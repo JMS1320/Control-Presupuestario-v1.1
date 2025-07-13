@@ -9,11 +9,19 @@ const supabase = createClient(
 
 function parseNumber(value: any): number {
   if (typeof value === "string") {
-    value = value.replace(/\./g, "").replace(",", ".")
+    value = value.trim()
+
+    if (value.includes(",") && value.includes(".")) {
+      value = value.replace(/\./g, "").replace(",", ".")
+    } else if (value.includes(",")) {
+      value = value.replace(",", ".")
+    }
+
     if (/^\(.*\)$/.test(value)) {
       value = "-" + value.replace(/[()]/g, "")
     }
   }
+
   const num = Number.parseFloat(value)
   return isNaN(num) ? 0 : num
 }
@@ -54,18 +62,14 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(sheet)
 
-    // Excluir fechas mayores o iguales a hoy
     const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0) // normalizar hora
+    hoy.setHours(0, 0, 0, 0)
+
     const filtrados = (json as any[]).filter((row) => {
       const fecha = parseDate(row["Fecha"])
-      if (!fecha) return false
-      const f = new Date(fecha)
-      f.setHours(0, 0, 0, 0)
-      return f < hoy
+      return fecha && new Date(fecha) < hoy
     })
 
-    // Revertir para que la más antigua esté primero
     const filasOrdenadas = filtrados.reverse()
 
     let controlAnterior = saldoInicio
@@ -96,11 +100,13 @@ export async function POST(req: Request) {
 
     const { error } = await supabase.from(tabla).insert(rows)
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error("Supabase insert error:", error)
+      return NextResponse.json({ error: "Error al insertar en la base de datos." }, { status: 500 })
     }
 
-    return NextResponse.json({ message: `Importación exitosa: ${rows.length} filas` })
-  } catch (err) {
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json({ success: true, cantidad: rows.length })
+  } catch (error) {
+    console.error("Catch error:", error)
+    return NextResponse.json({ error: "Error inesperado del servidor." }, { status: 500 })
   }
 }
