@@ -1,42 +1,4 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import * as XLSX from "xlsx"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-function parseNumber(value: any): number {
-  if (typeof value === "string") {
-    value = value.replace(/\./g, "").replace(",", ".")
-    if (/^\(.*\)$/.test(value)) {
-      value = "-" + value.replace(/[()]/g, "")
-    }
-  }
-  const num = Number.parseFloat(value)
-  return isNaN(num) ? 0 : num
-}
-
-function parseDate(value: any): string | null {
-  if (!value) return null
-  try {
-    let date: Date
-    if (typeof value === "number") {
-      date = new Date((value - 25569) * 86400 * 1000)
-    } else if (typeof value === "string") {
-      date = new Date(value)
-    } else if (value instanceof Date) {
-      date = value
-    } else {
-      return null
-    }
-    if (isNaN(date.getTime())) return null
-    return date.toISOString().split("T")[0]
-  } catch {
-    return null
-  }
-}
+// ... (importaciones y funciones iguales que antes)
 
 export async function POST(req: Request) {
   try {
@@ -56,7 +18,7 @@ export async function POST(req: Request) {
       .order("orden", { ascending: false })
       .limit(1)
 
-    const saldoInicio = ultimos?.[0]?.saldo ?? 0
+    const saldoInicio = ultimos?.[0]?.saldo ?? parseNumber(formData.get("saldo_inicio"))
     const ultimaFecha = ultimos?.[0]?.fecha ?? null
     const ultimoOrden = ultimos?.[0]?.orden ?? 0
 
@@ -66,14 +28,16 @@ export async function POST(req: Request) {
     const json = XLSX.utils.sheet_to_json(sheet)
 
     const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+
     const filtrados = (json as any[]).filter((row) => {
-      const fecha = parseDate(row["Fecha"])
-      const fechaDate = fecha ? new Date(fecha) : null
-      return (
-        fecha &&
-        fechaDate < hoy && // excluir fechas futuras y hoy
-        (!ultimaFecha || new Date(fecha) > new Date(ultimaFecha)) // excluir fechas previas o iguales
-      )
+      const fechaStr = parseDate(row["Fecha"])
+      if (!fechaStr) return false
+
+      const fecha = new Date(fechaStr)
+      fecha.setHours(0, 0, 0, 0)
+
+      return fecha < hoy && (!ultimaFecha || fecha > new Date(ultimaFecha))
     })
 
     const filasOrdenadas = filtrados.reverse()
