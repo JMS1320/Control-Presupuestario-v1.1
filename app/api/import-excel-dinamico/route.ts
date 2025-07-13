@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const file = formData.get("file") as File
     const tabla = (formData.get("tabla") as string)?.toLowerCase()
-    const saldoInicio = parseNumber(formData.get("saldo_inicio"))
+    const saldoInicio = Number(formData.get("saldo_inicio"))
 
     if (!file || !tabla || isNaN(saldoInicio)) {
       return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
@@ -55,11 +55,9 @@ export async function POST(req: Request) {
     const json = XLSX.utils.sheet_to_json(sheet)
 
     const hoy = new Date()
-    const hoyString = hoy.toISOString().split("T")[0]
-
     const filtrados = (json as any[]).filter((row) => {
       const fecha = parseDate(row["Fecha"])
-      return fecha && fecha < hoyString
+      return fecha && new Date(fecha) < hoy
     })
 
     const filasOrdenadas = filtrados.reverse()
@@ -72,14 +70,6 @@ export async function POST(req: Request) {
       const controlCalculado = controlAnterior + creditos - debitos
       const diferencia = controlCalculado - saldo
       controlAnterior = controlCalculado
-
-      console.log({
-        debitos,
-        creditos,
-        saldo,
-        controlCalculado,
-        diferencia
-      })
 
       return {
         fecha: parseDate(row["Fecha"]),
@@ -99,12 +89,14 @@ export async function POST(req: Request) {
     })
 
     const { error } = await supabase.from(tabla).insert(rows)
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+    if (error) throw error
 
-    return NextResponse.json({ message: "Importación completa", cantidad: rows.length })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Error interno" }, { status: 500 })
+    return NextResponse.json({
+      message: "Importación completa",
+      cantidad: rows.length
+    })
+  } catch (error: any) {
+    console.error("Error en importación:", error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
