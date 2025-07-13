@@ -54,15 +54,18 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(sheet)
 
+    // Filtrar fechas estrictamente menores a hoy
     const hoy = new Date()
     const filtrados = (json as any[]).filter((row) => {
       const fecha = parseDate(row["Fecha"])
-      return fecha && new Date(fecha) <= hoy
+      return fecha && new Date(fecha) < hoy
     })
 
-    // NO invertimos: se respeta el orden del archivo
+    // IMPORTANTE: revertimos para que la fila más antigua quede primero
+    const filasOrdenadas = filtrados.reverse()
+
     let controlAnterior = saldoInicio
-    const rows = filtrados.map((row, index) => {
+    const rows = filasOrdenadas.map((row, index) => {
       const debitos = parseNumber(row["Débitos"])
       const creditos = parseNumber(row["Créditos"])
       const saldo = parseNumber(row["Saldo"])
@@ -85,15 +88,3 @@ export async function POST(req: Request) {
         orden: index + 1,
         control: diferencia
       }
-    })
-
-    const { error } = await supabase.from(tabla).insert(rows)
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ message: "Importación completa", cantidad: rows.length })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Error interno" }, { status: 500 })
-  }
-}
