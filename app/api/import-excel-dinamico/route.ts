@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const file = formData.get("file") as File
     const tabla = (formData.get("tabla") as string)?.toLowerCase()
-    const saldoInicio = Number(formData.get("saldo_inicio"))
+    const saldoInicio = parseNumber(formData.get("saldo_inicio"))
 
     if (!file || !tabla || isNaN(saldoInicio)) {
       return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
@@ -54,15 +54,23 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(sheet)
 
+    // Normalizar fecha de hoy para eliminar registros >= hoy
     const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+
     const filtrados = (json as any[]).filter((row) => {
-      const fecha = parseDate(row["Fecha"])
-      return fecha && new Date(fecha) < hoy
+      const fechaStr = parseDate(row["Fecha"])
+      if (!fechaStr) return false
+      const fecha = new Date(fechaStr)
+      fecha.setHours(0, 0, 0, 0)
+      return fecha < hoy
     })
 
+    // IMPORTANTE: revertimos para que la fila más antigua quede primero
     const filasOrdenadas = filtrados.reverse()
 
     let controlAnterior = saldoInicio
+
     const rows = filasOrdenadas.map((row, index) => {
       const debitos = parseNumber(row["Débitos"])
       const creditos = parseNumber(row["Créditos"])
@@ -91,12 +99,9 @@ export async function POST(req: Request) {
     const { error } = await supabase.from(tabla).insert(rows)
     if (error) throw error
 
-    return NextResponse.json({
-      message: "Importación completa",
-      cantidad: rows.length
-    })
-  } catch (error: any) {
-    console.error("Error en importación:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ success: true, rowsInsertados: rows.length })
+  } catch (err: any) {
+    console.error("Error al importar:", err.message)
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
