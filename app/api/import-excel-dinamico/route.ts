@@ -54,23 +54,21 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(sheet)
 
-    // Normalizar fecha de hoy para eliminar registros >= hoy
+    // Excluir fechas mayores o iguales a hoy
     const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
-
+    hoy.setHours(0, 0, 0, 0) // normalizar hora
     const filtrados = (json as any[]).filter((row) => {
-      const fechaStr = parseDate(row["Fecha"])
-      if (!fechaStr) return false
-      const fecha = new Date(fechaStr)
-      fecha.setHours(0, 0, 0, 0)
-      return fecha < hoy
+      const fecha = parseDate(row["Fecha"])
+      if (!fecha) return false
+      const f = new Date(fecha)
+      f.setHours(0, 0, 0, 0)
+      return f < hoy
     })
 
-    // IMPORTANTE: revertimos para que la fila más antigua quede primero
+    // Revertir para que la más antigua esté primero
     const filasOrdenadas = filtrados.reverse()
 
     let controlAnterior = saldoInicio
-
     const rows = filasOrdenadas.map((row, index) => {
       const debitos = parseNumber(row["Débitos"])
       const creditos = parseNumber(row["Créditos"])
@@ -97,11 +95,12 @@ export async function POST(req: Request) {
     })
 
     const { error } = await supabase.from(tabla).insert(rows)
-    if (error) throw error
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
-    return NextResponse.json({ success: true, rowsInsertados: rows.length })
-  } catch (err: any) {
-    console.error("Error al importar:", err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ message: `Importación exitosa: ${rows.length} filas` })
+  } catch (err) {
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
 }
