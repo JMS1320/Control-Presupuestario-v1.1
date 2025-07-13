@@ -88,4 +88,15 @@ export async function POST(req: Request) {
         orden: index + 1,
         control: diferencia
       }
+    })
+
+    const { error } = await supabase.from(tabla).insert(rows)
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ message: "Importación completa", cantidad: rows.length })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Error interno" }, { status: 500 })
+  }
 }
