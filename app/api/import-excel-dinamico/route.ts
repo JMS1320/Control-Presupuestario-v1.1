@@ -39,55 +39,61 @@ function parseDate(value: any): string | null {
 }
 
 export async function POST(req: Request) {
-  const formData = await req.formData()
-  const file = formData.get("file") as File
-  const saldoInicio = parseNumber(formData.get("saldo_inicio"))
-  const tabla = (formData.get("tabla") as string)?.toLowerCase()
+  try {
+    const formData = await req.formData()
+    const file = formData.get("file") as File
+    const tabla = (formData.get("tabla") as string)?.toLowerCase()
+    const saldoInicio = parseNumber(formData.get("saldo_inicio"))
 
-  if (!file || !tabla || isNaN(saldoInicio)) {
-    return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
-  }
-
-  const arrayBuffer = await file.arrayBuffer()
-  const workbook = XLSX.read(arrayBuffer, { type: "buffer" })
-  const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-  const json = XLSX.utils.sheet_to_json(worksheet)
-
-  let controlAnterior = saldoInicio
-
-  const rows = (json as any[]).map((row, index) => {
-    const debitos = parseNumber(row["Débitos"])
-    const creditos = parseNumber(row["Créditos"])
-    const saldo = parseNumber(row["Saldo"])
-
-    const controlCalculado = controlAnterior + creditos - debitos
-    const diferencia = controlCalculado - saldo
-
-    controlAnterior = controlCalculado
-
-    return {
-      fecha: parseDate(row["Fecha"]),
-      descripcion: row["Descripción"] || null,
-      debitos,
-      creditos,
-      saldo,
-      categ: row["CATEG"] || null,
-      detalle: row["Detalle"] || null,
-      contable: row["Contable"] || null,
-      interno: row["Interno"] || null,
-      centro_de_costo: row["Centro de Costo"] || null, // Nota: nombre del Excel
-      cuenta: row["Cuenta"] || null,
-      orden: index + 1,
-      control: diferencia
+    if (!file || !tabla || isNaN(saldoInicio)) {
+      return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
     }
-  })
 
-  const { error } = await supabase.from(tabla).insert(rows)
+    const arrayBuffer = await file.arrayBuffer()
+    const workbook = XLSX.read(arrayBuffer)
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const json = XLSX.utils.sheet_to_json(sheet)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const hoy = new Date()
+    const filtrados = (json as any[]).filter((row) => {
+      const fecha = parseDate(row["Fecha"])
+      return fecha && new Date(fecha) <= hoy
+    })
+
+    // NO invertimos: se respeta el orden del archivo
+    let controlAnterior = saldoInicio
+    const rows = filtrados.map((row, index) => {
+      const debitos = parseNumber(row["Débitos"])
+      const creditos = parseNumber(row["Créditos"])
+      const saldo = parseNumber(row["Saldo"])
+      const controlCalculado = controlAnterior + creditos - debitos
+      const diferencia = controlCalculado - saldo
+      controlAnterior = controlCalculado
+
+      return {
+        fecha: parseDate(row["Fecha"]),
+        descripcion: row["Descripción"] || null,
+        debitos,
+        creditos,
+        saldo,
+        categ: row["CATEG"] || null,
+        detalle: row["Detalle"] || null,
+        contable: row["Contable"] || null,
+        interno: row["Interno"] || null,
+        centro_de_costo: row["Centro de Costo"] || null,
+        cuenta: row["Cuenta"] || null,
+        orden: index + 1,
+        control: diferencia
+      }
+    })
+
+    const { error } = await supabase.from(tabla).insert(rows)
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ message: "Importación completa", cantidad: rows.length })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Error interno" }, { status: 500 })
   }
-
-  return NextResponse.json({ message: "Importación completa", cantidad: rows.length })
 }
-
