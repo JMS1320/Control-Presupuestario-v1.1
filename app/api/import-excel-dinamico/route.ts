@@ -54,14 +54,14 @@ export async function POST(req: Request) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const json = XLSX.utils.sheet_to_json(sheet)
 
-    // Filtrar fechas estrictamente menores a hoy
     const hoy = new Date()
+    const hoyString = hoy.toISOString().split("T")[0]
+
     const filtrados = (json as any[]).filter((row) => {
       const fecha = parseDate(row["Fecha"])
-      return fecha && new Date(fecha) < hoy
+      return fecha && fecha < hoyString
     })
 
-    // IMPORTANTE: revertimos para que la fila más antigua quede primero
     const filasOrdenadas = filtrados.reverse()
 
     let controlAnterior = saldoInicio
@@ -72,6 +72,14 @@ export async function POST(req: Request) {
       const controlCalculado = controlAnterior + creditos - debitos
       const diferencia = controlCalculado - saldo
       controlAnterior = controlCalculado
+
+      console.log({
+        debitos,
+        creditos,
+        saldo,
+        controlCalculado,
+        diferencia
+      })
 
       return {
         fecha: parseDate(row["Fecha"]),
