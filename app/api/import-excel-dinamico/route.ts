@@ -9,19 +9,11 @@ const supabase = createClient(
 
 function parseNumber(value: any): number {
   if (typeof value === "string") {
-    value = value.trim()
-
-    if (value.includes(",") && value.includes(".")) {
-      value = value.replace(/\./g, "").replace(",", ".")
-    } else if (value.includes(",")) {
-      value = value.replace(",", ".")
-    }
-
+    value = value.replace(/\./g, "").replace(",", ".")
     if (/^\(.*\)$/.test(value)) {
       value = "-" + value.replace(/[()]/g, "")
     }
   }
-
   const num = Number.parseFloat(value)
   return isNaN(num) ? 0 : num
 }
@@ -51,11 +43,22 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const file = formData.get("file") as File
     const tabla = (formData.get("tabla") as string)?.toLowerCase()
-    const saldoInicio = parseNumber(formData.get("saldo_inicio"))
 
-    if (!file || !tabla || isNaN(saldoInicio)) {
+    if (!file || !tabla) {
       return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
     }
+
+    // Obtener último saldo y orden de la tabla destino
+    const { data: ultimos, error: errorUltimos } = await supabase
+      .from(tabla)
+      .select("fecha, saldo, orden")
+      .order("fecha", { ascending: false })
+      .order("orden", { ascending: false })
+      .limit(1)
+
+    const saldoInicio = ultimos?.[0]?.saldo ?? 0
+    const ultimaFecha = ultimos?.[0]?.fecha ?? null
+    const ultimoOrden = ultimos?.[0]?.orden ?? 0
 
     const arrayBuffer = await file.arrayBuffer()
     const workbook = XLSX.read(arrayBuffer)
@@ -63,11 +66,14 @@ export async function POST(req: Request) {
     const json = XLSX.utils.sheet_to_json(sheet)
 
     const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
-
     const filtrados = (json as any[]).filter((row) => {
       const fecha = parseDate(row["Fecha"])
-      return fecha && new Date(fecha) < hoy
+      const fechaDate = fecha ? new Date(fecha) : null
+      return (
+        fecha &&
+        fechaDate < hoy && // excluir fechas futuras y hoy
+        (!ultimaFecha || new Date(fecha) > new Date(ultimaFecha)) // excluir fechas previas o iguales
+      )
     })
 
     const filasOrdenadas = filtrados.reverse()
@@ -93,20 +99,20 @@ export async function POST(req: Request) {
         interno: row["Interno"] || null,
         centro_de_costo: row["Centro de Costo"] || null,
         cuenta: row["Cuenta"] || null,
-        orden: index + 1,
+        orden: ultimoOrden + index + 1,
         control: diferencia
       }
     })
 
-    const { error } = await supabase.from(tabla).insert(rows)
-    if (error) {
-      console.error("Supabase insert error:", error)
+    const { error: insertError } = await supabase.from(tabla).insert(rows)
+    if (insertError) {
+      console.error(insertError)
       return NextResponse.json({ error: "Error al insertar en la base de datos." }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, cantidad: rows.length })
-  } catch (error) {
-    console.error("Catch error:", error)
-    return NextResponse.json({ error: "Error inesperado del servidor." }, { status: 500 })
+    return NextResponse.json({ status: "ok", cantidad: rows.length })
+  } catch (err) {
+    console.error(err)
+    return NextResponse.json({ error: "Error interno del servidor." }, { status: 500 })
   }
 }
