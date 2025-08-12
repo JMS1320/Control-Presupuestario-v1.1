@@ -45,7 +45,7 @@ interface FacturaArca {
   created_at: string
 }
 
-// Configuración de columnas disponibles - TODAS VISIBLES por defecto EXCEPTO las 2 especificadas
+// Configuración de columnas disponibles - TODAS VISIBLES por defecto EXCEPTO las 2 especificadas  
 const COLUMNAS_CONFIG = {
   fecha_emision: { label: "Fecha Emisión", visible: true, width: "120px" },
   tipo_comprobante: { label: "Tipo Comp.", visible: true, width: "100px" },
