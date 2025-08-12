@@ -168,16 +168,29 @@ export async function POST(req: Request) {
           continue
         }
 
+        // Debug: Mostrar datos antes de insertar
+        console.log(`🔍 Intentando insertar fila ${indice + 2}:`, JSON.stringify(filaParaBBDD, null, 2))
+        console.log(`📊 Esquema usado: ${esquema}`)
+        
         // Insertar nueva factura
-        const { error: errorInsercion } = await supabase
+        const { data, error: errorInsercion } = await supabase
           .from(`${esquema}.comprobantes_arca`)
           .insert(filaParaBBDD)
+          .select()
+
+        console.log(`📤 Resultado inserción fila ${indice + 2}:`, { data, error: errorInsercion })
 
         if (errorInsercion) {
-          console.error(`❌ Error al insertar fila ${indice + 2}:`, JSON.stringify(errorInsercion, null, 2))
-          console.error(`🔍 Datos que se intentaron insertar:`, JSON.stringify(filaParaBBDD, null, 2))
-          errores.push(`Fila ${indice + 2}: ${errorInsercion.message || errorInsercion.code || 'Error desconocido'}`)
+          const errorCompleto = {
+            message: errorInsercion.message,
+            details: errorInsercion.details,
+            hint: errorInsercion.hint,
+            code: errorInsercion.code
+          }
+          console.error(`❌ Error COMPLETO fila ${indice + 2}:`, errorCompleto)
+          errores.push(`Fila ${indice + 2}: ${errorInsercion.message || errorInsercion.details || errorInsercion.code || 'Error desconocido'}`)
         } else {
+          console.log(`✅ Fila ${indice + 2} insertada correctamente:`, data)
           filasImportadas++
         }
 
