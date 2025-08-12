@@ -45,34 +45,34 @@ interface FacturaArca {
   created_at: string
 }
 
-// Configuración de columnas disponibles
+// Configuración de columnas disponibles - TODAS VISIBLES por defecto EXCEPTO las 2 especificadas
 const COLUMNAS_CONFIG = {
-  fecha_emision: { label: "Fecha Emisión", visible: true },
-  tipo_comprobante: { label: "Tipo Comp.", visible: true },
-  punto_venta: { label: "Punto Venta", visible: true },
-  numero_desde: { label: "Número Desde", visible: true },
-  numero_hasta: { label: "Número Hasta", visible: false }, // Oculta por defecto
-  codigo_autorizacion: { label: "Cód. Autorización", visible: false }, // Oculta por defecto
-  tipo_doc_emisor: { label: "Tipo Doc.", visible: true },
-  cuit: { label: "CUIT", visible: true },
-  denominacion_emisor: { label: "Proveedor", visible: true },
-  tipo_cambio: { label: "Tipo Cambio", visible: false },
-  moneda: { label: "Moneda", visible: false },
-  imp_neto_gravado: { label: "Neto Gravado", visible: true },
-  imp_neto_no_gravado: { label: "Neto No Gravado", visible: false },
-  imp_op_exentas: { label: "Op. Exentas", visible: false },
-  otros_tributos: { label: "Otros Tributos", visible: false },
-  iva: { label: "IVA", visible: true },
-  imp_total: { label: "Total", visible: true },
-  campana: { label: "Campaña", visible: false },
-  fc: { label: "FC", visible: false },
-  cuenta_contable: { label: "Cuenta Contable", visible: false },
-  centro_costo: { label: "Centro Costo", visible: false },
-  estado: { label: "Estado", visible: true },
-  observaciones_pago: { label: "Obs. Pago", visible: false },
-  detalle: { label: "Detalle", visible: false },
-  archivo_origen: { label: "Archivo Origen", visible: false },
-  created_at: { label: "Fecha Importación", visible: false }
+  fecha_emision: { label: "Fecha Emisión", visible: true, width: "120px" },
+  tipo_comprobante: { label: "Tipo Comp.", visible: true, width: "100px" },
+  punto_venta: { label: "Punto Venta", visible: true, width: "120px" },
+  numero_desde: { label: "Número Desde", visible: true, width: "140px" },
+  numero_hasta: { label: "Número Hasta", visible: false, width: "140px" }, // OCULTA por defecto
+  codigo_autorizacion: { label: "Cód. Autorización", visible: false, width: "160px" }, // OCULTA por defecto
+  tipo_doc_emisor: { label: "Tipo Doc.", visible: true, width: "100px" },
+  cuit: { label: "CUIT", visible: true, width: "120px" },
+  denominacion_emisor: { label: "Proveedor", visible: true, width: "200px" },
+  tipo_cambio: { label: "Tipo Cambio", visible: true, width: "120px" },
+  moneda: { label: "Moneda", visible: true, width: "80px" },
+  imp_neto_gravado: { label: "Neto Gravado", visible: true, width: "130px" },
+  imp_neto_no_gravado: { label: "Neto No Gravado", visible: true, width: "140px" },
+  imp_op_exentas: { label: "Op. Exentas", visible: true, width: "120px" },
+  otros_tributos: { label: "Otros Tributos", visible: true, width: "130px" },
+  iva: { label: "IVA", visible: true, width: "120px" },
+  imp_total: { label: "Total", visible: true, width: "130px" },
+  campana: { label: "Campaña", visible: true, width: "120px" },
+  fc: { label: "FC", visible: true, width: "80px" },
+  cuenta_contable: { label: "Cuenta Contable", visible: true, width: "150px" },
+  centro_costo: { label: "Centro Costo", visible: true, width: "120px" },
+  estado: { label: "Estado", visible: true, width: "100px" },
+  observaciones_pago: { label: "Obs. Pago", visible: true, width: "150px" },
+  detalle: { label: "Detalle", visible: true, width: "150px" },
+  archivo_origen: { label: "Archivo Origen", visible: true, width: "200px" },
+  created_at: { label: "Fecha Importación", visible: true, width: "150px" }
 } as const
 
 export function VistaFacturasArca() {
@@ -124,10 +124,12 @@ export function VistaFacturasArca() {
     }).format(valor)
   }
 
-  // Formatear fecha
+  // Formatear fecha - arreglando problema de zona horaria
   const formatearFecha = (fecha: string): string => {
     try {
-      return format(new Date(fecha), 'dd/MM/yyyy', { locale: es })
+      // Crear fecha interpretando como UTC para evitar problemas de zona horaria
+      const fechaUTC = new Date(fecha + 'T00:00:00.000Z')
+      return format(fechaUTC, 'dd/MM/yyyy', { locale: es })
     } catch {
       return fecha
     }
@@ -285,41 +287,56 @@ export function VistaFacturasArca() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {columnasVisiblesArray.map(columna => (
-                      <TableHead key={columna}>
-                        {COLUMNAS_CONFIG[columna].label}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {facturas.length === 0 ? (
+            {/* Scroll horizontal mejorado */}
+            <ScrollArea className="w-full">
+              <div className="rounded-md border" style={{ minWidth: 'fit-content' }}>
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell 
-                        colSpan={columnasVisiblesArray.length} 
-                        className="h-24 text-center text-muted-foreground"
-                      >
-                        No hay facturas para mostrar
-                      </TableCell>
+                      {columnasVisiblesArray.map(columna => (
+                        <TableHead 
+                          key={columna} 
+                          style={{ 
+                            width: COLUMNAS_CONFIG[columna].width,
+                            minWidth: COLUMNAS_CONFIG[columna].width
+                          }}
+                        >
+                          {COLUMNAS_CONFIG[columna].label}
+                        </TableHead>
+                      ))}
                     </TableRow>
-                  ) : (
-                    facturas.map(factura => (
-                      <TableRow key={factura.id}>
-                        {columnasVisiblesArray.map(columna => (
-                          <TableCell key={columna}>
-                            {renderizarCelda(factura, columna)}
-                          </TableCell>
-                        ))}
+                  </TableHeader>
+                  <TableBody>
+                    {facturas.length === 0 ? (
+                      <TableRow>
+                        <TableCell 
+                          colSpan={columnasVisiblesArray.length} 
+                          className="h-24 text-center text-muted-foreground"
+                        >
+                          No hay facturas para mostrar
+                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : (
+                      facturas.map(factura => (
+                        <TableRow key={factura.id}>
+                          {columnasVisiblesArray.map(columna => (
+                            <TableCell 
+                              key={columna}
+                              style={{ 
+                                width: COLUMNAS_CONFIG[columna].width,
+                                minWidth: COLUMNAS_CONFIG[columna].width
+                              }}
+                            >
+                              {renderizarCelda(factura, columna)}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </ScrollArea>
           </CardContent>
         </Card>
       )}
