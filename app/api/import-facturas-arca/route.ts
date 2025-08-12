@@ -193,7 +193,7 @@ export async function POST(req: Request) {
     console.log(`📈 Resultado: ${filasImportadas} importadas, ${filasIgnoradas} ignoradas, ${errores.length} errores`)
 
     return NextResponse.json({
-      success: true,
+      success: filasImportadas > 0, // Solo success si importó al menos 1
       message: mensaje,
       insertedCount: filasImportadas,
       ignoredCount: filasIgnoradas,

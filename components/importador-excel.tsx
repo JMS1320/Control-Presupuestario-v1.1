@@ -159,6 +159,12 @@ export function ImportadorExcel() {
 
       const data = await response.json()
 
+      // Mostrar errores detallados en consola para debugging
+      if (data.errores && data.errores.length > 0) {
+        console.error("🔍 ERRORES DETALLADOS:", data.errores)
+        console.error("🔍 RESPUESTA COMPLETA:", data)
+      }
+
       if (response.ok) {
         setResult(data)
       } else {
