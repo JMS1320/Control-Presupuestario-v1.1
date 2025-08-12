@@ -154,7 +154,8 @@ export async function POST(req: Request) {
 
         // Verificar si la factura ya existe (anti-duplicados)
         const { data: facturaExistente } = await supabase
-          .from(`${esquema}.comprobantes_arca`)
+          .schema(esquema)
+          .from('comprobantes_arca')
           .select('id')
           .eq('tipo_comprobante', filaParaBBDD.tipo_comprobante)
           .eq('punto_venta', filaParaBBDD.punto_venta)
@@ -174,7 +175,8 @@ export async function POST(req: Request) {
         
         // Insertar nueva factura
         const { data, error: errorInsercion } = await supabase
-          .from(`${esquema}.comprobantes_arca`)
+          .schema(esquema)
+          .from('comprobantes_arca')
           .insert(filaParaBBDD)
           .select()
 
