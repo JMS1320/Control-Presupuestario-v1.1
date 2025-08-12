@@ -10,11 +10,12 @@ import { ReporteDetallado } from "./components/reporte-detallado"
 import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
+import { VistaFacturasArca } from "./components/vista-facturas-arca"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt } from "lucide-react"
 
 export default function ControlPresupuestario() {
   // Obtener el año actual dinámicamente
@@ -41,7 +42,7 @@ export default function ControlPresupuestario() {
 
         {/* pestañas principales */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Dashboard
@@ -53,6 +54,10 @@ export default function ControlPresupuestario() {
             <TabsTrigger value="reporte" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Reporte Detallado
+            </TabsTrigger>
+            <TabsTrigger value="facturas" className="flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              Facturas ARCA
             </TabsTrigger>
             <TabsTrigger value="importar" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -142,6 +147,11 @@ export default function ControlPresupuestario() {
             />
 
             <ReporteDetallado año={año} semestre={semestre} mostrarDecimales={mostrarDecimales} />
+          </TabsContent>
+
+          {/* FACTURAS ARCA */}
+          <TabsContent value="facturas" className="space-y-6">
+            <VistaFacturasArca />
           </TabsContent>
 
           {/* IMPORTAR */}
