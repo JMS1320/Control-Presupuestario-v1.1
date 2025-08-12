@@ -174,8 +174,9 @@ export async function POST(req: Request) {
           .insert(filaParaBBDD)
 
         if (errorInsercion) {
-          console.error(`❌ Error al insertar fila ${indice + 2}:`, errorInsercion)
-          errores.push(`Fila ${indice + 2}: ${errorInsercion.message}`)
+          console.error(`❌ Error al insertar fila ${indice + 2}:`, JSON.stringify(errorInsercion, null, 2))
+          console.error(`🔍 Datos que se intentaron insertar:`, JSON.stringify(filaParaBBDD, null, 2))
+          errores.push(`Fila ${indice + 2}: ${errorInsercion.message || errorInsercion.code || 'Error desconocido'}`)
         } else {
           filasImportadas++
         }
