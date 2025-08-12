@@ -49,11 +49,121 @@ La aplicación estará disponible en [http://localhost:3000](http://localhost:30
 ### Tablas principales:
 - **`msa_galicia`**: Movimientos bancarios importados
 - **`cuentas_contables`**: Mapeo de categorías a tipos de cuenta
+- **`msa.comprobantes_arca`**: Facturas recibidas de MSA (esquema separado)
 
 ### Configurar Supabase:
 1. Crear proyecto en [Supabase](https://supabase.com)
-2. Ejecutar migraciones SQL (pendiente documentar)
+2. Ejecutar migraciones SQL (ver sección "Configuración Crítica")
 3. Copiar las claves del proyecto a `.env.local`
+
+## 🔧 Configuración Crítica de Supabase (IMPORTANTE)
+
+### 📋 Pasos obligatorios para multi-empresa con esquemas personalizados
+
+Esta sección documenta los pasos esenciales aprendidos durante el desarrollo para configurar Supabase con **esquemas personalizados** (MSA/PAM). **No omitir ningún paso**.
+
+#### 1️⃣ **Crear esquemas y tablas en SQL Editor**
+```sql
+-- Crear esquema MSA
+CREATE SCHEMA IF NOT EXISTS msa;
+
+-- Crear tabla de facturas ARCA para MSA
+CREATE TABLE IF NOT EXISTS msa.comprobantes_arca (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Datos originales de ARCA (17 campos del CSV)
+    fecha_emision DATE,
+    tipo_comprobante INTEGER,
+    punto_venta INTEGER,
+    numero_desde INTEGER,
+    numero_hasta INTEGER,
+    codigo_autorizacion TEXT,
+    tipo_doc_emisor INTEGER,
+    cuit TEXT NOT NULL,
+    denominacion_emisor TEXT NOT NULL,
+    tipo_cambio DECIMAL(10,4) DEFAULT 1.0000,
+    moneda VARCHAR(3) DEFAULT 'PES',
+    imp_neto_gravado DECIMAL(15,2) DEFAULT 0.00,
+    imp_neto_no_gravado DECIMAL(15,2) DEFAULT 0.00,
+    imp_op_exentas DECIMAL(15,2) DEFAULT 0.00,
+    otros_tributos DECIMAL(15,2) DEFAULT 0.00,
+    iva DECIMAL(15,2) DEFAULT 0.00,
+    imp_total DECIMAL(15,2) NOT NULL,
+    
+    -- Campos adicionales para gestión
+    campana TEXT,
+    fc TEXT,
+    cuenta_contable TEXT,
+    centro_costo TEXT,
+    estado VARCHAR(20) DEFAULT 'pendiente',
+    observaciones_pago TEXT,
+    detalle TEXT,
+    archivo_origen TEXT,
+    
+    -- Auditoría
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índice único para evitar duplicados
+CREATE UNIQUE INDEX IF NOT EXISTS idx_msa_comprobantes_unique 
+ON msa.comprobantes_arca (tipo_comprobante, punto_venta, numero_desde, cuit);
+```
+
+#### 2️⃣ **Exponer esquema en la API** (CRÍTICO)
+- **Dashboard Supabase** → **Settings** → **API**
+- **"Exposed schemas"**: Agregar `msa` junto a `public` y `graphql_public`
+- ⚠️ **Sin este paso, el cliente JavaScript de Supabase no puede acceder al esquema**
+
+#### 3️⃣ **Otorgar permisos de acceso** (CRÍTICO)
+```sql
+-- Permisos sobre el esquema
+GRANT USAGE ON SCHEMA msa TO authenticated;
+GRANT USAGE ON SCHEMA msa TO anon;
+GRANT USAGE ON SCHEMA msa TO service_role;
+
+-- Permisos sobre la tabla
+GRANT ALL ON msa.comprobantes_arca TO authenticated;
+GRANT ALL ON msa.comprobantes_arca TO anon; 
+GRANT ALL ON msa.comprobantes_arca TO service_role;
+```
+
+#### 4️⃣ **Sintaxis correcta en el código JavaScript**
+```typescript
+// ❌ INCORRECTO - No funciona con Supabase
+const { data, error } = await supabase
+  .from('msa.comprobantes_arca')  // No reconoce el punto
+
+// ✅ CORRECTO - Sintaxis requerida por Supabase
+const { data, error } = await supabase
+  .schema('msa')                  // Especificar esquema primero
+  .from('comprobantes_arca')      // Luego la tabla
+```
+
+#### 5️⃣ **Políticas RLS (Row Level Security)**
+```sql
+-- Habilitar RLS en la tabla
+ALTER TABLE msa.comprobantes_arca ENABLE ROW LEVEL SECURITY;
+
+-- Crear política permisiva (ajustar según necesidades de seguridad)
+CREATE POLICY IF NOT EXISTS "Allow all operations on msa.comprobantes_arca" 
+ON msa.comprobantes_arca FOR ALL 
+TO authenticated, anon
+USING (true)
+WITH CHECK (true);
+```
+
+### 🚨 **Errores Comunes y Soluciones**
+
+| Error | Causa | Solución |
+|-------|-------|----------|
+| `The schema must be one of the following: public, graphql_public` | Esquema no expuesto en API | Paso 2: Exponer esquema |
+| `permission denied for schema msa` | Falta otorgar permisos | Paso 3: Ejecutar GRANT |
+| `relation "msa.comprobantes_arca_id_seq" does not exist` | UUID vs SERIAL | Usar UUID con `gen_random_uuid()` |
+| Errores vacíos `{}` en inserción | Múltiples causas posibles | Verificar pasos 1-4 en orden |
+
+### 🔄 **Para replicar en PAM**
+Repetir estos 5 pasos reemplazando `msa` por `pam` en todos los comandos.
 
 ## 📁 Estructura del Proyecto
 
@@ -135,11 +245,32 @@ Para problemas o mejoras, crear issue en este repositorio.
     2. Unificar ambos importadores en un solo componente
     3. Integrar al dashboard principal
 
-### 📋 **Tareas Pendientes - Fase Actual**
-- [ ] Terminar desarrollo del importador PAM Galicia
-- [ ] Unificar `importador-excel.tsx` e `importador-excel-dinamico.tsx`
-- [ ] Integrar selector de banco en la UI principal
-- [ ] Testing completo del flujo PAM
+### 📋 **Tareas Pendientes - Próxima Fase (Orden de Ejecución)**
+
+#### **Fase 1: Visualización y Testing MSA** 
+- [ ] **Vista de facturas importadas**: Crear componente para visualizar datos de `msa.comprobantes_arca`
+- [ ] **Testing de rigurosidad del sistema MSA**:
+  - [ ] Intentar importar archivo PAM en sistema MSA (debe rechazarlo por CUIT)
+  - [ ] Probar importación con facturas repetidas (sistema anti-duplicados)
+  - [ ] Validar edge cases y manejo de errores
+
+#### **Fase 2: Desarrollo Cash Flow MSA**
+- [ ] **Vista Flujo de Fondos**: Crear sistema de gestión de cash flow
+- [ ] **Vincular facturas ARCA con Flujo de Fondos**: Sistema de matching/conciliación
+- [ ] **Completar proceso MSA**: Integrar todo el workflow MSA
+
+#### **Fase 3: Expansión PAM y Convergencia** 
+- [ ] **Replicar sistema para PAM**: Una vez MSA afilado y funcionando
+  - [ ] Crear esquema `pam` y tabla `pam.comprobantes_arca` 
+  - [ ] Configurar permisos y exposición API para esquema PAM
+  - [ ] Testing completo del flujo PAM
+- [ ] **Convergencia multi-empresa**: Hacer confluir ambos sistemas
+- [ ] **Integrar reportes de facturas ARCA al dashboard principal**
+
+#### **Fase 4: Limpieza y Optimización**
+- [ ] Limpiar código debug del test de conexión
+- [ ] Documentar flujo completo multi-empresa
+- [ ] Unificar `importador-excel.tsx` e `importador-excel-dinamico.tsx` (si aplica)
 - [ ] Documentar diferencias entre formatos de bancos
 
 ## 🚀 **Visión Futura - Rediseño Completo del Sistema**
