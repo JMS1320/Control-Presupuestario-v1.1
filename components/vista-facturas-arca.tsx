@@ -341,56 +341,21 @@ export function VistaFacturasArca() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Scroll horizontal mejorado con drag */}
-            <ScrollArea className="w-full h-[600px]">
-              <div 
-                className="rounded-md border cursor-grab active:cursor-grabbing" 
-                style={{ 
-                  minWidth: 'fit-content',
-                  userSelect: 'none'
-                }}
-              >
+            {/* Scroll horizontal simple */}
+            <div className="w-full overflow-auto max-h-[600px] border rounded-md">
+              <div style={{ minWidth: 'fit-content' }}>
                 <Table>
                   <TableHeader>
                     <TableRow>
                       {columnasVisiblesArray.map(columna => (
                         <TableHead 
                           key={columna} 
-                          className="relative border-r border-gray-200 resize-x overflow-hidden"
                           style={{ 
                             width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
-                            minWidth: '60px',
-                            position: 'relative'
+                            minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width
                           }}
                         >
-                          <div className="flex items-center justify-between">
-                            <span>{COLUMNAS_CONFIG[columna].label}</span>
-                            {/* Resize handle */}
-                            <div 
-                              className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-blue-300 transition-colors"
-                              onMouseDown={(e) => {
-                                e.preventDefault()
-                                const startX = e.clientX
-                                const startWidth = parseInt(anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width)
-                                
-                                const handleMouseMove = (e: MouseEvent) => {
-                                  const newWidth = Math.max(60, startWidth + (e.clientX - startX))
-                                  setAnchosColumnas(prev => ({
-                                    ...prev,
-                                    [columna]: `${newWidth}px`
-                                  }))
-                                }
-                                
-                                const handleMouseUp = () => {
-                                  document.removeEventListener('mousemove', handleMouseMove)
-                                  document.removeEventListener('mouseup', handleMouseUp)
-                                }
-                                
-                                document.addEventListener('mousemove', handleMouseMove)
-                                document.addEventListener('mouseup', handleMouseUp)
-                              }}
-                            />
-                          </div>
+                          {COLUMNAS_CONFIG[columna].label}
                         </TableHead>
                       ))}
                     </TableRow>
@@ -411,10 +376,9 @@ export function VistaFacturasArca() {
                           {columnasVisiblesArray.map(columna => (
                             <TableCell 
                               key={columna}
-                              className="border-r border-gray-100"
                               style={{ 
                                 width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
-                                minWidth: '60px'
+                                minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width
                               }}
                             >
                               {renderizarCelda(factura, columna)}
@@ -426,7 +390,7 @@ export function VistaFacturasArca() {
                   </TableBody>
                 </Table>
               </div>
-            </ScrollArea>
+            </div>
           </CardContent>
         </Card>
       )}
