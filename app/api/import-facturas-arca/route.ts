@@ -109,7 +109,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: SCHEMA-FIX-v3.0 - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: CONNECTION-TEST-v4.0 - ${new Date().toISOString()}`)
 
     // Leer contenido del archivo CSV
     const contenidoArchivo = await file.text()
@@ -134,6 +134,33 @@ export async function POST(req: Request) {
     // Determinar esquema de base de datos según empresa
     const esquema = empresa.toLowerCase()  // 'msa' o 'pam'
     const tabla = `${esquema}.comprobantes_arca`
+
+    // 🔍 TEST DE CONEXIÓN - Verificar que podemos acceder a la tabla
+    console.log(`🔍 Probando conexión a esquema: ${esquema}`)
+    try {
+      const { data: testData, error: testError } = await supabase
+        .schema(esquema)
+        .from('comprobantes_arca')
+        .select('id')
+        .limit(1)
+      
+      console.log(`✅ Test conexión resultado:`, { testData, testError })
+      
+      if (testError) {
+        console.error(`❌ FALLO TEST DE CONEXIÓN:`, testError)
+        return NextResponse.json({ 
+          error: `No se puede conectar a la tabla ${esquema}.comprobantes_arca: ${testError.message}` 
+        }, { status: 500 })
+      }
+      
+      console.log(`✅ Conexión exitosa a ${esquema}.comprobantes_arca`)
+      
+    } catch (error) {
+      console.error(`❌ ERROR CRÍTICO EN TEST:`, error)
+      return NextResponse.json({ 
+        error: `Error crítico de conexión: ${error}` 
+      }, { status: 500 })
+    }
 
     let filasImportadas = 0
     let filasIgnoradas = 0
