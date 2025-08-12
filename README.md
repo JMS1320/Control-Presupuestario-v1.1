@@ -47,9 +47,10 @@ La aplicación estará disponible en [http://localhost:3000](http://localhost:30
 ## 🗄️ Base de Datos (Supabase)
 
 ### Tablas principales:
-- **`msa_galicia`**: Movimientos bancarios importados
-- **`cuentas_contables`**: Mapeo de categorías a tipos de cuenta
-- **`msa.comprobantes_arca`**: Facturas recibidas de MSA (esquema separado)
+- **`msa_galicia`**: Movimientos bancarios importados (esquema público)
+- **`cuentas_contables`**: Mapeo de categorías a tipos de cuenta (esquema público)
+- **`msa.comprobantes_arca`**: Facturas recibidas MSA con 26 campos ARCA (esquema msa)
+- **`pam.comprobantes_arca`**: Facturas recibidas PAM - *próximamente* (esquema pam)
 
 ### Configurar Supabase:
 1. Crear proyecto en [Supabase](https://supabase.com)
@@ -170,16 +171,18 @@ Repetir estos 5 pasos reemplazando `msa` por `pam` en todos los comandos.
 ```
 ├── app/
 │   ├── api/                    # Endpoints de la API
-│   │   ├── import-excel/       # Importador Excel principal
-│   │   ├── import-excel-dinamico/ # Versión experimental
+│   │   ├── import-excel/       # Importador Excel extractos bancarios
+│   │   ├── import-facturas-arca/ # ✨ Importador facturas ARCA (MSA/PAM)
+│   │   ├── import-excel-dinamico/ # Versión experimental (legacy)
 │   │   └── verificar-tabla/    # Verificaciones de BD
-│   ├── importador-nuevo/       # Página experimental
+│   ├── importador-nuevo/       # Página experimental (legacy)
 │   └── page.tsx               # Página principal
 ├── components/
 │   ├── ui/                    # Componentes base shadcn/ui
 │   ├── filtros-financieros.tsx # Filtros de período
 │   ├── tabla-resumen-financiero.tsx # Resumen mensual
-│   ├── importador-excel.tsx   # Componente importador
+│   ├── importador-excel.tsx   # ✨ Importador dual: extractos + facturas ARCA
+│   ├── vista-facturas-arca.tsx # ✨ Vista gestión facturas con selector columnas
 │   └── corrector-categorias.tsx # Corrector de categorías
 ├── hooks/
 │   ├── useFinancialData.ts    # Hook datos financieros
@@ -209,20 +212,30 @@ Repetir estos 5 pasos reemplazando `msa` por `pam` en todos los comandos.
 
 ## 📈 Funcionalidades Principales
 
-### Dashboard
-- Resumen financiero mensual por categorías
-- Filtros por año y semestre
-- Toggle decimales/formato argentino
+### Dashboard Multi-Vista (5 solapas)
+- **Dashboard**: Resumen financiero mensual por categorías
+- **Distribución Socios**: Análisis de gastos por personas
+- **Reporte Detallado**: Vista línea por línea con filtros
+- **✨ Facturas ARCA**: Gestión completa de comprobantes recibidos
+- **Importar Excel**: Dual para extractos bancarios y facturas ARCA
 
-### Importador Excel
-- Procesa archivos de MSA Galicia
-- Validaciones automáticas de formato
-- Control de duplicados y errores
+### ✨ Sistema Facturas ARCA (Nuevo)
+- **Importación CSV**: Procesa archivos descargados de ARCA
+- **Validación CUIT**: Automática por empresa (MSA: 30617786016, PAM: 20044390222)
+- **26 campos ARCA**: Preserva toda la información fiscal original
+- **Anti-duplicados**: Por tipo_comprobante + punto_venta + numero_desde + cuit
+- **Vista personalizable**: Selector de columnas, fechas corregidas, scroll horizontal
+- **Arquitectura multi-empresa**: Esquemas separados (msa/pam)
 
-### Reportes
-- Vista detallada línea por línea
+### Importador Excel Dual
+- **Extractos bancarios**: MSA Galicia (funcionalidad original)
+- **Facturas ARCA**: CSV con validación empresarial integrada
+- **Validaciones automáticas**: Formato, duplicados, integridad
+
+### Reportes y Análisis
+- Vista detallada línea por línea con filtros avanzados
 - Análisis de distribución por socios
-- Exportación de datos (próximamente)
+- Dashboard con filtros por año/semestre y formato argentino
 
 ## 📞 Soporte
 
@@ -231,47 +244,46 @@ Para problemas o mejoras, crear issue en este repositorio.
 ## 🚧 Estado Actual del Desarrollo
 
 ### ✅ **Funcionalidades Completas**
-- **MSA Galicia**: Importador completamente funcional (`importador-excel.tsx` + `/api/import-excel`)
-- Dashboard con reportes y análisis
-- Corrección de categorías y distribución por socios
-- Base de datos configurada con tabla `msa_galicia`
 
-### 🔄 **En Desarrollo**
-- **PAM Galicia**: Importador experimental en progreso (`importador-excel-dinamico.tsx` + `/api/import-excel-dinamico`)
-  - **Objetivo**: Procesar archivos Excel de PAM Galicia (estructura diferente a MSA)
-  - **Estado**: Funcionalidad básica implementada, pendiente de debugging y unificación
-  - **Próximos pasos**: 
-    1. Resolver problemas de importación específicos de PAM
-    2. Unificar ambos importadores en un solo componente
-    3. Integrar al dashboard principal
+#### **Sistema MSA Galicia - COMPLETO**
+- **✅ Extractos bancarios**: Importador Excel completamente funcional (`/api/import-excel`)
+- **✅ Facturas ARCA**: Sistema completo de gestión de comprobantes recibidos
+  - ✅ **Importación CSV**: Procesamiento automático 26 campos ARCA (`/api/import-facturas-arca`)
+  - ✅ **Validación CUIT**: Automática por nombre archivo (MSA: 30617786016)
+  - ✅ **Vista gestión**: Selector columnas, fechas corregidas, scroll horizontal (`vista-facturas-arca.tsx`)
+  - ✅ **Sistema anti-duplicados**: Por clave única compuesta (tipo_comprobante + punto_venta + numero_desde + cuit)
+  - ✅ **Base de datos**: Esquema `msa.comprobantes_arca` completamente configurado
+  - ✅ **Integración UI**: Nueva solapa "Facturas ARCA" en dashboard principal
 
-### 📋 **Tareas Pendientes - Próxima Fase (Orden de Ejecución)**
+#### **Infraestructura y Core**
+- **✅ Dashboard multi-vista**: 5 solapas funcionales (Dashboard, Distribución, Reportes, Facturas ARCA, Importar)
+- **✅ Importador dual**: Extractos bancarios + facturas ARCA en componente unificado
+- **✅ Arquitectura multi-empresa**: Esquemas PostgreSQL separados con documentación crítica
+- **✅ Reportes y análisis**: Dashboard financiero, distribución socios, reportes detallados
+- **✅ Configuración Supabase**: Documentación paso a paso para esquemas personalizados
 
-#### **Fase 1: Visualización y Testing MSA** 
-- [ ] **Vista de facturas importadas**: Crear componente para visualizar datos de `msa.comprobantes_arca`
-- [ ] **Testing de rigurosidad del sistema MSA**:
-  - [ ] Intentar importar archivo PAM en sistema MSA (debe rechazarlo por CUIT)
-  - [ ] Probar importación con facturas repetidas (sistema anti-duplicados)
-  - [ ] Validar edge cases y manejo de errores
+### 🔄 **En Desarrollo Activo**
 
-#### **Fase 2: Desarrollo Cash Flow MSA**
-- [ ] **Vista Flujo de Fondos**: Crear sistema de gestión de cash flow
-- [ ] **Vincular facturas ARCA con Flujo de Fondos**: Sistema de matching/conciliación
-- [ ] **Completar proceso MSA**: Integrar todo el workflow MSA
+#### **Testing de Rigurosidad MSA** (Próximo inmediato)
+- [ ] **Validación cruzada**: Probar archivo PAM en sistema MSA (debe fallar por CUIT)
+- [ ] **Anti-duplicados**: Reimportar facturas existentes (debe detectar duplicados)
+- [ ] **Edge cases**: Archivos corruptos, formatos incorrectos, validaciones límite
 
-#### **Fase 3: Expansión PAM y Convergencia** 
-- [ ] **Replicar sistema para PAM**: Una vez MSA afilado y funcionando
-  - [ ] Crear esquema `pam` y tabla `pam.comprobantes_arca` 
-  - [ ] Configurar permisos y exposición API para esquema PAM
-  - [ ] Testing completo del flujo PAM
-- [ ] **Convergencia multi-empresa**: Hacer confluir ambos sistemas
-- [ ] **Integrar reportes de facturas ARCA al dashboard principal**
+#### **Desarrollo Flujo de Fondos** (Cash Flow)
+- [ ] **Vista gestión**: Sistema CRUD para presupuesto/pagos planificados
+- [ ] **Conciliación**: Matching automático facturas ARCA ↔ flujo fondos
+- [ ] **Reportes integrados**: Comparativas presupuesto vs real
 
-#### **Fase 4: Limpieza y Optimización**
-- [ ] Limpiar código debug del test de conexión
-- [ ] Documentar flujo completo multi-empresa
-- [ ] Unificar `importador-excel.tsx` e `importador-excel-dinamico.tsx` (si aplica)
-- [ ] Documentar diferencias entre formatos de bancos
+#### **Expansión PAM** (Una vez MSA probado)
+- [ ] **Replicar infraestructura**: Esquema `pam` + tabla `pam.comprobantes_arca`
+- [ ] **Configurar Supabase**: Permisos y exposición API para esquema PAM
+- [ ] **Validación CUIT PAM**: 20044390222 en sistema dual
+- [ ] **Testing completo**: Flujo PAM independiente + convergencia multi-empresa
+
+#### **Mejoras UX** (Para el final)
+- [ ] **Vista facturas**: Columnas redimensionables tipo Excel con v0
+- [ ] **Scroll mejorado**: Drag horizontal/vertical optimizado
+- [ ] **Integración dashboard**: Métricas facturas ARCA en vista principal
 
 ## 🚀 **Visión Futura - Rediseño Completo del Sistema**
 
