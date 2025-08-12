@@ -79,11 +79,48 @@ export function VistaFacturasArca() {
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(
-    Object.fromEntries(
+  
+  // Estado para columnas visibles con valores por defecto
+  const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
+    // Intentar cargar desde localStorage
+    const saved = localStorage.getItem('facturas-arca-columnas-visibles')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // Si hay error, usar valores por defecto
+      }
+    }
+    return Object.fromEntries(
       Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
     )
-  )
+  })
+
+  // Estado para anchos de columnas personalizables con persistencia
+  const [anchosColumnas, setAnchosColumnas] = useState<Record<string, string>>(() => {
+    // Intentar cargar desde localStorage
+    const saved = localStorage.getItem('facturas-arca-anchos-columnas')
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // Si hay error, usar valores por defecto
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
+    )
+  })
+
+  // Guardar cambios de columnas visibles en localStorage
+  useEffect(() => {
+    localStorage.setItem('facturas-arca-columnas-visibles', JSON.stringify(columnasVisibles))
+  }, [columnasVisibles])
+
+  // Guardar cambios de anchos en localStorage
+  useEffect(() => {
+    localStorage.setItem('facturas-arca-anchos-columnas', JSON.stringify(anchosColumnas))
+  }, [anchosColumnas])
 
   // Cargar facturas ARCA desde Supabase
   const cargarFacturas = async () => {
@@ -124,12 +161,17 @@ export function VistaFacturasArca() {
     }).format(valor)
   }
 
-  // Formatear fecha - arreglando problema de zona horaria
+  // Formatear fecha - enfoque directo sin conversión de zona horaria
   const formatearFecha = (fecha: string): string => {
     try {
-      // Crear fecha interpretando como UTC para evitar problemas de zona horaria
-      const fechaUTC = new Date(fecha + 'T00:00:00.000Z')
-      return format(fechaUTC, 'dd/MM/yyyy', { locale: es })
+      // Si viene en formato YYYY-MM-DD, parsearlo directamente
+      if (fecha.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [año, mes, dia] = fecha.split('-').map(Number)
+        const fechaLocal = new Date(año, mes - 1, dia) // mes - 1 porque Date() usa 0-11
+        return format(fechaLocal, 'dd/MM/yyyy', { locale: es })
+      }
+      // Fallback para otros formatos
+      return format(new Date(fecha), 'dd/MM/yyyy', { locale: es })
     } catch {
       return fecha
     }
@@ -254,6 +296,18 @@ export function VistaFacturasArca() {
                   <EyeOff className="mr-1 h-3 w-3" />
                   Por defecto
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAnchosColumnas(
+                    Object.fromEntries(
+                      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
+                    )
+                  )}
+                >
+                  <Settings2 className="mr-1 h-3 w-3" />
+                  Resetear anchos
+                </Button>
               </div>
             </div>
           </PopoverContent>
@@ -287,21 +341,56 @@ export function VistaFacturasArca() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Scroll horizontal mejorado */}
-            <ScrollArea className="w-full">
-              <div className="rounded-md border" style={{ minWidth: 'fit-content' }}>
+            {/* Scroll horizontal mejorado con drag */}
+            <ScrollArea className="w-full h-[600px]">
+              <div 
+                className="rounded-md border cursor-grab active:cursor-grabbing" 
+                style={{ 
+                  minWidth: 'fit-content',
+                  userSelect: 'none'
+                }}
+              >
                 <Table>
                   <TableHeader>
                     <TableRow>
                       {columnasVisiblesArray.map(columna => (
                         <TableHead 
                           key={columna} 
+                          className="relative border-r border-gray-200 resize-x overflow-hidden"
                           style={{ 
-                            width: COLUMNAS_CONFIG[columna].width,
-                            minWidth: COLUMNAS_CONFIG[columna].width
+                            width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
+                            minWidth: '60px',
+                            position: 'relative'
                           }}
                         >
-                          {COLUMNAS_CONFIG[columna].label}
+                          <div className="flex items-center justify-between">
+                            <span>{COLUMNAS_CONFIG[columna].label}</span>
+                            {/* Resize handle */}
+                            <div 
+                              className="absolute right-0 top-0 h-full w-1 cursor-col-resize bg-transparent hover:bg-blue-300 transition-colors"
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                const startX = e.clientX
+                                const startWidth = parseInt(anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width)
+                                
+                                const handleMouseMove = (e: MouseEvent) => {
+                                  const newWidth = Math.max(60, startWidth + (e.clientX - startX))
+                                  setAnchosColumnas(prev => ({
+                                    ...prev,
+                                    [columna]: `${newWidth}px`
+                                  }))
+                                }
+                                
+                                const handleMouseUp = () => {
+                                  document.removeEventListener('mousemove', handleMouseMove)
+                                  document.removeEventListener('mouseup', handleMouseUp)
+                                }
+                                
+                                document.addEventListener('mousemove', handleMouseMove)
+                                document.addEventListener('mouseup', handleMouseUp)
+                              }}
+                            />
+                          </div>
                         </TableHead>
                       ))}
                     </TableRow>
@@ -322,9 +411,10 @@ export function VistaFacturasArca() {
                           {columnasVisiblesArray.map(columna => (
                             <TableCell 
                               key={columna}
+                              className="border-r border-gray-100"
                               style={{ 
-                                width: COLUMNAS_CONFIG[columna].width,
-                                minWidth: COLUMNAS_CONFIG[columna].width
+                                width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
+                                minWidth: '60px'
                               }}
                             >
                               {renderizarCelda(factura, columna)}
