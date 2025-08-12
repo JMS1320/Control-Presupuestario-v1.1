@@ -109,6 +109,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: SCHEMA-FIX-v3.0 - ${new Date().toISOString()}`)
 
     // Leer contenido del archivo CSV
     const contenidoArchivo = await file.text()
