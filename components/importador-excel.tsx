@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, Info, DollarSign } from "lucide-react"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, Info, DollarSign, Building2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
 interface ControlError {
@@ -41,12 +42,18 @@ interface ImportResult {
 }
 
 export function ImportadorExcel() {
+  // Estados existentes para extractos bancarios
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [saldoInicial, setSaldoInicial] = useState("")
   const [mostrarSaldoInicial, setMostrarSaldoInicial] = useState(false)
   const [verificandoRegistros, setVerificandoRegistros] = useState(false)
+  
+  // Estados nuevos para manejar múltiples tipos de importación
+  const [tipoImportacion, setTipoImportacion] = useState<'extractos' | 'facturas'>('extractos')  // Tipo de archivo a importar
+  const [empresa, setEmpresa] = useState<'MSA' | 'PAM'>('MSA')  // Empresa destino (solo para facturas)
+  const [errorValidacion, setErrorValidacion] = useState<string | null>(null)  // Errores de validación de archivo
 
   // Verificar si hay registros existentes en la tabla
   const verificarRegistrosExistentes = async () => {
@@ -74,11 +81,47 @@ export function ImportadorExcel() {
     verificarRegistrosExistentes()
   }, [])
 
+  /**
+   * Valida que el archivo seleccionado sea correcto según el tipo y empresa
+   * Para facturas ARCA: verifica que el CUIT en el nombre del archivo coincida con la empresa seleccionada
+   * MSA CUIT: 30617786016 | PAM CUIT: 20044390222
+   */
+  const validarArchivo = (file: File, empresa: string, tipo: string): string | null => {
+    if (tipo === 'facturas') {
+      // Definir CUITs esperados por empresa
+      const cuitEsperado = empresa === 'MSA' ? '30617786016' : '20044390222'
+      
+      // Verificar si el nombre del archivo contiene el CUIT esperado
+      const contieneCorrectoCUIT = file.name.includes(cuitEsperado)
+      if (!contieneCorrectoCUIT) {
+        return `❌ Error: Archivo de ${empresa} esperado (CUIT ${cuitEsperado}), pero el archivo contiene CUIT diferente`
+      }
+    }
+    // Si es extracto bancario o validación OK, no hay error
+    return null
+  }
+
+  /**
+   * Maneja la selección de archivo y ejecuta validaciones
+   * Si el archivo no pasa validación, lo rechaza y muestra error
+   */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (selectedFile) {
+      // Ejecutar validación del archivo seleccionado
+      const errorValidacion = validarArchivo(selectedFile, empresa, tipoImportacion)
+      if (errorValidacion) {
+        // Si hay error, rechazar archivo y mostrar mensaje
+        setErrorValidacion(errorValidacion)
+        setFile(null)
+        e.target.value = ''  // Limpiar el input file
+        return
+      }
+      
+      // Si validación OK, aceptar archivo
       setFile(selectedFile)
-      setResult(null) // Limpiar resultados anteriores
+      setResult(null)  // Limpiar resultados anteriores
+      setErrorValidacion(null)  // Limpiar errores previos
     }
   }
 
@@ -97,7 +140,19 @@ export function ImportadorExcel() {
         formData.append("saldo_inicial", saldoInicial)
       }
 
-      const response = await fetch("/api/import-excel", {
+      /**
+       * Determinar endpoint de API según tipo de importación:
+       * - Extractos bancarios: /api/import-excel (existente)
+       * - Facturas ARCA: /api/import-facturas-arca (nuevo)
+       */
+      let endpoint = '/api/import-excel'  // Por defecto extractos bancarios
+      if (tipoImportacion === 'facturas') {
+        endpoint = '/api/import-facturas-arca'  // Nuevo endpoint para facturas
+        formData.append('empresa', empresa)     // Enviar empresa destino (MSA/PAM)
+      }
+
+      // Ejecutar llamada a la API correspondiente
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
       })
@@ -137,10 +192,97 @@ export function ImportadorExcel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Selector de tipo de importación */}
+        <div className="space-y-3">
+          <Label className="text-base font-semibold">Tipo de importación</Label>
+          <RadioGroup 
+            value={tipoImportacion} 
+            onValueChange={(value) => {
+              setTipoImportacion(value as 'extractos' | 'facturas')
+              // Limpiar archivo al cambiar tipo para forzar nueva validación
+              setFile(null)
+              setResult(null)
+              setErrorValidacion(null)
+            }}
+            className="flex gap-6"
+          >
+            {/* Opción extractos bancarios */}
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="extractos" id="extractos" />
+              <Label htmlFor="extractos" className="flex items-center gap-2 cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4" />
+                Extractos Bancarios
+              </Label>
+            </div>
+            {/* Opción facturas recibidas */}
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="facturas" id="facturas" />
+              <Label htmlFor="facturas" className="flex items-center gap-2 cursor-pointer">
+                <Building2 className="h-4 w-4" />
+                Facturas Recibidas (ARCA)
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+
+        {/* Selector de empresa - solo visible para facturas */}
+        {tipoImportacion === 'facturas' && (
+          <div className="space-y-3">
+            <Label className="text-base font-semibold">Empresa destino</Label>
+            <RadioGroup 
+              value={empresa} 
+              onValueChange={(value) => {
+                setEmpresa(value as 'MSA' | 'PAM')
+                // Limpiar archivo al cambiar empresa para forzar nueva validación de CUIT
+                setFile(null)
+                setResult(null)
+                setErrorValidacion(null)
+              }}
+              className="flex gap-6"
+            >
+              {/* Opción MSA */}
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="MSA" id="msa" />
+                <Label htmlFor="msa" className="cursor-pointer">
+                  MSA (CUIT: 30617786016)
+                </Label>
+              </div>
+              {/* Opción PAM */}
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="PAM" id="pam" />
+                <Label htmlFor="pam" className="cursor-pointer">
+                  PAM (CUIT: 20044390222)
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+        )}
+
+        {/* Selector de archivo */}
         <div className="space-y-2">
-          <Label htmlFor="excel-file">Archivo Excel (.xlsx)</Label>
-          <Input id="excel-file" type="file" accept=".xlsx,.xls" onChange={handleFileChange} disabled={loading} />
-          {file && <p className="text-sm text-muted-foreground">Archivo seleccionado: {file.name}</p>}
+          <Label htmlFor="excel-file">
+            {tipoImportacion === 'extractos' ? 'Archivo Excel (.xlsx)' : 'Archivo CSV de ARCA (.csv)'}
+          </Label>
+          <Input 
+            id="excel-file" 
+            type="file" 
+            accept={tipoImportacion === 'extractos' ? '.xlsx,.xls' : '.csv'} 
+            onChange={handleFileChange} 
+            disabled={loading} 
+          />
+          {/* Mostrar nombre del archivo seleccionado */}
+          {file && (
+            <p className="text-sm text-muted-foreground">
+              ✅ Archivo seleccionado: {file.name}
+            </p>
+          )}
+          {/* Mostrar error de validación si existe */}
+          {errorValidacion && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{errorValidacion}</AlertDescription>
+            </Alert>
+          )}
         </div>
 
         {/* Campo de saldo inicial - solo se muestra si no hay registros previos */}
@@ -172,16 +314,17 @@ export function ImportadorExcel() {
           </div>
         )}
 
-        <Button onClick={handleUpload} disabled={!file || loading} className="w-full">
+        {/* Botón de importación con texto dinámico */}
+        <Button onClick={handleUpload} disabled={!file || loading || !!errorValidacion} className="w-full">
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Procesando archivo...
+              {tipoImportacion === 'extractos' ? 'Procesando extracto...' : 'Procesando facturas...'}
             </>
           ) : (
             <>
               <Upload className="mr-2 h-4 w-4" />
-              Cargar movimientos
+              {tipoImportacion === 'extractos' ? 'Cargar movimientos' : `Importar facturas ${empresa}`}
             </>
           )}
         </Button>
