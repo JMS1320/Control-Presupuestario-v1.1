@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Calendar, Plus, Save, ArrowLeft, ArrowRight, Eye, Check } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
@@ -476,13 +477,12 @@ export function WizardTemplatesEgresos() {
               {state.configuracion.tipo === 'mensual' && (
                 <div className="space-y-4">
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="ultimo_dia_mes"
                       checked={state.configuracion.ultimo_dia_mes || false}
-                      onChange={(e) => {
-                        actualizarConfiguracion('ultimo_dia_mes', e.target.checked)
-                        if (e.target.checked) {
+                      onCheckedChange={(checked) => {
+                        actualizarConfiguracion('ultimo_dia_mes', checked)
+                        if (checked) {
                           actualizarConfiguracion('dia_mes', undefined)
                         }
                       }}
@@ -506,11 +506,10 @@ export function WizardTemplatesEgresos() {
                   )}
                   
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="incluir_aguinaldo"
                       checked={state.configuracion.incluir_aguinaldo}
-                      onChange={(e) => actualizarConfiguracion('incluir_aguinaldo', e.target.checked)}
+                      onCheckedChange={(checked) => actualizarConfiguracion('incluir_aguinaldo', checked)}
                     />
                     <Label htmlFor="incluir_aguinaldo">Incluir aguinaldo (Junio y Diciembre x1.5)</Label>
                   </div>
@@ -538,13 +537,12 @@ export function WizardTemplatesEgresos() {
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mt-2">
                       {MESES.map(mes => (
                         <div key={mes.value} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             id={`mes-${mes.value}`}
                             checked={state.configuracion.meses_especificos?.includes(mes.value) || false}
-                            onChange={(e) => {
+                            onCheckedChange={(checked) => {
                               const meses = state.configuracion.meses_especificos || []
-                              if (e.target.checked) {
+                              if (checked) {
                                 actualizarConfiguracion('meses_especificos', [...meses, mes.value])
                               } else {
                                 actualizarConfiguracion('meses_especificos', meses.filter(m => m !== mes.value))
@@ -558,13 +556,12 @@ export function WizardTemplatesEgresos() {
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       id="ultimo_dia_mes_cuotas"
                       checked={state.configuracion.ultimo_dia_mes_cuotas || false}
-                      onChange={(e) => {
-                        actualizarConfiguracion('ultimo_dia_mes_cuotas', e.target.checked)
-                        if (e.target.checked) {
+                      onCheckedChange={(checked) => {
+                        actualizarConfiguracion('ultimo_dia_mes_cuotas', checked)
+                        if (checked) {
                           actualizarConfiguracion('dia_default', undefined)
                         }
                       }}
