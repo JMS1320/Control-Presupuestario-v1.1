@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Calendar, Plus, Save, ArrowLeft, ArrowRight, Eye, Check } from "lucide-react"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
 
 // Tipos para el wizard
 interface DatosBasicos {
@@ -27,10 +28,12 @@ interface DatosBasicos {
 interface ConfiguracionRecurrencia {
   tipo: 'mensual' | 'anual' | 'cuotas_especificas'
   dia_mes?: number
+  ultimo_dia_mes?: boolean
   fecha_anual?: string
   cantidad_cuotas?: number
   meses_especificos?: number[]
   dia_default?: number
+  ultimo_dia_mes_cuotas?: boolean
   incluir_aguinaldo?: boolean
 }
 
@@ -82,10 +85,17 @@ export function WizardTemplatesEgresos() {
     },
     configuracion: {
       tipo: 'mensual',
-      incluir_aguinaldo: false
+      incluir_aguinaldo: false,
+      ultimo_dia_mes: false,
+      ultimo_dia_mes_cuotas: false
     },
     cuotas_generadas: []
   })
+
+  // Función para obtener último día del mes
+  const obtenerUltimoDiaDelMes = (año: number, mes: number): number => {
+    return new Date(año, mes, 0).getDate()
+  }
 
   // Función para generar cuotas según configuración
   const generarCuotas = (): CuotaGenerada[] => {
@@ -95,7 +105,13 @@ export function WizardTemplatesEgresos() {
 
     if (configuracion.tipo === 'mensual') {
       for (let mes = 1; mes <= 12; mes++) {
-        const dia = configuracion.dia_mes || 15
+        let dia: number
+        if (configuracion.ultimo_dia_mes) {
+          dia = obtenerUltimoDiaDelMes(año_actual, mes)
+        } else {
+          dia = configuracion.dia_mes || 15
+        }
+        
         const fecha = new Date(año_actual, mes - 1, dia)
         
         // Calcular monto (aguinaldo en junio y diciembre)
@@ -124,7 +140,13 @@ export function WizardTemplatesEgresos() {
     } else if (configuracion.tipo === 'cuotas_especificas') {
       const meses = configuracion.meses_especificos || []
       meses.forEach(mes => {
-        const dia = configuracion.dia_default || 15
+        let dia: number
+        if (configuracion.ultimo_dia_mes_cuotas) {
+          dia = obtenerUltimoDiaDelMes(año_actual, mes)
+        } else {
+          dia = configuracion.dia_default || 15
+        }
+        
         const fecha = new Date(año_actual, mes - 1, dia)
         
         cuotas.push({
@@ -181,9 +203,87 @@ export function WizardTemplatesEgresos() {
   // Función para guardar template
   const guardarTemplate = async () => {
     try {
-      // TODO: Implementar guardado en Supabase
-      console.log('Guardando template:', state)
-      toast.success('Template creado exitosamente')
+      const año_actual = new Date().getFullYear()
+      
+      // 1. Crear o buscar template master
+      const nombreTemplateMaster = `Egresos sin Factura ${año_actual}`
+      
+      let templateMaster
+      const { data: existingMaster } = await supabase
+        .from('templates_master')
+        .select('*')
+        .eq('nombre', nombreTemplateMaster)
+        .eq('año', año_actual)
+        .single()
+
+      if (existingMaster) {
+        templateMaster = existingMaster
+      } else {
+        const { data: newMaster, error: masterError } = await supabase
+          .from('templates_master')
+          .insert({
+            nombre: nombreTemplateMaster,
+            año: año_actual,
+            descripcion: `Template master para egresos sin factura del año ${año_actual}`,
+            total_renglones: 0
+          })
+          .select()
+          .single()
+
+        if (masterError) throw masterError
+        templateMaster = newMaster
+      }
+
+      // 2. Crear renglón de egreso
+      const { data: egresoData, error: egresoError } = await supabase
+        .from('egresos_sin_factura')
+        .insert({
+          template_master_id: templateMaster.id,
+          cuenta_contable: state.datos_basicos.cuenta_contable,
+          centro_costo: state.datos_basicos.centro_costo,
+          nombre_referencia: state.datos_basicos.nombre_referencia,
+          responsable: state.datos_basicos.responsable,
+          cuit_quien_cobra: state.datos_basicos.cuit_quien_cobra || null,
+          nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
+          tipo_recurrencia: state.configuracion.tipo,
+          configuracion_reglas: state.configuracion,
+          año: año_actual,
+          activo: true
+        })
+        .select()
+        .single()
+
+      if (egresoError) throw egresoError
+
+      // 3. Crear cuotas generadas
+      const cuotasParaInsertar = state.cuotas_generadas.map(cuota => ({
+        egreso_id: egresoData.id,
+        mes: cuota.mes,
+        fecha_estimada: cuota.fecha_estimada,
+        fecha_vencimiento: cuota.fecha_vencimiento,
+        monto: cuota.monto,
+        descripcion: cuota.descripcion,
+        estado: 'pendiente'
+      }))
+
+      const { error: cuotasError } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .insert(cuotasParaInsertar)
+
+      if (cuotasError) throw cuotasError
+
+      // 4. Actualizar contador en template master
+      const { error: updateError } = await supabase
+        .from('templates_master')
+        .update({ 
+          total_renglones: (templateMaster.total_renglones || 0) + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', templateMaster.id)
+
+      if (updateError) throw updateError
+
+      toast.success(`Template creado exitosamente: ${state.cuotas_generadas.length} cuotas generadas`)
       
       // Reset wizard
       setState({
@@ -199,13 +299,15 @@ export function WizardTemplatesEgresos() {
         },
         configuracion: {
           tipo: 'mensual',
-          incluir_aguinaldo: false
+          incluir_aguinaldo: false,
+          ultimo_dia_mes: false,
+          ultimo_dia_mes_cuotas: false
         },
         cuotas_generadas: []
       })
     } catch (error) {
       console.error('Error guardando template:', error)
-      toast.error('Error al crear template')
+      toast.error(`Error al crear template: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
   }
 
@@ -222,7 +324,7 @@ export function WizardTemplatesEgresos() {
         )
       case 2:
         if (state.configuracion.tipo === 'mensual') {
-          return !!(state.configuracion.dia_mes && state.configuracion.dia_mes >= 1 && state.configuracion.dia_mes <= 31)
+          return !!(state.configuracion.ultimo_dia_mes || (state.configuracion.dia_mes && state.configuracion.dia_mes >= 1 && state.configuracion.dia_mes <= 31))
         } else if (state.configuracion.tipo === 'anual') {
           return !!state.configuracion.fecha_anual
         } else if (state.configuracion.tipo === 'cuotas_especificas') {
@@ -373,18 +475,36 @@ export function WizardTemplatesEgresos() {
               {/* Configuración Mensual */}
               {state.configuracion.tipo === 'mensual' && (
                 <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="dia_mes">Día del Mes *</Label>
-                    <Input
-                      id="dia_mes"
-                      type="number"
-                      min="1"
-                      max="31"
-                      value={state.configuracion.dia_mes || ''}
-                      onChange={(e) => actualizarConfiguracion('dia_mes', parseInt(e.target.value) || 1)}
-                      placeholder="15"
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="ultimo_dia_mes"
+                      checked={state.configuracion.ultimo_dia_mes || false}
+                      onChange={(e) => {
+                        actualizarConfiguracion('ultimo_dia_mes', e.target.checked)
+                        if (e.target.checked) {
+                          actualizarConfiguracion('dia_mes', undefined)
+                        }
+                      }}
                     />
+                    <Label htmlFor="ultimo_dia_mes">Último día del mes</Label>
                   </div>
+                  
+                  {!state.configuracion.ultimo_dia_mes && (
+                    <div>
+                      <Label htmlFor="dia_mes">Día del Mes *</Label>
+                      <Input
+                        id="dia_mes"
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={state.configuracion.dia_mes || ''}
+                        onChange={(e) => actualizarConfiguracion('dia_mes', parseInt(e.target.value) || 1)}
+                        placeholder="15"
+                      />
+                    </div>
+                  )}
+                  
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
@@ -436,18 +556,36 @@ export function WizardTemplatesEgresos() {
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <Label htmlFor="dia_default">Día Aproximado</Label>
-                    <Input
-                      id="dia_default"
-                      type="number"
-                      min="1"
-                      max="31"
-                      value={state.configuracion.dia_default || ''}
-                      onChange={(e) => actualizarConfiguracion('dia_default', parseInt(e.target.value) || 15)}
-                      placeholder="15"
+                  
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="ultimo_dia_mes_cuotas"
+                      checked={state.configuracion.ultimo_dia_mes_cuotas || false}
+                      onChange={(e) => {
+                        actualizarConfiguracion('ultimo_dia_mes_cuotas', e.target.checked)
+                        if (e.target.checked) {
+                          actualizarConfiguracion('dia_default', undefined)
+                        }
+                      }}
                     />
+                    <Label htmlFor="ultimo_dia_mes_cuotas">Último día del mes</Label>
                   </div>
+                  
+                  {!state.configuracion.ultimo_dia_mes_cuotas && (
+                    <div>
+                      <Label htmlFor="dia_default">Día Aproximado</Label>
+                      <Input
+                        id="dia_default"
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={state.configuracion.dia_default || ''}
+                        onChange={(e) => actualizarConfiguracion('dia_default', parseInt(e.target.value) || 15)}
+                        placeholder="15"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>
