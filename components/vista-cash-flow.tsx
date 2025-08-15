@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter } from "lucide-react"
 
-// Definición de columnas Cash Flow
+// Definición de columnas Cash Flow (10 columnas finales)
 const columnasDefinicion = [
   { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32' },
   { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32' },
@@ -18,9 +18,7 @@ const columnasDefinicion = [
   { key: 'detalle', label: 'Detalle', type: 'text', width: 'w-64' },
   { key: 'debitos', label: 'Débitos', type: 'currency', width: 'w-32', align: 'text-right' },
   { key: 'creditos', label: 'Créditos', type: 'currency', width: 'w-32', align: 'text-right' },
-  { key: 'saldo_cta_cte', label: 'SALDO CTA CTE', type: 'currency', width: 'w-36', align: 'text-right' },
-  { key: 'registro_contable', label: 'Reg. Contable', type: 'text', width: 'w-28' },
-  { key: 'registro_interno', label: 'Reg. Interno', type: 'text', width: 'w-28' }
+  { key: 'saldo_cta_cte', label: 'SALDO CTA CTE', type: 'currency', width: 'w-36', align: 'text-right' }
 ] as const
 
 export function VistaCashFlow() {
@@ -48,45 +46,6 @@ export function VistaCashFlow() {
     }
   }
 
-  // Obtener badge de origen
-  const BadgeOrigen = ({ fila }: { fila: CashFlowRow }) => {
-    if (fila.origen === 'ARCA') {
-      return (
-        <Badge variant="default" className="bg-blue-100 text-blue-800 hover:bg-blue-200">
-          <Receipt className="w-3 h-3 mr-1" />
-          ARCA
-        </Badge>
-      )
-    } else {
-      return (
-        <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-200">
-          <Calendar className="w-3 h-3 mr-1" />
-          TEMPLATE
-        </Badge>
-      )
-    }
-  }
-
-  // Obtener badge de estado
-  const BadgeEstado = ({ estado }: { estado: string }) => {
-    const estilos = {
-      'pendiente': 'bg-yellow-100 text-yellow-800',
-      'pagar': 'bg-orange-100 text-orange-800',
-      'debito': 'bg-red-100 text-red-800',
-      'pagado': 'bg-gray-100 text-gray-800',
-      'credito': 'bg-purple-100 text-purple-800',
-      'conciliado': 'bg-green-100 text-green-800'
-    }
-
-    return (
-      <Badge 
-        variant="outline" 
-        className={estilos[estado as keyof typeof estilos] || 'bg-gray-100 text-gray-800'}
-      >
-        {estado}
-      </Badge>
-    )
-  }
 
   // Renderizar celda según tipo
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
@@ -256,12 +215,6 @@ export function VistaCashFlow() {
                 {/* Header */}
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                      Origen
-                    </th>
-                    <th className="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
-                      Estado
-                    </th>
                     {columnasDefinicion.map((col) => (
                       <th 
                         key={col.key} 
@@ -277,7 +230,7 @@ export function VistaCashFlow() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {data.length === 0 ? (
                     <tr>
-                      <td colSpan={columnasDefinicion.length + 2} className="p-8 text-center text-gray-500">
+                      <td colSpan={columnasDefinicion.length} className="p-8 text-center text-gray-500">
                         No hay datos para mostrar en Cash Flow
                         <br />
                         <span className="text-xs">
@@ -291,16 +244,6 @@ export function VistaCashFlow() {
                         key={fila.id} 
                         className={`hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}
                       >
-                        {/* Columna Origen */}
-                        <td className="p-3">
-                          <BadgeOrigen fila={fila} />
-                        </td>
-
-                        {/* Columna Estado */}
-                        <td className="p-3">
-                          <BadgeEstado estado={fila.estado} />
-                        </td>
-
                         {/* Columnas de datos */}
                         {columnasDefinicion.map((col) => (
                           <td key={col.key} className="p-3 text-sm">

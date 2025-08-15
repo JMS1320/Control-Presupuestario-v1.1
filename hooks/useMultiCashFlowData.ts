@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 
-// Interface unificada para Cash Flow
+// Interface unificada para Cash Flow (10 columnas finales)
 export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE'
@@ -18,8 +18,6 @@ export interface CashFlowRow {
   debitos: number
   creditos: number
   saldo_cta_cte: number // Calculado
-  registro_contable: string
-  registro_interno: string
   estado: string // Para tracking de cambios
 }
 
@@ -61,8 +59,6 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       debitos: f.imp_total || 0, // Cash Flow muestra monto original de factura
       creditos: 0, // Las facturas ARCA son siempre débitos
       saldo_cta_cte: 0, // Se calcula después
-      registro_contable: f.categ || '',
-      registro_interno: f.centro_costo || '',
       estado: f.estado || 'pendiente'
     }))
   }
@@ -83,8 +79,6 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       debitos: c.monto || 0,
       creditos: 0, // Los templates egresos son siempre débitos
       saldo_cta_cte: 0, // Se calcula después
-      registro_contable: c.egreso?.categ || '',
-      registro_interno: c.egreso?.centro_costo || '',
       estado: c.estado || 'pendiente'
     }))
   }
