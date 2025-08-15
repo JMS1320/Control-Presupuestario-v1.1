@@ -12,11 +12,12 @@ import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaFacturasArca } from "./components/vista-facturas-arca"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
+import { VistaCashFlow } from "./components/vista-cash-flow"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp } from "lucide-react"
 
 export default function ControlPresupuestario() {
   // Obtener el año actual dinámicamente
@@ -43,7 +44,7 @@ export default function ControlPresupuestario() {
 
         {/* pestañas principales */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Dashboard
@@ -63,6 +64,10 @@ export default function ControlPresupuestario() {
             <TabsTrigger value="templates" className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
               Templates
+            </TabsTrigger>
+            <TabsTrigger value="cashflow" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              Cash Flow
             </TabsTrigger>
             <TabsTrigger value="importar" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -162,6 +167,11 @@ export default function ControlPresupuestario() {
           {/* TEMPLATES */}
           <TabsContent value="templates" className="space-y-6">
             <WizardTemplatesEgresos />
+          </TabsContent>
+
+          {/* CASH FLOW */}
+          <TabsContent value="cashflow" className="space-y-6">
+            <VistaCashFlow />
           </TabsContent>
 
           {/* IMPORTAR */}
