@@ -215,8 +215,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       return true
 
     } catch (error) {
-      console.error('Error actualizando registro:', error)
-      setError(error instanceof Error ? error.message : 'Error al actualizar')
+      console.error('Error actualizando registro:', {
+        error,
+        id,
+        campo,
+        valor,
+        origen,
+        detalle: JSON.stringify(error)
+      })
+      setError(error instanceof Error ? error.message : `Error al actualizar campo ${campo}: ${JSON.stringify(error)}`)
       return false
     }
   }

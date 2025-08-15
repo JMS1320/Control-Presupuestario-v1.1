@@ -1,31 +1,56 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X } from "lucide-react"
+import { toast } from "sonner"
 
-// Definición de columnas Cash Flow (10 columnas finales)
+// Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
-  { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32' },
-  { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32' },
-  { key: 'categ', label: 'CATEG', type: 'text', width: 'w-24' },
-  { key: 'centro_costo', label: 'Centro Costo', type: 'text', width: 'w-28' },
-  { key: 'cuit_proveedor', label: 'CUIT Proveedor', type: 'text', width: 'w-32' },
-  { key: 'nombre_proveedor', label: 'Nombre Proveedor', type: 'text', width: 'w-48' },
-  { key: 'detalle', label: 'Detalle', type: 'text', width: 'w-64' },
-  { key: 'debitos', label: 'Débitos', type: 'currency', width: 'w-32', align: 'text-right' },
-  { key: 'creditos', label: 'Créditos', type: 'currency', width: 'w-32', align: 'text-right' },
-  { key: 'saldo_cta_cte', label: 'SALDO CTA CTE', type: 'currency', width: 'w-36', align: 'text-right' }
+  { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32', editable: true },
+  { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32', editable: true },
+  { key: 'categ', label: 'CATEG', type: 'text', width: 'w-24', editable: true },
+  { key: 'centro_costo', label: 'Centro Costo', type: 'text', width: 'w-28', editable: true },
+  { key: 'cuit_proveedor', label: 'CUIT Proveedor', type: 'text', width: 'w-32', editable: false }, // Solo lectura (viene de fuente)
+  { key: 'nombre_proveedor', label: 'Nombre Proveedor', type: 'text', width: 'w-48', editable: false }, // Solo lectura (viene de fuente)
+  { key: 'detalle', label: 'Detalle', type: 'text', width: 'w-64', editable: true },
+  { key: 'debitos', label: 'Débitos', type: 'currency', width: 'w-32', align: 'text-right', editable: true },
+  { key: 'creditos', label: 'Créditos', type: 'currency', width: 'w-32', align: 'text-right', editable: true },
+  { key: 'saldo_cta_cte', label: 'SALDO CTA CTE', type: 'currency', width: 'w-36', align: 'text-right', editable: false } // Calculado
 ] as const
+
+// Estados disponibles para edición
+const ESTADOS_DISPONIBLES = [
+  { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'debito', label: 'Débito', color: 'bg-blue-100 text-blue-800' },
+  { value: 'pagar', label: 'Pagar', color: 'bg-orange-100 text-orange-800' },
+  { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' },
+  { value: 'credito', label: 'Crédito', color: 'bg-purple-100 text-purple-800' },
+  { value: 'conciliado', label: 'Conciliado', color: 'bg-gray-100 text-gray-800' }
+]
+
+// Interface para celda en edición
+interface CeldaEnEdicion {
+  filaId: string
+  columna: string
+  valor: string | number
+}
 
 export function VistaCashFlow() {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   
-  const { data, loading, error, estadisticas, cargarDatos } = useMultiCashFlowData(filtros)
+  // Estado para edición inline
+  const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
+  const [guardandoCambio, setGuardandoCambio] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  
+  const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro } = useMultiCashFlowData(filtros)
 
   // Formatear moneda argentina
   const formatearMoneda = (valor: number): string => {
@@ -46,37 +71,226 @@ export function VistaCashFlow() {
     }
   }
 
+  // Funciones para edición inline
+  const iniciarEdicion = (fila: CashFlowRow, columna: typeof columnasDefinicion[number], event: React.MouseEvent) => {
+    // Solo activar con Ctrl+Click y si la columna es editable
+    if (!event.ctrlKey || !columna.editable) return
+    
+    event.preventDefault()
+    event.stopPropagation()
+    
+    const valor = fila[columna.key as keyof CashFlowRow]
+    setCeldaEnEdicion({
+      filaId: fila.id,
+      columna: columna.key,
+      valor: valor || ''
+    })
+    
+    // Focus al input después de renderizar
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus()
+        inputRef.current.select()
+      }
+    }, 0)
+  }
 
-  // Renderizar celda según tipo
+  const cancelarEdicion = () => {
+    setCeldaEnEdicion(null)
+  }
+
+  const guardarCambio = async () => {
+    if (!celdaEnEdicion) return
+    
+    setGuardandoCambio(true)
+    
+    try {
+      // Encontrar la fila original para obtener el origen
+      const filaOriginal = data.find(f => f.id === celdaEnEdicion.filaId)
+      if (!filaOriginal) {
+        toast.error('Error: No se encontró el registro')
+        return
+      }
+
+      // Mapear campo del Cash Flow al campo real de BD
+      let campoReal = celdaEnEdicion.columna
+      
+      if (filaOriginal.origen === 'ARCA') {
+        // Mapeo para facturas ARCA
+        if (celdaEnEdicion.columna === 'debitos') {
+          campoReal = 'monto_a_abonar' // Permite editar monto a pagar diferente al original
+        }
+        // Para ARCA, los demás campos coinciden: detalle, fecha_estimada, fecha_vencimiento, etc.
+      } else if (filaOriginal.origen === 'TEMPLATE') {
+        // Mapeo para templates
+        if (celdaEnEdicion.columna === 'debitos') {
+          campoReal = 'monto'
+        } else if (celdaEnEdicion.columna === 'detalle') {
+          campoReal = 'descripcion' // En templates, 'detalle' se guarda como 'descripcion'
+        }
+        // Para templates: fecha_estimada, fecha_vencimiento coinciden
+      }
+
+      // Validar y convertir valor según tipo
+      let valorFinal: any = celdaEnEdicion.valor
+      const columna = columnasDefinicion.find(c => c.key === celdaEnEdicion.columna)
+      
+      if (columna?.type === 'currency') {
+        valorFinal = parseFloat(String(valorFinal)) || 0
+      } else if (columna?.type === 'date') {
+        // Validar formato de fecha
+        if (valorFinal && !Date.parse(String(valorFinal))) {
+          toast.error('Formato de fecha inválido')
+          return
+        }
+      }
+
+      // Actualizar en BD
+      const exito = await actualizarRegistro(
+        celdaEnEdicion.filaId,
+        campoReal,
+        valorFinal,
+        filaOriginal.origen
+      )
+
+      if (exito) {
+        toast.success(`${columna?.label} actualizado correctamente`)
+        setCeldaEnEdicion(null)
+      } else {
+        toast.error('Error al guardar cambio')
+      }
+    } catch (error) {
+      console.error('Error guardando cambio:', error)
+      toast.error('Error al guardar cambio')
+    } finally {
+      setGuardandoCambio(false)
+    }
+  }
+
+  const manejarKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      guardarCambio()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      cancelarEdicion()
+    }
+  }
+
+  // Renderizar celda según tipo (con soporte para edición inline)
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
-
-    switch (columna.type) {
-      case 'date':
-        return (
-          <div className={`${columna.width} ${columna.align || ''}`}>
-            {formatearFecha(valor as string)}
+    const esCeldaEnEdicion = celdaEnEdicion?.filaId === fila.id && celdaEnEdicion?.columna === columna.key
+    
+    // Si esta celda está en edición, mostrar input
+    if (esCeldaEnEdicion) {
+      return (
+        <div className={`${columna.width} ${columna.align || ''} relative`}>
+          <div className="flex items-center gap-1">
+            {columna.type === 'date' ? (
+              <Input
+                ref={inputRef}
+                type="date"
+                value={String(celdaEnEdicion.valor)}
+                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={manejarKeyDown}
+                onBlur={guardarCambio}
+                className="h-6 text-xs p-1 w-full"
+                disabled={guardandoCambio}
+              />
+            ) : columna.type === 'currency' ? (
+              <Input
+                ref={inputRef}
+                type="number"
+                step="0.01"
+                value={String(celdaEnEdicion.valor)}
+                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={manejarKeyDown}
+                onBlur={guardarCambio}
+                className="h-6 text-xs p-1 w-full text-right"
+                disabled={guardandoCambio}
+              />
+            ) : (
+              <Input
+                ref={inputRef}
+                type="text"
+                value={String(celdaEnEdicion.valor)}
+                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={manejarKeyDown}
+                onBlur={guardarCambio}
+                className="h-6 text-xs p-1 w-full"
+                disabled={guardandoCambio}
+              />
+            )}
+            
+            {/* Botones de acción */}
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={guardarCambio}
+                disabled={guardandoCambio}
+                className="h-6 w-6 p-0"
+              >
+                {guardandoCambio ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Save className="h-3 w-3 text-green-600" />
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={cancelarEdicion}
+                disabled={guardandoCambio}
+                className="h-6 w-6 p-0"
+              >
+                <X className="h-3 w-3 text-red-600" />
+              </Button>
+            </div>
           </div>
-        )
-      
-      case 'currency':
-        const esNegativo = (valor as number) < 0
-        return (
-          <div className={`${columna.width} ${columna.align || ''} font-mono`}>
-            <span className={esNegativo ? 'text-red-600' : 'text-green-600'}>
+        </div>
+      )
+    }
+
+    // Celda normal con click handler
+    const contenido = (() => {
+      switch (columna.type) {
+        case 'date':
+          return formatearFecha(valor as string)
+        
+        case 'currency':
+          const esNegativo = (valor as number) < 0
+          return (
+            <span className={`font-mono ${esNegativo ? 'text-red-600' : 'text-green-600'}`}>
               {formatearMoneda(valor as number)}
             </span>
-          </div>
-        )
-      
-      case 'text':
-      default:
-        return (
-          <div className={`${columna.width} ${columna.align || ''} truncate`} title={valor as string}>
-            {valor || '-'}
-          </div>
-        )
-    }
+          )
+        
+        case 'text':
+        default:
+          return valor || '-'
+      }
+    })()
+
+    return (
+      <div 
+        className={`
+          ${columna.width} 
+          ${columna.align || ''} 
+          ${columna.editable ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'} 
+          ${columna.editable ? 'border-l-2 border-l-transparent hover:border-l-blue-300' : ''}
+          truncate p-1 transition-colors
+        `}
+        title={`${valor || '-'}${columna.editable ? ' (Ctrl+Click para editar)' : ''}`}
+        onClick={(e) => iniciarEdicion(fila, columna, e)}
+      >
+        {columna.editable && (
+          <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 float-right" />
+        )}
+        {contenido}
+      </div>
+    )
   }
 
   if (loading) {
@@ -175,6 +389,10 @@ export function VistaCashFlow() {
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5" />
               Cash Flow - Vista en Tiempo Real
+              <Badge variant="secondary" className="text-xs">
+                <Edit3 className="h-3 w-3 mr-1" />
+                Ctrl+Click para editar
+              </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
               <Button 
@@ -242,7 +460,7 @@ export function VistaCashFlow() {
                     data.map((fila, index) => (
                       <tr 
                         key={fila.id} 
-                        className={`hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}
+                        className={`group hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}
                       >
                         {/* Columnas de datos */}
                         {columnasDefinicion.map((col) => (
@@ -263,7 +481,7 @@ export function VistaCashFlow() {
             <div className="mt-4 text-sm text-gray-500 text-center">
               Mostrando {data.length} registros ordenados por fecha estimada
               <br />
-              💡 En PASO 4 se implementará edición con Ctrl+Click | En PASO 5 modo PAGOS
+              💡 PASO 4 ✅ Edición Ctrl+Click activa | PASO 5 🔄 Próximo: modo PAGOS
             </div>
           )}
         </CardContent>
