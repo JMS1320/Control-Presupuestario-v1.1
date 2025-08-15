@@ -17,13 +17,19 @@ import { supabase } from "@/lib/supabase"
 
 // Tipos para el wizard
 interface DatosBasicos {
-  cuenta_contable: string
+  categ: string
   centro_costo: string
   nombre_referencia: string
   responsable: string
   cuit_quien_cobra: string
   nombre_quien_cobra: string
   monto_base: number
+}
+
+interface CuentaContable {
+  categ: string
+  cuenta_contable: string
+  tipo: string
 }
 
 interface ConfiguracionRecurrencia {
@@ -73,10 +79,11 @@ const MESES = [
 ]
 
 export function WizardTemplatesEgresos() {
+  const [cuentasContables, setCuentasContables] = useState<CuentaContable[]>([])
   const [state, setState] = useState<WizardState>({
     paso: 1,
     datos_basicos: {
-      cuenta_contable: '',
+      categ: '',
       centro_costo: '',
       nombre_referencia: '',
       responsable: '',
@@ -92,6 +99,31 @@ export function WizardTemplatesEgresos() {
     },
     cuotas_generadas: []
   })
+
+  // Cargar cuentas contables al inicializar
+  useEffect(() => {
+    async function cargarCuentasContables() {
+      try {
+        const { data, error } = await supabase
+          .from('cuentas_contables')
+          .select('categ, cuenta_contable, tipo')
+          .order('categ')
+
+        if (error) {
+          console.error('Error cargando cuentas contables:', error)
+          return
+        }
+
+        if (data) {
+          setCuentasContables(data)
+        }
+      } catch (error) {
+        console.error('Error en cargarCuentasContables:', error)
+      }
+    }
+
+    cargarCuentasContables()
+  }, [])
 
   // Función para obtener último día del mes
   const obtenerUltimoDiaDelMes = (año: number, mes: number): number => {
@@ -240,7 +272,7 @@ export function WizardTemplatesEgresos() {
         .from('egresos_sin_factura')
         .insert({
           template_master_id: templateMaster.id,
-          cuenta_contable: state.datos_basicos.cuenta_contable,
+          categ: state.datos_basicos.categ,
           centro_costo: state.datos_basicos.centro_costo,
           nombre_referencia: state.datos_basicos.nombre_referencia,
           responsable: state.datos_basicos.responsable,
@@ -290,7 +322,7 @@ export function WizardTemplatesEgresos() {
       setState({
         paso: 1,
         datos_basicos: {
-          cuenta_contable: '',
+          categ: '',
           centro_costo: '',
           nombre_referencia: '',
           responsable: '',
@@ -317,7 +349,7 @@ export function WizardTemplatesEgresos() {
     switch (state.paso) {
       case 1:
         return !!(
-          state.datos_basicos.cuenta_contable &&
+          state.datos_basicos.categ &&
           state.datos_basicos.centro_costo &&
           state.datos_basicos.nombre_referencia &&
           state.datos_basicos.responsable &&
@@ -373,13 +405,22 @@ export function WizardTemplatesEgresos() {
             <TabsContent value="paso-1" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="cuenta_contable">Cuenta Contable *</Label>
-                  <Input
-                    id="cuenta_contable"
-                    value={state.datos_basicos.cuenta_contable}
-                    onChange={(e) => actualizarDatosBasicos('cuenta_contable', e.target.value)}
-                    placeholder="Ej: 410.001"
-                  />
+                  <Label htmlFor="categ">Cuenta Contable (CATEG) *</Label>
+                  <Select 
+                    value={state.datos_basicos.categ} 
+                    onValueChange={(value) => actualizarDatosBasicos('categ', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar cuenta contable" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cuentasContables.map(cuenta => (
+                        <SelectItem key={cuenta.categ} value={cuenta.categ}>
+                          {cuenta.categ} - {cuenta.cuenta_contable}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="centro_costo">Centro de Costo *</Label>
@@ -641,7 +682,7 @@ export function WizardTemplatesEgresos() {
                       <CardTitle className="text-base">Datos Básicos</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div><strong>Cuenta:</strong> {state.datos_basicos.cuenta_contable}</div>
+                      <div><strong>Cuenta:</strong> {state.datos_basicos.categ}</div>
                       <div><strong>Centro Costo:</strong> {state.datos_basicos.centro_costo}</div>
                       <div><strong>Referencia:</strong> {state.datos_basicos.nombre_referencia}</div>
                       <div><strong>Responsable:</strong> {state.datos_basicos.responsable}</div>
