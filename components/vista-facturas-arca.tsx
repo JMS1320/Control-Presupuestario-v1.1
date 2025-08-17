@@ -35,6 +35,8 @@ interface FacturaArca {
   iva: number
   imp_total: number
   campana: string | null
+  año_contable: number | null
+  mes_contable: number | null
   fc: string | null
   cuenta_contable: string | null
   centro_costo: string | null
@@ -42,6 +44,11 @@ interface FacturaArca {
   observaciones_pago: string | null
   detalle: string | null
   archivo_origen: string | null
+  fecha_importacion: string | null
+  fecha_modificacion: string | null
+  fecha_estimada: string | null
+  fecha_vencimiento: string | null
+  monto_a_abonar: number | null
   created_at: string
 }
 
@@ -65,6 +72,8 @@ const COLUMNAS_CONFIG = {
   iva: { label: "IVA", visible: true, width: "120px" },
   imp_total: { label: "Total", visible: true, width: "130px" },
   campana: { label: "Campaña", visible: true, width: "120px" },
+  año_contable: { label: "Año Contable", visible: true, width: "120px" },
+  mes_contable: { label: "Mes Contable", visible: true, width: "120px" },
   fc: { label: "FC", visible: true, width: "80px" },
   cuenta_contable: { label: "Cuenta Contable", visible: true, width: "150px" },
   centro_costo: { label: "Centro Costo", visible: true, width: "120px" },
@@ -72,7 +81,12 @@ const COLUMNAS_CONFIG = {
   observaciones_pago: { label: "Obs. Pago", visible: true, width: "150px" },
   detalle: { label: "Detalle", visible: true, width: "150px" },
   archivo_origen: { label: "Archivo Origen", visible: true, width: "200px" },
-  created_at: { label: "Fecha Importación", visible: true, width: "150px" }
+  fecha_importacion: { label: "Fecha Importación", visible: true, width: "150px" },
+  fecha_modificacion: { label: "Fecha Modificación", visible: true, width: "150px" },
+  fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
+  fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
+  monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
+  created_at: { label: "Created At", visible: true, width: "150px" }
 } as const
 
 export function VistaFacturasArca() {
@@ -192,6 +206,10 @@ export function VistaFacturasArca() {
 
     switch (columna) {
       case 'fecha_emision':
+      case 'fecha_importacion':
+      case 'fecha_modificacion':
+      case 'fecha_estimada':
+      case 'fecha_vencimiento':
       case 'created_at':
         return formatearFecha(valor as string)
       
@@ -202,6 +220,7 @@ export function VistaFacturasArca() {
       case 'iva':
       case 'imp_total':
       case 'tipo_cambio':
+      case 'monto_a_abonar':
         return formatearNumero(valor as number)
       
       case 'denominacion_emisor':
