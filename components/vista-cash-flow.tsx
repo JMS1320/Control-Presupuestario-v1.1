@@ -50,6 +50,9 @@ export function VistaCashFlow() {
   const [guardandoCambio, setGuardandoCambio] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   
+  // Estado para cambio de estado (Shift+Click en débitos/créditos)
+  const [filaParaCambioEstado, setFilaParaCambioEstado] = useState<CashFlowRow | null>(null)
+  
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro } = useMultiCashFlowData(filtros)
 
   // Formatear moneda argentina
@@ -76,7 +79,15 @@ export function VistaCashFlow() {
 
   // Funciones para edición inline
   const iniciarEdicion = (fila: CashFlowRow, columna: typeof columnasDefinicion[number], event: React.MouseEvent) => {
-    // Solo activar con Ctrl+Click y si la columna es editable
+    // Shift+Click en débitos/créditos = cambiar estado
+    if (event.shiftKey && (columna.key === 'debitos' || columna.key === 'creditos')) {
+      event.preventDefault()
+      event.stopPropagation()
+      iniciarCambioEstado(fila)
+      return
+    }
+    
+    // Ctrl+Click normal = editar campo
     if (!event.ctrlKey || !columna.editable) return
     
     event.preventDefault()
@@ -100,6 +111,38 @@ export function VistaCashFlow() {
 
   const cancelarEdicion = () => {
     setCeldaEnEdicion(null)
+  }
+
+  // Funciones para cambio de estado (Shift+Click)
+  const iniciarCambioEstado = (fila: CashFlowRow) => {
+    setFilaParaCambioEstado(fila)
+  }
+
+  const cambiarEstado = async (nuevoEstado: string) => {
+    if (!filaParaCambioEstado) return
+    
+    try {
+      setGuardandoCambio(true)
+      
+      const exito = await actualizarRegistro(
+        filaParaCambioEstado.id,
+        'estado',
+        nuevoEstado,
+        filaParaCambioEstado.origen
+      )
+
+      if (exito) {
+        toast.success(`Estado cambiado a: ${nuevoEstado}`)
+        setFilaParaCambioEstado(null)
+      } else {
+        toast.error('Error al cambiar estado')
+      }
+    } catch (error) {
+      console.error('Error cambiando estado:', error)
+      toast.error('Error al cambiar estado')
+    } finally {
+      setGuardandoCambio(false)
+    }
   }
 
   const guardarCambio = async () => {
@@ -491,6 +534,49 @@ export function VistaCashFlow() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal cambio de estado (Shift+Click débitos/créditos) */}
+      {filaParaCambioEstado && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">
+              Cambiar Estado
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {filaParaCambioEstado.nombre_proveedor}
+            </p>
+            
+            <div className="grid grid-cols-2 gap-2">
+              {ESTADOS_DISPONIBLES.map((estado) => (
+                <Button
+                  key={estado.value}
+                  variant={filaParaCambioEstado.estado === estado.value ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => cambiarEstado(estado.value)}
+                  disabled={guardandoCambio}
+                  className="justify-start"
+                >
+                  <Badge variant="outline" className={`mr-2 ${estado.color}`}>
+                    {estado.label}
+                  </Badge>
+                </Button>
+              ))}
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFilaParaCambioEstado(null)}
+                disabled={guardandoCambio}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

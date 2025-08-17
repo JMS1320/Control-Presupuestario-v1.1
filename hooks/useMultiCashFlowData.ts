@@ -193,18 +193,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     origen: 'ARCA' | 'TEMPLATE'
   ): Promise<boolean> => {
     try {
+      // Preparar objeto de actualización
+      let updateData: any = { [campo]: valor }
+      
+      // Regla automática: Si se actualiza fecha_vencimiento, actualizar fecha_estimada para coincidir
+      if (campo === 'fecha_vencimiento' && valor) {
+        updateData.fecha_estimada = valor
+        console.log(`🔄 Auto-actualización: fecha_vencimiento = ${valor} → fecha_estimada = ${valor}`)
+      }
+
       if (origen === 'ARCA') {
         const { error } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
-          .update({ [campo]: valor })
+          .update(updateData)
           .eq('id', id)
 
         if (error) throw error
       } else {
         const { error } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ [campo]: valor })
+          .update(updateData)
           .eq('id', id)
 
         if (error) throw error
