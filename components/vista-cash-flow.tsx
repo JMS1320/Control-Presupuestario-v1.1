@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X } from "lucide-react"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
+import { useCuentasContables } from "@/hooks/useCuentasContables"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -47,6 +48,9 @@ interface CeldaEnEdicion {
 export function VistaCashFlow() {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  
+  // Hook para validación de cuentas contables
+  const { cuentas } = useCuentasContables()
   
   // Estado para edición inline
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
@@ -268,13 +272,24 @@ export function VistaCashFlow() {
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
     
-    // Si está editando categ, validar primero
+    // Si está editando categ, validar si existe primero
     if (celdaEnEdicion.columna === 'categ') {
-      setValidandoCateg({
-        isOpen: true,
-        categIngresado: String(celdaEnEdicion.valor),
-        celdaEnEdicion: celdaEnEdicion
-      })
+      const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
+      const categExiste = cuentas.some(cuenta => cuenta.categ.toLowerCase() === categIngresado.toLowerCase())
+      
+      if (categExiste) {
+        // Si existe, guardar directo sin modal
+        console.log(`✅ CATEG "${categIngresado}" existe → guardado directo`)
+        await ejecutarGuardadoReal(celdaEnEdicion)
+      } else {
+        // Si no existe, mostrar modal con opciones
+        console.log(`❓ CATEG "${categIngresado}" no existe → mostrar modal`)
+        setValidandoCateg({
+          isOpen: true,
+          categIngresado: categIngresado,
+          celdaEnEdicion: celdaEnEdicion
+        })
+      }
       return
     }
     

@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Check, Plus, Search, AlertTriangle } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2, Check, Plus, Search, AlertTriangle, List } from "lucide-react"
 import { useCuentasContables, type CuentaContable } from "@/hooks/useCuentasContables"
 
 interface ModalValidarCategProps {
@@ -20,7 +21,7 @@ interface ModalValidarCategProps {
 
 export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel }: ModalValidarCategProps) {
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
-  const [modo, setModo] = useState<'validar' | 'seleccionar' | 'crear'>('validar')
+  const [modo, setModo] = useState<'seleccionar' | 'lista' | 'crear'>('lista')
   const [categSeleccionado, setCategSeleccionado] = useState('')
   const [creandoCuenta, setCreandoCuenta] = useState(false)
   
@@ -28,9 +29,29 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
   const [nuevoCateg, setNuevoCateg] = useState('')
   const [nuevoCuentaContable, setNuevoCuentaContable] = useState('')
   const [nuevoTipo, setNuevoTipo] = useState('')
+  
+  // Estado para lista completa con autocompletado
+  const [filtroLista, setFiltroLista] = useState('')
+  const [cuentasFiltradas, setCuentasFiltradas] = useState<CuentaContable[]>([])
 
   const categExiste = validarCateg(categIngresado)
   const similares = buscarSimilares(categIngresado)
+
+  // Filtrar cuentas para el modo lista
+  useEffect(() => {
+    if (modo === 'lista') {
+      if (!filtroLista.trim()) {
+        setCuentasFiltradas(cuentas.slice(0, 20)) // Mostrar primeras 20 por defecto
+      } else {
+        const filtro = filtroLista.toLowerCase()
+        const filtradas = cuentas.filter(cuenta => 
+          cuenta.categ.toLowerCase().includes(filtro) ||
+          cuenta.cuenta_contable.toLowerCase().includes(filtro)
+        ).slice(0, 50) // Máximo 50 resultados
+        setCuentasFiltradas(filtradas)
+      }
+    }
+  }, [filtroLista, modo, cuentas])
 
   useEffect(() => {
     if (isOpen) {
@@ -38,16 +59,16 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
       setNuevoCuentaContable('')
       setNuevoTipo('')
       setCategSeleccionado('')
+      setFiltroLista(categIngresado) // Pre-llenar filtro con lo ingresado
       
-      if (categExiste) {
-        setModo('validar')
-      } else if (similares.length > 0) {
+      // NOTA: categExiste nunca será true aquí porque el modal solo se abre cuando NO existe
+      if (similares.length > 0) {
         setModo('seleccionar')
       } else {
-        setModo('crear')
+        setModo('lista') // Por defecto mostrar lista si no hay similares
       }
     }
-  }, [isOpen, categIngresado, categExiste, similares.length])
+  }, [isOpen, categIngresado, similares.length])
 
   const handleConfirmarExistente = () => {
     onConfirm(categIngresado)
@@ -99,21 +120,6 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
               </CardContent>
             </Card>
 
-            {/* Validación existente */}
-            {modo === 'validar' && categExiste && (
-              <Alert>
-                <Check className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p>✅ El código <strong>{categIngresado}</strong> existe en las cuentas contables.</p>
-                    <Button onClick={handleConfirmarExistente} className="bg-green-600 hover:bg-green-700">
-                      <Check className="mr-2 h-4 w-4" />
-                      Confirmar y usar
-                    </Button>
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
 
             {/* Sugerencias similares */}
             {modo === 'seleccionar' && similares.length > 0 && (
@@ -149,14 +155,109 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
                       </div>
                     ))}
                     
-                    <div className="pt-4 border-t">
+                    <div className="pt-4 border-t space-y-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setModo('lista')}
+                        className="w-full"
+                      >
+                        <List className="mr-2 h-4 w-4" />
+                        Ver lista completa
+                      </Button>
                       <Button 
                         variant="outline" 
                         onClick={() => setModo('crear')}
                         className="w-full"
                       >
                         <Plus className="mr-2 h-4 w-4" />
-                        No, crear cuenta nueva
+                        Crear cuenta nueva
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Lista completa con autocompletado */}
+            {modo === 'lista' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <List className="h-5 w-5" />
+                    Seleccionar de lista completa
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <Alert>
+                      <Search className="h-4 w-4" />
+                      <AlertDescription>
+                        Busca y selecciona una cuenta existente. Escribe para filtrar por código o nombre.
+                      </AlertDescription>
+                    </Alert>
+
+                    <div>
+                      <Label htmlFor="filtro">Buscar cuenta contable</Label>
+                      <Input
+                        id="filtro"
+                        placeholder="Escribe código o nombre para filtrar..."
+                        value={filtroLista}
+                        onChange={(e) => setFiltroLista(e.target.value)}
+                        className="font-mono"
+                      />
+                    </div>
+
+                    <ScrollArea className="h-80 border rounded-md p-2">
+                      <div className="space-y-2">
+                        {cuentasFiltradas.length === 0 ? (
+                          <div className="text-center text-gray-500 py-8">
+                            {filtroLista ? 'No se encontraron cuentas con ese filtro' : 'Cargando cuentas...'}
+                          </div>
+                        ) : (
+                          cuentasFiltradas.map((cuenta) => (
+                            <div 
+                              key={cuenta.categ}
+                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                              onClick={() => handleSeleccionarSimilar(cuenta.categ)}
+                            >
+                              <div className="flex-1">
+                                <div className="font-mono font-bold text-lg">{cuenta.categ}</div>
+                                <div className="text-sm text-gray-600">{cuenta.cuenta_contable}</div>
+                                <Badge variant="secondary" className="text-xs mt-1">{cuenta.tipo}</Badge>
+                              </div>
+                              <Button 
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleSeleccionarSimilar(cuenta.categ)
+                                }}
+                              >
+                                <Check className="mr-1 h-3 w-3" />
+                                Usar
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                    
+                    <div className="flex gap-2 pt-4 border-t">
+                      {similares.length > 0 && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setModo('seleccionar')}
+                        >
+                          <Search className="mr-2 h-4 w-4" />
+                          Ver similares
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={() => setModo('crear')}
+                        className="flex-1"
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Crear nueva cuenta
                       </Button>
                     </div>
                   </div>
@@ -238,6 +339,14 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
                             Crear y usar
                           </>
                         )}
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        onClick={() => setModo('lista')}
+                      >
+                        <List className="mr-2 h-4 w-4" />
+                        Ver lista
                       </Button>
                       
                       {similares.length > 0 && (
