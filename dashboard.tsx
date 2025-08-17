@@ -10,7 +10,7 @@ import { ReporteDetallado } from "./components/reporte-detallado"
 import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
-import { VistaFacturasArca } from "./components/vista-facturas-arca"
+import { VistaEgresos } from "./components/vista-egresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 
@@ -44,7 +44,7 @@ export default function ControlPresupuestario() {
 
         {/* pestañas principales */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Dashboard
@@ -57,13 +57,9 @@ export default function ControlPresupuestario() {
               <FileText className="h-4 w-4" />
               Reporte Detallado
             </TabsTrigger>
-            <TabsTrigger value="facturas" className="flex items-center gap-2">
+            <TabsTrigger value="egresos" className="flex items-center gap-2">
               <Receipt className="h-4 w-4" />
-              Facturas ARCA
-            </TabsTrigger>
-            <TabsTrigger value="templates" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Templates
+              Egresos
             </TabsTrigger>
             <TabsTrigger value="cashflow" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
@@ -159,14 +155,9 @@ export default function ControlPresupuestario() {
             <ReporteDetallado año={año} semestre={semestre} mostrarDecimales={mostrarDecimales} />
           </TabsContent>
 
-          {/* FACTURAS ARCA */}
-          <TabsContent value="facturas" className="space-y-6">
-            <VistaFacturasArca />
-          </TabsContent>
-
-          {/* TEMPLATES */}
-          <TabsContent value="templates" className="space-y-6">
-            <WizardTemplatesEgresos />
+          {/* EGRESOS */}
+          <TabsContent value="egresos" className="space-y-6">
+            <VistaEgresos />
           </TabsContent>
 
           {/* CASH FLOW */}

@@ -98,8 +98,18 @@ export function VistaCashFlow() {
       return
     }
     
+    // Verificar si la columna es editable para este origen
+    const esEditable = columna.editable && !(
+      fila.origen === 'TEMPLATE' && (columna.key === 'categ' || columna.key === 'centro_costo')
+    )
+    
     // Ctrl+Click normal = editar campo
-    if (!event.ctrlKey || !columna.editable) return
+    if (!event.ctrlKey || !esEditable) {
+      if (!esEditable && event.ctrlKey) {
+        toast.error(`${columna.label} no es editable para templates desde Cash Flow`)
+      }
+      return
+    }
     
     event.preventDefault()
     event.stopPropagation()
@@ -186,8 +196,13 @@ export function VistaCashFlow() {
           campoReal = 'monto'
         } else if (celdaEnEdicion.columna === 'detalle') {
           campoReal = 'descripcion' // En templates, 'detalle' se guarda como 'descripcion'
+        } else if (celdaEnEdicion.columna === 'categ' || celdaEnEdicion.columna === 'centro_costo') {
+          // PROBLEMA: categ y centro_costo están en tabla egresos_sin_factura, no en cuotas_egresos_sin_factura
+          // Por ahora, no permitir edición de estos campos para templates
+          toast.error(`No se puede editar ${celdaEnEdicion.columna} en templates desde Cash Flow`)
+          return
         }
-        // Para templates: fecha_estimada, fecha_vencimiento coinciden
+        // Para templates: fecha_estimada, fecha_vencimiento coinciden y se guardan en cuotas_egresos_sin_factura
       }
 
       // Validar y convertir valor según tipo
@@ -445,16 +460,22 @@ export function VistaCashFlow() {
       }
     })()
 
+    // Verificar si es editable para este origen específico
+    const esEditableParaOrigen = columna.editable && !(
+      fila.origen === 'TEMPLATE' && (columna.key === 'categ' || columna.key === 'centro_costo')
+    )
+
     return (
       <div 
         className={`
           ${columna.width} 
           ${columna.align || ''} 
-          ${columna.editable ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'} 
-          ${columna.editable ? 'border-l-2 border-l-transparent hover:border-l-blue-300' : ''}
+          ${esEditableParaOrigen ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'} 
+          ${esEditableParaOrigen ? 'border-l-2 border-l-transparent hover:border-l-blue-300' : ''}
+          ${!esEditableParaOrigen && columna.editable ? 'opacity-60' : ''}
           truncate p-1 transition-colors
         `}
-        title={`${valor || '-'}${columna.editable ? ' (Ctrl+Click para editar)' : ''}`}
+        title={`${valor || '-'}${esEditableParaOrigen ? ' (Ctrl+Click para editar)' : columna.editable ? ' (No editable para templates)' : ''}`}
         onClick={(e) => iniciarEdicion(fila, columna, e)}
       >
         {columna.editable && (
