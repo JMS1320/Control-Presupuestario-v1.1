@@ -77,14 +77,28 @@
 - **Configuración Supabase esquemas** (exposición API, permisos RLS)
 - **Integración ARCA API** (certificados, autenticación WSAA, WSFEv1)
 
-## ✅ **COMANDO BACKUP DOCKER FUNCIONAL (2025-08-15):**
+## ✅ **COMANDOS BACKUP DOCKER FUNCIONALES (2025-08-17):**
+
+### **🚀 COMANDO COMBINADO (USAR SIEMPRE):**
 ```bash
-# BACKUP ESTRUCTURA (PostgreSQL 17 para compatibilidad Supabase)
-docker run --rm postgres:17 pg_dump "postgresql://postgres.upaygsviflbuwraaawhf:Monomaniaco13@aws-0-us-east-1.pooler.supabase.com:5432/postgres" --schema-only > schema_backup_$(date +%Y%m%d_%H%M%S).sql
+TIMESTAMP=$(date +%Y%m%d_%H%M%S) && \
+docker run --rm postgres:17 pg_dump "postgresql://postgres.upaygsviflbuwraaawhf:Monomaniaco13@aws-0-us-east-1.pooler.supabase.com:5432/postgres" --schema-only > schema_backup_$TIMESTAMP.sql && \
+docker run --rm -e PGPASSWORD=Monomaniaco13 postgres:17 pg_dumpall -h aws-0-us-east-1.pooler.supabase.com -p 5432 -U postgres.upaygsviflbuwraaawhf --roles-only > roles_backup_$TIMESTAMP.sql && \
+echo "✅ Backup completo generado con timestamp: $TIMESTAMP"
 ```
-**Resultado**: ✅ Funciona perfectamente, genera archivo `schema_backup_YYYYMMDD_HHMMSS.sql`
-**Incluye**: Todas las tablas, constraints, índices, políticas RLS, esquemas MSA/PAM
-**Uso**: Antes de modificaciones importantes en estructura BD
+
+### **📋 COMANDOS INDIVIDUALES:**
+```bash
+# BACKUP ESTRUCTURA SOLAMENTE
+docker run --rm postgres:17 pg_dump "postgresql://postgres.upaygsviflbuwraaawhf:Monomaniaco13@aws-0-us-east-1.pooler.supabase.com:5432/postgres" --schema-only > schema_backup_$(date +%Y%m%d_%H%M%S).sql
+
+# BACKUP ROLES SOLAMENTE  
+docker run --rm -e PGPASSWORD=Monomaniaco13 postgres:17 pg_dumpall -h aws-0-us-east-1.pooler.supabase.com -p 5432 -U postgres.upaygsviflbuwraaawhf --roles-only > roles_backup_$(date +%Y%m%d_%H%M%S).sql
+```
+
+**Resultado**: ✅ Genera 2 archivos: `schema_backup_YYYYMMDD_HHMMSS.sql` + `roles_backup_YYYYMMDD_HHMMSS.sql`
+**Incluye**: Estructura completa (tablas, constraints, índices, políticas RLS, esquemas MSA/PAM) + Roles y permisos
+**Uso**: SIEMPRE ambos antes de modificaciones importantes en BD
 
 ## 📖 **Temas con Setup en README.md:**
 - **Instalación proyecto** (dependencias, variables entorno, pasos exactos)
@@ -569,11 +583,63 @@ interface CuentaContable {
 
 ---
 
-# 🎯 **PRÓXIMOS PASOS INMEDIATOS**
+# 💰 **CASH FLOW - IMPLEMENTACIÓN COMPLETADA (PASOS 1-4)**
 
-1. **Testing wizard actualizado**: Probar dropdown CATEG funcionando
-2. **Desarrollo Cash Flow**: Implementar MVP con 12 columnas definidas
-3. **Testing riguroso MSA**: Validación cruzada y edge cases
-4. **Expansión PAM**: Una vez MSA completamente probado
+## 🎯 RESUMEN EJECUTIVO (2025-08-15)
 
-**🎯 Para cualquier desarrollo o troubleshooting**: Usar las reglas de navegación arriba para ir al archivo correcto.
+### **✅ PASOS COMPLETADOS**
+
+#### **📋 PASO 1: Hook useMultiCashFlowData**
+- **Archivo**: `hooks/useMultiCashFlowData.ts`
+- **Funcionalidad**: Consultas unificadas ARCA + Templates 
+- **Filtro**: `estado ≠ 'conciliado' AND estado ≠ 'credito'` para ambas fuentes
+- **Interface**: CashFlowRow unificada con 13 campos
+- **Funciones**: `actualizarRegistro()` y `actualizarBatch()`
+
+#### **📋 PASO 2: Componente vista-cash-flow.tsx** 
+- **Archivo**: `components/vista-cash-flow.tsx`
+- **UI**: Tabla 10 columnas + 4 cards estadísticas
+- **Formateo**: Moneda argentina, fechas locales, responsive
+
+#### **📋 PASO 3: Integración Dashboard**
+- **Archivo**: `dashboard.tsx` 
+- **Nueva pestaña**: "Cash Flow" con ícono TrendingUp
+- **Grid actualizado**: 6 → 7 columnas
+
+#### **📋 PASO 4: Edición Ctrl+Click**
+- **Funcionalidad**: Edición inline en celdas editables
+- **Editables**: fecha_estimada, fecha_vencimiento, categ, centro_costo, detalle, debitos, creditos
+- **Readonly**: cuit_proveedor, nombre_proveedor, saldo_cta_cte
+- **Controles**: Save/Cancel, Enter/Escape, validaciones
+- **Mapeo**: `detalle` → `descripcion` para templates
+- **RLS**: Políticas UPDATE habilitadas
+
+### **🔧 Arquitectura Implementada**
+- **Multi-fuente**: ARCA + Templates unificados
+- **Ordenamiento**: Por fecha_estimada
+- **Estados**: pendiente, debito, pagar, pagado
+- **Performance**: Consultas optimizadas con schemas
+
+---
+
+# 🧪 **PRÓXIMO: TESTING RIGUROSO CASH FLOW**
+
+## 📋 **PROTOCOL DE TESTING DEFINIDO**
+
+### **🎯 Preparación Testing**
+1. **Limpiar datos**: Dejar solo 1 factura ARCA + 1 cuota template
+2. **Testing masivo**: Modificar TODAS las columnas editables de una vez
+3. **Verificación MCP**: Comprobar cambios en BD después de cada edición
+4. **Debug sistemático**: Atacar errores uno por uno hasta resolverlos
+
+### **🔬 Estrategia Testing**
+- **Objetivo**: Verificar que TODAS las columnas editables funcionen correctamente
+- **Método**: Cambio simultáneo para detectar todos los errores juntos
+- **Validación**: Via MCP para confirmar persistencia en BD
+- **Scope**: Tanto registros ARCA como Templates
+
+### **📊 Post-Testing**
+- **PASO 5**: Modo PAGOS (botón flotante)
+- **PASO 6**: Filtros y ordenamiento avanzado
+
+**🎯 Para desarrollo**: Testing riguroso antes de continuar con nuevas funcionalidades.

@@ -51,7 +51,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       origen_tabla: 'msa.comprobantes_arca',
       fecha_estimada: f.fecha_estimada || calcularFechaEstimada(f.fecha_emision),
       fecha_vencimiento: f.fecha_vencimiento,
-      categ: f.categ || 'SIN_CATEG',
+      categ: f.cuenta_contable || 'SIN_CATEG',
       centro_costo: f.centro_costo || 'SIN_CC',
       cuit_proveedor: f.cuit || '',
       nombre_proveedor: f.denominacion_emisor || '',
