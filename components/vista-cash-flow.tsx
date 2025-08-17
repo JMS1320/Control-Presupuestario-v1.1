@@ -275,7 +275,15 @@ export function VistaCashFlow() {
     // Si está editando categ, validar si existe primero
     if (celdaEnEdicion.columna === 'categ') {
       const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
+      
+      // DEBUG: Información detallada
+      console.log('🔍 DEBUG CATEG:')
+      console.log('- categIngresado:', categIngresado)
+      console.log('- cuentas cargadas:', cuentas.length)
+      console.log('- primeras 3 cuentas:', cuentas.slice(0, 3).map(c => c.categ))
+      
       const categExiste = cuentas.some(cuenta => cuenta.categ.toLowerCase() === categIngresado.toLowerCase())
+      console.log('- categExiste:', categExiste)
       
       if (categExiste) {
         // Si existe, guardar directo sin modal

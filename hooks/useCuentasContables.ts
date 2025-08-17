@@ -21,6 +21,8 @@ export function useCuentasContables() {
       setLoading(true)
       setError(null)
       
+      console.log('🔍 DEBUG useCuentasContables: Iniciando carga...')
+      
       const { data, error: supabaseError } = await supabase
         .from('cuentas_contables')
         .select('*')
@@ -33,6 +35,9 @@ export function useCuentasContables() {
         return
       }
 
+      console.log('🔍 DEBUG useCuentasContables: Cuentas cargadas:', data?.length || 0)
+      console.log('🔍 DEBUG useCuentasContables: Primeras 3:', data?.slice(0, 3) || [])
+      
       setCuentas(data || [])
     } catch (error) {
       console.error('Error inesperado:', error)

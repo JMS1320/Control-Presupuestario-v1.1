@@ -40,14 +40,21 @@ export function ModalValidarCateg({ isOpen, categIngresado, onConfirm, onCancel 
   // Filtrar cuentas para el modo lista
   useEffect(() => {
     if (modo === 'lista') {
+      console.log('🔍 DEBUG Modal filtro:')
+      console.log('- cuentas disponibles:', cuentas.length)
+      console.log('- filtroLista:', filtroLista)
+      
       if (!filtroLista.trim()) {
-        setCuentasFiltradas(cuentas.slice(0, 20)) // Mostrar primeras 20 por defecto
+        const primeras20 = cuentas.slice(0, 20)
+        console.log('- sin filtro, primeras 20:', primeras20.length)
+        setCuentasFiltradas(primeras20)
       } else {
         const filtro = filtroLista.toLowerCase()
         const filtradas = cuentas.filter(cuenta => 
           cuenta.categ.toLowerCase().includes(filtro) ||
           cuenta.cuenta_contable.toLowerCase().includes(filtro)
-        ).slice(0, 50) // Máximo 50 resultados
+        ).slice(0, 50)
+        console.log('- con filtro, encontradas:', filtradas.length)
         setCuentasFiltradas(filtradas)
       }
     }
