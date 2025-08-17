@@ -70,6 +70,8 @@
 - **Importador dual CSV/Excel** (patrón reutilizable, validaciones)
 - **Sistema Templates Egresos sin Factura** (arquitectura decidida, 3 tablas, JSONB)
 - **Correcciones Cash Flow** (mapeo campos, CUIT quien cobra, registros en conciliación)
+- **FASE COMPLETADA Sistema CATEG + Cash Flow + Backups** (implementación completa, production ready)
+- **🏦 CONCILIACIÓN BANCARIA** (proceso, reglas, algoritmos, arquitectura decidida)
 
 ## 📚 **Temas con Troubleshooting en DOCS.md:**
 - **MCP problemas Windows** (NPX execution, herramientas no aparecen)

@@ -13,11 +13,12 @@ import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
+import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote } from "lucide-react"
 
 export default function ControlPresupuestario() {
   // Obtener el año actual dinámicamente
@@ -44,7 +45,7 @@ export default function ControlPresupuestario() {
 
         {/* pestañas principales */}
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Dashboard
@@ -64,6 +65,10 @@ export default function ControlPresupuestario() {
             <TabsTrigger value="cashflow" className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
               Cash Flow
+            </TabsTrigger>
+            <TabsTrigger value="extracto" className="flex items-center gap-2">
+              <Banknote className="h-4 w-4" />
+              Extracto Bancario
             </TabsTrigger>
             <TabsTrigger value="importar" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -163,6 +168,11 @@ export default function ControlPresupuestario() {
           {/* CASH FLOW */}
           <TabsContent value="cashflow" className="space-y-6">
             <VistaCashFlow />
+          </TabsContent>
+
+          {/* EXTRACTO BANCARIO */}
+          <TabsContent value="extracto" className="space-y-6">
+            <VistaExtractoBancario />
           </TabsContent>
 
           {/* IMPORTAR */}
