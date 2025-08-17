@@ -58,7 +58,8 @@ export function VistaCashFlow() {
   // Estado para modo PAGOS (Ctrl+Click botón PAGOS)
   const [modoPagos, setModoPagos] = useState(false)
   const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
-  const [tipoActualizacionLote, setTipoActualizacionLote] = useState<'fecha_vencimiento' | 'estado'>('estado')
+  const [cambiarFechaVenc, setCambiarFechaVenc] = useState(false)
+  const [cambiarEstado, setCambiarEstado] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
@@ -247,6 +248,8 @@ export function VistaCashFlow() {
   const desactivarModoPagos = () => {
     setModoPagos(false)
     setFilasSeleccionadas(new Set())
+    setCambiarFechaVenc(false)
+    setCambiarEstado(true)
     setValorFechaLote('')
     setValorEstadoLote('pagado')
   }
@@ -269,7 +272,12 @@ export function VistaCashFlow() {
       return
     }
 
-    if (tipoActualizacionLote === 'fecha_vencimiento' && !valorFechaLote) {
+    if (!cambiarFechaVenc && !cambiarEstado) {
+      toast.error("Selecciona al menos una opción: fecha vencimiento o estado")
+      return
+    }
+
+    if (cambiarFechaVenc && !valorFechaLote) {
       toast.error("Ingresa una fecha válida")
       return
     }
@@ -278,32 +286,48 @@ export function VistaCashFlow() {
 
     try {
       // Preparar actualizaciones para todas las filas seleccionadas
-      const actualizaciones = Array.from(filasSeleccionadas).map(filaId => {
+      const actualizaciones: Array<{id: string, origen: 'ARCA' | 'TEMPLATE', campo: string, valor: any}> = []
+      
+      Array.from(filasSeleccionadas).forEach(filaId => {
         const fila = data.find(f => f.id === filaId)!
         
-        // Determinar campo real en BD según origen
-        let campoReal = tipoActualizacionLote
-        if (fila.origen === 'ARCA' && tipoActualizacionLote === 'fecha_vencimiento') {
-          // Para ARCA, fecha_vencimiento se guarda tal cual
-          campoReal = 'fecha_vencimiento'
-        } else if (fila.origen === 'TEMPLATE' && tipoActualizacionLote === 'fecha_vencimiento') {
-          // Para TEMPLATE, fecha_vencimiento también se guarda tal cual
-          campoReal = 'fecha_vencimiento'
+        // Si cambiar fecha vencimiento
+        if (cambiarFechaVenc && valorFechaLote) {
+          actualizaciones.push({
+            id: filaId,
+            origen: fila.origen,
+            campo: 'fecha_vencimiento',
+            valor: valorFechaLote
+          })
+          
+          // Auto-sync: también actualizar fecha_estimada
+          actualizaciones.push({
+            id: filaId,
+            origen: fila.origen,
+            campo: 'fecha_estimada',
+            valor: valorFechaLote
+          })
         }
-        // Para estado, ambos usan 'estado'
-
-        return {
-          id: filaId,
-          origen: fila.origen,
-          campo: campoReal,
-          valor: tipoActualizacionLote === 'fecha_vencimiento' ? valorFechaLote : valorEstadoLote
+        
+        // Si cambiar estado
+        if (cambiarEstado) {
+          actualizaciones.push({
+            id: filaId,
+            origen: fila.origen,
+            campo: 'estado',
+            valor: valorEstadoLote
+          })
         }
       })
 
       const exito = await actualizarBatch(actualizaciones)
 
       if (exito) {
-        toast.success(`${filasSeleccionadas.size} registros actualizados correctamente`)
+        const cambiosTexto = []
+        if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
+        if (cambiarEstado) cambiosTexto.push('estado')
+        
+        toast.success(`${filasSeleccionadas.size} registros actualizados: ${cambiosTexto.join(' y ')}`)
         desactivarModoPagos()
       } else {
         toast.error('Error al aplicar cambios por lote')
@@ -594,12 +618,12 @@ export function VistaCashFlow() {
                 </div>
                 
                 <div className="flex items-center gap-4">
-                  {/* Selector tipo de actualización */}
+                  {/* Checkboxes independientes */}
                   <div className="flex items-center gap-2">
                     <Checkbox
                       id="cambiar-fecha"
-                      checked={tipoActualizacionLote === 'fecha_vencimiento'}
-                      onCheckedChange={(checked) => setTipoActualizacionLote(checked ? 'fecha_vencimiento' : 'estado')}
+                      checked={cambiarFechaVenc}
+                      onCheckedChange={setCambiarFechaVenc}
                     />
                     <Label htmlFor="cambiar-fecha">Cambiar fecha vencimiento</Label>
                   </div>
@@ -607,41 +631,49 @@ export function VistaCashFlow() {
                   <div className="flex items-center gap-2">
                     <Checkbox
                       id="cambiar-estado"
-                      checked={tipoActualizacionLote === 'estado'}
-                      onCheckedChange={(checked) => setTipoActualizacionLote(checked ? 'estado' : 'fecha_vencimiento')}
+                      checked={cambiarEstado}
+                      onCheckedChange={setCambiarEstado}
                     />
                     <Label htmlFor="cambiar-estado">Cambiar estado</Label>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-4">
-                  {/* Input según tipo seleccionado */}
-                  {tipoActualizacionLote === 'fecha_vencimiento' ? (
-                    <Input
-                      type="date"
-                      value={valorFechaLote}
-                      onChange={(e) => setValorFechaLote(e.target.value)}
-                      placeholder="Nueva fecha vencimiento"
-                      className="w-48"
-                    />
-                  ) : (
-                    <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ESTADOS_DISPONIBLES.map((estado) => (
-                          <SelectItem key={estado.value} value={estado.value}>
-                            {estado.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  {/* Inputs para ambas opciones */}
+                  {cambiarFechaVenc && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Fecha:</Label>
+                      <Input
+                        type="date"
+                        value={valorFechaLote}
+                        onChange={(e) => setValorFechaLote(e.target.value)}
+                        placeholder="Nueva fecha vencimiento"
+                        className="w-40"
+                      />
+                    </div>
+                  )}
+                  
+                  {cambiarEstado && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Estado:</Label>
+                      <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESTADOS_DISPONIBLES.map((estado) => (
+                            <SelectItem key={estado.value} value={estado.value}>
+                              {estado.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
 
                   <Button
                     onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstado)}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {procesandoLote ? (
