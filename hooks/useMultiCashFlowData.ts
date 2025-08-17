@@ -8,6 +8,7 @@ export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE'
   origen_tabla: string // Para identificar tabla específica al editar
+  egreso_id?: string // Para templates: ID del egreso padre
   fecha_estimada: string
   fecha_vencimiento: string | null
   categ: string
@@ -69,6 +70,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       id: c.id,
       origen: 'TEMPLATE' as const,
       origen_tabla: 'cuotas_egresos_sin_factura',
+      egreso_id: c.egreso_id, // ID del egreso padre para editar categ/centro_costo
       fecha_estimada: c.fecha_estimada,
       fecha_vencimiento: c.fecha_vencimiento,
       categ: c.egreso?.categ || 'SIN_CATEG',
@@ -190,7 +192,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     id: string, 
     campo: string, 
     valor: any, 
-    origen: 'ARCA' | 'TEMPLATE'
+    origen: 'ARCA' | 'TEMPLATE',
+    egresoId?: string
   ): Promise<boolean> => {
     try {
       // Preparar objeto de actualización
@@ -211,12 +214,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
       } else {
-        const { error } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update(updateData)
-          .eq('id', id)
+        // Para templates: categ y centro_costo van a la tabla padre
+        if (campo === 'categ' || campo === 'centro_costo') {
+          if (!egresoId) {
+            throw new Error('Se requiere egreso_id para actualizar categ/centro_costo')
+          }
+          
+          const { error } = await supabase
+            .from('egresos_sin_factura')
+            .update(updateData)
+            .eq('id', egresoId)
 
-        if (error) throw error
+          if (error) throw error
+        } else {
+          // Otros campos van a la tabla de cuotas
+          const { error } = await supabase
+            .from('cuotas_egresos_sin_factura')
+            .update(updateData)
+            .eq('id', id)
+
+          if (error) throw error
+        }
       }
 
       // Recargar datos después de actualización exitosa
@@ -230,6 +248,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         campo,
         valor,
         origen,
+        egresoId,
         detalle: JSON.stringify(error)
       })
       setError(error instanceof Error ? error.message : `Error al actualizar campo ${campo}: ${JSON.stringify(error)}`)

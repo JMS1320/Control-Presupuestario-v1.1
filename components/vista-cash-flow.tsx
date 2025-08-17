@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X } from "lucide-react"
 import { toast } from "sonner"
+import { ModalValidarCateg } from "./modal-validar-categ"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -54,6 +55,17 @@ export function VistaCashFlow() {
   
   // Estado para cambio de estado (Shift+Click en débitos/créditos)
   const [filaParaCambioEstado, setFilaParaCambioEstado] = useState<CashFlowRow | null>(null)
+  
+  // Estado para validación de categ
+  const [validandoCateg, setValidandoCateg] = useState<{
+    isOpen: boolean
+    categIngresado: string
+    celdaEnEdicion: CeldaEnEdicion | null
+  }>({
+    isOpen: false,
+    categIngresado: '',
+    celdaEnEdicion: null
+  })
   
   // Estado para modo PAGOS (Ctrl+Click botón PAGOS)
   const [modoPagos, setModoPagos] = useState(false)
@@ -99,17 +111,10 @@ export function VistaCashFlow() {
     }
     
     // Verificar si la columna es editable para este origen
-    const esEditable = columna.editable && !(
-      fila.origen === 'TEMPLATE' && (columna.key === 'categ' || columna.key === 'centro_costo')
-    )
+    const esEditable = columna.editable
     
     // Ctrl+Click normal = editar campo
-    if (!event.ctrlKey || !esEditable) {
-      if (!esEditable && event.ctrlKey) {
-        toast.error(`${columna.label} no es editable para templates desde Cash Flow`)
-      }
-      return
-    }
+    if (!event.ctrlKey || !esEditable) return
     
     event.preventDefault()
     event.stopPropagation()
@@ -166,48 +171,66 @@ export function VistaCashFlow() {
     }
   }
 
-  const guardarCambio = async () => {
-    if (!celdaEnEdicion) return
+  // Funciones para validación de categ
+  const confirmarCateg = async (categFinal: string) => {
+    if (!validandoCateg.celdaEnEdicion) return
+
+    const celdaOriginal = validandoCateg.celdaEnEdicion
     
+    // Actualizar el valor en la celda
+    const nuevaCelda = {
+      ...celdaOriginal,
+      valor: categFinal
+    }
+    
+    setCeldaEnEdicion(nuevaCelda)
+    setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+    
+    // Ejecutar el guardado real
+    await ejecutarGuardadoReal(nuevaCelda)
+  }
+
+  const cancelarValidacionCateg = () => {
+    setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+  }
+
+  // Función auxiliar para ejecutar el guardado sin validación
+  const ejecutarGuardadoReal = async (celda: CeldaEnEdicion) => {
     setGuardandoCambio(true)
     
     try {
       // Encontrar la fila original para obtener el origen
-      const filaOriginal = data.find(f => f.id === celdaEnEdicion.filaId)
+      const filaOriginal = data.find(f => f.id === celda.filaId)
       if (!filaOriginal) {
         toast.error('Error: No se encontró el registro')
         return
       }
 
       // Mapear campo del Cash Flow al campo real de BD
-      let campoReal = celdaEnEdicion.columna
+      let campoReal = celda.columna
       
       if (filaOriginal.origen === 'ARCA') {
         // Mapeo para facturas ARCA
-        if (celdaEnEdicion.columna === 'debitos') {
+        if (celda.columna === 'debitos') {
           campoReal = 'monto_a_abonar' // Permite editar monto a pagar diferente al original
-        } else if (celdaEnEdicion.columna === 'categ') {
+        } else if (celda.columna === 'categ') {
           campoReal = 'cuenta_contable' // En ARCA, 'categ' se guarda como 'cuenta_contable'
         }
         // Para ARCA, los demás campos coinciden: detalle, fecha_estimada, fecha_vencimiento, etc.
       } else if (filaOriginal.origen === 'TEMPLATE') {
         // Mapeo para templates
-        if (celdaEnEdicion.columna === 'debitos') {
+        if (celda.columna === 'debitos') {
           campoReal = 'monto'
-        } else if (celdaEnEdicion.columna === 'detalle') {
+        } else if (celda.columna === 'detalle') {
           campoReal = 'descripcion' // En templates, 'detalle' se guarda como 'descripcion'
-        } else if (celdaEnEdicion.columna === 'categ' || celdaEnEdicion.columna === 'centro_costo') {
-          // PROBLEMA: categ y centro_costo están en tabla egresos_sin_factura, no en cuotas_egresos_sin_factura
-          // Por ahora, no permitir edición de estos campos para templates
-          toast.error(`No se puede editar ${celdaEnEdicion.columna} en templates desde Cash Flow`)
-          return
         }
         // Para templates: fecha_estimada, fecha_vencimiento coinciden y se guardan en cuotas_egresos_sin_factura
+        // categ y centro_costo se guardan en egresos_sin_factura (tabla padre)
       }
 
       // Validar y convertir valor según tipo
-      let valorFinal: any = celdaEnEdicion.valor
-      const columna = columnasDefinicion.find(c => c.key === celdaEnEdicion.columna)
+      let valorFinal: any = celda.valor
+      const columna = columnasDefinicion.find(c => c.key === celda.columna)
       
       if (columna?.type === 'currency') {
         valorFinal = parseFloat(String(valorFinal)) || 0
@@ -221,10 +244,11 @@ export function VistaCashFlow() {
 
       // Actualizar en BD
       const exito = await actualizarRegistro(
-        celdaEnEdicion.filaId,
+        celda.filaId,
         campoReal,
         valorFinal,
-        filaOriginal.origen
+        filaOriginal.origen,
+        filaOriginal.egreso_id // Para templates: ID del egreso padre
       )
 
       if (exito) {
@@ -239,6 +263,23 @@ export function VistaCashFlow() {
     } finally {
       setGuardandoCambio(false)
     }
+  }
+
+  const guardarCambio = async () => {
+    if (!celdaEnEdicion) return
+    
+    // Si está editando categ, validar primero
+    if (celdaEnEdicion.columna === 'categ') {
+      setValidandoCateg({
+        isOpen: true,
+        categIngresado: String(celdaEnEdicion.valor),
+        celdaEnEdicion: celdaEnEdicion
+      })
+      return
+    }
+    
+    // Para otros campos, ejecutar guardado directo
+    await ejecutarGuardadoReal(celdaEnEdicion)
   }
 
   const manejarKeyDown = (event: React.KeyboardEvent) => {
@@ -460,22 +501,16 @@ export function VistaCashFlow() {
       }
     })()
 
-    // Verificar si es editable para este origen específico
-    const esEditableParaOrigen = columna.editable && !(
-      fila.origen === 'TEMPLATE' && (columna.key === 'categ' || columna.key === 'centro_costo')
-    )
-
     return (
       <div 
         className={`
           ${columna.width} 
           ${columna.align || ''} 
-          ${esEditableParaOrigen ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'} 
-          ${esEditableParaOrigen ? 'border-l-2 border-l-transparent hover:border-l-blue-300' : ''}
-          ${!esEditableParaOrigen && columna.editable ? 'opacity-60' : ''}
+          ${columna.editable ? 'cursor-pointer hover:bg-blue-50' : 'cursor-default'} 
+          ${columna.editable ? 'border-l-2 border-l-transparent hover:border-l-blue-300' : ''}
           truncate p-1 transition-colors
         `}
-        title={`${valor || '-'}${esEditableParaOrigen ? ' (Ctrl+Click para editar)' : columna.editable ? ' (No editable para templates)' : ''}`}
+        title={`${valor || '-'}${columna.editable ? ' (Ctrl+Click para editar)' : ''}`}
         onClick={(e) => iniciarEdicion(fila, columna, e)}
       >
         {columna.editable && (
@@ -831,6 +866,14 @@ export function VistaCashFlow() {
           </div>
         </div>
       )}
+
+      {/* Modal validación de categ */}
+      <ModalValidarCateg
+        isOpen={validandoCateg.isOpen}
+        categIngresado={validandoCateg.categIngresado}
+        onConfirm={confirmarCateg}
+        onCancel={cancelarValidacionCateg}
+      />
     </div>
   )
 }
