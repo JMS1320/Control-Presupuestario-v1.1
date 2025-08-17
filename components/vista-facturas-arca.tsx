@@ -58,9 +58,9 @@ const COLUMNAS_CONFIG = {
   tipo_comprobante: { label: "Tipo Comp.", visible: true, width: "100px" },
   punto_venta: { label: "Punto Venta", visible: true, width: "120px" },
   numero_desde: { label: "Número Desde", visible: true, width: "140px" },
-  numero_hasta: { label: "Número Hasta", visible: true, width: "140px" },
-  codigo_autorizacion: { label: "Cód. Autorización", visible: true, width: "160px" },
-  tipo_doc_emisor: { label: "Tipo Doc.", visible: true, width: "100px" },
+  numero_hasta: { label: "Número Hasta", visible: false, width: "140px" },
+  codigo_autorizacion: { label: "Cód. Autorización", visible: false, width: "160px" },
+  tipo_doc_emisor: { label: "Tipo Doc.", visible: false, width: "100px" },
   cuit: { label: "CUIT", visible: true, width: "120px" },
   denominacion_emisor: { label: "Proveedor", visible: true, width: "200px" },
   tipo_cambio: { label: "Tipo Cambio", visible: true, width: "120px" },
@@ -80,13 +80,13 @@ const COLUMNAS_CONFIG = {
   estado: { label: "Estado", visible: true, width: "100px" },
   observaciones_pago: { label: "Obs. Pago", visible: true, width: "150px" },
   detalle: { label: "Detalle", visible: true, width: "150px" },
-  archivo_origen: { label: "Archivo Origen", visible: true, width: "200px" },
-  fecha_importacion: { label: "Fecha Importación", visible: true, width: "150px" },
-  fecha_modificacion: { label: "Fecha Modificación", visible: true, width: "150px" },
+  archivo_origen: { label: "Archivo Origen", visible: false, width: "200px" },
+  fecha_importacion: { label: "Fecha Importación", visible: false, width: "150px" },
+  fecha_modificacion: { label: "Fecha Modificación", visible: false, width: "150px" },
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
-  created_at: { label: "Created At", visible: true, width: "150px" }
+  created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
 export function VistaFacturasArca() {

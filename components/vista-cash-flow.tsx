@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X } from "lucide-react"
 import { toast } from "sonner"
 
@@ -53,7 +55,15 @@ export function VistaCashFlow() {
   // Estado para cambio de estado (Shift+Click en débitos/créditos)
   const [filaParaCambioEstado, setFilaParaCambioEstado] = useState<CashFlowRow | null>(null)
   
-  const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro } = useMultiCashFlowData(filtros)
+  // Estado para modo PAGOS (Ctrl+Click botón PAGOS)
+  const [modoPagos, setModoPagos] = useState(false)
+  const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
+  const [tipoActualizacionLote, setTipoActualizacionLote] = useState<'fecha_vencimiento' | 'estado'>('estado')
+  const [valorFechaLote, setValorFechaLote] = useState('')
+  const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
+  const [procesandoLote, setProcesandoLote] = useState(false)
+  
+  const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
 
   // Formatear moneda argentina
   const formatearMoneda = (valor: number): string => {
@@ -225,6 +235,87 @@ export function VistaCashFlow() {
     }
   }
 
+  // Funciones para modo PAGOS
+  const activarModoPagos = (event: React.MouseEvent) => {
+    if (!event.ctrlKey) return
+    event.preventDefault()
+    setModoPagos(true)
+    setFilasSeleccionadas(new Set())
+    toast.success("Modo PAGOS activado. Selecciona filas con checkboxes")
+  }
+
+  const desactivarModoPagos = () => {
+    setModoPagos(false)
+    setFilasSeleccionadas(new Set())
+    setValorFechaLote('')
+    setValorEstadoLote('pagado')
+  }
+
+  const toggleFilaSeleccionada = (filaId: string) => {
+    setFilasSeleccionadas(prev => {
+      const nueva = new Set(prev)
+      if (nueva.has(filaId)) {
+        nueva.delete(filaId)
+      } else {
+        nueva.add(filaId)
+      }
+      return nueva
+    })
+  }
+
+  const aplicarCambiosLote = async () => {
+    if (filasSeleccionadas.size === 0) {
+      toast.error("Selecciona al menos una fila")
+      return
+    }
+
+    if (tipoActualizacionLote === 'fecha_vencimiento' && !valorFechaLote) {
+      toast.error("Ingresa una fecha válida")
+      return
+    }
+
+    setProcesandoLote(true)
+
+    try {
+      // Preparar actualizaciones para todas las filas seleccionadas
+      const actualizaciones = Array.from(filasSeleccionadas).map(filaId => {
+        const fila = data.find(f => f.id === filaId)!
+        
+        // Determinar campo real en BD según origen
+        let campoReal = tipoActualizacionLote
+        if (fila.origen === 'ARCA' && tipoActualizacionLote === 'fecha_vencimiento') {
+          // Para ARCA, fecha_vencimiento se guarda tal cual
+          campoReal = 'fecha_vencimiento'
+        } else if (fila.origen === 'TEMPLATE' && tipoActualizacionLote === 'fecha_vencimiento') {
+          // Para TEMPLATE, fecha_vencimiento también se guarda tal cual
+          campoReal = 'fecha_vencimiento'
+        }
+        // Para estado, ambos usan 'estado'
+
+        return {
+          id: filaId,
+          origen: fila.origen,
+          campo: campoReal,
+          valor: tipoActualizacionLote === 'fecha_vencimiento' ? valorFechaLote : valorEstadoLote
+        }
+      })
+
+      const exito = await actualizarBatch(actualizaciones)
+
+      if (exito) {
+        toast.success(`${filasSeleccionadas.size} registros actualizados correctamente`)
+        desactivarModoPagos()
+      } else {
+        toast.error('Error al aplicar cambios por lote')
+      }
+    } catch (error) {
+      console.error('Error en aplicarCambiosLote:', error)
+      toast.error('Error al aplicar cambios por lote')
+    } finally {
+      setProcesandoLote(false)
+    }
+  }
+
   // Renderizar celda según tipo (con soporte para edición inline)
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
@@ -308,9 +399,18 @@ export function VistaCashFlow() {
           return formatearFecha(valor as string)
         
         case 'currency':
-          const esNegativo = (valor as number) < 0
+          // Colorización según estado para débitos/créditos
+          let colorClase = 'text-black' // Por defecto números negros
+          if (columna.key === 'debitos') {
+            if (fila.estado === 'pagado') {
+              colorClase = 'text-white bg-green-600 px-2 py-1 rounded'
+            } else if (fila.estado === 'pagar') {
+              colorClase = 'text-black bg-yellow-300 px-2 py-1 rounded'
+            }
+          }
+          
           return (
-            <span className={`font-mono ${esNegativo ? 'text-red-600' : 'text-green-600'}`}>
+            <span className={`font-mono ${colorClase}`}>
               {formatearMoneda(valor as number)}
             </span>
           )
@@ -452,6 +552,15 @@ export function VistaCashFlow() {
                 Filtros
               </Button>
               <Button 
+                variant={modoPagos ? "default" : "outline"}
+                size="sm"
+                onClick={modoPagos ? desactivarModoPagos : activarModoPagos}
+                title="Ctrl+Click para activar modo PAGOS"
+              >
+                <Receipt className="h-4 w-4 mr-2" />
+                {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
+              </Button>
+              <Button 
                 variant="outline" 
                 size="sm"
                 onClick={cargarDatos}
@@ -474,6 +583,81 @@ export function VistaCashFlow() {
             </div>
           )}
 
+          {/* Panel modo PAGOS */}
+          {modoPagos && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-blue-800">
+                    💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas
+                  </h4>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  {/* Selector tipo de actualización */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="cambiar-fecha"
+                      checked={tipoActualizacionLote === 'fecha_vencimiento'}
+                      onCheckedChange={(checked) => setTipoActualizacionLote(checked ? 'fecha_vencimiento' : 'estado')}
+                    />
+                    <Label htmlFor="cambiar-fecha">Cambiar fecha vencimiento</Label>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="cambiar-estado"
+                      checked={tipoActualizacionLote === 'estado'}
+                      onCheckedChange={(checked) => setTipoActualizacionLote(checked ? 'estado' : 'fecha_vencimiento')}
+                    />
+                    <Label htmlFor="cambiar-estado">Cambiar estado</Label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Input según tipo seleccionado */}
+                  {tipoActualizacionLote === 'fecha_vencimiento' ? (
+                    <Input
+                      type="date"
+                      value={valorFechaLote}
+                      onChange={(e) => setValorFechaLote(e.target.value)}
+                      placeholder="Nueva fecha vencimiento"
+                      className="w-48"
+                    />
+                  ) : (
+                    <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ESTADOS_DISPONIBLES.map((estado) => (
+                          <SelectItem key={estado.value} value={estado.value}>
+                            {estado.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  <Button
+                    onClick={aplicarCambiosLote}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {procesandoLote ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Aplicando...
+                      </>
+                    ) : (
+                      `Aplicar a ${filasSeleccionadas.size} filas`
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
@@ -481,6 +665,13 @@ export function VistaCashFlow() {
                 {/* Header */}
                 <thead className="bg-gray-50 border-b">
                   <tr>
+                    {/* Columna checkbox solo en modo PAGOS */}
+                    {modoPagos && (
+                      <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                        Sel.
+                      </th>
+                    )}
+                    
                     {columnasDefinicion.map((col) => (
                       <th 
                         key={col.key} 
@@ -496,7 +687,7 @@ export function VistaCashFlow() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {data.length === 0 ? (
                     <tr>
-                      <td colSpan={columnasDefinicion.length} className="p-8 text-center text-gray-500">
+                      <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         No hay datos para mostrar en Cash Flow
                         <br />
                         <span className="text-xs">
@@ -508,8 +699,18 @@ export function VistaCashFlow() {
                     data.map((fila, index) => (
                       <tr 
                         key={fila.id} 
-                        className={`group hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}
+                        className={`group hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'} ${filasSeleccionadas.has(fila.id) ? 'bg-blue-50' : ''}`}
                       >
+                        {/* Checkbox solo en modo PAGOS */}
+                        {modoPagos && (
+                          <td className="p-3 text-center">
+                            <Checkbox
+                              checked={filasSeleccionadas.has(fila.id)}
+                              onCheckedChange={() => toggleFilaSeleccionada(fila.id)}
+                            />
+                          </td>
+                        )}
+                        
                         {/* Columnas de datos */}
                         {columnasDefinicion.map((col) => (
                           <td key={col.key} className="p-3 text-sm">
@@ -529,7 +730,7 @@ export function VistaCashFlow() {
             <div className="mt-4 text-sm text-gray-500 text-center">
               Mostrando {data.length} registros ordenados por fecha estimada
               <br />
-              💡 PASO 4 ✅ Edición Ctrl+Click activa | PASO 5 🔄 Próximo: modo PAGOS
+              💡 PASO 4 ✅ Edición Ctrl+Click | PASO 5 ✅ Modo PAGOS Ctrl+Click | Estados: 🟢 pagado, 🟡 pagar
             </div>
           )}
         </CardContent>
