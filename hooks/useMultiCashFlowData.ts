@@ -56,7 +56,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       cuit_proveedor: f.cuit || '',
       nombre_proveedor: f.denominacion_emisor || '',
       detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
-      debitos: f.imp_total || 0, // Cash Flow muestra monto original de factura
+      debitos: f.monto_a_abonar || f.imp_total || 0, // Cash Flow muestra monto a abonar (editable)
       creditos: 0, // Las facturas ARCA son siempre débitos
       saldo_cta_cte: 0, // Se calcula después
       estado: f.estado || 'pendiente'

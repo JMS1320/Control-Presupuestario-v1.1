@@ -51,13 +51,31 @@ function convertirFecha(valor: string): string | null {
 }
 
 /**
+ * Calcula fecha estimada (fecha_emision + 15 días)
+ */
+function calcularFechaEstimada(fechaEmision: string | null): string | null {
+  if (!fechaEmision) return null
+  
+  try {
+    const fecha = new Date(fechaEmision)
+    fecha.setDate(fecha.getDate() + 15)
+    return fecha.toISOString().split('T')[0] // Formato YYYY-MM-DD
+  } catch {
+    return null
+  }
+}
+
+/**
  * Mapea una fila del CSV de ARCA a la estructura de la base de datos
  * Convierte los 17 campos del CSV a los campos de la tabla
  */
 function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
+  const fechaEmision = convertirFecha(fila["Fecha de Emisión"])
+  const impTotal = convertirNumeroArgentino(fila["Imp. Total"])
+  
   return {
     // Datos originales de ARCA (convertidos apropiadamente)
-    fecha_emision: convertirFecha(fila["Fecha de Emisión"]),
+    fecha_emision: fechaEmision,
     tipo_comprobante: parseInt(fila["Tipo de Comprobante"]) || 0,
     punto_venta: parseInt(fila["Punto de Venta"]) || null,
     numero_desde: parseInt(fila["Número Desde"]) || null,
@@ -73,7 +91,11 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     imp_op_exentas: convertirNumeroArgentino(fila["Imp. Op. Exentas"]),
     otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
     iva: convertirNumeroArgentino(fila["IVA"]),
-    imp_total: convertirNumeroArgentino(fila["Imp. Total"]),
+    imp_total: impTotal,
+    
+    // Campos calculados automáticamente para Cash Flow
+    fecha_estimada: calcularFechaEstimada(fechaEmision),
+    monto_a_abonar: impTotal, // Inicialmente igual al importe total
     
     // Campos adicionales con valores por defecto
     campana: null,
