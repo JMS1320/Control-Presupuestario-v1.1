@@ -221,6 +221,7 @@ export async function POST(req: Request) {
         centro_de_costo: cleanString(fila["Centro de Costo"]),
         cuenta: cleanString(fila["Cuenta"]) || "MSA Galicia",
         orden: nextOrden,
+        estado: "Pendiente", // Todos los movimientos importados inician como pendientes
       }
 
       rowsParaInsertar.push(filaInsert)

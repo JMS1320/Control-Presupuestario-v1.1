@@ -49,6 +49,24 @@ Código/configuraciones para replicar en expansiones
 **Replicable**: ✅ Sí - Patrón para cualquier MCP en Windows
 **Tags**: `mcp`, `windows`, `supabase`, `configuración`
 
+## Deploy Production - Eliminación ARCA del Repo - FUNCIONAL (2025-08-17)
+**Contexto**: Error build Vercel por dependencia `fast-xml-parser` en archivos ARCA no subidos
+**Problema**: Vercel intentaba compilar `arca-integration/` y `app/api/arca/` pero faltaba dependencia
+**Resultado**: ✅ ÉXITO - Build limpio sin archivos ARCA
+**Solución aplicada**:
+1. `git rm -r arca-integration/` - Eliminar carpeta completa ARCA
+2. `git rm -r app/api/arca/` - Eliminar APIs ARCA
+3. Agregar a `.gitignore`: `arca-integration/` y `app/api/arca/`
+4. Commit + push → Auto-deploy Vercel exitoso
+**Ventajas confirmadas**:
+- ✅ Archivos ARCA permanecen en desarrollo local
+- ✅ Deploy production sin dependencias innecesarias
+- ✅ Eliminación superficie ataque seguridad (certificados privados)
+- ✅ Build más rápido y limpio
+**Flujo recomendado**: Desarrollo ARCA local → Decisión futura si subir a repo separado
+**Replicable**: ✅ Sí - Patrón para cualquier integración sensible/en desarrollo
+**Tags**: `deploy`, `vercel`, `security`, `arca`, `gitignore`, `production`
+
 ---
 
 # ❌ **MÉTODOS DESCARTADOS**

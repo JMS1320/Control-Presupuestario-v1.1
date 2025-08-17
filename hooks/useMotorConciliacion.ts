@@ -49,7 +49,10 @@ export function useMotorConciliacion() {
       
       // Si es PAM, usar schema específico
       if (cuenta.empresa === 'PAM') {
-        query = supabase.schema('pam').from('galicia').select('*')
+        query = supabase.schema('pam').from('galicia').select('*').eq('estado', 'Pendiente')
+      } else {
+        // Para MSA, filtrar solo movimientos pendientes
+        query = query.eq('estado', 'Pendiente')
       }
       
       const { data, error } = await query.order('fecha', { ascending: true })
@@ -211,11 +214,12 @@ export function useMotorConciliacion() {
               detalle_asignado: matchCF.cashFlowRow.detalle
             }
 
-            // Actualizar BD con datos del Cash Flow
+            // Actualizar BD con datos del Cash Flow y marcar como conciliado
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
               centro_costo: matchCF.cashFlowRow.centro_costo,
-              detalle: matchCF.cashFlowRow.detalle
+              detalle: matchCF.cashFlowRow.detalle,
+              estado: 'Conciliado'
             })
 
             if (matchCF.requiere_revision) {
@@ -242,11 +246,12 @@ export function useMotorConciliacion() {
                 detalle_asignado: regla.detalle
               }
 
-              // Actualizar BD con datos de la regla
+              // Actualizar BD con datos de la regla y marcar como conciliado
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
                 centro_costo: regla.centro_costo,
-                detalle: regla.detalle
+                detalle: regla.detalle,
+                estado: 'Conciliado'
               })
 
               resultadosProceso.automaticos++

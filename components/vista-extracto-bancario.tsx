@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
 import { 
   Banknote, 
   Settings, 
@@ -21,13 +23,17 @@ import {
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
+import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'Conciliado' | 'Pendiente'>('Todos')
+  const [busqueda, setBusqueda] = useState("")
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
+  const { movimientos, estadisticas, loading, cargarMovimientos, recargar } = useMovimientosBancarios()
 
   // Iniciar proceso de conciliación
   const iniciarConciliacion = () => {
@@ -52,9 +58,28 @@ export function VistaExtractoBancario() {
     
     try {
       await ejecutarConciliacion(cuenta)
+      // Recargar movimientos después de conciliación
+      recargar()
     } catch (error) {
       console.error('Error en conciliación:', error)
     }
+  }
+
+  // Aplicar filtros
+  const aplicarFiltros = () => {
+    cargarMovimientos({
+      estado: filtroEstado,
+      busqueda: busqueda.trim() || undefined,
+      limite: 200
+    })
+  }
+
+  // Formatear moneda
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS'
+    }).format(amount)
   }
 
   return (
@@ -186,7 +211,7 @@ export function VistaExtractoBancario() {
           <div className="grid grid-cols-4 gap-4">
             <Card>
               <CardContent className="pt-6">
-                <div className="text-2xl font-bold">156</div>
+                <div className="text-2xl font-bold">{estadisticas.total}</div>
                 <p className="text-xs text-gray-600 flex items-center gap-1">
                   <FileSpreadsheet className="h-3 w-3" />
                   Total Movimientos
@@ -195,7 +220,7 @@ export function VistaExtractoBancario() {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-green-600">124</div>
+                <div className="text-2xl font-bold text-green-600">{estadisticas.conciliados}</div>
                 <p className="text-xs text-gray-600 flex items-center gap-1">
                   <CheckCircle className="h-3 w-3" />
                   Conciliados
@@ -204,7 +229,7 @@ export function VistaExtractoBancario() {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-yellow-600">18</div>
+                <div className="text-2xl font-bold text-yellow-600">{estadisticas.pendientes}</div>
                 <p className="text-xs text-gray-600 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   Pendientes
@@ -213,28 +238,119 @@ export function VistaExtractoBancario() {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-red-600">14</div>
+                <div className="text-2xl font-bold text-red-600">{estadisticas.sin_categ}</div>
                 <p className="text-xs text-gray-600 flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
-                  Sin Match
+                  Sin CATEG
                 </p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Tabla de Movimientos (simulada) */}
+          {/* Filtros */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex gap-4 items-center">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Buscar por descripción..."
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
+                  />
+                </div>
+                <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Todos">Todos los estados</SelectItem>
+                    <SelectItem value="Conciliado">Conciliados</SelectItem>
+                    <SelectItem value="Pendiente">Pendientes</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={aplicarFiltros} variant="outline">
+                  Filtrar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Tabla de Movimientos */}
           <Card>
             <CardHeader>
               <CardTitle>Movimientos Bancarios</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-lg mb-2">No hay datos de extracto bancario</p>
-                <p className="text-sm">
-                  Importa un extracto bancario para visualizar los movimientos y ejecutar la conciliación automática.
-                </p>
-              </div>
+              {loading ? (
+                <div className="text-center text-gray-500 py-8">
+                  <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
+                  <p>Cargando movimientos...</p>
+                </div>
+              ) : movimientos.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">
+                  <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p className="text-lg mb-2">No se encontraron movimientos</p>
+                  <p className="text-sm">
+                    Ajusta los filtros o importa datos de extracto bancario.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Descripción</TableHead>
+                        <TableHead className="text-right">Débitos</TableHead>
+                        <TableHead className="text-right">Créditos</TableHead>
+                        <TableHead className="text-right">Saldo</TableHead>
+                        <TableHead>CATEG</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Detalle</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {movimientos.map((movimiento) => (
+                        <TableRow key={movimiento.id}>
+                          <TableCell className="font-mono text-sm">
+                            {new Date(movimiento.fecha).toLocaleDateString('es-AR')}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {movimiento.descripcion}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {movimiento.debitos > 0 ? formatCurrency(movimiento.debitos) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(movimiento.saldo)}
+                          </TableCell>
+                          <TableCell>
+                            {movimiento.categ ? (
+                              <Badge variant={movimiento.categ.startsWith('INVALIDA:') ? 'destructive' : 'default'}>
+                                {movimiento.categ}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">Sin CATEG</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={movimiento.estado === 'Conciliado' ? 'default' : 'secondary'}>
+                              {movimiento.estado}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate text-sm text-gray-600">
+                            {movimiento.detalle || '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
