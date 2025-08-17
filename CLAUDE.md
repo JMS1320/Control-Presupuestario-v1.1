@@ -263,9 +263,18 @@ SUPABASE_SERVICE_ROLE_KEY=
 - Facturas ARCA MSA: importación, validación CUIT, vista gestión, anti-duplicados
 - Esquema `msa.comprobantes_arca` configurado
 
+## ✅ **Sistema Conciliación Bancaria Completo (2025-08-17)**
+- ✅ **Motor de conciliación**: Matching Cash Flow + reglas configurables
+- ✅ **UI completa**: Configurador reglas + selector multicuenta + resultados
+- ✅ **Base de datos**: Tabla `reglas_conciliacion` + 8 reglas ejemplo
+- ✅ **Multi-banco**: Soporte MSA/PAM Galicia + escalable
+- ✅ **Funcionalidades**: CRUD reglas + prioridades + matching inteligente
+
 ## ✅ **Testing Completado**
 - ✅ Anti-duplicados: constraint funciona perfectamente
 - ✅ Validación CUIT por nombre archivo: funcional
+- ✅ Build del proyecto: compila sin errores
+- ✅ Motor conciliación: arquitectura completa implementada
 - Constraint único: (tipo_comprobante, punto_venta, numero_desde, cuit)
 
 ---

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { 
   Banknote, 
   Settings, 
@@ -19,29 +20,41 @@ import {
   Clock
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
+import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 
 export function VistaExtractoBancario() {
-  const [procesoEnCurso, setProcesoEnCurso] = useState(false)
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
-  const [resultadoConciliacion, setResultadoConciliacion] = useState<any>(null)
+  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
+  const [selectorAbierto, setSelectorAbierto] = useState(false)
 
-  // Simulación del proceso de conciliación
-  const ejecutarConciliacion = async () => {
-    setProcesoEnCurso(true)
+  const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
+
+  // Iniciar proceso de conciliación
+  const iniciarConciliacion = () => {
+    if (!cuentaSeleccionada) {
+      setSelectorAbierto(true)
+      return
+    }
     
-    // Simular proceso
-    await new Promise(resolve => setTimeout(resolve, 3000))
+    const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
+    if (cuenta) {
+      ejecutarConciliacion(cuenta)
+    }
+  }
+
+  // Ejecutar conciliación con cuenta seleccionada
+  const ejecutarConCuenta = async (cuentaId: string) => {
+    const cuenta = cuentasDisponibles.find(c => c.id === cuentaId)
+    if (!cuenta) return
     
-    // Simular resultados
-    setResultadoConciliacion({
-      total_movimientos: 45,
-      automaticos: 32,
-      revision_manual: 8,
-      sin_match: 5,
-      tiempo_proceso: "2.3s"
-    })
+    setCuentaSeleccionada(cuentaId)
+    setSelectorAbierto(false)
     
-    setProcesoEnCurso(false)
+    try {
+      await ejecutarConciliacion(cuenta)
+    } catch (error) {
+      console.error('Error en conciliación:', error)
+    }
   }
 
   return (
@@ -51,7 +64,12 @@ export function VistaExtractoBancario() {
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Banknote className="h-6 w-6" />
-            Extracto Bancario MSA Galicia
+            Extracto Bancario
+            {cuentaSeleccionada && (
+              <Badge variant="outline" className="ml-2">
+                {cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre}
+              </Badge>
+            )}
           </h2>
           <p className="text-gray-600">Conciliación automática de movimientos bancarios</p>
         </div>
@@ -67,7 +85,7 @@ export function VistaExtractoBancario() {
           </Button>
           
           <Button 
-            onClick={ejecutarConciliacion}
+            onClick={iniciarConciliacion}
             disabled={procesoEnCurso}
             className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
           >
@@ -96,8 +114,18 @@ export function VistaExtractoBancario() {
         </Alert>
       )}
 
+      {/* Error del Proceso */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Error en conciliación: {error}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Resultados del Proceso */}
-      {resultadoConciliacion && (
+      {resultados && (
         <Card className="border-green-200 bg-green-50">
           <CardHeader>
             <CardTitle className="text-green-800 flex items-center gap-2">
@@ -109,27 +137,27 @@ export function VistaExtractoBancario() {
             <div className="grid grid-cols-4 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
-                  {resultadoConciliacion.automaticos}
+                  {resultados.automaticos}
                 </div>
                 <div className="text-sm text-gray-600">Automáticos</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-yellow-600">
-                  {resultadoConciliacion.revision_manual}
+                  {resultados.revision_manual}
                 </div>
                 <div className="text-sm text-gray-600">Revisión Manual</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
-                  {resultadoConciliacion.sin_match}
+                  {resultados.sin_match}
                 </div>
                 <div className="text-sm text-gray-600">Sin Match</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {resultadoConciliacion.tiempo_proceso}
+                <div className="text-2xl font-bold text-gray-600">
+                  {resultados.total_movimientos}
                 </div>
-                <div className="text-sm text-gray-600">Tiempo</div>
+                <div className="text-sm text-gray-600">Total</div>
               </div>
             </div>
           </CardContent>
@@ -257,6 +285,38 @@ export function VistaExtractoBancario() {
             <DialogTitle>Configuración de Reglas de Conciliación</DialogTitle>
           </DialogHeader>
           <ConfiguradorReglas />
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Selector de Cuenta */}
+      <Dialog open={selectorAbierto} onOpenChange={setSelectorAbierto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Seleccionar Cuenta Bancaria</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Selecciona la cuenta bancaria que deseas conciliar:
+            </p>
+            <div className="space-y-2">
+              {cuentasDisponibles.map((cuenta) => (
+                <Button
+                  key={cuenta.id}
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => ejecutarConCuenta(cuenta.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <Banknote className="h-4 w-4" />
+                    <div className="text-left">
+                      <div className="font-medium">{cuenta.nombre}</div>
+                      <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                    </div>
+                  </div>
+                </Button>
+              ))}
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

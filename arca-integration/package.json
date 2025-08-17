@@ -1,0 +1,25 @@
+{
+  "name": "arca-integration",
+  "version": "1.0.0",
+  "description": "Integración con Web Services oficiales de ARCA",
+  "private": true,
+  "dependencies": {
+    "fast-xml-parser": "^5.2.5"
+  },
+  "scripts": {
+    "generate-certs": "cd scripts && ./generate-certs.sh",
+    "test-connection": "cd scripts && node test-connection.js",
+    "install-deps": "npm install"
+  },
+  "keywords": [
+    "arca",
+    "afip", 
+    "argentina",
+    "facturacion",
+    "web-services",
+    "wsaa",
+    "wsfe"
+  ],
+  "author": "Control Presupuestario",
+  "license": "UNLICENSED"
+}
