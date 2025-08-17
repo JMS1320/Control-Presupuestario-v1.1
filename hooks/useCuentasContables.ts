@@ -84,7 +84,12 @@ export function useCuentasContables() {
     tipo: string
   ): Promise<boolean> => {
     try {
-      const { error } = await supabase
+      console.log('🔍 DEBUG crearCuentaContable:')
+      console.log('- categ:', categ)
+      console.log('- cuenta_contable:', cuenta_contable)
+      console.log('- tipo:', tipo)
+      
+      const { data, error } = await supabase
         .from('cuentas_contables')
         .insert({
           categ: categ.toUpperCase(),
@@ -92,19 +97,22 @@ export function useCuentasContables() {
           tipo,
           activo: true
         })
+        .select()
 
       if (error) {
-        console.error('Error creando cuenta contable:', error)
+        console.error('❌ Error creando cuenta contable:', error)
         setError(`Error al crear cuenta: ${error.message}`)
         return false
       }
+
+      console.log('✅ Cuenta creada exitosamente:', data)
 
       // Recargar cuentas después de crear
       await cargarCuentas()
       return true
 
     } catch (error) {
-      console.error('Error inesperado creando cuenta:', error)
+      console.error('❌ Error inesperado creando cuenta:', error)
       setError('Error inesperado al crear la cuenta contable')
       return false
     }
