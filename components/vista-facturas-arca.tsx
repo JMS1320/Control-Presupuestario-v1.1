@@ -45,14 +45,14 @@ interface FacturaArca {
   created_at: string
 }
 
-// Configuración de columnas disponibles - TODAS VISIBLES por defecto EXCEPTO las 2 especificadas  
+// Configuración de columnas disponibles - TODAS VISIBLES por defecto  
 const COLUMNAS_CONFIG = {
   fecha_emision: { label: "Fecha Emisión", visible: true, width: "120px" },
   tipo_comprobante: { label: "Tipo Comp.", visible: true, width: "100px" },
   punto_venta: { label: "Punto Venta", visible: true, width: "120px" },
   numero_desde: { label: "Número Desde", visible: true, width: "140px" },
-  numero_hasta: { label: "Número Hasta", visible: false, width: "140px" }, // OCULTA por defecto
-  codigo_autorizacion: { label: "Cód. Autorización", visible: false, width: "160px" }, // OCULTA por defecto
+  numero_hasta: { label: "Número Hasta", visible: true, width: "140px" },
+  codigo_autorizacion: { label: "Cód. Autorización", visible: true, width: "160px" },
   tipo_doc_emisor: { label: "Tipo Doc.", visible: true, width: "100px" },
   cuit: { label: "CUIT", visible: true, width: "120px" },
   denominacion_emisor: { label: "Proveedor", visible: true, width: "200px" },
