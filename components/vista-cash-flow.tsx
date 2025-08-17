@@ -119,6 +119,8 @@ export function VistaCashFlow() {
         // Mapeo para facturas ARCA
         if (celdaEnEdicion.columna === 'debitos') {
           campoReal = 'monto_a_abonar' // Permite editar monto a pagar diferente al original
+        } else if (celdaEnEdicion.columna === 'categ') {
+          campoReal = 'cuenta_contable' // En ARCA, 'categ' se guarda como 'cuenta_contable'
         }
         // Para ARCA, los demás campos coinciden: detalle, fecha_estimada, fecha_vencimiento, etc.
       } else if (filaOriginal.origen === 'TEMPLATE') {
