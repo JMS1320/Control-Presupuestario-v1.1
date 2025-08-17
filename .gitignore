@@ -50,3 +50,7 @@ Thumbs.db
 # MCP local config
 .claude/
 .mcp.json
+
+# ARCA Integration (desarrollo local únicamente)
+arca-integration/
+app/api/arca/
