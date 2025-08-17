@@ -59,7 +59,7 @@ export function VistaCashFlow() {
   const [modoPagos, setModoPagos] = useState(false)
   const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
   const [cambiarFechaVenc, setCambiarFechaVenc] = useState(false)
-  const [cambiarEstado, setCambiarEstado] = useState(true)
+  const [cambiarEstadoLote, setCambiarEstadoLote] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
@@ -249,7 +249,7 @@ export function VistaCashFlow() {
     setModoPagos(false)
     setFilasSeleccionadas(new Set())
     setCambiarFechaVenc(false)
-    setCambiarEstado(true)
+    setCambiarEstadoLote(true)
     setValorFechaLote('')
     setValorEstadoLote('pagado')
   }
@@ -272,7 +272,7 @@ export function VistaCashFlow() {
       return
     }
 
-    if (!cambiarFechaVenc && !cambiarEstado) {
+    if (!cambiarFechaVenc && !cambiarEstadoLote) {
       toast.error("Selecciona al menos una opción: fecha vencimiento o estado")
       return
     }
@@ -310,7 +310,7 @@ export function VistaCashFlow() {
         }
         
         // Si cambiar estado
-        if (cambiarEstado) {
+        if (cambiarEstadoLote) {
           actualizaciones.push({
             id: filaId,
             origen: fila.origen,
@@ -325,7 +325,7 @@ export function VistaCashFlow() {
       if (exito) {
         const cambiosTexto = []
         if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
-        if (cambiarEstado) cambiosTexto.push('estado')
+        if (cambiarEstadoLote) cambiosTexto.push('estado')
         
         toast.success(`${filasSeleccionadas.size} registros actualizados: ${cambiosTexto.join(' y ')}`)
         desactivarModoPagos()
@@ -631,8 +631,8 @@ export function VistaCashFlow() {
                   <div className="flex items-center gap-2">
                     <Checkbox
                       id="cambiar-estado"
-                      checked={cambiarEstado}
-                      onCheckedChange={setCambiarEstado}
+                      checked={cambiarEstadoLote}
+                      onCheckedChange={setCambiarEstadoLote}
                     />
                     <Label htmlFor="cambiar-estado">Cambiar estado</Label>
                   </div>
@@ -653,7 +653,7 @@ export function VistaCashFlow() {
                     </div>
                   )}
                   
-                  {cambiarEstado && (
+                  {cambiarEstadoLote && (
                     <div className="flex items-center gap-2">
                       <Label className="text-sm">Estado:</Label>
                       <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
@@ -673,7 +673,7 @@ export function VistaCashFlow() {
 
                   <Button
                     onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstado)}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {procesandoLote ? (
