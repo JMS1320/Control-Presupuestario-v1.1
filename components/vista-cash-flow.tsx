@@ -61,11 +61,14 @@ export function VistaCashFlow() {
     }).format(valor)
   }
 
-  // Formatear fecha
+  // Formatear fecha (evitar problemas de zona horaria)
   const formatearFecha = (fecha: string | null): string => {
     if (!fecha) return '-'
     try {
-      return new Date(fecha).toLocaleDateString('es-AR')
+      // Parsear fecha como local para evitar conversión UTC que resta 1 día
+      const [year, month, day] = fecha.split('-')
+      const fechaLocal = new Date(parseInt(year), parseInt(month) - 1, parseInt(day))
+      return fechaLocal.toLocaleDateString('es-AR')
     } catch {
       return fecha
     }
