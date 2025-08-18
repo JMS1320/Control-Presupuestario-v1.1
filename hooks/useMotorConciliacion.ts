@@ -135,10 +135,19 @@ export function useMotorConciliacion() {
       })
       
       if (match) {
+        const fechaCF = new Date(match.fecha_estimada)
+        const diferenciaMs = Math.abs(fechaMovimiento.getTime() - fechaCF.getTime())
+        const diferenciaDias = diferenciaMs / (1000 * 60 * 60 * 24)
+        
+        // Si es fecha exacta (0 días) → Conciliado automático
+        // Si es fecha no exacta pero ≤5 días → Auditar
+        const fechaExacta = diferenciaDias === 0
+        
         return {
           match: true,
           cashFlowRow: match,
-          requiere_revision: false
+          requiere_revision: !fechaExacta,
+          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
         }
       }
     }
@@ -156,10 +165,19 @@ export function useMotorConciliacion() {
       })
       
       if (match) {
+        const fechaCF = new Date(match.fecha_estimada)
+        const diferenciaMs = Math.abs(fechaMovimiento.getTime() - fechaCF.getTime())
+        const diferenciaDias = diferenciaMs / (1000 * 60 * 60 * 24)
+        
+        // Si es fecha exacta (0 días) → Conciliado automático
+        // Si es fecha no exacta pero ≤5 días → Auditar
+        const fechaExacta = diferenciaDias === 0
+        
         return {
           match: true,
           cashFlowRow: match,
-          requiere_revision: false
+          requiere_revision: !fechaExacta,
+          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
         }
       }
     }
@@ -214,12 +232,14 @@ export function useMotorConciliacion() {
               detalle_asignado: matchCF.cashFlowRow.detalle
             }
 
-            // Actualizar BD con datos del Cash Flow y marcar como conciliado
+            // Actualizar BD con datos del Cash Flow y estado según revisión
+            const estadoFinal = matchCF.requiere_revision ? 'Auditar' : 'Conciliado'
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
-              estado: 'Conciliado'
+              estado: estadoFinal,
+              motivo_revision: matchCF.motivo_revision
             })
 
             if (matchCF.requiere_revision) {

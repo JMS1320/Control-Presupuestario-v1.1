@@ -47,6 +47,7 @@ export interface MovimientoBancario {
   detalle?: string
   contable?: string
   interno?: string
+  motivo_revision?: string
 }
 
 export interface ResultadoConciliacion {

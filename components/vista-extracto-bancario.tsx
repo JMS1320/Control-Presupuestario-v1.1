@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Banknote, 
   Settings, 
@@ -19,7 +20,10 @@ import {
   RotateCcw,
   CheckCircle,
   AlertTriangle,
-  Clock
+  Clock,
+  Edit,
+  Save,
+  X
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -29,11 +33,20 @@ export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'Conciliado' | 'Pendiente'>('Todos')
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'Conciliado' | 'Pendiente' | 'Auditar'>('Todos')
+  const [modoEdicion, setModoEdicion] = useState(false)
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
+  const [editData, setEditData] = useState({
+    categ: '',
+    centro_de_costo: '',
+    estado: '',
+    contable: '',
+    interno: ''
+  })
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
-  const { movimientos, estadisticas, loading, cargarMovimientos, recargar } = useMovimientosBancarios()
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
 
   // Iniciar proceso de conciliación
   const iniciarConciliacion = () => {
@@ -80,6 +93,65 @@ export function VistaExtractoBancario() {
       style: 'currency',
       currency: 'ARS'
     }).format(amount)
+  }
+
+  // Manejar selección de movimientos
+  const toggleSeleccion = (id: string) => {
+    const nuevaSeleccion = new Set(seleccionados)
+    if (nuevaSeleccion.has(id)) {
+      nuevaSeleccion.delete(id)
+    } else {
+      nuevaSeleccion.add(id)
+    }
+    setSeleccionados(nuevaSeleccion)
+  }
+
+  // Seleccionar todos los movimientos visibles
+  const seleccionarTodos = () => {
+    if (seleccionados.size === movimientos.length) {
+      setSeleccionados(new Set())
+    } else {
+      setSeleccionados(new Set(movimientos.map(m => m.id)))
+    }
+  }
+
+  // Aplicar ediciones masivas
+  const aplicarEdicionMasiva = async () => {
+    if (seleccionados.size === 0) return
+    
+    try {
+      const ids = Array.from(seleccionados)
+      const exito = await actualizarMasivo(ids, editData)
+      
+      if (exito) {
+        // Resetear después de aplicar exitosamente
+        setSeleccionados(new Set())
+        setModoEdicion(false)
+        setEditData({
+          categ: '',
+          centro_de_costo: '',
+          estado: '',
+          contable: '',
+          interno: ''
+        })
+        recargar()
+      }
+    } catch (error) {
+      console.error('Error aplicando edición masiva:', error)
+    }
+  }
+
+  // Cancelar modo edición
+  const cancelarEdicion = () => {
+    setModoEdicion(false)
+    setSeleccionados(new Set())
+    setEditData({
+      categ: '',
+      centro_de_costo: '',
+      estado: '',
+      contable: '',
+      interno: ''
+    })
   }
 
   return (
@@ -208,7 +280,7 @@ export function VistaExtractoBancario() {
 
         <TabsContent value="movimientos" className="space-y-4">
           {/* Estadísticas */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">{estadisticas.total}</div>
@@ -224,6 +296,15 @@ export function VistaExtractoBancario() {
                 <p className="text-xs text-gray-600 flex items-center gap-1">
                   <CheckCircle className="h-3 w-3" />
                   Conciliados
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-orange-600">{estadisticas.auditar || 0}</div>
+                <p className="text-xs text-gray-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Para Auditar
                 </p>
               </CardContent>
             </Card>
@@ -267,14 +348,103 @@ export function VistaExtractoBancario() {
                     <SelectItem value="Todos">Todos los estados</SelectItem>
                     <SelectItem value="Conciliado">Conciliados</SelectItem>
                     <SelectItem value="Pendiente">Pendientes</SelectItem>
+                    <SelectItem value="Auditar">Para Auditar</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={aplicarFiltros} variant="outline">
                   Filtrar
                 </Button>
+                <Button 
+                  onClick={() => setModoEdicion(!modoEdicion)} 
+                  variant={modoEdicion ? "destructive" : "outline"}
+                  className="flex items-center gap-2"
+                >
+                  {modoEdicion ? (
+                    <>
+                      <X className="h-4 w-4" />
+                      Cancelar
+                    </>
+                  ) : (
+                    <>
+                      <Edit className="h-4 w-4" />
+                      Editar
+                    </>
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>
+
+          {/* Panel de Edición Masiva */}
+          {modoEdicion && seleccionados.size > 0 && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader>
+                <CardTitle className="text-blue-800 flex items-center gap-2">
+                  <Edit className="h-5 w-5" />
+                  Edición Masiva - {seleccionados.size} seleccionados
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-5 gap-4 mb-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">CATEG</label>
+                    <Input
+                      placeholder="Cuenta contable"
+                      value={editData.categ}
+                      onChange={(e) => setEditData({...editData, categ: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Centro de Costo</label>
+                    <Input
+                      placeholder="Centro de costo"
+                      value={editData.centro_de_costo}
+                      onChange={(e) => setEditData({...editData, centro_de_costo: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Estado</label>
+                    <Select value={editData.estado} onValueChange={(value) => setEditData({...editData, estado: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Conciliado">Conciliado</SelectItem>
+                        <SelectItem value="Auditar">Auditar</SelectItem>
+                        <SelectItem value="Pendiente">Pendiente</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Contable</label>
+                    <Input
+                      placeholder="Código contable"
+                      value={editData.contable}
+                      onChange={(e) => setEditData({...editData, contable: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Interno</label>
+                    <Input
+                      placeholder="Código interno"
+                      value={editData.interno}
+                      onChange={(e) => setEditData({...editData, interno: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={aplicarEdicionMasiva} className="bg-green-600 hover:bg-green-700">
+                    <Save className="h-4 w-4 mr-2" />
+                    Aplicar Cambios
+                  </Button>
+                  <Button onClick={cancelarEdicion} variant="outline">
+                    <X className="h-4 w-4 mr-2" />
+                    Cancelar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Tabla de Movimientos */}
           <Card>
@@ -300,6 +470,14 @@ export function VistaExtractoBancario() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {modoEdicion && (
+                          <TableHead className="w-12">
+                            <Checkbox
+                              checked={seleccionados.size === movimientos.length && movimientos.length > 0}
+                              onCheckedChange={seleccionarTodos}
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Fecha</TableHead>
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Débitos</TableHead>
@@ -308,11 +486,20 @@ export function VistaExtractoBancario() {
                         <TableHead>CATEG</TableHead>
                         <TableHead>Estado</TableHead>
                         <TableHead>Detalle</TableHead>
+                        <TableHead>Motivo Revisión</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {movimientos.map((movimiento) => (
                         <TableRow key={movimiento.id}>
+                          {modoEdicion && (
+                            <TableCell>
+                              <Checkbox
+                                checked={seleccionados.has(movimiento.id)}
+                                onCheckedChange={() => toggleSeleccion(movimiento.id)}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-mono text-sm">
                             {new Date(movimiento.fecha).toLocaleDateString('es-AR')}
                           </TableCell>
@@ -338,12 +525,19 @@ export function VistaExtractoBancario() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={movimiento.estado === 'Conciliado' ? 'default' : 'secondary'}>
+                            <Badge variant={
+                              movimiento.estado === 'Conciliado' ? 'default' : 
+                              movimiento.estado === 'Auditar' ? 'secondary' : 
+                              'outline'
+                            }>
                               {movimiento.estado}
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-xs truncate text-sm text-gray-600">
                             {movimiento.detalle || '-'}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate text-xs text-orange-600">
+                            {movimiento.motivo_revision || '-'}
                           </TableCell>
                         </TableRow>
                       ))}
