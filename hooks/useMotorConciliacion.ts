@@ -83,7 +83,7 @@ export function useMotorConciliacion() {
           break
         case 'cuit':
           // Buscar en diferentes campos que puedan contener CUIT
-          valorCampo = movimiento.numero_comprobante || movimiento.observaciones_cliente || ''
+          valorCampo = movimiento.numero_de_comprobante || movimiento.observaciones_cliente || ''
           break
         case 'monto_debito':
           valorCampo = String(movimiento.debitos || 0)
@@ -217,7 +217,7 @@ export function useMotorConciliacion() {
             // Actualizar BD con datos del Cash Flow y marcar como conciliado
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
-              centro_costo: matchCF.cashFlowRow.centro_costo,
+              centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
               estado: 'Conciliado'
             })
@@ -249,7 +249,7 @@ export function useMotorConciliacion() {
               // Actualizar BD con datos de la regla y marcar como conciliado
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
-                centro_costo: regla.centro_costo,
+                centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
                 estado: 'Conciliado'
               })

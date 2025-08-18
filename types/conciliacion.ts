@@ -32,7 +32,7 @@ export interface MovimientoBancario {
   concepto: string
   numero_terminal?: string
   observaciones_cliente?: string
-  numero_comprobante?: string
+  numero_de_comprobante?: string
   leyendas_adicionales1?: string
   leyendas_adicionales2?: string
   leyendas_adicionales3?: string
@@ -43,7 +43,7 @@ export interface MovimientoBancario {
   // Campos completados por conciliación
   control?: string
   categ?: string
-  centro_costo?: string
+  centro_de_costo?: string
   detalle?: string
   contable?: string
   interno?: string
