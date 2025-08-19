@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -91,8 +93,21 @@ const COLUMNAS_CONFIG = {
 
 export function VistaFacturasArca() {
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
+  const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Estados para filtros
+  const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+  const [busquedaProveedor, setBusquedaProveedor] = useState('')
+  const [busquedaCUIT, setBusquedaCUIT] = useState('')
+  const [busquedaDetalle, setBusquedaDetalle] = useState('')
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState('')
+  const [montoMinimo, setMontoMinimo] = useState('')
+  const [montoMaximo, setMontoMaximo] = useState('')
+  const [busquedaCateg, setBusquedaCateg] = useState('')
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -154,7 +169,9 @@ export function VistaFacturasArca() {
         return
       }
 
-      setFacturas(data || [])
+      const facturasCargadas = data || []
+      setFacturas(facturasCargadas)
+      setFacturasOriginales(facturasCargadas)
     } catch (error) {
       console.error('Error inesperado:', error)
       setError('Error inesperado al cargar las facturas')
@@ -190,6 +207,83 @@ export function VistaFacturasArca() {
       return fecha
     }
   }
+
+  // Funciones para filtros
+  const aplicarFiltros = () => {
+    let facturasFiltradas = [...facturasOriginales]
+    
+    // Filtro por fecha de emisión
+    if (fechaDesde) {
+      facturasFiltradas = facturasFiltradas.filter(f => f.fecha_emision >= fechaDesde)
+    }
+    if (fechaHasta) {
+      facturasFiltradas = facturasFiltradas.filter(f => f.fecha_emision <= fechaHasta)
+    }
+    
+    // Filtro por proveedor
+    if (busquedaProveedor.trim()) {
+      const busqueda = busquedaProveedor.toLowerCase()
+      facturasFiltradas = facturasFiltradas.filter(f => 
+        f.denominacion_emisor.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por CUIT
+    if (busquedaCUIT.trim()) {
+      facturasFiltradas = facturasFiltradas.filter(f => 
+        f.cuit.includes(busquedaCUIT)
+      )
+    }
+    
+    // Filtro por detalle
+    if (busquedaDetalle.trim()) {
+      const busqueda = busquedaDetalle.toLowerCase()
+      facturasFiltradas = facturasFiltradas.filter(f => 
+        f.detalle?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por estado
+    if (estadoSeleccionado) {
+      facturasFiltradas = facturasFiltradas.filter(f => f.estado === estadoSeleccionado)
+    }
+    
+    // Filtro por rango de montos
+    if (montoMinimo) {
+      const minimo = parseFloat(montoMinimo)
+      facturasFiltradas = facturasFiltradas.filter(f => f.imp_total >= minimo)
+    }
+    if (montoMaximo) {
+      const maximo = parseFloat(montoMaximo)
+      facturasFiltradas = facturasFiltradas.filter(f => f.imp_total <= maximo)
+    }
+    
+    // Filtro por cuenta contable (CATEG)
+    if (busquedaCateg.trim()) {
+      const busqueda = busquedaCateg.toLowerCase()
+      facturasFiltradas = facturasFiltradas.filter(f => 
+        f.cuenta_contable?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    setFacturas(facturasFiltradas)
+  }
+  
+  const limpiarFiltros = () => {
+    setFechaDesde('')
+    setFechaHasta('')
+    setBusquedaProveedor('')
+    setBusquedaCUIT('')
+    setBusquedaDetalle('')
+    setEstadoSeleccionado('')
+    setMontoMinimo('')
+    setMontoMaximo('')
+    setBusquedaCateg('')
+    setFacturas(facturasOriginales)
+  }
+  
+  // Obtener estados únicos para el selector
+  const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
 
   // Obtener columnas visibles
   const columnasVisiblesArray = Object.entries(columnasVisibles)
@@ -253,8 +347,18 @@ export function VistaFacturasArca() {
           </p>
         </div>
         
-        {/* Selector de columnas */}
-        <Popover>
+        <div className="flex gap-2">
+          {/* Botón de filtros */}
+          <Button 
+            variant={mostrarFiltros ? "default" : "outline"}
+            onClick={() => setMostrarFiltros(!mostrarFiltros)}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filtros
+          </Button>
+          
+          {/* Selector de columnas */}
+          <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline">
               <Settings2 className="mr-2 h-4 w-4" />
@@ -331,7 +435,166 @@ export function VistaFacturasArca() {
             </div>
           </PopoverContent>
         </Popover>
+        </div>
       </div>
+
+      {/* Panel de filtros */}
+      {mostrarFiltros && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                🔍 Filtros de Búsqueda
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMostrarFiltros(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              {/* Filtros de fecha */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📅 Rango de Fechas de Emisión</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    placeholder="Desde"
+                    value={fechaDesde}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    className="text-xs"
+                  />
+                  <Input
+                    type="date"
+                    placeholder="Hasta"
+                    value={fechaHasta}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Búsqueda de proveedor */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">🏢 Proveedor</Label>
+                <Input
+                  placeholder="Buscar por nombre proveedor..."
+                  value={busquedaProveedor}
+                  onChange={(e) => setBusquedaProveedor(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Búsqueda por CUIT */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">🆔 CUIT</Label>
+                <Input
+                  placeholder="Buscar por CUIT..."
+                  value={busquedaCUIT}
+                  onChange={(e) => setBusquedaCUIT(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Búsqueda por detalle */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📝 Detalle</Label>
+                <Input
+                  placeholder="Buscar en detalle..."
+                  value={busquedaDetalle}
+                  onChange={(e) => setBusquedaDetalle(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Selector de estado */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">⚡ Estado</Label>
+                <Select value={estadoSeleccionado} onValueChange={setEstadoSeleccionado}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos los estados</SelectItem>
+                    {estadosUnicos.map(estado => (
+                      <SelectItem key={estado} value={estado}>
+                        {estado}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Búsqueda por CATEG */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">💰 Cuenta Contable</Label>
+                <Input
+                  placeholder="Buscar por cuenta contable..."
+                  value={busquedaCateg}
+                  onChange={(e) => setBusquedaCateg(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Rango de montos */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">💵 Rango de Montos</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Monto mínimo"
+                    value={montoMinimo}
+                    onChange={(e) => setMontoMinimo(e.target.value)}
+                    className="text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Monto máximo"
+                    value={montoMaximo}
+                    onChange={(e) => setMontoMaximo(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Estadísticas de filtrado */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📊 Estadísticas</Label>
+                <div className="text-xs text-gray-600">
+                  {facturas.length} de {facturasOriginales.length} facturas mostradas
+                  {facturas.length !== facturasOriginales.length && (
+                    <span className="text-blue-600"> (filtrado aplicado)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={aplicarFiltros}
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Aplicar Filtros
+              </Button>
+              <Button
+                onClick={limpiarFiltros}
+                variant="outline"
+                size="sm"
+              >
+                Limpiar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Estado de carga o error */}
       {loading && (

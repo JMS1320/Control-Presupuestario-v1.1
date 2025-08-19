@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -23,7 +25,10 @@ import {
   Clock,
   Edit,
   Save,
-  X
+  X,
+  Search,
+  Check,
+  ChevronsUpDown
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -47,6 +52,10 @@ export function VistaExtractoBancario() {
   })
   const [facturasDisponibles, setFacturasDisponibles] = useState<any[]>([])
   const [vinculaciones, setVinculaciones] = useState<{[key: string]: string}>({}) // movimiento_id -> factura_id
+  
+  // Estados para Combobox avanzado
+  const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
+  const [busquedaCombobox, setBusquedaCombobox] = useState<{[key: string]: string}>({})
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
@@ -134,8 +143,19 @@ export function VistaExtractoBancario() {
       const exito = await actualizarMasivo(ids, editData)
       
       if (exito) {
-        // Si se marcaron como "Conciliado", actualizar facturas vinculadas
+        // Si se marcaron como "Conciliado", actualizar facturas vinculadas y limpiar motivo_revision
         if (editData.estado === 'Conciliado') {
+          // Limpiar motivo_revision para movimientos marcados como Conciliado
+          const { error: errorLimpiar } = await supabase
+            .from('msa_galicia')
+            .update({ motivo_revision: null })
+            .in('id', ids)
+          
+          if (errorLimpiar) {
+            console.error('Error limpiando motivo_revision:', errorLimpiar)
+          }
+          
+          // Actualizar facturas vinculadas
           for (const movimientoId of ids) {
             const facturaId = vinculaciones[movimientoId]
             if (facturaId) {
@@ -226,11 +246,35 @@ export function VistaExtractoBancario() {
     return propuestas.sort((a, b) => a.prioridad - b.prioridad)
   }
 
+  // Filtrar facturas con búsqueda avanzada
+  const filtrarFacturasConBusqueda = (facturas: any[], termino: string) => {
+    if (!termino.trim()) return facturas
+    
+    const busqueda = termino.toLowerCase()
+    return facturas.filter(factura => {
+      // Buscar en múltiples campos
+      const campos = [
+        factura.denominacion_emisor?.toLowerCase() || '',
+        factura.cuit || '',
+        factura.monto_a_abonar?.toString() || '',
+        factura.detalle?.toLowerCase() || '',
+        factura.tipo_comprobante?.toString() || '',
+        factura.numero_desde?.toString() || '',
+        // Formatear fecha para búsqueda
+        factura.fecha_estimada ? new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR') : ''
+      ]
+      
+      return campos.some(campo => campo.includes(busqueda))
+    })
+  }
+
   // Cancelar modo edición
   const cancelarEdicion = () => {
     setModoEdicion(false)
     setSeleccionados(new Set())
     setVinculaciones({})
+    setComboboxAbierto({})
+    setBusquedaCombobox({})
     setEditData({
       categ: '',
       centro_de_costo: '',
@@ -542,51 +586,127 @@ export function VistaExtractoBancario() {
                                 {formatCurrency(movimiento.debitos)} - {movimiento.descripcion}
                               </span>
                             </div>
-                            <Select 
-                              value={vinculaciones[movimientoId] || ''} 
-                              onValueChange={(value) => setVinculaciones({
-                                ...vinculaciones, 
-                                [movimientoId]: value === 'sin_vincular' ? '' : value
-                              })}
+                            <Popover 
+                              open={comboboxAbierto[movimientoId] || false} 
+                              onOpenChange={(open) => setComboboxAbierto({...comboboxAbierto, [movimientoId]: open})}
                             >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Sin vincular" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="sin_vincular">Sin vincular</SelectItem>
-                                
-                                {propuestasInteligentes.length > 0 && (
-                                  <>
-                                    <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b">
-                                      ⭐ PROPUESTAS INTELIGENTES
-                                    </div>
-                                    {propuestasInteligentes.map(factura => (
-                                      <SelectItem key={factura.id} value={factura.id}>
-                                        ⭐ {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)} 
-                                        ({new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')})
-                                        {factura.tipo === 'mismo_monto' && ' - Mismo monto'}
-                                        {factura.tipo === 'similar_proveedor' && ' - Similar + proveedor'}
-                                        {factura.tipo === 'mismo_proveedor' && ' - Mismo proveedor'}
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                )}
-                                
-                                {todasLasFacturas.length > 0 && (
-                                  <>
-                                    <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b">
-                                      📋 TODAS LAS OPCIONES
-                                    </div>
-                                    {todasLasFacturas.map(factura => (
-                                      <SelectItem key={factura.id} value={factura.id}>
-                                        {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
-                                        ({new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')})
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                )}
-                              </SelectContent>
-                            </Select>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  aria-expanded={comboboxAbierto[movimientoId] || false}
+                                  className="w-full justify-between"
+                                >
+                                  {vinculaciones[movimientoId] ? (
+                                    (() => {
+                                      const facturaSeleccionada = facturasDisponibles.find(f => f.id === vinculaciones[movimientoId])
+                                      return facturaSeleccionada ? 
+                                        `${facturaSeleccionada.denominacion_emisor} - ${formatCurrency(facturaSeleccionada.monto_a_abonar)}` : 
+                                        "Sin vincular"
+                                    })()
+                                  ) : "Sin vincular"}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[400px] p-0">
+                                <Command>
+                                  <div className="flex items-center border-b px-3">
+                                    <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                                    <CommandInput 
+                                      placeholder="Buscar por empresa, monto, CUIT, fecha..." 
+                                      value={busquedaCombobox[movimientoId] || ''}
+                                      onValueChange={(value) => setBusquedaCombobox({...busquedaCombobox, [movimientoId]: value})}
+                                    />
+                                  </div>
+                                  <CommandList>
+                                    <CommandEmpty>No se encontraron facturas.</CommandEmpty>
+                                    
+                                    {/* Opción Sin vincular */}
+                                    <CommandGroup>
+                                      <CommandItem
+                                        value="sin_vincular"
+                                        onSelect={() => {
+                                          setVinculaciones({...vinculaciones, [movimientoId]: ''})
+                                          setComboboxAbierto({...comboboxAbierto, [movimientoId]: false})
+                                          setBusquedaCombobox({...busquedaCombobox, [movimientoId]: ''})
+                                        }}
+                                      >
+                                        <Check className={`mr-2 h-4 w-4 ${!vinculaciones[movimientoId] ? "opacity-100" : "opacity-0"}`} />
+                                        Sin vincular
+                                      </CommandItem>
+                                    </CommandGroup>
+                                    
+                                    {/* Propuestas inteligentes filtradas */}
+                                    {(() => {
+                                      const propuestasFiltradas = filtrarFacturasConBusqueda(propuestasInteligentes, busquedaCombobox[movimientoId] || '')
+                                      return propuestasFiltradas.length > 0 && (
+                                        <CommandGroup heading="⭐ PROPUESTAS INTELIGENTES">
+                                          {propuestasFiltradas.map(factura => (
+                                            <CommandItem
+                                              key={factura.id}
+                                              value={`${factura.denominacion_emisor} ${factura.cuit} ${factura.monto_a_abonar} ${factura.detalle || ''}`}
+                                              onSelect={() => {
+                                                setVinculaciones({...vinculaciones, [movimientoId]: factura.id})
+                                                setComboboxAbierto({...comboboxAbierto, [movimientoId]: false})
+                                                setBusquedaCombobox({...busquedaCombobox, [movimientoId]: ''})
+                                              }}
+                                            >
+                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === factura.id ? "opacity-100" : "opacity-0"}`} />
+                                              <div className="flex flex-col">
+                                                <span className="font-medium">
+                                                  ⭐ {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                  {new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • CUIT: {factura.cuit}
+                                                  {factura.tipo === 'mismo_monto' && ' • Mismo monto'}
+                                                  {factura.tipo === 'similar_proveedor' && ' • Similar + proveedor'}
+                                                  {factura.tipo === 'mismo_proveedor' && ' • Mismo proveedor'}
+                                                </span>
+                                              </div>
+                                            </CommandItem>
+                                          ))}
+                                        </CommandGroup>
+                                      )
+                                    })()}
+                                    
+                                    {/* Todas las facturas filtradas */}
+                                    {(() => {
+                                      const todasFiltradas = filtrarFacturasConBusqueda(todasLasFacturas, busquedaCombobox[movimientoId] || '')
+                                      return todasFiltradas.length > 0 && (
+                                        <CommandGroup heading="📋 TODAS LAS OPCIONES">
+                                          {todasFiltradas.slice(0, 20).map(factura => ( // Limitar a 20 para performance
+                                            <CommandItem
+                                              key={factura.id}
+                                              value={`${factura.denominacion_emisor} ${factura.cuit} ${factura.monto_a_abonar} ${factura.detalle || ''}`}
+                                              onSelect={() => {
+                                                setVinculaciones({...vinculaciones, [movimientoId]: factura.id})
+                                                setComboboxAbierto({...comboboxAbierto, [movimientoId]: false})
+                                                setBusquedaCombobox({...busquedaCombobox, [movimientoId]: ''})
+                                              }}
+                                            >
+                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === factura.id ? "opacity-100" : "opacity-0"}`} />
+                                              <div className="flex flex-col">
+                                                <span className="font-medium">
+                                                  {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                  {new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • CUIT: {factura.cuit}
+                                                </span>
+                                              </div>
+                                            </CommandItem>
+                                          ))}
+                                          {todasFiltradas.length > 20 && (
+                                            <div className="px-2 py-1 text-xs text-gray-500 text-center">
+                                              ... y {todasFiltradas.length - 20} más. Refina tu búsqueda.
+                                            </div>
+                                          )}
+                                        </CommandGroup>
+                                      )
+                                    })()}
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           </div>
                         )
                       })}

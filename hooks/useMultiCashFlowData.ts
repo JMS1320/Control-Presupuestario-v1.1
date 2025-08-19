@@ -30,6 +30,9 @@ export interface CashFlowFilters {
   estados?: string[]
   origenes?: ('ARCA' | 'TEMPLATE')[]
   empresas?: ('MSA' | 'PAM')[]
+  busquedaDetalle?: string
+  busquedaCateg?: string
+  busquedaCUIT?: string
 }
 
 export function useMultiCashFlowData(filtros?: CashFlowFilters) {
@@ -119,6 +122,24 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Filtro por origen
       if (filtros.origenes && filtros.origenes.length > 0) {
         if (!filtros.origenes.includes(fila.origen)) return false
+      }
+
+      // Filtro por detalle
+      if (filtros.busquedaDetalle && filtros.busquedaDetalle.trim()) {
+        const detalleSearch = filtros.busquedaDetalle.toLowerCase()
+        if (!fila.detalle.toLowerCase().includes(detalleSearch)) return false
+      }
+
+      // Filtro por CATEG
+      if (filtros.busquedaCateg && filtros.busquedaCateg.trim()) {
+        const categSearch = filtros.busquedaCateg.toLowerCase()
+        if (!fila.categ.toLowerCase().includes(categSearch)) return false
+      }
+
+      // Filtro por CUIT
+      if (filtros.busquedaCUIT && filtros.busquedaCUIT.trim()) {
+        const cuitSearch = filtros.busquedaCUIT.toLowerCase()
+        if (!fila.cuit_proveedor.toLowerCase().includes(cuitSearch)) return false
       }
 
       return true

@@ -49,6 +49,16 @@ export function VistaCashFlow() {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   
+  // Estados para filtros específicos
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+  const [busquedaProveedor, setBusquedaProveedor] = useState('')
+  const [estadosSeleccionados, setEstadosSeleccionados] = useState<string[]>([])
+  const [origenesSeleccionados, setOrigenesSeleccionados] = useState<('ARCA' | 'TEMPLATE')[]>([])
+  const [busquedaDetalle, setBusquedaDetalle] = useState('')
+  const [busquedaCateg, setBusquedaCateg] = useState('')
+  const [busquedaCUIT, setBusquedaCUIT] = useState('')
+  
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
   
@@ -313,6 +323,53 @@ export function VistaCashFlow() {
       event.preventDefault()
       cancelarEdicion()
     }
+  }
+
+  // Funciones para filtros
+  const aplicarFiltros = () => {
+    const nuevosFiltros: CashFlowFilters = {}
+    
+    // Aplicar filtros de fecha
+    if (fechaDesde) nuevosFiltros.fechaDesde = fechaDesde
+    if (fechaHasta) nuevosFiltros.fechaHasta = fechaHasta
+    
+    // Aplicar filtros de búsqueda (convertir en array de responsables)
+    const responsables: string[] = []
+    if (busquedaProveedor.trim()) {
+      responsables.push(busquedaProveedor.trim())
+    }
+    if (responsables.length > 0) nuevosFiltros.responsables = responsables
+    
+    // Aplicar filtros de estado
+    if (estadosSeleccionados.length > 0) {
+      nuevosFiltros.estados = estadosSeleccionados
+    }
+    
+    // Aplicar filtros de origen
+    if (origenesSeleccionados.length > 0) {
+      nuevosFiltros.origenes = origenesSeleccionados
+    }
+    
+    // Aplicar filtros de búsqueda adicionales
+    if (busquedaDetalle.trim()) nuevosFiltros.busquedaDetalle = busquedaDetalle.trim()
+    if (busquedaCateg.trim()) nuevosFiltros.busquedaCateg = busquedaCateg.trim()
+    if (busquedaCUIT.trim()) nuevosFiltros.busquedaCUIT = busquedaCUIT.trim()
+    
+    setFiltros(nuevosFiltros)
+    toast.success(`Filtros aplicados: ${Object.keys(nuevosFiltros).length} criterios`)
+  }
+  
+  const limpiarFiltros = () => {
+    setFechaDesde('')
+    setFechaHasta('')
+    setBusquedaProveedor('')
+    setEstadosSeleccionados([])
+    setOrigenesSeleccionados([])
+    setBusquedaDetalle('')
+    setBusquedaCateg('')
+    setBusquedaCUIT('')
+    setFiltros(undefined)
+    toast.success('Filtros limpiados')
   }
 
   // Funciones para modo PAGOS
@@ -675,13 +732,167 @@ export function VistaCashFlow() {
         </CardHeader>
 
         <CardContent>
-          {/* Filtros (placeholder para PASO 6) */}
+          {/* Filtros avanzados */}
           {mostrarFiltros && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <div className="text-sm text-gray-600">
-                🔄 Filtros avanzados se implementarán en PASO 6
-                <br />
-                Por ahora muestra todos los registros con estado ≠ 'conciliado' AND estado ≠ 'credito'
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+              <h4 className="font-medium mb-4 text-gray-800">🔍 Filtros Avanzados Cash Flow</h4>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                {/* Filtros de fecha */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">📅 Rango de Fechas</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="date"
+                      placeholder="Desde"
+                      value={fechaDesde}
+                      onChange={(e) => setFechaDesde(e.target.value)}
+                      className="text-xs"
+                    />
+                    <Input
+                      type="date"
+                      placeholder="Hasta"
+                      value={fechaHasta}
+                      onChange={(e) => setFechaHasta(e.target.value)}
+                      className="text-xs"
+                    />
+                  </div>
+                </div>
+                
+                {/* Búsqueda de proveedor */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">🏢 Proveedor</Label>
+                  <Input
+                    placeholder="Buscar por nombre proveedor..."
+                    value={busquedaProveedor}
+                    onChange={(e) => setBusquedaProveedor(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                
+                {/* Búsqueda por CUIT */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">🆔 CUIT</Label>
+                  <Input
+                    placeholder="Buscar por CUIT..."
+                    value={busquedaCUIT}
+                    onChange={(e) => setBusquedaCUIT(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                
+                {/* Búsqueda por detalle */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">📋 Detalle</Label>
+                  <Input
+                    placeholder="Buscar en detalle..."
+                    value={busquedaDetalle}
+                    onChange={(e) => setBusquedaDetalle(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                
+                {/* Búsqueda por CATEG */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">💰 CATEG</Label>
+                  <Input
+                    placeholder="Buscar por categ..."
+                    value={busquedaCateg}
+                    onChange={(e) => setBusquedaCateg(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+                
+                {/* Selector múltiple de estados */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">⚡ Estados</Label>
+                  <div className="flex flex-wrap gap-1">
+                    {ESTADOS_DISPONIBLES.map((estado) => (
+                      <div key={estado.value} className="flex items-center gap-1">
+                        <Checkbox
+                          id={`estado-${estado.value}`}
+                          checked={estadosSeleccionados.includes(estado.value)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setEstadosSeleccionados([...estadosSeleccionados, estado.value])
+                            } else {
+                              setEstadosSeleccionados(estadosSeleccionados.filter(e => e !== estado.value))
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`estado-${estado.value}`} className="text-xs cursor-pointer">
+                          {estado.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {/* Selector de orígenes */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">📊 Origen</Label>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="origen-arca"
+                        checked={origenesSeleccionados.includes('ARCA')}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setOrigenesSeleccionados([...origenesSeleccionados, 'ARCA'])
+                          } else {
+                            setOrigenesSeleccionados(origenesSeleccionados.filter(o => o !== 'ARCA'))
+                          }
+                        }}
+                      />
+                      <Label htmlFor="origen-arca" className="text-sm cursor-pointer">ARCA</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="origen-template"
+                        checked={origenesSeleccionados.includes('TEMPLATE')}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setOrigenesSeleccionados([...origenesSeleccionados, 'TEMPLATE'])
+                          } else {
+                            setOrigenesSeleccionados(origenesSeleccionados.filter(o => o !== 'TEMPLATE'))
+                          }
+                        }}
+                      />
+                      <Label htmlFor="origen-template" className="text-sm cursor-pointer">Templates</Label>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Estadísticas de filtrado */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">📈 Estadísticas</Label>
+                  <div className="text-xs text-gray-600">
+                    {data.length} registros mostrados
+                    {filtros && (
+                      <span className="text-blue-600"> (filtrado aplicado)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  onClick={aplicarFiltros}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Filter className="h-4 w-4 mr-2" />
+                  Aplicar Filtros
+                </Button>
+                <Button
+                  onClick={limpiarFiltros}
+                  variant="outline"
+                  size="sm"
+                >
+                  Limpiar
+                </Button>
               </div>
             </div>
           )}

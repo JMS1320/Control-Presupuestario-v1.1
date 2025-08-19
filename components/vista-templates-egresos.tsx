@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -73,9 +75,25 @@ const COLUMNAS_CONFIG = {
 
 export function VistaTemplatesEgresos() {
   const [cuotas, setCuotas] = useState<CuotaEgresoSinFactura[]>([])
+  const [cuotasOriginales, setCuotasOriginales] = useState<CuotaEgresoSinFactura[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mostrarWizard, setMostrarWizard] = useState(false)
+  
+  // Estados para filtros
+  const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+  const [busquedaResponsable, setBusquedaResponsable] = useState('')
+  const [busquedaNombreReferencia, setBusquedaNombreReferencia] = useState('')
+  const [busquedaDescripcion, setBusquedaDescripcion] = useState('')
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState('')
+  const [montoMinimo, setMontoMinimo] = useState('')
+  const [montoMaximo, setMontoMaximo] = useState('')
+  const [busquedaCateg, setBusquedaCateg] = useState('')
+  const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('')
+  const [anoSeleccionado, setAnoSeleccionado] = useState('')
+  const [soloActivos, setSoloActivos] = useState(false)
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -139,7 +157,9 @@ export function VistaTemplatesEgresos() {
         return
       }
 
-      setCuotas(data || [])
+      const cuotasCargadas = data || []
+      setCuotas(cuotasCargadas)
+      setCuotasOriginales(cuotasCargadas)
     } catch (error) {
       console.error('Error inesperado:', error)
       setError('Error inesperado al cargar las cuotas')
@@ -175,6 +195,107 @@ export function VistaTemplatesEgresos() {
       return fecha
     }
   }
+
+  // Funciones para filtros
+  const aplicarFiltros = () => {
+    let cuotasFiltradas = [...cuotasOriginales]
+    
+    // Filtro por fecha estimada
+    if (fechaDesde) {
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.fecha_estimada >= fechaDesde)
+    }
+    if (fechaHasta) {
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.fecha_estimada <= fechaHasta)
+    }
+    
+    // Filtro por responsable
+    if (busquedaResponsable.trim()) {
+      const busqueda = busquedaResponsable.toLowerCase()
+      cuotasFiltradas = cuotasFiltradas.filter(c => 
+        c.egreso?.responsable?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por nombre de referencia
+    if (busquedaNombreReferencia.trim()) {
+      const busqueda = busquedaNombreReferencia.toLowerCase()
+      cuotasFiltradas = cuotasFiltradas.filter(c => 
+        c.egreso?.nombre_referencia?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por descripción
+    if (busquedaDescripcion.trim()) {
+      const busqueda = busquedaDescripcion.toLowerCase()
+      cuotasFiltradas = cuotasFiltradas.filter(c => 
+        c.descripcion?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por estado
+    if (estadoSeleccionado) {
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.estado === estadoSeleccionado)
+    }
+    
+    // Filtro por rango de montos
+    if (montoMinimo) {
+      const minimo = parseFloat(montoMinimo)
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.monto >= minimo)
+    }
+    if (montoMaximo) {
+      const maximo = parseFloat(montoMaximo)
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.monto <= maximo)
+    }
+    
+    // Filtro por CATEG
+    if (busquedaCateg.trim()) {
+      const busqueda = busquedaCateg.toLowerCase()
+      cuotasFiltradas = cuotasFiltradas.filter(c => 
+        c.egreso?.categ?.toLowerCase().includes(busqueda)
+      )
+    }
+    
+    // Filtro por tipo de recurrencia
+    if (tipoRecurrenciaSeleccionado) {
+      cuotasFiltradas = cuotasFiltradas.filter(c => 
+        c.egreso?.tipo_recurrencia === tipoRecurrenciaSeleccionado
+      )
+    }
+    
+    // Filtro por año
+    if (anoSeleccionado) {
+      const ano = parseInt(anoSeleccionado)
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.año === ano)
+    }
+    
+    // Filtro solo activos
+    if (soloActivos) {
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.activo === true)
+    }
+    
+    setCuotas(cuotasFiltradas)
+  }
+  
+  const limpiarFiltros = () => {
+    setFechaDesde('')
+    setFechaHasta('')
+    setBusquedaResponsable('')
+    setBusquedaNombreReferencia('')
+    setBusquedaDescripcion('')
+    setEstadoSeleccionado('')
+    setMontoMinimo('')
+    setMontoMaximo('')
+    setBusquedaCateg('')
+    setTipoRecurrenciaSeleccionado('')
+    setAnoSeleccionado('')
+    setSoloActivos(false)
+    setCuotas(cuotasOriginales)
+  }
+  
+  // Obtener valores únicos para los selectores
+  const estadosUnicos = [...new Set(cuotasOriginales.map(c => c.estado))].filter(Boolean).sort()
+  const tiposRecurrenciaUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.tipo_recurrencia))].filter(Boolean).sort()
+  const anosUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.año))].filter(Boolean).sort((a, b) => b - a)
 
   // Obtener columnas visibles
   const columnasVisiblesArray = Object.entries(columnasVisibles)
@@ -263,6 +384,15 @@ export function VistaTemplatesEgresos() {
             Crear Template
           </Button>
           
+          {/* Botón de filtros */}
+          <Button 
+            variant={mostrarFiltros ? "default" : "outline"}
+            onClick={() => setMostrarFiltros(!mostrarFiltros)}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filtros
+          </Button>
+          
           {/* Selector de columnas */}
           <Popover>
             <PopoverTrigger asChild>
@@ -343,6 +473,215 @@ export function VistaTemplatesEgresos() {
           </Popover>
         </div>
       </div>
+
+      {/* Panel de filtros */}
+      {mostrarFiltros && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                🔍 Filtros de Búsqueda Templates
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMostrarFiltros(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              {/* Filtros de fecha */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📅 Rango de Fechas Estimadas</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    placeholder="Desde"
+                    value={fechaDesde}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    className="text-xs"
+                  />
+                  <Input
+                    type="date"
+                    placeholder="Hasta"
+                    value={fechaHasta}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Búsqueda de responsable */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">👤 Responsable</Label>
+                <Input
+                  placeholder="Buscar por responsable..."
+                  value={busquedaResponsable}
+                  onChange={(e) => setBusquedaResponsable(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Búsqueda por nombre referencia */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📝 Nombre Referencia</Label>
+                <Input
+                  placeholder="Buscar por nombre referencia..."
+                  value={busquedaNombreReferencia}
+                  onChange={(e) => setBusquedaNombreReferencia(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Búsqueda por descripción */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📄 Descripción</Label>
+                <Input
+                  placeholder="Buscar en descripción..."
+                  value={busquedaDescripcion}
+                  onChange={(e) => setBusquedaDescripcion(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Selector de estado */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">⚡ Estado</Label>
+                <Select value={estadoSeleccionado} onValueChange={setEstadoSeleccionado}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos los estados</SelectItem>
+                    {estadosUnicos.map(estado => (
+                      <SelectItem key={estado} value={estado}>
+                        {estado}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Búsqueda por CATEG */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">💰 CATEG</Label>
+                <Input
+                  placeholder="Buscar por categ..."
+                  value={busquedaCateg}
+                  onChange={(e) => setBusquedaCateg(e.target.value)}
+                  className="text-xs"
+                />
+              </div>
+              
+              {/* Selector de tipo de recurrencia */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">🔄 Tipo Recurrencia</Label>
+                <Select value={tipoRecurrenciaSeleccionado} onValueChange={setTipoRecurrenciaSeleccionado}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos los tipos</SelectItem>
+                    {tiposRecurrenciaUnicos.map(tipo => (
+                      <SelectItem key={tipo} value={tipo}>
+                        {tipo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Selector de año */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📆 Año</Label>
+                <Select value={anoSeleccionado} onValueChange={setAnoSeleccionado}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los años" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos los años</SelectItem>
+                    {anosUnicos.map(ano => (
+                      <SelectItem key={ano} value={ano.toString()}>
+                        {ano}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Checkbox solo activos */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">✅ Filtro Estado</Label>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="solo-activos"
+                    checked={soloActivos}
+                    onCheckedChange={setSoloActivos}
+                  />
+                  <Label htmlFor="solo-activos" className="text-sm cursor-pointer">
+                    Solo templates activos
+                  </Label>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Rango de montos */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">💵 Rango de Montos</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Monto mínimo"
+                    value={montoMinimo}
+                    onChange={(e) => setMontoMinimo(e.target.value)}
+                    className="text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Monto máximo"
+                    value={montoMaximo}
+                    onChange={(e) => setMontoMaximo(e.target.value)}
+                    className="text-xs"
+                  />
+                </div>
+              </div>
+              
+              {/* Estadísticas de filtrado */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📊 Estadísticas</Label>
+                <div className="text-xs text-gray-600">
+                  {cuotas.length} de {cuotasOriginales.length} cuotas mostradas
+                  {cuotas.length !== cuotasOriginales.length && (
+                    <span className="text-blue-600"> (filtrado aplicado)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button
+                onClick={aplicarFiltros}
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Aplicar Filtros
+              </Button>
+              <Button
+                onClick={limpiarFiltros}
+                variant="outline"
+                size="sm"
+              >
+                Limpiar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Estado de carga o error */}
       {loading && (
