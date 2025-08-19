@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -98,6 +100,9 @@ export function VistaFacturasArca() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
+  // Hook para validación de categorías
+  const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
+  
   // Estados para filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [fechaDesde, setFechaDesde] = useState('')
@@ -114,6 +119,17 @@ export function VistaFacturasArca() {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<{facturaId: string, columna: string, valor: any} | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
+  
+  // Estado para modal validación categorías
+  const [validandoCateg, setValidandoCateg] = useState<{
+    isOpen: boolean
+    categIngresado: string
+    celdaEnEdicion: {facturaId: string, columna: string, valor: any} | null
+  }>({
+    isOpen: false,
+    categIngresado: '',
+    celdaEnEdicion: null
+  })
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -309,21 +325,46 @@ export function VistaFacturasArca() {
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
     
+    // Si está editando cuenta_contable, validar si existe primero
+    if (celdaEnEdicion.columna === 'cuenta_contable') {
+      const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
+      
+      const categExiste = validarCateg(categIngresado)
+      
+      if (categExiste) {
+        // Si existe, guardar directo
+        await ejecutarGuardadoReal(celdaEnEdicion)
+      } else {
+        // Si no existe, mostrar modal con opciones
+        setValidandoCateg({
+          isOpen: true,
+          categIngresado: categIngresado,
+          celdaEnEdicion: celdaEnEdicion
+        })
+      }
+      return
+    }
+    
+    // Para otros campos, continuar con el guardado normal
+    await ejecutarGuardadoReal(celdaEnEdicion)
+  }
+
+  const ejecutarGuardadoReal = async (datosEdicion: {facturaId: string, columna: string, valor: any}) => {
     setGuardandoCambio(true)
     
     try {
-      let valorFinal: any = celdaEnEdicion.valor
+      let valorFinal: any = datosEdicion.valor
       
       // Convertir valores según el tipo de campo
-      if (['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(celdaEnEdicion.columna)) {
+      if (['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(datosEdicion.columna)) {
         valorFinal = parseFloat(String(valorFinal)) || 0
       }
       
       const { error } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .update({ [celdaEnEdicion.columna]: valorFinal })
-        .eq('id', celdaEnEdicion.facturaId)
+        .update({ [datosEdicion.columna]: valorFinal })
+        .eq('id', datosEdicion.facturaId)
       
       if (error) {
         console.error('Error actualizando factura:', error)
@@ -333,15 +374,15 @@ export function VistaFacturasArca() {
       
       // Actualizar estado local
       const nuevasFacturas = facturas.map(f => 
-        f.id === celdaEnEdicion.facturaId 
-          ? { ...f, [celdaEnEdicion.columna]: valorFinal }
+        f.id === datosEdicion.facturaId 
+          ? { ...f, [datosEdicion.columna]: valorFinal }
           : f
       )
       setFacturas(nuevasFacturas)
       
       const nuevasFacturasOriginales = facturasOriginales.map(f => 
-        f.id === celdaEnEdicion.facturaId 
-          ? { ...f, [celdaEnEdicion.columna]: valorFinal }
+        f.id === datosEdicion.facturaId 
+          ? { ...f, [datosEdicion.columna]: valorFinal }
           : f
       )
       setFacturasOriginales(nuevasFacturasOriginales)
@@ -355,6 +396,44 @@ export function VistaFacturasArca() {
     } finally {
       setGuardandoCambio(false)
     }
+  }
+
+  // Funciones para modal de validación categorías
+  const manejarCrearCategoria = async () => {
+    const categIngresado = validandoCateg.categIngresado
+    const cuentaContable = prompt(`Ingrese nombre de cuenta contable para la categoría "${categIngresado}":`)
+    const tipo = prompt(`Ingrese tipo para la categoría "${categIngresado}" (ej: egreso, ingreso):`) || 'egreso'
+    
+    if (cuentaContable) {
+      const creado = await crearCuentaContable(categIngresado, cuentaContable, tipo)
+      if (creado && validandoCateg.celdaEnEdicion) {
+        await ejecutarGuardadoReal(validandoCateg.celdaEnEdicion)
+        setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+      }
+    }
+  }
+
+  const manejarElegirExistente = () => {
+    const similares = buscarSimilares(validandoCateg.categIngresado)
+    if (similares.length > 0) {
+      const opciones = similares.map((c, i) => `${i + 1}. ${c.categ} - ${c.cuenta_contable}`).join('\n')
+      const seleccion = prompt(`Categorías similares encontradas:\n${opciones}\n\nIngrese el número de la categoría a usar:`)
+      const indice = parseInt(seleccion || '0') - 1
+      
+      if (indice >= 0 && indice < similares.length && validandoCateg.celdaEnEdicion) {
+        const categSeleccionada = similares[indice].categ
+        const nuevaEdicion = { ...validandoCateg.celdaEnEdicion, valor: categSeleccionada }
+        ejecutarGuardadoReal(nuevaEdicion)
+        setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+      }
+    } else {
+      alert('No se encontraron categorías similares')
+    }
+  }
+
+  const cerrarModalCateg = () => {
+    setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+    setCeldaEnEdicion(null)
   }
 
   // Obtener estados únicos para el selector
@@ -891,6 +970,34 @@ export function VistaFacturasArca() {
           </CardContent>
         </Card>
       )}
+
+      {/* Modal para validación de categorías */}
+      <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCateg()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Categoría no encontrada</DialogTitle>
+            <DialogDescription>
+              La categoría "{validandoCateg.categIngresado}" no existe en el sistema.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-gray-600">¿Qué desea hacer?</p>
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={cerrarModalCateg}>
+              Cancelar
+            </Button>
+            <Button variant="outline" onClick={manejarElegirExistente}>
+              Elegir categoría existente
+            </Button>
+            <Button onClick={manejarCrearCategoria}>
+              Crear nueva categoría
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

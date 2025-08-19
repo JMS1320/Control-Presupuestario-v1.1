@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
@@ -45,6 +47,9 @@ export function VistaExtractoBancario() {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
+  
+  // Hook para validación de categorías
+  const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
   const [editData, setEditData] = useState({
     categ: '',
     centro_de_costo: '',
@@ -216,9 +221,19 @@ export function VistaExtractoBancario() {
                   console.log(`💰 Monto actualizado: ${montoOriginal} → ${montoExtracto} (${diferenciaPorcentaje.toFixed(1)}% diff)`)
                 }
                 
-                // Propagar CATEG si fue editada
+                // Propagar CATEG si fue editada (con validación)
                 if (editData.categ?.trim()) {
-                  updateData.cuenta_contable = editData.categ.trim()
+                  const categIngresado = editData.categ.trim().toUpperCase()
+                  const categExiste = validarCateg(categIngresado)
+                  
+                  if (categExiste) {
+                    updateData.cuenta_contable = categIngresado
+                  } else {
+                    // Si no existe, mostrar alerta y NO propagar
+                    alert(`⚠️ La categoría "${categIngresado}" no existe en el sistema.\nNo se propagará este valor. Use una categoría válida.`)
+                    console.warn(`❌ Categoría "${categIngresado}" no válida - no se propaga`)
+                    // No agregamos cuenta_contable al updateData
+                  }
                 }
                 
                 // Propagar centro de costo si fue editado
@@ -284,7 +299,15 @@ export function VistaExtractoBancario() {
                     const updateEgresoData: any = {}
                     
                     if (editData.categ?.trim()) {
-                      updateEgresoData.categ = editData.categ.trim()
+                      const categIngresado = editData.categ.trim().toUpperCase()
+                      const categExiste = validarCateg(categIngresado)
+                      
+                      if (categExiste) {
+                        updateEgresoData.categ = categIngresado
+                      } else {
+                        alert(`⚠️ La categoría "${categIngresado}" no existe en el sistema.\nNo se propagará este valor al template. Use una categoría válida.`)
+                        console.warn(`❌ Categoría "${categIngresado}" no válida - no se propaga a template`)
+                      }
                     }
                     
                     if (editData.centro_de_costo?.trim()) {

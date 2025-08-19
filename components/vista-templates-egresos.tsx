@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -81,6 +83,9 @@ export function VistaTemplatesEgresos() {
   const [error, setError] = useState<string | null>(null)
   const [mostrarWizard, setMostrarWizard] = useState(false)
   
+  // Hook para validación de categorías
+  const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
+  
   // Estados para filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [fechaDesde, setFechaDesde] = useState('')
@@ -103,6 +108,17 @@ export function VistaTemplatesEgresos() {
     columna: string
     valor: any
   } | null>(null)
+  
+  // Estado para modal validación categorías
+  const [validandoCateg, setValidandoCateg] = useState<{
+    isOpen: boolean
+    categIngresado: string
+    celdaEnEdicion: {cuotaId: string, columna: string, valor: any} | null
+  }>({
+    isOpen: false,
+    categIngresado: '',
+    celdaEnEdicion: null
+  })
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -325,8 +341,33 @@ export function VistaTemplatesEgresos() {
   const guardarCambio = async (nuevoValor: string) => {
     if (!celdaEnEdicion) return
 
+    // Si está editando categ, validar si existe primero
+    if (celdaEnEdicion.columna === 'categ') {
+      const categIngresado = String(nuevoValor).toUpperCase()
+      
+      const categExiste = validarCateg(categIngresado)
+      
+      if (categExiste) {
+        // Si existe, guardar directo
+        await ejecutarGuardadoRealTemplates(celdaEnEdicion, nuevoValor)
+      } else {
+        // Si no existe, mostrar modal con opciones
+        setValidandoCateg({
+          isOpen: true,
+          categIngresado: categIngresado,
+          celdaEnEdicion: { ...celdaEnEdicion, valor: nuevoValor }
+        })
+      }
+      return
+    }
+
+    // Para otros campos, continuar con el guardado normal
+    await ejecutarGuardadoRealTemplates(celdaEnEdicion, nuevoValor)
+  }
+
+  const ejecutarGuardadoRealTemplates = async (datosEdicion: {cuotaId: string, columna: string, valor: any}, nuevoValor: string) => {
     try {
-      const cuota = cuotas.find(c => c.id === celdaEnEdicion.cuotaId)
+      const cuota = cuotas.find(c => c.id === datosEdicion.cuotaId)
       if (!cuota) throw new Error('Cuota no encontrada')
 
       // Determinar tabla y campo correcto
@@ -335,7 +376,7 @@ export function VistaTemplatesEgresos() {
       let idDestino = ''
 
       // Campos que van a la tabla de egresos padre
-      if (['categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'].includes(celdaEnEdicion.columna)) {
+      if (['categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'].includes(datosEdicion.columna)) {
         if (!cuota.egreso_id) throw new Error('No se encontró el egreso padre')
         tablaDestino = 'egresos_sin_factura'
         idDestino = cuota.egreso_id
@@ -347,11 +388,11 @@ export function VistaTemplatesEgresos() {
 
       // Preparar el valor según el tipo de campo
       let valorFinal: any = nuevoValor
-      if (celdaEnEdicion.columna === 'monto') {
+      if (datosEdicion.columna === 'monto') {
         valorFinal = parseFloat(nuevoValor) || 0
       }
 
-      updateData[celdaEnEdicion.columna] = valorFinal
+      updateData[datosEdicion.columna] = valorFinal
 
       const { error } = await supabase
         .from(tablaDestino)
@@ -364,11 +405,48 @@ export function VistaTemplatesEgresos() {
       await cargarCuotas()
       setCeldaEnEdicion(null)
 
-      console.log(`✅ Templates: ${celdaEnEdicion.columna} actualizado en ${tablaDestino}`)
+      console.log(`✅ Templates: ${datosEdicion.columna} actualizado en ${tablaDestino}`)
     } catch (error) {
       console.error('Error guardando cambio:', error)
       alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
+  }
+
+  // Funciones para modal de validación categorías
+  const manejarCrearCategoriaTemplates = async () => {
+    const categIngresado = validandoCateg.categIngresado
+    const cuentaContable = prompt(`Ingrese nombre de cuenta contable para la categoría "${categIngresado}":`)
+    const tipo = prompt(`Ingrese tipo para la categoría "${categIngresado}" (ej: egreso, ingreso):`) || 'egreso'
+    
+    if (cuentaContable && validandoCateg.celdaEnEdicion) {
+      const creado = await crearCuentaContable(categIngresado, cuentaContable, tipo)
+      if (creado) {
+        await ejecutarGuardadoRealTemplates(validandoCateg.celdaEnEdicion, categIngresado)
+        setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+      }
+    }
+  }
+
+  const manejarElegirExistenteTemplates = () => {
+    const similares = buscarSimilares(validandoCateg.categIngresado)
+    if (similares.length > 0) {
+      const opciones = similares.map((c, i) => `${i + 1}. ${c.categ} - ${c.cuenta_contable}`).join('\n')
+      const seleccion = prompt(`Categorías similares encontradas:\n${opciones}\n\nIngrese el número de la categoría a usar:`)
+      const indice = parseInt(seleccion || '0') - 1
+      
+      if (indice >= 0 && indice < similares.length && validandoCateg.celdaEnEdicion) {
+        const categSeleccionada = similares[indice].categ
+        ejecutarGuardadoRealTemplates(validandoCateg.celdaEnEdicion, categSeleccionada)
+        setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+      }
+    } else {
+      alert('No se encontraron categorías similares')
+    }
+  }
+
+  const cerrarModalCategTemplates = () => {
+    setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
+    setCeldaEnEdicion(null)
   }
 
   // Obtener columnas visibles
@@ -942,6 +1020,34 @@ export function VistaTemplatesEgresos() {
           </div>
         </div>
       )}
+
+      {/* Modal para validación de categorías */}
+      <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCategTemplates()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Categoría no encontrada</DialogTitle>
+            <DialogDescription>
+              La categoría "{validandoCateg.categIngresado}" no existe en el sistema.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-gray-600">¿Qué desea hacer?</p>
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={cerrarModalCategTemplates}>
+              Cancelar
+            </Button>
+            <Button variant="outline" onClick={manejarElegirExistenteTemplates}>
+              Elegir categoría existente
+            </Button>
+            <Button onClick={manejarCrearCategoriaTemplates}>
+              Crear nueva categoría
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
