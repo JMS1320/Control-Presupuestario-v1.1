@@ -104,7 +104,7 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     centro_costo: null,
     estado: 'pendiente',
     observaciones_pago: null,
-    detalle: null,
+    detalle: `Factura ${fila["Tipo de Comprobante"]}-${fila["Número Desde"]} - ${fila["Denominación Emisor"] || 'Sin nombre'}`,
     archivo_origen: nombreArchivo
   }
 }
