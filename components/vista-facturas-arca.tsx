@@ -104,7 +104,7 @@ export function VistaFacturasArca() {
   const [busquedaProveedor, setBusquedaProveedor] = useState('')
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState('')
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState('todos')
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
@@ -244,7 +244,7 @@ export function VistaFacturasArca() {
     }
     
     // Filtro por estado
-    if (estadoSeleccionado) {
+    if (estadoSeleccionado && estadoSeleccionado !== 'todos') {
       facturasFiltradas = facturasFiltradas.filter(f => f.estado === estadoSeleccionado)
     }
     
@@ -275,7 +275,7 @@ export function VistaFacturasArca() {
     setBusquedaProveedor('')
     setBusquedaCUIT('')
     setBusquedaDetalle('')
-    setEstadoSeleccionado('')
+    setEstadoSeleccionado('todos')
     setMontoMinimo('')
     setMontoMaximo('')
     setBusquedaCateg('')
@@ -519,7 +519,7 @@ export function VistaFacturasArca() {
                     <SelectValue placeholder="Todos los estados" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos los estados</SelectItem>
+                    <SelectItem value="todos">Todos los estados</SelectItem>
                     {estadosUnicos.map(estado => (
                       <SelectItem key={estado} value={estado}>
                         {estado}

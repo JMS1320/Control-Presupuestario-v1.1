@@ -87,12 +87,12 @@ export function VistaTemplatesEgresos() {
   const [busquedaResponsable, setBusquedaResponsable] = useState('')
   const [busquedaNombreReferencia, setBusquedaNombreReferencia] = useState('')
   const [busquedaDescripcion, setBusquedaDescripcion] = useState('')
-  const [estadoSeleccionado, setEstadoSeleccionado] = useState('')
+  const [estadoSeleccionado, setEstadoSeleccionado] = useState('todos')
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
-  const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('')
-  const [anoSeleccionado, setAnoSeleccionado] = useState('')
+  const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('todos')
+  const [anoSeleccionado, setAnoSeleccionado] = useState('todos')
   const [soloActivos, setSoloActivos] = useState(false)
   
   // Estado para columnas visibles con valores por defecto
@@ -233,7 +233,7 @@ export function VistaTemplatesEgresos() {
     }
     
     // Filtro por estado
-    if (estadoSeleccionado) {
+    if (estadoSeleccionado && estadoSeleccionado !== 'todos') {
       cuotasFiltradas = cuotasFiltradas.filter(c => c.estado === estadoSeleccionado)
     }
     
@@ -256,14 +256,14 @@ export function VistaTemplatesEgresos() {
     }
     
     // Filtro por tipo de recurrencia
-    if (tipoRecurrenciaSeleccionado) {
+    if (tipoRecurrenciaSeleccionado && tipoRecurrenciaSeleccionado !== 'todos') {
       cuotasFiltradas = cuotasFiltradas.filter(c => 
         c.egreso?.tipo_recurrencia === tipoRecurrenciaSeleccionado
       )
     }
     
     // Filtro por año
-    if (anoSeleccionado) {
+    if (anoSeleccionado && anoSeleccionado !== 'todos') {
       const ano = parseInt(anoSeleccionado)
       cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.año === ano)
     }
@@ -282,12 +282,12 @@ export function VistaTemplatesEgresos() {
     setBusquedaResponsable('')
     setBusquedaNombreReferencia('')
     setBusquedaDescripcion('')
-    setEstadoSeleccionado('')
+    setEstadoSeleccionado('todos')
     setMontoMinimo('')
     setMontoMaximo('')
     setBusquedaCateg('')
-    setTipoRecurrenciaSeleccionado('')
-    setAnoSeleccionado('')
+    setTipoRecurrenciaSeleccionado('todos')
+    setAnoSeleccionado('todos')
     setSoloActivos(false)
     setCuotas(cuotasOriginales)
   }
@@ -555,7 +555,7 @@ export function VistaTemplatesEgresos() {
                     <SelectValue placeholder="Todos los estados" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos los estados</SelectItem>
+                    <SelectItem value="todos">Todos los estados</SelectItem>
                     {estadosUnicos.map(estado => (
                       <SelectItem key={estado} value={estado}>
                         {estado}
@@ -584,7 +584,7 @@ export function VistaTemplatesEgresos() {
                     <SelectValue placeholder="Todos los tipos" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos los tipos</SelectItem>
+                    <SelectItem value="todos">Todos los tipos</SelectItem>
                     {tiposRecurrenciaUnicos.map(tipo => (
                       <SelectItem key={tipo} value={tipo}>
                         {tipo}
@@ -602,7 +602,7 @@ export function VistaTemplatesEgresos() {
                     <SelectValue placeholder="Todos los años" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos los años</SelectItem>
+                    <SelectItem value="todos">Todos los años</SelectItem>
                     {anosUnicos.map(ano => (
                       <SelectItem key={ano} value={ano.toString()}>
                         {ano}
