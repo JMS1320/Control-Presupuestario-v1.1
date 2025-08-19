@@ -230,12 +230,12 @@ export function VistaExtractoBancario() {
   // Cargar facturas y templates disponibles para vincular
   const cargarFacturasDisponibles = async () => {
     try {
-      // Cargar facturas ARCA pendientes
+      // Cargar facturas ARCA NO conciliadas (cualquier estado excepto conciliado)
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit')
-        .eq('estado', 'pendiente')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit, estado')
+        .neq('estado', 'conciliado')
         .order('fecha_estimada', { ascending: false })
 
       if (errorArca) {
@@ -243,7 +243,7 @@ export function VistaExtractoBancario() {
         return
       }
 
-      // Cargar templates egresos pendientes (incluyendo diferentes estados válidos)
+      // Cargar templates egresos NO conciliados (cualquier estado excepto conciliado)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
@@ -259,7 +259,7 @@ export function VistaExtractoBancario() {
             responsable
           )
         `)
-        .in('estado', ['pendiente', 'Pendiente']) // Probar ambas variantes
+        .neq('estado', 'conciliado')
         .order('fecha_estimada', { ascending: false })
 
       if (errorTemplates) {
@@ -309,8 +309,8 @@ export function VistaExtractoBancario() {
       setFacturasDisponibles(todasLasOpciones)
       
       console.log(`✅ Cargadas ${facturasFormateadas.length} facturas ARCA + ${templatesFormateados.length} templates = ${todasLasOpciones.length} total`)
-      console.log('📄 Facturas ARCA:', facturasFormateadas.map(f => `${f.display_nombre} - ${f.display_monto}`))
-      console.log('📋 Templates:', templatesFormateados.map(t => `${t.display_nombre} - ${t.display_monto}`))
+      console.log('📄 Facturas ARCA (NO conciliadas):', facturasArca?.map(f => `${f.denominacion_emisor} - ${f.monto_a_abonar} [${f.estado}]`) || [])
+      console.log('📋 Templates (NO conciliados):', templatesEgresos?.map(t => `${t.egreso?.nombre_quien_cobra || t.egreso?.responsable} - ${t.monto} [${t.estado}]`) || [])
     } catch (error) {
       console.error('Error cargando facturas y templates:', error)
     }
