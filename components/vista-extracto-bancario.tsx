@@ -67,6 +67,7 @@ export function VistaExtractoBancario() {
   const [montoHasta, setMontoHasta] = useState('')
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
+  const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
@@ -113,7 +114,7 @@ export function VistaExtractoBancario() {
     cargarMovimientos({
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: 200
+      limite: limiteRegistros
     })
   }
 
@@ -492,12 +493,20 @@ export function VistaExtractoBancario() {
     })
   }
 
+  // Obtener información del límite seleccionado
+  const obtenerInfoLimite = (limite: number) => {
+    if (limite <= 500) return { color: 'text-green-600', mensaje: 'Carga rápida' }
+    if (limite <= 1000) return { color: 'text-yellow-600', mensaje: 'Carga moderada' }
+    if (limite <= 2000) return { color: 'text-orange-600', mensaje: 'Puede ser lento' }
+    return { color: 'text-red-600', mensaje: 'Carga pesada - usar filtros' }
+  }
+
   // Aplicar filtros avanzados extracto bancario
   const aplicarFiltrosAvanzados = () => {
     const filtros: any = {
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: 200
+      limite: limiteRegistros
     }
 
     // Agregar filtros adicionales
@@ -524,7 +533,7 @@ export function VistaExtractoBancario() {
     
     cargarMovimientos({
       estado: 'Todos',
-      limite: 200
+      limite: limiteRegistros
     })
   }
 
@@ -741,6 +750,26 @@ export function VistaExtractoBancario() {
                     <SelectItem value="auditar">Para Auditar</SelectItem>
                   </SelectContent>
                 </Select>
+                
+                {/* Selector de límite de registros */}
+                <div className="flex flex-col gap-1">
+                  <Select value={limiteRegistros.toString()} onValueChange={(value) => setLimiteRegistros(parseInt(value))}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="200">200</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                      <SelectItem value="1000">1,000</SelectItem>
+                      <SelectItem value="2000">2,000</SelectItem>
+                      <SelectItem value="5000">5,000</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className={`text-xs ${obtenerInfoLimite(limiteRegistros).color}`}>
+                    {obtenerInfoLimite(limiteRegistros).mensaje}
+                  </span>
+                </div>
+                
                 <Button onClick={aplicarFiltros} variant="outline">
                   Filtrar
                 </Button>
@@ -860,7 +889,12 @@ export function VistaExtractoBancario() {
                   <div className="space-y-2 col-span-1 md:col-span-2">
                     <label className="text-sm font-medium text-purple-700">📊 Info de Filtrado</label>
                     <div className="text-xs text-gray-600">
-                      Mostrando {movimientos.length} movimientos
+                      Mostrando {movimientos.length} de {limiteRegistros} movimientos máximo
+                      {movimientos.length === limiteRegistros && (
+                        <div className="text-orange-600 font-medium">
+                          ⚠️ Límite alcanzado - puede haber más registros
+                        </div>
+                      )}
                       {(fechaMovDesde || fechaMovHasta || montoDesde || montoHasta || busquedaCateg || busquedaDetalle) && (
                         <span className="text-purple-600"> (filtros aplicados)</span>
                       )}
