@@ -14,7 +14,7 @@ export interface MovimientoBancario {
   categ: string | null
   detalle: string | null
   centro_de_costo: string | null
-  estado: 'Conciliado' | 'Pendiente' | 'Auditar'
+  estado: 'conciliado' | 'pendiente' | 'auditar'
   numero_de_comprobante: string | null
   observaciones_cliente: string | null
   motivo_revision: string | null
@@ -46,7 +46,7 @@ export function useMovimientosBancarios() {
 
   // Cargar movimientos bancarios
   const cargarMovimientos = async (filtros?: {
-    estado?: 'Conciliado' | 'Pendiente' | 'Auditar' | 'Todos'
+    estado?: 'conciliado' | 'pendiente' | 'auditar' | 'Todos'
     limite?: number
     busqueda?: string
     fechaDesde?: string
@@ -141,9 +141,9 @@ export function useMovimientosBancarios() {
 
       const stats = {
         total: data?.length || 0,
-        conciliados: data?.filter(m => m.estado === 'Conciliado').length || 0,
-        pendientes: data?.filter(m => m.estado === 'Pendiente').length || 0,
-        auditar: data?.filter(m => m.estado === 'Auditar').length || 0,
+        conciliados: data?.filter(m => m.estado === 'conciliado').length || 0,
+        pendientes: data?.filter(m => m.estado === 'pendiente').length || 0,
+        auditar: data?.filter(m => m.estado === 'auditar').length || 0,
         sin_categ: data?.filter(m => !m.categ || m.categ.startsWith('INVALIDA:')).length || 0
       }
 

@@ -41,7 +41,7 @@ export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'Conciliado' | 'Pendiente' | 'Auditar'>('Todos')
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
@@ -155,7 +155,7 @@ export function VistaExtractoBancario() {
       
       if (exito) {
         // Si se marcaron como "Conciliado", actualizar facturas vinculadas y limpiar motivo_revision
-        if (editData.estado === 'Conciliado') {
+        if (editData.estado === 'conciliado') {
           // Limpiar motivo_revision para movimientos marcados como Conciliado
           const { error: errorLimpiar } = await supabase
             .from('msa_galicia')
@@ -190,9 +190,29 @@ export function VistaExtractoBancario() {
                 // Preparar datos de actualización: estado + valores editados del extracto
                 const updateData: any = { estado: 'conciliado' }
                 
-                // Propagar monto del extracto bancario
+                // Propagar monto del extracto bancario con validación de diferencia
                 if (movimiento.debitos) {
-                  updateData.monto_a_abonar = movimiento.debitos
+                  const montoOriginal = opcionVinculada.display_monto
+                  const montoExtracto = movimiento.debitos
+                  const diferenciaPorcentaje = Math.abs((montoExtracto - montoOriginal) / montoOriginal) * 100
+                  
+                  if (diferenciaPorcentaje > 10) {
+                    const confirmar = window.confirm(
+                      `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
+                      `Factura original: $${montoOriginal.toLocaleString()}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `¿Confirmas actualizar la factura con el monto del extracto?`
+                    )
+                    
+                    if (!confirmar) {
+                      console.log(`❌ Usuario canceló actualización de factura ${opcionId} por diferencia de monto`)
+                      continue // Saltar esta factura
+                    }
+                  }
+                  
+                  updateData.monto_a_abonar = montoExtracto
+                  console.log(`💰 Monto actualizado: ${montoOriginal} → ${montoExtracto} (${diferenciaPorcentaje.toFixed(1)}% diff)`)
                 }
                 
                 // Propagar CATEG si fue editada
@@ -223,9 +243,29 @@ export function VistaExtractoBancario() {
                 // Actualizar cuota del template
                 const updateCuotaData: any = { estado: 'conciliado' }
                 
-                // Propagar monto del extracto bancario
+                // Propagar monto del extracto bancario con validación de diferencia
                 if (movimiento.debitos) {
-                  updateCuotaData.monto = movimiento.debitos
+                  const montoOriginal = opcionVinculada.display_monto
+                  const montoExtracto = movimiento.debitos
+                  const diferenciaPorcentaje = Math.abs((montoExtracto - montoOriginal) / montoOriginal) * 100
+                  
+                  if (diferenciaPorcentaje > 10) {
+                    const confirmar = window.confirm(
+                      `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
+                      `Template original: $${montoOriginal.toLocaleString()}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `¿Confirmas actualizar el template con el monto del extracto?`
+                    )
+                    
+                    if (!confirmar) {
+                      console.log(`❌ Usuario canceló actualización de template ${opcionId} por diferencia de monto`)
+                      continue // Saltar este template
+                    }
+                  }
+                  
+                  updateCuotaData.monto = montoExtracto
+                  console.log(`💰 Monto template actualizado: ${montoOriginal} → ${montoExtracto} (${diferenciaPorcentaje.toFixed(1)}% diff)`)
                 }
                 
                 const { error: errorCuota } = await supabase
@@ -696,9 +736,9 @@ export function VistaExtractoBancario() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Todos">Todos los estados</SelectItem>
-                    <SelectItem value="Conciliado">Conciliados</SelectItem>
-                    <SelectItem value="Pendiente">Pendientes</SelectItem>
-                    <SelectItem value="Auditar">Para Auditar</SelectItem>
+                    <SelectItem value="conciliado">Conciliados</SelectItem>
+                    <SelectItem value="pendiente">Pendientes</SelectItem>
+                    <SelectItem value="auditar">Para Auditar</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button onClick={aplicarFiltros} variant="outline">
@@ -884,9 +924,9 @@ export function VistaExtractoBancario() {
                         <SelectValue placeholder="Seleccionar estado" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Conciliado">Conciliado</SelectItem>
-                        <SelectItem value="Auditar">Auditar</SelectItem>
-                        <SelectItem value="Pendiente">Pendiente</SelectItem>
+                        <SelectItem value="conciliado">Conciliado</SelectItem>
+                        <SelectItem value="auditar">Auditar</SelectItem>
+                        <SelectItem value="pendiente">Pendiente</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -909,7 +949,7 @@ export function VistaExtractoBancario() {
                 </div>
                 
                 {/* Sección de Vinculación con Facturas */}
-                {editData.estado === 'Conciliado' && (
+                {editData.estado === 'conciliado' && (
                   <div className="border-t pt-4 mt-4">
                     <h4 className="text-lg font-medium mb-3 text-blue-800">
                       💡 Vincular con Facturas ARCA (Opcional)
@@ -1155,7 +1195,7 @@ export function VistaExtractoBancario() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={
-                              movimiento.estado === 'Conciliado' ? 'default' : 
+                              movimiento.estado === 'conciliado' ? 'default' : 
                               movimiento.estado === 'Auditar' ? 'secondary' : 
                               'outline'
                             }>
