@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -108,6 +108,11 @@ export function VistaFacturasArca() {
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
+  
+  // Estados para edición inline
+  const [modoEdicion, setModoEdicion] = useState(false)
+  const [celdaEnEdicion, setCeldaEnEdicion] = useState<{facturaId: string, columna: string, valor: any} | null>(null)
+  const [guardandoCambio, setGuardandoCambio] = useState(false)
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -282,6 +287,75 @@ export function VistaFacturasArca() {
     setFacturas(facturasOriginales)
   }
   
+  // Funciones para edición inline
+  const iniciarEdicion = (facturaId: string, columna: string, valor: any, event: React.MouseEvent) => {
+    if (!event.ctrlKey || !modoEdicion) return
+    
+    event.preventDefault()
+    event.stopPropagation()
+    
+    setCeldaEnEdicion({
+      facturaId,
+      columna,
+      valor: valor || ''
+    })
+  }
+
+  const cancelarEdicion = () => {
+    setCeldaEnEdicion(null)
+  }
+
+  const guardarCambio = async () => {
+    if (!celdaEnEdicion) return
+    
+    setGuardandoCambio(true)
+    
+    try {
+      let valorFinal: any = celdaEnEdicion.valor
+      
+      // Convertir valores según el tipo de campo
+      if (['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(celdaEnEdicion.columna)) {
+        valorFinal = parseFloat(String(valorFinal)) || 0
+      }
+      
+      const { error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .update({ [celdaEnEdicion.columna]: valorFinal })
+        .eq('id', celdaEnEdicion.facturaId)
+      
+      if (error) {
+        console.error('Error actualizando factura:', error)
+        alert('Error al guardar cambio: ' + error.message)
+        return
+      }
+      
+      // Actualizar estado local
+      const nuevasFacturas = facturas.map(f => 
+        f.id === celdaEnEdicion.facturaId 
+          ? { ...f, [celdaEnEdicion.columna]: valorFinal }
+          : f
+      )
+      setFacturas(nuevasFacturas)
+      
+      const nuevasFacturasOriginales = facturasOriginales.map(f => 
+        f.id === celdaEnEdicion.facturaId 
+          ? { ...f, [celdaEnEdicion.columna]: valorFinal }
+          : f
+      )
+      setFacturasOriginales(nuevasFacturasOriginales)
+      
+      setCeldaEnEdicion(null)
+      alert('Cambio guardado exitosamente')
+      
+    } catch (error) {
+      console.error('Error guardando cambio:', error)
+      alert('Error al guardar cambio')
+    } finally {
+      setGuardandoCambio(false)
+    }
+  }
+
   // Obtener estados únicos para el selector
   const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
 
@@ -290,9 +364,90 @@ export function VistaFacturasArca() {
     .filter(([_, visible]) => visible)
     .map(([key]) => key as keyof FacturaArca)
 
+  // Campos editables en ARCA
+  const camposEditables = [
+    'fecha_estimada', 'fecha_vencimiento', 'monto_a_abonar', 'cuenta_contable', 
+    'centro_costo', 'estado', 'observaciones_pago', 'detalle', 'campana'
+  ]
+
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
+    const esEditable = camposEditables.includes(columna as string)
+    const esCeldaEnEdicion = celdaEnEdicion?.facturaId === factura.id && celdaEnEdicion?.columna === columna
+
+    // Si esta celda está en edición, mostrar input
+    if (esCeldaEnEdicion) {
+      return (
+        <div className="flex items-center gap-1">
+          {(['fecha_estimada', 'fecha_vencimiento'].includes(columna as string)) ? (
+            <Input
+              type="date"
+              value={String(celdaEnEdicion.valor)}
+              onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              className="h-6 text-xs p-1 w-full"
+              disabled={guardandoCambio}
+            />
+          ) : (['monto_a_abonar', 'imp_total'].includes(columna as string)) ? (
+            <Input
+              type="number"
+              step="0.01"
+              value={String(celdaEnEdicion.valor)}
+              onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              className="h-6 text-xs p-1 w-full text-right"
+              disabled={guardandoCambio}
+            />
+          ) : (columna === 'estado') ? (
+            <Select 
+              value={String(celdaEnEdicion.valor)} 
+              onValueChange={(value) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: value } : null)}
+              disabled={guardandoCambio}
+            >
+              <SelectTrigger className="h-6 text-xs p-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pendiente">Pendiente</SelectItem>
+                <SelectItem value="pagado">Pagado</SelectItem>
+                <SelectItem value="conciliado">Conciliado</SelectItem>
+                <SelectItem value="credito">Crédito</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              type="text"
+              value={String(celdaEnEdicion.valor)}
+              onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              className="h-6 text-xs p-1 w-full"
+              disabled={guardandoCambio}
+            />
+          )}
+          
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={guardarCambio}
+            disabled={guardandoCambio}
+            className="h-6 w-6 p-0"
+          >
+            {guardandoCambio ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Save className="h-3 w-3 text-green-600" />
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={cancelarEdicion}
+            disabled={guardandoCambio}
+            className="h-6 w-6 p-0"
+          >
+            <X className="h-3 w-3 text-red-600" />
+          </Button>
+        </div>
+      )
+    }
 
     if (valor === null || valor === undefined) {
       return <span className="text-gray-400">-</span>
@@ -305,7 +460,17 @@ export function VistaFacturasArca() {
       case 'fecha_estimada':
       case 'fecha_vencimiento':
       case 'created_at':
-        return formatearFecha(valor as string)
+        const contenidoFecha = formatearFecha(valor as string)
+        return esEditable && modoEdicion ? (
+          <div 
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoFecha}
+          </div>
+        ) : contenidoFecha
       
       case 'imp_neto_gravado':
       case 'imp_neto_no_gravado':
@@ -315,24 +480,64 @@ export function VistaFacturasArca() {
       case 'imp_total':
       case 'tipo_cambio':
       case 'monto_a_abonar':
-        return formatearNumero(valor as number)
+        const contenidoNumero = formatearNumero(valor as number)
+        return esEditable && modoEdicion ? (
+          <div 
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoNumero}
+          </div>
+        ) : contenidoNumero
       
       case 'denominacion_emisor':
-        return (
+        const contenidoDenominacion = (
           <div className="max-w-xs truncate" title={valor as string}>
             {valor as string}
           </div>
         )
+        return esEditable && modoEdicion ? (
+          <div 
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoDenominacion}
+          </div>
+        ) : contenidoDenominacion
       
       case 'estado':
-        return (
+        const contenidoEstado = (
           <Badge variant={valor === 'pendiente' ? 'secondary' : 'default'}>
             {valor as string}
           </Badge>
         )
+        return esEditable && modoEdicion ? (
+          <div 
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoEstado}
+          </div>
+        ) : contenidoEstado
       
       default:
-        return String(valor)
+        const contenidoDefault = String(valor)
+        return esEditable && modoEdicion ? (
+          <div 
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoDefault}
+          </div>
+        ) : contenidoDefault
     }
   }
 
@@ -355,6 +560,15 @@ export function VistaFacturasArca() {
           >
             <Filter className="mr-2 h-4 w-4" />
             Filtros
+          </Button>
+          
+          {/* Botón modo edición */}
+          <Button 
+            variant={modoEdicion ? "default" : "outline"}
+            onClick={() => setModoEdicion(!modoEdicion)}
+          >
+            <Edit3 className="mr-2 h-4 w-4" />
+            {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
           </Button>
           
           {/* Selector de columnas */}

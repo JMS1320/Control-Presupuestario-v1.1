@@ -28,7 +28,8 @@ import {
   X,
   Search,
   Check,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Filter
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -56,6 +57,15 @@ export function VistaExtractoBancario() {
   // Estados para Combobox avanzado
   const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
   const [busquedaCombobox, setBusquedaCombobox] = useState<{[key: string]: string}>({})
+  
+  // Estados para filtros avanzados extracto bancario
+  const [mostrarFiltrosAvanzados, setMostrarFiltrosAvanzados] = useState(false)
+  const [fechaMovDesde, setFechaMovDesde] = useState('')
+  const [fechaMovHasta, setFechaMovHasta] = useState('')
+  const [montoDesde, setMontoDesde] = useState('')
+  const [montoHasta, setMontoHasta] = useState('')
+  const [busquedaCateg, setBusquedaCategExtracto] = useState('')
+  const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
@@ -265,6 +275,42 @@ export function VistaExtractoBancario() {
       ]
       
       return campos.some(campo => campo.includes(busqueda))
+    })
+  }
+
+  // Aplicar filtros avanzados extracto bancario
+  const aplicarFiltrosAvanzados = () => {
+    const filtros: any = {
+      estado: filtroEstado,
+      busqueda: busqueda.trim() || undefined,
+      limite: 200
+    }
+
+    // Agregar filtros adicionales
+    if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
+    if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
+    if (montoDesde) filtros.montoDesde = parseFloat(montoDesde)
+    if (montoHasta) filtros.montoHasta = parseFloat(montoHasta)
+    if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
+    if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
+
+    cargarMovimientos(filtros)
+  }
+
+  // Limpiar filtros avanzados
+  const limpiarFiltrosAvanzados = () => {
+    setFechaMovDesde('')
+    setFechaMovHasta('')
+    setMontoDesde('')
+    setMontoHasta('')
+    setBusquedaCategExtracto('')
+    setBusquedaDetalleExtracto('')
+    setBusqueda('')
+    setFiltroEstado('Todos')
+    
+    cargarMovimientos({
+      estado: 'Todos',
+      limite: 200
     })
   }
 
@@ -485,6 +531,13 @@ export function VistaExtractoBancario() {
                   Filtrar
                 </Button>
                 <Button 
+                  onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
+                  variant={mostrarFiltrosAvanzados ? "default" : "outline"}
+                >
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filtros Avanzados
+                </Button>
+                <Button 
                   onClick={() => setModoEdicion(!modoEdicion)} 
                   variant={modoEdicion ? "destructive" : "outline"}
                   className="flex items-center gap-2"
@@ -504,6 +557,123 @@ export function VistaExtractoBancario() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Panel de Filtros Avanzados */}
+          {mostrarFiltrosAvanzados && (
+            <Card className="border-purple-200 bg-purple-50">
+              <CardHeader>
+                <CardTitle className="text-purple-800 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Filter className="h-5 w-5" />
+                    🔍 Filtros Avanzados Extracto Bancario
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMostrarFiltrosAvanzados(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                  {/* Filtros de fecha de movimiento */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-purple-700">📅 Rango de Fechas Movimiento</label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="date"
+                        placeholder="Desde"
+                        value={fechaMovDesde}
+                        onChange={(e) => setFechaMovDesde(e.target.value)}
+                        className="text-xs"
+                      />
+                      <Input
+                        type="date"
+                        placeholder="Hasta"
+                        value={fechaMovHasta}
+                        onChange={(e) => setFechaMovHasta(e.target.value)}
+                        className="text-xs"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Filtros de monto */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-purple-700">💵 Rango de Montos</label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        placeholder="Monto desde"
+                        value={montoDesde}
+                        onChange={(e) => setMontoDesde(e.target.value)}
+                        className="text-xs"
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Monto hasta"
+                        value={montoHasta}
+                        onChange={(e) => setMontoHasta(e.target.value)}
+                        className="text-xs"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Búsqueda por CATEG */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-purple-700">💰 CATEG</label>
+                    <Input
+                      placeholder="Buscar por CATEG..."
+                      value={busquedaCateg}
+                      onChange={(e) => setBusquedaCategExtracto(e.target.value)}
+                      className="text-xs"
+                    />
+                  </div>
+                  
+                  {/* Búsqueda por detalle */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-purple-700">📝 Detalle Movimiento</label>
+                    <Input
+                      placeholder="Buscar en detalle..."
+                      value={busquedaDetalle}
+                      onChange={(e) => setBusquedaDetalleExtracto(e.target.value)}
+                      className="text-xs"
+                    />
+                  </div>
+                  
+                  {/* Estadísticas */}
+                  <div className="space-y-2 col-span-1 md:col-span-2">
+                    <label className="text-sm font-medium text-purple-700">📊 Info de Filtrado</label>
+                    <div className="text-xs text-gray-600">
+                      Mostrando {movimientos.length} movimientos
+                      {(fechaMovDesde || fechaMovHasta || montoDesde || montoHasta || busquedaCateg || busquedaDetalle) && (
+                        <span className="text-purple-600"> (filtros aplicados)</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button
+                    onClick={aplicarFiltrosAvanzados}
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Filter className="h-4 w-4 mr-2" />
+                    Aplicar Filtros Avanzados
+                  </Button>
+                  <Button
+                    onClick={limpiarFiltrosAvanzados}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Limpiar Todos
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Panel de Edición Masiva */}
           {modoEdicion && seleccionados.size > 0 && (

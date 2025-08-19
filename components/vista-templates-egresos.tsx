@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -94,6 +94,14 @@ export function VistaTemplatesEgresos() {
   const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('todos')
   const [anoSeleccionado, setAnoSeleccionado] = useState('todos')
   const [soloActivos, setSoloActivos] = useState(false)
+  
+  // Estados para edición inline
+  const [modoEdicion, setModoEdicion] = useState(false)
+  const [celdaEnEdicion, setCeldaEnEdicion] = useState<{
+    cuotaId: string
+    columna: string
+    valor: any
+  } | null>(null)
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -297,12 +305,77 @@ export function VistaTemplatesEgresos() {
   const tiposRecurrenciaUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.tipo_recurrencia))].filter(Boolean).sort()
   const anosUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.año))].filter(Boolean).sort((a, b) => b - a)
 
+  // Definir campos editables para templates - incluye cuotas y egresos padre
+  const camposEditables = [
+    'fecha_estimada', 'fecha_vencimiento', 'monto', 'descripcion', 'estado',
+    'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
+  ]
+
+  // Funciones para edición inline
+  const iniciarEdicion = (cuotaId: string, columna: string, valor: any, event: React.MouseEvent) => {
+    if (!event.ctrlKey || !modoEdicion) return
+    setCeldaEnEdicion({ cuotaId, columna, valor: valor || '' })
+  }
+
+  const cancelarEdicion = () => {
+    setCeldaEnEdicion(null)
+  }
+
+  const guardarCambio = async (nuevoValor: string) => {
+    if (!celdaEnEdicion) return
+
+    try {
+      const cuota = cuotas.find(c => c.id === celdaEnEdicion.cuotaId)
+      if (!cuota) throw new Error('Cuota no encontrada')
+
+      // Determinar tabla y campo correcto
+      let updateData: any = {}
+      let tablaDestino = ''
+      let idDestino = ''
+
+      // Campos que van a la tabla de egresos padre
+      if (['categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'].includes(celdaEnEdicion.columna)) {
+        if (!cuota.egreso_id) throw new Error('No se encontró el egreso padre')
+        tablaDestino = 'egresos_sin_factura'
+        idDestino = cuota.egreso_id
+      } else {
+        // Campos que van a la tabla de cuotas
+        tablaDestino = 'cuotas_egresos_sin_factura'
+        idDestino = cuota.id
+      }
+
+      // Preparar el valor según el tipo de campo
+      let valorFinal: any = nuevoValor
+      if (celdaEnEdicion.columna === 'monto') {
+        valorFinal = parseFloat(nuevoValor) || 0
+      }
+
+      updateData[celdaEnEdicion.columna] = valorFinal
+
+      const { error } = await supabase
+        .from(tablaDestino)
+        .update(updateData)
+        .eq('id', idDestino)
+
+      if (error) throw error
+
+      // Recargar datos
+      await cargarCuotas()
+      setCeldaEnEdicion(null)
+
+      console.log(`✅ Templates: ${celdaEnEdicion.columna} actualizado en ${tablaDestino}`)
+    } catch (error) {
+      console.error('Error guardando cambio:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    }
+  }
+
   // Obtener columnas visibles
   const columnasVisiblesArray = Object.entries(columnasVisibles)
     .filter(([_, visible]) => visible)
     .map(([key]) => key)
 
-  // Renderizar valor de celda según el tipo de columna
+  // Renderizar valor de celda según el tipo de columna con soporte para edición
   const renderizarCelda = (cuota: CuotaEgresoSinFactura, columna: string) => {
     let valor: any
 
@@ -314,53 +387,114 @@ export function VistaTemplatesEgresos() {
       valor = cuota.egreso?.[columna as keyof typeof cuota.egreso]
     }
 
-    if (valor === null || valor === undefined) {
-      return <span className="text-gray-400">-</span>
+    // Si está en edición esta celda específica
+    if (celdaEnEdicion?.cuotaId === cuota.id && celdaEnEdicion?.columna === columna) {
+      return (
+        <div className="flex items-center gap-1 min-w-[120px]">
+          <Input
+            defaultValue={celdaEnEdicion.valor}
+            className="h-8 text-xs"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                guardarCambio(e.currentTarget.value)
+              } else if (e.key === 'Escape') {
+                cancelarEdicion()
+              }
+            }}
+            onBlur={(e) => guardarCambio(e.target.value)}
+          />
+          <Button
+            size="sm" 
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => guardarCambio((document.querySelector('input:focus') as HTMLInputElement)?.value || '')}
+          >
+            <Save className="h-3 w-3" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost" 
+            className="h-6 w-6 p-0"
+            onClick={cancelarEdicion}
+          >
+            <XCircle className="h-3 w-3" />
+          </Button>
+        </div>
+      )
     }
 
-    switch (columna) {
-      case 'fecha_estimada':
-      case 'fecha_vencimiento':
-      case 'created_at':
-      case 'updated_at':
-        return formatearFecha(valor as string)
-      
-      case 'monto':
-        return formatearNumero(valor as number)
-      
-      case 'estado':
-        return (
-          <Badge variant={valor === 'pendiente' ? 'secondary' : 'default'}>
-            {valor as string}
-          </Badge>
-        )
-      
-      case 'activo':
-        return (
-          <Badge variant={valor ? 'default' : 'secondary'}>
-            {valor ? 'Sí' : 'No'}
-          </Badge>
-        )
-      
-      case 'configuracion_reglas':
-        return (
-          <div className="max-w-xs truncate" title={JSON.stringify(valor)}>
-            {JSON.stringify(valor)}
-          </div>
-        )
-      
-      case 'nombre_referencia':
-      case 'nombre_quien_cobra':
-      case 'descripcion':
-        return (
-          <div className="max-w-xs truncate" title={valor as string}>
-            {valor as string}
-          </div>
-        )
-      
-      default:
-        return String(valor)
+    // Determinar si es campo editable
+    const esEditable = camposEditables.includes(columna)
+    const claseEditable = modoEdicion && esEditable ? 'cursor-pointer hover:bg-blue-50 border border-transparent hover:border-blue-200' : ''
+    
+    if (valor === null || valor === undefined) {
+      return (
+        <span 
+          className={`text-gray-400 ${claseEditable}`}
+          onClick={(e) => esEditable ? iniciarEdicion(cuota.id, columna, valor, e) : undefined}
+        >
+          {modoEdicion && esEditable && <Edit3 className="h-3 w-3 inline mr-1 opacity-50" />}
+          -
+        </span>
+      )
     }
+
+    const contenidoCelda = (() => {
+      switch (columna) {
+        case 'fecha_estimada':
+        case 'fecha_vencimiento':
+        case 'created_at':
+        case 'updated_at':
+          return formatearFecha(valor as string)
+        
+        case 'monto':
+          return formatearNumero(valor as number)
+        
+        case 'estado':
+          return (
+            <Badge variant={valor === 'pendiente' ? 'secondary' : 'default'}>
+              {valor as string}
+            </Badge>
+          )
+        
+        case 'activo':
+          return (
+            <Badge variant={valor ? 'default' : 'secondary'}>
+              {valor ? 'Sí' : 'No'}
+            </Badge>
+          )
+        
+        case 'configuracion_reglas':
+          return (
+            <div className="max-w-xs truncate" title={JSON.stringify(valor)}>
+              {JSON.stringify(valor)}
+            </div>
+          )
+        
+        case 'nombre_referencia':
+        case 'nombre_quien_cobra':
+        case 'descripcion':
+          return (
+            <div className="max-w-xs truncate" title={valor as string}>
+              {valor as string}
+            </div>
+          )
+        
+        default:
+          return String(valor)
+      }
+    })()
+
+    return (
+      <div
+        className={claseEditable}
+        onClick={(e) => esEditable ? iniciarEdicion(cuota.id, columna, valor, e) : undefined}
+      >
+        {modoEdicion && esEditable && <Edit3 className="h-3 w-3 inline mr-1 opacity-50" />}
+        {contenidoCelda}
+      </div>
+    )
   }
 
   return (
@@ -376,6 +510,19 @@ export function VistaTemplatesEgresos() {
         
         {/* Controles */}
         <div className="flex items-center gap-2">
+          {/* Botón de modo edición */}
+          <Button
+            variant={modoEdicion ? "default" : "outline"}
+            onClick={() => {
+              setModoEdicion(!modoEdicion)
+              setCeldaEnEdicion(null) // Limpiar edición activa
+            }}
+            className={modoEdicion ? "bg-blue-600 hover:bg-blue-700" : ""}
+          >
+            <Edit3 className="mr-2 h-4 w-4" />
+            {modoEdicion ? "Salir Edición" : "Modo Edición"}
+          </Button>
+          
           <Button
             onClick={() => setMostrarWizard(true)}
             className="bg-green-600 hover:bg-green-700"
@@ -473,6 +620,17 @@ export function VistaTemplatesEgresos() {
           </Popover>
         </div>
       </div>
+
+      {/* Información sobre modo edición */}
+      {modoEdicion && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Modo Edición Activo:</strong> Mantén presionado Ctrl + Click en cualquier celda editable para modificar valores. 
+            Campos editables: fecha estimada, fecha vencimiento, monto, descripción, estado, CATEG, centro costo, responsable, nombre quien cobra, CUIT.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Panel de filtros */}
       {mostrarFiltros && (
