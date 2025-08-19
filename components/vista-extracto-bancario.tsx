@@ -166,43 +166,110 @@ export function VistaExtractoBancario() {
             console.error('Error limpiando motivo_revision:', errorLimpiar)
           }
           
-          // Actualizar facturas ARCA y templates vinculados
+          // Actualizar facturas ARCA y templates vinculados con valores del extracto bancario
           for (const movimientoId of ids) {
             const opcionId = vinculaciones[movimientoId]
             if (opcionId) {
-              // Encontrar la opción vinculada para saber si es ARCA o Template
+              // Encontrar el movimiento bancario y la opción vinculada
+              const movimiento = movimientos.find(m => m.id === movimientoId)
               const opcionVinculada = facturasDisponibles.find(opt => opt.id === opcionId)
+              
               if (!opcionVinculada) {
                 console.warn(`No se encontró opción vinculada con ID: ${opcionId}`)
                 continue
               }
 
+              if (!movimiento) {
+                console.warn(`No se encontró movimiento con ID: ${movimientoId}`)
+                continue
+              }
+
               if (opcionVinculada.tipo === 'ARCA') {
-                console.log(`Actualizando factura ARCA ${opcionId} a estado conciliado`)
+                console.log(`Actualizando factura ARCA ${opcionId} con valores del extracto bancario`)
+                
+                // Preparar datos de actualización: estado + valores editados del extracto
+                const updateData: any = { estado: 'conciliado' }
+                
+                // Propagar monto del extracto bancario
+                if (movimiento.debitos) {
+                  updateData.monto_a_abonar = movimiento.debitos
+                }
+                
+                // Propagar CATEG si fue editada
+                if (editData.categ?.trim()) {
+                  updateData.cuenta_contable = editData.categ.trim()
+                }
+                
+                // Propagar centro de costo si fue editado
+                if (editData.centro_de_costo?.trim()) {
+                  updateData.centro_costo = editData.centro_de_costo.trim()
+                }
                 
                 const { error } = await supabase
                   .schema('msa')
                   .from('comprobantes_arca')
-                  .update({ estado: 'conciliado' })
+                  .update(updateData)
                   .eq('id', opcionId)
                 
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
                 } else {
-                  console.log(`✅ Factura ARCA ${opcionId} marcada como conciliada`)
+                  console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
                 }
-              } else if (opcionVinculada.tipo === 'TEMPLATE') {
-                console.log(`Actualizando template ${opcionId} a estado conciliado`)
                 
-                const { error } = await supabase
+              } else if (opcionVinculada.tipo === 'TEMPLATE') {
+                console.log(`Actualizando template ${opcionId} con valores del extracto bancario`)
+                
+                // Actualizar cuota del template
+                const updateCuotaData: any = { estado: 'conciliado' }
+                
+                // Propagar monto del extracto bancario
+                if (movimiento.debitos) {
+                  updateCuotaData.monto = movimiento.debitos
+                }
+                
+                const { error: errorCuota } = await supabase
                   .from('cuotas_egresos_sin_factura')
-                  .update({ estado: 'conciliado' })
+                  .update(updateCuotaData)
                   .eq('id', opcionId)
                 
-                if (error) {
-                  console.error('Error actualizando template:', error)
+                if (errorCuota) {
+                  console.error('Error actualizando cuota template:', errorCuota)
                 } else {
-                  console.log(`✅ Template ${opcionId} marcado como conciliado`)
+                  console.log(`✅ Cuota template ${opcionId} actualizada:`, updateCuotaData)
+                  
+                  // Actualizar egreso padre con CATEG y centro de costo si fueron editados
+                  if (editData.categ?.trim() || editData.centro_de_costo?.trim()) {
+                    const updateEgresoData: any = {}
+                    
+                    if (editData.categ?.trim()) {
+                      updateEgresoData.categ = editData.categ.trim()
+                    }
+                    
+                    if (editData.centro_de_costo?.trim()) {
+                      updateEgresoData.centro_costo = editData.centro_de_costo.trim()
+                    }
+                    
+                    // Necesitamos el egreso_id para actualizar el egreso padre
+                    const { data: cuotaData } = await supabase
+                      .from('cuotas_egresos_sin_factura')
+                      .select('egreso_id')
+                      .eq('id', opcionId)
+                      .single()
+                    
+                    if (cuotaData?.egreso_id) {
+                      const { error: errorEgreso } = await supabase
+                        .from('egresos_sin_factura')
+                        .update(updateEgresoData)
+                        .eq('id', cuotaData.egreso_id)
+                      
+                      if (errorEgreso) {
+                        console.error('Error actualizando egreso padre:', errorEgreso)
+                      } else {
+                        console.log(`✅ Egreso padre ${cuotaData.egreso_id} actualizado:`, updateEgresoData)
+                      }
+                    }
+                  }
                 }
               }
             }
