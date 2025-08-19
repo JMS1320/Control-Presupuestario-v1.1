@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +28,7 @@ import {
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
+import { supabase } from "@/lib/supabase"
 
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
@@ -44,9 +45,18 @@ export function VistaExtractoBancario() {
     contable: '',
     interno: ''
   })
+  const [facturasDisponibles, setFacturasDisponibles] = useState<any[]>([])
+  const [vinculaciones, setVinculaciones] = useState<{[key: string]: string}>({}) // movimiento_id -> factura_id
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
+
+  // Cargar facturas cuando se activa modo edición
+  useEffect(() => {
+    if (modoEdicion) {
+      cargarFacturasDisponibles()
+    }
+  }, [modoEdicion])
 
   // Iniciar proceso de conciliación
   const iniciarConciliacion = () => {
@@ -124,9 +134,32 @@ export function VistaExtractoBancario() {
       const exito = await actualizarMasivo(ids, editData)
       
       if (exito) {
+        // Si se marcaron como "Conciliado", actualizar facturas vinculadas
+        if (editData.estado === 'Conciliado') {
+          for (const movimientoId of ids) {
+            const facturaId = vinculaciones[movimientoId]
+            if (facturaId) {
+              console.log(`Actualizando factura ${facturaId} a estado conciliado`)
+              
+              const { error } = await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .update({ estado: 'conciliado' })
+                .eq('id', facturaId)
+              
+              if (error) {
+                console.error('Error actualizando factura:', error)
+              } else {
+                console.log(`✅ Factura ${facturaId} marcada como conciliada`)
+              }
+            }
+          }
+        }
+        
         // Resetear después de aplicar exitosamente
         setSeleccionados(new Set())
         setModoEdicion(false)
+        setVinculaciones({})
         setEditData({
           categ: '',
           centro_de_costo: '',
@@ -141,10 +174,63 @@ export function VistaExtractoBancario() {
     }
   }
 
+  // Cargar facturas disponibles para vincular
+  const cargarFacturasDisponibles = async () => {
+    try {
+      const { data: facturasArca, error: errorArca } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit')
+        .eq('estado', 'pendiente')
+        .order('fecha_estimada', { ascending: false })
+
+      if (errorArca) {
+        console.error('Error cargando facturas ARCA:', errorArca)
+        return
+      }
+
+      // TODO: Agregar templates egresos también
+      setFacturasDisponibles(facturasArca || [])
+    } catch (error) {
+      console.error('Error cargando facturas:', error)
+    }
+  }
+
+  // Generar propuestas inteligentes para un movimiento
+  const generarPropuestasInteligentes = (movimiento: any) => {
+    const facturas = facturasDisponibles
+    const propuestas = []
+    
+    // 1. Mismo monto exacto (cualquier fecha)
+    const mismoMonto = facturas.filter(f => 
+      Math.abs(f.monto_a_abonar - movimiento.debitos) < 0.01
+    )
+    propuestas.push(...mismoMonto.map(f => ({...f, tipo: 'mismo_monto', prioridad: 1})))
+    
+    // 2. Monto similar ±10% + mismo proveedor (buscar en descripción)
+    const montoSimilar = facturas.filter(f => {
+      const diferenciaMonto = Math.abs(f.monto_a_abonar - movimiento.debitos) / movimiento.debitos
+      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.denominacion_emisor.toLowerCase().split(' ')[0])
+      return diferenciaMonto <= 0.10 && proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
+    })
+    propuestas.push(...montoSimilar.map(f => ({...f, tipo: 'similar_proveedor', prioridad: 2})))
+    
+    // 3. Mismo proveedor (cualquier monto)
+    const mismoProveedor = facturas.filter(f => {
+      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.denominacion_emisor.toLowerCase().split(' ')[0])
+      return proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
+    })
+    propuestas.push(...mismoProveedor.map(f => ({...f, tipo: 'mismo_proveedor', prioridad: 3})))
+    
+    // Ordenar por prioridad
+    return propuestas.sort((a, b) => a.prioridad - b.prioridad)
+  }
+
   // Cancelar modo edición
   const cancelarEdicion = () => {
     setModoEdicion(false)
     setSeleccionados(new Set())
+    setVinculaciones({})
     setEditData({
       categ: '',
       centro_de_costo: '',
@@ -432,6 +518,82 @@ export function VistaExtractoBancario() {
                     />
                   </div>
                 </div>
+                
+                {/* Sección de Vinculación con Facturas */}
+                {editData.estado === 'Conciliado' && (
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-lg font-medium mb-3 text-blue-800">
+                      💡 Vincular con Facturas ARCA (Opcional)
+                    </h4>
+                    <div className="space-y-3">
+                      {Array.from(seleccionados).map(movimientoId => {
+                        const movimiento = movimientos.find(m => m.id === movimientoId)
+                        if (!movimiento) return null
+                        
+                        const propuestasInteligentes = generarPropuestasInteligentes(movimiento)
+                        const todasLasFacturas = facturasDisponibles.filter(f => 
+                          !propuestasInteligentes.find(p => p.id === f.id)
+                        )
+                        
+                        return (
+                          <div key={movimientoId} className="border rounded-lg p-3 bg-gray-50">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium">
+                                {formatCurrency(movimiento.debitos)} - {movimiento.descripcion}
+                              </span>
+                            </div>
+                            <Select 
+                              value={vinculaciones[movimientoId] || ''} 
+                              onValueChange={(value) => setVinculaciones({
+                                ...vinculaciones, 
+                                [movimientoId]: value === 'sin_vincular' ? '' : value
+                              })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sin vincular" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sin_vincular">Sin vincular</SelectItem>
+                                
+                                {propuestasInteligentes.length > 0 && (
+                                  <>
+                                    <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b">
+                                      ⭐ PROPUESTAS INTELIGENTES
+                                    </div>
+                                    {propuestasInteligentes.map(factura => (
+                                      <SelectItem key={factura.id} value={factura.id}>
+                                        ⭐ {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)} 
+                                        ({new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')})
+                                        {factura.tipo === 'mismo_monto' && ' - Mismo monto'}
+                                        {factura.tipo === 'similar_proveedor' && ' - Similar + proveedor'}
+                                        {factura.tipo === 'mismo_proveedor' && ' - Mismo proveedor'}
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                )}
+                                
+                                {todasLasFacturas.length > 0 && (
+                                  <>
+                                    <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b">
+                                      📋 TODAS LAS OPCIONES
+                                    </div>
+                                    {todasLasFacturas.map(factura => (
+                                      <SelectItem key={factura.id} value={factura.id}>
+                                        {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
+                                        ({new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')})
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Button onClick={aplicarEdicionMasiva} className="bg-green-600 hover:bg-green-700">
                     <Save className="h-4 w-4 mr-2" />
