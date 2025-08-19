@@ -501,7 +501,7 @@ export function VistaExtractoBancario() {
                             </TableCell>
                           )}
                           <TableCell className="font-mono text-sm">
-                            {new Date(movimiento.fecha).toLocaleDateString('es-AR')}
+                            {new Date(movimiento.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
                           </TableCell>
                           <TableCell className="max-w-xs truncate">
                             {movimiento.descripcion}
