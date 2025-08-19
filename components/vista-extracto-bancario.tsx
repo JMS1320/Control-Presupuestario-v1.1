@@ -243,7 +243,7 @@ export function VistaExtractoBancario() {
         return
       }
 
-      // Cargar templates egresos pendientes
+      // Cargar templates egresos pendientes (incluyendo diferentes estados válidos)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
@@ -251,6 +251,7 @@ export function VistaExtractoBancario() {
           monto,
           descripcion,
           fecha_estimada,
+          estado,
           egreso:egresos_sin_factura(
             nombre_referencia,
             nombre_quien_cobra,
@@ -258,13 +259,16 @@ export function VistaExtractoBancario() {
             responsable
           )
         `)
-        .eq('estado', 'pendiente')
+        .in('estado', ['pendiente', 'Pendiente']) // Probar ambas variantes
         .order('fecha_estimada', { ascending: false })
 
       if (errorTemplates) {
         console.error('Error cargando templates egresos:', errorTemplates)
         return
       }
+
+      console.log('🔍 DEBUG Templates cargados:', templatesEgresos?.length || 0)
+      console.log('🔍 DEBUG Templates raw data:', templatesEgresos)
 
       // Combinar facturas ARCA y templates en formato unificado
       const facturasFormateadas = (facturasArca || []).map(f => ({
@@ -305,6 +309,8 @@ export function VistaExtractoBancario() {
       setFacturasDisponibles(todasLasOpciones)
       
       console.log(`✅ Cargadas ${facturasFormateadas.length} facturas ARCA + ${templatesFormateados.length} templates = ${todasLasOpciones.length} total`)
+      console.log('📄 Facturas ARCA:', facturasFormateadas.map(f => `${f.display_nombre} - ${f.display_monto}`))
+      console.log('📋 Templates:', templatesFormateados.map(t => `${t.display_nombre} - ${t.display_monto}`))
     } catch (error) {
       console.error('Error cargando facturas y templates:', error)
     }
@@ -789,10 +795,11 @@ export function VistaExtractoBancario() {
                 <div className="grid grid-cols-5 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">CATEG</label>
-                    <Input
-                      placeholder="Cuenta contable"
+                    <CategCombobox
                       value={editData.categ}
-                      onChange={(e) => setEditData({...editData, categ: e.target.value})}
+                      onValueChange={(value) => setEditData({...editData, categ: value})}
+                      placeholder="Seleccionar cuenta contable..."
+                      className="w-full"
                     />
                   </div>
                   <div>
