@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
@@ -623,10 +624,10 @@ export function VistaExtractoBancario() {
                   {/* Búsqueda por CATEG */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-purple-700">💰 CATEG</label>
-                    <Input
-                      placeholder="Buscar por CATEG..."
+                    <CategCombobox
                       value={busquedaCateg}
-                      onChange={(e) => setBusquedaCategExtracto(e.target.value)}
+                      onValueChange={setBusquedaCategExtracto}
+                      placeholder="Buscar por CATEG..."
                       className="text-xs"
                     />
                   </div>

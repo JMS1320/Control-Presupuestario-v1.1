@@ -13,6 +13,7 @@ import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filte
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
+import { CategCombobox } from "@/components/ui/categ-combobox"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -795,10 +796,10 @@ export function VistaCashFlow() {
                 {/* Búsqueda por CATEG */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">💰 CATEG</Label>
-                  <Input
-                    placeholder="Buscar por categ..."
+                  <CategCombobox
                     value={busquedaCateg}
-                    onChange={(e) => setBusquedaCateg(e.target.value)}
+                    onValueChange={setBusquedaCateg}
+                    placeholder="Buscar por categ..."
                     className="text-xs"
                   />
                 </div>

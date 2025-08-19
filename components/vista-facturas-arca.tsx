@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check } from "lucide-react"
+import { CategCombobox } from "@/components/ui/categ-combobox"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -746,10 +747,10 @@ export function VistaFacturasArca() {
               {/* Búsqueda por CATEG */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">💰 Cuenta Contable</Label>
-                <Input
-                  placeholder="Buscar por cuenta contable..."
+                <CategCombobox
                   value={busquedaCateg}
-                  onChange={(e) => setBusquedaCateg(e.target.value)}
+                  onValueChange={setBusquedaCateg}
+                  placeholder="Buscar por cuenta contable..."
                   className="text-xs"
                 />
               </div>

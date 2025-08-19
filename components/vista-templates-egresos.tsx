@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle } from "lucide-react"
+import { CategCombobox } from "@/components/ui/categ-combobox"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -726,10 +727,10 @@ export function VistaTemplatesEgresos() {
               {/* Búsqueda por CATEG */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">💰 CATEG</Label>
-                <Input
-                  placeholder="Buscar por categ..."
+                <CategCombobox
                   value={busquedaCateg}
-                  onChange={(e) => setBusquedaCateg(e.target.value)}
+                  onValueChange={setBusquedaCateg}
+                  placeholder="Buscar por categ..."
                   className="text-xs"
                 />
               </div>

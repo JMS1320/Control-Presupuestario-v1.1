@@ -49,6 +49,12 @@ export function useMovimientosBancarios() {
     estado?: 'Conciliado' | 'Pendiente' | 'Auditar' | 'Todos'
     limite?: number
     busqueda?: string
+    fechaDesde?: string
+    fechaHasta?: string
+    montoDesde?: number
+    montoHasta?: number
+    categ?: string
+    detalle?: string
   }) => {
     try {
       setLoading(true)
@@ -66,6 +72,36 @@ export function useMovimientosBancarios() {
       // Aplicar búsqueda en descripción
       if (filtros?.busqueda) {
         query = query.ilike('descripcion', `%${filtros.busqueda}%`)
+      }
+
+      // Aplicar filtro de fecha desde
+      if (filtros?.fechaDesde) {
+        query = query.gte('fecha', filtros.fechaDesde)
+      }
+
+      // Aplicar filtro de fecha hasta
+      if (filtros?.fechaHasta) {
+        query = query.lte('fecha', filtros.fechaHasta)
+      }
+
+      // Aplicar filtro de monto desde (débitos)
+      if (filtros?.montoDesde) {
+        query = query.gte('debitos', filtros.montoDesde)
+      }
+
+      // Aplicar filtro de monto hasta (débitos)
+      if (filtros?.montoHasta) {
+        query = query.lte('debitos', filtros.montoHasta)
+      }
+
+      // Aplicar filtro de CATEG
+      if (filtros?.categ) {
+        query = query.ilike('categ', `%${filtros.categ}%`)
+      }
+
+      // Aplicar filtro de detalle
+      if (filtros?.detalle) {
+        query = query.ilike('detalle', `%${filtros.detalle}%`)
       }
 
       // Ordenar por fecha descendente (más recientes primero)
