@@ -166,22 +166,44 @@ export function VistaExtractoBancario() {
             console.error('Error limpiando motivo_revision:', errorLimpiar)
           }
           
-          // Actualizar facturas vinculadas
+          // Actualizar facturas ARCA y templates vinculados
           for (const movimientoId of ids) {
-            const facturaId = vinculaciones[movimientoId]
-            if (facturaId) {
-              console.log(`Actualizando factura ${facturaId} a estado conciliado`)
-              
-              const { error } = await supabase
-                .schema('msa')
-                .from('comprobantes_arca')
-                .update({ estado: 'conciliado' })
-                .eq('id', facturaId)
-              
-              if (error) {
-                console.error('Error actualizando factura:', error)
-              } else {
-                console.log(`✅ Factura ${facturaId} marcada como conciliada`)
+            const opcionId = vinculaciones[movimientoId]
+            if (opcionId) {
+              // Encontrar la opción vinculada para saber si es ARCA o Template
+              const opcionVinculada = facturasDisponibles.find(opt => opt.id === opcionId)
+              if (!opcionVinculada) {
+                console.warn(`No se encontró opción vinculada con ID: ${opcionId}`)
+                continue
+              }
+
+              if (opcionVinculada.tipo === 'ARCA') {
+                console.log(`Actualizando factura ARCA ${opcionId} a estado conciliado`)
+                
+                const { error } = await supabase
+                  .schema('msa')
+                  .from('comprobantes_arca')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', opcionId)
+                
+                if (error) {
+                  console.error('Error actualizando factura ARCA:', error)
+                } else {
+                  console.log(`✅ Factura ARCA ${opcionId} marcada como conciliada`)
+                }
+              } else if (opcionVinculada.tipo === 'TEMPLATE') {
+                console.log(`Actualizando template ${opcionId} a estado conciliado`)
+                
+                const { error } = await supabase
+                  .from('cuotas_egresos_sin_factura')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', opcionId)
+                
+                if (error) {
+                  console.error('Error actualizando template:', error)
+                } else {
+                  console.log(`✅ Template ${opcionId} marcado como conciliado`)
+                }
               }
             }
           }
@@ -205,9 +227,10 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Cargar facturas disponibles para vincular
+  // Cargar facturas y templates disponibles para vincular
   const cargarFacturasDisponibles = async () => {
     try {
+      // Cargar facturas ARCA pendientes
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
@@ -220,59 +243,136 @@ export function VistaExtractoBancario() {
         return
       }
 
-      // TODO: Agregar templates egresos también
-      setFacturasDisponibles(facturasArca || [])
+      // Cargar templates egresos pendientes
+      const { data: templatesEgresos, error: errorTemplates } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .select(`
+          id,
+          monto,
+          descripcion,
+          fecha_estimada,
+          egreso:egresos_sin_factura(
+            nombre_referencia,
+            nombre_quien_cobra,
+            cuit_quien_cobra,
+            responsable
+          )
+        `)
+        .eq('estado', 'pendiente')
+        .order('fecha_estimada', { ascending: false })
+
+      if (errorTemplates) {
+        console.error('Error cargando templates egresos:', errorTemplates)
+        return
+      }
+
+      // Combinar facturas ARCA y templates en formato unificado
+      const facturasFormateadas = (facturasArca || []).map(f => ({
+        id: f.id,
+        tipo: 'ARCA' as const,
+        origen_tabla: 'msa.comprobantes_arca' as const,
+        tipo_comprobante: f.tipo_comprobante,
+        numero_desde: f.numero_desde,
+        denominacion_emisor: f.denominacion_emisor,
+        monto_a_abonar: f.monto_a_abonar,
+        fecha_estimada: f.fecha_estimada,
+        cuit: f.cuit,
+        // Campos para mostrar en UI
+        display_nombre: f.denominacion_emisor,
+        display_referencia: `${f.tipo_comprobante}-${f.numero_desde}`,
+        display_monto: f.monto_a_abonar
+      }))
+
+      const templatesFormateados = (templatesEgresos || []).map(t => ({
+        id: t.id,
+        tipo: 'TEMPLATE' as const,
+        origen_tabla: 'cuotas_egresos_sin_factura' as const,
+        descripcion: t.descripcion,
+        denominacion_emisor: t.egreso?.nombre_quien_cobra || t.egreso?.responsable || 'Template Sin Factura',
+        monto_a_abonar: t.monto,
+        fecha_estimada: t.fecha_estimada,
+        cuit: t.egreso?.cuit_quien_cobra || '',
+        // Campos para mostrar en UI
+        display_nombre: t.egreso?.nombre_quien_cobra || t.egreso?.responsable || 'Template Sin Factura',
+        display_referencia: t.egreso?.nombre_referencia || t.descripcion || 'Template',
+        display_monto: t.monto
+      }))
+
+      // Combinar y ordenar por fecha
+      const todasLasOpciones = [...facturasFormateadas, ...templatesFormateados]
+        .sort((a, b) => new Date(b.fecha_estimada).getTime() - new Date(a.fecha_estimada).getTime())
+
+      setFacturasDisponibles(todasLasOpciones)
+      
+      console.log(`✅ Cargadas ${facturasFormateadas.length} facturas ARCA + ${templatesFormateados.length} templates = ${todasLasOpciones.length} total`)
     } catch (error) {
-      console.error('Error cargando facturas:', error)
+      console.error('Error cargando facturas y templates:', error)
     }
   }
 
-  // Generar propuestas inteligentes para un movimiento
+  // Generar propuestas inteligentes para un movimiento (funciona con ARCA y Templates)
   const generarPropuestasInteligentes = (movimiento: any) => {
-    const facturas = facturasDisponibles
+    const opcionesDisponibles = facturasDisponibles
     const propuestas = []
     
     // 1. Mismo monto exacto (cualquier fecha)
-    const mismoMonto = facturas.filter(f => 
-      Math.abs(f.monto_a_abonar - movimiento.debitos) < 0.01
+    const mismoMonto = opcionesDisponibles.filter(f => 
+      Math.abs(f.display_monto - movimiento.debitos) < 0.01
     )
-    propuestas.push(...mismoMonto.map(f => ({...f, tipo: 'mismo_monto', prioridad: 1})))
+    propuestas.push(...mismoMonto.map(f => ({
+      ...f, 
+      tipo_match: f.tipo === 'ARCA' ? 'factura_mismo_monto' : 'template_mismo_monto', 
+      prioridad: f.tipo === 'ARCA' ? 1 : 2 // Priorizar facturas ARCA
+    })))
     
     // 2. Monto similar ±10% + mismo proveedor (buscar en descripción)
-    const montoSimilar = facturas.filter(f => {
-      const diferenciaMonto = Math.abs(f.monto_a_abonar - movimiento.debitos) / movimiento.debitos
-      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.denominacion_emisor.toLowerCase().split(' ')[0])
+    const montoSimilar = opcionesDisponibles.filter(f => {
+      const diferenciaMonto = Math.abs(f.display_monto - movimiento.debitos) / movimiento.debitos
+      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.display_nombre.toLowerCase().split(' ')[0])
       return diferenciaMonto <= 0.10 && proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
     })
-    propuestas.push(...montoSimilar.map(f => ({...f, tipo: 'similar_proveedor', prioridad: 2})))
+    propuestas.push(...montoSimilar.map(f => ({
+      ...f, 
+      tipo_match: f.tipo === 'ARCA' ? 'factura_similar_proveedor' : 'template_similar_proveedor', 
+      prioridad: f.tipo === 'ARCA' ? 3 : 4
+    })))
     
     // 3. Mismo proveedor (cualquier monto)
-    const mismoProveedor = facturas.filter(f => {
-      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.denominacion_emisor.toLowerCase().split(' ')[0])
+    const mismoProveedor = opcionesDisponibles.filter(f => {
+      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.display_nombre.toLowerCase().split(' ')[0])
       return proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
     })
-    propuestas.push(...mismoProveedor.map(f => ({...f, tipo: 'mismo_proveedor', prioridad: 3})))
+    propuestas.push(...mismoProveedor.map(f => ({
+      ...f, 
+      tipo_match: f.tipo === 'ARCA' ? 'factura_mismo_proveedor' : 'template_mismo_proveedor', 
+      prioridad: f.tipo === 'ARCA' ? 5 : 6
+    })))
     
-    // Ordenar por prioridad
+    // Ordenar por prioridad (facturas ARCA primero, luego templates)
     return propuestas.sort((a, b) => a.prioridad - b.prioridad)
   }
 
   // Filtrar facturas con búsqueda avanzada
-  const filtrarFacturasConBusqueda = (facturas: any[], termino: string) => {
-    if (!termino.trim()) return facturas
+  const filtrarFacturasConBusqueda = (opciones: any[], termino: string) => {
+    if (!termino.trim()) return opciones
     
     const busqueda = termino.toLowerCase()
-    return facturas.filter(factura => {
-      // Buscar en múltiples campos
+    return opciones.filter(opcion => {
+      // Buscar en múltiples campos - compatible con ARCA y Templates
       const campos = [
-        factura.denominacion_emisor?.toLowerCase() || '',
-        factura.cuit || '',
-        factura.monto_a_abonar?.toString() || '',
-        factura.detalle?.toLowerCase() || '',
-        factura.tipo_comprobante?.toString() || '',
-        factura.numero_desde?.toString() || '',
+        opcion.display_nombre?.toLowerCase() || '',
+        opcion.display_referencia?.toLowerCase() || '',
+        opcion.cuit || '',
+        opcion.display_monto?.toString() || '',
+        opcion.tipo?.toLowerCase() || '', // 'arca' o 'template'
+        // Campos específicos ARCA (retrocompatibilidad)
+        opcion.denominacion_emisor?.toLowerCase() || '',
+        opcion.tipo_comprobante?.toString() || '',
+        opcion.numero_desde?.toString() || '',
+        // Campos específicos Templates
+        opcion.descripcion?.toLowerCase() || '',
         // Formatear fecha para búsqueda
-        factura.fecha_estimada ? new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR') : ''
+        opcion.fecha_estimada ? new Date(opcion.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR') : ''
       ]
       
       return campos.some(campo => campo.includes(busqueda))
@@ -770,10 +870,11 @@ export function VistaExtractoBancario() {
                                 >
                                   {vinculaciones[movimientoId] ? (
                                     (() => {
-                                      const facturaSeleccionada = facturasDisponibles.find(f => f.id === vinculaciones[movimientoId])
-                                      return facturaSeleccionada ? 
-                                        `${facturaSeleccionada.denominacion_emisor} - ${formatCurrency(facturaSeleccionada.monto_a_abonar)}` : 
-                                        "Sin vincular"
+                                      const opcionSeleccionada = facturasDisponibles.find(f => f.id === vinculaciones[movimientoId])
+                                      if (!opcionSeleccionada) return "Sin vincular"
+                                      
+                                      const tipoIcon = opcionSeleccionada.tipo === 'ARCA' ? '📄' : '📋'
+                                      return `${tipoIcon} ${opcionSeleccionada.display_nombre} - ${formatCurrency(opcionSeleccionada.display_monto)}`
                                     })()
                                   ) : "Sin vincular"}
                                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -812,26 +913,25 @@ export function VistaExtractoBancario() {
                                       const propuestasFiltradas = filtrarFacturasConBusqueda(propuestasInteligentes, busquedaCombobox[movimientoId] || '')
                                       return propuestasFiltradas.length > 0 && (
                                         <CommandGroup heading="⭐ PROPUESTAS INTELIGENTES">
-                                          {propuestasFiltradas.map(factura => (
+                                          {propuestasFiltradas.map(opcion => (
                                             <CommandItem
-                                              key={factura.id}
-                                              value={`${factura.denominacion_emisor} ${factura.cuit} ${factura.monto_a_abonar} ${factura.detalle || ''}`}
+                                              key={opcion.id}
+                                              value={`${opcion.display_nombre} ${opcion.cuit} ${opcion.display_monto} ${opcion.display_referencia || ''}`}
                                               onSelect={() => {
-                                                setVinculaciones({...vinculaciones, [movimientoId]: factura.id})
+                                                setVinculaciones({...vinculaciones, [movimientoId]: opcion.id})
                                                 setComboboxAbierto({...comboboxAbierto, [movimientoId]: false})
                                                 setBusquedaCombobox({...busquedaCombobox, [movimientoId]: ''})
                                               }}
                                             >
-                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === factura.id ? "opacity-100" : "opacity-0"}`} />
+                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === opcion.id ? "opacity-100" : "opacity-0"}`} />
                                               <div className="flex flex-col">
                                                 <span className="font-medium">
-                                                  ⭐ {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
+                                                  ⭐ {opcion.tipo === 'ARCA' ? '📄' : '📋'} {opcion.display_nombre} - {formatCurrency(opcion.display_monto)}
                                                 </span>
                                                 <span className="text-xs text-gray-500">
-                                                  {new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • CUIT: {factura.cuit}
-                                                  {factura.tipo === 'mismo_monto' && ' • Mismo monto'}
-                                                  {factura.tipo === 'similar_proveedor' && ' • Similar + proveedor'}
-                                                  {factura.tipo === 'mismo_proveedor' && ' • Mismo proveedor'}
+                                                  {new Date(opcion.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • 
+                                                  {opcion.tipo === 'ARCA' ? 'Factura ARCA' : 'Template'} • 
+                                                  {opcion.display_referencia} • CUIT: {opcion.cuit}
                                                 </span>
                                               </div>
                                             </CommandItem>
@@ -845,23 +945,25 @@ export function VistaExtractoBancario() {
                                       const todasFiltradas = filtrarFacturasConBusqueda(todasLasFacturas, busquedaCombobox[movimientoId] || '')
                                       return todasFiltradas.length > 0 && (
                                         <CommandGroup heading="📋 TODAS LAS OPCIONES">
-                                          {todasFiltradas.slice(0, 20).map(factura => ( // Limitar a 20 para performance
+                                          {todasFiltradas.slice(0, 20).map(opcion => ( // Limitar a 20 para performance
                                             <CommandItem
-                                              key={factura.id}
-                                              value={`${factura.denominacion_emisor} ${factura.cuit} ${factura.monto_a_abonar} ${factura.detalle || ''}`}
+                                              key={opcion.id}
+                                              value={`${opcion.display_nombre} ${opcion.cuit} ${opcion.display_monto} ${opcion.display_referencia || ''}`}
                                               onSelect={() => {
-                                                setVinculaciones({...vinculaciones, [movimientoId]: factura.id})
+                                                setVinculaciones({...vinculaciones, [movimientoId]: opcion.id})
                                                 setComboboxAbierto({...comboboxAbierto, [movimientoId]: false})
                                                 setBusquedaCombobox({...busquedaCombobox, [movimientoId]: ''})
                                               }}
                                             >
-                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === factura.id ? "opacity-100" : "opacity-0"}`} />
+                                              <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === opcion.id ? "opacity-100" : "opacity-0"}`} />
                                               <div className="flex flex-col">
                                                 <span className="font-medium">
-                                                  {factura.denominacion_emisor} - {formatCurrency(factura.monto_a_abonar)}
+                                                  {opcion.tipo === 'ARCA' ? '📄' : '📋'} {opcion.display_nombre} - {formatCurrency(opcion.display_monto)}
                                                 </span>
                                                 <span className="text-xs text-gray-500">
-                                                  {new Date(factura.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • CUIT: {factura.cuit}
+                                                  {new Date(opcion.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')} • 
+                                                  {opcion.tipo === 'ARCA' ? 'Factura ARCA' : 'Template'} • 
+                                                  {opcion.display_referencia} • CUIT: {opcion.cuit}
                                                 </span>
                                               </div>
                                             </CommandItem>
