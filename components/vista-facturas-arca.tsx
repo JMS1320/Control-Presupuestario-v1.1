@@ -607,11 +607,11 @@ export function VistaFacturasArca() {
         ) : contenidoEstado
       
       default:
-        const contenidoDefault = String(valor)
+        const contenidoDefault = valor ? String(valor) : '(vacío)'
         return esEditable && modoEdicion ? (
           <div 
             className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
-            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor || '', e)}
             title="Ctrl+Click para editar"
           >
             <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
