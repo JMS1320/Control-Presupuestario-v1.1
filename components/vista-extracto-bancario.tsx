@@ -35,6 +35,7 @@ import {
   Filter
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
+import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
@@ -1318,9 +1319,23 @@ export function VistaExtractoBancario() {
       <Dialog open={configuradorAbierto} onOpenChange={setConfiguradorAbierto}>
         <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Configuración de Reglas de Conciliación</DialogTitle>
+            <DialogTitle>Configuración de Reglas</DialogTitle>
           </DialogHeader>
-          <ConfiguradorReglas />
+          
+          <Tabs defaultValue="conciliacion" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
+              <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="conciliacion" className="mt-4">
+              <ConfiguradorReglas />
+            </TabsContent>
+            
+            <TabsContent value="contable-interno" className="mt-4">
+              <ConfiguradorReglasContable />
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 

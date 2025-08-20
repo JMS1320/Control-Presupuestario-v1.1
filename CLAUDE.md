@@ -83,6 +83,8 @@ npm test
 - [2025-08-19] Contexto técnico conservado para desarrollo iterativo sin pérdida información
 - [2025-08-20] ✅ FIX CRÍTICO: Campos vacíos categoría ARCA facturas ahora editables (Ctrl+Click)
 - [2025-08-20] COMMIT: 69933a4 - Fix edición campos null/undefined con onClick handler
+- [2025-08-20] ✅ FEATURE: Centro de costo opcional en creación templates
+- [2025-08-20] COMMIT: 0754ef4 - Removido centro_costo como requerido en wizard
 - [2025-08-20] VERIFICAR: Templates posiblemente necesite mismo fix para campos vacíos
 
 ## 📋 **Contexto Técnico Conservado:**
