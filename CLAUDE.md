@@ -68,34 +68,66 @@ npm test
 
 ---
 
-# 🎯 **OBJETIVO ACTUAL: Conciliación Bancaria Nivel 3 - Testing**
+# 🎯 **OBJETIVO ACTUAL: Desarrollo Continuo - Mejoras Sistema**
 
 ## 📍 **Estado Objetivo:**
-**Progreso**: Contexto técnico cargado ✅ - Listo para testing
-**Iniciado**: 2025-08-18
+**Progreso**: Core completado ✅ - Desarrollando mejoras activamente
+**Transición**: 2025-08-19 (desde testing conciliación)
+**Iniciado originalmente**: 2025-08-18
 
 ## 💡 **Avances Sesión Actual:**
-- [2025-08-18] Corrección: Nivel 3 YA implementado (motor automático funcionando)
-- [2025-08-18] Contexto BD cargado: msa_galicia (858 registros), reglas_conciliacion (22 reglas)
-- [2025-08-18] Contexto hooks cargado: useMotorConciliacion.ts, useReglasConciliacion.ts
-- [2025-08-18] Algoritmo confirmado: Cash Flow matching + reglas por prioridad + estados
-- [2025-08-18] Protocolo validación usuario establecido para carga contexto
-- [2025-08-18] Estado actual BD confirmado: 858 movimientos TODOS "Conciliados", 0 pendientes
-- [2025-08-18] Sistema completamente funcional - necesita datos nuevos para testing
+- [2025-08-19] TRANSICIÓN: Core conciliación completado → desarrollo mejoras continuas
+- [2025-08-19] Contexto preservado: Motor conciliación + filtros + edición inline funcionando
+- [2025-08-19] Sistema integrado: ARCA facturas + Templates + Extracto bancario operativo
+- [2025-08-19] Todas las funcionalidades principales implementadas y mergeadas a main
+- [2025-08-19] Contexto técnico conservado para desarrollo iterativo sin pérdida información
 
-## 📋 **Contexto Cargado:**
-- **Tablas BD**: msa_galicia (858 reg TODOS "Conciliados"), reglas_conciliacion (22 reg), cuentas_contables (67 cat)
-- **Motor**: useMotorConciliacion.ts:35 - matching Cash Flow + reglas configurables
-- **Reglas**: useReglasConciliacion.ts:7 - gestión completa reglas con prioridades
-- **Estados**: Pendiente → Conciliado con campos categ/centro_costo/detalle
-- **Algoritmo**: 1) Cash Flow ±5 días, 2) Reglas por orden, 3) Estados automáticos
-- **Cuentas**: MSA/PAM Galicia configuradas, solo MSA con datos reales
+## 📋 **Contexto Técnico Conservado:**
+- **Conciliación**: Motor automático completo - useMotorConciliacion.ts:35 + reglas configurables
+- **Filtros**: Sistema universal completado en todas las vistas (Cash Flow, ARCA, Templates, Extracto)
+- **Edición**: Inline editing con Ctrl+Click en ARCA facturas y Templates funcionando
+- **Matching**: Templates integrados en sistema extracto bancario con propagación valores
+- **Estados**: Gestión consistente lowercase + validaciones amount >10% + límites configurables
+- **BD**: msa_galicia (858 reg), reglas_conciliacion (22 reg), cuentas_contables (67 cat)
+- **Git**: Branch desarrollo sincronizado con main - todas las mejoras deployadas
 
-## 🎯 **Próximos Pasos Acordados:**
-1. ✅ Contexto técnico completo cargado
-2. 📋 Usuario carga movimientos bancarios que coincidan con facturas registradas
-3. 📋 Ejecutar motor conciliación y evaluar matching automático
-4. 📋 Ajustar algoritmo/reglas según resultados testing
+## 🎯 **Desarrollo Continuo:**
+1. ✅ Core sistema conciliación implementado y funcional
+2. ✅ Filtros universales + edición inline + matching templates
+3. ✅ Merge a main branch completado exitosamente
+4. 🔄 Desarrollo iterativo de mejoras y nuevas funcionalidades
+5. 🔄 Mantener contexto acumulado para eficiencia desarrollo
+
+## 🎯 **ROADMAP PRÓXIMOS OBJETIVOS (Registrado 2025-08-19):**
+
+### 📦 **0. CARGA DATOS HISTÓRICOS** `#roadmap #prerequisito #urgente`
+**Prerequisito ANTES de Empleado Contable o PAM**
+- **Facturas históricas**: Carga masiva estado "conciliado" (NO aparecen en Cash Flow)
+- **Templates históricos**: Carga masiva cuotas/egresos estado "conciliado" 
+- **Objetivo**: Dejar BD al día con solo datos actuales en flujo operativo
+- **Impacto**: Sistema operativo solo con datos corrientes vs históricos ocultos
+- **Criticidad**: Bloquea objetivos 1 y 2 hasta completarse
+
+### 📊 **1. SISTEMA EMPLEADO CONTABLE** `#roadmap #contable`
+**Vista especializada para adjudicación periodos contables**
+- **Periodos**: Por mes/año → Subdiarios (ej: factura julio → subdiario agosto OK, agosto → julio ❌)
+- **Control físico**: Columna "factura" [SI/NO/PEAJES + otras opciones a desarrollar]
+- **Imputación lotes**: Filtros + selección múltiple + adjudicación batch a subdiarios
+- **Variables editables**: Definir cuáles puede cambiar empleado vs admin
+- **Afecta**: Cash Flow + BD facturas ARCA (mismo nivel permisos que vista principal)
+- **Reporting**: Vista por subdiarios + totalizaciones para control
+- **Datos EB ARCA**: Ingreso manual mes/mes por subdiario para controles pre-declaración
+
+### 🏢 **2. COPIA PROGRAMA PARA PAM** `#roadmap #pam`
+**Duplicación completa funcionalidad MSA → PAM**
+- **Dependencia**: Requiere carga históricos completada (Objetivo 0)
+- Evaluar detalles implementación cuando se implemente
+
+### 🏛️ **3. TERCERA EMPRESA COMPARTIMIENTO ESTANCO** `#roadmap #empresa3`
+**Nueva empresa SIN mezcla datos con MSA/PAM**
+- **Requisito**: MSA/PAM se mezclan entre sí, Empresa3 completamente separada
+- **Desafío**: Arquitectura compartimientos estancos
+- Evaluar cuando corresponda implementar
 
 ## 🚨 **PENDIENTES SISTEMA:**
 
@@ -180,4 +212,4 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 **📍 Total líneas**: ~150 (cumple objetivo ≤300 líneas)  
 **🔗 Conocimiento completo**: Ver KNOWLEDGE.md  
-**📅 Última actualización**: 2025-08-18
+**📅 Última actualización**: 2025-08-19

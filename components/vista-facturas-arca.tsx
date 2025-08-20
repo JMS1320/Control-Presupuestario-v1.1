@@ -306,14 +306,11 @@ export function VistaFacturasArca() {
   
   // Funciones para edición inline
   const iniciarEdicion = (facturaId: string, columna: string, valor: any, event: React.MouseEvent) => {
-    console.log('🔍 DEBUG iniciarEdicion:', { facturaId, columna, valor, ctrlKey: event.ctrlKey, modoEdicion })
-    
     if (!event.ctrlKey || !modoEdicion) return
     
     event.preventDefault()
     event.stopPropagation()
     
-    console.log('✅ Iniciando edición:', { facturaId, columna, valor })
     setCeldaEnEdicion({
       facturaId,
       columna,
@@ -545,7 +542,16 @@ export function VistaFacturasArca() {
     }
 
     if (valor === null || valor === undefined) {
-      return <span className="text-gray-400">-</span>
+      return esEditable && modoEdicion ? (
+        <div 
+          className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+          onClick={(e) => iniciarEdicion(factura.id, columna, '', e)}
+          title="Ctrl+Click para editar"
+        >
+          <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+          <span className="text-gray-400">-</span>
+        </div>
+      ) : <span className="text-gray-400">-</span>
     }
 
     switch (columna) {
