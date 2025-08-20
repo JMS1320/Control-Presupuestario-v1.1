@@ -306,11 +306,14 @@ export function VistaFacturasArca() {
   
   // Funciones para edición inline
   const iniciarEdicion = (facturaId: string, columna: string, valor: any, event: React.MouseEvent) => {
+    console.log('🔍 DEBUG iniciarEdicion:', { facturaId, columna, valor, ctrlKey: event.ctrlKey, modoEdicion })
+    
     if (!event.ctrlKey || !modoEdicion) return
     
     event.preventDefault()
     event.stopPropagation()
     
+    console.log('✅ Iniciando edición:', { facturaId, columna, valor })
     setCeldaEnEdicion({
       facturaId,
       columna,
@@ -325,17 +328,25 @@ export function VistaFacturasArca() {
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
     
+    console.log('🔍 DEBUG guardarCambio:', { celdaEnEdicion, cuentasCargadas: cuentas.length })
+    
     // Si está editando cuenta_contable, validar si existe primero
     if (celdaEnEdicion.columna === 'cuenta_contable') {
       const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
       
+      console.log('🔍 DEBUG validando categoria:', { categIngresado })
+      
       const categExiste = validarCateg(categIngresado)
+      
+      console.log('🔍 DEBUG resultado validación:', { categExiste })
       
       if (categExiste) {
         // Si existe, guardar directo
+        console.log('✅ Categoría existe, guardando directo')
         await ejecutarGuardadoReal(celdaEnEdicion)
       } else {
         // Si no existe, mostrar modal con opciones
+        console.log('❌ Categoría no existe, mostrando modal')
         setValidandoCateg({
           isOpen: true,
           categIngresado: categIngresado,
