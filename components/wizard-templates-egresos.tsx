@@ -350,7 +350,6 @@ export function WizardTemplatesEgresos() {
       case 1:
         return !!(
           state.datos_basicos.categ &&
-          state.datos_basicos.centro_costo &&
           state.datos_basicos.nombre_referencia &&
           state.datos_basicos.responsable &&
           state.datos_basicos.monto_base > 0
@@ -423,12 +422,12 @@ export function WizardTemplatesEgresos() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="centro_costo">Centro de Costo *</Label>
+                  <Label htmlFor="centro_costo">Centro de Costo</Label>
                   <Input
                     id="centro_costo"
                     value={state.datos_basicos.centro_costo}
                     onChange={(e) => actualizarDatosBasicos('centro_costo', e.target.value)}
-                    placeholder="Ej: ADM"
+                    placeholder="Ej: ADM (opcional)"
                   />
                 </div>
                 <div className="md:col-span-2">

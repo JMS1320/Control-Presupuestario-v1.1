@@ -81,6 +81,9 @@ npm test
 - [2025-08-19] Sistema integrado: ARCA facturas + Templates + Extracto bancario operativo
 - [2025-08-19] Todas las funcionalidades principales implementadas y mergeadas a main
 - [2025-08-19] Contexto técnico conservado para desarrollo iterativo sin pérdida información
+- [2025-08-20] ✅ FIX CRÍTICO: Campos vacíos categoría ARCA facturas ahora editables (Ctrl+Click)
+- [2025-08-20] COMMIT: 69933a4 - Fix edición campos null/undefined con onClick handler
+- [2025-08-20] VERIFICAR: Templates posiblemente necesite mismo fix para campos vacíos
 
 ## 📋 **Contexto Técnico Conservado:**
 - **Conciliación**: Motor automático completo - useMotorConciliacion.ts:35 + reglas configurables
@@ -130,6 +133,13 @@ npm test
 - Evaluar cuando corresponda implementar
 
 ## 🚨 **PENDIENTES SISTEMA:**
+
+### 🔧 **Verificar Templates Campos Vacíos** `#pendiente #ui #verificar`
+- **Issue potencial**: Campos vacíos en templates pueden no ser editables con Ctrl+Click
+- **Contexto**: Fix aplicado en ARCA facturas (commit 69933a4) - templates ya tenía implementación similar
+- **Acción**: Verificar si templates necesita mismo fix para consistency
+- **Ubicación**: vista-templates-egresos.tsx línea ~544 (renderizarCelda null check)
+- **Detectado**: 2025-08-20 durante fix ARCA facturas
 
 ### 🔒 **Seguridad BBDD Egresos** `#pendiente #seguridad`
 - **Issue**: Datos facturas pueden modificarse sin restricciones
@@ -212,4 +222,25 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 **📍 Total líneas**: ~150 (cumple objetivo ≤300 líneas)  
 **🔗 Conocimiento completo**: Ver KNOWLEDGE.md  
-**📅 Última actualización**: 2025-08-19
+**📅 Última actualización**: 2025-08-20
+
+## 🔄 **SESIÓN ACTUAL - RESUMEN FINAL:**
+
+### ✅ **Completado 2025-08-20:**
+- **Fix crítico**: Campos vacíos categoría en ARCA facturas → ahora editables con Ctrl+Click
+- **Root cause**: Early return null/undefined sin onClick handler en vista-facturas-arca.tsx:544
+- **Solución**: Wrapper div clickeable para null values cuando esEditable && modoEdicion
+- **Commit**: 69933a4 - "Fix: Permitir edición campos vacíos categoría en ARCA facturas"
+- **Testing**: Usuario confirmó funcionamiento OK
+
+### 🔍 **Investigación Templates:**
+- Templates YA tenía implementación correcta para campos vacíos (línea ~544)
+- ARCA facturas tenía bug específico que fue corregido
+- **PENDIENTE**: Verificar en próxima sesión si templates realmente funciona bien con campos vacíos
+
+### 📋 **Estado Sistema Validación Categorías:**
+- ✅ ARCA facturas: Validación completa + edición campos vacíos
+- ✅ Templates: Validación completa + (verificar edición campos vacíos)
+- ✅ Cash Flow: Validación completa (ya existía)
+- ✅ Extracto bancario: Validación en propagación masiva
+- **Sistema completo**: Todas las ubicaciones de edición tienen validación categorías
