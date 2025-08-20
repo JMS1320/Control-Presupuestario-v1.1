@@ -466,6 +466,10 @@ export function VistaFacturasArca() {
     const valor = factura[columna]
     const esEditable = camposEditables.includes(columna as string)
     const esCeldaEnEdicion = celdaEnEdicion?.facturaId === factura.id && celdaEnEdicion?.columna === columna
+    
+    if (columna === 'cuenta_contable') {
+      console.log('🔍 DEBUG cuenta_contable:', { valor, esEditable, modoEdicion, camposEditables })
+    }
 
     // Si esta celda está en edición, mostrar input
     if (esCeldaEnEdicion) {
