@@ -24,7 +24,6 @@ import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 interface CuotaEgresoSinFactura {
   id: string
   egreso_id: string
-  mes: number
   fecha_estimada: string
   fecha_vencimiento: string | null
   monto: number
@@ -54,7 +53,6 @@ interface CuotaEgresoSinFactura {
 const COLUMNAS_CONFIG = {
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
-  mes: { label: "Mes", visible: true, width: "80px" },
   monto: { label: "Monto", visible: true, width: "130px" },
   descripcion: { label: "Descripción", visible: true, width: "200px" },
   estado: { label: "Estado", visible: true, width: "100px" },
@@ -367,45 +365,45 @@ export function VistaTemplatesEgresos() {
 
   const ejecutarGuardadoRealTemplates = async (datosEdicion: {cuotaId: string, columna: string, valor: any}, nuevoValor: string) => {
     try {
-      const cuota = cuotas.find(c => c.id === datosEdicion.cuotaId)
-      if (!cuota) throw new Error('Cuota no encontrada')
-
-      // Determinar tabla y campo correcto
-      let updateData: any = {}
-      let tablaDestino = ''
-      let idDestino = ''
-
-      // Campos que van a la tabla de egresos padre
-      if (['categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'].includes(datosEdicion.columna)) {
-        if (!cuota.egreso_id) throw new Error('No se encontró el egreso padre')
-        tablaDestino = 'egresos_sin_factura'
-        idDestino = cuota.egreso_id
-      } else {
-        // Campos que van a la tabla de cuotas
-        tablaDestino = 'cuotas_egresos_sin_factura'
-        idDestino = cuota.id
-      }
-
-      // Preparar el valor según el tipo de campo
       let valorFinal: any = nuevoValor
-      if (datosEdicion.columna === 'monto') {
-        valorFinal = parseFloat(nuevoValor) || 0
+      
+      // Convertir valores según el tipo de campo (igual que en ARCA facturas)
+      if (['monto'].includes(datosEdicion.columna)) {
+        valorFinal = parseFloat(String(valorFinal)) || 0
+      } else if (['fecha_estimada', 'fecha_vencimiento'].includes(datosEdicion.columna)) {
+        // Validar y convertir fechas
+        if (valorFinal && !Date.parse(String(valorFinal))) {
+          alert('Formato de fecha inválido')
+          return
+        }
+      }
+      
+      // Preparar objeto de actualización
+      let updateData: any = { [datosEdicion.columna]: valorFinal }
+      
+      // Regla automática: Si se actualiza fecha_vencimiento, actualizar fecha_estimada para coincidir
+      if (datosEdicion.columna === 'fecha_vencimiento' && valorFinal) {
+        updateData.fecha_estimada = valorFinal
+        console.log(`🔄 Auto-actualización Templates: fecha_vencimiento = ${valorFinal} → fecha_estimada = ${valorFinal}`)
+      }
+      
+      // Guardado simple directo en cuotas (igual que ARCA)
+      const { error } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .update(updateData)
+        .eq('id', datosEdicion.cuotaId)
+
+      if (error) {
+        console.error('Error actualizando cuota:', error)
+        alert('Error al guardar cambio: ' + error.message)
+        return
       }
 
-      updateData[datosEdicion.columna] = valorFinal
-
-      const { error } = await supabase
-        .from(tablaDestino)
-        .update(updateData)
-        .eq('id', idDestino)
-
-      if (error) throw error
-
-      // Recargar datos
+      // Recargar datos y limpiar edición (igual que ARCA)
       await cargarCuotas()
       setCeldaEnEdicion(null)
 
-      console.log(`✅ Templates: ${datosEdicion.columna} actualizado en ${tablaDestino}`)
+      console.log(`✅ Templates: ${datosEdicion.columna} actualizado`)
     } catch (error) {
       console.error('Error guardando cambio:', error)
       alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
