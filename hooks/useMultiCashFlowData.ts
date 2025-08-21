@@ -79,7 +79,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       categ: c.egreso?.categ || 'SIN_CATEG',
       centro_costo: c.egreso?.centro_costo || 'SIN_CC',
       cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
-      nombre_proveedor: c.egreso?.nombre_quien_cobra || c.egreso?.responsable || '',
+      nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
       detalle: c.descripcion || c.egreso?.nombre_referencia || '',
       debitos: c.monto || 0,
       creditos: 0, // Los templates egresos son siempre débitos
