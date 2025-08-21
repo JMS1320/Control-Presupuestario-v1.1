@@ -85,6 +85,8 @@ npm test
 - [2025-08-20] COMMIT: 69933a4 - Fix edición campos null/undefined con onClick handler
 - [2025-08-20] ✅ FEATURE: Centro de costo opcional en creación templates
 - [2025-08-20] COMMIT: 0754ef4 - Removido centro_costo como requerido en wizard
+- [2025-08-20] ✅ FEATURE: Sistema reglas contable e interno automatizado
+- [2025-08-20] COMMIT: 3865ea8 - Tabla + CRUD + UI configuración completa
 - [2025-08-20] VERIFICAR: Templates posiblemente necesite mismo fix para campos vacíos
 
 ## 📋 **Contexto Técnico Conservado:**
@@ -134,6 +136,40 @@ npm test
 - **Desafío**: Arquitectura compartimientos estancos
 - Evaluar cuando corresponda implementar
 
+## 🔮 **DESARROLLOS FUTUROS (Sin orden prioridad)** `#roadmap #futuro`
+
+### 📊 **Vista Presupuesto** `#futuro #presupuesto`
+- **Funcionalidad**: Sistema gestión presupuestaria completa
+- **Estado**: Por desarrollar - sin especificaciones detalladas
+- **Registrado**: 2025-08-20
+
+### 📈 **Dashboard Reportes Macro - Desgloses** `#futuro #dashboard #reportes`
+- **Contexto**: Sistema hecho por v0 (Claude no tiene contexto previo)
+- **Renglones pendientes**:
+  - **Desglose Tarjetas**: Vista detallada movimientos tarjetas
+  - **Desglose Caja**: Vista detallada movimientos efectivo
+- **Estado**: Extensión dashboard existente
+- **Registrado**: 2025-08-20
+
+### 💳 **Vistas Tarjetas y Caja** `#futuro #tarjetas #caja`
+- **Vista Tarjetas**: Gestión completa movimientos tarjetas de crédito/débito
+- **Vista Caja**: Gestión completa movimientos efectivo
+- **Integración**: Con dashboard desgloses macro
+- **Estado**: Por desarrollar - sin especificaciones
+- **Registrado**: 2025-08-20
+
+### 📤 **Exportación Reportes Varios** `#futuro #export #reportes`
+- **Funcionalidad**: Sistema exportación múltiples formatos (Excel, PDF, CSV)
+- **Alcance**: Todos los reportes y vistas del sistema
+- **Estado**: Por desarrollar - sin especificaciones
+- **Registrado**: 2025-08-20
+
+### 🏠 **Vista Principal** `#futuro #home #principal`
+- **Funcionalidad**: Página principal/home del sistema
+- **Alcance**: Por definir - se irá viendo
+- **Estado**: Por desarrollar - sin especificaciones
+- **Registrado**: 2025-08-20
+
 ## 🚨 **PENDIENTES SISTEMA:**
 
 ### 🔧 **Verificar Templates Campos Vacíos** `#pendiente #ui #verificar`
@@ -142,6 +178,24 @@ npm test
 - **Acción**: Verificar si templates necesita mismo fix para consistency
 - **Ubicación**: vista-templates-egresos.tsx línea ~544 (renderizarCelda null check)
 - **Detectado**: 2025-08-20 durante fix ARCA facturas
+
+### 🎯 **Sistema Reglas Contable e Interno** `#pendiente #revision #testing`
+- **Feature**: Configurador reglas para automatizar campos contable/interno
+- **Tabla BD**: reglas_contable_interno (migración aplicada)
+- **UI**: Tab nueva en Extracto Bancario → Configuración → "Contable e Interno"
+- **Variables**: banco_origen (MSA/PAM) + tipo_gasto (template/factura) + proveedor_pattern
+- **Estado**: ⚠️ **PENDIENTE REVISIÓN** - Funcionalidad creada, testing requerido
+- **Commit**: 3865ea8 - Implementación completa sin validar
+- **Ubicación**: components/configurador-reglas-contable.tsx + vista-extracto-bancario.tsx
+
+### 🚨 **Sistema Backup a Supabase** `#critico #prerequisito #backup`
+- **Issue CRÍTICO**: Sistema backup NO funciona - nunca hemos logrado subir backup a Supabase
+- **Riesgo**: Antes de usar app con datos reales DEBE funcionar el backup/restore
+- **Propuesta**: Crear BD vacía en Supabase + cargar backup completo como prueba
+- **Expectativa**: Backup debería setear estructura + datos automáticamente
+- **Estado**: ⚠️ **BLOQUEANTE** para puesta en producción
+- **Prioridad**: **MÁXIMA** - prerequisito absoluto antes datos reales
+- **Registrado**: 2025-08-20 - Usuario reporta relevancia crítica
 
 ### 🔒 **Seguridad BBDD Egresos** `#pendiente #seguridad`
 - **Issue**: Datos facturas pueden modificarse sin restricciones
@@ -234,6 +288,17 @@ SUPABASE_SERVICE_ROLE_KEY=
 - **Solución**: Wrapper div clickeable para null values cuando esEditable && modoEdicion
 - **Commit**: 69933a4 - "Fix: Permitir edición campos vacíos categoría en ARCA facturas"
 - **Testing**: Usuario confirmó funcionamiento OK
+
+- **Feature**: Centro de costo opcional en templates
+- **Cambio**: Removido centro_costo de validación requerida wizard
+- **Commit**: 0754ef4 - UX mejorada para creación templates
+
+- **Feature**: Sistema reglas contable e interno automatizado  
+- **Estructura**: Tabla reglas_contable_interno con variables (banco_origen, tipo_gasto, proveedor_pattern)
+- **UI**: Nueva tab en configuración extracto bancario → Contable e Interno
+- **Logic**: Automatización campos según contexto MSA/PAM + template/factura + proveedor
+- **Commit**: 3865ea8 - CRUD completo + migración BD
+- **Estado**: ⚠️ **PENDIENTE REVISIÓN** - Funcionalidad creada pero no testeada
 
 ### 🔍 **Investigación Templates:**
 - Templates YA tenía implementación correcta para campos vacíos (línea ~544)

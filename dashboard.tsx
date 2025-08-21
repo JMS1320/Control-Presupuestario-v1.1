@@ -14,11 +14,12 @@ import { VistaEgresos } from "./components/vista-egresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
+import { VistaPrincipal } from "./components/vista-principal"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home } from "lucide-react"
 
 export default function ControlPresupuestario() {
   // Obtener el año actual dinámicamente
@@ -37,15 +38,13 @@ export default function ControlPresupuestario() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* encabezado */}
-        <div className="text-center">
-          <h1 className="mb-2 text-3xl font-bold text-gray-900">Control Presupuestario</h1>
-          <p className="text-gray-600">Sistema de análisis financiero mensual</p>
-        </div>
-
         {/* pestañas principales */}
-        <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-7">
+        <Tabs defaultValue="principal" className="w-full">
+          <TabsList className="grid w-full grid-cols-8">
+            <TabsTrigger value="principal" className="flex items-center gap-2">
+              <Home className="h-4 w-4" />
+              Principal
+            </TabsTrigger>
             <TabsTrigger value="dashboard" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Dashboard
@@ -75,6 +74,11 @@ export default function ControlPresupuestario() {
               Importar Excel
             </TabsTrigger>
           </TabsList>
+
+          {/* VISTA PRINCIPAL */}
+          <TabsContent value="principal" className="space-y-6">
+            <VistaPrincipal />
+          </TabsContent>
 
           {/* DASHBOARD */}
           <TabsContent value="dashboard" className="space-y-6">
