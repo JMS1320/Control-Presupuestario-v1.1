@@ -447,9 +447,9 @@ export function VistaTemplatesEgresos() {
     setCeldaEnEdicion(null)
   }
 
-  // Obtener columnas visibles
+  // Obtener columnas visibles - SOLO las que existen en COLUMNAS_CONFIG
   const columnasVisiblesArray = Object.entries(columnasVisibles)
-    .filter(([_, visible]) => visible)
+    .filter(([key, visible]) => visible && key in COLUMNAS_CONFIG)
     .map(([key]) => key)
 
   // Renderizar valor de celda según el tipo de columna con soporte para edición
@@ -951,17 +951,21 @@ export function VistaTemplatesEgresos() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {columnasVisiblesArray.map(columna => (
-                        <TableHead 
-                          key={columna} 
-                          style={{ 
-                            width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG].width,
-                            minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG].width
-                          }}
-                        >
-                          {COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG].label}
-                        </TableHead>
-                      ))}
+                      {columnasVisiblesArray.map(columna => {
+                        const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]
+                        if (!config) return null // Protección adicional
+                        return (
+                          <TableHead 
+                            key={columna} 
+                            style={{ 
+                              width: anchosColumnas[columna] || config.width,
+                              minWidth: anchosColumnas[columna] || config.width
+                            }}
+                          >
+                            {config.label}
+                          </TableHead>
+                        )
+                      })}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -977,17 +981,21 @@ export function VistaTemplatesEgresos() {
                     ) : (
                       cuotas.map(cuota => (
                         <TableRow key={cuota.id}>
-                          {columnasVisiblesArray.map(columna => (
-                            <TableCell 
-                              key={columna}
-                              style={{ 
-                                width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG].width,
-                                minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG].width
-                              }}
-                            >
-                              {renderizarCelda(cuota, columna)}
-                            </TableCell>
-                          ))}
+                          {columnasVisiblesArray.map(columna => {
+                            const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]
+                            if (!config) return null // Protección adicional
+                            return (
+                              <TableCell 
+                                key={columna}
+                                style={{ 
+                                  width: anchosColumnas[columna] || config.width,
+                                  minWidth: anchosColumnas[columna] || config.width
+                                }}
+                              >
+                                {renderizarCelda(cuota, columna)}
+                              </TableCell>
+                            )
+                          })}
                         </TableRow>
                       ))
                     )}
