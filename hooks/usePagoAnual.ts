@@ -48,28 +48,22 @@ export function usePagoAnual() {
         throw new Error(`Error obteniendo cuotas futuras: ${errorFuturas.message}`)
       }
 
-      let cuotasDesactivadas = 0
+      // 3. DESACTIVAR TEMPLATE COMPLETO (no tocar cuotas individuales)
+      const { error: errorDesactivarTemplate } = await supabase
+        .from('egresos_sin_factura')
+        .update({ 
+          activo: false,
+          pago_anual: true,
+          monto_anual: config.montoAnual,
+          fecha_pago_anual: config.fechaPagoAnual
+        })
+        .eq('id', cuotaActual.egreso_id)
 
-      // 3. DESACTIVAR (no eliminar) todas las cuotas futuras cambiando estado a 'desactivado'
-      if (cuotasFuturas && cuotasFuturas.length > 0) {
-        const cuotaIds = cuotasFuturas.map(c => c.id)
-        
-        const { error: errorDesactivar } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update({ 
-            estado: 'desactivado',
-            descripcion: 'Cuota desactivada por pago anual'
-          })
-          .in('id', cuotaIds)
-
-        if (errorDesactivar) {
-          throw new Error(`Error desactivando cuotas futuras: ${errorDesactivar.message}`)
-        }
-
-        cuotasDesactivadas = cuotasFuturas.length
+      if (errorDesactivarTemplate) {
+        throw new Error(`Error desactivando template: ${errorDesactivarTemplate.message}`)
       }
 
-      // 4. Actualizar la cuota actual con el monto anual y nueva fecha
+      // 4. Actualizar SOLO la cuota actual con el monto anual y nueva fecha
       const { error: errorUpdate } = await supabase
         .from('cuotas_egresos_sin_factura')
         .update({ 
@@ -86,7 +80,7 @@ export function usePagoAnual() {
 
       const result: PagoAnualResult = {
         success: true,
-        cuotasDesactivadas,
+        cuotasDesactivadas: cuotasFuturas ? cuotasFuturas.length : 0,
         cuotaActualizada: true
       }
       

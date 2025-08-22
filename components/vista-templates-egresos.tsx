@@ -104,7 +104,7 @@ export function VistaTemplatesEgresos() {
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('todos')
   const [anoSeleccionado, setAnoSeleccionado] = useState('todos')
-  const [soloActivos, setSoloActivos] = useState(false)
+  const [filtroActivacion, setFiltroActivacion] = useState<'activos' | 'inactivos' | 'todos'>('activos')
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -298,10 +298,13 @@ export function VistaTemplatesEgresos() {
       cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.año === ano)
     }
     
-    // Filtro solo activos
-    if (soloActivos) {
+    // Filtro por activación de templates
+    if (filtroActivacion === 'activos') {
       cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.activo === true)
+    } else if (filtroActivacion === 'inactivos') {
+      cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.activo === false)
     }
+    // Si es 'todos', no se filtra
     
     setCuotas(cuotasFiltradas)
   }
@@ -549,7 +552,6 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="pagado">Pagado</SelectItem>
                 <SelectItem value="credito">Crédito</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
-                <SelectItem value="desactivado">Desactivado</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -692,7 +694,7 @@ export function VistaTemplatesEgresos() {
           </p>
           {modoEdicion && (
             <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual (desactiva futuras) | Editar monto = Opción propagación
+              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual (desactiva template) | Editar monto = Opción propagación
             </p>
           )}
         </div>
@@ -959,19 +961,19 @@ export function VistaTemplatesEgresos() {
                 </Select>
               </div>
               
-              {/* Checkbox solo activos */}
+              {/* Selector de activación de templates */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">✅ Filtro Estado</Label>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="solo-activos"
-                    checked={soloActivos}
-                    onCheckedChange={setSoloActivos}
-                  />
-                  <Label htmlFor="solo-activos" className="text-sm cursor-pointer">
-                    Solo templates activos
-                  </Label>
-                </div>
+                <Label className="text-sm font-medium">🔄 Activación Templates</Label>
+                <Select value={filtroActivacion} onValueChange={setFiltroActivacion}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Filtro activación" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="activos">Solo Activos</SelectItem>
+                    <SelectItem value="inactivos">Solo Inactivos</SelectItem>
+                    <SelectItem value="todos">Todos</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             
