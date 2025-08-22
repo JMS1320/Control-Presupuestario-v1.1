@@ -566,6 +566,22 @@ Nombre de Referencia | Año / Campaña | Proveedor | Cuit | CATEG | Centro de Co
 - **Detectado**: 2025-08-18 sesión conciliación bancaria
 - **Prioridad**: Alta (datos críticos empresa)
 
+### ⚡ **Refactoring Edición Inline - Hook Reutilizable** `#pendiente #refactoring #escalabilidad`
+- **Issue**: Código edición inline duplicado en 3+ vistas (Cash Flow, ARCA, Templates)
+- **Impacto escalabilidad**: Cada nueva vista = más duplicación código
+- **Propuesta**: Crear `useInlineEditor.ts` hook centralizado
+- **Beneficios**: 
+  - Un solo lugar para lógica tipos campo (date, currency, select)
+  - Consistencia automática entre vistas
+  - Nuevas vistas reutilizan inmediatamente
+  - Testing centralizado
+- **Enfoque híbrido recomendado**:
+  - Fase 1: Hook base para templates nuevos (11-13)  
+  - Fase 2: Migrar Cash Flow + ARCA existentes
+- **Prioridad**: Media (después completar Template 10)
+- **Detectado**: 2025-08-22 durante unificación formatos fecha
+- **ROI**: Alto para escalabilidad futura
+
 ---
 
 # 🚨 **COMANDOS ENTRE NOSOTROS**
