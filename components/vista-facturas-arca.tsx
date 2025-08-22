@@ -494,6 +494,7 @@ export function VistaFacturasArca() {
               value={String(celdaEnEdicion.valor)} 
               onValueChange={(value) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: value } : null)}
               disabled={guardandoCambio}
+              defaultOpen={true}
             >
               <SelectTrigger className="h-6 text-xs p-1 w-full">
                 <SelectValue />

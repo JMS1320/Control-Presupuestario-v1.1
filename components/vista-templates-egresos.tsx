@@ -473,6 +473,7 @@ export function VistaTemplatesEgresos() {
             <Select 
               value={celdaEnEdicion.valor}
               onValueChange={(value) => guardarCambio(value)}
+              defaultOpen={true}
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
