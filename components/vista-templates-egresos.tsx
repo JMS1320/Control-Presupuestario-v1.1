@@ -466,9 +466,39 @@ export function VistaTemplatesEgresos() {
 
     // Si está en edición esta celda específica
     if (celdaEnEdicion?.cuotaId === cuota.id && celdaEnEdicion?.columna === columna) {
+      // Manejar edición de estado con dropdown
+      if (columna === 'estado') {
+        return (
+          <div className="flex items-center gap-1 min-w-[120px]">
+            <Select 
+              value={celdaEnEdicion.valor}
+              onValueChange={(value) => guardarCambio(value)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pendiente">Pendiente</SelectItem>
+                <SelectItem value="auditar">Auditar</SelectItem>
+                <SelectItem value="conciliado">Conciliado</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="ghost" 
+              className="h-6 w-6 p-0"
+              onClick={cancelarEdicion}
+            >
+              <XCircle className="h-3 w-3" />
+            </Button>
+          </div>
+        )
+      }
+
       return (
         <div className="flex items-center gap-1 min-w-[120px]">
           <Input
+            type={['fecha_estimada', 'fecha_vencimiento'].includes(columna) ? 'date' : 'text'}
             defaultValue={celdaEnEdicion.valor}
             className="h-8 text-xs"
             autoFocus

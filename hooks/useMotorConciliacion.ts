@@ -233,7 +233,7 @@ export function useMotorConciliacion() {
             }
 
             // Actualizar BD con datos del Cash Flow y estado según revisión
-            const estadoFinal = matchCF.requiere_revision ? 'Auditar' : 'Conciliado'
+            const estadoFinal = matchCF.requiere_revision ? 'auditar' : 'conciliado'
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
@@ -271,7 +271,7 @@ export function useMotorConciliacion() {
                 categ: regla.categ,
                 centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
-                estado: 'Conciliado'
+                estado: 'conciliado'
               })
 
               resultadosProceso.automaticos++

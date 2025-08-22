@@ -92,6 +92,85 @@ npm test
 - [2025-08-21] 🧪 **TESTING PLAN**: 10 tests sistemáticos definidos para validación completa
 - [2025-08-21] **Template 10 Inmobiliario PAM**: 4 cuotas en BD + reglas aplicables + listo testing
 
+### 🔧 **SESIÓN FINAL 2025-08-21 - FIXES CRÍTICOS TEMPLATES:**
+
+#### ✅ **PROBLEMA 1: Datos Template 10 Inconsistentes**
+- **Síntoma**: Template 10 mostraba "PAM" en lugar de "ARBA" en Cash Flow proveedor
+- **Root cause**: `useMultiCashFlowData.ts` línea 82 fallback incorrecto `nombre_quien_cobra || responsable`
+- **Decisión**: Es incorrecto mezclar proveedor con responsable → son conceptos diferentes
+- **Solución**: Eliminado fallback, ahora solo `nombre_quien_cobra || ''`
+- **CUIT actualizado**: Template 10 ARBA sin guiones = "30710404611"
+- **Estado**: ✅ COMPLETADO - Commit 534e872
+
+#### ✅ **PROBLEMA 2: Templates Edición Fallaba**
+- **Síntomas**: 
+  - Monto se ponía en cero al editar
+  - Descripción no se actualizaba
+  - Estado mostraba input en lugar de dropdown
+- **Root cause**: Función `ejecutarGuardadoRealTemplates` con lógica compleja multi-tabla vs ARCA simple
+- **Decisión**: Unificar lógica Templates = ARCA facturas (probado funcionando)
+- **Solución**: Simplificada a update directo `cuotas_egresos_sin_factura` con `updateData`
+- **PLUS**: Agregada regla automática `fecha_vencimiento → fecha_estimada` (faltaba en Templates)
+- **Estado**: ✅ COMPLETADO - Commit 9f5a6a1
+
+#### ✅ **PROBLEMA 3: Templates Vista Crash** 
+- **Síntoma**: "Cannot read properties of undefined (reading 'label')" → Application error
+- **Root cause**: localStorage contenía columna 'mes' eliminada ayer → `COLUMNAS_CONFIG['mes']` = undefined
+- **Decisión**: Protección robusta contra columnas localStorage obsoletas
+- **Solución**: 
+  - Filtrar `columnasVisiblesArray` solo columnas existentes en `COLUMNAS_CONFIG`
+  - Doble protección en renderizado headers y celdas
+- **Estado**: ✅ COMPLETADO - Commit 43a18ae
+
+### ⚠️ **ERRORES DETECTADOS 2025-08-21 - PENDIENTES CORREGIR:**
+
+#### 🗓️ **ERROR 1: Formato Fechas Templates Incorrecto**
+- **Síntoma**: Al editar fechas en Templates toma formato MM/DD/AAAA en lugar de DD/MM/AAAA
+- **Root cause**: Templates NO usa el sistema de edición de Cash Flow (más eficiente)
+- **Decisión**: Unificar TODAS las ediciones de fecha con sistema Cash Flow
+- **Alcance**: Templates, ARCA facturas, Extracto bancario → mismo comportamiento
+- **Estado**: ⚠️ PENDIENTE - Requires refactoring fecha editing
+
+#### 🏷️ **ERROR 2: Estados Templates Input Texto vs Dropdown**
+- **Síntoma**: Estados en Templates se editan como texto libre en lugar de opciones predefinidas
+- **Necesidad**: Dropdown con estados válidos (pendiente, conciliado, auditado, etc.)
+- **Decisión**: Cambiar a Select component con opciones limitadas
+- **Estado**: ⚠️ PENDIENTE - Requires UI/UX change
+
+#### 🔍 **ERROR 3: Estado "auditado" por Conciliación Bancaria**
+- **Síntoma**: Cuando conciliación bancaria asigna estado "auditado" a template → problema no especificado
+- **Investigación**: Verificar qué pasa cuando template cambia a "auditado" via conciliación
+- **Estado**: ⚠️ PENDIENTE - Requires testing + analysis
+
+### ⏳ **PENDIENTES INMEDIATOS - TESTING 2025-08-21:**
+1. **🧪 TESTEAR EDICIÓN TEMPLATES**: Monto, descripción (estado tiene error conocido)
+2. **🧪 TESTEAR REGLA FECHAS**: fecha_vencimiento auto-actualizar fecha_estimada (formato tiene error)
+3. **🛠️ FIX FORMATO FECHAS**: Unificar con sistema Cash Flow eficiente
+4. **🛠️ FIX ESTADOS DROPDOWN**: Cambiar de input texto a Select opciones
+5. **🔍 INVESTIGAR AUDITADO**: Qué problema surge con estado auditado via conciliación
+6. **📋 CREAR TEMPLATES 11-13**: Resto grupo inmobiliario según Excel
+7. **🔄 CONTINUAR CARGA MASIVA**: 53 templates Excel pendientes
+
+### 🏗️ **DECISIONES ESTRUCTURA DATOS 2025-08-21:**
+- **✅ ARQUITECTURA 3 TABLAS**: Mantenida (templates_master → egresos_sin_factura → cuotas_egresos_sin_factura)
+- **✅ UNIFICACIÓN LÓGICA**: Templates edición = ARCA facturas (probado estable)
+- **✅ PROTECCIÓN LOCALSTORAGE**: Filtros automáticos columnas obsoletas
+- **✅ REGLAS AUTOMÁTICAS**: Templates ahora tiene mismas reglas que Cash Flow
+- **✅ CUIT SIN GUIONES**: Estandarizado en toda la aplicación
+- **⚠️ FECHAS EDICIÓN**: Unificar con sistema Cash Flow (más eficiente)
+- **⚠️ ESTADOS DROPDOWN**: Cambiar de texto libre a opciones predefinidas
+
+### 🎯 **ESTADO TEMPLATE 10 - READY FOR TESTING:**
+```sql
+-- Template Master 2026: 'a0b6189c-f725-474a-91ff-bc8f3365ead2'
+-- Template 10: '387da693-9238-4aed-82ea-1feddd85bda8' 
+-- 4 cuotas: Mar/Jun/Sep/Nov 2026 - $3.900.000 c/u
+-- Proveedor: ARBA (30710404611) ✅ CORREGIDO
+-- Reglas: PAM responsable + Template tipo = "RET i" aplicable
+-- Edición: Todos campos funcionando ✅ CORREGIDO
+-- Vista: Sin crash ✅ CORREGIDO
+```
+
 ## 🎯 **CONTEXTO OBJETIVO ACTUAL - CARGA MASIVA TEMPLATES:**
 
 ### 📋 **PLAN PASO A PASO - METODOLOGÍA DESARROLLO:**

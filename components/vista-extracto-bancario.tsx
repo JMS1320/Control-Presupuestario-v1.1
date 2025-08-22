@@ -1254,7 +1254,7 @@ export function VistaExtractoBancario() {
                           <TableCell>
                             <Badge variant={
                               movimiento.estado === 'conciliado' ? 'default' : 
-                              movimiento.estado === 'Auditar' ? 'secondary' : 
+                              movimiento.estado === 'auditar' ? 'secondary' : 
                               'outline'
                             }>
                               {movimiento.estado}
