@@ -12,12 +12,15 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
+import { TemplateTestSuite } from "@/components/template-test-suite"
+import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
+import { usePagoAnual } from "@/hooks/usePagoAnual"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 
@@ -83,6 +86,10 @@ export function VistaTemplatesEgresos() {
   
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
+  
+  // Hooks para procesos reusables Templates
+  const { propagando, ejecutarPropagacion, confirmarPropagacion } = usePropagacionCuotas()
+  const { procesando, ejecutarPagoAnual, confirmarPagoAnual } = usePagoAnual()
   
   // Estados para filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
@@ -328,8 +335,45 @@ export function VistaTemplatesEgresos() {
 
   // Funciones para edición inline
   const iniciarEdicion = (cuotaId: string, columna: string, valor: any, event: React.MouseEvent) => {
+    // Ctrl+Shift+Click en monto = Activar pago anual
+    if (event.ctrlKey && event.shiftKey && columna === 'monto' && modoEdicion) {
+      event.preventDefault()
+      activarPagoAnual(cuotaId)
+      return
+    }
+    
+    // Ctrl+Click normal = Edición inline
     if (!event.ctrlKey || !modoEdicion) return
     setCeldaEnEdicion({ cuotaId, columna, valor: valor || '' })
+  }
+
+  // Función para activar proceso de pago anual
+  const activarPagoAnual = async (cuotaId: string) => {
+    try {
+      // Obtener información del template para mostrar en confirmación
+      const cuota = cuotas.find(c => c.id === cuotaId)
+      const nombreTemplate = cuota?.egreso?.nombre_referencia || 'Template'
+      
+      const confirmacion = await confirmarPagoAnual(cuotaId, nombreTemplate)
+      
+      if (confirmacion.confirmed && confirmacion.montoAnual) {
+        const resultado = await ejecutarPagoAnual({
+          templateId: cuota?.egreso_id || '',
+          cuotaId: cuotaId,
+          montoAnual: confirmacion.montoAnual
+        })
+        
+        if (resultado.success) {
+          alert(`✅ Pago anual configurado\n• Cuotas eliminadas: ${resultado.cuotasEliminadas}\n• Monto anual: $${confirmacion.montoAnual.toLocaleString('es-AR')}`)
+          // Recargar datos
+          await cargarCuotas()
+        } else {
+          alert(`❌ Error: ${resultado.error}`)
+        }
+      }
+    } catch (error) {
+      alert(`Error activando pago anual: ${error}`)
+    }
   }
 
   const cancelarEdicion = () => {
@@ -370,6 +414,25 @@ export function VistaTemplatesEgresos() {
       // Convertir valores según el tipo de campo (igual que en ARCA facturas)
       if (['monto'].includes(datosEdicion.columna)) {
         valorFinal = parseFloat(String(valorFinal)) || 0
+        
+        // PROCESO ESPECIAL TEMPLATES: Confirmar propagación de cuotas cuando se edita monto
+        if (valorFinal > 0) {
+          const confirmarProp = await confirmarPropagacion(datosEdicion.cuotaId, 'template', valorFinal)
+          
+          if (confirmarProp) {
+            // Usuario quiere propagar a cuotas futuras
+            const resultPropagacion = await ejecutarPropagacion({
+              templateId: 'template', // Se actualiza después con datos reales
+              cuotaModificadaId: datosEdicion.cuotaId,
+              nuevoMonto: valorFinal,
+              aplicarATodasLasFuturas: true
+            })
+            
+            if (resultPropagacion.success && resultPropagacion.cuotasModificadas > 0) {
+              alert(`✅ Propagación exitosa: ${resultPropagacion.cuotasModificadas} cuotas futuras actualizadas`)
+            }
+          }
+        }
       } else if (['fecha_estimada', 'fecha_vencimiento'].includes(datosEdicion.columna)) {
         // Validar y convertir fechas
         if (valorFinal && !Date.parse(String(valorFinal))) {
@@ -610,6 +673,14 @@ export function VistaTemplatesEgresos() {
 
   return (
     <div className="space-y-6">
+      {/* Template Testing Suite - Solo para Template 10 como prototipo */}
+      {cuotas.some(c => c.egreso?.nombre_referencia === 'Inmobiliario' && c.egreso?.año === 2026) && (
+        <TemplateTestSuite 
+          templateId="387da693-9238-4aed-82ea-1feddd85bda8"
+          templateName="Template 10 - Inmobiliario 2026"
+        />
+      )}
+
       {/* Encabezado con controles */}
       <div className="flex items-center justify-between">
         <div className="space-y-1">
@@ -617,6 +688,11 @@ export function VistaTemplatesEgresos() {
           <p className="text-muted-foreground">
             Cuotas y compromisos recurrentes generados desde templates
           </p>
+          {modoEdicion && (
+            <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual | Editar monto = Opción propagación
+            </p>
+          )}
         </div>
         
         {/* Controles */}
