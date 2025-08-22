@@ -42,7 +42,7 @@ export function useAlertasTemplates() {
         `)
         .gte('fecha_estimada', fechaHoy)
         .lte('fecha_estimada', fechaLimiteStr)
-        .in('estado', ['pendiente', 'pagar']) // Solo alertar estados activos
+        .in('estado', ['pendiente', 'pagar']) // Solo alertar estados activos (excluye desactivado)
         .order('fecha_estimada', { ascending: true })
 
       if (errorCuotas) {

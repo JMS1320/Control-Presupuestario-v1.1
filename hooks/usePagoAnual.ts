@@ -7,11 +7,12 @@ interface PagoAnualConfig {
   templateId: string
   cuotaId: string
   montoAnual: number
+  fechaPagoAnual: string
 }
 
 interface PagoAnualResult {
   success: boolean
-  cuotasEliminadas: number
+  cuotasDesactivadas: number
   cuotaActualizada: boolean
   error?: string
 }
@@ -47,30 +48,35 @@ export function usePagoAnual() {
         throw new Error(`Error obteniendo cuotas futuras: ${errorFuturas.message}`)
       }
 
-      let cuotasEliminadas = 0
+      let cuotasDesactivadas = 0
 
-      // 3. Eliminar todas las cuotas futuras si existen
+      // 3. DESACTIVAR (no eliminar) todas las cuotas futuras cambiando estado a 'desactivado'
       if (cuotasFuturas && cuotasFuturas.length > 0) {
         const cuotaIds = cuotasFuturas.map(c => c.id)
         
-        const { error: errorEliminar } = await supabase
+        const { error: errorDesactivar } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .delete()
+          .update({ 
+            estado: 'desactivado',
+            descripcion: 'Cuota desactivada por pago anual'
+          })
           .in('id', cuotaIds)
 
-        if (errorEliminar) {
-          throw new Error(`Error eliminando cuotas futuras: ${errorEliminar.message}`)
+        if (errorDesactivar) {
+          throw new Error(`Error desactivando cuotas futuras: ${errorDesactivar.message}`)
         }
 
-        cuotasEliminadas = cuotasFuturas.length
+        cuotasDesactivadas = cuotasFuturas.length
       }
 
-      // 4. Actualizar la cuota actual con el monto anual
+      // 4. Actualizar la cuota actual con el monto anual y nueva fecha
       const { error: errorUpdate } = await supabase
         .from('cuotas_egresos_sin_factura')
         .update({ 
           monto: config.montoAnual,
-          descripcion: 'Pago anual' // Marcar como pago anual
+          fecha_estimada: config.fechaPagoAnual,
+          fecha_vencimiento: config.fechaPagoAnual,
+          descripcion: 'Pago anual'
         })
         .eq('id', config.cuotaId)
 
@@ -80,7 +86,7 @@ export function usePagoAnual() {
 
       const result: PagoAnualResult = {
         success: true,
-        cuotasEliminadas,
+        cuotasDesactivadas,
         cuotaActualizada: true
       }
       
@@ -90,7 +96,7 @@ export function usePagoAnual() {
     } catch (error) {
       const result: PagoAnualResult = {
         success: false,
-        cuotasEliminadas: 0,
+        cuotasDesactivadas: 0,
         cuotaActualizada: false,
         error: error instanceof Error ? error.message : 'Error desconocido'
       }
@@ -106,12 +112,12 @@ export function usePagoAnual() {
   const confirmarPagoAnual = async (
     cuotaId: string,
     templateNombre: string
-  ): Promise<{ confirmed: boolean; montoAnual?: number }> => {
+  ): Promise<{ confirmed: boolean; montoAnual?: number; fechaPago?: string }> => {
     return new Promise((resolve) => {
       // Solicitar monto anual
       const montoIngresado = window.prompt(
         `🔄 PAGO ANUAL - ${templateNombre}\n\n` +
-        `Esta acción convertirá esta cuota en un pago anual y eliminará todas las cuotas futuras.\n\n` +
+        `Esta acción convertirá esta cuota en un pago anual y desactivará todas las cuotas futuras.\n\n` +
         `Ingrese el monto anual total:`
       )
 
@@ -129,16 +135,38 @@ export function usePagoAnual() {
         return
       }
 
+      // Solicitar fecha de pago anual
+      const fechaIngresada = window.prompt(
+        `📅 FECHA PAGO ANUAL - ${templateNombre}\n\n` +
+        `Monto anual: $${montoAnual.toLocaleString('es-AR')}\n\n` +
+        `Ingrese la fecha del pago anual (YYYY-MM-DD):`
+      )
+
+      if (fechaIngresada === null) {
+        // Usuario canceló
+        resolve({ confirmed: false })
+        return
+      }
+
+      // Validar formato de fecha
+      if (!fechaIngresada.match(/^\d{4}-\d{2}-\d{2}$/) || !Date.parse(fechaIngresada)) {
+        alert('Fecha inválida. Use formato YYYY-MM-DD. Operación cancelada.')
+        resolve({ confirmed: false })
+        return
+      }
+
       // Confirmar la operación
       const confirmar = window.confirm(
         `¿Confirma convertir a pago anual?\n\n` +
         `Monto anual: $${montoAnual.toLocaleString('es-AR')}\n` +
-        `⚠️ ATENCIÓN: Se eliminarán todas las cuotas futuras de este template`
+        `Fecha pago: ${fechaIngresada}\n` +
+        `⚠️ ATENCIÓN: Se desactivarán todas las cuotas futuras de este template`
       )
 
       resolve({ 
         confirmed: confirmar, 
-        montoAnual: confirmar ? montoAnual : undefined 
+        montoAnual: confirmar ? montoAnual : undefined,
+        fechaPago: confirmar ? fechaIngresada : undefined
       })
     })
   }

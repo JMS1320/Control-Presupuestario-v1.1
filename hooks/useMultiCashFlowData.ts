@@ -166,7 +166,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         throw new Error(`Error facturas ARCA: ${errorArca.message}`)
       }
 
-      // 2. Cargar templates egresos (mismo filtro de estados)
+      // 2. Cargar templates egresos (mismo filtro de estados + desactivado)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
@@ -175,6 +175,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         `)
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
+        .neq('estado', 'desactivado')
         .order('fecha_estimada', { ascending: true })
 
       if (errorTemplates) {

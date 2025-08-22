@@ -356,15 +356,16 @@ export function VistaTemplatesEgresos() {
       
       const confirmacion = await confirmarPagoAnual(cuotaId, nombreTemplate)
       
-      if (confirmacion.confirmed && confirmacion.montoAnual) {
+      if (confirmacion.confirmed && confirmacion.montoAnual && confirmacion.fechaPago) {
         const resultado = await ejecutarPagoAnual({
           templateId: cuota?.egreso_id || '',
           cuotaId: cuotaId,
-          montoAnual: confirmacion.montoAnual
+          montoAnual: confirmacion.montoAnual,
+          fechaPagoAnual: confirmacion.fechaPago
         })
         
         if (resultado.success) {
-          alert(`✅ Pago anual configurado\n• Cuotas eliminadas: ${resultado.cuotasEliminadas}\n• Monto anual: $${confirmacion.montoAnual.toLocaleString('es-AR')}`)
+          alert(`✅ Pago anual configurado\n• Cuotas desactivadas: ${resultado.cuotasDesactivadas}\n• Monto anual: $${confirmacion.montoAnual.toLocaleString('es-AR')}\n• Fecha pago: ${confirmacion.fechaPago}`)
           // Recargar datos
           await cargarCuotas()
         } else {
@@ -548,6 +549,7 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="pagado">Pagado</SelectItem>
                 <SelectItem value="credito">Crédito</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
+                <SelectItem value="desactivado">Desactivado</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -690,7 +692,7 @@ export function VistaTemplatesEgresos() {
           </p>
           {modoEdicion && (
             <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual | Editar monto = Opción propagación
+              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual (desactiva futuras) | Editar monto = Opción propagación
             </p>
           )}
         </div>
