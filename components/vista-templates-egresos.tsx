@@ -479,8 +479,10 @@ export function VistaTemplatesEgresos() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pendiente">Pendiente</SelectItem>
+                <SelectItem value="debito">Débito</SelectItem>
                 <SelectItem value="pagar">Pagar</SelectItem>
                 <SelectItem value="pagado">Pagado</SelectItem>
+                <SelectItem value="credito">Crédito</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
               </SelectContent>
             </Select>
