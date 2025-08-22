@@ -21,6 +21,7 @@ import { format } from "date-fns"
 import { TemplateTestSuite } from "@/components/template-test-suite"
 import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
 import { usePagoAnual } from "@/hooks/usePagoAnual"
+import { usePagoCuotas } from "@/hooks/usePagoCuotas"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 
@@ -90,6 +91,7 @@ export function VistaTemplatesEgresos() {
   // Hooks para procesos reusables Templates
   const { propagando, ejecutarPropagacion, confirmarPropagacion } = usePropagacionCuotas()
   const { procesando, ejecutarPagoAnual, confirmarPagoAnual } = usePagoAnual()
+  const { procesando: procesandoCuotas, ejecutarPagoCuotas, confirmarPagoCuotas } = usePagoCuotas()
   
   // Estados para filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
@@ -338,10 +340,17 @@ export function VistaTemplatesEgresos() {
 
   // Funciones para edición inline
   const iniciarEdicion = (cuotaId: string, columna: string, valor: any, event: React.MouseEvent) => {
-    // Ctrl+Shift+Click en monto = Activar pago anual
+    const cuota = cuotas.find(c => c.id === cuotaId)
+    const esTemplateInactivo = cuota?.egreso?.activo === false
+    
+    // Ctrl+Shift+Click en monto = Activar pago anual (si template activo) o convertir a cuotas (si inactivo)
     if (event.ctrlKey && event.shiftKey && columna === 'monto' && modoEdicion) {
       event.preventDefault()
-      activarPagoAnual(cuotaId)
+      if (esTemplateInactivo) {
+        activarPagoCuotas(cuotaId)
+      } else {
+        activarPagoAnual(cuotaId)
+      }
       return
     }
     
@@ -377,6 +386,40 @@ export function VistaTemplatesEgresos() {
       }
     } catch (error) {
       alert(`Error activando pago anual: ${error}`)
+    }
+  }
+
+  // Función para activar proceso de pago por cuotas (reversa de pago anual)
+  const activarPagoCuotas = async (cuotaId: string) => {
+    try {
+      // Obtener información del template para mostrar en confirmación
+      const cuota = cuotas.find(c => c.id === cuotaId)
+      const nombreTemplate = cuota?.egreso?.nombre_referencia || 'Template'
+      
+      const confirmacion = await confirmarPagoCuotas(cuotaId, nombreTemplate)
+      
+      if (confirmacion.confirmed && confirmacion.montoPorCuota && confirmacion.numeroCuotas && 
+          confirmacion.fechaPrimeraCuota && confirmacion.frecuenciaMeses) {
+        
+        const resultado = await ejecutarPagoCuotas({
+          templateId: cuota?.egreso_id || '',
+          cuotaId: cuotaId,
+          montoPorCuota: confirmacion.montoPorCuota,
+          numeroCuotas: confirmacion.numeroCuotas,
+          fechaPrimeraCuota: confirmacion.fechaPrimeraCuota,
+          frecuenciaMeses: confirmacion.frecuenciaMeses
+        })
+        
+        if (resultado.success) {
+          alert(`✅ Template convertido a cuotas\n• Template reactivado: SÍ\n• Cuotas creadas: ${resultado.cuotasCreadas + 1}\n• Monto por cuota: $${confirmacion.montoPorCuota.toLocaleString('es-AR')}`)
+          // Recargar datos
+          await cargarCuotas()
+        } else {
+          alert(`❌ Error: ${resultado.error}`)
+        }
+      }
+    } catch (error) {
+      alert(`Error activando pago por cuotas: ${error}`)
     }
   }
 
@@ -694,7 +737,7 @@ export function VistaTemplatesEgresos() {
           </p>
           {modoEdicion && (
             <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual (desactiva template) | Editar monto = Opción propagación
+              💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual ↔ Cuotas (bidireccional) | Editar monto = Opción propagación
             </p>
           )}
         </div>
