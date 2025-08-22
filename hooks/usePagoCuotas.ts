@@ -16,6 +16,7 @@ interface PagoCuotasResult {
   success: boolean
   cuotasCreadas: number
   templateReactivado: boolean
+  templateCreado: boolean
   error?: string
 }
 
@@ -28,10 +29,22 @@ export function usePagoCuotas() {
     setLastResult(null)
 
     try {
-      // 1. Obtener información del template actual
+      // 1. Obtener información del template actual y sus datos
       const { data: cuotaActual, error: errorCuota } = await supabase
         .from('cuotas_egresos_sin_factura')
-        .select('egreso_id')
+        .select(`
+          egreso_id,
+          egreso:egresos_sin_factura!inner(
+            categ,
+            centro_costo,
+            nombre_referencia,
+            responsable,
+            cuit_quien_cobra,
+            nombre_quien_cobra,
+            template_master_id,
+            pago_anual
+          )
+        `)
         .eq('id', config.cuotaId)
         .single()
 
@@ -39,34 +52,99 @@ export function usePagoCuotas() {
         throw new Error(`Error obteniendo cuota actual: ${errorCuota?.message}`)
       }
 
-      // 2. REACTIVAR TEMPLATE (cambiar a activo y quitar pago anual)
-      const { error: errorReactivar } = await supabase
-        .from('egresos_sin_factura')
-        .update({ 
-          activo: true,
-          pago_anual: false,
-          monto_anual: null,
-          fecha_pago_anual: null
-        })
-        .eq('id', cuotaActual.egreso_id)
+      // 2. Verificar si ya existe un template de cuotas para este concepto
+      let templateCreado = false
+      let templateCuotasId = cuotaActual.egreso_id
 
-      if (errorReactivar) {
-        throw new Error(`Error reactivando template: ${errorReactivar.message}`)
+      // Si el template actual ES de pago anual, crear uno nuevo de cuotas
+      if (cuotaActual.egreso?.pago_anual) {
+        // Crear template de cuotas basado en el template anual
+        const { data: nuevoTemplateCuotas, error: errorCrearCuotas } = await supabase
+          .from('egresos_sin_factura')
+          .insert({
+            template_master_id: cuotaActual.egreso?.template_master_id,
+            categ: cuotaActual.egreso?.categ,
+            centro_costo: cuotaActual.egreso?.centro_costo,
+            nombre_referencia: cuotaActual.egreso?.nombre_referencia?.replace(' (Anual)', ''),
+            responsable: cuotaActual.egreso?.responsable,
+            cuit_quien_cobra: cuotaActual.egreso?.cuit_quien_cobra,
+            nombre_quien_cobra: cuotaActual.egreso?.nombre_quien_cobra,
+            tipo_recurrencia: 'cuotas_especificas',
+            activo: true,
+            pago_anual: false,
+            año: new Date().getFullYear()
+          })
+          .select()
+          .single()
+
+        if (errorCrearCuotas) {
+          throw new Error(`Error creando template de cuotas: ${errorCrearCuotas.message}`)
+        }
+
+        templateCuotasId = nuevoTemplateCuotas.id
+        templateCreado = true
+
+        // Desactivar el template anual original
+        const { error: errorDesactivarAnual } = await supabase
+          .from('egresos_sin_factura')
+          .update({ activo: false })
+          .eq('id', cuotaActual.egreso_id)
+
+        if (errorDesactivarAnual) {
+          throw new Error(`Error desactivando template anual: ${errorDesactivarAnual.message}`)
+        }
+      } else {
+        // Si ya es template de cuotas, solo reactivar
+        const { error: errorReactivar } = await supabase
+          .from('egresos_sin_factura')
+          .update({ 
+            activo: true,
+            pago_anual: false,
+            monto_anual: null,
+            fecha_pago_anual: null
+          })
+          .eq('id', cuotaActual.egreso_id)
+
+        if (errorReactivar) {
+          throw new Error(`Error reactivando template: ${errorReactivar.message}`)
+        }
       }
 
-      // 3. Actualizar la cuota actual con el nuevo monto y fecha
-      const { error: errorUpdateActual } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update({ 
-          monto: config.montoPorCuota,
-          fecha_estimada: config.fechaPrimeraCuota,
-          fecha_vencimiento: config.fechaPrimeraCuota,
-          descripcion: 'Cuota 1'
-        })
-        .eq('id', config.cuotaId)
+      // 3. Crear/actualizar la primera cuota
+      if (templateCreado) {
+        // Crear primera cuota para el nuevo template
+        const { data: primeraCuota, error: errorPrimeraCuota } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert({
+            egreso_id: templateCuotasId,
+            mes: new Date(config.fechaPrimeraCuota).getMonth() + 1,
+            fecha_estimada: config.fechaPrimeraCuota,
+            fecha_vencimiento: config.fechaPrimeraCuota,
+            monto: config.montoPorCuota,
+            descripcion: 'Cuota 1',
+            estado: 'pendiente'
+          })
+          .select()
+          .single()
 
-      if (errorUpdateActual) {
-        throw new Error(`Error actualizando cuota actual: ${errorUpdateActual.message}`)
+        if (errorPrimeraCuota) {
+          throw new Error(`Error creando primera cuota: ${errorPrimeraCuota.message}`)
+        }
+      } else {
+        // Actualizar la cuota actual existente
+        const { error: errorUpdateActual } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update({ 
+            monto: config.montoPorCuota,
+            fecha_estimada: config.fechaPrimeraCuota,
+            fecha_vencimiento: config.fechaPrimeraCuota,
+            descripcion: 'Cuota 1'
+          })
+          .eq('id', config.cuotaId)
+
+        if (errorUpdateActual) {
+          throw new Error(`Error actualizando cuota actual: ${errorUpdateActual.message}`)
+        }
       }
 
       // 4. Crear las cuotas adicionales (si se necesitan más de 1)
@@ -82,7 +160,7 @@ export function usePagoCuotas() {
           const fechaCuotaStr = fechaCuota.toISOString().split('T')[0]
           
           nuevasCuotas.push({
-            egreso_id: cuotaActual.egreso_id,
+            mes: new Date(fechaCuotaStr).getMonth() + 1,
             fecha_estimada: fechaCuotaStr,
             fecha_vencimiento: fechaCuotaStr,
             monto: config.montoPorCuota,
@@ -91,10 +169,13 @@ export function usePagoCuotas() {
           })
         }
 
-        // Insertar todas las nuevas cuotas
+        // Insertar todas las nuevas cuotas en el template correcto
         const { error: errorInsert } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .insert(nuevasCuotas)
+          .insert(nuevasCuotas.map(cuota => ({
+            ...cuota,
+            egreso_id: templateCuotasId
+          })))
 
         if (errorInsert) {
           throw new Error(`Error creando nuevas cuotas: ${errorInsert.message}`)
@@ -106,7 +187,8 @@ export function usePagoCuotas() {
       const result: PagoCuotasResult = {
         success: true,
         cuotasCreadas,
-        templateReactivado: true
+        templateReactivado: !templateCreado, // Solo true si se reactivó existente
+        templateCreado
       }
       
       setLastResult(result)
@@ -117,6 +199,7 @@ export function usePagoCuotas() {
         success: false,
         cuotasCreadas: 0,
         templateReactivado: false,
+        templateCreado: false,
         error: error instanceof Error ? error.message : 'Error desconocido'
       }
       
@@ -142,7 +225,7 @@ export function usePagoCuotas() {
       // Solicitar monto por cuota
       const montoIngresado = window.prompt(
         `🔄 CONVERTIR A CUOTAS - ${templateNombre}\n\n` +
-        `Esta acción reactivará el template y creará un esquema de cuotas.\n\n` +
+        `Esta acción creará (o actualizará) un template de cuotas y desactivará el template anual.\n\n` +
         `Ingrese el monto por cuota:`
       )
 
@@ -229,13 +312,15 @@ export function usePagoCuotas() {
 
       // Confirmación final
       const confirmar = window.confirm(
-        `¿Confirma convertir a esquema de cuotas?\n\n` +
+        `¿Confirma conversión a esquema de cuotas?\n\n` +
         `• Monto por cuota: $${montoPorCuota.toLocaleString('es-AR')}\n` +
         `• Número de cuotas: ${numeroCuotas}\n` +
         `• Frecuencia: ${frecuencias[indice].label}\n` +
         `• Primera cuota: ${fechaIngresada}\n` +
-        `• Total: $${(montoPorCuota * numeroCuotas).toLocaleString('es-AR')}\n\n` +
-        `⚠️ El template será reactivado y aparecerá en Cash Flow`
+        `• Total: $${(montoPorCuota * numeroCuotas).toLocaleString('es-AR')}\n` +
+        `• Se creará/actualizará template de cuotas\n` +
+        `• Se desactivará template anual\n\n` +
+        `⚠️ El template anual original quedará inactivo`
       )
 
       resolve({ 
