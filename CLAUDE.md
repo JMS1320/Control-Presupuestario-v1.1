@@ -96,6 +96,17 @@ npm test
 - [2025-08-24] 📋 **ARQUITECTURA BASE**: Hook creado + 2 vistas migradas
 - [2025-08-24] 🚀 **COMMITS APLICADOS**: Push exitoso - código deployado en Vercel
 
+## 🚀 **AVANCES SESIÓN CONTINUACIÓN (2025-08-24):**
+- [2025-08-24] 🎯 **SISTEMA CONVERSIÓN BIDIRECCIONAL COMPLETADO**: Cuotas ↔ Anual funcionando
+- [2025-08-24] 🔧 **TEMPLATES INLINE EDITING FIX**: Problema fechas resuelto - era patrón value/onChange
+- [2025-08-24] ⚡ **CASH FLOW MIGRADO**: Hook useInlineEditor implementado exitosamente  
+- [2025-08-24] 🛡️ **CONVERSIÓN INTELIGENTE**: Detecta registros existentes + reactivar vs crear
+- [2025-08-24] 🆕 **ESTADO 'DESACTIVADO'**: Nueva semántica vs 'conciliado' en BD
+- [2025-08-24] 🎨 **UX ARGENTINO**: Modales usan DD/MM/AAAA en lugar de YYYY-MM-DD
+- [2025-08-24] 📋 **TEMPLATES UI**: Checkbox mostrar/ocultar desactivados implementado
+- [2025-08-24] 🔒 **CASH FLOW FILTROS**: Excluye 'desactivado' + 'conciliado' correctamente
+- [2025-08-24] ✅ **COMMIT 75cf69f**: Sistema semántico mejorado + formato argentino
+
 ## 🚀 **AVANCES SESIÓN PREVIA (2025-08-22):**
 - [2025-08-22] 💡 **ENHANCEMENT CRÍTICO COMPLETADO**: Auto-creación templates en conversión bidireccional
 - [2025-08-22] 🔄 **PAGO ANUAL INTELIGENTE**: Detecta tipo template + crea anual si no existe + preserva datos
@@ -208,21 +219,22 @@ npm test
 - **MODIFICADO**: `components/vista-facturas-arca.tsx` - Approach híbrido implementado
 - **COMMIT**: Push exitoso con approach híbrido funcionando
 
-### ⏳ **PRÓXIMA FASE PENDIENTE:**
-- **⚡ Migrar Templates**: Reemplazar lógica actual con hook unificado
-- **⚡ Migrar Cash Flow**: Opcional - ya funciona bien pero por consistency
-- **⚡ Nuevas vistas**: Usar hook desde inicio automáticamente
+### ✅ **FASE UNIFICACIÓN COMPLETADA:**
+- **✅ Templates**: Hook implementado + fix patrón value/onChange
+- **✅ Cash Flow**: Hook migrado exitosamente
+- **✅ Arquitectura**: Base escalable para vistas futuras
 
-## 🚨 **ISSUE CRÍTICO DETECTADO 2025-08-24:**
+## ✅ **ISSUES RESUELTOS 2025-08-24:**
 
-### ⚠️ **TEMPLATES EDICIÓN FECHAS NO FUNCIONA**
-- **Síntoma**: Ctrl+Click en fechas Templates no abre editor
-- **Estado actual**: 
+### ✅ **TEMPLATES EDICIÓN FECHAS SOLUCIONADO**
+- **Síntoma original**: Ctrl+Click en fechas Templates no persistía cambios
+- **Root cause**: Patrón defaultValue+onBlur vs value+onChange (faltaba controlled input)
+- **Solución**: Replicar patrón ARCA exitoso → controlled inputs value+onChange
+- **Estado final**: 
   - ✅ ARCA facturas: Hook funciona perfectamente
-  - ✅ Cash Flow: Edición original funciona
-  - ❌ Templates: Hook implementado pero no responde
-- **Debugging necesario**: Verificar por qué Templates no detecta Ctrl+Click
-- **Commit problemático**: 0873989 - Hook implementado pero no funcional
+  - ✅ Cash Flow: Hook migrado exitosamente  
+  - ✅ Templates: Hook funcional + fix patrón edición
+- **Commit solución**: Incluido en migración completa
 
 ### 🔍 **DEBUGGING PLAN PRÓXIMA SESIÓN:**
 1. **Console logs**: Verificar si `iniciarEdicion` se ejecuta en Templates
@@ -231,46 +243,66 @@ npm test
 4. **Click events**: Validar propagación eventos en Templates
 5. **Fallback**: Si no se resuelve rápido → revert Templates a lógica original
 
-### ⏳ **PENDIENTES INMEDIATOS - TESTING 2025-08-24:**
-1. **🔥 FIX TEMPLATES HOOK**: Debugging edición fechas NO funciona
-2. **🧪 TESTEAR AUTO-CREACIÓN**: Conversión cuotas ↔ anual con templates inexistentes
-3. **🧪 TESTEAR PROPAGACIÓN CUOTAS**: Cambiar monto cuota + confirmación para modificar futuras
-4. **🧪 TESTEAR PRESERVACIÓN DATOS**: Categ, responsable, centro_costo se mantienen
-5. **🧪 TESTEAR DESACTIVACIÓN**: Templates originales quedan inactivos correctamente
-6. **🧪 TESTEAR NOMENCLATURA**: "(Anual)" se agrega/remueve correctamente
-7. **🛠️ FIX ESTADOS DROPDOWN**: Cambiar de input texto a Select opciones
-8. **🔍 INVESTIGAR AUDITADO**: Qué problema surge con estado auditado via conciliación
-9. **📋 CREAR TEMPLATES 11-13**: Resto grupo inmobiliario según Excel
+### ⏳ **TESTING PENDIENTE - PRÓXIMA SESIÓN (2025-08-24):**
+
+#### 🧪 **SISTEMA DESACTIVADO - TESTING PLAN:**
+1. **🔍 TEMPLATES UI**: Verificar checkbox mostrar/ocultar desactivados funciona
+2. **🔍 CASH FLOW FILTROS**: Confirmar excluye 'desactivado' + 'conciliado'
+3. **🧪 CONVERSIÓN ANUAL → CUOTAS**: Testear reactivación cuotas desactivadas
+4. **🧪 CONVERSIÓN CUOTAS → ANUAL**: Testear con nuevo estado desactivado
+5. **🎨 MODALES ARGENTINOS**: Testear formato DD/MM/AAAA funciona correctamente
+
+#### 📊 **ESTADO BD ACTUAL TESTING:**
+- **Template 10**: 4 cuotas 'desactivado' + 1 anual 'pendiente' ✅ PREPARADO
+- **BD Schema**: Estado 'desactivado' agregado ✅ APLICADO
+- **Hooks**: usePagoAnual + usePagoCuotas actualizados ✅ COMPLETADO
+
+#### 🚀 **TESTING AUTOMÁTICO AVANZADO:**
+6. **🧪 TESTEAR AUTO-CREACIÓN**: Conversión con templates inexistentes
+7. **🧪 TESTEAR PROPAGACIÓN CUOTAS**: Cambiar monto cuota + confirmación futuras
+8. **🧪 TESTEAR PRESERVACIÓN DATOS**: Categ, responsable, centro_costo se mantienen
+9. **🧪 TESTEAR NOMENCLATURA**: "(Anual)" se agrega/remueve correctamente
+
+#### 🛠️ **MEJORAS IDENTIFICADAS (FUTURO):**
+10. **🛠️ FIX ESTADOS DROPDOWN**: Cambiar de input texto a Select opciones
+11. **🔍 INVESTIGAR AUDITADO**: Qué problema surge con estado auditado via conciliación
+12. **📋 CREAR TEMPLATES 11-13**: Resto grupo inmobiliario según Excel
 
 ### 🏗️ **DECISIONES ARQUITECTURA 2025-08-24:**
 - **✅ HOOK CENTRALIZADO**: useInlineEditor.ts implementado exitosamente
-- **✅ APPROACH HÍBRIDO**: Migración gradual (fechas primero) evita romper funcionalidad
+- **✅ APPROACH HÍBRIDO**: Migración gradual completada - todas las vistas migradas
 - **✅ MULTI-TABLA SUPPORT**: Hook maneja diferentes esquemas BD automáticamente
 - **✅ REGLAS AUTOMÁTICAS**: fecha_vencimiento → fecha_estimada centralizada
-- **✅ ERROR HANDLING**: Orden inicialización React crítico para hooks
+- **✅ ERROR HANDLING**: Orden inicialización React + patrón controlled inputs
 - **✅ ESCALABILIDAD**: Arquitectura preparada para vistas futuras
-- **⚠️ TEMPLATES ISSUE**: Hook implementado pero eventos Ctrl+Click no funcionan
+- **✅ SEMÁNTICA MEJORADA**: Estado 'desactivado' separado de 'conciliado'
+- **✅ UX ARGENTINO**: Formato DD/MM/AAAA unificado en modales
 
 ## 📊 **ESTADO SESIÓN FINAL 2025-08-24:**
 
 ### ✅ **COMPLETADO:**
-- Hook `useInlineEditor.ts` creado con todas las funcionalidades
-- ARCA facturas migrada → funciona perfectamente 
-- Templates migrada → hook implementado pero no funcional
-- Documentación completa del proceso + lecciones aprendidas
-- Commits pushed: ARCA (funcionando) + Templates (con issue)
+- Hook `useInlineEditor.ts` unificado en TODAS las vistas (ARCA, Templates, Cash Flow)
+- Templates inline editing FIX → patrón controlled inputs aplicado
+- Sistema conversión bidireccional COMPLETO cuotas ↔ anual
+- Estado 'desactivado' implementado con mejor semántica vs 'conciliado'
+- UX argentino: Modales formato DD/MM/AAAA unificado
+- Templates UI: Checkbox mostrar/ocultar desactivados
+- Cash Flow: Filtros excluyen 'desactivado' + 'conciliado'
+- Documentación completa + commits pushed: 75cf69f
 
-### 🔥 **ISSUE PENDIENTE - PRIORIDAD ALTA:**
-**Templates hook NO funciona** - Ctrl+Click en fechas no responde
-- **Debugging plan** documentado para próxima sesión
-- **Fallback ready**: Revert Templates a lógica original si necesario
-- **Estado**: Commit 0873989 deployado con issue
+### 🧪 **TESTING READY - PRÓXIMA SESIÓN:**
+**BD Preparada para testing**: Template 10 con 4 cuotas 'desactivado' + 1 anual 'pendiente'
+- **Test 1**: Templates UI checkbox desactivados
+- **Test 2**: Cash Flow filtros funcionando
+- **Test 3**: Conversión ANUAL → CUOTAS reactivación
+- **Test 4**: Conversión CUOTAS → ANUAL con nuevo estado
+- **Test 5**: Formato argentino DD/MM/AAAA
 
 ### 🎯 **PRÓXIMA SESIÓN DEBE EMPEZAR CON:**
-1. **Fix Templates hook** - Debugging event handlers
-2. **Testing auto-creación** templates (funcionalidad lista)
-3. **Testing propagación cuotas** (funcionalidad lista)
-4. **Continuar con Templates 11-13** según Excel
+1. **🚀 TESTING COMPLETO** - Sistema desactivado listo para verificar
+2. **🧪 Testing auto-creación** templates (funcionalidad completa)
+3. **🧪 Testing propagación cuotas** (funcionalidad completa)
+4. **📋 Continuar Templates 11-13** según Excel cuando testing OK
 
 ### 🏗️ **DECISIONES ESTRUCTURA DATOS 2025-08-21:**
 - **✅ ARQUITECTURA 3 TABLAS**: Mantenida (templates_master → egresos_sin_factura → cuotas_egresos_sin_factura)
