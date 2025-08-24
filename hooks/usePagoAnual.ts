@@ -51,109 +51,79 @@ export function usePagoAnual() {
         throw new Error(`Error obteniendo cuota actual: ${errorCuota?.message}`)
       }
 
-      // 2. Verificar si ya existe un template anual para este concepto
-      let templateCreado = false
-      let templateAnualId = cuotaActual.egreso_id
+      // 2. SIEMPRE crear nuevo template anual (NUNCA modificar cuotas existentes)
+      let templateCreado = true
+      let templateAnualId: string
 
-      // Si el template actual NO es de pago anual, crear uno nuevo
-      if (!cuotaActual.egreso?.pago_anual) {
-        // Crear template anual basado en el template de cuotas
-        const { data: nuevoTemplateAnual, error: errorCrearAnual } = await supabase
-          .from('egresos_sin_factura')
-          .insert({
-            template_master_id: cuotaActual.egreso?.template_master_id,
-            categ: cuotaActual.egreso?.categ,
-            centro_costo: cuotaActual.egreso?.centro_costo,
-            nombre_referencia: `${cuotaActual.egreso?.nombre_referencia} (Anual)`,
-            responsable: cuotaActual.egreso?.responsable,
-            cuit_quien_cobra: cuotaActual.egreso?.cuit_quien_cobra,
-            nombre_quien_cobra: cuotaActual.egreso?.nombre_quien_cobra,
-            tipo_recurrencia: 'anual',
-            activo: true,
-            pago_anual: true,
-            monto_anual: config.montoAnual,
-            fecha_pago_anual: config.fechaPagoAnual,
-            año: new Date().getFullYear()
-          })
-          .select()
-          .single()
+      // Crear template anual basado en el template de cuotas
+      const { data: nuevoTemplateAnual, error: errorCrearAnual } = await supabase
+        .from('egresos_sin_factura')
+        .insert({
+          template_master_id: cuotaActual.egreso?.template_master_id,
+          categ: cuotaActual.egreso?.categ,
+          centro_costo: cuotaActual.egreso?.centro_costo,
+          nombre_referencia: `${cuotaActual.egreso?.nombre_referencia} (Anual)`,
+          responsable: cuotaActual.egreso?.responsable,
+          cuit_quien_cobra: cuotaActual.egreso?.cuit_quien_cobra,
+          nombre_quien_cobra: cuotaActual.egreso?.nombre_quien_cobra,
+          tipo_recurrencia: 'anual',
+          activo: true,
+          pago_anual: true,
+          monto_anual: config.montoAnual,
+          fecha_pago_anual: config.fechaPagoAnual,
+          año: new Date().getFullYear()
+        })
+        .select()
+        .single()
 
-        if (errorCrearAnual) {
-          throw new Error(`Error creando template anual: ${errorCrearAnual.message}`)
-        }
-
-        templateAnualId = nuevoTemplateAnual.id
-        templateCreado = true
-
-        // Crear la cuota anual
-        const { error: errorCuotaAnual } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .insert({
-            egreso_id: templateAnualId,
-            mes: new Date(config.fechaPagoAnual).getMonth() + 1,
-            fecha_estimada: config.fechaPagoAnual,
-            fecha_vencimiento: config.fechaPagoAnual,
-            monto: config.montoAnual,
-            descripcion: 'Pago anual',
-            estado: 'pendiente'
-          })
-
-        if (errorCuotaAnual) {
-          throw new Error(`Error creando cuota anual: ${errorCuotaAnual.message}`)
-        }
-      } else {
-        // Si ya es template anual, solo actualizar
-        const { error: errorUpdateAnual } = await supabase
-          .from('egresos_sin_factura')
-          .update({ 
-            monto_anual: config.montoAnual,
-            fecha_pago_anual: config.fechaPagoAnual
-          })
-          .eq('id', cuotaActual.egreso_id)
-
-        if (errorUpdateAnual) {
-          throw new Error(`Error actualizando template anual: ${errorUpdateAnual.message}`)
-        }
-
-        // Actualizar la cuota existente
-        const { error: errorUpdateCuota } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update({ 
-            monto: config.montoAnual,
-            fecha_estimada: config.fechaPagoAnual,
-            fecha_vencimiento: config.fechePagoAnual
-          })
-          .eq('id', config.cuotaId)
-
-        if (errorUpdateCuota) {
-          throw new Error(`Error actualizando cuota anual: ${errorUpdateCuota.message}`)
-        }
+      if (errorCrearAnual) {
+        throw new Error(`Error creando template anual: ${errorCrearAnual.message}`)
       }
 
-      // 3. Si se creó nuevo template anual, desactivar el template original de cuotas
-      let cuotasDesactivadas = 0
-      if (templateCreado) {
-        // Obtener todas las cuotas del template original
-        const { data: cuotasOriginales, error: errorCuotasOriginales } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .select('id')
-          .eq('egreso_id', cuotaActual.egreso_id)
+      templateAnualId = nuevoTemplateAnual.id
 
-        if (errorCuotasOriginales) {
-          throw new Error(`Error obteniendo cuotas originales: ${errorCuotasOriginales.message}`)
-        }
+      // Crear la cuota anual con descripción inteligente
+      const descripcionAnual = cuotaActual.egreso?.nombre_referencia?.includes('Cuota') 
+        ? cuotaActual.egreso.nombre_referencia.replace(/Cuota \d+\/\d+/, '(Anual)')
+        : `${cuotaActual.egreso?.nombre_referencia} (Anual)`
 
-        cuotasDesactivadas = cuotasOriginales ? cuotasOriginales.length : 0
+      const { error: errorCuotaAnual } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .insert({
+          egreso_id: templateAnualId,
+          mes: new Date(config.fechaPagoAnual).getMonth() + 1,
+          fecha_estimada: config.fechaPagoAnual,
+          fecha_vencimiento: config.fechaPagoAnual,
+          monto: config.montoAnual,
+          descripcion: descripcionAnual,
+          estado: 'pendiente'
+        })
 
-        // Desactivar el template original de cuotas
-        const { error: errorDesactivarOriginal } = await supabase
-          .from('egresos_sin_factura')
-          .update({ activo: false })
-          .eq('id', cuotaActual.egreso_id)
+      if (errorCuotaAnual) {
+        throw new Error(`Error creando cuota anual: ${errorCuotaAnual.message}`)
+      }
 
-        if (errorDesactivarOriginal) {
-          throw new Error(`Error desactivando template original: ${errorDesactivarOriginal.message}`)
-        }
+      // 3. SIEMPRE desactivar template original y contar cuotas
+      // Obtener todas las cuotas del template original para contador
+      const { data: cuotasOriginales, error: errorCuotasOriginales } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .select('id')
+        .eq('egreso_id', cuotaActual.egreso_id)
+
+      if (errorCuotasOriginales) {
+        throw new Error(`Error obteniendo cuotas originales: ${errorCuotasOriginales.message}`)
+      }
+
+      const cuotasDesactivadas = cuotasOriginales ? cuotasOriginales.length : 0
+
+      // Desactivar el template original de cuotas
+      const { error: errorDesactivarOriginal } = await supabase
+        .from('egresos_sin_factura')
+        .update({ activo: false })
+        .eq('id', cuotaActual.egreso_id)
+
+      if (errorDesactivarOriginal) {
+        throw new Error(`Error desactivando template original: ${errorDesactivarOriginal.message}`)
       }
 
       const result: PagoAnualResult = {
@@ -234,8 +204,8 @@ export function usePagoAnual() {
         `¿Confirma conversión a pago anual?\n\n` +
         `• Monto anual: $${montoAnual.toLocaleString('es-AR')}\n` +
         `• Fecha pago: ${fechaIngresada}\n` +
-        `• Se creará/actualizará template anual\n` +
-        `• Se desactivará template de cuotas\n\n` +
+        `• Se creará NUEVO template anual\n` +
+        `• Se desactivarán todas las cuotas existentes\n\n` +
         `⚠️ El template de cuotas original quedará inactivo`
       )
 
