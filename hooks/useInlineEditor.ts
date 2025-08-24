@@ -10,7 +10,7 @@ export interface CeldaEnEdicion {
   valor: any
   tableName?: string
   campoReal?: string
-  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO'
+  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW'
   egresoId?: string
 }
 

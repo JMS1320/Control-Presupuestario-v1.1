@@ -13,6 +13,7 @@ import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filte
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
+import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
@@ -63,7 +64,7 @@ export function VistaCashFlow() {
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
   
-  // Estado para edición inline
+  // Estados para edición legacy (mantener por compatibilidad modal categ)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -93,6 +94,33 @@ export function VistaCashFlow() {
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
 
+  // Hook unificado para edición inline (DESPUÉS de cargarDatos para evitar error inicialización)
+  const hookEditor = useInlineEditor({
+    onSuccess: cargarDatos,
+    onError: (error) => console.error('Hook error Cash Flow:', error),
+    customValidations: async (celda) => {
+      // Validación especial para categorías en Cash Flow
+      if (celda.columna === 'categ') {
+        const categIngresado = String(celda.valor).toUpperCase()
+        console.log('🔍 Hook validación CATEG:', categIngresado)
+        
+        const categExiste = cuentas.some(cuenta => cuenta.categ.toLowerCase() === categIngresado.toLowerCase())
+        console.log('- categExiste:', categExiste)
+        
+        if (!categExiste) {
+          // Abrir modal de validación 
+          setValidandoCateg({
+            isOpen: true,
+            categIngresado: categIngresado,
+            celdaEnEdicion: celda as any // Cast temporal para compatibilidad
+          })
+          return false // No guardar todavía
+        }
+      }
+      return true // Proceder con guardado
+    }
+  })
+
   // Formatear moneda argentina
   const formatearMoneda = (valor: number): string => {
     return new Intl.NumberFormat('es-AR', {
@@ -115,8 +143,9 @@ export function VistaCashFlow() {
     }
   }
 
-  // Funciones para edición inline
+  // Funciones para edición inline - MIGRADA A HOOK UNIFICADO
   const iniciarEdicion = (fila: CashFlowRow, columna: typeof columnasDefinicion[number], event: React.MouseEvent) => {
+    console.log('🔍 Cash Flow iniciarEdicion called:', columna.key, 'ctrlKey:', event.ctrlKey, 'editable:', columna.editable)
     // Shift+Click en débitos/créditos = cambiar estado
     if (event.shiftKey && (columna.key === 'debitos' || columna.key === 'creditos')) {
       event.preventDefault()
@@ -134,20 +163,37 @@ export function VistaCashFlow() {
     event.preventDefault()
     event.stopPropagation()
     
+    // Usar hook unificado para ALL campos editables
     const valor = fila[columna.key as keyof CashFlowRow]
-    setCeldaEnEdicion({
+    console.log('🔄 Cash Flow: Usando hook unificado para:', columna.key)
+    
+    // Determinar tabla según origen de datos
+    console.log('🔍 Cash Flow determinar tabla:', 'fila.origen =', fila.origen, typeof fila.origen)
+    let tableName = 'cuotas_egresos_sin_factura' // Default
+    if (fila.origen === 'ARCA') {
+      tableName = 'comprobantes_arca'
+      console.log('✅ Cash Flow: Detectado ARCA → tabla comprobantes_arca')
+    } else {
+      console.log('📋 Cash Flow: Default Templates → tabla cuotas_egresos_sin_factura')
+    }
+    
+    // Determinar origen para el hook
+    let origenHook: any = 'CASH_FLOW'
+    if (fila.origen === 'ARCA') {
+      origenHook = 'ARCA' // Para que use schema msa
+    }
+    
+    const celdaHook: CeldaEnEdicionHook = {
       filaId: fila.id,
       columna: columna.key,
-      valor: valor || ''
-    })
+      valor: valor || '',
+      tableName,
+      origen: origenHook
+    }
     
-    // Focus al input después de renderizar
-    setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus()
-        inputRef.current.select()
-      }
-    }, 0)
+    console.log('🎯 Cash Flow celdaHook:', celdaHook)
+    
+    hookEditor.iniciarEdicion(celdaHook)
   }
 
   const cancelarEdicion = () => {
@@ -477,49 +523,49 @@ export function VistaCashFlow() {
     }
   }
 
-  // Renderizar celda según tipo (con soporte para edición inline)
+  // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
-    const esCeldaEnEdicion = celdaEnEdicion?.filaId === fila.id && celdaEnEdicion?.columna === columna.key
     
-    // Si esta celda está en edición, mostrar input
-    if (esCeldaEnEdicion) {
+    // Verificar si esta celda está siendo editada por el hook
+    const esCeldaHookEnEdicion = hookEditor.celdaEnEdicion?.filaId === fila.id && 
+                                 hookEditor.celdaEnEdicion?.columna === columna.key
+    
+    // Si esta celda está en edición del hook, mostrar input del hook
+    if (esCeldaHookEnEdicion) {
       return (
         <div className={`${columna.width} ${columna.align || ''} relative`}>
           <div className="flex items-center gap-1">
             {columna.type === 'date' ? (
               <Input
-                ref={inputRef}
+                ref={hookEditor.inputRef} // ✅ AUTO-FOCUS del hook
                 type="date"
-                value={String(celdaEnEdicion.valor)}
-                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
-                onKeyDown={manejarKeyDown}
-                onBlur={guardarCambio}
+                value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={hookEditor.manejarKeyDown} // ✅ Enter/Escape del hook
                 className="h-6 text-xs p-1 w-full"
-                disabled={guardandoCambio}
+                disabled={hookEditor.guardandoCambio}
               />
             ) : columna.type === 'currency' ? (
               <Input
-                ref={inputRef}
+                ref={hookEditor.inputRef}
                 type="number"
                 step="0.01"
-                value={String(celdaEnEdicion.valor)}
-                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
-                onKeyDown={manejarKeyDown}
-                onBlur={guardarCambio}
+                value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={hookEditor.manejarKeyDown}
                 className="h-6 text-xs p-1 w-full text-right"
-                disabled={guardandoCambio}
+                disabled={hookEditor.guardandoCambio}
               />
             ) : (
               <Input
-                ref={inputRef}
+                ref={hookEditor.inputRef}
                 type="text"
-                value={String(celdaEnEdicion.valor)}
-                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
-                onKeyDown={manejarKeyDown}
-                onBlur={guardarCambio}
+                value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={hookEditor.manejarKeyDown}
                 className="h-6 text-xs p-1 w-full"
-                disabled={guardandoCambio}
+                disabled={hookEditor.guardandoCambio}
               />
             )}
             
@@ -528,11 +574,11 @@ export function VistaCashFlow() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={guardarCambio}
-                disabled={guardandoCambio}
+                onClick={() => hookEditor.guardarCambio()}
+                disabled={hookEditor.guardandoCambio}
                 className="h-6 w-6 p-0"
               >
-                {guardandoCambio ? (
+                {hookEditor.guardandoCambio ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
                 ) : (
                   <Save className="h-3 w-3 text-green-600" />
@@ -541,8 +587,8 @@ export function VistaCashFlow() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={cancelarEdicion}
-                disabled={guardandoCambio}
+                onClick={() => hookEditor.cancelarEdicion()}
+                disabled={hookEditor.guardandoCambio}
                 className="h-6 w-6 p-0"
               >
                 <X className="h-3 w-3 text-red-600" />
@@ -551,6 +597,13 @@ export function VistaCashFlow() {
           </div>
         </div>
       )
+    }
+    
+    // FALLBACK: Legacy edición (para modal categ si lo necesita)
+    const esCeldaLegacyEnEdicion = celdaEnEdicion?.filaId === fila.id && celdaEnEdicion?.columna === columna.key
+    if (esCeldaLegacyEnEdicion) {
+      // Mantener lógica original por si acaso
+      return <div className="text-blue-500">Legacy editing...</div>
     }
 
     // Celda normal con click handler
