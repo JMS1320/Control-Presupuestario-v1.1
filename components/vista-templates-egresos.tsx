@@ -347,6 +347,8 @@ export function VistaTemplatesEgresos() {
 
   // Funciones para edición inline
   const iniciarEdicion = (cuotaId: string, columna: string, valor: any, event: React.MouseEvent) => {
+    console.log('🔍 Templates iniciarEdicion called:', columna, 'ctrlKey:', event.ctrlKey, 'modoEdicion:', modoEdicion)
+    
     const cuota = cuotas.find(c => c.id === cuotaId)
     const esTemplateInactivo = cuota?.egreso?.activo === false
     
@@ -370,10 +372,18 @@ export function VistaTemplatesEgresos() {
     // APPROACH HÍBRIDO: Usar hook solo para fechas (migración gradual)
     if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
       console.log('🔄 Templates: Usando hook para fecha:', columna)
+      // Convertir fecha BD (YYYY-MM-DD) a formato input date
+      let valorFormateado = valor || ''
+      if (['fecha_estimada', 'fecha_vencimiento'].includes(columna) && valor) {
+        // Si viene fecha de BD (YYYY-MM-DD), mantener ese formato para input type="date"
+        valorFormateado = String(valor).includes('-') ? valor : valor
+        console.log('🗓️ Templates iniciarEdicion valor original:', valor, '→ formateado:', valorFormateado)
+      }
+      
       const celdaHook: CeldaEnEdicion = {
         filaId: cuotaId,
         columna,
-        valor: valor || '',
+        valor: valorFormateado,
         tableName: 'cuotas_egresos_sin_factura',
         origen: 'TEMPLATE'
       }
@@ -599,31 +609,34 @@ export function VistaTemplatesEgresos() {
       valor = cuota.egreso?.[columna as keyof typeof cuota.egreso]
     }
 
-    // APPROACH HÍBRIDO: Si la celda está en edición del hook (fechas)
+    // APPROACH HÍBRIDO: Si la celda está en edición del hook (fechas) - ESTRUCTURA ARCA EXACTA
     if (hookEditor.celdaEnEdicion?.filaId === cuota.id && hookEditor.celdaEnEdicion?.columna === columna) {
       return (
-        <div className="flex items-center gap-1 min-w-[120px]">
+        <div className="flex items-center gap-1">
           <Input
-            ref={hookEditor.inputRef}
+            ref={hookEditor.inputRef} // ✅ AUTO-FOCUS del hook
             type="date"
-            defaultValue={hookEditor.celdaEnEdicion.valor}
-            className="h-8 text-xs"
-            onKeyDown={hookEditor.manejarKeyDown}
-            onBlur={(e) => hookEditor.guardarCambio(e.target.value)}
+            value={String(hookEditor.celdaEnEdicion?.valor || '')}
+            onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+            onKeyDown={hookEditor.manejarKeyDown} // ✅ Enter/Escape del hook
+            className="h-6 text-xs p-1 w-full"
+            disabled={hookEditor.guardandoCambio}
           />
           <Button
-            size="sm" 
+            size="sm"
             variant="ghost"
             className="h-6 w-6 p-0"
             onClick={() => hookEditor.guardarCambio()}
+            disabled={hookEditor.guardandoCambio}
           >
-            <Save className="h-3 w-3" />
+            {hookEditor.guardandoCambio ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
           </Button>
           <Button
             size="sm"
-            variant="ghost" 
+            variant="ghost"
             className="h-6 w-6 p-0"
-            onClick={hookEditor.cancelarEdicion}
+            onClick={() => hookEditor.cancelarEdicion()}
+            disabled={hookEditor.guardandoCambio}
           >
             <XCircle className="h-3 w-3" />
           </Button>
@@ -767,7 +780,12 @@ export function VistaTemplatesEgresos() {
     return (
       <div
         className={claseEditable}
-        onClick={(e) => esEditable ? iniciarEdicion(cuota.id, columna, valor, e) : undefined}
+        onClick={(e) => {
+          console.log('🔍 Templates onClick:', columna, 'esEditable:', esEditable, 'modoEdicion:', modoEdicion, 'ctrlKey:', e.ctrlKey)
+          if (esEditable) {
+            iniciarEdicion(cuota.id, columna, valor, e)
+          }
+        }}
       >
         {modoEdicion && esEditable && <Edit3 className="h-3 w-3 inline mr-1 opacity-50" />}
         {contenidoCelda}

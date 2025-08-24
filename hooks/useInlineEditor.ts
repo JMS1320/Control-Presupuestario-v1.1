@@ -42,10 +42,31 @@ function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEdi
       if (!valor || String(valor).trim() === '') {
         return null
       }
-      if (!Date.parse(String(valor))) {
+      
+      // Convertir fecha a formato YYYY-MM-DD para Supabase
+      const fechaStr = String(valor).trim()
+      console.log(`🗓️ Hook procesarValor fecha original: "${fechaStr}"`)
+      
+      // Detectar formato DD/MM/AAAA y convertir
+      if (fechaStr.includes('/')) {
+        const partes = fechaStr.split('/')
+        if (partes.length === 3) {
+          const [dia, mes, ano] = partes
+          const fechaFormateada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`
+          console.log(`🔄 Hook convertido DD/MM/AAAA → YYYY-MM-DD: "${fechaFormateada}"`)
+          
+          if (!Date.parse(fechaFormateada)) {
+            throw new Error('Formato de fecha inválido')
+          }
+          return fechaFormateada
+        }
+      }
+      
+      // Si ya viene en formato correcto o ISO, validar y devolver
+      if (!Date.parse(fechaStr)) {
         throw new Error('Formato de fecha inválido')
       }
-      return String(valor).trim()
+      return fechaStr
     }
     
     if (['monto', 'monto_a_abonar', 'imp_total'].includes(columna)) {
