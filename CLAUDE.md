@@ -86,12 +86,15 @@ npm test
 ## 🚀 **AVANCES SESIÓN ACTUAL (2025-08-24):**
 - [2025-08-24] 🔧 **UNIFICACIÓN INLINE EDITING COMPLETADA**: Hook useInlineEditor.ts centralizado
 - [2025-08-24] ⚡ **ARCA FACTURAS MIGRADA**: Auto-focus + regla fecha_vencimiento → fecha_estimada
+- [2025-08-24] ⚡ **TEMPLATES MIGRADA**: Hook implementado con approach híbrido (commit 0873989)
 - [2025-08-24] 🛡️ **APPROACH HÍBRIDO**: Solo fechas usan hook (gradual sin romper funcionalidad)
 - [2025-08-24] 🔍 **ERROR DEBUGGING**: "Cannot access 'eS' before initialization" resuelto
 - [2025-08-24] ✅ **ROOT CAUSE**: Orden inicialización hook vs función (NO era date-fns)
-- [2025-08-24] 🧪 **TESTING COMPLETADO**: Auto-focus + reglas automáticas funcionando perfectamente
-- [2025-08-24] 📋 **ARQUITECTURA ESCALABLE**: Futuras vistas heredan comportamiento automáticamente
-- [2025-08-24] 🚀 **COMMIT APLICADO**: Push exitoso - código deployado en Vercel
+- [2025-08-24] 🧪 **ARCA TESTING**: Auto-focus + reglas automáticas funcionando perfectamente
+- [2025-08-24] ⚠️ **TEMPLATES ISSUE**: Edición fechas NO funciona - debugging pendiente
+- [2025-08-24] ✅ **CASH FLOW**: Edición fechas funciona correctamente (sin hook)
+- [2025-08-24] 📋 **ARQUITECTURA BASE**: Hook creado + 2 vistas migradas
+- [2025-08-24] 🚀 **COMMITS APLICADOS**: Push exitoso - código deployado en Vercel
 
 ## 🚀 **AVANCES SESIÓN PREVIA (2025-08-22):**
 - [2025-08-22] 💡 **ENHANCEMENT CRÍTICO COMPLETADO**: Auto-creación templates en conversión bidireccional
@@ -210,13 +213,31 @@ npm test
 - **⚡ Migrar Cash Flow**: Opcional - ya funciona bien pero por consistency
 - **⚡ Nuevas vistas**: Usar hook desde inicio automáticamente
 
+## 🚨 **ISSUE CRÍTICO DETECTADO 2025-08-24:**
+
+### ⚠️ **TEMPLATES EDICIÓN FECHAS NO FUNCIONA**
+- **Síntoma**: Ctrl+Click en fechas Templates no abre editor
+- **Estado actual**: 
+  - ✅ ARCA facturas: Hook funciona perfectamente
+  - ✅ Cash Flow: Edición original funciona
+  - ❌ Templates: Hook implementado pero no responde
+- **Debugging necesario**: Verificar por qué Templates no detecta Ctrl+Click
+- **Commit problemático**: 0873989 - Hook implementado pero no funcional
+
+### 🔍 **DEBUGGING PLAN PRÓXIMA SESIÓN:**
+1. **Console logs**: Verificar si `iniciarEdicion` se ejecuta en Templates
+2. **Event handlers**: Comparar Templates vs ARCA facturas
+3. **Hook state**: Verificar si `hookEditor` se instancia correctamente
+4. **Click events**: Validar propagación eventos en Templates
+5. **Fallback**: Si no se resuelve rápido → revert Templates a lógica original
+
 ### ⏳ **PENDIENTES INMEDIATOS - TESTING 2025-08-24:**
-1. **🧪 TESTEAR AUTO-CREACIÓN**: Conversión cuotas ↔ anual con templates inexistentes
-2. **🧪 TESTEAR PROPAGACIÓN CUOTAS**: Cambiar monto cuota + confirmación para modificar futuras
-3. **🧪 TESTEAR PRESERVACIÓN DATOS**: Categ, responsable, centro_costo se mantienen
-4. **🧪 TESTEAR DESACTIVACIÓN**: Templates originales quedan inactivos correctamente
-5. **🧪 TESTEAR NOMENCLATURA**: "(Anual)" se agrega/remueve correctamente
-6. **⚡ MIGRAR TEMPLATES**: A useInlineEditor para completar unificación
+1. **🔥 FIX TEMPLATES HOOK**: Debugging edición fechas NO funciona
+2. **🧪 TESTEAR AUTO-CREACIÓN**: Conversión cuotas ↔ anual con templates inexistentes
+3. **🧪 TESTEAR PROPAGACIÓN CUOTAS**: Cambiar monto cuota + confirmación para modificar futuras
+4. **🧪 TESTEAR PRESERVACIÓN DATOS**: Categ, responsable, centro_costo se mantienen
+5. **🧪 TESTEAR DESACTIVACIÓN**: Templates originales quedan inactivos correctamente
+6. **🧪 TESTEAR NOMENCLATURA**: "(Anual)" se agrega/remueve correctamente
 7. **🛠️ FIX ESTADOS DROPDOWN**: Cambiar de input texto a Select opciones
 8. **🔍 INVESTIGAR AUDITADO**: Qué problema surge con estado auditado via conciliación
 9. **📋 CREAR TEMPLATES 11-13**: Resto grupo inmobiliario según Excel
@@ -228,6 +249,28 @@ npm test
 - **✅ REGLAS AUTOMÁTICAS**: fecha_vencimiento → fecha_estimada centralizada
 - **✅ ERROR HANDLING**: Orden inicialización React crítico para hooks
 - **✅ ESCALABILIDAD**: Arquitectura preparada para vistas futuras
+- **⚠️ TEMPLATES ISSUE**: Hook implementado pero eventos Ctrl+Click no funcionan
+
+## 📊 **ESTADO SESIÓN FINAL 2025-08-24:**
+
+### ✅ **COMPLETADO:**
+- Hook `useInlineEditor.ts` creado con todas las funcionalidades
+- ARCA facturas migrada → funciona perfectamente 
+- Templates migrada → hook implementado pero no funcional
+- Documentación completa del proceso + lecciones aprendidas
+- Commits pushed: ARCA (funcionando) + Templates (con issue)
+
+### 🔥 **ISSUE PENDIENTE - PRIORIDAD ALTA:**
+**Templates hook NO funciona** - Ctrl+Click en fechas no responde
+- **Debugging plan** documentado para próxima sesión
+- **Fallback ready**: Revert Templates a lógica original si necesario
+- **Estado**: Commit 0873989 deployado con issue
+
+### 🎯 **PRÓXIMA SESIÓN DEBE EMPEZAR CON:**
+1. **Fix Templates hook** - Debugging event handlers
+2. **Testing auto-creación** templates (funcionalidad lista)
+3. **Testing propagación cuotas** (funcionalidad lista)
+4. **Continuar con Templates 11-13** según Excel
 
 ### 🏗️ **DECISIONES ESTRUCTURA DATOS 2025-08-21:**
 - **✅ ARQUITECTURA 3 TABLAS**: Mantenida (templates_master → egresos_sin_factura → cuotas_egresos_sin_factura)
