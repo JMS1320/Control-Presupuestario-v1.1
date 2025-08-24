@@ -22,6 +22,7 @@ import { TemplateTestSuite } from "@/components/template-test-suite"
 import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
 import { usePagoAnual } from "@/hooks/usePagoAnual"
 import { usePagoCuotas } from "@/hooks/usePagoCuotas"
+import useInlineEditor, { CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 
@@ -204,6 +205,12 @@ export function VistaTemplatesEgresos() {
     cargarCuotas()
   }, [])
 
+  // Hook unificado (DESPUÉS de cargarCuotas para evitar error inicialización)
+  const hookEditor = useInlineEditor({
+    onSuccess: cargarCuotas,
+    onError: (error) => console.error('Hook error Templates:', error)
+  })
+
   // Formatear valores numéricos
   const formatearNumero = (valor: number): string => {
     return new Intl.NumberFormat('es-AR', {
@@ -356,7 +363,25 @@ export function VistaTemplatesEgresos() {
     
     // Ctrl+Click normal = Edición inline
     if (!event.ctrlKey || !modoEdicion) return
-    setCeldaEnEdicion({ cuotaId, columna, valor: valor || '' })
+    
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // APPROACH HÍBRIDO: Usar hook solo para fechas (migración gradual)
+    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+      console.log('🔄 Templates: Usando hook para fecha:', columna)
+      const celdaHook: CeldaEnEdicion = {
+        filaId: cuotaId,
+        columna,
+        valor: valor || '',
+        tableName: 'cuotas_egresos_sin_factura',
+        origen: 'TEMPLATE'
+      }
+      hookEditor.iniciarEdicion(celdaHook)
+    } else {
+      // Lógica original para otros campos
+      setCeldaEnEdicion({ cuotaId, columna, valor: valor || '' })
+    }
   }
 
   // Función para activar proceso de pago anual
@@ -574,7 +599,39 @@ export function VistaTemplatesEgresos() {
       valor = cuota.egreso?.[columna as keyof typeof cuota.egreso]
     }
 
-    // Si está en edición esta celda específica
+    // APPROACH HÍBRIDO: Si la celda está en edición del hook (fechas)
+    if (hookEditor.celdaEnEdicion?.filaId === cuota.id && hookEditor.celdaEnEdicion?.columna === columna) {
+      return (
+        <div className="flex items-center gap-1 min-w-[120px]">
+          <Input
+            ref={hookEditor.inputRef}
+            type="date"
+            defaultValue={hookEditor.celdaEnEdicion.valor}
+            className="h-8 text-xs"
+            onKeyDown={hookEditor.manejarKeyDown}
+            onBlur={(e) => hookEditor.guardarCambio(e.target.value)}
+          />
+          <Button
+            size="sm" 
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => hookEditor.guardarCambio()}
+          >
+            <Save className="h-3 w-3" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost" 
+            className="h-6 w-6 p-0"
+            onClick={hookEditor.cancelarEdicion}
+          >
+            <XCircle className="h-3 w-3" />
+          </Button>
+        </div>
+      )
+    }
+
+    // Si está en edición esta celda específica (lógica original para otros campos)
     if (celdaEnEdicion?.cuotaId === cuota.id && celdaEnEdicion?.columna === columna) {
       // Manejar edición de estado con dropdown
       if (columna === 'estado') {
