@@ -57,13 +57,13 @@ export function usePagoCuotas() {
         .from('cuotas_egresos_sin_factura')
         .select('id, monto, fecha_estimada, descripcion, estado')
         .eq('egreso_id', cuotaActual.egreso_id)
-        .in('estado', ['pendiente', 'conciliado']) // Incluir cuotas activas e inactivas
+        .in('estado', ['pendiente', 'desactivado']) // Incluir cuotas activas e inactivas
 
       if (errorVerificarCuotas) {
         throw new Error(`Error verificando cuotas existentes: ${errorVerificarCuotas.message}`)
       }
 
-      const cuotasInactivas = cuotasExistentes?.filter(c => c.estado === 'conciliado' && !c.descripcion?.toLowerCase().includes('anual')) || []
+      const cuotasInactivas = cuotasExistentes?.filter(c => c.estado === 'desactivado' && !c.descripcion?.toLowerCase().includes('anual')) || []
       const tieneRegistroAnual = cuotasExistentes?.some(c => c.descripcion?.toLowerCase().includes('anual')) || false
 
       console.log(`🔍 Verificación cuotas template ${cuotaActual.egreso_id}:`)
@@ -89,10 +89,6 @@ export function usePagoCuotas() {
           if (errorCambiarTemplate) {
             throw new Error(`Error cambiando template a cuotas: ${errorCambiarTemplate.message}`)
           }
-
-          // Reactivar cuotas inactivas (cambiar estado si es necesario)
-          // Por ahora las cuotas inactivas estarán en estado 'pendiente' pero con template inactivo
-          // Al cambiar template a activo, las cuotas se mostrarán automáticamente
 
           templateCreado = false // No se creó template nuevo
           templateCuotasId = cuotaActual.egreso_id
@@ -123,7 +119,7 @@ export function usePagoCuotas() {
         if (tieneRegistroAnual) {
           const { error: errorDesactivarAnual } = await supabase
             .from('cuotas_egresos_sin_factura')
-            .update({ estado: 'conciliado' })
+            .update({ estado: 'desactivado' })
             .eq('egreso_id', cuotaActual.egreso_id)
             .ilike('descripcion', '%anual%')
 
@@ -134,7 +130,7 @@ export function usePagoCuotas() {
           }
         }
 
-        // Reactivar cuotas inactivas si existen (conciliado → pendiente)
+        // Reactivar cuotas inactivas si existen (desactivado → pendiente)
         if (cuotasInactivas.length > 0) {
           const { error: errorReactivarCuotas } = await supabase
             .from('cuotas_egresos_sin_factura')
@@ -355,7 +351,7 @@ export function usePagoCuotas() {
         `📅 FECHA PRIMERA CUOTA - ${templateNombre}\n\n` +
         `Monto: $${montoPorCuota.toLocaleString('es-AR')} x ${numeroCuotas} cuotas\n` +
         `Total: $${(montoPorCuota * numeroCuotas).toLocaleString('es-AR')}\n\n` +
-        `Ingrese la fecha de la primera cuota (YYYY-MM-DD):`
+        `Ingrese la fecha de la primera cuota (DD/MM/AAAA):`
       )
 
       if (fechaIngresada === null) {
@@ -363,8 +359,18 @@ export function usePagoCuotas() {
         return
       }
 
-      if (!fechaIngresada.match(/^\d{4}-\d{2}-\d{2}$/) || !Date.parse(fechaIngresada)) {
-        alert('Fecha inválida. Use formato YYYY-MM-DD. Operación cancelada.')
+      // Validar y convertir formato de fecha DD/MM/AAAA → YYYY-MM-DD
+      let fechaFormateada = fechaIngresada
+      if (fechaIngresada.includes('/')) {
+        const partes = fechaIngresada.split('/')
+        if (partes.length === 3) {
+          const [dia, mes, ano] = partes
+          fechaFormateada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`
+        }
+      }
+      
+      if (!Date.parse(fechaFormateada)) {
+        alert('Fecha inválida. Use formato DD/MM/AAAA. Operación cancelada.')
         resolve({ confirmed: false })
         return
       }
@@ -415,7 +421,7 @@ export function usePagoCuotas() {
         confirmed: confirmar,
         montoPorCuota: confirmar ? montoPorCuota : undefined,
         numeroCuotas: confirmar ? numeroCuotas : undefined,
-        fechaPrimeraCuota: confirmar ? fechaIngresada : undefined,
+        fechaPrimeraCuota: confirmar ? fechaFormateada : undefined,
         frecuenciaMeses: confirmar ? frecuenciaMeses : undefined
       })
     })

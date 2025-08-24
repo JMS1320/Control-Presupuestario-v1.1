@@ -108,6 +108,7 @@ export function VistaTemplatesEgresos() {
   const [tipoRecurrenciaSeleccionado, setTipoRecurrenciaSeleccionado] = useState('todos')
   const [anoSeleccionado, setAnoSeleccionado] = useState('todos')
   const [filtroActivacion, setFiltroActivacion] = useState<'activos' | 'inactivos' | 'todos'>('activos')
+  const [mostrarDesactivados, setMostrarDesactivados] = useState(false)
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -176,12 +177,19 @@ export function VistaTemplatesEgresos() {
       setLoading(true)
       setError(null)
       
-      const { data, error: supabaseError } = await supabase
+      let query = supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
           *,
           egreso:egresos_sin_factura(*)
         `)
+        
+      // Filtrar según mostrarDesactivados
+      if (!mostrarDesactivados) {
+        query = query.neq('estado', 'desactivado')
+      }
+      
+      const { data, error: supabaseError } = await query
         .order('fecha_estimada', { ascending: false })
 
       if (supabaseError) {
@@ -203,7 +211,7 @@ export function VistaTemplatesEgresos() {
 
   useEffect(() => {
     cargarCuotas()
-  }, [])
+  }, [mostrarDesactivados])
 
   // Hook unificado (DESPUÉS de cargarCuotas para evitar error inicialización)
   const hookEditor = useInlineEditor({
@@ -848,6 +856,18 @@ export function VistaTemplatesEgresos() {
             <Filter className="mr-2 h-4 w-4" />
             Filtros
           </Button>
+          
+          {/* Toggle desactivados */}
+          <div className="flex items-center space-x-2">
+            <Label htmlFor="mostrar-desactivados" className="text-sm">
+              Mostrar desactivados
+            </Label>
+            <Checkbox 
+              id="mostrar-desactivados"
+              checked={mostrarDesactivados}
+              onCheckedChange={setMostrarDesactivados}
+            />
+          </div>
           
           {/* Selector de columnas */}
           <Popover>

@@ -174,6 +174,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           egreso:egresos_sin_factura!inner(*)
         `)
         .neq('estado', 'conciliado')
+        .neq('estado', 'desactivado')
         .neq('estado', 'credito')
         .eq('egreso.activo', true)
         .order('fecha_estimada', { ascending: true })

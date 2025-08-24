@@ -62,8 +62,9 @@ export function usePagoAnual() {
         throw new Error(`Error buscando registro anual: ${errorBuscarAnual.message}`)
       }
 
-      const registroAnualInactivo = registrosAnuales?.find(r => r.estado === 'conciliado')
+      const registroAnualInactivo = registrosAnuales?.find(r => r.estado === 'desactivado')
       const tieneRegistroAnualActivo = registrosAnuales?.some(r => r.estado === 'pendiente')
+      let templateCreado = false // Variable para resultado
 
       console.log(`🔍 Verificación registro anual template ${cuotaActual.egreso_id}:`)
       console.log(`- Registros anuales encontrados: ${registrosAnuales?.length || 0}`)
@@ -102,6 +103,7 @@ export function usePagoAnual() {
       } else {
         // CASO B: NO existe registro anual → CREAR nuevo
         console.log('🆕 CREANDO nuevo registro anual')
+        templateCreado = true // Se está creando registro nuevo
 
         const descripcionAnual = cuotaActual.egreso?.nombre_referencia?.includes('Cuota') 
           ? cuotaActual.egreso.nombre_referencia.replace(/Cuota \d+\/\d+/, '(Anual)')
@@ -142,7 +144,7 @@ export function usePagoAnual() {
       if (cuotasActivas && cuotasActivas.length > 0) {
         const { error: errorDesactivarCuotas } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ estado: 'conciliado' })
+          .update({ estado: 'desactivado' })
           .eq('egreso_id', cuotaActual.egreso_id)
           .eq('estado', 'pendiente')
           .not('descripcion', 'ilike', '%anual%')
@@ -211,7 +213,7 @@ export function usePagoAnual() {
       const fechaIngresada = window.prompt(
         `📅 FECHA PAGO ANUAL - ${templateNombre}\n\n` +
         `Monto anual: $${montoAnual.toLocaleString('es-AR')}\n\n` +
-        `Ingrese la fecha del pago anual (YYYY-MM-DD):`
+        `Ingrese la fecha del pago anual (DD/MM/AAAA):`
       )
 
       if (fechaIngresada === null) {
@@ -220,9 +222,18 @@ export function usePagoAnual() {
         return
       }
 
-      // Validar formato de fecha
-      if (!fechaIngresada.match(/^\d{4}-\d{2}-\d{2}$/) || !Date.parse(fechaIngresada)) {
-        alert('Fecha inválida. Use formato YYYY-MM-DD. Operación cancelada.')
+      // Validar y convertir formato de fecha DD/MM/AAAA → YYYY-MM-DD
+      let fechaFormateada = fechaIngresada
+      if (fechaIngresada.includes('/')) {
+        const partes = fechaIngresada.split('/')
+        if (partes.length === 3) {
+          const [dia, mes, ano] = partes
+          fechaFormateada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`
+        }
+      }
+      
+      if (!Date.parse(fechaFormateada)) {
+        alert('Fecha inválida. Use formato DD/MM/AAAA. Operación cancelada.')
         resolve({ confirmed: false })
         return
       }
@@ -240,7 +251,7 @@ export function usePagoAnual() {
       resolve({ 
         confirmed: confirmar, 
         montoAnual: confirmar ? montoAnual : undefined,
-        fechaPago: confirmar ? fechaIngresada : undefined
+        fechaPago: confirmar ? fechaFormateada : undefined
       })
     })
   }
