@@ -177,7 +177,6 @@ export function usePagoCuotas() {
           .from('cuotas_egresos_sin_factura')
           .insert({
             egreso_id: templateCuotasId,
-            mes: new Date(config.fechaPrimeraCuota).getMonth() + 1,
             fecha_estimada: config.fechaPrimeraCuota,
             fecha_vencimiento: config.fechaPrimeraCuota,
             monto: config.montoPorCuota,
@@ -202,7 +201,6 @@ export function usePagoCuotas() {
             const fechaCuotaStr = fechaCuota.toISOString().split('T')[0]
             
             nuevasCuotas.push({
-              mes: new Date(fechaCuotaStr).getMonth() + 1,
               fecha_estimada: fechaCuotaStr,
               fecha_vencimiento: fechaCuotaStr,
               monto: config.montoPorCuota,

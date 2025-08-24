@@ -111,7 +111,6 @@ export function usePagoAnual() {
           .from('cuotas_egresos_sin_factura')
           .insert({
             egreso_id: cuotaActual.egreso_id,
-            mes: new Date(config.fechaPagoAnual).getMonth() + 1,
             fecha_estimada: config.fechaPagoAnual,
             fecha_vencimiento: config.fechaPagoAnual,
             monto: config.montoAnual,
