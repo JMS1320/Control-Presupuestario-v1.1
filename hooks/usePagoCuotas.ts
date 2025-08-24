@@ -57,13 +57,13 @@ export function usePagoCuotas() {
         .from('cuotas_egresos_sin_factura')
         .select('id, monto, fecha_estimada, descripcion, estado')
         .eq('egreso_id', cuotaActual.egreso_id)
-        .eq('estado', 'pendiente') // Solo cuotas válidas, no anuladas
+        .in('estado', ['pendiente', 'conciliado']) // Incluir cuotas activas e inactivas
 
       if (errorVerificarCuotas) {
         throw new Error(`Error verificando cuotas existentes: ${errorVerificarCuotas.message}`)
       }
 
-      const cuotasInactivas = cuotasExistentes?.filter(c => !c.estado?.includes('anual')) || []
+      const cuotasInactivas = cuotasExistentes?.filter(c => c.estado === 'conciliado' && !c.descripcion?.toLowerCase().includes('anual')) || []
       const tieneRegistroAnual = cuotasExistentes?.some(c => c.descripcion?.toLowerCase().includes('anual')) || false
 
       console.log(`🔍 Verificación cuotas template ${cuotaActual.egreso_id}:`)
@@ -123,7 +123,7 @@ export function usePagoCuotas() {
         if (tieneRegistroAnual) {
           const { error: errorDesactivarAnual } = await supabase
             .from('cuotas_egresos_sin_factura')
-            .update({ estado: 'inactivo' })
+            .update({ estado: 'conciliado' })
             .eq('egreso_id', cuotaActual.egreso_id)
             .ilike('descripcion', '%anual%')
 
@@ -134,7 +134,7 @@ export function usePagoCuotas() {
           }
         }
 
-        // Reactivar cuotas inactivas si existen
+        // Reactivar cuotas inactivas si existen (conciliado → pendiente)
         if (cuotasInactivas.length > 0) {
           const { error: errorReactivarCuotas } = await supabase
             .from('cuotas_egresos_sin_factura')

@@ -62,7 +62,7 @@ export function usePagoAnual() {
         throw new Error(`Error buscando registro anual: ${errorBuscarAnual.message}`)
       }
 
-      const registroAnualInactivo = registrosAnuales?.find(r => r.estado === 'inactivo')
+      const registroAnualInactivo = registrosAnuales?.find(r => r.estado === 'conciliado')
       const tieneRegistroAnualActivo = registrosAnuales?.some(r => r.estado === 'pendiente')
 
       console.log(`🔍 Verificación registro anual template ${cuotaActual.egreso_id}:`)
@@ -142,7 +142,7 @@ export function usePagoAnual() {
       if (cuotasActivas && cuotasActivas.length > 0) {
         const { error: errorDesactivarCuotas } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ estado: 'inactivo' })
+          .update({ estado: 'conciliado' })
           .eq('egreso_id', cuotaActual.egreso_id)
           .eq('estado', 'pendiente')
           .not('descripcion', 'ilike', '%anual%')
