@@ -16,6 +16,7 @@ import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save,
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
+import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -202,6 +203,12 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Hook unificado (DESPUÉS de cargarFacturas para evitar error inicialización)
+  const hookEditor = useInlineEditor({
+    onSuccess: cargarFacturas,
+    onError: (error) => console.error('Hook error:', error)
+  })
+
   useEffect(() => {
     cargarFacturas()
   }, [])
@@ -311,11 +318,25 @@ export function VistaFacturasArca() {
     event.preventDefault()
     event.stopPropagation()
     
-    setCeldaEnEdicion({
-      facturaId,
-      columna,
-      valor: valor || ''
-    })
+    // TESTING: Usar hook solo para fechas (approach gradual)
+    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+      console.log('🔄 Usando hook para fecha:', columna)
+      const celdaHook: CeldaEnEdicion = {
+        filaId: facturaId,
+        columna,
+        valor: valor || '',
+        tableName: 'comprobantes_arca',
+        origen: 'ARCA'
+      }
+      hookEditor.iniciarEdicion(celdaHook)
+    } else {
+      // Lógica original para otros campos
+      setCeldaEnEdicion({
+        facturaId,
+        columna,
+        valor: valor || ''
+      })
+    }
   }
 
   const cancelarEdicion = () => {
@@ -468,7 +489,46 @@ export function VistaFacturasArca() {
       console.log('🔍 DEBUG cuenta_contable:', { valor, esEditable, modoEdicion, camposEditables })
     }
 
-    // Si esta celda está en edición, mostrar input
+    // Si esta celda está en edición (hook) para fechas, mostrar input del hook
+    const esCeldaHookEnEdicion = (['fecha_estimada', 'fecha_vencimiento'].includes(columna as string)) && 
+                                hookEditor.celdaEnEdicion?.filaId === factura.id && 
+                                hookEditor.celdaEnEdicion?.columna === columna
+    
+    if (esCeldaHookEnEdicion) {
+      return (
+        <div className="flex items-center gap-1">
+          <Input
+            ref={hookEditor.inputRef} // ✅ AUTO-FOCUS del hook
+            type="date"
+            value={String(hookEditor.celdaEnEdicion?.valor || '')}
+            onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+            onKeyDown={hookEditor.manejarKeyDown} // ✅ Enter/Escape del hook
+            className="h-6 text-xs p-1 w-full"
+            disabled={hookEditor.guardandoCambio}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => hookEditor.guardarCambio()}
+            disabled={hookEditor.guardandoCambio}
+          >
+            {hookEditor.guardandoCambio ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => hookEditor.cancelarEdicion()}
+            disabled={hookEditor.guardandoCambio}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )
+    }
+
+    // Si esta celda está en edición (lógica original), mostrar input
     if (esCeldaEnEdicion) {
       return (
         <div className="flex items-center gap-1">
