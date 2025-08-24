@@ -191,7 +191,8 @@ export function usePagoCuotas() {
           throw new Error(`Error creando primera cuota: ${errorPrimeraCuota.message}`)
         }
 
-          // 4. Crear las cuotas adicionales (si se necesitan más de 1)
+        // 4. Crear las cuotas adicionales (si se necesitan más de 1)
+        if (config.numeroCuotas > 1) {
           const nuevasCuotas = []
           
           for (let i = 2; i <= config.numeroCuotas; i++) {
