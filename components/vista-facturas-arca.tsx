@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -138,6 +138,12 @@ export function VistaFacturasArca() {
     categIngresado: '',
     celdaEnEdicion: null
   })
+  
+  // Estados para importación Excel
+  const [mostrarImportador, setMostrarImportador] = useState(false)
+  const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
+  const [importandoExcel, setImportandoExcel] = useState(false)
+  const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -470,6 +476,43 @@ export function VistaFacturasArca() {
   const cerrarModalCateg = () => {
     setValidandoCateg({ isOpen: false, categIngresado: '', celdaEnEdicion: null })
     setCeldaEnEdicion(null)
+  }
+
+  // Función para manejar importación Excel
+  const manejarImportacionExcel = async () => {
+    if (!archivoImportacion) return
+
+    setImportandoExcel(true)
+    setResultadoImportacion(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', archivoImportacion)
+      formData.append('empresa', 'MSA') // Por ahora MSA por defecto
+
+      const response = await fetch('/api/import-facturas-arca', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const resultado = await response.json()
+      setResultadoImportacion(resultado)
+
+      if (resultado.success) {
+        // Recargar facturas después de importación exitosa
+        await cargarFacturas()
+        setMostrarImportador(false)
+        setArchivoImportacion(null)
+      }
+    } catch (error) {
+      console.error('Error importando Excel:', error)
+      setResultadoImportacion({
+        success: false,
+        message: 'Error de conexión al importar archivo Excel'
+      })
+    } finally {
+      setImportandoExcel(false)
+    }
   }
 
   // Obtener estados únicos para el selector
