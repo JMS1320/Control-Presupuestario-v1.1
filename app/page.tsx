@@ -1,5 +1,6 @@
-import ControlPresupuestario from "../dashboard"
+import { redirect } from 'next/navigation'
 
 export default function Page() {
-  return <ControlPresupuestario />
+  // Redirigir a página de error cuando acceden a la raíz
+  redirect('/no-access')
 }

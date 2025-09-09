@@ -21,7 +21,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home } from "lucide-react"
 
-export default function ControlPresupuestario() {
+interface ControlPresupuestarioProps {
+  userRole?: 'admin' | 'contable'
+}
+
+export default function ControlPresupuestario({ userRole = 'admin' }: ControlPresupuestarioProps) {
   // Obtener el año actual dinámicamente
   const añoActual = new Date().getFullYear()
 
@@ -35,44 +39,74 @@ export default function ControlPresupuestario() {
   const { resumen, loading } = useFinancialData(año, semestre)
   const { resumenPorSeccion, estadisticas, loading: loadingDistribucion } = useDistribucionSociosData(año, semestre)
 
+  // Función para determinar si mostrar una pestaña según el rol
+  const shouldShowTab = (tabName: string): boolean => {
+    if (userRole === 'admin') return true
+    if (userRole === 'contable') return tabName === 'egresos'
+    return false
+  }
+
+  // Determinar valor por defecto del tab según rol
+  const getDefaultTab = (): string => {
+    if (userRole === 'admin') return 'principal'
+    if (userRole === 'contable') return 'egresos'
+    return 'principal'
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* pestañas principales */}
-        <Tabs defaultValue="principal" className="w-full">
-          <TabsList className="grid w-full grid-cols-8">
-            <TabsTrigger value="principal" className="flex items-center gap-2">
-              <Home className="h-4 w-4" />
-              Principal
-            </TabsTrigger>
-            <TabsTrigger value="dashboard" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Dashboard
-            </TabsTrigger>
-            <TabsTrigger value="distribucion" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Distribución Socios
-            </TabsTrigger>
-            <TabsTrigger value="reporte" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Reporte Detallado
-            </TabsTrigger>
-            <TabsTrigger value="egresos" className="flex items-center gap-2">
-              <Receipt className="h-4 w-4" />
-              Egresos
-            </TabsTrigger>
-            <TabsTrigger value="cashflow" className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Cash Flow
-            </TabsTrigger>
-            <TabsTrigger value="extracto" className="flex items-center gap-2">
-              <Banknote className="h-4 w-4" />
-              Extracto Bancario
-            </TabsTrigger>
-            <TabsTrigger value="importar" className="flex items-center gap-2">
-              <Upload className="h-4 w-4" />
-              Importar Excel
-            </TabsTrigger>
+        <Tabs defaultValue={getDefaultTab()} className="w-full">
+          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-8'}`}>
+            {shouldShowTab('principal') && (
+              <TabsTrigger value="principal" className="flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                Principal
+              </TabsTrigger>
+            )}
+            {shouldShowTab('dashboard') && (
+              <TabsTrigger value="dashboard" className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Dashboard
+              </TabsTrigger>
+            )}
+            {shouldShowTab('distribucion') && (
+              <TabsTrigger value="distribucion" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Distribución Socios
+              </TabsTrigger>
+            )}
+            {shouldShowTab('reporte') && (
+              <TabsTrigger value="reporte" className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Reporte Detallado
+              </TabsTrigger>
+            )}
+            {shouldShowTab('egresos') && (
+              <TabsTrigger value="egresos" className="flex items-center gap-2">
+                <Receipt className="h-4 w-4" />
+                Egresos
+              </TabsTrigger>
+            )}
+            {shouldShowTab('cashflow') && (
+              <TabsTrigger value="cashflow" className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Cash Flow
+              </TabsTrigger>
+            )}
+            {shouldShowTab('extracto') && (
+              <TabsTrigger value="extracto" className="flex items-center gap-2">
+                <Banknote className="h-4 w-4" />
+                Extracto Bancario
+              </TabsTrigger>
+            )}
+            {shouldShowTab('importar') && (
+              <TabsTrigger value="importar" className="flex items-center gap-2">
+                <Upload className="h-4 w-4" />
+                Importar Excel
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* VISTA PRINCIPAL */}
