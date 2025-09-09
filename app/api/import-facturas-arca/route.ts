@@ -67,17 +67,26 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
 }
 
 /**
- * Mapea una fila del CSV de ARCA a la estructura de la base de datos
- * Convierte los 17 campos del CSV a los campos de la tabla
+ * Mapea una fila del CSV/Excel de ARCA a la estructura de la base de datos
+ * SOPORTE DUAL: Formato CSV anterior + Excel nuevo AFIP 2025
  */
 function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
-  const fechaEmision = convertirFecha(fila["Fecha de Emisión"])
-  const impTotal = convertirNumeroArgentino(fila["Imp. Total"])
+  // Detectar formato: Excel nuevo (tiene "Fecha" + "Tipo") vs CSV anterior ("Fecha de Emisión")
+  const esFormatoExcel = 'Fecha' in fila && 'Tipo' in fila && !('Fecha de Emisión' in fila)
   
-  return {
-    // Datos originales de ARCA (convertidos apropiadamente)
+  console.log(`🔍 Formato detectado: ${esFormatoExcel ? 'EXCEL NUEVO' : 'CSV ANTERIOR'}`)
+  
+  // Mapeo de campos comunes según formato
+  const fechaEmision = convertirFecha(
+    esFormatoExcel ? fila["Fecha"] : fila["Fecha de Emisión"]
+  )
+  
+  // Mapeo campos básicos (comunes a ambos formatos)
+  const datosBasicos = {
     fecha_emision: fechaEmision,
-    tipo_comprobante: parseInt(fila["Tipo de Comprobante"]) || 0,
+    tipo_comprobante: parseInt(
+      esFormatoExcel ? fila["Tipo"] : fila["Tipo de Comprobante"]
+    ) || 0,
     punto_venta: parseInt(fila["Punto de Venta"]) || null,
     numero_desde: parseInt(fila["Número Desde"]) || null,
     numero_hasta: parseInt(fila["Número Hasta"]) || null,
@@ -85,29 +94,89 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     tipo_doc_emisor: parseInt(fila["Tipo Doc. Emisor"]) || null,
     cuit: fila["Nro. Doc. Emisor"]?.toString() || "",
     denominacion_emisor: fila["Denominación Emisor"]?.toString() || "",
-    tipo_cambio: convertirNumeroArgentino(fila["Tipo Cambio"]),
-    moneda: fila["Moneda"]?.toString() || "PES",
-    imp_neto_gravado: convertirNumeroArgentino(fila["Imp. Neto Gravado"]),
-    imp_neto_no_gravado: convertirNumeroArgentino(fila["Imp. Neto No Gravado"]),
-    imp_op_exentas: convertirNumeroArgentino(fila["Imp. Op. Exentas"]),
-    otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
-    iva: convertirNumeroArgentino(fila["IVA"]),
-    imp_total: impTotal,
+    tipo_cambio: convertirNumeroArgentino(fila["Tipo Cambio"]) || 1,
+    moneda: fila["Moneda"]?.toString() || "PES"
+  }
+  
+  // Mapeo campos IVA según formato
+  let camposIVA: any
+  
+  if (esFormatoExcel) {
+    // FORMATO EXCEL NUEVO - Desglose detallado por alícuota
+    camposIVA = {
+      // Campos existentes (calculados como totales)
+      imp_neto_gravado: convertirNumeroArgentino(fila["Neto Gravado Total"]),
+      imp_neto_no_gravado: convertirNumeroArgentino(fila["Neto No Gravado"]),
+      imp_op_exentas: convertirNumeroArgentino(fila["Op. Exentas"]),
+      otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
+      iva: convertirNumeroArgentino(fila["Total IVA"]),
+      imp_total: convertirNumeroArgentino(fila["Imp. Total"]),
+      
+      // Campos nuevos - desglose detallado IVA
+      tipo_doc_receptor: parseInt(fila["Tipo Doc. Receptor"]) || null,
+      nro_doc_receptor: fila["Nro. Doc. Receptor"]?.toString() || null,
+      neto_grav_iva_0: convertirNumeroArgentino(fila["Neto Grav. IVA 0%"]),
+      iva_2_5: convertirNumeroArgentino(fila["IVA 2,5%"]),
+      neto_grav_iva_2_5: convertirNumeroArgentino(fila["Neto Grav. IVA 2,5%"]),
+      iva_5: convertirNumeroArgentino(fila["IVA 5%"]),
+      neto_grav_iva_5: convertirNumeroArgentino(fila["Neto Grav. IVA 5%"]),
+      iva_10_5: convertirNumeroArgentino(fila["IVA 10,5%"]),
+      neto_grav_iva_10_5: convertirNumeroArgentino(fila["Neto Grav. IVA 10,5%"]),
+      iva_21: convertirNumeroArgentino(fila["IVA 21%"]),
+      neto_grav_iva_21: convertirNumeroArgentino(fila["Neto Grav. IVA 21%"]),
+      iva_27: convertirNumeroArgentino(fila["IVA 27%"]),
+      neto_grav_iva_27: convertirNumeroArgentino(fila["Neto Grav. IVA 27%"])
+    }
+  } else {
+    // FORMATO CSV ANTERIOR - Mapeo tradicional
+    camposIVA = {
+      // Campos existentes (formato anterior)
+      imp_neto_gravado: convertirNumeroArgentino(fila["Imp. Neto Gravado"]),
+      imp_neto_no_gravado: convertirNumeroArgentino(fila["Imp. Neto No Gravado"]),
+      imp_op_exentas: convertirNumeroArgentino(fila["Imp. Op. Exentas"]),
+      otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
+      iva: convertirNumeroArgentino(fila["IVA"]),
+      imp_total: convertirNumeroArgentino(fila["Imp. Total"]),
+      
+      // Campos nuevos - valores por defecto (CSV no los tiene)
+      tipo_doc_receptor: null,
+      nro_doc_receptor: null,
+      neto_grav_iva_0: 0,
+      iva_2_5: 0,
+      neto_grav_iva_2_5: 0,
+      iva_5: 0,
+      neto_grav_iva_5: 0,
+      iva_10_5: 0,
+      neto_grav_iva_10_5: 0,
+      iva_21: 0,
+      neto_grav_iva_21: 0,
+      iva_27: 0,
+      neto_grav_iva_27: 0
+    }
+  }
+  
+  // Combinar datos básicos + IVA + campos sistema
+  const resultado = {
+    ...datosBasicos,
+    ...camposIVA,
     
-    // Campos calculados automáticamente para Cash Flow
+    // Campos calculados automáticamente (PRESERVAR LÓGICA EXISTENTE)
     fecha_estimada: calcularFechaEstimada(fechaEmision),
-    monto_a_abonar: impTotal, // Inicialmente igual al importe total
+    monto_a_abonar: camposIVA.imp_total, // Inicialmente igual al importe total
     
-    // Campos adicionales con valores por defecto
+    // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
     fc: null,
     cuenta_contable: null,
     centro_costo: null,
     estado: 'pendiente',
     observaciones_pago: null,
-    detalle: `Factura ${fila["Tipo de Comprobante"]}-${fila["Número Desde"]} - ${fila["Denominación Emisor"] || 'Sin nombre'}`,
+    detalle: `Factura ${datosBasicos.tipo_comprobante}-${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
     archivo_origen: nombreArchivo
   }
+  
+  console.log(`✅ Mapeo completado: ${Object.keys(resultado).length} campos`)
+  return resultado
 }
 
 /**
