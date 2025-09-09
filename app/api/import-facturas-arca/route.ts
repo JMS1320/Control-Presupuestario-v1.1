@@ -175,6 +175,7 @@ export async function POST(req: Request) {
       
       console.log(`📊 Headers detectados en Excel:`, headers)
       console.log(`📊 Total filas de datos: ${filasCSV.length}`)
+      console.log(`🔍 SAMPLE: Primera fila de datos:`, filasCSV[0])
       
     } else if (esCsv) {
       console.log("📄 Procesando archivo CSV...")
@@ -245,12 +246,28 @@ export async function POST(req: Request) {
       const filaOriginal = filasCSV[indice]
       
       try {
+        // Debug: Mostrar claves disponibles en la fila
+        if (indice < 3) { // Solo las primeras 3 filas para no saturar logs
+          console.log(`🔍 FILA ${indice + 2} - Claves disponibles:`, Object.keys(filaOriginal))
+          console.log(`🔍 FILA ${indice + 2} - Datos:`, filaOriginal)
+        }
+        
         // Convertir fila del CSV al formato de la base de datos
         const filaParaBBDD = mapearFilaCSVaBBDD(filaOriginal, file.name)
 
+        // Debug: Mostrar resultado del mapeo
+        if (indice < 3) {
+          console.log(`🔍 FILA ${indice + 2} - Resultado mapeo:`, {
+            fecha_emision: filaParaBBDD.fecha_emision,
+            cuit: filaParaBBDD.cuit,
+            imp_total: filaParaBBDD.imp_total,
+            denominacion_emisor: filaParaBBDD.denominacion_emisor
+          })
+        }
+
         // Validar campos obligatorios
         if (!filaParaBBDD.fecha_emision || !filaParaBBDD.cuit || filaParaBBDD.imp_total === 0) {
-          errores.push(`Fila ${indice + 2}: Faltan datos obligatorios (fecha, CUIT o importe)`)
+          errores.push(`Fila ${indice + 2}: Faltan datos obligatorios (fecha: ${filaParaBBDD.fecha_emision}, CUIT: ${filaParaBBDD.cuit}, importe: ${filaParaBBDD.imp_total})`)
           continue
         }
 
