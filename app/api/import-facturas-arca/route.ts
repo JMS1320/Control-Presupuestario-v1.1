@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as Papa from "papaparse"
+import * as XLSX from "xlsx"
 
 // Cliente Supabase con permisos de administrador para insertar datos
 const supabase = createClient(
@@ -131,27 +132,78 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: CONNECTION-TEST-v4.0 - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.0 - ${new Date().toISOString()}`)
 
-    // Leer contenido del archivo CSV
-    const contenidoArchivo = await file.text()
+    // Detectar formato del archivo
+    const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+    const esCsv = file.name.endsWith('.csv')
     
-    // Parsear CSV con configuración para formato argentino (separador punto y coma)
-    const resultadoParser = Papa.parse(contenidoArchivo, {
-      header: true,           // Primera fila son los headers
-      delimiter: ";",         // ARCA usa punto y coma como separador
-      skipEmptyLines: true    // Ignorar filas vacías
-    })
+    let filasCSV: any[]
+    
+    if (esExcel) {
+      console.log("📊 Procesando archivo Excel...")
+      
+      // Leer archivo Excel
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = XLSX.read(arrayBuffer, { type: 'buffer' })
+      const sheetName = workbook.SheetNames[0] // Primera hoja
+      const worksheet = workbook.Sheets[sheetName]
+      
+      // Convertir hoja a array, empezando desde fila 2 (fila 1 es info que ignoramos)
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1,        // Array de arrays
+        range: 1          // Empezar desde fila 2 (índice 1)
+      }) as any[][]
+      
+      if (rawData.length < 2) {
+        return NextResponse.json({ 
+          error: "El archivo Excel debe tener al menos 2 filas (headers y datos)" 
+        }, { status: 400 })
+      }
+      
+      // Primera fila (índice 0) son los headers
+      const headers = rawData[0].map((h: any) => h?.toString().trim() || '')
+      
+      // Resto son datos - convertir a objetos
+      filasCSV = rawData.slice(1).map(row => {
+        const obj: any = {}
+        headers.forEach((header: string, index: number) => {
+          obj[header] = row[index] ?? ''
+        })
+        return obj
+      })
+      
+      console.log(`📊 Headers detectados en Excel:`, headers)
+      console.log(`📊 Total filas de datos: ${filasCSV.length}`)
+      
+    } else if (esCsv) {
+      console.log("📄 Procesando archivo CSV...")
+      
+      // Leer contenido del archivo CSV
+      const contenidoArchivo = await file.text()
+      
+      // Parsear CSV con configuración para formato argentino (separador punto y coma)
+      const resultadoParser = Papa.parse(contenidoArchivo, {
+        header: true,           // Primera fila son los headers
+        delimiter: ";",         // ARCA usa punto y coma como separador
+        skipEmptyLines: true    // Ignorar filas vacías
+      })
 
-    if (resultadoParser.errors.length > 0) {
-      console.error("❌ Errores al parsear CSV:", resultadoParser.errors)
+      if (resultadoParser.errors.length > 0) {
+        console.error("❌ Errores al parsear CSV:", resultadoParser.errors)
+        return NextResponse.json({ 
+          error: "Error al procesar el archivo CSV" 
+        }, { status: 400 })
+      }
+
+      filasCSV = resultadoParser.data as any[]
+      console.log(`📊 Total de filas en CSV: ${filasCSV.length}`)
+      
+    } else {
       return NextResponse.json({ 
-        error: "Error al procesar el archivo CSV" 
+        error: "Formato de archivo no soportado. Use .xlsx, .xls o .csv" 
       }, { status: 400 })
     }
-
-    const filasCSV = resultadoParser.data as any[]
-    console.log(`📊 Total de filas en CSV: ${filasCSV.length}`)
 
     // Determinar esquema de base de datos según empresa
     const esquema = empresa.toLowerCase()  // 'msa' o 'pam'

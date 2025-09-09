@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -115,6 +115,13 @@ export function VistaFacturasArca() {
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
+  
+  // Estados para importador Excel
+  const [mostrarImportador, setMostrarImportador] = useState(false)
+  const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
+  const [importandoExcel, setImportandoExcel] = useState(false)
+  const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
+  const [empresa, setEmpresa] = useState<'MSA' | 'PAM'>('MSA')
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -708,6 +715,43 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Función para manejar la importación de Excel
+  const manejarImportacionExcel = async () => {
+    if (!archivoImportacion) return
+
+    setImportandoExcel(true)
+    setResultadoImportacion(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', archivoImportacion)
+      formData.append('empresa', empresa)
+
+      const response = await fetch('/api/import-facturas-arca', {
+        method: 'POST',
+        body: formData
+      })
+
+      const resultado = await response.json()
+      setResultadoImportacion(resultado)
+
+      if (resultado.success) {
+        // Recargar las facturas después de una importación exitosa
+        cargarFacturas()
+        setMostrarImportador(false)
+        setArchivoImportacion(null)
+      }
+    } catch (error) {
+      console.error('Error en importación:', error)
+      setResultadoImportacion({
+        success: false,
+        error: 'Error de conexión durante la importación'
+      })
+    } finally {
+      setImportandoExcel(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Encabezado con controles */}
@@ -720,6 +764,15 @@ export function VistaFacturasArca() {
         </div>
         
         <div className="flex gap-2">
+          {/* Botón importar Excel */}
+          <Button 
+            variant="outline"
+            onClick={() => setMostrarImportador(true)}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Importar Excel
+          </Button>
+          
           {/* Botón de filtros */}
           <Button 
             variant={mostrarFiltros ? "default" : "outline"}
@@ -1081,6 +1134,128 @@ export function VistaFacturasArca() {
             </Button>
             <Button onClick={manejarCrearCategoria}>
               Crear nueva categoría
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para importación de Excel */}
+      <Dialog open={mostrarImportador} onOpenChange={setMostrarImportador}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Importar Facturas ARCA desde Excel
+            </DialogTitle>
+            <DialogDescription>
+              Selecciona el archivo Excel de ARCA para importar las facturas automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Selector de empresa */}
+            <div className="space-y-2">
+              <Label>Empresa destino</Label>
+              <Select value={empresa} onValueChange={(value: 'MSA' | 'PAM') => setEmpresa(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MSA">MSA</SelectItem>
+                  <SelectItem value="PAM">PAM</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Selector de archivo */}
+            <div className="space-y-2">
+              <Label>Archivo Excel de ARCA</Label>
+              <Input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  setArchivoImportacion(file || null)
+                  setResultadoImportacion(null)
+                }}
+              />
+              {archivoImportacion && (
+                <div className="text-sm text-gray-600">
+                  Archivo seleccionado: {archivoImportacion.name}
+                </div>
+              )}
+            </div>
+
+            {/* Información */}
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <div className="text-sm space-y-1">
+                  <p><strong>Formato esperado:</strong></p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Fila 1: Información general (se ignora)</li>
+                    <li>Fila 2: Headers de columnas</li>
+                    <li>Fila 3+: Datos de facturas</li>
+                    <li>Extensiones soportadas: .xlsx, .xls</li>
+                  </ul>
+                </div>
+              </AlertDescription>
+            </Alert>
+
+            {/* Resultado de importación */}
+            {resultadoImportacion && (
+              <Alert className={resultadoImportacion.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+                <div className="flex items-center gap-2">
+                  {resultadoImportacion.success ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                  )}
+                </div>
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-medium">
+                      {resultadoImportacion.success ? 'Importación exitosa' : 'Error en importación'}
+                    </p>
+                    <p className="text-sm">
+                      {resultadoImportacion.message || resultadoImportacion.error}
+                    </p>
+                    
+                    {resultadoImportacion.summary && (
+                      <div className="text-xs bg-white p-2 rounded border">
+                        <div>Total facturas procesadas: {resultadoImportacion.summary.totalFilas}</div>
+                        <div>Facturas importadas: {resultadoImportacion.insertedCount}</div>
+                        <div>Facturas duplicadas: {resultadoImportacion.ignoredCount || 0}</div>
+                        {resultadoImportacion.errores?.length > 0 && (
+                          <div className="text-red-600">Errores: {resultadoImportacion.errores.length}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarImportador(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={manejarImportacionExcel} 
+              disabled={!archivoImportacion || importandoExcel}
+            >
+              {importandoExcel ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Importando...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
