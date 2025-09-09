@@ -139,12 +139,6 @@ export function VistaFacturasArca() {
     celdaEnEdicion: null
   })
   
-  // Estados para importación Excel
-  const [mostrarImportador, setMostrarImportador] = useState(false)
-  const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
-  const [importandoExcel, setImportandoExcel] = useState(false)
-  const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
-  
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
     // Intentar cargar desde localStorage
