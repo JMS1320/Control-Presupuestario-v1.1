@@ -227,7 +227,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.0 - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.1-FIXED - ${new Date().toISOString()}`)
 
     // Detectar formato del archivo
     const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
