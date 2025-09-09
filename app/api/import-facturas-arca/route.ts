@@ -13,9 +13,20 @@ const supabase = createClient(
  * Convierte números en formato argentino a decimal estándar
  * Ejemplo: "15.528,69" → 15528.69
  * Ejemplo: "(1.234,56)" → -1234.56 (números negativos entre paréntesis)
+ * SOPORTA: string, number, undefined, null
  */
-function convertirNumeroArgentino(valor: string): number {
-  if (!valor || valor.trim() === '') return 0
+function convertirNumeroArgentino(valor: string | number | null | undefined): number {
+  // Manejar valores vacíos/nulos
+  if (valor === null || valor === undefined || valor === '') return 0
+  
+  // Si ya es número, devolverlo directamente
+  if (typeof valor === 'number') return valor
+  
+  // Si es string, procesarlo
+  if (typeof valor !== 'string') return 0
+  
+  // String vacío después de trim
+  if (valor.trim() === '') return 0
   
   let textoLimpio = valor.toString().trim()
   
@@ -34,11 +45,26 @@ function convertirNumeroArgentino(valor: string): number {
 }
 
 /**
- * Convierte fechas del formato CSV a formato base de datos
- * Entrada: "2025-08-01" → Salida: "2025-08-01"
+ * Convierte fechas del formato CSV/Excel a formato base de datos
+ * Entrada: "2025-08-01" | 45870 (Excel serial) → Salida: "2025-08-01"
  */
-function convertirFecha(valor: string): string | null {
-  if (!valor || valor.trim() === '') return null
+function convertirFecha(valor: string | number | null | undefined): string | null {
+  if (!valor) return null
+  
+  // Si es número (formato Excel serial date)
+  if (typeof valor === 'number') {
+    try {
+      // Excel usa 1900-01-01 como día 1 (con bug de año bisiesto)
+      const fecha = new Date((valor - 25569) * 86400 * 1000)
+      if (isNaN(fecha.getTime())) return null
+      return fecha.toISOString().split('T')[0]
+    } catch {
+      return null
+    }
+  }
+  
+  // Si es string
+  if (typeof valor !== 'string' || valor.trim() === '') return null
   
   try {
     // ARCA ya viene en formato YYYY-MM-DD, solo validamos que sea fecha válida
@@ -90,12 +116,12 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     punto_venta: parseInt(fila["Punto de Venta"]) || null,
     numero_desde: parseInt(fila["Número Desde"]) || null,
     numero_hasta: parseInt(fila["Número Hasta"]) || null,
-    codigo_autorizacion: fila["Cód. Autorización"]?.toString() || null,
+    codigo_autorizacion: fila["Cód. Autorización"] ? fila["Cód. Autorización"].toString() : null,
     tipo_doc_emisor: parseInt(fila["Tipo Doc. Emisor"]) || null,
-    cuit: fila["Nro. Doc. Emisor"]?.toString() || "",
-    denominacion_emisor: fila["Denominación Emisor"]?.toString() || "",
+    cuit: fila["Nro. Doc. Emisor"] ? fila["Nro. Doc. Emisor"].toString() : "",
+    denominacion_emisor: fila["Denominación Emisor"] ? fila["Denominación Emisor"].toString() : "",
     tipo_cambio: convertirNumeroArgentino(fila["Tipo Cambio"]) || 1,
-    moneda: fila["Moneda"]?.toString() || "PES"
+    moneda: fila["Moneda"] ? fila["Moneda"].toString() : "PES"
   }
   
   // Mapeo campos IVA según formato
@@ -114,7 +140,7 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
       
       // Campos nuevos - desglose detallado IVA
       tipo_doc_receptor: parseInt(fila["Tipo Doc. Receptor"]) || null,
-      nro_doc_receptor: fila["Nro. Doc. Receptor"]?.toString() || null,
+      nro_doc_receptor: fila["Nro. Doc. Receptor"] ? fila["Nro. Doc. Receptor"].toString() : null,
       neto_grav_iva_0: convertirNumeroArgentino(fila["Neto Grav. IVA 0%"]),
       iva_2_5: convertirNumeroArgentino(fila["IVA 2,5%"]),
       neto_grav_iva_2_5: convertirNumeroArgentino(fila["Neto Grav. IVA 2,5%"]),
