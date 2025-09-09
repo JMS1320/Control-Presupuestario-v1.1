@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -131,6 +131,12 @@ export function VistaFacturasArca() {
     categIngresado: '',
     celdaEnEdicion: null
   })
+  
+  // Estados para importación Excel
+  const [mostrarImportador, setMostrarImportador] = useState(false)
+  const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
+  const [importandoExcel, setImportandoExcel] = useState(false)
+  const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -465,6 +471,43 @@ export function VistaFacturasArca() {
     setCeldaEnEdicion(null)
   }
 
+  // Función para manejar importación Excel
+  const manejarImportacionExcel = async () => {
+    if (!archivoImportacion) return
+
+    setImportandoExcel(true)
+    setResultadoImportacion(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', archivoImportacion)
+      formData.append('empresa', 'MSA') // Por ahora MSA por defecto
+
+      const response = await fetch('/api/import-facturas-arca', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const resultado = await response.json()
+      setResultadoImportacion(resultado)
+
+      if (resultado.success) {
+        // Recargar facturas después de importación exitosa
+        await cargarFacturas()
+        setMostrarImportador(false)
+        setArchivoImportacion(null)
+      }
+    } catch (error) {
+      console.error('Error importando Excel:', error)
+      setResultadoImportacion({
+        success: false,
+        message: 'Error de conexión al importar archivo Excel'
+      })
+    } finally {
+      setImportandoExcel(false)
+    }
+  }
+
   // Obtener estados únicos para el selector
   const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
 
@@ -720,6 +763,15 @@ export function VistaFacturasArca() {
         </div>
         
         <div className="flex gap-2">
+          {/* Botón importar Excel */}
+          <Button 
+            variant="outline"
+            onClick={() => setMostrarImportador(true)}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            Importar Excel
+          </Button>
+          
           {/* Botón de filtros */}
           <Button 
             variant={mostrarFiltros ? "default" : "outline"}
@@ -1081,6 +1133,96 @@ export function VistaFacturasArca() {
             </Button>
             <Button onClick={manejarCrearCategoria}>
               Crear nueva categoría
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para importación Excel */}
+      <Dialog open={mostrarImportador} onOpenChange={setMostrarImportador}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Importar Facturas desde Excel ARCA
+            </DialogTitle>
+            <DialogDescription>
+              Seleccione un archivo Excel (.xlsx) con facturas de ARCA para importar al sistema
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Selector de archivo */}
+            <div className="space-y-2">
+              <Label htmlFor="archivo-excel">Archivo Excel de ARCA</Label>
+              <Input
+                id="archivo-excel"
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => setArchivoImportacion(e.target.files?.[0] || null)}
+                disabled={importandoExcel}
+              />
+              {archivoImportacion && (
+                <p className="text-sm text-green-600">
+                  ✅ Archivo seleccionado: {archivoImportacion.name}
+                </p>
+              )}
+            </div>
+
+            {/* Resultado de importación */}
+            {resultadoImportacion && (
+              <Alert variant={resultadoImportacion.success ? "default" : "destructive"}>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  {resultadoImportacion.message}
+                  {resultadoImportacion.summary && (
+                    <div className="mt-2 text-sm">
+                      <p>• Total filas: {resultadoImportacion.summary.totalFilas}</p>
+                      <p>• Facturas importadas: {resultadoImportacion.summary.filasImportadas}</p>
+                      <p>• Facturas ignoradas: {resultadoImportacion.summary.filasIgnoradas}</p>
+                      <p>• Errores: {resultadoImportacion.summary.erroresCount}</p>
+                    </div>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Información adicional */}
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p><strong>Instrucciones:</strong></p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>El archivo debe ser formato Excel (.xlsx o .xls)</li>
+                <li>Fila 1: Información ignorada</li>
+                <li>Fila 2: Headers (nombres de columnas)</li>
+                <li>Fila 3+: Datos de facturas</li>
+                <li>Se detectarán automáticamente facturas duplicadas</li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setMostrarImportador(false)}
+              disabled={importandoExcel}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={manejarImportacionExcel}
+              disabled={!archivoImportacion || importandoExcel}
+            >
+              {importandoExcel ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar Excel
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
