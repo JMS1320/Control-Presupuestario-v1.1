@@ -472,43 +472,6 @@ export function VistaFacturasArca() {
     setCeldaEnEdicion(null)
   }
 
-  // Función para manejar importación Excel
-  const manejarImportacionExcel = async () => {
-    if (!archivoImportacion) return
-
-    setImportandoExcel(true)
-    setResultadoImportacion(null)
-
-    try {
-      const formData = new FormData()
-      formData.append('file', archivoImportacion)
-      formData.append('empresa', 'MSA') // Por ahora MSA por defecto
-
-      const response = await fetch('/api/import-facturas-arca', {
-        method: 'POST',
-        body: formData,
-      })
-
-      const resultado = await response.json()
-      setResultadoImportacion(resultado)
-
-      if (resultado.success) {
-        // Recargar facturas después de importación exitosa
-        await cargarFacturas()
-        setMostrarImportador(false)
-        setArchivoImportacion(null)
-      }
-    } catch (error) {
-      console.error('Error importando Excel:', error)
-      setResultadoImportacion({
-        success: false,
-        message: 'Error de conexión al importar archivo Excel'
-      })
-    } finally {
-      setImportandoExcel(false)
-    }
-  }
-
   // Obtener estados únicos para el selector
   const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
 
