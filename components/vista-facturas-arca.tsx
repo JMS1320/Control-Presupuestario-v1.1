@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1008,7 +1011,23 @@ export function VistaFacturasArca() {
       // Recargar facturas del período para mostrar cambios
       await cargarFacturasPeriodo(periodoConsulta)
       
-      alert(`✅ DDJJ confirmada para período ${periodoConsulta}`)
+      // DESCARGA AUTOMÁTICA: Generar PDF + Excel con facturas confirmadas
+      if (facturasPeriodo.length > 0) {
+        const facturasConfirmadas = facturasPeriodo.filter(f => f.ddjj_iva === 'DDJJ OK')
+        
+        console.log('📥 Iniciando descarga automática...', {
+          periodo: periodoConsulta,
+          totalFacturas: facturasConfirmadas.length
+        })
+        
+        // Generar archivos automáticamente
+        descargarExcelDDJJ(facturasConfirmadas, periodoConsulta)
+        setTimeout(() => descargarPDFDDJJ(facturasConfirmadas, periodoConsulta), 500)
+        
+        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n📥 Descargando automáticamente:\n• Excel con datos detallados\n• PDF con resumen y totales`)
+      } else {
+        alert(`✅ DDJJ confirmada para período ${periodoConsulta}`)
+      }
     } catch (error) {
       console.error('Error confirmando DDJJ:', error)
       alert('Error al confirmar DDJJ')
@@ -1038,6 +1057,105 @@ export function VistaFacturasArca() {
     } catch (error) {
       console.error('Error validando período:', error)
       return false
+    }
+  }
+
+  // Generar y descargar Excel DDJJ
+  const descargarExcelDDJJ = (facturas: FacturaArca[], periodo: string) => {
+    try {
+      // Preparar datos para Excel
+      const datosExcel = facturas.map(f => ({
+        'Fecha Factura': f.fecha_factura || '',
+        'Tipo Comprobante': f.tipo_comprobante || '',
+        'Punto Venta': f.punto_venta || '',
+        'Número Factura': f.numero_factura || '',
+        'CUIT Emisor': f.cuit_emisor || '',
+        'Razón Social': f.razon_social || '',
+        'Neto Gravado': f.imp_neto_gravado || 0,
+        'Neto No Gravado': f.imp_neto_no_gravado || 0,
+        'Op. Exentas': f.imp_op_exentas || 0,
+        'Total IVA': f.imp_total_iva || 0,
+        'Otros Tributos': f.imp_otros_tributos || 0,
+        'Importe Total': f.imp_total || 0,
+        'Estado DDJJ': f.ddjj_iva || '',
+        'Mes Contable': f.mes_contable || '',
+        'Año Contable': f.año_contable || ''
+      }))
+
+      // Crear libro Excel
+      const ws = XLSX.utils.json_to_sheet(datosExcel)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo}`)
+      
+      // Descargar archivo
+      const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      XLSX.writeFile(wb, filename)
+      
+      console.log('📥 Excel generado:', filename)
+    } catch (error) {
+      console.error('Error generando Excel:', error)
+      alert('Error al generar archivo Excel')
+    }
+  }
+
+  // Generar y descargar PDF DDJJ
+  const descargarPDFDDJJ = (facturas: FacturaArca[], periodo: string) => {
+    try {
+      const doc = new jsPDF()
+      
+      // Título
+      doc.setFontSize(16)
+      doc.text(`DECLARACIÓN JURADA IVA - PERÍODO ${periodo}`, 20, 20)
+      
+      // Información general
+      doc.setFontSize(10)
+      doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
+      doc.text(`Total facturas: ${facturas.length}`, 20, 42)
+      
+      // Calcular totales
+      const totales = facturas.reduce((acc, f) => ({
+        neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
+        neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
+        op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
+        total_iva: acc.total_iva + (f.imp_total_iva || 0),
+        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        importe_total: acc.importe_total + (f.imp_total || 0)
+      }), {
+        neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, 
+        total_iva: 0, otros_tributos: 0, importe_total: 0
+      })
+
+      doc.text(`Total Neto Gravado: $${totales.neto_gravado.toLocaleString('es-AR')}`, 20, 49)
+      doc.text(`Total IVA: $${totales.total_iva.toLocaleString('es-AR')}`, 20, 56)
+      doc.text(`Total General: $${totales.importe_total.toLocaleString('es-AR')}`, 20, 63)
+      
+      // Tabla con facturas (solo primeras 100 por límites de página)
+      const datosTabla = facturas.slice(0, 100).map(f => [
+        f.fecha_factura || '',
+        f.tipo_comprobante || '',
+        `${f.punto_venta || ''}-${f.numero_factura || ''}`,
+        f.razon_social?.substring(0, 25) || '',
+        (f.imp_total || 0).toLocaleString('es-AR'),
+        f.ddjj_iva || ''
+      ])
+
+      // @ts-ignore - jsPDF autoTable
+      doc.autoTable({
+        head: [['Fecha', 'Tipo', 'Número', 'Razón Social', 'Total', 'Estado']],
+        body: datosTabla,
+        startY: 75,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [66, 139, 202] }
+      })
+
+      // Descargar archivo
+      const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.pdf`
+      doc.save(filename)
+      
+      console.log('📥 PDF generado:', filename)
+    } catch (error) {
+      console.error('Error generando PDF:', error)  
+      alert('Error al generar archivo PDF')
     }
   }
 
