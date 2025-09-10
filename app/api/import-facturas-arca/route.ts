@@ -122,10 +122,33 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
 }
 
 /**
+ * Obtiene información del tipo de comprobante desde la tabla AFIP
+ */
+async function obtenerTipoComprobante(codigo: number): Promise<{descripcion: string, es_nota_credito: boolean}> {
+  try {
+    const { data, error } = await supabase
+      .from('tipos_comprobante_afip')
+      .select('descripcion, es_nota_credito')
+      .eq('codigo', codigo)
+      .single()
+    
+    if (error) {
+      console.warn(`⚠️ Tipo comprobante ${codigo} no encontrado en BD:`, error.message)
+      return { descripcion: `Código ${codigo}`, es_nota_credito: false }
+    }
+    
+    return data
+  } catch (err) {
+    console.error(`❌ Error consultando tipo comprobante ${codigo}:`, err)
+    return { descripcion: `Código ${codigo}`, es_nota_credito: false }
+  }
+}
+
+/**
  * Mapea una fila del CSV/Excel de ARCA a la estructura de la base de datos
  * SOPORTE DUAL: Formato CSV anterior + Excel nuevo AFIP 2025
  */
-function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
+async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
   // Detectar formato: Excel nuevo (tiene "Fecha" + "Tipo") vs CSV anterior ("Fecha de Emisión")
   const esFormatoExcel = 'Fecha' in fila && 'Tipo' in fila && !('Fecha de Emisión' in fila)
   
@@ -136,12 +159,20 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     esFormatoExcel ? fila["Fecha"] : fila["Fecha de Emisión"]
   )
   
+  // Obtener tipo de comprobante y su información
+  const tipoComprobanteNumero = parseInt(
+    esFormatoExcel ? fila["Tipo"] : fila["Tipo de Comprobante"]
+  ) || 0
+  
+  const tipoInfo = await obtenerTipoComprobante(tipoComprobanteNumero)
+  
+  console.log(`📝 Tipo ${tipoComprobanteNumero}: ${tipoInfo.descripcion} ${tipoInfo.es_nota_credito ? '(NEGATIVO)' : '(POSITIVO)'}`)
+
   // Mapeo campos básicos (comunes a ambos formatos)
   const datosBasicos = {
     fecha_emision: fechaEmision,
-    tipo_comprobante: parseInt(
-      esFormatoExcel ? fila["Tipo"] : fila["Tipo de Comprobante"]
-    ) || 0,
+    tipo_comprobante: tipoComprobanteNumero,
+    tipo_comprobante_desc: tipoInfo.descripcion,
     punto_venta: parseInt(fila["Punto de Venta"]) || null,
     numero_desde: parseInt(fila["Número Desde"]) || null,
     numero_hasta: parseInt(fila["Número Hasta"]) || null,
@@ -208,6 +239,28 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
       iva_27: 0,
       neto_grav_iva_27: 0
     }
+  }
+  
+  // CONVERSIÓN A NEGATIVO PARA NOTAS DE CRÉDITO
+  if (tipoInfo.es_nota_credito) {
+    console.log('⚠️ Convirtiendo Nota de Crédito a valores negativos')
+    
+    // Lista de TODOS los campos monetarios que deben ser negativos
+    const camposMonetarios = [
+      'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 
+      'imp_otros_tributos', 'imp_total_iva', 'imp_total',
+      'otros_tributos', 'iva',
+      'neto_grav_iva_0', 'iva_2_5', 'neto_grav_iva_2_5', 'iva_5', 'neto_grav_iva_5',
+      'iva_10_5', 'neto_grav_iva_10_5', 'iva_21', 'neto_grav_iva_21', 
+      'iva_27', 'neto_grav_iva_27'
+    ]
+    
+    // Convertir todos los campos monetarios a negativos
+    camposMonetarios.forEach(campo => {
+      if (camposIVA[campo] && typeof camposIVA[campo] === 'number' && camposIVA[campo] > 0) {
+        camposIVA[campo] = -camposIVA[campo]
+      }
+    })
   }
   
   // Combinar datos básicos + IVA + campos sistema
@@ -378,7 +431,7 @@ export async function POST(req: Request) {
         }
         
         // Convertir fila del CSV al formato de la base de datos
-        const filaParaBBDD = mapearFilaCSVaBBDD(filaOriginal, file.name)
+        const filaParaBBDD = await mapearFilaCSVaBBDD(filaOriginal, file.name)
 
         // Debug: Mostrar resultado del mapeo
         if (indice < 3) {
