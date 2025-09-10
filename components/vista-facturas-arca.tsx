@@ -1075,7 +1075,12 @@ export function VistaFacturasArca() {
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead>Total</TableHead>
+                    <TableHead>Neto Gravado</TableHead>
+                    <TableHead>Neto No Gravado</TableHead>
+                    <TableHead>Op. Exentas</TableHead>
+                    <TableHead>Otros Tributos</TableHead>
+                    <TableHead>Total IVA</TableHead>
+                    <TableHead>Imp. Total</TableHead>
                     <TableHead>Estado DDJJ</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1086,7 +1091,12 @@ export function VistaFacturasArca() {
                       <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
                       <TableCell>{factura.cuit}</TableCell>
                       <TableCell>{factura.tipo_comprobante}</TableCell>
-                      <TableCell>${Number(factura.imp_total).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_neto_gravado || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_total_iva || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell>
                         <Badge variant={
                           factura.ddjj_iva === 'DDJJ OK' ? 'default' :
