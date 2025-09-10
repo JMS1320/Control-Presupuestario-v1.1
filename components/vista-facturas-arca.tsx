@@ -857,9 +857,9 @@ export function VistaFacturasArca() {
 
       // Filtro por fecha: solo facturas <= período objetivo
       if (periodoObjetivo) {
-        const [año, mes] = periodoObjetivo.split('/')
+        const [mes, año] = periodoObjetivo.split('/') // Formato: MM/YYYY
         const fechaLimite = `${año}-${mes.padStart(2, '0')}-31` // Último día del mes
-        console.log('📅 Aplicando filtro fecha:', { año, mes, fechaLimite })
+        console.log('📅 Aplicando filtro fecha:', { periodoObjetivo, mes, año, fechaLimite })
         
         query = query.lte('fecha_emision', fechaLimite)
         
@@ -903,21 +903,41 @@ export function VistaFacturasArca() {
     if (facturasSeleccionadas.size === 0 || !periodoImputacion) return
 
     try {
-      const [año, mes] = periodoImputacion.split('/')
+      const [mes, año] = periodoImputacion.split('/') // Formato: MM/YYYY
       const facturasIds = Array.from(facturasSeleccionadas)
+      
+      console.log('🔍 DEBUG ejecutarImputacion:', {
+        periodoImputacion,
+        mes: parseInt(mes),
+        año: parseInt(año), 
+        facturasSeleccionadas: facturasSeleccionadas.size,
+        totalIds: facturasIds.length
+      })
 
-      const { error } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .update({
-          año_contable: parseInt(año),
-          mes_contable: parseInt(mes),
-          ddjj_iva: 'Imputado'
-        })
-        .in('id', facturasIds)
+      // Procesar en lotes para evitar URL muy larga
+      const LOTE_SIZE = 20
+      for (let i = 0; i < facturasIds.length; i += LOTE_SIZE) {
+        const lote = facturasIds.slice(i, i + LOTE_SIZE)
+        console.log(`📦 Procesando lote ${Math.floor(i/LOTE_SIZE) + 1}: ${lote.length} facturas`)
+        
+        const { error } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update({
+            año_contable: parseInt(año),
+            mes_contable: parseInt(mes),
+            ddjj_iva: 'Imputado'
+          })
+          .in('id', lote)
+        
+        if (error) {
+          console.error(`❌ Error en lote ${Math.floor(i/LOTE_SIZE) + 1}:`, error)
+          throw error
+        }
+      }
 
-      if (error) throw error
-
+      console.log('✅ Imputación completada exitosamente')
+      
       // Limpiar selecciones y recargar
       setFacturasSeleccionadas(new Set())
       setMostrarModalImputar(false)
