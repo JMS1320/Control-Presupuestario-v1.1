@@ -1822,18 +1822,31 @@ export function VistaFacturasArca() {
 
       {/* Modal Gestión Masiva de Facturas */}
       {console.log('🔍 DEBUG: Renderizando modal gestión masiva, open:', mostrarGestionMasiva)}
-      <Dialog open={mostrarGestionMasiva} onOpenChange={setMostrarGestionMasiva}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto z-[9999]" style={{zIndex: 9999}}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              🔧 Gestionar Facturas Masivamente
-            </DialogTitle>
-            <DialogDescription>
-              Selecciona facturas y modifica estado DDJJ o período contable
-            </DialogDescription>
-          </DialogHeader>
+      {mostrarGestionMasiva && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]"
+          style={{zIndex: 9999}}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setMostrarGestionMasiva(false)
+            }
+          }}
+        >
+          <div className="bg-white rounded-lg shadow-lg max-w-4xl max-h-[80vh] w-full mx-4 overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-6 border-b">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                🔧 Gestionar Facturas Masivamente
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Selecciona facturas y modifica estado DDJJ o período contable
+              </p>
+            </div>
           
-          <div className="space-y-4">
+            {/* Contenido */}
+            <div className="p-6 space-y-4">
             {/* Controles */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
               {/* Cambiar Estado DDJJ */}
@@ -1973,8 +1986,8 @@ export function VistaFacturasArca() {
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
 
       {/* Modal para validación de categorías */}
       <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCateg()}>
