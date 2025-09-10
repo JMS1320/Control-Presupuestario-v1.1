@@ -221,6 +221,7 @@ function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     
     // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
+    año_contable: null, // Dejar en blanco (no usar default de BD)
     fc: null,
     cuenta_contable: null,
     centro_costo: null,
@@ -256,7 +257,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.2-FECHA-FIX - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.3-NULL-AÑO - ${new Date().toISOString()}`)
 
     // Detectar formato del archivo
     const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
