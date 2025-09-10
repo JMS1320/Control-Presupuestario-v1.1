@@ -975,6 +975,72 @@ export function VistaFacturasArca() {
     }
   }
 
+  const confirmarDDJJ = async () => {
+    if (!periodoConsulta) return
+
+    // Confirmar acción
+    const confirmar = window.confirm(
+      `¿Confirmar DDJJ para el período ${periodoConsulta}?\n\n` +
+      `Esto cambiará TODAS las facturas "Imputado" a "DDJJ OK" y el período quedará cerrado.\n\n` +
+      `⚠️ Esta acción NO se puede deshacer.`
+    )
+    
+    if (!confirmar) return
+
+    try {
+      const [mes, año] = periodoConsulta.split('/')
+      
+      // Actualizar todas las facturas imputadas del período a DDJJ OK
+      const { error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .update({ ddjj_iva: 'DDJJ OK' })
+        .eq('mes_contable', parseInt(mes))
+        .eq('año_contable', parseInt(año))
+        .eq('ddjj_iva', 'Imputado')
+
+      if (error) {
+        console.error('Error confirmando DDJJ:', error)
+        alert('Error al confirmar DDJJ: ' + error.message)
+        return
+      }
+
+      // Recargar facturas del período para mostrar cambios
+      await cargarFacturasPeriodo(periodoConsulta)
+      
+      alert(`✅ DDJJ confirmada para período ${periodoConsulta}`)
+    } catch (error) {
+      console.error('Error confirmando DDJJ:', error)
+      alert('Error al confirmar DDJJ')
+    }
+  }
+
+  // Validar si un período ya está declarado (tiene facturas con DDJJ OK)
+  const validarPeriodoDeclarado = async (periodo: string): Promise<boolean> => {
+    const [mes, año] = periodo.split('/')
+    
+    try {
+      const { data, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id')
+        .eq('mes_contable', parseInt(mes))
+        .eq('año_contable', parseInt(año))
+        .eq('ddjj_iva', 'DDJJ OK')
+        .limit(1)
+        
+      if (error) {
+        console.error('Error validando período:', error)
+        return false
+      }
+      
+      return data && data.length > 0
+    } catch (error) {
+      console.error('Error validando período:', error)
+      return false
+    }
+  }
+
   // Componente SubdiariosContent
   const SubdiariosContent = () => (
     <div className="space-y-6">
@@ -1006,20 +1072,33 @@ export function VistaFacturasArca() {
               </Select>
             </div>
 
-            {/* Botón Imputar */}
+            {/* Botones de Acciones */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">⚡ Acciones</Label>
-              <Button 
-                onClick={() => {
-                  setMostrarModalImputar(true)
-                  // NO cargar facturas automáticamente - usuario debe seleccionar período primero
-                  setFacturasImputacion([])
-                  setFacturasSeleccionadas(new Set())
-                }}
-                className="w-full"
-              >
-                Imputar Facturas
-              </Button>
+              <div className="space-y-2">
+                <Button 
+                  onClick={() => {
+                    setMostrarModalImputar(true)
+                    // NO cargar facturas automáticamente - usuario debe seleccionar período primero
+                    setFacturasImputacion([])
+                    setFacturasSeleccionadas(new Set())
+                  }}
+                  className="w-full"
+                >
+                  Imputar Facturas
+                </Button>
+                
+                {/* Botón Confirmar DDJJ - solo si hay facturas "Imputado" */}
+                {periodoConsulta && facturasPeriodo.some(f => f.ddjj_iva === 'Imputado') && (
+                  <Button 
+                    onClick={confirmarDDJJ}
+                    variant="default"
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    ✅ Confirmar DDJJ {periodoConsulta}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
@@ -1677,16 +1756,34 @@ export function VistaFacturasArca() {
               {/* Período destino */}
               <div className="space-y-2">
                 <Label>Período MM/AAAA</Label>
-                <Select value={periodoImputacion} onValueChange={setPeriodoImputacion}>
+                <Select 
+                  value={periodoImputacion} 
+                  onValueChange={async (valor) => {
+                    // Validar si período está declarado
+                    const estaDeclarado = await validarPeriodoDeclarado(valor)
+                    if (estaDeclarado) {
+                      alert(`❌ El período ${valor} ya está declarado (DDJJ OK) y no se puede modificar.`)
+                      return
+                    }
+                    setPeriodoImputacion(valor)
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar período" />
                   </SelectTrigger>
                   <SelectContent>
                     {generarPeriodos().map(periodo => (
-                      <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
+                      <SelectItem key={periodo} value={periodo}>
+                        {periodo}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {periodoImputacion && (
+                  <p className="text-xs text-gray-500">
+                    ⚠️ Se validará que el período no esté declarado
+                  </p>
+                )}
               </div>
 
               {/* Filtros estado */}
