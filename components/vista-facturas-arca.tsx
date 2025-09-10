@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -1063,24 +1063,36 @@ export function VistaFacturasArca() {
   // Generar y descargar Excel DDJJ
   const descargarExcelDDJJ = (facturas: FacturaArca[], periodo: string) => {
     try {
+      console.log('📊 Generando Excel con', facturas.length, 'facturas')
+      
+      // Validar datos de entrada
+      if (!facturas || facturas.length === 0) {
+        throw new Error('No hay facturas para exportar')
+      }
+      
       // Preparar datos para Excel
-      const datosExcel = facturas.map(f => ({
-        'Fecha Factura': f.fecha_factura || '',
-        'Tipo Comprobante': f.tipo_comprobante || '',
-        'Punto Venta': f.punto_venta || '',
-        'Número Factura': f.numero_factura || '',
-        'CUIT Emisor': f.cuit_emisor || '',
-        'Razón Social': f.razon_social || '',
-        'Neto Gravado': f.imp_neto_gravado || 0,
-        'Neto No Gravado': f.imp_neto_no_gravado || 0,
-        'Op. Exentas': f.imp_op_exentas || 0,
-        'Total IVA': f.imp_total_iva || 0,
-        'Otros Tributos': f.imp_otros_tributos || 0,
-        'Importe Total': f.imp_total || 0,
-        'Estado DDJJ': f.ddjj_iva || '',
-        'Mes Contable': f.mes_contable || '',
-        'Año Contable': f.año_contable || ''
-      }))
+      const datosExcel = facturas.map((f, index) => {
+        console.log(`📋 Procesando factura ${index + 1}:`, f)
+        return {
+          'Fecha Factura': f.fecha_factura || '',
+          'Tipo Comprobante': f.tipo_comprobante || '',
+          'Punto Venta': f.punto_venta || '',
+          'Número Factura': f.numero_factura || '',
+          'CUIT Emisor': f.cuit_emisor || '',
+          'Razón Social': f.razon_social || '',
+          'Neto Gravado': f.imp_neto_gravado || 0,
+          'Neto No Gravado': f.imp_neto_no_gravado || 0,
+          'Op. Exentas': f.imp_op_exentas || 0,
+          'Total IVA': f.imp_total_iva || 0,
+          'Otros Tributos': f.imp_otros_tributos || 0,
+          'Importe Total': f.imp_total || 0,
+          'Estado DDJJ': f.ddjj_iva || '',
+          'Mes Contable': f.mes_contable || '',
+          'Año Contable': f.año_contable || ''
+        }
+      })
+
+      console.log('📊 Datos Excel preparados:', datosExcel)
 
       // Crear libro Excel
       const ws = XLSX.utils.json_to_sheet(datosExcel)
@@ -1089,12 +1101,14 @@ export function VistaFacturasArca() {
       
       // Descargar archivo
       const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      console.log('💾 Descargando Excel:', filename)
       XLSX.writeFile(wb, filename)
       
-      console.log('📥 Excel generado:', filename)
+      console.log('✅ Excel generado exitosamente:', filename)
     } catch (error) {
-      console.error('Error generando Excel:', error)
-      alert('Error al generar archivo Excel')
+      console.error('❌ Error detallado generando Excel:', error)
+      console.error('📊 Facturas recibidas:', facturas)
+      alert('Error al generar archivo Excel: ' + (error as Error).message)
     }
   }
 
@@ -1139,8 +1153,8 @@ export function VistaFacturasArca() {
         f.ddjj_iva || ''
       ])
 
-      // @ts-ignore - jsPDF autoTable
-      doc.autoTable({
+      // Usar autoTable importado
+      autoTable(doc, {
         head: [['Fecha', 'Tipo', 'Número', 'Razón Social', 'Total', 'Estado']],
         body: datosTabla,
         startY: 75,
