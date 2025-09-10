@@ -46,7 +46,7 @@ function convertirNumeroArgentino(valor: string | number | null | undefined): nu
 
 /**
  * Convierte fechas del formato CSV/Excel a formato base de datos
- * Entrada: "2025-08-01" | 45870 (Excel serial) → Salida: "2025-08-01"
+ * Entrada: "2025-08-01" | 45870 (Excel serial) | "11/8/2025" → Salida: "2025-08-11"
  */
 function convertirFecha(valor: string | number | null | undefined): string | null {
   if (!valor) return null
@@ -55,9 +55,15 @@ function convertirFecha(valor: string | number | null | undefined): string | nul
   if (typeof valor === 'number') {
     try {
       // Excel usa 1900-01-01 como día 1 (con bug de año bisiesto)
-      const fecha = new Date((valor - 25569) * 86400 * 1000)
+      // Usar UTC para evitar problemas de zona horaria
+      const fecha = new Date(Date.UTC(1899, 11, 30) + valor * 86400 * 1000)
       if (isNaN(fecha.getTime())) return null
-      return fecha.toISOString().split('T')[0]
+      
+      const año = fecha.getUTCFullYear()
+      const mes = String(fecha.getUTCMonth() + 1).padStart(2, '0')
+      const dia = String(fecha.getUTCDate()).padStart(2, '0')
+      
+      return `${año}-${mes}-${dia}`
     } catch {
       return null
     }
@@ -66,12 +72,35 @@ function convertirFecha(valor: string | number | null | undefined): string | nul
   // Si es string
   if (typeof valor !== 'string' || valor.trim() === '') return null
   
+  const valorLimpio = valor.trim()
+  
   try {
-    // ARCA ya viene en formato YYYY-MM-DD, solo validamos que sea fecha válida
-    const fecha = new Date(valor)
-    if (isNaN(fecha.getTime())) return null
+    // Si ya está en formato YYYY-MM-DD, validar y devolver
+    if (/^\d{4}-\d{2}-\d{2}$/.test(valorLimpio)) {
+      const fecha = new Date(valorLimpio)
+      if (isNaN(fecha.getTime())) return null
+      return valorLimpio
+    }
     
-    return valor // Ya está en formato correcto
+    // Si está en formato DD/MM/YYYY o D/M/YYYY (formato argentino Excel)
+    const matchArgentino = valorLimpio.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (matchArgentino) {
+      const [, dia, mes, año] = matchArgentino
+      const diaFormatted = dia.padStart(2, '0')
+      const mesFormatted = mes.padStart(2, '0')
+      
+      // Validar que sea fecha válida
+      const fecha = new Date(parseInt(año), parseInt(mes) - 1, parseInt(dia))
+      if (fecha.getFullYear() !== parseInt(año) || 
+          fecha.getMonth() !== parseInt(mes) - 1 || 
+          fecha.getDate() !== parseInt(dia)) {
+        return null
+      }
+      
+      return `${año}-${mesFormatted}-${diaFormatted}`
+    }
+    
+    return null
   } catch {
     return null
   }
@@ -227,7 +256,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.1-FIXED - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.2-FECHA-FIX - ${new Date().toISOString()}`)
 
     // Detectar formato del archivo
     const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
