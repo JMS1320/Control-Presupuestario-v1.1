@@ -797,6 +797,7 @@ export function VistaFacturasArca() {
     try {
       const [año, mes] = periodo.split('/')
       const { data, error } = await supabase
+        .schema('msa')
         .from('comprobantes_arca')
         .select('*')
         .eq('año_contable', parseInt(año))
@@ -852,7 +853,7 @@ export function VistaFacturasArca() {
         return
       }
 
-      let query = supabase.from('comprobantes_arca').select('*')
+      let query = supabase.schema('msa').from('comprobantes_arca').select('*')
 
       // Filtro por fecha: solo facturas <= período objetivo
       if (periodoObjetivo) {
@@ -906,6 +907,7 @@ export function VistaFacturasArca() {
       const facturasIds = Array.from(facturasSeleccionadas)
 
       const { error } = await supabase
+        .schema('msa')
         .from('comprobantes_arca')
         .update({
           año_contable: parseInt(año),

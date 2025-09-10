@@ -96,6 +96,78 @@ npm test
 - [2025-08-24] 📋 **ARQUITECTURA BASE**: Hook creado + 2 vistas migradas
 - [2025-08-24] 🚀 **COMMITS APLICADOS**: Push exitoso - código deployado en Vercel
 
+## 🚀 **AVANCES SESIÓN COMPLETA (2025-09-09):**
+
+### 🔐 **SISTEMA PERMISOS URL-BASED IMPLEMENTADO:**
+- [2025-09-09] 🔐 **RUTAS COMO PASSWORDS**: "adminjms1320" (admin) + "ulises" (contable)
+- [2025-09-09] 👥 **ROLES DINÁMICOS**: Admin ve todo, Contable solo "Egresos" (ARCA + Templates)
+- [2025-09-09] 🏗️ **ARQUITECTURA**: Dynamic routing [accessRoute] + config/access-routes.ts central
+- [2025-09-09] ⚡ **SIN AUTENTICACIÓN**: Solo UX + URL validation, sin login real
+- [2025-09-09] 📱 **UNIVERSAL FEATURES**: Todas las funcionalidades funcionan igual para ambos roles
+
+### 📊 **AFIP FORMATO EXCEL NUEVO - SOPORTE COMPLETO:**
+- [2025-09-09] 🚨 **BREAKING CHANGE**: AFIP cambió formato Excel completamente (30 vs 17 columnas)
+- [2025-09-09] 🛡️ **BACKUP ESTRUCTURA**: Docker schema+roles (216KB) método funcionando
+- [2025-09-09] 📋 **BD EXPANDIDA**: +13 columnas nuevas (33→46 total) desglose IVA detallado
+- [2025-09-09] 🔄 **MAPEO DUAL**: Detección automática formato + compatibilidad CSV anterior
+- [2025-09-09] ⚡ **EXCEL IMPORT UI**: Botón integrado vista ARCA + modal completo
+- [2025-09-09] 🛡️ **PRESERVACIÓN LÓGICA**: fecha_estimada/monto_a_abonar/detalle automáticos intactos
+
+### 🧪 **TESTING STATUS:**
+- [2025-09-09] ⚠️ **IMPORT TESTING**: 48 registros procesados, 0 importados, 48 errores
+- [2025-09-09] 🔍 **DEBUG NEEDED**: Server logs requeridos para root cause analysis
+- [2025-09-09] 💡 **HIPÓTESIS**: Validación campos obligatorios (fecha_emision/cuit/imp_total)
+
+### 🗂️ **ARCHIVOS IMPLEMENTADOS 2025-09-09:**
+- **NUEVO**: `config/access-routes.ts` - Sistema permisos URL central
+- **NUEVO**: `app/[accessRoute]/page.tsx` - Dynamic routing validation
+- **MODIFICADO**: `app/page.tsx` - Redirect admin URL default
+- **MODIFICADO**: `components/control-presupuestario.tsx` - Role filtering tabs
+- **MODIFICADO**: `components/vista-facturas-arca.tsx` - Excel import button + modal
+- **MODIFICADO**: `app/api/import-facturas-arca/route.ts` - Mapeo dual CSV/Excel
+- **BD MIGRATION**: 13 columnas nuevas AFIP aplicada exitosamente
+
+### 🔄 **GIT WORKFLOW 2025-09-09:**
+- `68d1243` - Merge desarrollo: Excel import + debugging funcional  
+- `9b4c527` - Feature: Soporte dual CSV/Excel + 13 columnas nuevas AFIP 2025
+- ✅ **Branches sincronizados**: desarrollo ↔ main + push exitoso
+
+### ⚠️ **PENDIENTES INMEDIATOS (2025-09-09):**
+- 🔍 **Debug import Excel**: Analizar server logs para error específico 48/48 fallos
+- 🧪 **Completar testing**: Una vez resuelto debug, probar funcionalidad completa
+- 📋 **Merge to main**: Cuando testing OK, merger desarrollo → main
+- 📚 **Documentar KNOWLEDGE**: Proceso completo nuevo formato AFIP
+
+### ⏳ **PENDIENTES SESIONES ANTERIORES (NO RETOMADOS):**
+
+#### 🧪 **TESTING TEMPLATES SISTEMA (2025-08-24):**
+- **Template 10**: 4 cuotas 'desactivado' + 1 anual 'pendiente' ✅ PREPARADO
+- **Test 1**: Templates UI checkbox mostrar/ocultar desactivados
+- **Test 2**: Cash Flow filtros excluyen 'desactivado' + 'conciliado' 
+- **Test 3**: Conversión ANUAL → CUOTAS reactivación automática
+- **Test 4**: Conversión CUOTAS → ANUAL con nuevo estado
+- **Test 5**: Formato argentino DD/MM/AAAA en modales
+- **Estado**: ⚠️ **PENDIENTE** - BD preparada, testing completo requerido
+
+#### 🔧 **MEJORAS IDENTIFICADAS TEMPLATES:**
+- **Estados Dropdown**: Cambiar de input texto a Select con opciones predefinidas
+- **Fechas Edición**: ¿Unificar con sistema Cash Flow? (puede estar resuelto con hook)
+- **Investigar Estado "auditado"**: Qué problema surge con conciliación bancaria
+- **Templates 11-13**: Crear resto grupo inmobiliario según Excel original
+
+#### 📋 **CARGA MASIVA TEMPLATES EXCEL (2025-08-20):**
+- **53 Templates Excel**: Análisis completo ✅ COMPLETADO
+- **Proceso implementación**: Templates 10 prototipo ✅ COMPLETADO
+- **Templates 11-13**: Resto grupo inmobiliario ⚠️ PENDIENTE
+- **Templates 14-61**: Masiva según Excel original ⚠️ PENDIENTE
+- **Sistema alertas**: Vista Principal integración ⚠️ PENDIENTE
+- **Reglas IIBB/SICORE**: Automáticas templates específicos ⚠️ PENDIENTE
+
+#### 🚨 **ISSUES CRÍTICOS SISTEMA:**
+- **Sistema Backup Supabase**: Nunca funciona upload, solo download ⚠️ CRÍTICO
+- **Seguridad BBDD**: Datos facturas sin restricciones modificación ⚠️ ALTA
+- **Sistema Reglas Contable/Interno**: Testing pendiente (funcionalidad creada) ⚠️ MEDIA
+
 ## 🚀 **AVANCES SESIÓN CONTINUACIÓN (2025-08-24):**
 - [2025-08-24] 🎯 **SISTEMA CONVERSIÓN BIDIRECCIONAL COMPLETADO**: Cuotas ↔ Anual funcionando
 - [2025-08-24] 🔧 **TEMPLATES INLINE EDITING FIX**: Problema fechas resuelto - era patrón value/onChange
