@@ -123,6 +123,18 @@ export function VistaFacturasArca() {
   // Estados para tabs de navegación
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios'>('facturas')
   
+  // Estados para Subdiarios
+  const [periodoConsulta, setPeriodoConsulta] = useState('')
+  const [mostrarModalImputar, setMostrarModalImputar] = useState(false)
+  const [periodoImputacion, setPeriodoImputacion] = useState('')
+  const [mostrarSinImputar, setMostrarSinImputar] = useState(true)
+  const [mostrarImputadas, setMostrarImputadas] = useState(false)
+  const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<string>>(new Set())
+  const [facturasPeriodo, setFacturasPeriodo] = useState<FacturaArca[]>([])
+  const [facturasImputacion, setFacturasImputacion] = useState<FacturaArca[]>([])
+  const [subtotales, setSubtotales] = useState<any>(null)
+  const [cargandoSubdiarios, setCargandoSubdiarios] = useState(false)
+  
   // Estados para importador Excel
   const [mostrarImportador, setMostrarImportador] = useState(false)
   const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
@@ -759,6 +771,258 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Funciones para Subdiarios
+  const cargarFacturasPeriodo = async (periodo: string) => {
+    if (!periodo) {
+      setFacturasPeriodo([])
+      setSubtotales(null)
+      return
+    }
+
+    setCargandoSubdiarios(true)
+    try {
+      const [año, mes] = periodo.split('/')
+      const { data, error } = await supabase
+        .from('comprobantes_arca')
+        .select('*')
+        .eq('año_contable', parseInt(año))
+        .eq('mes_contable', parseInt(mes))
+        .order('fecha_emision', { ascending: false })
+
+      if (error) throw error
+
+      const facturas = data || []
+      setFacturasPeriodo(facturas)
+      
+      // Calcular subtotales
+      const totales = facturas.reduce((acc, f) => {
+        acc.imp_total += Number(f.imp_total) || 0
+        acc.iva += Number(f.iva) || 0
+        acc.imp_neto_gravado += Number(f.imp_neto_gravado) || 0
+        acc.imp_neto_no_gravado += Number(f.imp_neto_no_gravado) || 0
+        acc.imp_op_exentas += Number(f.imp_op_exentas) || 0
+        acc.otros_tributos += Number(f.otros_tributos) || 0
+        return acc
+      }, {
+        imp_total: 0, iva: 0, imp_neto_gravado: 0, 
+        imp_neto_no_gravado: 0, imp_op_exentas: 0, otros_tributos: 0
+      })
+
+      // Facturas C (tipo 11) por separado
+      const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
+      const totalFacturasC = facturasC.reduce((sum, f) => sum + (Number(f.imp_total) || 0), 0)
+
+      setSubtotales({ ...totales, facturas_c: totalFacturasC, cantidad_facturas_c: facturasC.length })
+    } catch (error) {
+      console.error('Error cargando período:', error)
+    } finally {
+      setCargandoSubdiarios(false)
+    }
+  }
+
+  const cargarFacturasImputacion = async () => {
+    try {
+      const filtrosEstado = []
+      if (mostrarSinImputar) filtrosEstado.push('No')
+      if (mostrarImputadas) filtrosEstado.push('Imputado')
+
+      if (filtrosEstado.length === 0) {
+        setFacturasImputacion([])
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('comprobantes_arca')
+        .select('*')
+        .in('ddjj_iva', filtrosEstado)
+        .order('fecha_emision', { ascending: false })
+
+      if (error) throw error
+      setFacturasImputacion(data || [])
+    } catch (error) {
+      console.error('Error cargando facturas imputación:', error)
+    }
+  }
+
+  const ejecutarImputacion = async () => {
+    if (facturasSeleccionadas.size === 0 || !periodoImputacion) return
+
+    try {
+      const [año, mes] = periodoImputacion.split('/')
+      const facturasIds = Array.from(facturasSeleccionadas)
+
+      const { error } = await supabase
+        .from('comprobantes_arca')
+        .update({
+          año_contable: parseInt(año),
+          mes_contable: parseInt(mes),
+          ddjj_iva: 'Imputado'
+        })
+        .in('id', facturasIds)
+
+      if (error) throw error
+
+      // Limpiar selecciones y recargar
+      setFacturasSeleccionadas(new Set())
+      setMostrarModalImputar(false)
+      setPeriodoImputacion('')
+      await cargarFacturasImputacion()
+      if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
+      
+      alert(`${facturasIds.length} facturas imputadas al período ${periodoImputacion}`)
+    } catch (error) {
+      console.error('Error en imputación:', error)
+      alert('Error al imputar facturas')
+    }
+  }
+
+  // Componente SubdiariosContent
+  const SubdiariosContent = () => (
+    <div className="space-y-6">
+      {/* Controles principales */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📊 Subdiarios DDJJ IVA</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Consulta períodos y gestión de imputaciones contables
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Selector período consulta */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">🗓️ Consultar Período</Label>
+              <Select value={periodoConsulta} onValueChange={(value) => {
+                setPeriodoConsulta(value)
+                cargarFacturasPeriodo(value)
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar MM/AAAA" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="08/2025">08/2025</SelectItem>
+                  <SelectItem value="09/2025">09/2025</SelectItem>
+                  <SelectItem value="10/2025">10/2025</SelectItem>
+                  <SelectItem value="11/2025">11/2025</SelectItem>
+                  <SelectItem value="12/2025">12/2025</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Botón Imputar */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">⚡ Acciones</Label>
+              <Button 
+                onClick={() => {
+                  setMostrarModalImputar(true)
+                  cargarFacturasImputacion()
+                }}
+                className="w-full"
+              >
+                Imputar Facturas
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Subtotales del período */}
+      {subtotales && (
+        <Card>
+          <CardHeader>
+            <CardTitle>📈 Subtotales Período {periodoConsulta}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div className="bg-blue-50 p-3 rounded">
+                <p className="text-gray-600">Total General</p>
+                <p className="font-bold text-lg">${subtotales.imp_total.toLocaleString('es-AR')}</p>
+              </div>
+              <div className="bg-green-50 p-3 rounded">
+                <p className="text-gray-600">IVA</p>
+                <p className="font-bold">${subtotales.iva.toLocaleString('es-AR')}</p>
+              </div>
+              <div className="bg-yellow-50 p-3 rounded">
+                <p className="text-gray-600">Neto Gravado</p>
+                <p className="font-bold">${subtotales.imp_neto_gravado.toLocaleString('es-AR')}</p>
+              </div>
+              <div className="bg-purple-50 p-3 rounded">
+                <p className="text-gray-600">Neto No Gravado</p>
+                <p className="font-bold">${subtotales.imp_neto_no_gravado.toLocaleString('es-AR')}</p>
+              </div>
+              <div className="bg-indigo-50 p-3 rounded">
+                <p className="text-gray-600">Op. Exentas</p>
+                <p className="font-bold">${subtotales.imp_op_exentas.toLocaleString('es-AR')}</p>
+              </div>
+              <div className="bg-gray-50 p-3 rounded">
+                <p className="text-gray-600">Otros Tributos</p>
+                <p className="font-bold">${subtotales.otros_tributos.toLocaleString('es-AR')}</p>
+              </div>
+            </div>
+            
+            {/* Facturas C separadas */}
+            {subtotales.cantidad_facturas_c > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <h4 className="font-medium mb-2">📋 Facturas C (Tipo 11) - Apartado</h4>
+                <div className="bg-red-50 p-3 rounded">
+                  <p className="text-gray-600">Total Facturas C ({subtotales.cantidad_facturas_c} facturas)</p>
+                  <p className="font-bold text-lg">${subtotales.facturas_c.toLocaleString('es-AR')}</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tabla facturas del período */}
+      {facturasPeriodo.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>📋 Facturas del Período {periodoConsulta}</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {facturasPeriodo.length} facturas encontradas
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-auto max-h-96">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead>CUIT</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Estado DDJJ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {facturasPeriodo.map(factura => (
+                    <TableRow key={factura.id}>
+                      <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
+                      <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
+                      <TableCell>{factura.cuit}</TableCell>
+                      <TableCell>{factura.tipo_comprobante}</TableCell>
+                      <TableCell>${Number(factura.imp_total).toLocaleString('es-AR')}</TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          factura.ddjj_iva === 'DDJJ OK' ? 'default' :
+                          factura.ddjj_iva === 'Imputado' ? 'secondary' : 'outline'
+                        }>
+                          {factura.ddjj_iva}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+
   return (
     <div className="space-y-6">
       {/* Encabezado */}
@@ -1281,25 +1545,173 @@ export function VistaFacturasArca() {
 
         {/* Tab Content: Subdiarios */}
         <TabsContent value="subdiarios" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>📊 Subdiarios DDJJ IVA</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Gestión de declaraciones juradas y períodos contables
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <Receipt className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Funcionalidad Subdiarios en desarrollo</p>
-                <p className="text-xs mt-2">
-                  Próximamente: Consulta períodos, imputación facturas, subtotales y exportaciones
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <SubdiariosContent />
         </TabsContent>
       </Tabs>
+
+      {/* Modal Imputación */}
+      <Dialog open={mostrarModalImputar} onOpenChange={setMostrarModalImputar}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5" />
+              Imputar Facturas a Período
+            </DialogTitle>
+            <DialogDescription>
+              Selecciona las facturas y asigna un período contable MM/AAAA
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Controles */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Período destino */}
+              <div className="space-y-2">
+                <Label>Período MM/AAAA</Label>
+                <Select value={periodoImputacion} onValueChange={setPeriodoImputacion}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar período" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="08/2025">08/2025</SelectItem>
+                    <SelectItem value="09/2025">09/2025</SelectItem>
+                    <SelectItem value="10/2025">10/2025</SelectItem>
+                    <SelectItem value="11/2025">11/2025</SelectItem>
+                    <SelectItem value="12/2025">12/2025</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Filtros estado */}
+              <div className="space-y-2">
+                <Label>Mostrar</Label>
+                <div className="flex gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sin-imputar"
+                      checked={mostrarSinImputar}
+                      onCheckedChange={setMostrarSinImputar}
+                    />
+                    <Label htmlFor="sin-imputar" className="text-sm">Sin imputar</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="imputadas"
+                      checked={mostrarImputadas}
+                      onCheckedChange={setMostrarImputadas}
+                    />
+                    <Label htmlFor="imputadas" className="text-sm">Imputadas</Label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selección masiva */}
+              <div className="space-y-2">
+                <Label>Selección</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const nuevasSelecciones = new Set(facturasImputacion.map(f => f.id))
+                      setFacturasSeleccionadas(nuevasSelecciones)
+                    }}
+                  >
+                    Todas
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFacturasSeleccionadas(new Set())}
+                  >
+                    Ninguna
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Botón cargar facturas */}
+            <Button onClick={cargarFacturasImputacion} variant="outline" className="w-full">
+              Cargar Facturas ({mostrarSinImputar ? 'Sin imputar' : ''} {mostrarImputadas ? 'Imputadas' : ''})
+            </Button>
+
+            {/* Tabla facturas para imputar */}
+            {facturasImputacion.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  {facturasSeleccionadas.size} de {facturasImputacion.length} facturas seleccionadas
+                </p>
+                <div className="overflow-auto max-h-64 border rounded">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={facturasSeleccionadas.size === facturasImputacion.length && facturasImputacion.length > 0}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setFacturasSeleccionadas(new Set(facturasImputacion.map(f => f.id)))
+                              } else {
+                                setFacturasSeleccionadas(new Set())
+                              }
+                            }}
+                          />
+                        </TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Proveedor</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {facturasImputacion.map(factura => (
+                        <TableRow key={factura.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={facturasSeleccionadas.has(factura.id)}
+                              onCheckedChange={(checked) => {
+                                const nuevas = new Set(facturasSeleccionadas)
+                                if (checked) {
+                                  nuevas.add(factura.id)
+                                } else {
+                                  nuevas.delete(factura.id)
+                                }
+                                setFacturasSeleccionadas(nuevas)
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
+                          <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
+                          <TableCell>${Number(factura.imp_total).toLocaleString('es-AR')}</TableCell>
+                          <TableCell>
+                            <Badge variant={
+                              factura.ddjj_iva === 'Imputado' ? 'secondary' : 'outline'
+                            }>
+                              {factura.ddjj_iva}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarModalImputar(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={ejecutarImputacion}
+              disabled={facturasSeleccionadas.size === 0 || !periodoImputacion}
+            >
+              Imputar {facturasSeleccionadas.size} Facturas
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
