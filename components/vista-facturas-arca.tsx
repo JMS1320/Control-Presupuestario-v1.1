@@ -1326,11 +1326,16 @@ export function VistaFacturasArca() {
                 {/* Botón Gestionar Facturas - solo si hay facturas en el período */}
                 {periodoConsulta && facturasPeriodo.length > 0 && (
                   <Button 
-                    onClick={() => setMostrarGestionMasiva(true)}
+                    onClick={() => {
+                      console.log('🔧 DEBUG: Click Gestionar Facturas')
+                      console.log('Estado actual mostrarGestionMasiva:', mostrarGestionMasiva)
+                      setMostrarGestionMasiva(true)
+                      console.log('Después de setMostrarGestionMasiva(true)')
+                    }}
                     variant="outline"
                     className="w-full border-blue-500 text-blue-600 hover:bg-blue-50"
                   >
-                    🔧 Gestionar Facturas
+                    🔧 Gestionar Facturas ({facturasPeriodo.length})
                   </Button>
                 )}
               </div>
@@ -1816,6 +1821,7 @@ export function VistaFacturasArca() {
       )}
 
       {/* Modal Gestión Masiva de Facturas */}
+      {console.log('🔍 DEBUG: Renderizando modal gestión masiva, open:', mostrarGestionMasiva)}
       <Dialog open={mostrarGestionMasiva} onOpenChange={setMostrarGestionMasiva}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
