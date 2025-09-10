@@ -134,6 +134,20 @@ export function VistaFacturasArca() {
   const [facturasImputacion, setFacturasImputacion] = useState<FacturaArca[]>([])
   const [subtotales, setSubtotales] = useState<any>(null)
   const [cargandoSubdiarios, setCargandoSubdiarios] = useState(false)
+
+  // Generar períodos desde mes actual hacia atrás
+  const generarPeriodos = () => {
+    const periodos = []
+    const hoy = new Date()
+    
+    for (let i = 0; i < 12; i++) {
+      const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
+      const mes = String(fecha.getMonth() + 1).padStart(2, '0')
+      const año = fecha.getFullYear()
+      periodos.push(`${mes}/${año}`)
+    }
+    return periodos
+  }
   
   // Estados para importador Excel
   const [mostrarImportador, setMostrarImportador] = useState(false)
@@ -820,7 +834,7 @@ export function VistaFacturasArca() {
     }
   }
 
-  const cargarFacturasImputacion = async () => {
+  const cargarFacturasImputacion = async (periodoObjetivo?: string) => {
     try {
       const filtrosEstado = []
       if (mostrarSinImputar) filtrosEstado.push('No')
@@ -831,11 +845,36 @@ export function VistaFacturasArca() {
         return
       }
 
-      const { data, error } = await supabase
-        .from('comprobantes_arca')
-        .select('*')
-        .in('ddjj_iva', filtrosEstado)
-        .order('fecha_emision', { ascending: false })
+      let query = supabase.from('comprobantes_arca').select('*')
+
+      // Filtro por fecha: solo facturas <= período objetivo
+      if (periodoObjetivo) {
+        const [año, mes] = periodoObjetivo.split('/')
+        const fechaLimite = `${año}-${mes.padStart(2, '0')}-31` // Último día del mes
+        query = query.lte('fecha_emision', fechaLimite)
+        
+        // Lógica: Mostrar facturas que están:
+        // 1. Sin imputar (ddjj_iva = 'No') 
+        // 2. O imputadas al período objetivo específico (para permitir reedición)
+        let condicionesFiltro = []
+        
+        if (mostrarSinImputar) {
+          condicionesFiltro.push('ddjj_iva.eq.No')
+        }
+        
+        if (mostrarImputadas) {
+          condicionesFiltro.push(`and(ddjj_iva.eq.Imputado,año_contable.eq.${parseInt(año)},mes_contable.eq.${parseInt(mes)})`)
+        }
+        
+        if (condicionesFiltro.length > 0) {
+          query = query.or(condicionesFiltro.join(','))
+        }
+      } else {
+        // Sin período específico, usar filtros básicos
+        query = query.in('ddjj_iva', filtrosEstado)
+      }
+
+      const { data, error } = await query.order('fecha_emision', { ascending: false })
 
       if (error) throw error
       setFacturasImputacion(data || [])
@@ -900,11 +939,9 @@ export function VistaFacturasArca() {
                   <SelectValue placeholder="Seleccionar MM/AAAA" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="08/2025">08/2025</SelectItem>
-                  <SelectItem value="09/2025">09/2025</SelectItem>
-                  <SelectItem value="10/2025">10/2025</SelectItem>
-                  <SelectItem value="11/2025">11/2025</SelectItem>
-                  <SelectItem value="12/2025">12/2025</SelectItem>
+                  {generarPeriodos().map(periodo => (
+                    <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1573,11 +1610,9 @@ export function VistaFacturasArca() {
                     <SelectValue placeholder="Seleccionar período" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="08/2025">08/2025</SelectItem>
-                    <SelectItem value="09/2025">09/2025</SelectItem>
-                    <SelectItem value="10/2025">10/2025</SelectItem>
-                    <SelectItem value="11/2025">11/2025</SelectItem>
-                    <SelectItem value="12/2025">12/2025</SelectItem>
+                    {generarPeriodos().map(periodo => (
+                      <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1631,7 +1666,7 @@ export function VistaFacturasArca() {
             </div>
 
             {/* Botón cargar facturas */}
-            <Button onClick={cargarFacturasImputacion} variant="outline" className="w-full">
+            <Button onClick={() => cargarFacturasImputacion(periodoImputacion)} variant="outline" className="w-full">
               Cargar Facturas ({mostrarSinImputar ? 'Sin imputar' : ''} {mostrarImputadas ? 'Imputadas' : ''})
             </Button>
 
