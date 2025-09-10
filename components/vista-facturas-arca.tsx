@@ -870,21 +870,21 @@ export function VistaFacturasArca() {
         
         query = query.lte('fecha_emision', fechaLimite)
         
-        // SIMPLIFICADO: Solo filtros básicos por ahora para debug
+        // FILTROS DE ESTADO DDJJ (DESPUÉS del filtro de fecha)
         if (mostrarSinImputar && !mostrarImputadas) {
-          // Solo sin imputar
+          // Solo sin imputar (CON filtro fecha ya aplicado arriba)
           query = query.eq('ddjj_iva', 'No')
-          console.log('🔍 Filtro aplicado: solo ddjj_iva = No')
+          console.log('🔍 Filtro aplicado: fecha <= período Y ddjj_iva = No')
         } else if (!mostrarSinImputar && mostrarImputadas) {
-          // Solo imputadas del período específico
+          // Solo imputadas del período específico (CON filtro fecha ya aplicado arriba)
           query = query.eq('ddjj_iva', 'Imputado')
                .eq('año_contable', parseInt(año))
                .eq('mes_contable', parseInt(mes))
-          console.log('🔍 Filtro aplicado: solo Imputado del período')
+          console.log('🔍 Filtro aplicado: fecha <= período Y Imputado del período')
         } else if (mostrarSinImputar && mostrarImputadas) {
-          // Ambos: necesitamos OR más complejo (temporalmente usar solo No para debug)
-          query = query.eq('ddjj_iva', 'No')
-          console.log('🔍 Filtro aplicado: temporalmente solo No (debug)')
+          // Ambos: Sin imputar + Imputadas del período (CON filtro fecha ya aplicado arriba)
+          query = query.or(`ddjj_iva.eq.No,and(ddjj_iva.eq.Imputado,año_contable.eq.${parseInt(año)},mes_contable.eq.${parseInt(mes)})`)
+          console.log('🔍 Filtro aplicado: fecha <= período Y (No O Imputado del período)')
         }
       } else {
         // Sin período específico, usar filtros básicos
