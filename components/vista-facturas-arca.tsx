@@ -253,6 +253,16 @@ export function VistaFacturasArca() {
     cargarFacturas()
   }, [])
 
+  // Auto-cargar facturas cuando cambia el período de imputación
+  useEffect(() => {
+    if (periodoImputacion) {
+      cargarFacturasImputacion(periodoImputacion)
+    } else {
+      // Si no hay período, limpiar lista
+      setFacturasImputacion([])
+    }
+  }, [periodoImputacion, mostrarSinImputar, mostrarImputadas])
+
   // Formatear valores numéricos
   const formatearNumero = (valor: number): string => {
     return new Intl.NumberFormat('es-AR', {
@@ -1727,10 +1737,12 @@ export function VistaFacturasArca() {
               </div>
             </div>
 
-            {/* Botón cargar facturas */}
-            <Button onClick={() => cargarFacturasImputacion(periodoImputacion)} variant="outline" className="w-full">
-              Cargar Facturas ({mostrarSinImputar ? 'Sin imputar' : ''} {mostrarImputadas ? 'Imputadas' : ''})
-            </Button>
+            {/* Indicador de carga automática */}
+            {periodoImputacion && (
+              <div className="text-sm text-gray-600 text-center py-2">
+                Mostrando facturas para período {periodoImputacion} ({mostrarSinImputar ? 'Sin imputar' : ''} {mostrarImputadas ? 'Imputadas' : ''})
+              </div>
+            )}
 
             {/* Tabla facturas para imputar */}
             {facturasImputacion.length > 0 && (
