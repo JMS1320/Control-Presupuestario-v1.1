@@ -866,8 +866,12 @@ export function VistaFacturasArca() {
       // Filtro por fecha: solo facturas <= período objetivo
       if (periodoObjetivo) {
         const [mes, año] = periodoObjetivo.split('/') // Formato: MM/YYYY
-        const fechaLimite = `${año}-${mes.padStart(2, '0')}-31` // Último día del mes
-        console.log('📅 Aplicando filtro fecha:', { periodoObjetivo, mes, año, fechaLimite })
+        
+        // Calcular último día del mes correctamente (no siempre 31)
+        const ultimoDiaMes = new Date(parseInt(año), parseInt(mes), 0).getDate()
+        const fechaLimite = `${año}-${mes.padStart(2, '0')}-${ultimoDiaMes.toString().padStart(2, '0')}`
+        
+        console.log('📅 Aplicando filtro fecha:', { periodoObjetivo, mes, año, ultimoDiaMes, fechaLimite })
         
         query = query.lte('fecha_emision', fechaLimite)
         
