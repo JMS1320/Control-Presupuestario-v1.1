@@ -137,6 +137,12 @@ export function VistaFacturasArca() {
   const [facturasImputacion, setFacturasImputacion] = useState<FacturaArca[]>([])
   const [subtotales, setSubtotales] = useState<any>(null)
   const [cargandoSubdiarios, setCargandoSubdiarios] = useState(false)
+  
+  // Estados para gestión masiva de facturas
+  const [mostrarGestionMasiva, setMostrarGestionMasiva] = useState(false)
+  const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
+  const [nuevoEstadoDDJJ, setNuevoEstadoDDJJ] = useState('')
+  const [nuevoPeriodo, setNuevoPeriodo] = useState('')
 
   // Generar períodos desde mes actual hacia atrás
   const generarPeriodos = () => {
@@ -1173,6 +1179,92 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Función gestión masiva de facturas
+  const ejecutarGestionMasiva = async () => {
+    if (facturasSeleccionadasGestion.size === 0) {
+      alert('Selecciona al menos una factura')
+      return
+    }
+
+    // TODO: Verificar permisos por rol (admin vs contable)
+    const rolUsuario = 'admin' // Temporal - obtener del contexto/localStorage real
+    
+    // Validar permisos por factura seleccionada
+    const facturasArray = Array.from(facturasSeleccionadasGestion)
+    const facturasProhibidas = facturasPeriodo.filter(f => 
+      facturasArray.includes(f.id) && 
+      f.ddjj_iva === 'DDJJ OK' && 
+      rolUsuario !== 'admin'
+    )
+
+    if (facturasProhibidas.length > 0) {
+      alert(`❌ Sin permisos: ${facturasProhibidas.length} facturas tienen estado "DDJJ OK" y requieren permisos de administrador`)
+      return
+    }
+
+    const confirmar = window.confirm(
+      `¿Confirmar cambios masivos?\n\n` +
+      `• ${facturasSeleccionadasGestion.size} facturas seleccionadas\n` +
+      `• Nuevo estado DDJJ: ${nuevoEstadoDDJJ || '(sin cambios)'}\n` +
+      `• Nuevo período: ${nuevoPeriodo || '(sin cambios)'}\n\n` +
+      `⚠️ Esta acción modificará múltiples registros.`
+    )
+
+    if (!confirmar) return
+
+    try {
+      // Preparar datos de actualización
+      const updateData: any = {}
+      
+      if (nuevoEstadoDDJJ) {
+        updateData.ddjj_iva = nuevoEstadoDDJJ
+      }
+      
+      if (nuevoPeriodo) {
+        const [mes, año] = nuevoPeriodo.split('/')
+        updateData.mes_contable = parseInt(mes)
+        updateData.año_contable = parseInt(año)
+      }
+
+      console.log('🔄 Ejecutando gestión masiva:', {
+        facturas: facturasSeleccionadasGestion.size,
+        updateData,
+        rolUsuario
+      })
+
+      // Actualizar en lotes
+      const facturasIds = Array.from(facturasSeleccionadasGestion)
+      const LOTE_SIZE = 20
+      
+      for (let i = 0; i < facturasIds.length; i += LOTE_SIZE) {
+        const lote = facturasIds.slice(i, i + LOTE_SIZE)
+        
+        const { error } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update(updateData)
+          .in('id', lote)
+
+        if (error) {
+          throw new Error(`Error en lote ${Math.floor(i/LOTE_SIZE) + 1}: ${error.message}`)
+        }
+      }
+
+      // Limpiar selecciones y recargar
+      setFacturasSeleccionadasGestion(new Set())
+      setNuevoEstadoDDJJ('')
+      setNuevoPeriodo('')
+      setMostrarGestionMasiva(false)
+      
+      if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
+      
+      alert(`✅ Gestión masiva completada: ${facturasIds.length} facturas actualizadas`)
+    } catch (error) {
+      console.error('Error en gestión masiva:', error)
+      alert('Error en gestión masiva: ' + (error as Error).message)
+    }
+  }
+
   // Componente SubdiariosContent
   const SubdiariosContent = () => (
     <div className="space-y-6">
@@ -1228,6 +1320,17 @@ export function VistaFacturasArca() {
                     className="w-full bg-green-600 hover:bg-green-700"
                   >
                     ✅ Confirmar DDJJ {periodoConsulta}
+                  </Button>
+                )}
+
+                {/* Botón Gestionar Facturas - solo si hay facturas en el período */}
+                {periodoConsulta && facturasPeriodo.length > 0 && (
+                  <Button 
+                    onClick={() => setMostrarGestionMasiva(true)}
+                    variant="outline"
+                    className="w-full border-blue-500 text-blue-600 hover:bg-blue-50"
+                  >
+                    🔧 Gestionar Facturas
                   </Button>
                 )}
               </div>
@@ -1711,6 +1814,161 @@ export function VistaFacturasArca() {
           </CardContent>
         </Card>
       )}
+
+      {/* Modal Gestión Masiva de Facturas */}
+      <Dialog open={mostrarGestionMasiva} onOpenChange={setMostrarGestionMasiva}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              🔧 Gestionar Facturas Masivamente
+            </DialogTitle>
+            <DialogDescription>
+              Selecciona facturas y modifica estado DDJJ o período contable
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Controles */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
+              {/* Cambiar Estado DDJJ */}
+              <div className="space-y-2">
+                <Label>Cambiar Estado DDJJ</Label>
+                <Select value={nuevoEstadoDDJJ} onValueChange={setNuevoEstadoDDJJ}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sin cambios</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                    <SelectItem value="Imputado">Imputado</SelectItem>
+                    <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Cambiar Período */}
+              <div className="space-y-2">
+                <Label>Cambiar Período MM/AAAA</Label>
+                <Select value={nuevoPeriodo} onValueChange={setNuevoPeriodo}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar período" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sin cambios</SelectItem>
+                    {generarPeriodos().map(periodo => (
+                      <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Tabla facturas con checkboxes */}
+            {facturasPeriodo.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Seleccionar Facturas</Label>
+                  <div className="space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))}
+                    >
+                      Todas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFacturasSeleccionadasGestion(new Set())}
+                    >
+                      Ninguna
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="border rounded max-h-96 overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={facturasSeleccionadasGestion.size === facturasPeriodo.length}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))
+                              } else {
+                                setFacturasSeleccionadasGestion(new Set())
+                              }
+                            }}
+                          />
+                        </TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Número</TableHead>
+                        <TableHead>Razón Social</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Estado DDJJ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {facturasPeriodo.map((factura) => (
+                        <TableRow key={factura.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={facturasSeleccionadasGestion.has(factura.id)}
+                              onCheckedChange={(checked) => {
+                                const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
+                                if (checked) {
+                                  nuevaSeleccion.add(factura.id)
+                                } else {
+                                  nuevaSeleccion.delete(factura.id)
+                                }
+                                setFacturasSeleccionadasGestion(nuevaSeleccion)
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>{factura.fecha_factura}</TableCell>
+                          <TableCell>{factura.tipo_comprobante}</TableCell>
+                          <TableCell>{factura.punto_venta}-{factura.numero_factura}</TableCell>
+                          <TableCell>{factura.razon_social?.substring(0, 30)}...</TableCell>
+                          <TableCell>${(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell>
+                            <Badge variant={factura.ddjj_iva === 'DDJJ OK' ? 'default' : 'secondary'}>
+                              {factura.ddjj_iva}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {/* Botones de acción */}
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setMostrarGestionMasiva(false)
+                  setFacturasSeleccionadasGestion(new Set())
+                  setNuevoEstadoDDJJ('')
+                  setNuevoPeriodo('')
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={ejecutarGestionMasiva}
+                disabled={facturasSeleccionadasGestion.size === 0 || (!nuevoEstadoDDJJ && !nuevoPeriodo)}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                🔧 Aplicar Cambios ({facturasSeleccionadasGestion.size} facturas)
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal para validación de categorías */}
       <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCateg()}>
