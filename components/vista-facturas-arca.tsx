@@ -844,10 +844,11 @@ export function VistaFacturasArca() {
       return
     }
     try {
-      console.log('🔍 DEBUG cargarFacturasImputacion:', { 
+      console.log('🔍 DEBUG cargarFacturasImputacion INICIO:', { 
         periodoObjetivo, 
         mostrarSinImputar, 
-        mostrarImputadas 
+        mostrarImputadas,
+        timestamp: new Date().toISOString()
       })
 
       const filtrosEstado = []
@@ -892,6 +893,7 @@ export function VistaFacturasArca() {
         console.log('🔍 Filtro aplicado: filtros básicos sin período')
       }
 
+      console.log('🚀 EJECUTANDO QUERY final con período:', periodoObjetivo)
       const { data, error } = await query.order('fecha_emision', { ascending: false })
 
       if (error) {
