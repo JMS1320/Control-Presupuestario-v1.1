@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -56,6 +57,7 @@ interface FacturaArca {
   fecha_estimada: string | null
   fecha_vencimiento: string | null
   monto_a_abonar: number | null
+  ddjj_iva: string
   created_at: string
 }
 
@@ -93,6 +95,7 @@ const COLUMNAS_CONFIG = {
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
+  ddjj_iva: { label: "DDJJ IVA", visible: true, width: "100px" },
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
@@ -116,6 +119,9 @@ export function VistaFacturasArca() {
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
+  
+  // Estados para tabs de navegación
+  const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios'>('facturas')
   
   // Estados para importador Excel
   const [mostrarImportador, setMostrarImportador] = useState(false)
@@ -755,14 +761,24 @@ export function VistaFacturasArca() {
 
   return (
     <div className="space-y-6">
-      {/* Encabezado con controles */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-bold tracking-tight">Facturas ARCA - MSA</h2>
-          <p className="text-muted-foreground">
-            Gestión de comprobantes recibidos importados desde ARCA
-          </p>
-        </div>
+      {/* Encabezado */}
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold tracking-tight">Facturas ARCA - MSA</h2>
+        <p className="text-muted-foreground">
+          Gestión de comprobantes recibidos importados desde ARCA
+        </p>
+      </div>
+
+      {/* Tabs principales */}
+      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios')}>
+        <TabsList>
+          <TabsTrigger value="facturas">Facturas</TabsTrigger>
+          <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>
+        </TabsList>
+
+        {/* Tab Content: Facturas */}
+        <TabsContent value="facturas" className="space-y-6">
+          <div className="flex items-center justify-end">
         
         <div className="flex gap-2">
           {/* Botón importar Excel */}
@@ -1261,6 +1277,29 @@ export function VistaFacturasArca() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        {/* Tab Content: Subdiarios */}
+        <TabsContent value="subdiarios" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>📊 Subdiarios DDJJ IVA</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Gestión de declaraciones juradas y períodos contables
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                <Receipt className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Funcionalidad Subdiarios en desarrollo</p>
+                <p className="text-xs mt-2">
+                  Próximamente: Consulta períodos, imputación facturas, subtotales y exportaciones
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
