@@ -837,6 +837,12 @@ export function VistaFacturasArca() {
   }
 
   const cargarFacturasImputacion = async (periodoObjetivo?: string) => {
+    // VALIDACIÓN: Siempre requerir período para filtro de fecha
+    if (!periodoObjetivo) {
+      console.log('⚠️ No se especificó período - no se cargan facturas')
+      setFacturasImputacion([])
+      return
+    }
     try {
       console.log('🔍 DEBUG cargarFacturasImputacion:', { 
         periodoObjetivo, 
@@ -943,7 +949,7 @@ export function VistaFacturasArca() {
       setFacturasSeleccionadas(new Set())
       setMostrarModalImputar(false)
       setPeriodoImputacion('')
-      await cargarFacturasImputacion()
+      // NO recargar facturas automáticamente después de imputar
       if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
       
       alert(`${facturasIds.length} facturas imputadas al período ${periodoImputacion}`)
@@ -990,7 +996,9 @@ export function VistaFacturasArca() {
               <Button 
                 onClick={() => {
                   setMostrarModalImputar(true)
-                  cargarFacturasImputacion()
+                  // NO cargar facturas automáticamente - usuario debe seleccionar período primero
+                  setFacturasImputacion([])
+                  setFacturasSeleccionadas(new Set())
                 }}
                 className="w-full"
               >
