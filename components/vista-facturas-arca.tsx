@@ -795,7 +795,8 @@ export function VistaFacturasArca() {
 
     setCargandoSubdiarios(true)
     try {
-      const [año, mes] = periodo.split('/')
+      const [mes, año] = periodo.split('/') // FIX: formato es MM/YYYY
+      console.log('🔍 DEBUG cargarFacturasSubdiarios:', { periodo, mes, año })
       const { data, error } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
