@@ -836,11 +836,18 @@ export function VistaFacturasArca() {
 
   const cargarFacturasImputacion = async (periodoObjetivo?: string) => {
     try {
+      console.log('🔍 DEBUG cargarFacturasImputacion:', { 
+        periodoObjetivo, 
+        mostrarSinImputar, 
+        mostrarImputadas 
+      })
+
       const filtrosEstado = []
       if (mostrarSinImputar) filtrosEstado.push('No')
       if (mostrarImputadas) filtrosEstado.push('Imputado')
 
       if (filtrosEstado.length === 0) {
+        console.log('❌ No hay filtros de estado seleccionados')
         setFacturasImputacion([])
         return
       }
@@ -851,32 +858,40 @@ export function VistaFacturasArca() {
       if (periodoObjetivo) {
         const [año, mes] = periodoObjetivo.split('/')
         const fechaLimite = `${año}-${mes.padStart(2, '0')}-31` // Último día del mes
+        console.log('📅 Aplicando filtro fecha:', { año, mes, fechaLimite })
+        
         query = query.lte('fecha_emision', fechaLimite)
         
-        // Lógica: Mostrar facturas que están:
-        // 1. Sin imputar (ddjj_iva = 'No') 
-        // 2. O imputadas al período objetivo específico (para permitir reedición)
-        let condicionesFiltro = []
-        
-        if (mostrarSinImputar) {
-          condicionesFiltro.push('ddjj_iva.eq.No')
-        }
-        
-        if (mostrarImputadas) {
-          condicionesFiltro.push(`and(ddjj_iva.eq.Imputado,año_contable.eq.${parseInt(año)},mes_contable.eq.${parseInt(mes)})`)
-        }
-        
-        if (condicionesFiltro.length > 0) {
-          query = query.or(condicionesFiltro.join(','))
+        // SIMPLIFICADO: Solo filtros básicos por ahora para debug
+        if (mostrarSinImputar && !mostrarImputadas) {
+          // Solo sin imputar
+          query = query.eq('ddjj_iva', 'No')
+          console.log('🔍 Filtro aplicado: solo ddjj_iva = No')
+        } else if (!mostrarSinImputar && mostrarImputadas) {
+          // Solo imputadas del período específico
+          query = query.eq('ddjj_iva', 'Imputado')
+               .eq('año_contable', parseInt(año))
+               .eq('mes_contable', parseInt(mes))
+          console.log('🔍 Filtro aplicado: solo Imputado del período')
+        } else if (mostrarSinImputar && mostrarImputadas) {
+          // Ambos: necesitamos OR más complejo (temporalmente usar solo No para debug)
+          query = query.eq('ddjj_iva', 'No')
+          console.log('🔍 Filtro aplicado: temporalmente solo No (debug)')
         }
       } else {
         // Sin período específico, usar filtros básicos
         query = query.in('ddjj_iva', filtrosEstado)
+        console.log('🔍 Filtro aplicado: filtros básicos sin período')
       }
 
       const { data, error } = await query.order('fecha_emision', { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Error en query:', error)
+        throw error
+      }
+
+      console.log('✅ Facturas encontradas:', data?.length || 0)
       setFacturasImputacion(data || [])
     } catch (error) {
       console.error('Error cargando facturas imputación:', error)
