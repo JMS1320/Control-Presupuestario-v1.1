@@ -1412,9 +1412,9 @@ export function VistaFacturasArca() {
 
       console.log('🔍 DEBUG PDF: Totales calculados:', totales)
       
-      // Tabla horizontal con formato LIBRO IVA COMPRAS (máximo 30 facturas por límites PDF horizontal)
+      // Tabla horizontal con formato LIBRO IVA COMPRAS (mostrar todas las facturas)
       console.log('🔍 DEBUG PDF: Preparando datos tabla con', facturas.length, 'facturas')
-      const datosTabla = facturas.slice(0, 30).map((f, index) => {
+      const datosTabla = facturas.map((f, index) => {
         if (index < 3) { // Solo log de las primeras 3 para no saturar
           console.log(`🔍 DEBUG PDF: Procesando factura ${index + 1}:`, {
             fecha: f.fecha_emision,
@@ -1489,8 +1489,20 @@ export function VistaFacturasArca() {
       })
       console.log('🔍 DEBUG PDF: Tabla generada exitosamente')
       
-      // Agregar desglose por alícuotas
-      const yPosition = doc.lastAutoTable.finalY + 15
+      // Nueva página para desglose por alícuotas
+      doc.addPage('landscape', 'a4')
+      
+      // Header para página de desglose
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('MARTINEZ SOBRADO AGRO SRL', 20, 15)
+      doc.text('30-61778601-6', 180, 15)
+      doc.text('DESGLOSE IVA POR ALÍCUOTAS', 200, 15)
+      
+      doc.setFontSize(12)
+      doc.text(`Período: ${fechaInicio} al ${fechaFin}`, 20, 30)
+      
+      const yPosition = 50
       doc.setFontSize(10)
       doc.setFont(undefined, 'bold')
       doc.text('Detalle por Alícuotas:', 20, yPosition)
@@ -1518,11 +1530,35 @@ export function VistaFacturasArca() {
         }
       })
       
-      // Agregar nota si hay más facturas
-      if (facturas.length > 30) {
-        doc.setFontSize(9)
-        doc.text(`⚠️ Mostrando primeras 30 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
-      }
+      // Agregar totales generales y MONOTRIBUTISTA en página desglose
+      const yTotales = doc.lastAutoTable.finalY + 15
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text('TOTALES GENERALES:', 20, yTotales)
+      
+      const totalesGenerales = [
+        ['Neto Gravado', totales.neto_gravado.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Neto No Gravado', totales.neto_no_gravado.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Op. Exentas', totales.op_exentas.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Otros Tributos', totales.otros_tributos.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['IVA Diferencial', totales.iva_diferencial.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Total IVA', totales.total_iva.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Importe Total', totales.importe_total.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['', ''],
+        ['MONOTRIBUTISTA', monotributista.toLocaleString('es-AR', {maximumFractionDigits: 0})]
+      ]
+      
+      autoTable(doc, {
+        head: [['Concepto', 'Importe $']],
+        body: totalesGenerales,
+        startY: yTotales + 5,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [66, 139, 202] },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 60, halign: 'right' }
+        }
+      })
 
       // Generar nombre único para evitar sobreescribir  
       const añoCorto = año.slice(-2)
