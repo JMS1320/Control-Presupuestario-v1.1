@@ -1257,7 +1257,7 @@ export function VistaFacturasArca() {
           'Neto Gravado': f.imp_neto_gravado || 0,
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
           'Op. Exentas': f.imp_op_exentas || 0,
-          'Otros Tributos': f.imp_otros_tributos || 0,
+          'Otros Tributos': f.otros_tributos || 0,
           'IVA Diferencial': ivaDiferencial,
           'Total IVA': f.iva || 0,
           'Imp. Total': f.imp_total || 0
@@ -1269,7 +1269,7 @@ export function VistaFacturasArca() {
         neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
         neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
         op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
-        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        otros_tributos: acc.otros_tributos + (f.otros_tributos || 0),
         iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
         total_iva: acc.total_iva + (f.iva || 0),
         importe_total: acc.importe_total + (f.imp_total || 0),
@@ -1394,7 +1394,7 @@ export function VistaFacturasArca() {
         neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
         neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
         op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
-        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        otros_tributos: acc.otros_tributos + (f.otros_tributos || 0),
         iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
         total_iva: acc.total_iva + (f.iva || 0),
         importe_total: acc.importe_total + (f.imp_total || 0),
@@ -1447,9 +1447,9 @@ export function VistaFacturasArca() {
           (f.imp_neto_gravado || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.imp_neto_no_gravado || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.imp_op_exentas || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
-          (f.imp_otros_tributos || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.otros_tributos || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           ivaDiferencial.toLocaleString('es-AR', {maximumFractionDigits: 0}),
-          (f.imp_total_iva || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.iva || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.imp_total || 0).toLocaleString('es-AR', {maximumFractionDigits: 0})
         ]
       })
@@ -1649,7 +1649,7 @@ export function VistaFacturasArca() {
           'Neto Gravado': f.imp_neto_gravado || 0,
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
           'Op. Exentas': f.imp_op_exentas || 0,
-          'Otros Tributos': f.imp_otros_tributos || 0,
+          'Otros Tributos': f.otros_tributos || 0,
           'Total IVA': f.iva || 0,
           'Imp. Total': f.imp_total || 0,
           'Estado DDJJ': f.ddjj_iva || '',
@@ -1717,7 +1717,7 @@ export function VistaFacturasArca() {
         neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
         op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
         total_iva: acc.total_iva + (f.iva || 0),
-        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        otros_tributos: acc.otros_tributos + (f.otros_tributos || 0),
         importe_total: acc.importe_total + (f.imp_total || 0)
       }), {
         neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, 
@@ -1736,7 +1736,7 @@ export function VistaFacturasArca() {
           f.cuit_emisor || '',
           f.tipo_comprobante || '',
           (f.imp_neto_gravado || 0).toLocaleString('es-AR'),
-          (f.imp_total_iva || 0).toLocaleString('es-AR'),
+          (f.iva || 0).toLocaleString('es-AR'),
           (f.imp_total || 0).toLocaleString('es-AR'),
           f.ddjj_iva || ''
         ])
