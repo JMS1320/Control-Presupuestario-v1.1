@@ -1282,7 +1282,7 @@ export function VistaFacturasArca() {
 
       // Calcular Monotributista (facturas tipo C)
       const monotributista = facturas
-        .filter(f => f.tipo_comprobante?.includes('C') || f.tipo_comprobante?.includes('c'))
+        .filter(f => f.tipo_comprobante && (f.tipo_comprobante.includes('C') || f.tipo_comprobante.includes('c')))
         .reduce((acc, f) => acc + (f.imp_total || 0), 0)
 
       // Agregar filas de totales
@@ -1407,7 +1407,7 @@ export function VistaFacturasArca() {
 
       // Calcular Monotributista (facturas tipo C)
       const monotributista = facturas
-        .filter(f => f.tipo_comprobante?.includes('C') || f.tipo_comprobante?.includes('c'))
+        .filter(f => f.tipo_comprobante && (f.tipo_comprobante.includes('C') || f.tipo_comprobante.includes('c')))
         .reduce((acc, f) => acc + (f.imp_total || 0), 0)
 
       console.log('🔍 DEBUG PDF: Totales calculados:', totales)
