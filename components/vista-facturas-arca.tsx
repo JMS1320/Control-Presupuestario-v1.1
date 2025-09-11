@@ -62,6 +62,18 @@ interface FacturaArca {
   monto_a_abonar: number | null
   ddjj_iva: string
   created_at: string
+  // Campos IVA por alícuotas que existen en BD pero faltaban en interface
+  iva_2_5: number | null
+  iva_5: number | null
+  iva_10_5: number | null
+  iva_21: number | null
+  iva_27: number | null
+  neto_grav_iva_0: number | null
+  neto_grav_iva_2_5: number | null
+  neto_grav_iva_5: number | null
+  neto_grav_iva_10_5: number | null
+  neto_grav_iva_21: number | null
+  neto_grav_iva_27: number | null
 }
 
 // Configuración de columnas disponibles - TODAS VISIBLES por defecto  
