@@ -1823,7 +1823,18 @@ export function VistaFacturasArca() {
       {/* Modal Gestión Masiva de Facturas */}
       {console.log('🔍 DEBUG: Renderizando modal gestión masiva, open:', mostrarGestionMasiva)}
       <Dialog open={mostrarGestionMasiva} onOpenChange={setMostrarGestionMasiva}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto z-[9999]" style={{zIndex: 9999}}>
+        <DialogContent 
+          className="max-w-4xl max-h-[80vh] overflow-y-auto" 
+          style={{
+            zIndex: 99999,
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            backgroundColor: 'white',
+            boxShadow: '0 10px 50px rgba(0, 0, 0, 0.5)'
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               🔧 Gestionar Facturas Masivamente
