@@ -1094,9 +1094,9 @@ export function VistaFacturasArca() {
         try {
           // Opciones de destino
           const opciones = [
-            '1. Elegir carpeta específica',
-            carpetaPorDefecto ? `2. Usar carpeta por defecto (${carpetaPorDefecto.name})` : '2. Configurar carpeta por defecto',
-            '3. Usar carpeta Descargas',
+            '1. Cambiar carpeta por defecto',
+            carpetaPorDefecto ? `2. Usar carpeta por defecto actual (${carpetaPorDefecto.name})` : '2. Establecer carpeta por defecto',
+            '3. Cancelar descarga',
             '',
             'Elige una opción (1, 2 o 3):'
           ].join('\n')
@@ -1104,10 +1104,14 @@ export function VistaFacturasArca() {
           const respuesta = prompt(opciones)
           
           if (respuesta === '1') {
-            // Elegir carpeta específica
-            directorioDestino = await (window as any).showDirectoryPicker()
-            ubicacionFinal = `carpeta "${directorioDestino.name}"`
-            console.log('📁 Carpeta específica seleccionada:', directorioDestino.name)
+            // Cambiar carpeta por defecto
+            const nuevaCarpetaPorDefecto = await (window as any).showDirectoryPicker({
+              startIn: carpetaPorDefecto || 'downloads' // Iniciar desde carpeta actual o Descargas
+            })
+            setCarpetaPorDefecto(nuevaCarpetaPorDefecto)
+            directorioDestino = nuevaCarpetaPorDefecto
+            ubicacionFinal = `nueva carpeta por defecto "${nuevaCarpetaPorDefecto.name}"`
+            console.log('📁 Nueva carpeta por defecto establecida:', nuevaCarpetaPorDefecto.name)
           } else if (respuesta === '2') {
             if (carpetaPorDefecto) {
               // Usar carpeta por defecto existente
@@ -1115,29 +1119,34 @@ export function VistaFacturasArca() {
               ubicacionFinal = `carpeta por defecto "${carpetaPorDefecto.name}"`
               console.log('📁 Usando carpeta por defecto:', carpetaPorDefecto.name)
             } else {
-              // Configurar nueva carpeta por defecto
+              // Establecer carpeta por defecto por primera vez
               const nuevaCarpeta = await (window as any).showDirectoryPicker()
               setCarpetaPorDefecto(nuevaCarpeta)
               directorioDestino = nuevaCarpeta
-              ubicacionFinal = `nueva carpeta por defecto "${nuevaCarpeta.name}"`
-              console.log('📁 Carpeta por defecto configurada:', nuevaCarpeta.name)
+              ubicacionFinal = `carpeta por defecto establecida "${nuevaCarpeta.name}"`
+              console.log('📁 Carpeta por defecto establecida por primera vez:', nuevaCarpeta.name)
             }
           } else {
-            // Opción 3 o cualquier otra cosa = Descargas por defecto
-            console.log('📁 Usando carpeta Descargas por defecto')
-            ubicacionFinal = 'carpeta Descargas'
+            // Opción 3 o cualquier otra cosa = Cancelar descarga
+            console.log('📁 Descarga cancelada por el usuario')
+            alert('📁 Descarga cancelada')
+            return // Salir sin generar archivos
           }
         } catch (error) {
-          console.log('Usuario canceló selección de carpeta, usando Descargas por defecto')
-          ubicacionFinal = 'carpeta Descargas'
+          console.log('Usuario canceló selección de carpeta')
+          alert('📁 Descarga cancelada')
+          return // Salir sin generar archivos
         }
       }
 
       // Generar archivos con opción de carpeta personalizada
       console.log('🔍 DEBUG: Iniciando generación archivos con facturas:', facturasProcesar.length)
       console.log('🔍 DEBUG: Primera factura para procesar:', facturasProcesar[0])
+      console.log('🔍 DEBUG: DirectorioDestino antes de Excel:', directorioDestino ? directorioDestino.name : 'null')
       
       await generarExcelConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
+      
+      console.log('🔍 DEBUG: DirectorioDestino antes de PDF:', directorioDestino ? directorioDestino.name : 'null')
       // Generar PDF inmediatamente después del Excel, sin timeout
       await generarPDFConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
       
@@ -1320,8 +1329,12 @@ export function VistaFacturasArca() {
       const añoCorto = año.slice(-2)
       const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.pdf`
 
+      console.log('🔍 DEBUG PDF: Antes de guardar - directorio:', directorio ? 'SI EXISTE' : 'NULL')
+      console.log('🔍 DEBUG PDF: Filename a guardar:', filename)
+
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
+        console.log('🔍 DEBUG PDF: Intentando guardar en carpeta personalizada:', directorio.name)
         const contenidoPDF = doc.output('arraybuffer')
         const archivoHandle = await directorio.getFileHandle(filename, { create: true })
         const writable = await archivoHandle.createWritable()
@@ -1330,6 +1343,7 @@ export function VistaFacturasArca() {
         console.log('✅ PDF guardado en carpeta personalizada:', filename)
       } else {
         // Descargar normalmente
+        console.log('🔍 DEBUG PDF: Directorio es null, descargando en Descargas por defecto')
         doc.save(filename)
         console.log('✅ PDF descargado en carpeta por defecto:', filename)
       }
