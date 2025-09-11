@@ -1054,6 +1054,55 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Generar reportes independiente - sin restricción de estado DDJJ
+  const generarReportesPeriodo = async () => {
+    if (!periodoConsulta) {
+      alert('Selecciona un período para generar reportes')
+      return
+    }
+
+    try {
+      const [mes, año] = periodoConsulta.split('/')
+      
+      // Obtener todas las facturas del período (independiente del estado DDJJ)
+      const { data: facturasReporte, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('*')
+        .eq('mes_contable', parseInt(mes))
+        .eq('año_contable', parseInt(año))
+
+      if (error) {
+        console.error('Error obteniendo facturas para reporte:', error)
+        alert('Error obteniendo datos para reporte: ' + error.message)
+        return
+      }
+
+      const facturasProcesar = facturasReporte || []
+      
+      console.log('📊 Generando reportes independientes...', {
+        periodo: periodoConsulta,
+        totalFacturas: facturasProcesar.length,
+        estados: facturasProcesar.map(f => f.ddjj_iva)
+      })
+      
+      if (facturasProcesar.length === 0) {
+        alert(`⚠️ No hay facturas registradas para el período ${periodoConsulta}`)
+        return
+      }
+
+      // Generar archivos
+      descargarExcelDDJJ(facturasProcesar, periodoConsulta)
+      setTimeout(() => descargarPDFDDJJ(facturasProcesar, periodoConsulta), 500)
+      
+      alert(`📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n• Excel con ${facturasProcesar.length} facturas\n• PDF con resumen detallado\n\n📁 Archivos guardados en carpeta Descargas`)
+      
+    } catch (error) {
+      console.error('Error generando reportes:', error)
+      alert('Error al generar reportes')
+    }
+  }
+
   // Validar si un período ya está declarado (tiene facturas con DDJJ OK)
   const validarPeriodoDeclarado = async (periodo: string): Promise<boolean> => {
     const [mes, año] = periodo.split('/')
@@ -1090,25 +1139,29 @@ export function VistaFacturasArca() {
         throw new Error('No hay facturas para exportar')
       }
       
-      // Preparar datos para Excel
+      // Preparar datos para Excel - TODOS los campos de la pantalla consulta
       const datosExcel = facturas.map((f, index) => {
         console.log(`📋 Procesando factura ${index + 1}:`, f)
         return {
-          'Fecha Factura': f.fecha_factura || '',
-          'Tipo Comprobante': f.tipo_comprobante || '',
-          'Punto Venta': f.punto_venta || '',
-          'Número Factura': f.numero_factura || '',
-          'CUIT Emisor': f.cuit_emisor || '',
-          'Razón Social': f.razon_social || '',
+          'Fecha': f.fecha_factura || '',
+          'Proveedor': f.razon_social || '',
+          'CUIT': f.cuit_emisor || '',
+          'Tipo': f.tipo_comprobante || '',
           'Neto Gravado': f.imp_neto_gravado || 0,
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
           'Op. Exentas': f.imp_op_exentas || 0,
-          'Total IVA': f.imp_total_iva || 0,
           'Otros Tributos': f.imp_otros_tributos || 0,
-          'Importe Total': f.imp_total || 0,
+          'Total IVA': f.imp_total_iva || 0,
+          'Imp. Total': f.imp_total || 0,
           'Estado DDJJ': f.ddjj_iva || '',
+          'Punto Venta': f.punto_venta || '',
+          'Número Factura': f.numero_factura || '',
           'Mes Contable': f.mes_contable || '',
-          'Año Contable': f.año_contable || ''
+          'Año Contable': f.año_contable || '',
+          'Fecha Emisión': f.fecha_emision || '',
+          'Fecha Vencimiento': f.fecha_vencimiento || '',
+          'CAI': f.cai || '',
+          'Categoría': f.categ || ''
         }
       })
 
@@ -1117,7 +1170,7 @@ export function VistaFacturasArca() {
       // Crear libro Excel
       const ws = XLSX.utils.json_to_sheet(datosExcel)
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo}`)
+      XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo.replace('/', '-')}`)
       
       // Descargar archivo
       const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
@@ -1174,24 +1227,44 @@ export function VistaFacturasArca() {
       doc.text(`Total IVA: $${totales.total_iva.toLocaleString('es-AR')}`, 20, 56)
       doc.text(`Total General: $${totales.importe_total.toLocaleString('es-AR')}`, 20, 63)
       
-      // Tabla con facturas (solo primeras 100 por límites de página)
-      const datosTabla = facturas.slice(0, 100).map(f => [
-        f.fecha_factura || '',
-        f.tipo_comprobante || '',
-        `${f.punto_venta || ''}-${f.numero_factura || ''}`,
-        f.razon_social?.substring(0, 25) || '',
-        (f.imp_total || 0).toLocaleString('es-AR'),
-        f.ddjj_iva || ''
-      ])
+      // Tabla con facturas - TODOS los datos principales (máximo 50 por límites PDF)
+      if (facturas.length > 0) {
+        const datosTabla = facturas.slice(0, 50).map(f => [
+          f.fecha_factura || '',
+          (f.razon_social || '').substring(0, 20),
+          f.cuit_emisor || '',
+          f.tipo_comprobante || '',
+          (f.imp_neto_gravado || 0).toLocaleString('es-AR'),
+          (f.imp_total_iva || 0).toLocaleString('es-AR'),
+          (f.imp_total || 0).toLocaleString('es-AR'),
+          f.ddjj_iva || ''
+        ])
 
-      // Usar autoTable importado
-      autoTable(doc, {
-        head: [['Fecha', 'Tipo', 'Número', 'Razón Social', 'Total', 'Estado']],
-        body: datosTabla,
-        startY: 75,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [66, 139, 202] }
-      })
+        // Usar autoTable importado
+        autoTable(doc, {
+          head: [['Fecha', 'Proveedor', 'CUIT', 'Tipo', 'Neto Grav.', 'IVA', 'Total', 'Estado']],
+          body: datosTabla,
+          startY: facturas.length === 0 ? 85 : 75,
+          styles: { fontSize: 7 },
+          headStyles: { fillColor: [66, 139, 202] },
+          columnStyles: {
+            0: { cellWidth: 18 }, // Fecha
+            1: { cellWidth: 25 }, // Proveedor
+            2: { cellWidth: 25 }, // CUIT
+            3: { cellWidth: 18 }, // Tipo
+            4: { cellWidth: 20 }, // Neto Gravado
+            5: { cellWidth: 20 }, // IVA
+            6: { cellWidth: 20 }, // Total
+            7: { cellWidth: 20 }  // Estado
+          }
+        })
+        
+        // Agregar nota si hay más facturas
+        if (facturas.length > 50) {
+          doc.setFontSize(9)
+          doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
+        }
+      }
 
       // Descargar archivo
       const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.pdf`
@@ -1241,7 +1314,7 @@ export function VistaFacturasArca() {
         `Estás intentando cambiar ${facturasDDJJOK.length} facturas desde estado "DDJJ OK" a "${nuevoEstadoDDJJ}".\n\n` +
         `⚠️ RIESGO: Las facturas con "DDJJ OK" ya fueron declaradas fiscalmente.\n` +
         `Cambiar su estado puede afectar declaraciones oficiales presentadas.\n\n` +
-        `Si entiendes el riesgo y quieres continuar, escribe exactamente: CONTINUAR\n` +
+        `Si entiendes el riesgo y quieres continuar, tipea exactamente: CONTINUAR\n` +
         `Cualquier otro texto cancelará la operación.`
       )
 
@@ -1388,6 +1461,17 @@ export function VistaFacturasArca() {
                     }
                   >
                     {mostrarGestionMasiva ? "❌ Cancelar Gestión" : "🔧 Gestionar Facturas"} ({facturasPeriodo.length})
+                  </Button>
+                )}
+
+                {/* Botón Generar Reportes - independiente de estado DDJJ */}
+                {periodoConsulta && facturasPeriodo.length > 0 && (
+                  <Button 
+                    onClick={generarReportesPeriodo}
+                    variant="outline"
+                    className="w-full border-green-500 text-green-600 hover:bg-green-50"
+                  >
+                    📊 Generar PDF + Excel ({facturasPeriodo.length} facturas)
                   </Button>
                 )}
               </div>
