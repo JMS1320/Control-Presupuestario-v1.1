@@ -1158,6 +1158,36 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Función helper para generar nombres únicos de archivo
+  const generarNombreUnico = async (directorio: any, nombreBase: string, extension: string): Promise<string> => {
+    if (!directorio) return `${nombreBase}.${extension}` // Si no hay directorio personalizado, usar nombre base
+    
+    let contador = 0
+    let nombreFinal = `${nombreBase}.${extension}`
+    
+    try {
+      // Intentar acceder al archivo para ver si existe
+      while (true) {
+        try {
+          await directorio.getFileHandle(nombreFinal)
+          // Si llegamos aquí, el archivo existe, intentar con siguiente número
+          contador++
+          nombreFinal = `${nombreBase} (${contador}).${extension}`
+        } catch (error) {
+          // Error significa que el archivo no existe, podemos usar este nombre
+          break
+        }
+      }
+    } catch (error) {
+      console.log('Error verificando archivos existentes:', error)
+      // En caso de error, usar el nombre base
+      nombreFinal = `${nombreBase}.${extension}`
+    }
+    
+    console.log(`📝 Nombre único generado: ${nombreFinal}`)
+    return nombreFinal
+  }
+
   // Generar Excel con opción de carpeta personalizada
   const generarExcelConCarpeta = async (facturas: FacturaArca[], periodo: string, directorio: any = null) => {
     try {
@@ -1204,10 +1234,11 @@ export function VistaFacturasArca() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo.replace('/', '-')}`)
       
-      // Nombre archivo con nuevo formato
+      // Generar nombre único para evitar sobreescribir
       const [mes, año] = periodo.split('/')
       const añoCorto = año.slice(-2)
-      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.xlsx`
+      const nombreBase = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}`
+      const filename = await generarNombreUnico(directorio, nombreBase, 'xlsx')
 
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
@@ -1324,13 +1355,14 @@ export function VistaFacturasArca() {
         doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
       }
 
-      // Nombre archivo con nuevo formato
+      // Generar nombre único para evitar sobreescribir
       const [mes, año] = periodo.split('/')
       const añoCorto = año.slice(-2)
-      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.pdf`
+      const nombreBase = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}`
+      const filename = await generarNombreUnico(directorio, nombreBase, 'pdf')
 
       console.log('🔍 DEBUG PDF: Antes de guardar - directorio:', directorio ? 'SI EXISTE' : 'NULL')
-      console.log('🔍 DEBUG PDF: Filename a guardar:', filename)
+      console.log('🔍 DEBUG PDF: Filename único generado:', filename)
 
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
