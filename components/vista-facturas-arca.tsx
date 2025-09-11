@@ -1205,8 +1205,8 @@ export function VistaFacturasArca() {
     const confirmar = window.confirm(
       `¿Confirmar cambios masivos?\n\n` +
       `• ${facturasSeleccionadasGestion.size} facturas seleccionadas\n` +
-      `• Nuevo estado DDJJ: ${nuevoEstadoDDJJ || '(sin cambios)'}\n` +
-      `• Nuevo período: ${nuevoPeriodo || '(sin cambios)'}\n\n` +
+      `• Nuevo estado DDJJ: ${(nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') ? nuevoEstadoDDJJ : '(sin cambios)'}\n` +
+      `• Nuevo período: ${(nuevoPeriodo && nuevoPeriodo !== 'sin-cambios') ? nuevoPeriodo : '(sin cambios)'}\n\n` +
       `⚠️ Esta acción modificará múltiples registros.`
     )
 
@@ -1216,11 +1216,11 @@ export function VistaFacturasArca() {
       // Preparar datos de actualización
       const updateData: any = {}
       
-      if (nuevoEstadoDDJJ) {
+      if (nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') {
         updateData.ddjj_iva = nuevoEstadoDDJJ
       }
       
-      if (nuevoPeriodo) {
+      if (nuevoPeriodo && nuevoPeriodo !== 'sin-cambios') {
         const [mes, año] = nuevoPeriodo.split('/')
         updateData.mes_contable = parseInt(mes)
         updateData.año_contable = parseInt(año)
@@ -1504,7 +1504,7 @@ export function VistaFacturasArca() {
                         <SelectValue placeholder="Seleccionar estado" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Sin cambios</SelectItem>
+                        <SelectItem value="sin-cambios">Sin cambios</SelectItem>
                         <SelectItem value="No">No</SelectItem>
                         <SelectItem value="Imputado">Imputado</SelectItem>
                         <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
@@ -1520,7 +1520,7 @@ export function VistaFacturasArca() {
                         <SelectValue placeholder="Seleccionar período" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Sin cambios</SelectItem>
+                        <SelectItem value="sin-cambios">Sin cambios</SelectItem>
                         {generarPeriodos().map(periodo => (
                           <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
                         ))}
@@ -1533,7 +1533,9 @@ export function VistaFacturasArca() {
                     <Label className="text-sm font-medium text-blue-900">Acción</Label>
                     <Button
                       onClick={ejecutarGestionMasiva}
-                      disabled={facturasSeleccionadasGestion.size === 0 || (!nuevoEstadoDDJJ && !nuevoPeriodo)}
+                      disabled={facturasSeleccionadasGestion.size === 0 || 
+                        (!nuevoEstadoDDJJ || nuevoEstadoDDJJ === 'sin-cambios') && 
+                        (!nuevoPeriodo || nuevoPeriodo === 'sin-cambios')}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                     >
                       ✅ Aplicar Cambios
