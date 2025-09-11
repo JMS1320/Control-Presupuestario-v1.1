@@ -143,8 +143,33 @@ export function VistaFacturasArca() {
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
   const [nuevoEstadoDDJJ, setNuevoEstadoDDJJ] = useState('')
   
-  // Estados para configuración de carpetas
-  const [carpetaPorDefecto, setCarpetaPorDefecto] = useState<any>(null)
+  // Estados para configuración de carpetas con persistencia
+  const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
+  
+  // Función para persistir carpeta por defecto
+  const setCarpetaPorDefecto = (carpeta: any) => {
+    setCarpetaPorDefectoState(carpeta)
+    if (carpeta) {
+      localStorage.setItem('carpetaPorDefectoDDJJ', JSON.stringify({
+        name: carpeta.name,
+        // No podemos serializar el handle completo, solo el nombre para mostrar
+      }))
+    }
+  }
+
+  // Cargar carpeta por defecto al inicio (solo nombre para mostrar)
+  useEffect(() => {
+    try {
+      const carpetaGuardada = localStorage.getItem('carpetaPorDefectoDDJJ')
+      if (carpetaGuardada) {
+        const carpetaInfo = JSON.parse(carpetaGuardada)
+        // Solo mantenemos la info para mostrar, no el handle real
+        setCarpetaPorDefectoState({ name: carpetaInfo.name, isFromStorage: true })
+      }
+    } catch (error) {
+      console.log('Error cargando carpeta por defecto:', error)
+    }
+  }, [])
   const [nuevoPeriodo, setNuevoPeriodo] = useState('')
 
   // Generar períodos desde mes actual hacia atrás
@@ -1113,18 +1138,18 @@ export function VistaFacturasArca() {
             ubicacionFinal = `nueva carpeta por defecto "${nuevaCarpetaPorDefecto.name}"`
             console.log('📁 Nueva carpeta por defecto establecida:', nuevaCarpetaPorDefecto.name)
           } else if (respuesta === '2') {
-            if (carpetaPorDefecto) {
-              // Usar carpeta por defecto existente
+            if (carpetaPorDefecto && !carpetaPorDefecto.isFromStorage) {
+              // Usar carpeta por defecto existente (handle real)
               directorioDestino = carpetaPorDefecto
               ubicacionFinal = `carpeta por defecto "${carpetaPorDefecto.name}"`
               console.log('📁 Usando carpeta por defecto:', carpetaPorDefecto.name)
             } else {
-              // Establecer carpeta por defecto por primera vez
+              // Establecer carpeta por defecto (primera vez o recarga desde localStorage)
               const nuevaCarpeta = await (window as any).showDirectoryPicker()
               setCarpetaPorDefecto(nuevaCarpeta)
               directorioDestino = nuevaCarpeta
               ubicacionFinal = `carpeta por defecto establecida "${nuevaCarpeta.name}"`
-              console.log('📁 Carpeta por defecto establecida por primera vez:', nuevaCarpeta.name)
+              console.log('📁 Carpeta por defecto establecida:', nuevaCarpeta.name)
             }
           } else {
             // Opción 3 o cualquier otra cosa = Cancelar descarga
@@ -1326,39 +1351,70 @@ export function VistaFacturasArca() {
         throw new Error('No hay facturas para generar PDF')
       }
       
-      const doc = new jsPDF()
+      // PDF en orientación horizontal (landscape)
+      const doc = new jsPDF('landscape', 'mm', 'a4')
       
-      // Título
-      doc.setFontSize(16)
-      doc.text(`SUBDIARIO COMPRAS - PERÍODO ${periodo}`, 20, 20)
+      // Calcular fechas del período
+      const [mes, año] = periodo.split('/')
+      const fechaInicio = `01/${mes.padStart(2, '0')}/${año}`
+      const ultimoDiaMes = new Date(parseInt(año), parseInt(mes), 0).getDate()
+      const fechaFin = `${ultimoDiaMes.toString().padStart(2, '0')}/${mes.padStart(2, '0')}/${año}`
+      
+      // Header profesional
+      doc.setFontSize(14)
+      doc.setFont(undefined, 'bold')
+      doc.text('MARTINEZ SOBRADO AGRO SRL', 20, 15)
+      doc.text('30-61778601-6', 180, 15)
+      doc.text('COMPRAS', 250, 15)
+      
+      doc.setFontSize(12)
+      doc.setFont(undefined, 'normal')
+      doc.text(`LIBRO DE IVA COMPRAS - Movimientos desde el ${fechaInicio} hasta el ${fechaFin}`, 20, 25)
       
       // Información general
       doc.setFontSize(10)
       doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
-      doc.text(`Total facturas: ${facturas.length}`, 20, 42)
+      doc.text(`Total facturas: ${facturas.length}`, 150, 35)
       
-      // Calcular totales
+      // Calcular totales igual que Excel
       console.log('🔍 DEBUG PDF: Calculando totales...')
       const totales = facturas.reduce((acc, f) => ({
         neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
         neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
         op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
-        total_iva: acc.total_iva + (f.imp_total_iva || 0),
         otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
-        importe_total: acc.importe_total + (f.imp_total || 0)
+        iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
+        total_iva: acc.total_iva + (f.imp_total_iva || 0),
+        importe_total: acc.importe_total + (f.imp_total || 0),
+        // Alícuotas separadas
+        iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0),
+        iva_5: acc.iva_5 + (f.iva_5 || 0),
+        iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0),
+        iva_21: acc.iva_21 + (f.iva_21 || 0),
+        iva_27: acc.iva_27 + (f.iva_27 || 0),
+        neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0),
+        neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0),
+        neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0),
+        neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0),
+        neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0),
+        neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0)
       }), {
-        neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, 
-        total_iva: 0, otros_tributos: 0, importe_total: 0
+        neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, otros_tributos: 0,
+        iva_diferencial: 0, total_iva: 0, importe_total: 0,
+        iva_2_5: 0, iva_5: 0, iva_10_5: 0, iva_21: 0, iva_27: 0,
+        neto_0: 0, neto_2_5: 0, neto_5: 0, neto_10_5: 0, neto_21: 0, neto_27: 0
       })
-      console.log('🔍 DEBUG PDF: Totales calculados:', totales)
 
-      doc.text(`Total Neto Gravado: $${totales.neto_gravado.toLocaleString('es-AR')}`, 20, 49)
-      doc.text(`Total IVA: $${totales.total_iva.toLocaleString('es-AR')}`, 20, 56)
-      doc.text(`Total General: $${totales.importe_total.toLocaleString('es-AR')}`, 20, 63)
+      // Calcular Monotributista (facturas tipo C)
+      const monotributista = facturas
+        .filter(f => f.tipo_comprobante?.includes('C') || f.tipo_comprobante?.includes('c'))
+        .reduce((acc, f) => acc + (f.imp_total || 0), 0)
+
+      console.log('🔍 DEBUG PDF: Totales calculados:', totales)
       
-      // Tabla con facturas - TODOS los datos principales (máximo 50 por límites PDF)
+      // Tabla horizontal con formato LIBRO IVA COMPRAS (máximo 30 facturas por límites PDF horizontal)
       console.log('🔍 DEBUG PDF: Preparando datos tabla con', facturas.length, 'facturas')
-      const datosTabla = facturas.slice(0, 50).map((f, index) => {
+      const datosTabla = facturas.slice(0, 30).map((f, index) => {
         if (index < 3) { // Solo log de las primeras 3 para no saturar
           console.log(`🔍 DEBUG PDF: Procesando factura ${index + 1}:`, {
             fecha: f.fecha_emision,
@@ -1367,51 +1423,110 @@ export function VistaFacturasArca() {
             total: f.imp_total
           })
         }
+        
+        // Calcular IVA Diferencial para cada factura
+        const ivaDiferencial = (f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)
+        
         return [
           f.fecha_emision || '',
-          (f.denominacion_emisor || '').substring(0, 20),
-          f.cuit || '',
           f.tipo_comprobante || '',
-          (f.imp_neto_gravado || 0).toLocaleString('es-AR'),
-          (f.imp_total_iva || 0).toLocaleString('es-AR'),
-          (f.imp_total || 0).toLocaleString('es-AR'),
-          f.ddjj_iva || ''
+          (f.denominacion_emisor || '').substring(0, 18),
+          f.cuit || '',
+          (f.imp_neto_gravado || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.imp_neto_no_gravado || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.imp_op_exentas || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.imp_otros_tributos || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          ivaDiferencial.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.imp_total_iva || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.imp_total || 0).toLocaleString('es-AR', {maximumFractionDigits: 0})
         ]
       })
+
+      // Agregar fila totales
+      datosTabla.push([
+        '', '', 'TOTALES GENERALES', '',
+        totales.neto_gravado.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.neto_no_gravado.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.op_exentas.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.otros_tributos.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.iva_diferencial.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.total_iva.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        totales.importe_total.toLocaleString('es-AR', {maximumFractionDigits: 0})
+      ])
+
+      // Agregar fila monotributista si hay facturas C
+      if (monotributista > 0) {
+        datosTabla.push([
+          '', '', 'MONOTRIBUTISTA', '', '', '', '', '', '', '',
+          monotributista.toLocaleString('es-AR', {maximumFractionDigits: 0})
+        ])
+      }
+
       console.log('🔍 DEBUG PDF: Datos tabla preparados:', datosTabla.length, 'filas')
       console.log('🔍 DEBUG PDF: Primera fila tabla:', datosTabla[0])
 
-      // Usar autoTable importado
+      // Usar autoTable para tabla horizontal
       console.log('🔍 DEBUG PDF: Generando tabla con autoTable...')
       autoTable(doc, {
-        head: [['Fecha', 'Proveedor', 'CUIT', 'Tipo', 'Neto Grav.', 'IVA', 'Total', 'Estado']],
+        head: [['Fecha', 'Tipo-N° Comp.', 'Razón Social', 'C.U.I.T.', 'Neto Gravado', 'Neto No Gravado', 'Op. Exentas', 'Otros Tributos', 'IVA Diferencial', 'Total IVA', 'Imp. Total']],
         body: datosTabla,
-        startY: 75,
-        styles: { fontSize: 7 },
-        headStyles: { fillColor: [66, 139, 202] },
+        startY: 45,
+        styles: { fontSize: 6, cellPadding: 1 },
+        headStyles: { fillColor: [66, 139, 202], fontSize: 7 },
         columnStyles: {
-          0: { cellWidth: 18 }, // Fecha
-          1: { cellWidth: 25 }, // Proveedor
-          2: { cellWidth: 25 }, // CUIT
-          3: { cellWidth: 18 }, // Tipo
-          4: { cellWidth: 20 }, // Neto Gravado
-          5: { cellWidth: 20 }, // IVA
-          6: { cellWidth: 20 }, // Total
-          7: { cellWidth: 20 }  // Estado
+          0: { cellWidth: 20 },  // Fecha
+          1: { cellWidth: 25 },  // Tipo-N° Comp
+          2: { cellWidth: 30 },  // Razón Social  
+          3: { cellWidth: 25 },  // CUIT
+          4: { cellWidth: 22 },  // Neto Gravado
+          5: { cellWidth: 22 },  // Neto No Gravado
+          6: { cellWidth: 20 },  // Op. Exentas
+          7: { cellWidth: 20 },  // Otros Tributos
+          8: { cellWidth: 22 },  // IVA Diferencial
+          9: { cellWidth: 20 },  // Total IVA
+          10: { cellWidth: 22 }  // Imp. Total
         }
       })
       console.log('🔍 DEBUG PDF: Tabla generada exitosamente')
       
+      // Agregar desglose por alícuotas
+      const yPosition = doc.lastAutoTable.finalY + 15
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'bold')
+      doc.text('Detalle por Alícuotas:', 20, yPosition)
+      
+      const desgloseData = [
+        ['Al 0%', totales.neto_0.toLocaleString('es-AR', {maximumFractionDigits: 0}), '0.00', '0'],
+        ['Al 2.5%', totales.neto_2_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '2.50', totales.iva_2_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Al 5%', totales.neto_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '5.00', totales.iva_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Al 10.5%', totales.neto_10_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '10.50', totales.iva_10_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Al 21.0%', totales.neto_21.toLocaleString('es-AR', {maximumFractionDigits: 0}), '21.00', totales.iva_21.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Al 27.0%', totales.neto_27.toLocaleString('es-AR', {maximumFractionDigits: 0}), '27.00', totales.iva_27.toLocaleString('es-AR', {maximumFractionDigits: 0})]
+      ]
+
+      autoTable(doc, {
+        head: [['Detalle', 'Neto $', 'Alíc.', 'IVA $']],
+        body: desgloseData,
+        startY: yPosition + 5,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [66, 139, 202] },
+        columnStyles: {
+          0: { cellWidth: 30 },  // Detalle
+          1: { cellWidth: 40 },  // Neto $
+          2: { cellWidth: 20 },  // Alíc.
+          3: { cellWidth: 40 }   // IVA $
+        }
+      })
+      
       // Agregar nota si hay más facturas
-      if (facturas.length > 50) {
+      if (facturas.length > 30) {
         doc.setFontSize(9)
-        doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
+        doc.text(`⚠️ Mostrando primeras 30 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
       }
 
-      // Generar nombre único para evitar sobreescribir
-      const [mes, año] = periodo.split('/')
+      // Generar nombre único para evitar sobreescribir  
       const añoCorto = año.slice(-2)
-      const nombreBase = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}`
+      const nombreBase = `LIBRO IVA COMPRAS ${añoCorto}-${mes.padStart(2, '0')}`
       const filename = await generarNombreUnico(directorio, nombreBase, 'pdf')
 
       console.log('🔍 DEBUG PDF: Antes de guardar - directorio:', directorio ? 'SI EXISTE' : 'NULL')
