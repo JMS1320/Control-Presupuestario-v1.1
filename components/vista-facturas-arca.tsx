@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createPortal } from "react-dom"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -1329,15 +1328,17 @@ export function VistaFacturasArca() {
                 {periodoConsulta && facturasPeriodo.length > 0 && (
                   <Button 
                     onClick={() => {
-                      console.log('🔧 DEBUG: Click Gestionar Facturas')
-                      console.log('Estado actual mostrarGestionMasiva:', mostrarGestionMasiva)
-                      setMostrarGestionMasiva(true)
-                      console.log('Después de setMostrarGestionMasiva(true)')
+                      console.log('🔧 DEBUG: Activar modo gestión masiva')
+                      setMostrarGestionMasiva(!mostrarGestionMasiva)
+                      setFacturasSeleccionadasGestion(new Set()) // Limpiar selección
                     }}
-                    variant="outline"
-                    className="w-full border-blue-500 text-blue-600 hover:bg-blue-50"
+                    variant={mostrarGestionMasiva ? "default" : "outline"}
+                    className={mostrarGestionMasiva 
+                      ? "w-full bg-blue-600 hover:bg-blue-700 text-white" 
+                      : "w-full border-blue-500 text-blue-600 hover:bg-blue-50"
+                    }
                   >
-                    🔧 Gestionar Facturas ({facturasPeriodo.length})
+                    {mostrarGestionMasiva ? "❌ Cancelar Gestión" : "🔧 Gestionar Facturas"} ({facturasPeriodo.length})
                   </Button>
                 )}
               </div>
@@ -1408,6 +1409,20 @@ export function VistaFacturasArca() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {mostrarGestionMasiva && (
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={facturasSeleccionadasGestion.size === facturasPeriodo.length && facturasPeriodo.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))
+                            } else {
+                              setFacturasSeleccionadasGestion(new Set())
+                            }
+                          }}
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Fecha</TableHead>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
@@ -1424,6 +1439,22 @@ export function VistaFacturasArca() {
                 <TableBody>
                   {facturasPeriodo.map(factura => (
                     <TableRow key={factura.id}>
+                      {mostrarGestionMasiva && (
+                        <TableCell>
+                          <Checkbox
+                            checked={facturasSeleccionadasGestion.has(factura.id)}
+                            onCheckedChange={(checked) => {
+                              const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
+                              if (checked) {
+                                nuevaSeleccion.add(factura.id)
+                              } else {
+                                nuevaSeleccion.delete(factura.id)
+                              }
+                              setFacturasSeleccionadasGestion(nuevaSeleccion)
+                            }}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
                       <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
                       <TableCell>{factura.cuit}</TableCell>
@@ -1447,6 +1478,70 @@ export function VistaFacturasArca() {
                 </TableBody>
               </Table>
             </div>
+            
+            {/* Panel de controles gestión masiva */}
+            {mostrarGestionMasiva && facturasSeleccionadasGestion.size > 0 && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-medium text-blue-900">
+                    🔧 Gestión Masiva - {facturasSeleccionadasGestion.size} facturas seleccionadas
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFacturasSeleccionadasGestion(new Set())}
+                  >
+                    Limpiar selección
+                  </Button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Cambiar Estado DDJJ */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-blue-900">Estado DDJJ</Label>
+                    <Select value={nuevoEstadoDDJJ} onValueChange={setNuevoEstadoDDJJ}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Sin cambios</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                        <SelectItem value="Imputado">Imputado</SelectItem>
+                        <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Cambiar Período */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-blue-900">Período MM/AAAA</Label>
+                    <Select value={nuevoPeriodo} onValueChange={setNuevoPeriodo}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar período" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Sin cambios</SelectItem>
+                        {generarPeriodos().map(periodo => (
+                          <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Botón aplicar */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-blue-900">Acción</Label>
+                    <Button
+                      onClick={ejecutarGestionMasiva}
+                      disabled={facturasSeleccionadasGestion.size === 0 || (!nuevoEstadoDDJJ && !nuevoPeriodo)}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                    >
+                      ✅ Aplicar Cambios
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1822,212 +1917,6 @@ export function VistaFacturasArca() {
         </Card>
       )}
 
-      {/* Modal Gestión Masiva de Facturas */}
-      {console.log('🔍 DEBUG: Renderizando modal gestión masiva, open:', mostrarGestionMasiva)}
-      {mostrarGestionMasiva && typeof window !== 'undefined' && createPortal(
-        <div 
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            zIndex: 999999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px'
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setMostrarGestionMasiva(false)
-            }
-          }}
-        >
-          <div 
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '8px',
-              maxWidth: '1000px',
-              width: '100%',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              padding: '24px',
-              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
-              position: 'relative'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div style={{ marginBottom: '24px', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                🔧 Gestionar Facturas Masivamente
-              </h2>
-              <p style={{ color: '#6b7280', fontSize: '14px', margin: '4px 0 0 0' }}>
-                Selecciona facturas y modifica estado DDJJ o período contable
-              </p>
-              <button
-                onClick={() => setMostrarGestionMasiva(false)}
-                style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: '#6b7280'
-                }}
-              >
-                ×
-              </button>
-            </div>
-          
-          <div className="space-y-4">
-            {/* Controles */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
-              {/* Cambiar Estado DDJJ */}
-              <div className="space-y-2">
-                <Label>Cambiar Estado DDJJ</Label>
-                <Select value={nuevoEstadoDDJJ} onValueChange={setNuevoEstadoDDJJ}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Sin cambios</SelectItem>
-                    <SelectItem value="No">No</SelectItem>
-                    <SelectItem value="Imputado">Imputado</SelectItem>
-                    <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Cambiar Período */}
-              <div className="space-y-2">
-                <Label>Cambiar Período MM/AAAA</Label>
-                <Select value={nuevoPeriodo} onValueChange={setNuevoPeriodo}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar período" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Sin cambios</SelectItem>
-                    {generarPeriodos().map(periodo => (
-                      <SelectItem key={periodo} value={periodo}>{periodo}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Tabla facturas con checkboxes */}
-            {facturasPeriodo.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Seleccionar Facturas</Label>
-                  <div className="space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))}
-                    >
-                      Todas
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFacturasSeleccionadasGestion(new Set())}
-                    >
-                      Ninguna
-                    </Button>
-                  </div>
-                </div>
-                
-                <div className="border rounded max-h-96 overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={facturasSeleccionadasGestion.size === facturasPeriodo.length}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))
-                              } else {
-                                setFacturasSeleccionadasGestion(new Set())
-                              }
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Número</TableHead>
-                        <TableHead>Razón Social</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Estado DDJJ</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {facturasPeriodo.map((factura) => (
-                        <TableRow key={factura.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={facturasSeleccionadasGestion.has(factura.id)}
-                              onCheckedChange={(checked) => {
-                                const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
-                                if (checked) {
-                                  nuevaSeleccion.add(factura.id)
-                                } else {
-                                  nuevaSeleccion.delete(factura.id)
-                                }
-                                setFacturasSeleccionadasGestion(nuevaSeleccion)
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>{factura.fecha_factura}</TableCell>
-                          <TableCell>{factura.tipo_comprobante}</TableCell>
-                          <TableCell>{factura.punto_venta}-{factura.numero_factura}</TableCell>
-                          <TableCell>{factura.razon_social?.substring(0, 30)}...</TableCell>
-                          <TableCell>${(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell>
-                            <Badge variant={factura.ddjj_iva === 'DDJJ OK' ? 'default' : 'secondary'}>
-                              {factura.ddjj_iva}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            )}
-
-            {/* Botones de acción */}
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setMostrarGestionMasiva(false)
-                  setFacturasSeleccionadasGestion(new Set())
-                  setNuevoEstadoDDJJ('')
-                  setNuevoPeriodo('')
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={ejecutarGestionMasiva}
-                disabled={facturasSeleccionadasGestion.size === 0 || (!nuevoEstadoDDJJ && !nuevoPeriodo)}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                🔧 Aplicar Cambios ({facturasSeleccionadasGestion.size} facturas)
-              </Button>
-            </div>
-          </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* Modal para validación de categorías */}
       <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCateg()}>
