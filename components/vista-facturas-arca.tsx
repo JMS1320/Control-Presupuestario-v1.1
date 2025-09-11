@@ -1237,14 +1237,11 @@ export function VistaFacturasArca() {
         throw new Error('No hay facturas para exportar')
       }
       
-      // Función para formato Excel con puntos de miles + espacios + ceros como " -   "
+      // Función para formato Excel contabilidad - sin puntos en contenido, coma decimal
       const formatearNumeroExcel = (valor) => {
-        if (valor === 0 || valor === null || valor === undefined) return ' -   '
-        const formatted = valor.toLocaleString('es-AR', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        })
-        return ` ${formatted} `
+        if (valor === 0 || valor === null || valor === undefined) return 0
+        // Convertir a string con coma como separador decimal, sin puntos de miles
+        return parseFloat(valor.toFixed(2))
       }
 
       // Preparar datos para Excel - Formato LIBRO IVA COMPRAS
@@ -1315,8 +1312,6 @@ export function VistaFacturasArca() {
       const filasExtras = [
         {},
         { 'Fecha': 'TOTALES GENERALES', 'Neto Gravado': formatearNumeroExcel(totales.neto_gravado), 'Neto No Gravado': formatearNumeroExcel(totales.neto_no_gravado), 'Op. Exentas': formatearNumeroExcel(totales.op_exentas), 'Otros Tributos': formatearNumeroExcel(totales.otros_tributos), 'IVA 21%': formatearNumeroExcel(totales.iva_21), 'IVA Diferencial': formatearNumeroExcel(totales.iva_diferencial), 'Total IVA': formatearNumeroExcel(totales.total_iva), 'Imp. Total': formatearNumeroExcel(totales.importe_total) },
-        { 'Fecha': 'MONOTRIBUTISTA', 'Imp. Total': formatearNumeroExcel(monotributista) },
-        { 'Fecha': 'Total General + Monotributo', 'Neto Gravado': formatearNumeroExcel(totales.neto_gravado), 'Neto No Gravado': formatearNumeroExcel(totales.neto_no_gravado), 'Op. Exentas': formatearNumeroExcel(totales.op_exentas), 'Otros Tributos': formatearNumeroExcel(totales.otros_tributos), 'IVA 21%': formatearNumeroExcel(totales.iva_21), 'IVA Diferencial': formatearNumeroExcel(totales.iva_diferencial), 'Total IVA': formatearNumeroExcel(totales.total_iva), 'Imp. Total': formatearNumeroExcel(totales.importe_total + monotributista) },
         {},
         { 'Fecha': 'Detalle por Alícuotas', 'Tipo-N° Comp.': 'Neto $', 'Razón Social': 'Alíc.', 'C.U.I.T.': 'IVA $' },
         { 'Fecha': 'Al 0%', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_0), 'Razón Social': '0.00', 'C.U.I.T.': formatearNumeroExcel(0) },
@@ -1330,18 +1325,34 @@ export function VistaFacturasArca() {
         {},
         { 'Fecha': 'TOTALES GENERALES:' },
         { 'Fecha': 'Concepto ', 'Tipo-N° Comp.': 'Importe $' },
-        { 'Fecha': 'Neto Gravado ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_gravado).trim() },
-        { 'Fecha': 'Neto No Gravado', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_no_gravado).trim() },
-        { 'Fecha': 'Op. Exentas ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.op_exentas).trim() },
-        { 'Fecha': 'Otros Tributos ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.otros_tributos).trim() },
-        { 'Fecha': 'Total IVA ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.total_iva).trim() },
-        { 'Fecha': 'Monotributo', 'Tipo-N° Comp.': formatearNumeroExcel(monotributista).trim() },
-        { 'Fecha': 'Importe Total', 'Tipo-N° Comp.': formatearNumeroExcel(totales.importe_total).trim() }
+        { 'Fecha': 'Neto Gravado ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_gravado) },
+        { 'Fecha': 'Neto No Gravado', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_no_gravado) },
+        { 'Fecha': 'Op. Exentas ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.op_exentas) },
+        { 'Fecha': 'Otros Tributos ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.otros_tributos) },
+        { 'Fecha': 'Total IVA ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.total_iva) },
+        { 'Fecha': 'Importe Total', 'Tipo-N° Comp.': formatearNumeroExcel(totales.importe_total) }
       ]
 
       // Crear libro Excel
       const datosCompletos = [...datosExcel, ...filasExtras]
       const ws = XLSX.utils.json_to_sheet(datosCompletos)
+      
+      // Aplicar formato contabilidad a columnas numéricas (E a L)
+      const range = XLSX.utils.decode_range(ws['!ref'])
+      if (!ws['!cols']) ws['!cols'] = []
+      
+      // Formato contabilidad para columnas numéricas
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        for (let C = 4; C <= 11; ++C) { // Columnas E (4) a L (11) - las numéricas
+          const cellAddress = XLSX.utils.encode_cell({r: R, c: C})
+          if (ws[cellAddress] && typeof ws[cellAddress].v === 'number') {
+            ws[cellAddress].s = { 
+              numFmt: '#,##0.00;[Red]-#,##0.00' // Formato contabilidad con coma decimal
+            }
+          }
+        }
+      }
+      
       const wb = XLSX.utils.book_new()
       
       // Calcular fechas del período correctamente
@@ -1505,24 +1516,6 @@ export function VistaFacturasArca() {
         formatearNumeroPDF(totales.importe_total).trim()
       ])
 
-      // Agregar fila monotributista
-      datosTabla.push([
-        '', '', 'MONOTRIBUTISTA', '', '', '', '', '', '', '',
-        formatearNumeroPDF(monotributista).trim()
-      ])
-
-      // Agregar fila Total General + Monotributo
-      datosTabla.push([
-        '', '', 'Total General + Monotributo', '',
-        formatearNumeroPDF(totales.neto_gravado).trim(),
-        formatearNumeroPDF(totales.neto_no_gravado).trim(),
-        formatearNumeroPDF(totales.op_exentas).trim(),
-        formatearNumeroPDF(totales.otros_tributos).trim(),
-        formatearNumeroPDF(totales.iva_21).trim(),
-        formatearNumeroPDF(totales.iva_diferencial).trim(),
-        formatearNumeroPDF(totales.total_iva).trim(),
-        formatearNumeroPDF(totales.importe_total + monotributista).trim()
-      ])
 
       console.log('🔍 DEBUG PDF: Datos tabla preparados:', datosTabla.length, 'filas')
       console.log('🔍 DEBUG PDF: Primera fila tabla:', datosTabla[0])
@@ -1613,7 +1606,6 @@ export function VistaFacturasArca() {
         ['Op. Exentas', formatearNumeroPDF(totales.op_exentas).trim()],
         ['Otros Tributos', formatearNumeroPDF(totales.otros_tributos).trim()],
         ['Total IVA', formatearNumeroPDF(totales.total_iva).trim()],
-        ['Monotributo', formatearNumeroPDF(monotributista).trim()],
         ['Importe Total', formatearNumeroPDF(totales.importe_total).trim()]
       ]
       
