@@ -1258,6 +1258,7 @@ export function VistaFacturasArca() {
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
           'Op. Exentas': f.imp_op_exentas || 0,
           'Otros Tributos': f.otros_tributos || 0,
+          'IVA 21%': f.iva_21 || 0,
           'IVA Diferencial': ivaDiferencial,
           'Total IVA': f.iva || 0,
           'Imp. Total': f.imp_total || 0
@@ -1300,7 +1301,7 @@ export function VistaFacturasArca() {
       // Agregar filas de totales
       const filasExtras = [
         {},
-        { 'Fecha': 'TOTALES GENERALES', 'Neto Gravado': totales.neto_gravado, 'Neto No Gravado': totales.neto_no_gravado, 'Op. Exentas': totales.op_exentas, 'Otros Tributos': totales.otros_tributos, 'IVA Diferencial': totales.iva_diferencial, 'Total IVA': totales.total_iva, 'Imp. Total': totales.importe_total },
+        { 'Fecha': 'TOTALES GENERALES', 'Neto Gravado': totales.neto_gravado, 'Neto No Gravado': totales.neto_no_gravado, 'Op. Exentas': totales.op_exentas, 'Otros Tributos': totales.otros_tributos, 'IVA 21%': totales.iva_21 || 0, 'IVA Diferencial': totales.iva_diferencial, 'Total IVA': totales.total_iva, 'Imp. Total': totales.importe_total },
         { 'Fecha': 'MONOTRIBUTISTA', 'Imp. Total': monotributista },
         {},
         { 'Fecha': 'Detalle por Alícuotas', 'Tipo-N° Comp.': 'Neto $', 'Razón Social': 'Alíc.', 'C.U.I.T.': 'IVA $' },
@@ -1308,8 +1309,10 @@ export function VistaFacturasArca() {
         { 'Fecha': 'Al 2.5%', 'Tipo-N° Comp.': totales.neto_2_5, 'Razón Social': '2.50', 'C.U.I.T.': totales.iva_2_5 },
         { 'Fecha': 'Al 5%', 'Tipo-N° Comp.': totales.neto_5, 'Razón Social': '5.00', 'C.U.I.T.': totales.iva_5 },
         { 'Fecha': 'Al 10.5%', 'Tipo-N° Comp.': totales.neto_10_5, 'Razón Social': '10.50', 'C.U.I.T.': totales.iva_10_5 },
-        { 'Fecha': 'Al 21.0%', 'Tipo-N° Comp.': totales.neto_21, 'Razón Social': '21.00', 'C.U.I.T.': totales.iva_21 },
-        { 'Fecha': 'Al 27.0%', 'Tipo-N° Comp.': totales.neto_27, 'Razón Social': '27.00', 'C.U.I.T.': totales.iva_27 }
+        { 'Fecha': 'Al 21%', 'Tipo-N° Comp.': totales.neto_21, 'Razón Social': '21.00', 'C.U.I.T.': totales.iva_21 },
+        { 'Fecha': 'Al 27%', 'Tipo-N° Comp.': totales.neto_27, 'Razón Social': '27.00', 'C.U.I.T.': totales.iva_27 },
+        { 'Fecha': 'Monotributo', 'Tipo-N° Comp.': monotributista, 'Razón Social': '----', 'C.U.I.T.': '----' },
+        { 'Fecha': 'TOTALES', 'Tipo-N° Comp.': totales.neto_gravado + totales.neto_no_gravado + totales.op_exentas + monotributista, 'Razón Social': '----', 'C.U.I.T.': totales.total_iva }
       ]
 
       // Crear libro Excel
@@ -1448,6 +1451,7 @@ export function VistaFacturasArca() {
           (f.imp_neto_no_gravado || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.imp_op_exentas || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.otros_tributos || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
+          (f.iva_21 || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           ivaDiferencial.toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.iva || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
           (f.imp_total || 0).toLocaleString('es-AR', {maximumFractionDigits: 0})
@@ -1461,6 +1465,7 @@ export function VistaFacturasArca() {
         totales.neto_no_gravado.toLocaleString('es-AR', {maximumFractionDigits: 0}),
         totales.op_exentas.toLocaleString('es-AR', {maximumFractionDigits: 0}),
         totales.otros_tributos.toLocaleString('es-AR', {maximumFractionDigits: 0}),
+        (totales.iva_21 || 0).toLocaleString('es-AR', {maximumFractionDigits: 0}),
         totales.iva_diferencial.toLocaleString('es-AR', {maximumFractionDigits: 0}),
         totales.total_iva.toLocaleString('es-AR', {maximumFractionDigits: 0}),
         totales.importe_total.toLocaleString('es-AR', {maximumFractionDigits: 0})
@@ -1480,7 +1485,7 @@ export function VistaFacturasArca() {
       // Usar autoTable para tabla horizontal
       console.log('🔍 DEBUG PDF: Generando tabla con autoTable...')
       autoTable(doc, {
-        head: [['Fecha', 'Tipo-N° Comp.', 'Razón Social', 'C.U.I.T.', 'Neto Gravado', 'Neto No Gravado', 'Op. Exentas', 'Otros Tributos', 'IVA Diferencial', 'Total IVA', 'Imp. Total']],
+        head: [['Fecha', 'Tipo-N° Comp.', 'Razón Social', 'C.U.I.T.', 'Neto Gravado', 'Neto No Gravado', 'Op. Exentas', 'Otros Tributos', 'IVA 21%', 'IVA Diferencial', 'Total IVA', 'Imp. Total']],
         body: datosTabla,
         startY: 45,
         styles: { fontSize: 6, cellPadding: 1 },
@@ -1494,9 +1499,10 @@ export function VistaFacturasArca() {
           5: { cellWidth: 22 },  // Neto No Gravado
           6: { cellWidth: 20 },  // Op. Exentas
           7: { cellWidth: 20 },  // Otros Tributos
-          8: { cellWidth: 22 },  // IVA Diferencial
-          9: { cellWidth: 20 },  // Total IVA
-          10: { cellWidth: 22 }  // Imp. Total
+          8: { cellWidth: 18 },  // IVA 21%
+          9: { cellWidth: 18 },  // IVA Diferencial
+          10: { cellWidth: 20 }, // Total IVA
+          11: { cellWidth: 22 }  // Imp. Total
         }
       })
       console.log('🔍 DEBUG PDF: Tabla generada exitosamente')
@@ -1524,8 +1530,10 @@ export function VistaFacturasArca() {
         ['Al 2.5%', totales.neto_2_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '2.50', totales.iva_2_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
         ['Al 5%', totales.neto_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '5.00', totales.iva_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
         ['Al 10.5%', totales.neto_10_5.toLocaleString('es-AR', {maximumFractionDigits: 0}), '10.50', totales.iva_10_5.toLocaleString('es-AR', {maximumFractionDigits: 0})],
-        ['Al 21.0%', totales.neto_21.toLocaleString('es-AR', {maximumFractionDigits: 0}), '21.00', totales.iva_21.toLocaleString('es-AR', {maximumFractionDigits: 0})],
-        ['Al 27.0%', totales.neto_27.toLocaleString('es-AR', {maximumFractionDigits: 0}), '27.00', totales.iva_27.toLocaleString('es-AR', {maximumFractionDigits: 0})]
+        ['Al 21%', totales.neto_21.toLocaleString('es-AR', {maximumFractionDigits: 0}), '21.00', totales.iva_21.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Al 27%', totales.neto_27.toLocaleString('es-AR', {maximumFractionDigits: 0}), '27.00', totales.iva_27.toLocaleString('es-AR', {maximumFractionDigits: 0})],
+        ['Monotributo', monotributista.toLocaleString('es-AR', {maximumFractionDigits: 0}), '----', '----'],
+        ['TOTALES', (totales.neto_gravado + totales.neto_no_gravado + totales.op_exentas + monotributista).toLocaleString('es-AR', {maximumFractionDigits: 0}), '----', totales.total_iva.toLocaleString('es-AR', {maximumFractionDigits: 0})]
       ]
 
       autoTable(doc, {
@@ -1539,6 +1547,13 @@ export function VistaFacturasArca() {
           1: { cellWidth: 40 },  // Neto $
           2: { cellWidth: 20 },  // Alíc.
           3: { cellWidth: 40 }   // IVA $
+        },
+        didDrawCell: function(data) {
+          // Resaltar fila TOTALES (última fila, índice 7)
+          if (data.row.index === 7) {
+            doc.setFont(undefined, 'bold')
+            doc.setFillColor(220, 220, 220) // Color gris claro
+          }
         }
       })
       
@@ -2106,8 +2121,8 @@ export function VistaFacturasArca() {
                       <TableCell className="text-right">${Number(factura.imp_neto_gravado || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell className="text-right">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell className="text-right">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_total_iva || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${Number(factura.iva || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell className="text-right">${Number(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell>
                         <Badge variant={

@@ -132,6 +132,57 @@ npm test
 - `9b4c527` - Feature: Soporte dual CSV/Excel + 13 columnas nuevas AFIP 2025
 - ✅ **Branches sincronizados**: desarrollo ↔ main + push exitoso
 
+## 🚀 **AVANCES SESIÓN 2025-09-11:**
+
+### 🎯 **CONTEXTO SESIÓN:**
+- **Objetivo**: Fix sistema DDJJ IVA formato profesional LIBRO IVA COMPRAS
+- **Problema inicial**: Error "a.includes is not a function" impedía generación archivos
+- **Origen**: Sesión previa implementó sistema completo pero con errores técnicos
+
+### 🔧 **PROBLEMAS RESUELTOS:**
+
+#### ✅ **1. ERROR CRÍTICO "includes is not a function"**
+- **Root Cause**: Interface `FacturaArca` definía `tipo_comprobante: number` pero código usaba `.includes('C')`
+- **Solución**: Cambiar a `f.tipo_comprobante === 11` (Tipo 11 AFIP = Factura C MONOTRIBUTISTA)
+- **Commit**: `9cc5333` - Fix tipo_comprobante number vs string
+- **Resultado**: ✅ Error completamente eliminado
+
+#### ✅ **2. PDF LIMITADO A 30 FACTURAS**
+- **Problema**: PDF mostraba solo primeras 30 facturas vs Excel todas
+- **Solución**: Remover `facturas.slice(0, 30)` → mostrar todas
+- **Plus**: Desglose alícuotas en página separada con header profesional
+- **Commit**: `f01c297` - PDF completo + desglose página separada
+- **Resultado**: ✅ PDF multipágina completo
+
+#### ✅ **3. CAMPOS BD INCORRECTOS - IVA Y OTROS TRIBUTOS**
+- **Diagnóstico**: Excel IVA ✅ otros_tributos ❌, PDF ambos ❌
+- **Root Cause**: Mapeo incorrecto campos BD
+  - `f.imp_otros_tributos` → NO EXISTE en BD (campo correcto: `otros_tributos`)
+  - `f.imp_total_iva` → NO EXISTE en BD (campo correcto: `iva`)
+- **Verificación BD**: Query SQL confirmó valores correctos en campo `iva`
+- **Solución**: Corregir todos los mapeos + actualizar interface FacturaArca
+- **Commits**: 
+  - `031baa5` - Fix interface FacturaArca con campos IVA faltantes
+  - `f96fa6c` - Fix mapeo campos BD → Excel/PDF
+- **Resultado**: ✅ **CONFIRMADO TESTING** - Total IVA + Otros Tributos funcionando
+
+### 📊 **ESTRUCTURA FINAL IMPLEMENTADA:**
+- **Header**: MARTINEZ SOBRADO AGRO SRL + CUIT + branding
+- **Columnas BD reales**: Neto Gravado, Neto No Gravado, Op. Exentas, Otros Tributos, Total IVA, Imp. Total
+- **IVA Diferencial**: Suma automática alícuotas != 21%
+- **PDF**: Orientación horizontal + multipágina + desglose separado
+- **Persistencia**: localStorage carpeta seleccionada
+
+### 🏆 **COMMITS APLICADOS 2025-09-11:**
+```
+4becd2e - Fix: Error includes function en generación Excel/PDF  
+9cc5333 - Fix: Error tipo_comprobante number vs string MONOTRIBUTISTA
+f01c297 - Feature: PDF completo + desglose página separada
+55a841c - Fix: Usar campo 'iva' en lugar 'imp_total_iva' inexistente
+031baa5 - Fix: Agregar campos IVA faltantes interface FacturaArca
+f96fa6c - Fix: Corregir mapeo campos BD → Excel/PDF
+```
+
 ## 🚀 **AVANCES SESIÓN 2025-09-10:**
 
 ### 🎯 **CONTEXTO SESIÓN:**
@@ -168,27 +219,52 @@ npm test
 
 ## 🚨 **PENDIENTES CRÍTICOS SESIÓN PRÓXIMA:**
 
-### 🔥 **PRIORIDAD MÁXIMA - FIX BUILD ERROR:**
-- [2025-09-10] 🚨 **ARCHIVO CRÍTICO**: `components/vista-facturas-arca.tsx` - Build completamente roto
-- [2025-09-10] 💡 **FIX IDENTIFICADO**: Mover Excel Import Dialog (línea 2022) DENTRO de TabsContent Facturas
-- [2025-09-10] ⚡ **INDENTACIÓN**: Cambiar Dialog de nivel component a nivel TabsContent con indentación correcta
-- [2025-09-10] 🎯 **ESTRUCTURA OBJETIVO**:
-  ```jsx
-  <TabsContent value="facturas">
-    ... contenido facturas ...
-    
-    {/* Modal Excel Import DEBE ESTAR AQUÍ */}
-    <Dialog open={mostrarImportador}>
-      ...
-    </Dialog>
-  </TabsContent>
-  ```
-- [2025-09-10] 🚀 **TESTING POST-FIX**: Una vez corregido → probar funcionalidad gestión masiva modal
+### 🎯 **ESTADO SISTEMA DDJJ IVA (2025-09-11):**
+- **Excel + PDF**: ✅ Funcionando correctamente con todos los fixes aplicados
+- **Sistema DDJJ**: 95% funcional - errores técnicos resueltos
+- **Branch**: `desarrollo` sincronizado con todos los commits
 
-### 🧪 **TESTING COMPLETO FUNCIONALIDADES 2025-09-09:**
-- [2025-09-10] ⚠️ **DEBUGGING EXCEL IMPORT**: 48 registros procesados, 0 importados - requiere server logs
-- [2025-09-10] 🔍 **HIPÓTESIS VALIDACIÓN**: Campos obligatorios (fecha_emision/cuit/imp_total) 
-- [2025-09-10] 📋 **WORKFLOW COMPLETO**: Reset facturas → re-imputar → confirmar DDJJ → verificar descargas PDF+Excel
+### 🔧 **PENDIENTES INMEDIATOS:**
+
+#### **1. FIX INTERFAZ - Total IVA sigue en cero**
+- **Estado**: Excel/PDF ✅ corregidos, Interfaz ❌ aún muestra 0
+- **Problema**: Mapeo diferente en consulta interfaz vs generación archivos
+- **Acción**: Buscar consulta específica interfaz y corregir mismo mapeo (`f.imp_total_iva` → `f.iva`)
+- **Tiempo estimado**: 2 minutos
+
+#### **2. AGREGAR COLUMNA IVA 21% - Excel + PDF**
+- **Ubicación**: Después de columnas Neto, antes de IVA Diferencial
+- **Orden objetivo**:
+  ```
+  Fecha | Tipo | Razón Social | CUIT | Neto Gravado | Neto No Gravado | 
+  Op. Exentas | Otros Tributos | IVA 21% | IVA Diferencial | Total IVA | Imp. Total
+  ```
+- **Campo BD**: `iva_21` (ya existe en interface FacturaArca)
+- **Cambio**: Mover "IVA Diferencial" después de "IVA 21%"
+- **Tiempo estimado**: 5 minutos
+
+#### **3. MEJORAS DESGLOSE (después de fixes anteriores)**
+- **Monotributo**: Mover a tabla desglose alícuotas
+- **Estructura objetivo**:
+  ```
+  Al 0%       | [neto] | 0.00  | [iva]
+  Al 2.5%     | [neto] | 2.50  | [iva]
+  Al 5%       | [neto] | 5.00  | [iva]
+  Al 10.5%    | [neto] | 10.50 | [iva]
+  Al 21%      | [neto] | 21.00 | [iva]
+  Al 27%      | [neto] | 27.00 | [iva]
+  Monotributo | [monto]| ----  | ----
+  -----------+--------+-------+-----
+  TOTALES     | [suma] | ----  | [suma]
+  ```
+- **Resaltado**: Solo fila TOTALES con formato especial
+- **Tiempo estimado**: 10 minutos
+
+### 🚀 **METODOLOGÍA PRÓXIMA SESIÓN (15-20 min total):**
+1. **[2min]** Fix interfaz Total IVA → mismo patrón Excel/PDF aplicado
+2. **[5min]** Agregar IVA 21% + reordenar columnas
+3. **[10min]** Reestructurar desglose con monotributo + totales
+4. **[3min]** Testing rápido → generar archivos verificar orden
 
 ### 🎯 **PROPUESTA METODOLÓGICA PRÓXIMA SESIÓN:**
 
@@ -332,36 +408,42 @@ npm test
 
 ---
 
-# 📋 **RESUMEN EJECUTIVO 2025-09-10**
+# 📋 **RESUMEN EJECUTIVO 2025-09-11**
 
 ## ✅ **LOGROS PRINCIPALES:**
-1. **Sistema DDJJ IVA**: Workflow completo funcional (validaciones + tipos comprobante + subtotales)
-2. **Conversión automática**: Notas crédito → valores negativos sin intervención manual
-3. **Gestión masiva**: Admin puede cambiar bulk estados facturas + períodos
-4. **Fix crítico fechas**: Cálculo último día mes correcto (importante para Sep, Feb, etc.)
-5. **Auto-filtrado**: UX mejorado eliminando clicks manuales
+1. **Sistema DDJJ IVA COMPLETO**: ✅ Todos los errores técnicos resueltos - Excel + PDF funcionando
+2. **Fix errores críticos**: ✅ "includes is not a function" + mapeo campos BD + PDF completo
+3. **Formato profesional**: ✅ LIBRO IVA COMPRAS con header MSA + desglose alícuotas
+4. **Mapeo BD correcto**: ✅ Campos `iva` y `otros_tributos` funcionando correctamente
+5. **PDF multipágina**: ✅ Todas las facturas + desglose en página separada
 
-## 🚨 **ISSUE CRÍTICO PENDIENTE:**
-- **Build Error**: JSX malformado impide deployment - FIX identificado, 5min resolución
-- **Excel Import**: 0 importados de 48 - requiere server logs debugging  
-- **Modal gestión**: Invisible pero funcional - se resuelve con fix JSX
-- **PDF/Excel downloads**: Errores librerías - requiere debugging imports
+## 🎯 **PENDIENTES FINALES (15-20 min):**
+- **Fix interfaz IVA**: Corrección consulta interfaz (2 min)
+- **Columna IVA 21%**: Agregar + reordenar Excel/PDF (5 min)  
+- **Desglose mejorado**: Reestructurar con monotributo + totales (10 min)
 
-## 🎯 **PRÓXIMA SESIÓN - PLAN 25 MINUTOS:**
-1. **[5min]** Fix build error → mover Excel Dialog dentro TabsContent
-2. **[15min]** Testing completo funcionalidades + debugging server logs  
-3. **[5min]** Deploy validation + merge main si todo OK
+## 🏆 **ESTADO FINAL:**
+**Sistema DDJJ IVA**: 95% completado - solo mejoras finales pendientes
+- **Excel + PDF**: ✅ Funcionando correctamente
+- **Branch**: `desarrollo` sincronizado con 6 commits aplicados
+- **Deployment**: ✅ Sin errores build (issues 2025-09-10 no aplicables)
 
-**Estado**: Sistema 95% funcional, bloqueado por issue estructural JSX que tiene solución identificada.
-- **MODIFICADO**: `components/vista-facturas-arca.tsx` - Sistema DDJJ completo
-- **FUNCIONES NUEVAS**: `confirmarDDJJ()` + `validarPeriodoDeclarado()` + useEffect automático
-- **BUG FIX**: Cálculo último día mes - soporte meses 28/29/30/31 días
+### ✅ **COMMITS APLICADOS 2025-09-11:**
+```
+4becd2e - Fix: Error includes function en generación Excel/PDF  
+9cc5333 - Fix: Error tipo_comprobante number vs string MONOTRIBUTISTA
+f01c297 - Feature: PDF completo + desglose página separada
+55a841c - Fix: Usar campo 'iva' en lugar 'imp_total_iva' inexistente
+031baa5 - Fix: Agregar campos IVA faltantes interface FacturaArca
+f96fa6c - Fix: Corregir mapeo campos BD → Excel/PDF
+```
 
-### ✅ **COMMITS APLICADOS 2025-09-10:**
-- `b20c717` - Fix: Cálculo correcto último día mes para filtrado períodos
-- `627ae45` - Feature: Filtrado automático período imputación  
-- `f6337dd` - Feature: Botón Confirmar DDJJ + Validación períodos declarados
-- **Status git**: Branch desarrollo sincronizado + push exitoso
+## 📊 **PRÓXIMA SESIÓN OBJETIVOS:**
+1. **Completar sistema DDJJ IVA**: Aplicar 3 mejoras finales identificadas
+2. **Testing completo**: Verificar funcionalidad 100% operativa
+3. **Posible retoma Templates**: Si DDJJ completado, continuar objetivo carga masiva templates
+
+**Contexto conservado**: Sistema permisos URL + 13 columnas AFIP + tipos comprobante funcionando
 
 ### 🎯 **PRÓXIMA PRIORIDAD DEFINIDA:**
 - 📥 **DESCARGA AUTOMÁTICA**: PDF + Excel al confirmar DDJJ
