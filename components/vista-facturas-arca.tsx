@@ -1330,6 +1330,7 @@ export function VistaFacturasArca() {
         { 'Fecha': 'Op. Exentas ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.op_exentas) },
         { 'Fecha': 'Otros Tributos ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.otros_tributos) },
         { 'Fecha': 'Total IVA ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.total_iva) },
+        { 'Fecha': 'Monotributo', 'Tipo-N° Comp.': formatearNumeroExcel(monotributista) },
         { 'Fecha': 'Importe Total', 'Tipo-N° Comp.': formatearNumeroExcel(totales.importe_total) }
       ]
 
@@ -1606,6 +1607,7 @@ export function VistaFacturasArca() {
         ['Op. Exentas', formatearNumeroPDF(totales.op_exentas).trim()],
         ['Otros Tributos', formatearNumeroPDF(totales.otros_tributos).trim()],
         ['Total IVA', formatearNumeroPDF(totales.total_iva).trim()],
+        ['Monotributo', formatearNumeroPDF(monotributista).trim()],
         ['Importe Total', formatearNumeroPDF(totales.importe_total).trim()]
       ]
       
