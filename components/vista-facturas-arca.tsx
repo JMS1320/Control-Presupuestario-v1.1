@@ -340,14 +340,14 @@ export function VistaFacturasArca() {
     if (busquedaProveedor.trim()) {
       const busqueda = busquedaProveedor.toLowerCase()
       facturasFiltradas = facturasFiltradas.filter(f => 
-        f.denominacion_emisor.toLowerCase().includes(busqueda)
+        f.denominacion_emisor && f.denominacion_emisor.toLowerCase().includes(busqueda)
       )
     }
     
     // Filtro por CUIT
     if (busquedaCUIT.trim()) {
       facturasFiltradas = facturasFiltradas.filter(f => 
-        f.cuit.includes(busquedaCUIT)
+        f.cuit && f.cuit.includes(busquedaCUIT)
       )
     }
     
@@ -355,7 +355,7 @@ export function VistaFacturasArca() {
     if (busquedaDetalle.trim()) {
       const busqueda = busquedaDetalle.toLowerCase()
       facturasFiltradas = facturasFiltradas.filter(f => 
-        f.detalle?.toLowerCase().includes(busqueda)
+        f.detalle && f.detalle.toLowerCase().includes(busqueda)
       )
     }
     
@@ -378,7 +378,7 @@ export function VistaFacturasArca() {
     if (busquedaCateg.trim()) {
       const busqueda = busquedaCateg.toLowerCase()
       facturasFiltradas = facturasFiltradas.filter(f => 
-        f.cuenta_contable?.toLowerCase().includes(busqueda)
+        f.cuenta_contable && f.cuenta_contable.toLowerCase().includes(busqueda)
       )
     }
     
