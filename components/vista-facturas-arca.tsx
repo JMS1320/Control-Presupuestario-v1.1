@@ -1200,7 +1200,7 @@ export function VistaFacturasArca() {
         throw new Error('No hay facturas para exportar')
       }
       
-      // Preparar datos para Excel - EXACTAMENTE los mismos campos que en pantalla
+      // Preparar datos para Excel - Formato LIBRO IVA COMPRAS
       const datosExcel = facturas.map((f, index) => {
         console.log(`🔍 DEBUG Excel: Procesando factura ${index + 1}:`, {
           fecha_emision: f.fecha_emision,
@@ -1208,38 +1208,89 @@ export function VistaFacturasArca() {
           cuit: f.cuit,
           tipo_comprobante: f.tipo_comprobante
         })
+        
+        // Calcular IVA Diferencial (todo lo que NO es 21%)
+        const ivaDiferencial = (f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)
+        
         return {
           'Fecha': f.fecha_emision || '',
-          'Proveedor': f.denominacion_emisor || '',
-          'CUIT': f.cuit || '',
-          'Tipo': f.tipo_comprobante || '',
+          'Tipo-N° Comp.': f.tipo_comprobante || '',
+          'Razón Social': f.denominacion_emisor || '',
+          'C.U.I.T.': f.cuit || '',
           'Neto Gravado': f.imp_neto_gravado || 0,
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
           'Op. Exentas': f.imp_op_exentas || 0,
           'Otros Tributos': f.imp_otros_tributos || 0,
+          'IVA Diferencial': ivaDiferencial,
           'Total IVA': f.imp_total_iva || 0,
-          'Imp. Total': f.imp_total || 0,
-          'Estado DDJJ': f.ddjj_iva || '',
-          'Punto Venta': f.punto_venta || '',
-          'Número Factura': f.numero_factura || '',
-          'Mes Contable': f.mes_contable || '',
-          'Año Contable': f.año_contable || '',
-          'Fecha Emisión': f.fecha_emision || '',
-          'Fecha Vencimiento': f.fecha_vencimiento || '',
-          'CAI': f.cai || '',
-          'Categoría': f.categ || ''
+          'Imp. Total': f.imp_total || 0
         }
       })
 
+      // Calcular totales para Excel
+      const totales = facturas.reduce((acc, f) => ({
+        neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
+        neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
+        op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
+        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
+        total_iva: acc.total_iva + (f.imp_total_iva || 0),
+        importe_total: acc.importe_total + (f.imp_total || 0),
+        // Alícuotas separadas
+        iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0),
+        iva_5: acc.iva_5 + (f.iva_5 || 0),
+        iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0),
+        iva_21: acc.iva_21 + (f.iva_21 || 0),
+        iva_27: acc.iva_27 + (f.iva_27 || 0),
+        neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0),
+        neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0),
+        neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0),
+        neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0),
+        neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0),
+        neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0)
+      }), {
+        neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, otros_tributos: 0,
+        iva_diferencial: 0, total_iva: 0, importe_total: 0,
+        iva_2_5: 0, iva_5: 0, iva_10_5: 0, iva_21: 0, iva_27: 0,
+        neto_0: 0, neto_2_5: 0, neto_5: 0, neto_10_5: 0, neto_21: 0, neto_27: 0
+      })
+
+      // Calcular Monotributista (facturas tipo C)
+      const monotributista = facturas
+        .filter(f => f.tipo_comprobante?.includes('C') || f.tipo_comprobante?.includes('c'))
+        .reduce((acc, f) => acc + (f.imp_total || 0), 0)
+
+      // Agregar filas de totales
+      const filasExtras = [
+        {},
+        { 'Fecha': 'TOTALES GENERALES', 'Neto Gravado': totales.neto_gravado, 'Neto No Gravado': totales.neto_no_gravado, 'Op. Exentas': totales.op_exentas, 'Otros Tributos': totales.otros_tributos, 'IVA Diferencial': totales.iva_diferencial, 'Total IVA': totales.total_iva, 'Imp. Total': totales.importe_total },
+        { 'Fecha': 'MONOTRIBUTISTA', 'Imp. Total': monotributista },
+        {},
+        { 'Fecha': 'Detalle por Alícuotas', 'Tipo-N° Comp.': 'Neto $', 'Razón Social': 'Alíc.', 'C.U.I.T.': 'IVA $' },
+        { 'Fecha': 'Al 0%', 'Tipo-N° Comp.': totales.neto_0, 'Razón Social': '0.00', 'C.U.I.T.': 0 },
+        { 'Fecha': 'Al 2.5%', 'Tipo-N° Comp.': totales.neto_2_5, 'Razón Social': '2.50', 'C.U.I.T.': totales.iva_2_5 },
+        { 'Fecha': 'Al 5%', 'Tipo-N° Comp.': totales.neto_5, 'Razón Social': '5.00', 'C.U.I.T.': totales.iva_5 },
+        { 'Fecha': 'Al 10.5%', 'Tipo-N° Comp.': totales.neto_10_5, 'Razón Social': '10.50', 'C.U.I.T.': totales.iva_10_5 },
+        { 'Fecha': 'Al 21.0%', 'Tipo-N° Comp.': totales.neto_21, 'Razón Social': '21.00', 'C.U.I.T.': totales.iva_21 },
+        { 'Fecha': 'Al 27.0%', 'Tipo-N° Comp.': totales.neto_27, 'Razón Social': '27.00', 'C.U.I.T.': totales.iva_27 }
+      ]
+
       // Crear libro Excel
-      const ws = XLSX.utils.json_to_sheet(datosExcel)
+      const datosCompletos = [...datosExcel, ...filasExtras]
+      const ws = XLSX.utils.json_to_sheet(datosCompletos)
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo.replace('/', '-')}`)
+      
+      // Calcular fechas del período correctamente
+      const [mes, año] = periodo.split('/')
+      const fechaInicio = `01/${mes.padStart(2, '0')}/${año}`
+      const ultimoDiaMes = new Date(parseInt(año), parseInt(mes), 0).getDate()
+      const fechaFin = `${ultimoDiaMes.toString().padStart(2, '0')}/${mes.padStart(2, '0')}/${año}`
+      
+      XLSX.utils.book_append_sheet(wb, ws, `LIBRO IVA COMPRAS ${mes}-${año}`)
       
       // Generar nombre único para evitar sobreescribir
-      const [mes, año] = periodo.split('/')
       const añoCorto = año.slice(-2)
-      const nombreBase = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}`
+      const nombreBase = `LIBRO IVA COMPRAS ${añoCorto}-${mes.padStart(2, '0')}`
       const filename = await generarNombreUnico(directorio, nombreBase, 'xlsx')
 
       if (directorio) {
