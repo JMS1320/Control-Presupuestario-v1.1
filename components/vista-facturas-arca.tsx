@@ -1325,6 +1325,7 @@ export function VistaFacturasArca() {
                 )}
 
                 {/* Botón Gestionar Facturas - solo si hay facturas en el período */}
+                {console.log('🔍 DEBUG Botón Gestionar:', { periodoConsulta, facturasPeriodoLength: facturasPeriodo.length })}
                 {periodoConsulta && facturasPeriodo.length > 0 && (
                   <Button 
                     onClick={() => {
