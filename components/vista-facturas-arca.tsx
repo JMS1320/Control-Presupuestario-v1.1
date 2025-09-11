@@ -155,6 +155,9 @@ export function VistaFacturasArca() {
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
   const [nuevoEstadoDDJJ, setNuevoEstadoDDJJ] = useState('')
   
+  // Estado para mostrar columnas detalladas en Subdiarios
+  const [mostrarColumnasDetalladas, setMostrarColumnasDetalladas] = useState(false)
+  
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
   
@@ -2094,10 +2097,23 @@ export function VistaFacturasArca() {
       {facturasPeriodo.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>📋 Facturas del Período {periodoConsulta}</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {facturasPeriodo.length} facturas encontradas
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>📋 Facturas del Período {periodoConsulta}</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {facturasPeriodo.length} facturas encontradas
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMostrarColumnasDetalladas(!mostrarColumnasDetalladas)}
+                className="flex items-center gap-2"
+              >
+                {mostrarColumnasDetalladas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-auto max-h-96">
@@ -2122,10 +2138,35 @@ export function VistaFacturasArca() {
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead>Neto Gravado</TableHead>
-                    <TableHead>Neto No Gravado</TableHead>
-                    <TableHead>Op. Exentas</TableHead>
-                    <TableHead>Otros Tributos</TableHead>
+                    {mostrarColumnasDetalladas ? (
+                      <>
+                        {/* Columnas detalladas de Netos por Alícuota */}
+                        <TableHead className="text-xs">Neto 0%</TableHead>
+                        <TableHead className="text-xs">Neto 2.5%</TableHead>
+                        <TableHead className="text-xs">Neto 5%</TableHead>
+                        <TableHead className="text-xs">Neto 10.5%</TableHead>
+                        <TableHead className="text-xs">Neto 21%</TableHead>
+                        <TableHead className="text-xs">Neto 27%</TableHead>
+                        <TableHead className="text-xs">Neto No Grav.</TableHead>
+                        <TableHead className="text-xs">Op. Exentas</TableHead>
+                        <TableHead className="text-xs">Otros Trib.</TableHead>
+                        {/* Columnas detalladas de IVAs por Alícuota */}
+                        <TableHead className="text-xs">IVA 0%</TableHead>
+                        <TableHead className="text-xs">IVA 2.5%</TableHead>
+                        <TableHead className="text-xs">IVA 5%</TableHead>
+                        <TableHead className="text-xs">IVA 10.5%</TableHead>
+                        <TableHead className="text-xs">IVA 21%</TableHead>
+                        <TableHead className="text-xs">IVA 27%</TableHead>
+                      </>
+                    ) : (
+                      <>
+                        {/* Columnas básicas (actuales) */}
+                        <TableHead>Neto Gravado</TableHead>
+                        <TableHead>Neto No Gravado</TableHead>
+                        <TableHead>Op. Exentas</TableHead>
+                        <TableHead>Otros Tributos</TableHead>
+                      </>
+                    )}
                     <TableHead>Total IVA</TableHead>
                     <TableHead>Imp. Total</TableHead>
                     <TableHead>Estado DDJJ</TableHead>
@@ -2154,10 +2195,35 @@ export function VistaFacturasArca() {
                       <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
                       <TableCell>{factura.cuit}</TableCell>
                       <TableCell>{factura.tipo_comprobante}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_neto_gravado || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                      {mostrarColumnasDetalladas ? (
+                        <>
+                          {/* Columnas detalladas de Netos por Alícuota */}
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_0 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_2_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_10_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_21 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_27 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                          {/* Columnas detalladas de IVAs por Alícuota */}
+                          <TableCell className="text-right text-xs">${Number(0).toLocaleString('es-AR')}</TableCell> {/* IVA 0% siempre es 0 */}
+                          <TableCell className="text-right text-xs">${Number(factura.iva_2_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.iva_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.iva_10_5 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.iva_21 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(factura.iva_27 || 0).toLocaleString('es-AR')}</TableCell>
+                        </>
+                      ) : (
+                        <>
+                          {/* Columnas básicas (actuales) */}
+                          <TableCell className="text-right">${Number(factura.imp_neto_gravado || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                        </>
+                      )}
                       <TableCell className="text-right">${Number(factura.iva || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell className="text-right">${Number(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
                       <TableCell>
