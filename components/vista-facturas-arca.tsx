@@ -142,6 +142,9 @@ export function VistaFacturasArca() {
   const [mostrarGestionMasiva, setMostrarGestionMasiva] = useState(false)
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
   const [nuevoEstadoDDJJ, setNuevoEstadoDDJJ] = useState('')
+  
+  // Estados para configuración de carpetas
+  const [carpetaPorDefecto, setCarpetaPorDefecto] = useState<any>(null)
   const [nuevoPeriodo, setNuevoPeriodo] = useState('')
 
   // Generar períodos desde mes actual hacia atrás
@@ -1083,31 +1086,62 @@ export function VistaFacturasArca() {
         return
       }
 
-      // Intentar seleccionar carpeta (File System Access API moderna)
+      // Sistema de selección de carpeta mejorado
       let directorioDestino = null
+      let ubicacionFinal = 'carpeta Descargas'
+      
       if ('showDirectoryPicker' in window) {
         try {
-          const confirmarSeleccion = window.confirm(
-            '¿Deseas elegir una carpeta específica para guardar los archivos?\n\n' +
-            '• SÍ: Seleccionar carpeta personalizada\n' +
-            '• NO: Usar carpeta Descargas por defecto'
-          )
+          // Opciones de destino
+          const opciones = [
+            '1. Elegir carpeta específica',
+            carpetaPorDefecto ? `2. Usar carpeta por defecto (${carpetaPorDefecto.name})` : '2. Configurar carpeta por defecto',
+            '3. Usar carpeta Descargas',
+            '',
+            'Elige una opción (1, 2 o 3):'
+          ].join('\n')
           
-          if (confirmarSeleccion) {
+          const respuesta = prompt(opciones)
+          
+          if (respuesta === '1') {
+            // Elegir carpeta específica
             directorioDestino = await (window as any).showDirectoryPicker()
-            console.log('📁 Carpeta seleccionada:', directorioDestino.name)
+            ubicacionFinal = `carpeta "${directorioDestino.name}"`
+            console.log('📁 Carpeta específica seleccionada:', directorioDestino.name)
+          } else if (respuesta === '2') {
+            if (carpetaPorDefecto) {
+              // Usar carpeta por defecto existente
+              directorioDestino = carpetaPorDefecto
+              ubicacionFinal = `carpeta por defecto "${carpetaPorDefecto.name}"`
+              console.log('📁 Usando carpeta por defecto:', carpetaPorDefecto.name)
+            } else {
+              // Configurar nueva carpeta por defecto
+              const nuevaCarpeta = await (window as any).showDirectoryPicker()
+              setCarpetaPorDefecto(nuevaCarpeta)
+              directorioDestino = nuevaCarpeta
+              ubicacionFinal = `nueva carpeta por defecto "${nuevaCarpeta.name}"`
+              console.log('📁 Carpeta por defecto configurada:', nuevaCarpeta.name)
+            }
+          } else {
+            // Opción 3 o cualquier otra cosa = Descargas por defecto
+            console.log('📁 Usando carpeta Descargas por defecto')
+            ubicacionFinal = 'carpeta Descargas'
           }
         } catch (error) {
-          console.log('Usuario canceló selección de carpeta, usando descarga por defecto')
+          console.log('Usuario canceló selección de carpeta, usando Descargas por defecto')
+          ubicacionFinal = 'carpeta Descargas'
         }
       }
 
       // Generar archivos con opción de carpeta personalizada
-      await generarExcelConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
-      setTimeout(async () => await generarPDFConCarpeta(facturasProcesar, periodoConsulta, directorioDestino), 500)
+      console.log('🔍 DEBUG: Iniciando generación archivos con facturas:', facturasProcesar.length)
+      console.log('🔍 DEBUG: Primera factura para procesar:', facturasProcesar[0])
       
-      const ubicacion = directorioDestino ? `carpeta "${directorioDestino.name}"` : 'carpeta Descargas'
-      alert(`📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n• Excel con ${facturasProcesar.length} facturas\n• PDF con resumen detallado\n\n📁 Archivos guardados en ${ubicacion}`)
+      await generarExcelConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
+      // Generar PDF inmediatamente después del Excel, sin timeout
+      await generarPDFConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
+      
+      alert(`📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n• Excel con ${facturasProcesar.length} facturas\n• PDF con resumen detallado\n\n📁 Archivos guardados en ${ubicacionFinal}`)
       
     } catch (error) {
       console.error('Error generando reportes:', error)
@@ -1125,12 +1159,18 @@ export function VistaFacturasArca() {
         throw new Error('No hay facturas para exportar')
       }
       
-      // Preparar datos para Excel - TODOS los campos de la pantalla consulta
+      // Preparar datos para Excel - EXACTAMENTE los mismos campos que en pantalla
       const datosExcel = facturas.map((f, index) => {
+        console.log(`🔍 DEBUG Excel: Procesando factura ${index + 1}:`, {
+          fecha_emision: f.fecha_emision,
+          denominacion_emisor: f.denominacion_emisor,
+          cuit: f.cuit,
+          tipo_comprobante: f.tipo_comprobante
+        })
         return {
-          'Fecha': f.fecha_factura || '',
-          'Proveedor': f.razon_social || '',
-          'CUIT': f.cuit_emisor || '',
+          'Fecha': f.fecha_emision || '',
+          'Proveedor': f.denominacion_emisor || '',
+          'CUIT': f.cuit || '',
           'Tipo': f.tipo_comprobante || '',
           'Neto Gravado': f.imp_neto_gravado || 0,
           'Neto No Gravado': f.imp_neto_no_gravado || 0,
@@ -1184,6 +1224,14 @@ export function VistaFacturasArca() {
   const generarPDFConCarpeta = async (facturas: FacturaArca[], periodo: string, directorio: any = null) => {
     try {
       console.log('🔍 DEBUG PDF: Iniciando generación con', facturas.length, 'facturas')
+      console.log('🔍 DEBUG PDF: Período recibido:', periodo)
+      console.log('🔍 DEBUG PDF: Primera factura recibida:', facturas[0])
+      console.log('🔍 DEBUG PDF: Directorio destino:', directorio ? directorio.name : 'Descargas por defecto')
+      
+      if (!facturas || facturas.length === 0) {
+        console.error('🚨 DEBUG PDF: No hay facturas para procesar!')
+        throw new Error('No hay facturas para generar PDF')
+      }
       
       const doc = new jsPDF()
       
@@ -1196,14 +1244,8 @@ export function VistaFacturasArca() {
       doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
       doc.text(`Total facturas: ${facturas.length}`, 20, 42)
       
-      // Mensaje si no hay facturas
-      if (facturas.length === 0) {
-        doc.setFontSize(12)
-        doc.text('⚠️ No hay facturas para este período', 20, 60)
-        doc.text('Verifique que las facturas estén correctamente registradas.', 20, 75)
-      }
-      
       // Calcular totales
+      console.log('🔍 DEBUG PDF: Calculando totales...')
       const totales = facturas.reduce((acc, f) => ({
         neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
         neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
@@ -1215,48 +1257,62 @@ export function VistaFacturasArca() {
         neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, 
         total_iva: 0, otros_tributos: 0, importe_total: 0
       })
+      console.log('🔍 DEBUG PDF: Totales calculados:', totales)
 
       doc.text(`Total Neto Gravado: $${totales.neto_gravado.toLocaleString('es-AR')}`, 20, 49)
       doc.text(`Total IVA: $${totales.total_iva.toLocaleString('es-AR')}`, 20, 56)
       doc.text(`Total General: $${totales.importe_total.toLocaleString('es-AR')}`, 20, 63)
       
       // Tabla con facturas - TODOS los datos principales (máximo 50 por límites PDF)
-      if (facturas.length > 0) {
-        const datosTabla = facturas.slice(0, 50).map(f => [
-          f.fecha_factura || '',
-          (f.razon_social || '').substring(0, 20),
-          f.cuit_emisor || '',
+      console.log('🔍 DEBUG PDF: Preparando datos tabla con', facturas.length, 'facturas')
+      const datosTabla = facturas.slice(0, 50).map((f, index) => {
+        if (index < 3) { // Solo log de las primeras 3 para no saturar
+          console.log(`🔍 DEBUG PDF: Procesando factura ${index + 1}:`, {
+            fecha: f.fecha_emision,
+            proveedor: f.denominacion_emisor,
+            cuit: f.cuit,
+            total: f.imp_total
+          })
+        }
+        return [
+          f.fecha_emision || '',
+          (f.denominacion_emisor || '').substring(0, 20),
+          f.cuit || '',
           f.tipo_comprobante || '',
           (f.imp_neto_gravado || 0).toLocaleString('es-AR'),
           (f.imp_total_iva || 0).toLocaleString('es-AR'),
           (f.imp_total || 0).toLocaleString('es-AR'),
           f.ddjj_iva || ''
-        ])
+        ]
+      })
+      console.log('🔍 DEBUG PDF: Datos tabla preparados:', datosTabla.length, 'filas')
+      console.log('🔍 DEBUG PDF: Primera fila tabla:', datosTabla[0])
 
-        // Usar autoTable importado
-        autoTable(doc, {
-          head: [['Fecha', 'Proveedor', 'CUIT', 'Tipo', 'Neto Grav.', 'IVA', 'Total', 'Estado']],
-          body: datosTabla,
-          startY: facturas.length === 0 ? 85 : 75,
-          styles: { fontSize: 7 },
-          headStyles: { fillColor: [66, 139, 202] },
-          columnStyles: {
-            0: { cellWidth: 18 }, // Fecha
-            1: { cellWidth: 25 }, // Proveedor
-            2: { cellWidth: 25 }, // CUIT
-            3: { cellWidth: 18 }, // Tipo
-            4: { cellWidth: 20 }, // Neto Gravado
-            5: { cellWidth: 20 }, // IVA
-            6: { cellWidth: 20 }, // Total
-            7: { cellWidth: 20 }  // Estado
-          }
-        })
-        
-        // Agregar nota si hay más facturas
-        if (facturas.length > 50) {
-          doc.setFontSize(9)
-          doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
+      // Usar autoTable importado
+      console.log('🔍 DEBUG PDF: Generando tabla con autoTable...')
+      autoTable(doc, {
+        head: [['Fecha', 'Proveedor', 'CUIT', 'Tipo', 'Neto Grav.', 'IVA', 'Total', 'Estado']],
+        body: datosTabla,
+        startY: 75,
+        styles: { fontSize: 7 },
+        headStyles: { fillColor: [66, 139, 202] },
+        columnStyles: {
+          0: { cellWidth: 18 }, // Fecha
+          1: { cellWidth: 25 }, // Proveedor
+          2: { cellWidth: 25 }, // CUIT
+          3: { cellWidth: 18 }, // Tipo
+          4: { cellWidth: 20 }, // Neto Gravado
+          5: { cellWidth: 20 }, // IVA
+          6: { cellWidth: 20 }, // Total
+          7: { cellWidth: 20 }  // Estado
         }
+      })
+      console.log('🔍 DEBUG PDF: Tabla generada exitosamente')
+      
+      // Agregar nota si hay más facturas
+      if (facturas.length > 50) {
+        doc.setFontSize(9)
+        doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
       }
 
       // Nombre archivo con nuevo formato
@@ -1470,42 +1526,50 @@ export function VistaFacturasArca() {
       return
     }
 
-    // TODO: Verificar permisos por rol (admin vs contable)
-    const rolUsuario = 'admin' // Temporal - obtener del contexto/localStorage real
+    // Obtener rol real del usuario desde la URL
+    const pathArray = window.location.pathname.split('/')
+    const accessRoute = pathArray[1] // Primera parte después del dominio
+    const rolUsuario = accessRoute === 'adminjms1320' ? 'admin' : 'contable'
     
-    // Validar permisos por factura seleccionada
+    // Validar permisos según rol y cambios de estado
     const facturasArray = Array.from(facturasSeleccionadasGestion)
-    const facturasProhibidas = facturasPeriodo.filter(f => 
-      facturasArray.includes(f.id) && 
-      f.ddjj_iva === 'DDJJ OK' && 
-      rolUsuario !== 'admin'
-    )
-
-    if (facturasProhibidas.length > 0) {
-      alert(`❌ Sin permisos: ${facturasProhibidas.length} facturas tienen estado "DDJJ OK" y requieren permisos de administrador`)
-      return
-    }
-
-    // Validación especial para facturas DDJJ OK que van a cambiar de estado
-    const facturasDDJJOK = facturasPeriodo.filter(f => 
-      facturasArray.includes(f.id) && 
-      f.ddjj_iva === 'DDJJ OK' &&
-      nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
-    )
-
-    if (facturasDDJJOK.length > 0) {
-      const textoConfirmacion = prompt(
-        `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
-        `Estás intentando cambiar ${facturasDDJJOK.length} facturas desde estado "DDJJ OK" a "${nuevoEstadoDDJJ}".\n\n` +
-        `⚠️ RIESGO: Las facturas con "DDJJ OK" ya fueron declaradas fiscalmente.\n` +
-        `Cambiar su estado puede afectar declaraciones oficiales presentadas.\n\n` +
-        `Si entiendes el riesgo y quieres continuar, tipea exactamente: CONTINUAR\n` +
-        `Cualquier otro texto cancelará la operación.`
+    
+    // SOLO ADMIN puede revertir desde "DDJJ OK" hacia otros estados
+    if (rolUsuario !== 'admin' && nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') {
+      const facturasProhibidas = facturasPeriodo.filter(f => 
+        facturasArray.includes(f.id) && 
+        f.ddjj_iva === 'DDJJ OK' && 
+        nuevoEstadoDDJJ !== 'DDJJ OK' // Intentando cambiar DESDE "DDJJ OK" hacia otro estado
       )
 
-      if (textoConfirmacion !== 'CONTINUAR') {
-        alert('❌ Operación cancelada. No se modificaron las facturas.')
+      if (facturasProhibidas.length > 0) {
+        alert(`❌ Sin permisos: Solo administrador puede revertir el estado "DDJJ OK". ${facturasProhibidas.length} facturas requieren permisos de administrador.`)
         return
+      }
+    }
+
+    // Validación especial para ADMIN que intenta cambiar facturas DDJJ OK
+    if (rolUsuario === 'admin') {
+      const facturasDDJJOK = facturasPeriodo.filter(f => 
+        facturasArray.includes(f.id) && 
+        f.ddjj_iva === 'DDJJ OK' &&
+        nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
+      )
+
+      if (facturasDDJJOK.length > 0) {
+        const textoConfirmacion = prompt(
+          `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
+          `Estás intentando cambiar ${facturasDDJJOK.length} facturas desde estado "DDJJ OK" a "${nuevoEstadoDDJJ}".\n\n` +
+          `⚠️ RIESGO: Las facturas con "DDJJ OK" ya fueron declaradas fiscalmente.\n` +
+          `Cambiar su estado puede afectar declaraciones oficiales presentadas.\n\n` +
+          `Si entiendes el riesgo y quieres continuar, tipea exactamente: CONTINUAR\n` +
+          `Cualquier otro texto cancelará la operación.`
+        )
+
+        if (textoConfirmacion !== 'CONTINUAR') {
+          alert('❌ Operación cancelada. No se modificaron las facturas.')
+          return
+        }
       }
     }
 
