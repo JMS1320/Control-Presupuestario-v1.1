@@ -1166,15 +1166,17 @@ export function VistaFacturasArca() {
     let nombreFinal = `${nombreBase}.${extension}`
     
     try {
-      // Intentar acceder al archivo para ver si existe
+      // Intentar acceder al archivo para ver si existe (sin crear)
       while (true) {
         try {
-          await directorio.getFileHandle(nombreFinal)
+          await directorio.getFileHandle(nombreFinal, { create: false })
           // Si llegamos aquí, el archivo existe, intentar con siguiente número
           contador++
           nombreFinal = `${nombreBase} (${contador}).${extension}`
+          console.log(`📝 Archivo existe, probando: ${nombreFinal}`)
         } catch (error) {
           // Error significa que el archivo no existe, podemos usar este nombre
+          console.log(`📝 Nombre disponible encontrado: ${nombreFinal}`)
           break
         }
       }
@@ -1184,7 +1186,7 @@ export function VistaFacturasArca() {
       nombreFinal = `${nombreBase}.${extension}`
     }
     
-    console.log(`📝 Nombre único generado: ${nombreFinal}`)
+    console.log(`✅ Nombre único final: ${nombreFinal}`)
     return nombreFinal
   }
 
