@@ -1017,22 +1017,36 @@ export function VistaFacturasArca() {
       // Recargar facturas del período para mostrar cambios
       await cargarFacturasPeriodo(periodoConsulta)
       
-      // DESCARGA AUTOMÁTICA: Generar PDF + Excel con facturas confirmadas
-      if (facturasPeriodo.length > 0) {
-        const facturasConfirmadas = facturasPeriodo.filter(f => f.ddjj_iva === 'DDJJ OK')
-        
-        console.log('📥 Iniciando descarga automática...', {
-          periodo: periodoConsulta,
-          totalFacturas: facturasConfirmadas.length
-        })
-        
+      // DESCARGA AUTOMÁTICA: Obtener facturas actualizadas directamente de BD
+      const { data: facturasActualizadas, error: errorFetch } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('*')
+        .eq('mes_contable', parseInt(mes))
+        .eq('año_contable', parseInt(año))
+        .eq('ddjj_iva', 'DDJJ OK')
+
+      if (errorFetch) {
+        console.error('Error obteniendo facturas para descarga:', errorFetch)
+        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n⚠️ Error obteniendo datos para descarga automática`)
+        return
+      }
+
+      const facturasConfirmadas = facturasActualizadas || []
+      
+      console.log('📥 Iniciando descarga automática...', {
+        periodo: periodoConsulta,
+        totalFacturas: facturasConfirmadas.length
+      })
+      
+      if (facturasConfirmadas.length > 0) {
         // Generar archivos automáticamente
         descargarExcelDDJJ(facturasConfirmadas, periodoConsulta)
         setTimeout(() => descargarPDFDDJJ(facturasConfirmadas, periodoConsulta), 500)
         
-        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n📥 Descargando automáticamente:\n• Excel con datos detallados\n• PDF con resumen y totales`)
+        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n📥 Descargando automáticamente:\n• Excel con datos detallados\n• PDF con resumen y totales\n\n📁 Archivos guardados en carpeta de Descargas por defecto\n(Generalmente: C:\\Users\\[usuario]\\Downloads)`)
       } else {
-        alert(`✅ DDJJ confirmada para período ${periodoConsulta}`)
+        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n⚠️ No se encontraron facturas para descarga`)
       }
     } catch (error) {
       console.error('Error confirmando DDJJ:', error)
@@ -1111,6 +1125,7 @@ export function VistaFacturasArca() {
       XLSX.writeFile(wb, filename)
       
       console.log('✅ Excel generado exitosamente:', filename)
+      console.log('📁 Excel guardado como:', filename, 'en carpeta Descargas')
     } catch (error) {
       console.error('❌ Error detallado generando Excel:', error)
       console.error('📊 Facturas recibidas:', facturas)
@@ -1121,6 +1136,9 @@ export function VistaFacturasArca() {
   // Generar y descargar PDF DDJJ
   const descargarPDFDDJJ = (facturas: FacturaArca[], periodo: string) => {
     try {
+      console.log('🔍 DEBUG PDF: Iniciando generación con', facturas.length, 'facturas')
+      console.log('🔍 DEBUG PDF: Primera factura:', facturas[0])
+      
       const doc = new jsPDF()
       
       // Título
@@ -1131,6 +1149,13 @@ export function VistaFacturasArca() {
       doc.setFontSize(10)
       doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
       doc.text(`Total facturas: ${facturas.length}`, 20, 42)
+      
+      // Mensaje si no hay facturas
+      if (facturas.length === 0) {
+        doc.setFontSize(12)
+        doc.text('⚠️ No hay facturas en estado "DDJJ OK" para este período', 20, 60)
+        doc.text('Verifique que las facturas estén correctamente imputadas y confirmadas.', 20, 75)
+      }
       
       // Calcular totales
       const totales = facturas.reduce((acc, f) => ({
@@ -1173,6 +1198,7 @@ export function VistaFacturasArca() {
       doc.save(filename)
       
       console.log('📥 PDF generado:', filename)
+      console.log('📁 PDF guardado como:', filename, 'en carpeta Descargas')
     } catch (error) {
       console.error('Error generando PDF:', error)  
       alert('Error al generar archivo PDF')
@@ -1200,6 +1226,29 @@ export function VistaFacturasArca() {
     if (facturasProhibidas.length > 0) {
       alert(`❌ Sin permisos: ${facturasProhibidas.length} facturas tienen estado "DDJJ OK" y requieren permisos de administrador`)
       return
+    }
+
+    // Validación especial para facturas DDJJ OK que van a cambiar de estado
+    const facturasDDJJOK = facturasPeriodo.filter(f => 
+      facturasArray.includes(f.id) && 
+      f.ddjj_iva === 'DDJJ OK' &&
+      nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
+    )
+
+    if (facturasDDJJOK.length > 0) {
+      const textoConfirmacion = prompt(
+        `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
+        `Estás intentando cambiar ${facturasDDJJOK.length} facturas desde estado "DDJJ OK" a "${nuevoEstadoDDJJ}".\n\n` +
+        `⚠️ RIESGO: Las facturas con "DDJJ OK" ya fueron declaradas fiscalmente.\n` +
+        `Cambiar su estado puede afectar declaraciones oficiales presentadas.\n\n` +
+        `Si entiendes el riesgo y quieres continuar, escribe exactamente: CONTINUAR\n` +
+        `Cualquier otro texto cancelará la operación.`
+      )
+
+      if (textoConfirmacion !== 'CONTINUAR') {
+        alert('❌ Operación cancelada. No se modificaron las facturas.')
+        return
+      }
     }
 
     const confirmar = window.confirm(
