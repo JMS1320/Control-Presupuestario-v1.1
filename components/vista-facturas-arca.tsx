@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -1822,27 +1823,65 @@ export function VistaFacturasArca() {
 
       {/* Modal Gestión Masiva de Facturas */}
       {console.log('🔍 DEBUG: Renderizando modal gestión masiva, open:', mostrarGestionMasiva)}
-      <Dialog open={mostrarGestionMasiva} onOpenChange={setMostrarGestionMasiva}>
-        <DialogContent 
-          className="max-w-4xl max-h-[80vh] overflow-y-auto" 
+      {mostrarGestionMasiva && typeof window !== 'undefined' && createPortal(
+        <div 
           style={{
-            zIndex: 99999,
             position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            backgroundColor: 'white',
-            boxShadow: '0 10px 50px rgba(0, 0, 0, 0.5)'
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            zIndex: 999999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setMostrarGestionMasiva(false)
+            }
           }}
         >
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              🔧 Gestionar Facturas Masivamente
-            </DialogTitle>
-            <DialogDescription>
-              Selecciona facturas y modifica estado DDJJ o período contable
-            </DialogDescription>
-          </DialogHeader>
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              maxWidth: '1000px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              padding: '24px',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ marginBottom: '24px', borderBottom: '1px solid #e5e7eb', paddingBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                🔧 Gestionar Facturas Masivamente
+              </h2>
+              <p style={{ color: '#6b7280', fontSize: '14px', margin: '4px 0 0 0' }}>
+                Selecciona facturas y modifica estado DDJJ o período contable
+              </p>
+              <button
+                onClick={() => setMostrarGestionMasiva(false)}
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#6b7280'
+                }}
+              >
+                ×
+              </button>
+            </div>
           
           <div className="space-y-4">
             {/* Controles */}
@@ -1984,8 +2023,10 @@ export function VistaFacturasArca() {
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Modal para validación de categorías */}
       <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCateg()}>
