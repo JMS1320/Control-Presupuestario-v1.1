@@ -1039,15 +1039,7 @@ export function VistaFacturasArca() {
         totalFacturas: facturasConfirmadas.length
       })
       
-      if (facturasConfirmadas.length > 0) {
-        // Generar archivos automáticamente
-        descargarExcelDDJJ(facturasConfirmadas, periodoConsulta)
-        setTimeout(() => descargarPDFDDJJ(facturasConfirmadas, periodoConsulta), 500)
-        
-        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n📥 Descargando automáticamente:\n• Excel con datos detallados\n• PDF con resumen y totales\n\n📁 Archivos guardados en carpeta de Descargas por defecto\n(Generalmente: C:\\Users\\[usuario]\\Downloads)`)
-      } else {
-        alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n⚠️ No se encontraron facturas para descarga`)
-      }
+      alert(`✅ DDJJ confirmada para período ${periodoConsulta}\n\n📊 Para generar reportes, usa el botón "📊 Generar PDF + Excel" cuando lo necesites.`)
     } catch (error) {
       console.error('Error confirmando DDJJ:', error)
       alert('Error al confirmar DDJJ')
@@ -1091,15 +1083,204 @@ export function VistaFacturasArca() {
         return
       }
 
-      // Generar archivos
-      descargarExcelDDJJ(facturasProcesar, periodoConsulta)
-      setTimeout(() => descargarPDFDDJJ(facturasProcesar, periodoConsulta), 500)
+      // Intentar seleccionar carpeta (File System Access API moderna)
+      let directorioDestino = null
+      if ('showDirectoryPicker' in window) {
+        try {
+          const confirmarSeleccion = window.confirm(
+            '¿Deseas elegir una carpeta específica para guardar los archivos?\n\n' +
+            '• SÍ: Seleccionar carpeta personalizada\n' +
+            '• NO: Usar carpeta Descargas por defecto'
+          )
+          
+          if (confirmarSeleccion) {
+            directorioDestino = await (window as any).showDirectoryPicker()
+            console.log('📁 Carpeta seleccionada:', directorioDestino.name)
+          }
+        } catch (error) {
+          console.log('Usuario canceló selección de carpeta, usando descarga por defecto')
+        }
+      }
+
+      // Generar archivos con opción de carpeta personalizada
+      await generarExcelConCarpeta(facturasProcesar, periodoConsulta, directorioDestino)
+      setTimeout(async () => await generarPDFConCarpeta(facturasProcesar, periodoConsulta, directorioDestino), 500)
       
-      alert(`📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n• Excel con ${facturasProcesar.length} facturas\n• PDF con resumen detallado\n\n📁 Archivos guardados en carpeta Descargas`)
+      const ubicacion = directorioDestino ? `carpeta "${directorioDestino.name}"` : 'carpeta Descargas'
+      alert(`📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n• Excel con ${facturasProcesar.length} facturas\n• PDF con resumen detallado\n\n📁 Archivos guardados en ${ubicacion}`)
       
     } catch (error) {
       console.error('Error generando reportes:', error)
       alert('Error al generar reportes')
+    }
+  }
+
+  // Generar Excel con opción de carpeta personalizada
+  const generarExcelConCarpeta = async (facturas: FacturaArca[], periodo: string, directorio: any = null) => {
+    try {
+      console.log('📊 Generando Excel con', facturas.length, 'facturas')
+      
+      // Validar datos de entrada
+      if (!facturas || facturas.length === 0) {
+        throw new Error('No hay facturas para exportar')
+      }
+      
+      // Preparar datos para Excel - TODOS los campos de la pantalla consulta
+      const datosExcel = facturas.map((f, index) => {
+        return {
+          'Fecha': f.fecha_factura || '',
+          'Proveedor': f.razon_social || '',
+          'CUIT': f.cuit_emisor || '',
+          'Tipo': f.tipo_comprobante || '',
+          'Neto Gravado': f.imp_neto_gravado || 0,
+          'Neto No Gravado': f.imp_neto_no_gravado || 0,
+          'Op. Exentas': f.imp_op_exentas || 0,
+          'Otros Tributos': f.imp_otros_tributos || 0,
+          'Total IVA': f.imp_total_iva || 0,
+          'Imp. Total': f.imp_total || 0,
+          'Estado DDJJ': f.ddjj_iva || '',
+          'Punto Venta': f.punto_venta || '',
+          'Número Factura': f.numero_factura || '',
+          'Mes Contable': f.mes_contable || '',
+          'Año Contable': f.año_contable || '',
+          'Fecha Emisión': f.fecha_emision || '',
+          'Fecha Vencimiento': f.fecha_vencimiento || '',
+          'CAI': f.cai || '',
+          'Categoría': f.categ || ''
+        }
+      })
+
+      // Crear libro Excel
+      const ws = XLSX.utils.json_to_sheet(datosExcel)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo.replace('/', '-')}`)
+      
+      // Nombre archivo con nuevo formato
+      const [mes, año] = periodo.split('/')
+      const añoCorto = año.slice(-2)
+      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.xlsx`
+
+      if (directorio) {
+        // Guardar en carpeta personalizada usando File System Access API
+        const contenidoExcel = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+        const archivoHandle = await directorio.getFileHandle(filename, { create: true })
+        const writable = await archivoHandle.createWritable()
+        await writable.write(contenidoExcel)
+        await writable.close()
+        console.log('✅ Excel guardado en carpeta personalizada:', filename)
+      } else {
+        // Descargar normalmente
+        XLSX.writeFile(wb, filename)
+        console.log('✅ Excel descargado en carpeta por defecto:', filename)
+      }
+      
+    } catch (error) {
+      console.error('❌ Error generando Excel:', error)
+      alert('Error al generar archivo Excel: ' + (error as Error).message)
+    }
+  }
+
+  // Generar PDF con opción de carpeta personalizada
+  const generarPDFConCarpeta = async (facturas: FacturaArca[], periodo: string, directorio: any = null) => {
+    try {
+      console.log('🔍 DEBUG PDF: Iniciando generación con', facturas.length, 'facturas')
+      
+      const doc = new jsPDF()
+      
+      // Título
+      doc.setFontSize(16)
+      doc.text(`SUBDIARIO COMPRAS - PERÍODO ${periodo}`, 20, 20)
+      
+      // Información general
+      doc.setFontSize(10)
+      doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
+      doc.text(`Total facturas: ${facturas.length}`, 20, 42)
+      
+      // Mensaje si no hay facturas
+      if (facturas.length === 0) {
+        doc.setFontSize(12)
+        doc.text('⚠️ No hay facturas para este período', 20, 60)
+        doc.text('Verifique que las facturas estén correctamente registradas.', 20, 75)
+      }
+      
+      // Calcular totales
+      const totales = facturas.reduce((acc, f) => ({
+        neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
+        neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
+        op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
+        total_iva: acc.total_iva + (f.imp_total_iva || 0),
+        otros_tributos: acc.otros_tributos + (f.imp_otros_tributos || 0),
+        importe_total: acc.importe_total + (f.imp_total || 0)
+      }), {
+        neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, 
+        total_iva: 0, otros_tributos: 0, importe_total: 0
+      })
+
+      doc.text(`Total Neto Gravado: $${totales.neto_gravado.toLocaleString('es-AR')}`, 20, 49)
+      doc.text(`Total IVA: $${totales.total_iva.toLocaleString('es-AR')}`, 20, 56)
+      doc.text(`Total General: $${totales.importe_total.toLocaleString('es-AR')}`, 20, 63)
+      
+      // Tabla con facturas - TODOS los datos principales (máximo 50 por límites PDF)
+      if (facturas.length > 0) {
+        const datosTabla = facturas.slice(0, 50).map(f => [
+          f.fecha_factura || '',
+          (f.razon_social || '').substring(0, 20),
+          f.cuit_emisor || '',
+          f.tipo_comprobante || '',
+          (f.imp_neto_gravado || 0).toLocaleString('es-AR'),
+          (f.imp_total_iva || 0).toLocaleString('es-AR'),
+          (f.imp_total || 0).toLocaleString('es-AR'),
+          f.ddjj_iva || ''
+        ])
+
+        // Usar autoTable importado
+        autoTable(doc, {
+          head: [['Fecha', 'Proveedor', 'CUIT', 'Tipo', 'Neto Grav.', 'IVA', 'Total', 'Estado']],
+          body: datosTabla,
+          startY: facturas.length === 0 ? 85 : 75,
+          styles: { fontSize: 7 },
+          headStyles: { fillColor: [66, 139, 202] },
+          columnStyles: {
+            0: { cellWidth: 18 }, // Fecha
+            1: { cellWidth: 25 }, // Proveedor
+            2: { cellWidth: 25 }, // CUIT
+            3: { cellWidth: 18 }, // Tipo
+            4: { cellWidth: 20 }, // Neto Gravado
+            5: { cellWidth: 20 }, // IVA
+            6: { cellWidth: 20 }, // Total
+            7: { cellWidth: 20 }  // Estado
+          }
+        })
+        
+        // Agregar nota si hay más facturas
+        if (facturas.length > 50) {
+          doc.setFontSize(9)
+          doc.text(`⚠️ Mostrando primeras 50 de ${facturas.length} facturas. Descargue Excel para ver todas.`, 20, doc.lastAutoTable.finalY + 10)
+        }
+      }
+
+      // Nombre archivo con nuevo formato
+      const [mes, año] = periodo.split('/')
+      const añoCorto = año.slice(-2)
+      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.pdf`
+
+      if (directorio) {
+        // Guardar en carpeta personalizada usando File System Access API
+        const contenidoPDF = doc.output('arraybuffer')
+        const archivoHandle = await directorio.getFileHandle(filename, { create: true })
+        const writable = await archivoHandle.createWritable()
+        await writable.write(contenidoPDF)
+        await writable.close()
+        console.log('✅ PDF guardado en carpeta personalizada:', filename)
+      } else {
+        // Descargar normalmente
+        doc.save(filename)
+        console.log('✅ PDF descargado en carpeta por defecto:', filename)
+      }
+      
+    } catch (error) {
+      console.error('Error generando PDF:', error)
+      alert('Error al generar archivo PDF: ' + (error as Error).message)
     }
   }
 
@@ -1172,8 +1353,10 @@ export function VistaFacturasArca() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, `DDJJ ${periodo.replace('/', '-')}`)
       
-      // Descargar archivo
-      const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      // Descargar archivo con nuevo formato: Subdiario Compras (MSA) aa-mm
+      const [mes, año] = periodo.split('/')
+      const añoCorto = año.slice(-2) // últimos 2 dígitos del año
+      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.xlsx`
       console.log('💾 Descargando Excel:', filename)
       XLSX.writeFile(wb, filename)
       
@@ -1266,8 +1449,10 @@ export function VistaFacturasArca() {
         }
       }
 
-      // Descargar archivo
-      const filename = `DDJJ_IVA_${periodo.replace('/', '-')}_${new Date().toISOString().split('T')[0]}.pdf`
+      // Descargar archivo con nuevo formato: Subdiario Compras (MSA) aa-mm
+      const [mes, año] = periodo.split('/')
+      const añoCorto = año.slice(-2) // últimos 2 dígitos del año
+      const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.pdf`
       doc.save(filename)
       
       console.log('📥 PDF generado:', filename)
