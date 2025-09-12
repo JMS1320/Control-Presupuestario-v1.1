@@ -1303,3 +1303,144 @@ SUPABASE_SERVICE_ROLE_KEY=
 - ✅ Cash Flow: Validación completa (ya existía)
 - ✅ Extracto bancario: Validación en propagación masiva
 - **Sistema completo**: Todas las ubicaciones de edición tienen validación categorías
+
+---
+
+## 🚀 **AVANCES SESIÓN 2025-09-11 (COMPLETADA):**
+
+### 🎯 **OBJETIVO COMPLETADO: Toggle Columnas Detalladas Subdiarios**
+- **Fecha**: 2025-09-11
+- **Duración**: Sesión corta enfocada en mejora UX específica
+- **Context**: Sistema DDJJ IVA ya funcional, usuario solicita mejora visualización
+
+### ✅ **FUNCIONALIDAD IMPLEMENTADA - TOGGLE VISTA SUBDIARIOS:**
+
+**📱 Botón Toggle Inteligente:**
+- Ubicación: Header tabla facturas período en tab Subdiarios
+- Texto dinámico: "Mostrar Detalle IVA" ↔ "Ocultar Detalle"
+- Iconos visuales: Eye (👁️) ↔ EyeOff (👁️‍🗨️) 
+- Estado persistente durante sesión con useState
+
+**📊 Vista Básica (DEFAULT - como estaba antes):**
+```
+Fecha | Proveedor | CUIT | Tipo | Neto Gravado | Neto No Gravado | 
+Op. Exentas | Otros Tributos | Total IVA | Imp. Total | Estado DDJJ
+```
+
+**🔍 Vista Detallada (AL ACTIVAR TOGGLE):**
+```
+Fecha | Proveedor | CUIT | Tipo | 
+Neto 0% | Neto 2.5% | Neto 5% | Neto 10.5% | Neto 21% | Neto 27% |
+Neto No Grav. | Op. Exentas | Otros Trib. |
+IVA 0% | IVA 2.5% | IVA 5% | IVA 10.5% | IVA 21% | IVA 27% |
+Total IVA | Imp. Total | Estado DDJJ
+```
+
+### 🎨 **DETALLES IMPLEMENTACIÓN:**
+- **Campos BD utilizados**: `neto_grav_iva_X`, `iva_X` para cada alícuota
+- **Responsive**: Columnas detalladas usan `text-xs` para optimizar espacio
+- **Formato monetario**: Argentino ($xxx.xxx,xx) consistente
+- **Toggle instantáneo**: Sin recargas ni delays
+- **Gestión masiva**: Compatible con modo gestión facturas existente
+
+### 🔧 **ARCHIVOS MODIFICADOS:**
+- **components/vista-facturas-arca.tsx** (líneas ~159, ~2100-2240):
+  - Agregado estado `mostrarColumnasDetalladas`
+  - Toggle button en CardHeader con iconos Eye/EyeOff
+  - Columnas condicionales en TableHeader/TableBody
+  - Manejo responsivo con clases CSS apropiadas
+
+### ✅ **TESTING COMPLETADO:**
+- ✅ **Build verification**: npm run build sin errores
+- ✅ **Merge success**: desarrollo → main completado sin conflictos
+- ✅ **Git workflow**: Commits descriptivos + push exitoso
+
+### 📊 **COMMITS APLICADOS 2025-09-11:**
+```
+ed543ea - Feature: Toggle columnas detalladas IVA en vista Subdiarios
+6242f1b - Merge: Integrar funcionalidad toggle columnas detalladas Subdiarios
+```
+
+### 🎯 **VALOR AGREGADO:**
+- **UX Mejorado**: Usuario puede alternar entre vista sintética y detallada
+- **Análisis Flexible**: Vista detallada permite análisis granular por alícuota
+- **Compatibilidad**: No rompe funcionalidad existente (gestión masiva, DDJJ)
+- **Performance**: Toggle instantáneo sin consultas adicionales BD
+
+### 📋 **ESTADO FINAL SESIÓN:**
+- **Branch main**: Actualizado con funcionalidad completa
+- **Deploy Vercel**: Automático post-merge
+- **Sistema DDJJ IVA**: 100% funcional + mejora UX implementada
+- **Ready for**: Nueva funcionalidad (SICORE module)
+
+---
+
+## 🎯 **NUEVO OBJETIVO INICIADO: MÓDULO SICORE - RETENCIONES GANANCIAS**
+
+### 📅 **TRANSICIÓN DE OBJETIVOS:**
+- **Objetivo anterior**: Sistema DDJJ IVA ✅ **COMPLETADO**
+- **Objetivo nuevo**: Módulo SICORE - Retenciones Ganancias ⚡ **INICIADO**
+- **Fecha inicio**: 2025-09-11 
+- **Context**: Sistema base sólido, expandir funcionalidad impuestos
+
+### 🎯 **COMPRENSIÓN INICIAL PROCESO SICORE:**
+
+**📋 FLUJO COMPLETO IDENTIFICADO:**
+1. **🔍 Evaluación al Pago**: Aplicar reglas SICORE por proveedor
+2. **💰 Cálculo Retención**: % sobre monto factura según normativa
+3. **📊 Acumulación Quincenal**: 1ra quincena (1-15) + 2da quincena (16-fin)
+4. **📄 Comprobantes**: Generar PDF oficial retención por proveedor
+5. **📧 Comunicación**: Envío automático mail comprobantes
+6. **🔄 Template Integration**: Llenar automático templates SICORE existentes
+7. **💾 Trazabilidad**: Registro histórico completo proceso
+
+**🔧 COMPONENTES TÉCNICOS REQUERIDOS:**
+- ✅ **Motor Reglas**: ¿Qué proveedores requieren retención?
+- ✅ **Engine Cálculo**: % retención según CUIT/monto
+- ✅ **Generador PDF**: Comprobante oficial formato AFIP
+- ✅ **Sistema Mail**: Automatización envío proveedores  
+- ✅ **BD Integration**: Templates SICORE 1ra/2da quincena
+- ✅ **Audit Trail**: Historial retenciones/comprobantes
+
+### ❓ **PREGUNTAS PENDIENTES CLARIFICAR:**
+1. **Reglas aplicación**: ¿CUIT específico vs rangos monto?
+2. **% Retención**: ¿Fijo vs variable por proveedor/importe?
+3. **Templates SICORE**: ¿Ya existen en sistema actual?
+4. **Prioridad desarrollo**: ¿Motor cálculo vs estructura datos primero?
+
+### 🚀 **METODOLOGÍA DESARROLLO:**
+- **Phase 1**: Análisis reglas + estructura datos
+- **Phase 2**: Motor cálculo + validaciones
+- **Phase 3**: Generación comprobantes + PDF
+- **Phase 4**: Integración templates + automatización
+- **Phase 5**: Sistema mail + trazabilidad completa
+
+### 📋 **ESTADO BRANCH DESARROLLO:**
+- **Posición**: Sincronizado con main post-merge
+- **Ready for**: Nueva funcionalidad SICORE
+- **Preparado**: Estructura base sólida para expansión
+
+### ⚠️ **TAREAS PENDIENTES ANTERIORES (CONSERVAR):**
+
+#### 🧪 **TESTING TEMPLATES SISTEMA (2025-08-24):**
+- **Template 10**: 4 cuotas 'desactivado' + 1 anual 'pendiente' ✅ PREPARADO
+- **Test 1**: Templates UI checkbox mostrar/ocultar desactivados
+- **Test 2**: Cash Flow filtros excluyen 'desactivado' + 'conciliado' 
+- **Test 3**: Conversión ANUAL → CUOTAS reactivación automática
+- **Test 4**: Conversión CUOTAS → ANUAL con nuevo estado
+- **Test 5**: Formato argentino DD/MM/AAAA en modales
+- **Estado**: ⚠️ **PENDIENTE** - BD preparada, testing completo requerido
+
+#### 🔧 **MEJORAS IDENTIFICADAS TEMPLATES:**
+- **Estados Dropdown**: Cambiar de input texto a Select con opciones predefinidas
+- **Fechas Edición**: ¿Unificar con sistema Cash Flow? (puede estar resuelto con hook)
+- **Investigar Estado "auditado"**: Qué problema surge con conciliación bancaria
+- **Templates 11-13**: Crear resto grupo inmobiliario según Excel original
+
+#### 📋 **CARGA MASIVA TEMPLATES EXCEL (2025-08-20):**
+- **53 Templates Excel**: Análisis completo ✅ COMPLETADO
+- **Proceso implementación**: Templates 10 prototipo ✅ COMPLETADO
+- **Templates 11-13**: Resto grupo inmobiliario ⚠️ PENDIENTE
+- **Templates 14-61**: Masiva según Excel original ⚠️ PENDIENTE
+- **Sistema alertas**: Vista Principal integración ⚠️ PENDIENTE
+- **Reglas IIBB/SICORE**: Automáticas templates específicos ⚠️ PENDIENTE
