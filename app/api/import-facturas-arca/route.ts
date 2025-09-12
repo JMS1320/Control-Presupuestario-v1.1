@@ -13,9 +13,20 @@ const supabase = createClient(
  * Convierte números en formato argentino a decimal estándar
  * Ejemplo: "15.528,69" → 15528.69
  * Ejemplo: "(1.234,56)" → -1234.56 (números negativos entre paréntesis)
+ * SOPORTA: string, number, undefined, null
  */
-function convertirNumeroArgentino(valor: string): number {
-  if (!valor || valor.trim() === '') return 0
+function convertirNumeroArgentino(valor: string | number | null | undefined): number {
+  // Manejar valores vacíos/nulos
+  if (valor === null || valor === undefined || valor === '') return 0
+  
+  // Si ya es número, devolverlo directamente
+  if (typeof valor === 'number') return valor
+  
+  // Si es string, procesarlo
+  if (typeof valor !== 'string') return 0
+  
+  // String vacío después de trim
+  if (valor.trim() === '') return 0
   
   let textoLimpio = valor.toString().trim()
   
@@ -34,18 +45,62 @@ function convertirNumeroArgentino(valor: string): number {
 }
 
 /**
- * Convierte fechas del formato CSV a formato base de datos
- * Entrada: "2025-08-01" → Salida: "2025-08-01"
+ * Convierte fechas del formato CSV/Excel a formato base de datos
+ * Entrada: "2025-08-01" | 45870 (Excel serial) | "11/8/2025" → Salida: "2025-08-11"
  */
-function convertirFecha(valor: string): string | null {
-  if (!valor || valor.trim() === '') return null
+function convertirFecha(valor: string | number | null | undefined): string | null {
+  if (!valor) return null
+  
+  // Si es número (formato Excel serial date)
+  if (typeof valor === 'number') {
+    try {
+      // Excel usa 1900-01-01 como día 1 (con bug de año bisiesto)
+      // Usar UTC para evitar problemas de zona horaria
+      const fecha = new Date(Date.UTC(1899, 11, 30) + valor * 86400 * 1000)
+      if (isNaN(fecha.getTime())) return null
+      
+      const año = fecha.getUTCFullYear()
+      const mes = String(fecha.getUTCMonth() + 1).padStart(2, '0')
+      const dia = String(fecha.getUTCDate()).padStart(2, '0')
+      
+      return `${año}-${mes}-${dia}`
+    } catch {
+      return null
+    }
+  }
+  
+  // Si es string
+  if (typeof valor !== 'string' || valor.trim() === '') return null
+  
+  const valorLimpio = valor.trim()
   
   try {
-    // ARCA ya viene en formato YYYY-MM-DD, solo validamos que sea fecha válida
-    const fecha = new Date(valor)
-    if (isNaN(fecha.getTime())) return null
+    // Si ya está en formato YYYY-MM-DD, validar y devolver
+    if (/^\d{4}-\d{2}-\d{2}$/.test(valorLimpio)) {
+      const fecha = new Date(valorLimpio)
+      if (isNaN(fecha.getTime())) return null
+      return valorLimpio
+    }
     
-    return valor // Ya está en formato correcto
+    // Si está en formato DD/MM/YYYY o D/M/YYYY (formato argentino Excel)
+    const matchArgentino = valorLimpio.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (matchArgentino) {
+      const [, dia, mes, año] = matchArgentino
+      const diaFormatted = dia.padStart(2, '0')
+      const mesFormatted = mes.padStart(2, '0')
+      
+      // Validar que sea fecha válida
+      const fecha = new Date(parseInt(año), parseInt(mes) - 1, parseInt(dia))
+      if (fecha.getFullYear() !== parseInt(año) || 
+          fecha.getMonth() !== parseInt(mes) - 1 || 
+          fecha.getDate() !== parseInt(dia)) {
+        return null
+      }
+      
+      return `${año}-${mesFormatted}-${diaFormatted}`
+    }
+    
+    return null
   } catch {
     return null
   }
@@ -67,47 +122,170 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
 }
 
 /**
- * Mapea una fila del CSV de ARCA a la estructura de la base de datos
- * Convierte los 17 campos del CSV a los campos de la tabla
+ * Obtiene información del tipo de comprobante desde la tabla AFIP
  */
-function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
-  const fechaEmision = convertirFecha(fila["Fecha de Emisión"])
-  const impTotal = convertirNumeroArgentino(fila["Imp. Total"])
+async function obtenerTipoComprobante(codigo: number): Promise<{descripcion: string, es_nota_credito: boolean}> {
+  try {
+    const { data, error } = await supabase
+      .from('tipos_comprobante_afip')
+      .select('descripcion, es_nota_credito')
+      .eq('codigo', codigo)
+      .single()
+    
+    if (error) {
+      console.warn(`⚠️ Tipo comprobante ${codigo} no encontrado en BD:`, error.message)
+      return { descripcion: `Código ${codigo}`, es_nota_credito: false }
+    }
+    
+    return data
+  } catch (err) {
+    console.error(`❌ Error consultando tipo comprobante ${codigo}:`, err)
+    return { descripcion: `Código ${codigo}`, es_nota_credito: false }
+  }
+}
+
+/**
+ * Mapea una fila del CSV/Excel de ARCA a la estructura de la base de datos
+ * SOPORTE DUAL: Formato CSV anterior + Excel nuevo AFIP 2025
+ */
+async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
+  // Detectar formato: Excel nuevo (tiene "Fecha" + "Tipo") vs CSV anterior ("Fecha de Emisión")
+  const esFormatoExcel = 'Fecha' in fila && 'Tipo' in fila && !('Fecha de Emisión' in fila)
   
-  return {
-    // Datos originales de ARCA (convertidos apropiadamente)
+  console.log(`🔍 Formato detectado: ${esFormatoExcel ? 'EXCEL NUEVO' : 'CSV ANTERIOR'}`)
+  
+  // Mapeo de campos comunes según formato
+  const fechaEmision = convertirFecha(
+    esFormatoExcel ? fila["Fecha"] : fila["Fecha de Emisión"]
+  )
+  
+  // Obtener tipo de comprobante y su información
+  const tipoComprobanteNumero = parseInt(
+    esFormatoExcel ? fila["Tipo"] : fila["Tipo de Comprobante"]
+  ) || 0
+  
+  const tipoInfo = await obtenerTipoComprobante(tipoComprobanteNumero)
+  
+  console.log(`📝 Tipo ${tipoComprobanteNumero}: ${tipoInfo.descripcion} ${tipoInfo.es_nota_credito ? '(NEGATIVO)' : '(POSITIVO)'}`)
+
+  // Mapeo campos básicos (comunes a ambos formatos)
+  const datosBasicos = {
     fecha_emision: fechaEmision,
-    tipo_comprobante: parseInt(fila["Tipo de Comprobante"]) || 0,
+    tipo_comprobante: tipoComprobanteNumero,
+    tipo_comprobante_desc: tipoInfo.descripcion,
     punto_venta: parseInt(fila["Punto de Venta"]) || null,
     numero_desde: parseInt(fila["Número Desde"]) || null,
     numero_hasta: parseInt(fila["Número Hasta"]) || null,
-    codigo_autorizacion: fila["Cód. Autorización"]?.toString() || null,
+    codigo_autorizacion: fila["Cód. Autorización"] ? fila["Cód. Autorización"].toString() : null,
     tipo_doc_emisor: parseInt(fila["Tipo Doc. Emisor"]) || null,
-    cuit: fila["Nro. Doc. Emisor"]?.toString() || "",
-    denominacion_emisor: fila["Denominación Emisor"]?.toString() || "",
-    tipo_cambio: convertirNumeroArgentino(fila["Tipo Cambio"]),
-    moneda: fila["Moneda"]?.toString() || "PES",
-    imp_neto_gravado: convertirNumeroArgentino(fila["Imp. Neto Gravado"]),
-    imp_neto_no_gravado: convertirNumeroArgentino(fila["Imp. Neto No Gravado"]),
-    imp_op_exentas: convertirNumeroArgentino(fila["Imp. Op. Exentas"]),
-    otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
-    iva: convertirNumeroArgentino(fila["IVA"]),
-    imp_total: impTotal,
+    cuit: fila["Nro. Doc. Emisor"] ? fila["Nro. Doc. Emisor"].toString() : "",
+    denominacion_emisor: fila["Denominación Emisor"] ? fila["Denominación Emisor"].toString() : "",
+    tipo_cambio: convertirNumeroArgentino(fila["Tipo Cambio"]) || 1,
+    moneda: fila["Moneda"] ? fila["Moneda"].toString() : "PES"
+  }
+  
+  // Mapeo campos IVA según formato
+  let camposIVA: any
+  
+  if (esFormatoExcel) {
+    // FORMATO EXCEL NUEVO - Desglose detallado por alícuota
+    camposIVA = {
+      // Campos existentes (calculados como totales)
+      imp_neto_gravado: convertirNumeroArgentino(fila["Neto Gravado Total"]),
+      imp_neto_no_gravado: convertirNumeroArgentino(fila["Neto No Gravado"]),
+      imp_op_exentas: convertirNumeroArgentino(fila["Op. Exentas"]),
+      otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
+      iva: convertirNumeroArgentino(fila["Total IVA"]),
+      imp_total: convertirNumeroArgentino(fila["Imp. Total"]),
+      
+      // Campos nuevos - desglose detallado IVA
+      tipo_doc_receptor: parseInt(fila["Tipo Doc. Receptor"]) || null,
+      nro_doc_receptor: fila["Nro. Doc. Receptor"] ? fila["Nro. Doc. Receptor"].toString() : null,
+      neto_grav_iva_0: convertirNumeroArgentino(fila["Neto Grav. IVA 0%"]),
+      iva_2_5: convertirNumeroArgentino(fila["IVA 2,5%"]),
+      neto_grav_iva_2_5: convertirNumeroArgentino(fila["Neto Grav. IVA 2,5%"]),
+      iva_5: convertirNumeroArgentino(fila["IVA 5%"]),
+      neto_grav_iva_5: convertirNumeroArgentino(fila["Neto Grav. IVA 5%"]),
+      iva_10_5: convertirNumeroArgentino(fila["IVA 10,5%"]),
+      neto_grav_iva_10_5: convertirNumeroArgentino(fila["Neto Grav. IVA 10,5%"]),
+      iva_21: convertirNumeroArgentino(fila["IVA 21%"]),
+      neto_grav_iva_21: convertirNumeroArgentino(fila["Neto Grav. IVA 21%"]),
+      iva_27: convertirNumeroArgentino(fila["IVA 27%"]),
+      neto_grav_iva_27: convertirNumeroArgentino(fila["Neto Grav. IVA 27%"])
+    }
+  } else {
+    // FORMATO CSV ANTERIOR - Mapeo tradicional
+    camposIVA = {
+      // Campos existentes (formato anterior)
+      imp_neto_gravado: convertirNumeroArgentino(fila["Imp. Neto Gravado"]),
+      imp_neto_no_gravado: convertirNumeroArgentino(fila["Imp. Neto No Gravado"]),
+      imp_op_exentas: convertirNumeroArgentino(fila["Imp. Op. Exentas"]),
+      otros_tributos: convertirNumeroArgentino(fila["Otros Tributos"]),
+      iva: convertirNumeroArgentino(fila["IVA"]),
+      imp_total: convertirNumeroArgentino(fila["Imp. Total"]),
+      
+      // Campos nuevos - valores por defecto (CSV no los tiene)
+      tipo_doc_receptor: null,
+      nro_doc_receptor: null,
+      neto_grav_iva_0: 0,
+      iva_2_5: 0,
+      neto_grav_iva_2_5: 0,
+      iva_5: 0,
+      neto_grav_iva_5: 0,
+      iva_10_5: 0,
+      neto_grav_iva_10_5: 0,
+      iva_21: 0,
+      neto_grav_iva_21: 0,
+      iva_27: 0,
+      neto_grav_iva_27: 0
+    }
+  }
+  
+  // CONVERSIÓN A NEGATIVO PARA NOTAS DE CRÉDITO
+  if (tipoInfo.es_nota_credito) {
+    console.log('⚠️ Convirtiendo Nota de Crédito a valores negativos')
     
-    // Campos calculados automáticamente para Cash Flow
+    // Lista de TODOS los campos monetarios que deben ser negativos
+    const camposMonetarios = [
+      'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 
+      'imp_otros_tributos', 'imp_total_iva', 'imp_total',
+      'otros_tributos', 'iva',
+      'neto_grav_iva_0', 'iva_2_5', 'neto_grav_iva_2_5', 'iva_5', 'neto_grav_iva_5',
+      'iva_10_5', 'neto_grav_iva_10_5', 'iva_21', 'neto_grav_iva_21', 
+      'iva_27', 'neto_grav_iva_27'
+    ]
+    
+    // Convertir todos los campos monetarios a negativos
+    camposMonetarios.forEach(campo => {
+      if (camposIVA[campo] && typeof camposIVA[campo] === 'number' && camposIVA[campo] > 0) {
+        camposIVA[campo] = -camposIVA[campo]
+      }
+    })
+  }
+  
+  // Combinar datos básicos + IVA + campos sistema
+  const resultado = {
+    ...datosBasicos,
+    ...camposIVA,
+    
+    // Campos calculados automáticamente (PRESERVAR LÓGICA EXISTENTE)
     fecha_estimada: calcularFechaEstimada(fechaEmision),
-    monto_a_abonar: impTotal, // Inicialmente igual al importe total
+    monto_a_abonar: camposIVA.imp_total, // Inicialmente igual al importe total
     
-    // Campos adicionales con valores por defecto
+    // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
+    año_contable: null, // Dejar en blanco (no usar default de BD)
     fc: null,
     cuenta_contable: null,
     centro_costo: null,
     estado: 'pendiente',
     observaciones_pago: null,
-    detalle: `Factura ${fila["Tipo de Comprobante"]}-${fila["Número Desde"]} - ${fila["Denominación Emisor"] || 'Sin nombre'}`,
+    detalle: `Factura ${datosBasicos.tipo_comprobante}-${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
     archivo_origen: nombreArchivo
   }
+  
+  console.log(`✅ Mapeo completado: ${Object.keys(resultado).length} campos`)
+  return resultado
 }
 
 /**
@@ -132,7 +310,7 @@ export async function POST(req: Request) {
 
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.0 - ${new Date().toISOString()}`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.3-NULL-AÑO - ${new Date().toISOString()}`)
 
     // Detectar formato del archivo
     const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
@@ -253,7 +431,7 @@ export async function POST(req: Request) {
         }
         
         // Convertir fila del CSV al formato de la base de datos
-        const filaParaBBDD = mapearFilaCSVaBBDD(filaOriginal, file.name)
+        const filaParaBBDD = await mapearFilaCSVaBBDD(filaOriginal, file.name)
 
         // Debug: Mostrar resultado del mapeo
         if (indice < 3) {
