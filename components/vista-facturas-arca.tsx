@@ -74,6 +74,19 @@ interface FacturaArca {
   neto_grav_iva_10_5: number | null
   neto_grav_iva_21: number | null
   neto_grav_iva_27: number | null
+  // Campos SICORE - Retenciones Ganancias
+  sicore: string | null
+  monto_sicore: number | null
+}
+
+// Interface para configuración tipos SICORE
+interface TipoSicore {
+  id: number
+  tipo: string
+  emoji: string
+  minimo_no_imponible: number
+  porcentaje_retencion: number
+  activo: boolean
 }
 
 // Configuración de columnas disponibles - TODAS VISIBLES por defecto  
@@ -158,6 +171,15 @@ export function VistaFacturasArca() {
   // Estado para mostrar columnas detalladas en Subdiarios
   const [mostrarColumnasDetalladas, setMostrarColumnasDetalladas] = useState(false)
   
+  // Estados para flujo SICORE - Retenciones Ganancias
+  const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
+  const [facturaEnProceso, setFacturaEnProceso] = useState<FacturaArca | null>(null)
+  const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
+  const [tipoSeleccionado, setTipoSeleccionado] = useState<TipoSicore | null>(null)
+  const [montoRetencion, setMontoRetencion] = useState(0)
+  const [descuentoAdicional, setDescuentoAdicional] = useState(0)
+  const [pasoSicore, setPasoSicore] = useState<'tipo' | 'calculo' | 'descuento'>('tipo')
+  
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
   
@@ -185,6 +207,31 @@ export function VistaFacturasArca() {
       console.log('Error cargando carpeta por defecto:', error)
     }
   }, [])
+  
+  // Cargar tipos SICORE al inicializar
+  useEffect(() => {
+    const cargarTiposSicore = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tipos_sicore_config')
+          .select('*')
+          .eq('activo', true)
+          .order('minimo_no_imponible', { ascending: true })
+        
+        if (error) {
+          console.error('Error cargando tipos SICORE:', error)
+          return
+        }
+        
+        setTiposSicore(data || [])
+      } catch (error) {
+        console.error('Error cargando tipos SICORE:', error)
+      }
+    }
+    
+    cargarTiposSicore()
+  }, [])
+  
   const [nuevoPeriodo, setNuevoPeriodo] = useState('')
 
   // Generar períodos desde mes actual hacia atrás
@@ -519,6 +566,24 @@ export function VistaFacturasArca() {
       setFacturasOriginales(nuevasFacturasOriginales)
       
       setCeldaEnEdicion(null)
+      
+      // HOOK SICORE - Detectar cambio estado HACIA "pagar" (no si ya estaba en pagar)
+      console.log('🔍 SICORE DEBUG Hook:', { columna: datosEdicion.columna, valorFinal, esEstado: datosEdicion.columna === 'estado' })
+      if (datosEdicion.columna === 'estado' && valorFinal === 'pagar') {
+        const facturaOriginal = facturasOriginales.find(f => f.id === datosEdicion.facturaId)
+        const estadoAnterior = facturaOriginal?.estado
+        
+        // Solo ejecutar SICORE si el estado cambió HACIA 'pagar' (no si ya estaba en 'pagar')
+        if (estadoAnterior !== 'pagar') {
+          const facturaModificada = nuevasFacturas.find(f => f.id === datosEdicion.facturaId)
+          if (facturaModificada) {
+            console.log(`🎯 SICORE: Cambio detectado ${estadoAnterior} → pagar`)
+            await evaluarRetencionSicore(facturaModificada)
+          }
+        } else {
+          console.log('⏭️ SICORE: Factura ya estaba en estado pagar, no ejecutar')
+        }
+      }
       alert('Cambio guardado exitosamente')
       
     } catch (error) {
@@ -1952,6 +2017,188 @@ export function VistaFacturasArca() {
     }
   }
 
+  // FUNCIONES SICORE - RETENCIONES GANANCIAS
+  
+  // Generar quincena según fecha vencimiento
+  const generarQuincenaSicore = (fechaVencimiento: string): string => {
+    const fecha = new Date(fechaVencimiento)
+    const año = fecha.getFullYear().toString().slice(-2) // últimos 2 dígitos
+    const mes = (fecha.getMonth() + 1).toString().padStart(2, '0')
+    const dia = fecha.getDate()
+    
+    const quincena = dia <= 15 ? '1ra' : '2da'
+    return `${año}-${mes} - ${quincena}`
+  }
+  
+  // Verificar si ya se retuvo a este proveedor en esta quincena
+  const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id')
+        .eq('cuit', cuit)
+        .eq('sicore', quincena)
+        .limit(1)
+      
+      if (error) {
+        console.error('Error verificando retención previa:', error)
+        return false
+      }
+      
+      return (data && data.length > 0)
+    } catch (error) {
+      console.error('Error verificando retención previa:', error)
+      return false
+    }
+  }
+  
+  // Función principal: evaluar si corresponde retención SICORE
+  const evaluarRetencionSicore = async (factura: FacturaArca) => {
+    try {
+      const netoGravado = factura.imp_neto_gravado || 0
+      const minimoServicios = 67170 // Mínimo más bajo (Servicios/Transporte)
+      
+      console.log('🔍 SICORE: Evaluando factura', {
+        id: factura.id,
+        proveedor: factura.denominacion_emisor,
+        netoGravado,
+        minimoServicios
+      })
+      
+      // Filtro inicial: si no supera el mínimo más bajo → proceso normal
+      if (netoGravado <= minimoServicios) {
+        console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
+        return
+      }
+      
+      // Sí corresponde evaluación → iniciar flujo interactivo
+      console.log('⚡ SICORE: Corresponde evaluación - iniciando flujo')
+      setFacturaEnProceso(factura)
+      setPasoSicore('tipo')
+      setMostrarModalSicore(true)
+      
+    } catch (error) {
+      console.error('Error evaluando retención SICORE:', error)
+      alert('Error evaluando retención SICORE: ' + (error as Error).message)
+    }
+  }
+  
+  // Calcular retención según tipo seleccionado
+  const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
+    try {
+      const netoGravado = factura.imp_neto_gravado || 0
+      const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
+      
+      console.log('🧮 SICORE: Calculando retención', {
+        tipo: tipo.tipo,
+        netoGravado,
+        minimo: tipo.minimo_no_imponible,
+        porcentaje: tipo.porcentaje_retencion,
+        quincena
+      })
+      
+      // Verificar si no corresponde por tipo específico
+      if (netoGravado <= tipo.minimo_no_imponible) {
+        alert(`No corresponde retención para ${tipo.tipo}.\nMonto: $${netoGravado.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+        setMostrarModalSicore(false)
+        return
+      }
+      
+      // Verificar retención previa en quincena
+      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+      let montoBase = netoGravado
+      
+      if (!yaRetuvo) {
+        // Primera retención: descontar mínimo no imponible
+        montoBase = netoGravado - tipo.minimo_no_imponible
+        console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
+      } else {
+        console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
+      }
+      
+      const retencionCalculada = montoBase * tipo.porcentaje_retencion
+      
+      console.log('✅ SICORE: Retención calculada', {
+        montoBase,
+        retencion: retencionCalculada,
+        yaRetuvoAntes: yaRetuvo
+      })
+      
+      setTipoSeleccionado(tipo)
+      setMontoRetencion(retencionCalculada)
+      setDescuentoAdicional(0)
+      setPasoSicore('calculo')
+      
+    } catch (error) {
+      console.error('Error calculando retención SICORE:', error)
+      alert('Error calculando retención: ' + (error as Error).message)
+    }
+  }
+  
+  // Finalizar proceso SICORE y actualizar BD
+  const finalizarProcesoSicore = async () => {
+    if (!facturaEnProceso || !tipoSeleccionado) return
+    
+    try {
+      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      const quincena = generarQuincenaSicore(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
+      
+      console.log('💾 SICORE: Finalizando proceso', {
+        facturaId: facturaEnProceso.id,
+        montoRetencion,
+        descuentoAdicional,
+        saldoFinal,
+        quincena
+      })
+      
+      // Actualizar factura con datos SICORE
+      const { error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .update({
+          monto_a_abonar: saldoFinal,
+          sicore: quincena,
+          monto_sicore: montoRetencion,
+          estado: 'pagar'
+        })
+        .eq('id', facturaEnProceso.id)
+      
+      if (error) {
+        throw new Error(error.message)
+      }
+      
+      // Actualizar estado local
+      const nuevasFacturas = facturas.map(f => 
+        f.id === facturaEnProceso.id 
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, estado: 'pagar' }
+          : f
+      )
+      setFacturas(nuevasFacturas)
+      
+      const nuevasFacturasOriginales = facturasOriginales.map(f => 
+        f.id === facturaEnProceso.id 
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, estado: 'pagar' }
+          : f
+      )
+      setFacturasOriginales(nuevasFacturasOriginales)
+      
+      // Cerrar modal y limpiar estados
+      setMostrarModalSicore(false)
+      setFacturaEnProceso(null)
+      setTipoSeleccionado(null)
+      setMontoRetencion(0)
+      setDescuentoAdicional(0)
+      setPasoSicore('tipo')
+      
+      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
+      
+    } catch (error) {
+      console.error('Error finalizando proceso SICORE:', error)
+      alert('Error finalizando proceso SICORE: ' + (error as Error).message)
+    }
+  }
+
   // Componente SubdiariosContent
   const SubdiariosContent = () => (
     <div className="space-y-6">
@@ -3017,6 +3264,146 @@ export function VistaFacturasArca() {
               Imputar {facturasSeleccionadas.size} Facturas
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal SICORE - Retenciones Ganancias */}
+      <Dialog open={mostrarModalSicore} onOpenChange={setMostrarModalSicore}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>🏛️ Retención SICORE - Ganancias</DialogTitle>
+            <DialogDescription>
+              {facturaEnProceso && (
+                <>Factura: {facturaEnProceso.denominacion_emisor} - ${facturaEnProceso.imp_neto_gravado?.toLocaleString('es-AR')}</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* PASO 1: Selección de tipo */}
+          {pasoSicore === 'tipo' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-700 mb-4">
+                  Esta factura supera el mínimo para retención SICORE.
+                  <br />
+                  Seleccione el tipo de operación:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {tiposSicore.map((tipo) => (
+                  <Button
+                    key={tipo.id}
+                    variant="outline" 
+                    className="h-auto p-4 flex items-center justify-between hover:bg-gray-50"
+                    onClick={() => calcularRetencionSicore(facturaEnProceso!, tipo)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{tipo.emoji}</span>
+                      <div className="text-left">
+                        <div className="font-medium">{tipo.tipo}</div>
+                        <div className="text-sm text-gray-500">
+                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2)}%)
+                        </div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 bg-green-50 hover:bg-green-100 border-green-300"
+                  onClick={() => {
+                    setMostrarModalSicore(false)
+                    // Estado ya se cambió a "Pagar" automáticamente
+                  }}
+                >
+                  ✅ Continuar sin Retención
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setMostrarModalSicore(false)}
+                >
+                  ❌ Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 2: Mostrar cálculo + opciones */}
+          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-green-800 mb-2">Cálculo de retención:</h3>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Total factura:</span>
+                    <span className="font-medium">${facturaEnProceso.imp_total?.toLocaleString('es-AR')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Retención SICORE:</span>
+                    <span className="font-medium text-red-600">${montoRetencion.toLocaleString('es-AR')} ({(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%)</span>
+                  </div>
+                  {descuentoAdicional > 0 && (
+                    <div className="flex justify-between">
+                      <span>Descuento adicional:</span>
+                      <span className="font-medium text-red-600">${descuentoAdicional.toLocaleString('es-AR')}</span>
+                    </div>
+                  )}
+                  <hr className="my-2" />
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Saldo a pagar:</span>
+                    <span className="text-green-600">${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR')}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  onClick={finalizarProcesoSicore}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  ✅ Confirmar
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    const monto = prompt('Ingrese monto descuento adicional:', '0')
+                    if (monto !== null) {
+                      const descuento = parseFloat(monto) || 0
+                      setDescuentoAdicional(descuento)
+                    }
+                  }}
+                >
+                  💰 Descuento Adicional
+                </Button>
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    const monto = prompt('Ingrese nuevo monto retención:', montoRetencion.toString())
+                    if (monto !== null) {
+                      const nuevaRetencion = parseFloat(monto) || 0
+                      setMontoRetencion(nuevaRetencion)
+                    }
+                  }}
+                >
+                  📝 Cambiar Monto Retención
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setMostrarModalSicore(false)}
+                >
+                  ❌ Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
