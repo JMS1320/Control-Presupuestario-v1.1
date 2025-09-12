@@ -180,6 +180,9 @@ export function VistaFacturasArca() {
   const [descuentoAdicional, setDescuentoAdicional] = useState(0)
   const [pasoSicore, setPasoSicore] = useState<'tipo' | 'calculo' | 'descuento'>('tipo')
   
+  // Estado para guardado pendiente - permite cancelar SICORE sin guardar estado
+  const [guardadoPendiente, setGuardadoPendiente] = useState<{facturaId: string, columna: string, valor: any, estadoAnterior: string} | null>(null)
+  
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
   
@@ -567,7 +570,7 @@ export function VistaFacturasArca() {
       
       setCeldaEnEdicion(null)
       
-      // HOOK SICORE - Detectar cambio estado HACIA "pagar" (no si ya estaba en pagar)
+      // HOOK SICORE - Interceptar cambio estado HACIA "pagar" ANTES del guardado
       console.log('🔍 SICORE DEBUG Hook:', { columna: datosEdicion.columna, valorFinal, esEstado: datosEdicion.columna === 'estado' })
       if (datosEdicion.columna === 'estado' && valorFinal === 'pagar') {
         const facturaOriginal = facturasOriginales.find(f => f.id === datosEdicion.facturaId)
@@ -577,8 +580,25 @@ export function VistaFacturasArca() {
         if (estadoAnterior !== 'pagar') {
           const facturaModificada = nuevasFacturas.find(f => f.id === datosEdicion.facturaId)
           if (facturaModificada) {
-            console.log(`🎯 SICORE: Cambio detectado ${estadoAnterior} → pagar`)
+            console.log(`🎯 SICORE: Cambio detectado ${estadoAnterior} → pagar - INTERCEPTANDO`)
+            
+            // GUARDAR datos del cambio pendiente (sin ejecutar aún)
+            setGuardadoPendiente({
+              facturaId: datosEdicion.facturaId,
+              columna: datosEdicion.columna,
+              valor: valorFinal,
+              estadoAnterior: estadoAnterior || 'pendiente'
+            })
+            
+            // REVERTIR temporalmente el estado en la UI (hasta confirmar SICORE)
+            const nuevasFacturasRevertidas = nuevasFacturas.map(f => 
+              f.id === datosEdicion.facturaId ? { ...f, estado: estadoAnterior || 'pendiente' } : f
+            )
+            setFacturas(nuevasFacturasRevertidas)
+            
+            // EVALUAR SICORE (no guarda aún, solo muestra modal)
             await evaluarRetencionSicore(facturaModificada)
+            return // NO ejecutar guardado normal
           }
         } else {
           console.log('⏭️ SICORE: Factura ya estaba en estado pagar, no ejecutar')
@@ -2139,11 +2159,72 @@ export function VistaFacturasArca() {
     }
   }
   
+  // Ejecutar cambio de estado pendiente (después de confirmar SICORE)
+  const ejecutarGuardadoPendiente = async () => {
+    if (!guardadoPendiente) return
+    
+    console.log('💾 Ejecutando guardado pendiente:', guardadoPendiente)
+    
+    const nuevasFacturas = facturas.map(factura => 
+      factura.id === guardadoPendiente.facturaId 
+        ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.valor }
+        : factura
+    )
+    setFacturas(nuevasFacturas)
+    
+    const nuevasFacturasOriginales = facturasOriginales.map(factura => 
+      factura.id === guardadoPendiente.facturaId 
+        ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.valor }
+        : factura
+    )
+    setFacturasOriginales(nuevasFacturasOriginales)
+    
+    // Ejecutar guardado en BD
+    await ejecutarGuardadoRealArca(guardadoPendiente.facturaId, guardadoPendiente.columna, guardadoPendiente.valor)
+    
+    // Limpiar guardado pendiente
+    setGuardadoPendiente(null)
+  }
+
+  // Cancelar cambio de estado pendiente
+  const cancelarGuardadoPendiente = () => {
+    console.log('❌ Cancelando guardado pendiente:', guardadoPendiente)
+    
+    if (guardadoPendiente) {
+      // Restaurar estado anterior en la UI
+      const nuevasFacturas = facturas.map(factura => 
+        factura.id === guardadoPendiente.facturaId 
+          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+          : factura
+      )
+      setFacturas(nuevasFacturas)
+      
+      const nuevasFacturasOriginales = facturasOriginales.map(factura => 
+        factura.id === guardadoPendiente.facturaId 
+          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+          : factura
+      )
+      setFacturasOriginales(nuevasFacturasOriginales)
+    }
+    
+    // Limpiar estados SICORE y guardado pendiente
+    setGuardadoPendiente(null)
+    setMostrarModalSicore(false)
+    setFacturaEnProceso(null)
+    setTipoSeleccionado(null)
+    setMontoRetencion(0)
+    setDescuentoAdicional(0)
+    setPasoSicore('tipo')
+  }
+
   // Finalizar proceso SICORE y actualizar BD
   const finalizarProcesoSicore = async () => {
     if (!facturaEnProceso || !tipoSeleccionado) return
     
     try {
+      // PRIMERO: Ejecutar el cambio de estado pendiente (estado → 'pagar')
+      await ejecutarGuardadoPendiente()
+      
       const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
       const quincena = generarQuincenaSicore(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
       
@@ -2155,15 +2236,15 @@ export function VistaFacturasArca() {
         quincena
       })
       
-      // Actualizar factura con datos SICORE
+      // SEGUNDO: Actualizar factura con datos SICORE
       const { error } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
         .update({
           monto_a_abonar: saldoFinal,
           sicore: quincena,
-          monto_sicore: montoRetencion,
-          estado: 'pagar'
+          monto_sicore: montoRetencion
+          // Nota: estado ya fue actualizado por ejecutarGuardadoPendiente()
         })
         .eq('id', facturaEnProceso.id)
       
@@ -2171,17 +2252,17 @@ export function VistaFacturasArca() {
         throw new Error(error.message)
       }
       
-      // Actualizar estado local
+      // Actualizar estado local con datos SICORE
       const nuevasFacturas = facturas.map(f => 
         f.id === facturaEnProceso.id 
-          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, estado: 'pagar' }
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
           : f
       )
       setFacturas(nuevasFacturas)
       
       const nuevasFacturasOriginales = facturasOriginales.map(f => 
         f.id === facturaEnProceso.id 
-          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, estado: 'pagar' }
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
           : f
       )
       setFacturasOriginales(nuevasFacturasOriginales)
@@ -3327,7 +3408,7 @@ export function VistaFacturasArca() {
                 </Button>
                 <Button 
                   variant="outline" 
-                  onClick={() => setMostrarModalSicore(false)}
+                  onClick={cancelarGuardadoPendiente}
                 >
                   ❌ Cancelar
                 </Button>
@@ -3400,7 +3481,7 @@ export function VistaFacturasArca() {
                 </Button>
                 <Button 
                   variant="outline"
-                  onClick={() => setMostrarModalSicore(false)}
+                  onClick={cancelarGuardadoPendiente}
                 >
                   ❌ Cancelar
                 </Button>
