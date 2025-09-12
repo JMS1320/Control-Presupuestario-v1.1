@@ -2098,22 +2098,25 @@ export function VistaFacturasArca() {
         quincena
       })
       
-      // Verificar si no corresponde por tipo específico
-      if (netoGravado <= tipo.minimo_no_imponible) {
-        alert(`No corresponde retención para ${tipo.tipo}.\nMonto: $${netoGravado.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
-        setMostrarModalSicore(false)
-        return
-      }
-      
-      // Verificar retención previa en quincena
+      // PRIMERO: Verificar retención previa en quincena
       const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+      console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
+      
       let montoBase = netoGravado
       
       if (!yaRetuvo) {
-        // Primera retención: descontar mínimo no imponible
+        // Primera retención: verificar si supera mínimo específico del tipo
+        if (netoGravado <= tipo.minimo_no_imponible) {
+          alert(`No corresponde retención para ${tipo.tipo}.\nMonto: $${netoGravado.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+          setMostrarModalSicore(false)
+          return
+        }
+        // Descontar mínimo no imponible para primera retención
         montoBase = netoGravado - tipo.minimo_no_imponible
         console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
       } else {
+        // Retención adicional: retener sobre monto completo (sin aplicar mínimo)
+        montoBase = netoGravado
         console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
       }
       
