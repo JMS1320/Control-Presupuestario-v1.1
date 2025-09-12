@@ -1444,3 +1444,99 @@ ed543ea - Feature: Toggle columnas detalladas IVA en vista Subdiarios
 - **Templates 14-61**: Masiva según Excel original ⚠️ PENDIENTE
 - **Sistema alertas**: Vista Principal integración ⚠️ PENDIENTE
 - **Reglas IIBB/SICORE**: Automáticas templates específicos ⚠️ PENDIENTE
+
+
+---
+
+## 📋 **WORKFLOW SICORE DEFINITIVO - PROCESO RETENCIONES (2025-09-11)**
+
+### 🎯 **WORKFLOW INTERACTIVO COMPLETO ACORDADO:**
+
+**🔄 TRIGGER AUTOMÁTICO:**
+- **Momento**: Factura ARCA cambia a estado **"Pagar"**
+- **Evaluación**: Sistema verifica reglas SICORE para proveedor
+- **Decision**: Si NO aplica → flujo normal | Si SÍ aplica → flujo interactivo
+
+**📋 PASO 1 - DECISIÓN INICIAL:**
+```
+"Esta factura requiere retención ganancias según reglas. 
+¿Desea aplicar retención SICORE?"
+[SÍ] [NO]
+```
+- **NO**: Anula proceso, continúa flujo normal
+- **SÍ**: Continúa a cálculo automático
+
+**🧮 PASO 2 - CÁLCULO + OPCIONES MÚLTIPLES:**
+```
+"Cálculo de retención:
+- Total factura: $XXX.XXX
+- Retención SICORE: $XX.XXX (X%)  
+- Saldo a pagar: $XXX.XXX
+
+¿Qué desea hacer?"
+[CONFIRMAR] [DESCUENTO ADICIONAL] [CAMBIAR MONTO RETENCIÓN] [CANCELAR]
+```
+
+**🎯 PASO 3A - SI CONFIRMAR:**
+- Actualizar `monto_a_abonar` = saldo calculado
+- Continuar a finalización proceso
+
+**🎯 PASO 3B - SI DESCUENTO ADICIONAL:**
+```
+"Ingrese monto descuento adicional: $_____"
+
+"Cálculo con descuento:
+- Total factura: $XXX.XXX  
+- Retención: $XX.XXX
+- Descuento: $X.XXX
+- Saldo a pagar: $XXX.XXX
+
+¿Confirmar valores finales?"
+[CONFIRMAR] [MODIFICAR DESCUENTO] [CANCELAR]
+```
+
+**🎯 PASO 3C - SI CAMBIAR MONTO RETENCIÓN:**
+```
+"Ingrese nuevo monto retención: $_____"
+
+"Cálculo con retención modificada:
+- Total factura: $XXX.XXX  
+- Retención: $XX.XXX (modificada)
+- Saldo a pagar: $XXX.XXX
+
+¿Confirmar valores finales?"
+[CONFIRMAR] [DESCUENTO ADICIONAL] [MODIFICAR RETENCIÓN] [CANCELAR]
+```
+- **DESCUENTO ADICIONAL**: Vuelve a PASO 3B con valores modificados
+- **MODIFICAR RETENCIÓN**: Permite cambiar retención nuevamente
+- **Lógica**: Máxima flexibilidad, cualquier combinación posible
+
+### 💾 **FINALIZACIÓN PROCESO - CAMPOS BD:**
+
+**🗃️ ACTUALIZACIONES REQUERIDAS:**
+1. **`monto_a_abonar`**: Saldo final calculado (reemplaza valor anterior)
+2. **`estado`**: Cambiar a "Pagar" 
+3. **`sicore`**: **CAMPO NUEVO** → "aa-mm - 1ra" o "aa-mm - 2da"
+4. **`monto_sicore`**: **CAMPO NUEVO** → Monto retención aplicada
+
+**📅 LÓGICA QUINCENAS (por fecha_vencimiento):**
+- **Días 1-15**: "aa-mm - 1ra" (ej: "24-09 - 1ra")
+- **Días 16-fin mes**: "aa-mm - 2da" (ej: "24-09 - 2da")
+
+**📄 DOCUMENTOS A GENERAR:**
+- Orden de pago (factura + datos retención)
+- Comprobante retención ganancias (enviar proveedor)
+
+### ✅ **CARACTERÍSTICAS WORKFLOW:**
+- **Eficiencia**: Máximo 3 pasos, opciones múltiples por paso
+- **Flexibilidad**: Combinar retención + descuento en cualquier orden
+- **Seguridad**: Siempre hay opción CANCELAR en cada paso
+- **Trazabilidad**: Todos los valores quedan registrados en BD
+
+### ⏳ **PENDIENTES PARA IMPLEMENTACIÓN:**
+- **Lógica cálculo**: Definir reglas y % retención por proveedor/monto
+- **Campos BD**: Migración agregar `sicore` y `monto_sicore`
+- **UI Modales**: Implementar flujo interactivo step-by-step  
+- **Documentos**: Generar PDFs orden pago + comprobante retención
+- **Hook triggers**: Detectar cambio estado a "Pagar"
+
