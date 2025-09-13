@@ -211,6 +211,26 @@ export function VistaCashFlow() {
     try {
       setGuardandoCambio(true)
       
+      // HOOK SICORE - Interceptar cambio estado HACIA "pagar" para facturas ARCA
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && filaParaCambioEstado.estado !== 'pagar') {
+        console.log('🎯 SICORE Cash Flow: Cambio detectado hacia "pagar" - evaluando retención')
+        
+        // Crear objeto factura compatible con evaluarRetencionSicore
+        const facturaSimulada = {
+          id: filaParaCambioEstado.id,
+          imp_neto_gravado: filaParaCambioEstado.debitos || 0, // En Cash Flow, débitos = neto gravado
+          denominacion_emisor: filaParaCambioEstado.nombre_proveedor,
+          cuit: filaParaCambioEstado.cuit_proveedor,
+          fecha_vencimiento: filaParaCambioEstado.fecha_vencimiento,
+          fecha_estimada: filaParaCambioEstado.fecha_estimada
+        }
+        
+        // TODO: Implementar evaluación SICORE completa para Cash Flow
+        // Por ahora, continuar con guardado normal y mostrar advertencia
+        console.log('⚠️ SICORE Cash Flow: Evaluación SICORE pendiente de implementar')
+        alert('⚠️ ADVERTENCIA: Cambio a "pagar" desde Cash Flow no evalúa SICORE automáticamente.\nUsa la vista ARCA Facturas para evaluación completa.')
+      }
+      
       const exito = await actualizarRegistro(
         filaParaCambioEstado.id,
         'estado',
@@ -468,6 +488,18 @@ export function VistaCashFlow() {
     setProcesandoLote(true)
 
     try {
+      // HOOK SICORE - Verificar si hay facturas ARCA cambiando a "pagar"
+      if (cambiarEstadoLote && valorEstadoLote === 'pagar') {
+        const facturasArcaAPagar = Array.from(filasSeleccionadas)
+          .map(filaId => data.find(f => f.id === filaId)!)
+          .filter(fila => fila.origen === 'ARCA' && fila.estado !== 'pagar')
+        
+        if (facturasArcaAPagar.length > 0) {
+          console.log('🎯 SICORE Cash Flow LOTE: Facturas ARCA detectadas cambiando a "pagar"', facturasArcaAPagar.length)
+          alert(`⚠️ ADVERTENCIA: ${facturasArcaAPagar.length} facturas ARCA cambiarán a "pagar" desde Cash Flow sin evaluación SICORE automática.\n\nPara evaluación completa de retenciones, usa la vista ARCA Facturas.`)
+        }
+      }
+      
       // Preparar actualizaciones para todas las filas seleccionadas
       const actualizaciones: Array<{id: string, origen: 'ARCA' | 'TEMPLATE', campo: string, valor: any}> = []
       

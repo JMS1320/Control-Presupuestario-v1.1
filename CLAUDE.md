@@ -98,7 +98,55 @@ npm test
 
 ## 🚀 **AVANCES SESIÓN COMPLETA (2025-09-11):**
 
-### 🏛️ **SISTEMA SICORE COMPLETAMENTE IMPLEMENTADO:**
+### 🏛️ **SISTEMA SICORE COMPLETAMENTE IMPLEMENTADO Y CORREGIDO (SESIÓN 2025-09-12):**
+
+#### 🔧 **FIXES CRÍTICOS APLICADOS (2025-09-12):**
+- [2025-09-12] 🚨 **FIX CANCELACIÓN SICORE**: Interceptar guardado ANTES de ejecutar para permitir cancelación real
+- [2025-09-12] 🔧 **FIX CONFIRMACIÓN**: Corregir función guardado (ejecutarGuardadoReal vs ejecutarGuardadoRealArca)  
+- [2025-09-12] 💰 **FIX RETENCIONES NEGATIVAS**: Lógica especial facturas negativas con retenciones previas
+- [2025-09-12] ⚠️ **FIX HOOK CASH FLOW**: Sistema advertencias cuando se cambia estado desde Cash Flow
+- [2025-09-12] 📊 **NUEVO: CIERRE QUINCENA**: Sistema completo reportes PDF+Excel para cierre administrativo
+
+#### 🆕 **ARQUITECTURA MEJORADA - GUARDADO INTERCEPTADO:**
+```typescript
+// NUEVO WORKFLOW SICORE:
+// 1. User cambia estado → 'pagar'
+// 2. Hook intercepta y guarda datos SIN ejecutar
+// 3. Modal SICORE se abre con factura temporal en 'pagar' 
+// 4. CONFIRMAR → ejecutarGuardadoPendiente() + datos SICORE
+// 5. CANCELAR → cancelarGuardadoPendiente() revierte a estado anterior
+
+const [guardadoPendiente, setGuardadoPendiente] = useState<{
+  facturaId: string, 
+  columna: string, 
+  valor: any, 
+  estadoAnterior: string
+} | null>(null)
+```
+
+#### 📊 **NUEVO: SISTEMA CIERRE QUINCENA SICORE:**
+- [2025-09-12] 🎯 **UBICACIÓN**: Botón "Cierre Quincena SICORE" en vista ARCA Facturas
+- [2025-09-12] 🔍 **PROCESO AUTOMÁTICO**:
+  1. Selector quincenas disponibles (últimos 6 meses)  
+  2. Query automático: todas facturas con `sicore = quincena` y `monto_sicore > 0`
+  3. Generación reportes PDF + Excel (misma lógica subdiarios DDJJ)
+  4. Gestión carpeta por defecto integrada
+  5. Alert resumen: cantidad facturas + total retenciones
+- [2025-09-12] 📄 **ARCHIVOS GENERADOS**:
+  - Excel: `SICORE_Cierre_2024-09-2_2025-09-12.xlsx` (detalle + totales)
+  - PDF: `SICORE_Cierre_2024-09-2_2025-09-12.pdf` (formato profesional)
+- [2025-09-12] ⚠️ **PENDIENTE**: Actualización/creación automática templates SICORE
+
+#### 💻 **FUNCIONES PRINCIPALES AGREGADAS:**
+- **generarQuincenasDisponibles()**: Lista quincenas últimos 6 meses
+- **buscarRetencionesQuincena()**: Query BD + estadísticas 
+- **procesarCierreQuincena()**: Coordinador proceso completo
+- **generarExcelCierreQuincena()**: Excel con detalle + totales
+- **generarPDFCierreQuincena()**: PDF profesional con tabla
+- **ejecutarGuardadoPendiente()**: Ejecutar guardado diferido post-confirmación
+- **cancelarGuardadoPendiente()**: Revertir estado y limpiar modal
+
+### 🏛️ **SISTEMA SICORE BASE (SESIÓN 2025-09-11):**
 - [2025-09-11] 🎯 **MÓDULO SICORE**: Sistema retenciones ganancias AFIP completamente funcional
 - [2025-09-11] 📊 **4 TIPOS OPERACIÓN**: Arrendamiento 6%, Bienes 2%, Servicios 2%, Transporte 0.25%
 - [2025-09-11] 🗓️ **LÓGICA QUINCENAS**: Cálculo automático '25-09 - 1ra/2da' basado en fecha_vencimiento
