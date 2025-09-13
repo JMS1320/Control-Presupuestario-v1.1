@@ -2564,7 +2564,7 @@ export function VistaFacturasArca() {
       ])
       
       // Generar tabla
-      ;(doc as any).autoTable({
+      autoTable(doc, {
         head: [columnas],
         body: filas,
         startY: 80,
