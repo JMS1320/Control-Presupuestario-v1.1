@@ -2458,24 +2458,22 @@ export function VistaFacturasArca() {
       
       // Preparar datos para Excel
       const datosExcel = facturas.map(factura => ({
-        'Quincena SICORE': quincena,
+        'Fecha de Pago': factura.fecha_vencimiento || '',
         'CUIT': factura.cuit || '',
         'Proveedor': factura.denominacion_emisor || '',
-        'Retención SICORE': factura.monto_sicore || 0,
-        'Estado': factura.estado || '',
-        'Fecha Vencimiento': factura.fecha_vencimiento || '',
-        'Fecha Estimada': factura.fecha_estimada || ''
+        'Tipo FC': factura.tipo_comprobante || '',
+        'Nro Factura': `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
+        'Retención Aplicada': factura.monto_sicore || 0
       }))
       
       // Agregar fila de totales
       datosExcel.push({
-        'Quincena SICORE': '',
+        'Fecha de Pago': '',
         'CUIT': '',
         'Proveedor': 'TOTAL RETENCIONES',
-        'Retención SICORE': totalRetenciones,
-        'Estado': '',
-        'Fecha Vencimiento': '',
-        'Fecha Estimada': ''
+        'Tipo FC': '',
+        'Nro Factura': '',
+        'Retención Aplicada': totalRetenciones
       })
       
       // Crear workbook
@@ -2542,25 +2540,31 @@ export function VistaFacturasArca() {
       
       // Tabla de facturas
       const columnas = [
+        'Fecha de Pago',
         'CUIT',
-        'Proveedor', 
-        'Retención SICORE',
-        'Estado'
+        'Proveedor',
+        'Tipo FC',
+        'Nro Factura',
+        'Retención Aplicada'
       ]
       
       const filas = facturas.map(factura => [
+        factura.fecha_vencimiento || '',
         factura.cuit || '',
         factura.denominacion_emisor || '',
-        `$${(factura.monto_sicore || 0).toLocaleString('es-AR')}`,
-        factura.estado || ''
+        factura.tipo_comprobante || '',
+        `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
+        `$${(factura.monto_sicore || 0).toLocaleString('es-AR')}`
       ])
       
       // Agregar fila de total
       filas.push([
         '',
+        '',
         'TOTAL RETENCIONES',
-        `$${totalRetenciones.toLocaleString('es-AR')}`,
-        ''
+        '',
+        '',
+        `$${totalRetenciones.toLocaleString('es-AR')}`
       ])
       
       // Generar tabla
