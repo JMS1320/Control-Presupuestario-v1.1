@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -74,6 +74,19 @@ interface FacturaArca {
   neto_grav_iva_10_5: number | null
   neto_grav_iva_21: number | null
   neto_grav_iva_27: number | null
+  // Campos SICORE - Retenciones Ganancias
+  sicore: string | null
+  monto_sicore: number | null
+}
+
+// Interface para configuración tipos SICORE
+interface TipoSicore {
+  id: number
+  tipo: string
+  emoji: string
+  minimo_no_imponible: number
+  porcentaje_retencion: number
+  activo: boolean
 }
 
 // Configuración de columnas disponibles - TODAS VISIBLES por defecto  
@@ -158,6 +171,23 @@ export function VistaFacturasArca() {
   // Estado para mostrar columnas detalladas en Subdiarios
   const [mostrarColumnasDetalladas, setMostrarColumnasDetalladas] = useState(false)
   
+  // Estados para flujo SICORE - Retenciones Ganancias
+  const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
+  const [facturaEnProceso, setFacturaEnProceso] = useState<FacturaArca | null>(null)
+  const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
+  const [tipoSeleccionado, setTipoSeleccionado] = useState<TipoSicore | null>(null)
+  const [montoRetencion, setMontoRetencion] = useState(0)
+  const [descuentoAdicional, setDescuentoAdicional] = useState(0)
+  const [pasoSicore, setPasoSicore] = useState<'tipo' | 'calculo' | 'descuento'>('tipo')
+  
+  // Estado para guardado pendiente - permite cancelar SICORE sin guardar estado
+  const [guardadoPendiente, setGuardadoPendiente] = useState<{facturaId: string, columna: string, valor: any, estadoAnterior: string} | null>(null)
+  
+  // Estados para cierre de quincena SICORE
+  const [mostrarModalCierreQuincena, setMostrarModalCierreQuincena] = useState(false)
+  const [quincenaSeleccionada, setQuincenaSeleccionada] = useState('')
+  const [procesandoCierre, setProcesandoCierre] = useState(false)
+  
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
   
@@ -185,6 +215,31 @@ export function VistaFacturasArca() {
       console.log('Error cargando carpeta por defecto:', error)
     }
   }, [])
+  
+  // Cargar tipos SICORE al inicializar
+  useEffect(() => {
+    const cargarTiposSicore = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('tipos_sicore_config')
+          .select('*')
+          .eq('activo', true)
+          .order('minimo_no_imponible', { ascending: true })
+        
+        if (error) {
+          console.error('Error cargando tipos SICORE:', error)
+          return
+        }
+        
+        setTiposSicore(data || [])
+      } catch (error) {
+        console.error('Error cargando tipos SICORE:', error)
+      }
+    }
+    
+    cargarTiposSicore()
+  }, [])
+  
   const [nuevoPeriodo, setNuevoPeriodo] = useState('')
 
   // Generar períodos desde mes actual hacia atrás
@@ -519,6 +574,38 @@ export function VistaFacturasArca() {
       setFacturasOriginales(nuevasFacturasOriginales)
       
       setCeldaEnEdicion(null)
+      
+      // HOOK SICORE - Interceptar cambio estado HACIA "pagar" ANTES del guardado
+      console.log('🔍 SICORE DEBUG Hook:', { columna: datosEdicion.columna, valorFinal, esEstado: datosEdicion.columna === 'estado' })
+      if (datosEdicion.columna === 'estado' && valorFinal === 'pagar') {
+        const facturaOriginal = facturasOriginales.find(f => f.id === datosEdicion.facturaId)
+        const estadoAnterior = facturaOriginal?.estado
+        
+        // Solo ejecutar SICORE si el estado cambió HACIA 'pagar' (no si ya estaba en 'pagar')
+        if (estadoAnterior !== 'pagar') {
+          const facturaModificada = nuevasFacturas.find(f => f.id === datosEdicion.facturaId)
+          if (facturaModificada) {
+            console.log(`🎯 SICORE: Cambio detectado ${estadoAnterior} → pagar - INTERCEPTANDO`)
+            
+            // GUARDAR datos del cambio pendiente (sin ejecutar aún)
+            setGuardadoPendiente({
+              facturaId: datosEdicion.facturaId,
+              columna: datosEdicion.columna,
+              valor: valorFinal,
+              estadoAnterior: estadoAnterior || 'pendiente'
+            })
+            
+            // NO TOCAR la UI aquí - debe quedar en estado 'pagar' hasta cancelar
+            // La UI ya se actualizó arriba con 'pagar', solo interceptamos el guardado BD
+            
+            // EVALUAR SICORE (no guarda aún, solo muestra modal)
+            await evaluarRetencionSicore(facturaModificada)
+            return // NO ejecutar guardado normal
+          }
+        } else {
+          console.log('⏭️ SICORE: Factura ya estaba en estado pagar, no ejecutar')
+        }
+      }
       alert('Cambio guardado exitosamente')
       
     } catch (error) {
@@ -1952,6 +2039,584 @@ export function VistaFacturasArca() {
     }
   }
 
+  // FUNCIONES SICORE - RETENCIONES GANANCIAS
+  
+  // Generar quincena según fecha vencimiento
+  const generarQuincenaSicore = (fechaVencimiento: string): string => {
+    const fecha = new Date(fechaVencimiento)
+    const año = fecha.getFullYear().toString().slice(-2) // últimos 2 dígitos
+    const mes = (fecha.getMonth() + 1).toString().padStart(2, '0')
+    const dia = fecha.getDate()
+    
+    const quincena = dia <= 15 ? '1ra' : '2da'
+    return `${año}-${mes} - ${quincena}`
+  }
+  
+  // Verificar si ya se retuvo a este proveedor en esta quincena
+  const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id')
+        .eq('cuit', cuit)
+        .eq('sicore', quincena)
+        .limit(1)
+      
+      if (error) {
+        console.error('Error verificando retención previa:', error)
+        return false
+      }
+      
+      return (data && data.length > 0)
+    } catch (error) {
+      console.error('Error verificando retención previa:', error)
+      return false
+    }
+  }
+  
+  // Función principal: evaluar si corresponde retención SICORE
+  const evaluarRetencionSicore = async (factura: FacturaArca) => {
+    try {
+      const netoGravado = factura.imp_neto_gravado || 0
+      const minimoServicios = 67170 // Mínimo más bajo (Servicios/Transporte)
+      const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
+      
+      console.log('🔍 SICORE: Evaluando factura', {
+        id: factura.id,
+        proveedor: factura.denominacion_emisor,
+        netoGravado,
+        minimoServicios,
+        esNegativa: netoGravado < 0
+      })
+      
+      // CASO ESPECIAL: Facturas negativas
+      if (netoGravado < 0) {
+        // Para facturas negativas, verificar si ya hay retención previa
+        const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+        console.log('💰 SICORE: Factura negativa - verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
+        
+        if (yaRetuvo) {
+          // Si ya retuvo, permitir retención negativa
+          console.log('⚡ SICORE: Factura negativa con retención previa - PERMITIR')
+          setFacturaEnProceso(factura)
+          setPasoSicore('tipo')
+          setMostrarModalSicore(true)
+          return
+        } else {
+          // Si no retuvo antes, no corresponde retención sobre negativo
+          console.log('✅ SICORE: Factura negativa sin retención previa - No corresponde')
+          return
+        }
+      }
+      
+      // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
+      if (netoGravado <= minimoServicios) {
+        console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
+        return
+      }
+      
+      // Sí corresponde evaluación → iniciar flujo interactivo
+      console.log('⚡ SICORE: Corresponde evaluación - iniciando flujo')
+      setFacturaEnProceso(factura)
+      setPasoSicore('tipo')
+      setMostrarModalSicore(true)
+      
+    } catch (error) {
+      console.error('Error evaluando retención SICORE:', error)
+      alert('Error evaluando retención SICORE: ' + (error as Error).message)
+    }
+  }
+  
+  // Calcular retención según tipo seleccionado
+  const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
+    try {
+      const netoGravado = factura.imp_neto_gravado || 0
+      const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
+      
+      console.log('🧮 SICORE: Calculando retención', {
+        tipo: tipo.tipo,
+        netoGravado,
+        minimo: tipo.minimo_no_imponible,
+        porcentaje: tipo.porcentaje_retencion,
+        quincena
+      })
+      
+      // PRIMERO: Verificar retención previa en quincena
+      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+      console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
+      
+      let montoBase = netoGravado
+      
+      if (!yaRetuvo) {
+        // Primera retención: verificar si supera mínimo específico del tipo
+        if (netoGravado <= tipo.minimo_no_imponible) {
+          alert(`No corresponde retención para ${tipo.tipo}.\nMonto: $${netoGravado.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+          setMostrarModalSicore(false)
+          return
+        }
+        // Descontar mínimo no imponible para primera retención
+        montoBase = netoGravado - tipo.minimo_no_imponible
+        console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
+      } else {
+        // Retención adicional: retener sobre monto completo (sin aplicar mínimo)
+        montoBase = netoGravado
+        console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
+      }
+      
+      const retencionCalculada = montoBase * tipo.porcentaje_retencion
+      
+      console.log('✅ SICORE: Retención calculada', {
+        montoBase,
+        retencion: retencionCalculada,
+        yaRetuvoAntes: yaRetuvo
+      })
+      
+      setTipoSeleccionado(tipo)
+      setMontoRetencion(retencionCalculada)
+      setDescuentoAdicional(0)
+      setPasoSicore('calculo')
+      
+    } catch (error) {
+      console.error('Error calculando retención SICORE:', error)
+      alert('Error calculando retención: ' + (error as Error).message)
+    }
+  }
+  
+  // Ejecutar cambio de estado pendiente (después de confirmar SICORE)
+  const ejecutarGuardadoPendiente = async () => {
+    if (!guardadoPendiente) return
+    
+    console.log('💾 Ejecutando guardado pendiente:', guardadoPendiente)
+    
+    // La UI ya está actualizada con el estado correcto ('pagar')
+    // Solo necesitamos ejecutar el guardado en BD y actualizar facturasOriginales
+    const nuevasFacturasOriginales = facturasOriginales.map(factura => 
+      factura.id === guardadoPendiente.facturaId 
+        ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.valor }
+        : factura
+    )
+    setFacturasOriginales(nuevasFacturasOriginales)
+    
+    // Ejecutar guardado en BD
+    await ejecutarGuardadoReal({ facturaId: guardadoPendiente.facturaId, columna: guardadoPendiente.columna, valor: guardadoPendiente.valor })
+    
+    // Limpiar guardado pendiente
+    setGuardadoPendiente(null)
+  }
+
+  // Cancelar cambio de estado pendiente
+  const cancelarGuardadoPendiente = () => {
+    console.log('❌ Cancelando guardado pendiente:', guardadoPendiente)
+    
+    if (guardadoPendiente) {
+      // Restaurar estado anterior en la UI
+      const nuevasFacturas = facturas.map(factura => 
+        factura.id === guardadoPendiente.facturaId 
+          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+          : factura
+      )
+      setFacturas(nuevasFacturas)
+      
+      const nuevasFacturasOriginales = facturasOriginales.map(factura => 
+        factura.id === guardadoPendiente.facturaId 
+          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+          : factura
+      )
+      setFacturasOriginales(nuevasFacturasOriginales)
+    }
+    
+    // Limpiar estados SICORE y guardado pendiente
+    setGuardadoPendiente(null)
+    setMostrarModalSicore(false)
+    setFacturaEnProceso(null)
+    setTipoSeleccionado(null)
+    setMontoRetencion(0)
+    setDescuentoAdicional(0)
+    setPasoSicore('tipo')
+  }
+
+  // Finalizar proceso SICORE y actualizar BD
+  const finalizarProcesoSicore = async () => {
+    if (!facturaEnProceso || !tipoSeleccionado) return
+    
+    try {
+      // PRIMERO: Ejecutar el cambio de estado pendiente (estado → 'pagar')
+      await ejecutarGuardadoPendiente()
+      
+      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      const quincena = generarQuincenaSicore(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
+      
+      console.log('💾 SICORE: Finalizando proceso', {
+        facturaId: facturaEnProceso.id,
+        montoRetencion,
+        descuentoAdicional,
+        saldoFinal,
+        quincena
+      })
+      
+      // SEGUNDO: Actualizar factura con datos SICORE
+      const { error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .update({
+          monto_a_abonar: saldoFinal,
+          sicore: quincena,
+          monto_sicore: montoRetencion
+          // Nota: estado ya fue actualizado por ejecutarGuardadoPendiente()
+        })
+        .eq('id', facturaEnProceso.id)
+      
+      if (error) {
+        throw new Error(error.message)
+      }
+      
+      // Actualizar estado local con datos SICORE
+      const nuevasFacturas = facturas.map(f => 
+        f.id === facturaEnProceso.id 
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
+          : f
+      )
+      setFacturas(nuevasFacturas)
+      
+      const nuevasFacturasOriginales = facturasOriginales.map(f => 
+        f.id === facturaEnProceso.id 
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
+          : f
+      )
+      setFacturasOriginales(nuevasFacturasOriginales)
+      
+      // Cerrar modal y limpiar estados
+      setMostrarModalSicore(false)
+      setFacturaEnProceso(null)
+      setTipoSeleccionado(null)
+      setMontoRetencion(0)
+      setDescuentoAdicional(0)
+      setPasoSicore('tipo')
+      
+      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
+      
+    } catch (error) {
+      console.error('Error finalizando proceso SICORE:', error)
+      alert('Error finalizando proceso SICORE: ' + (error as Error).message)
+    }
+  }
+
+  // ============= FUNCIONES CIERRE QUINCENA SICORE =============
+
+  // Generar lista de quincenas disponibles (últimos 6 meses)
+  const generarQuincenasDisponibles = () => {
+    const quincenas = []
+    const ahora = new Date()
+    
+    for (let i = 0; i < 12; i++) { // 12 quincenas = 6 meses
+      const fecha = new Date(ahora)
+      fecha.setDate(fecha.getDate() - (i * 15)) // Retroceder de a 15 días
+      
+      const quincena = generarQuincenaSicore(fecha.toISOString())
+      if (!quincenas.includes(quincena)) {
+        quincenas.push(quincena)
+      }
+    }
+    
+    return quincenas.sort().reverse() // Más recientes primero
+  }
+
+  // Buscar todas las retenciones SICORE de una quincena
+  const buscarRetencionesQuincena = async (quincena: string) => {
+    try {
+      console.log('🔍 SICORE: Buscando retenciones para quincena', quincena)
+      
+      const { data, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, denominacion_emisor, cuit, monto_sicore, fecha_vencimiento, fecha_estimada, estado')
+        .eq('sicore', quincena)
+        .not('monto_sicore', 'is', null)
+        .gt('monto_sicore', 0)
+      
+      if (error) {
+        throw new Error(error.message)
+      }
+      
+      const totalRetenciones = data?.reduce((sum, f) => sum + (f.monto_sicore || 0), 0) || 0
+      
+      console.log('📊 SICORE: Retenciones encontradas', {
+        quincena,
+        cantidad: data?.length || 0,
+        totalRetenciones,
+        facturas: data
+      })
+      
+      return {
+        facturas: data || [],
+        totalRetenciones,
+        cantidad: data?.length || 0
+      }
+      
+    } catch (error) {
+      console.error('Error buscando retenciones quincena:', error)
+      throw error
+    }
+  }
+
+  // Procesar cierre completo de quincena
+  const procesarCierreQuincena = async (quincena: string) => {
+    try {
+      setProcesandoCierre(true)
+      
+      // 1. Buscar todas las retenciones de la quincena
+      console.log('🎯 SICORE: Iniciando cierre quincena', quincena)
+      const { facturas, totalRetenciones, cantidad } = await buscarRetencionesQuincena(quincena)
+      
+      if (cantidad === 0) {
+        alert(`No se encontraron retenciones SICORE para la quincena ${quincena}`)
+        return
+      }
+      
+      // 2. Generar reportes PDF + Excel
+      await generarReportesCierreQuincena(facturas, quincena, totalRetenciones)
+      
+      // 3. TODO: Actualizar/crear template SICORE
+      console.log('⚠️ TODO: Actualizar template SICORE con monto total', totalRetenciones)
+      
+      alert(`✅ Cierre de quincena ${quincena} completado!\n\n📊 Resumen:\n• ${cantidad} facturas procesadas\n• Total retenciones: $${totalRetenciones.toLocaleString('es-AR')}\n\n📄 Reportes generados:\n• Excel con detalle por factura\n• PDF con resumen y totales`)
+      
+      setMostrarModalCierreQuincena(false)
+      setQuincenaSeleccionada('')
+      
+    } catch (error) {
+      console.error('Error procesando cierre quincena:', error)
+      alert('Error procesando cierre de quincena: ' + (error as Error).message)
+    } finally {
+      setProcesandoCierre(false)
+    }
+  }
+
+  // Generar reportes Excel + PDF para cierre de quincena
+  const generarReportesCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number) => {
+    try {
+      // Gestión de carpeta (misma lógica que subdiarios)
+      let directorioDestino = null
+      let ubicacionFinal = 'Descargas'
+      
+      if (carpetaPorDefecto) {
+        try {
+          await (carpetaPorDefecto as any).requestPermission({ mode: 'readwrite' })
+          directorioDestino = carpetaPorDefecto
+          ubicacionFinal = carpetaPorDefecto.name
+        } catch (error) {
+          console.log('Error accediendo carpeta por defecto, usando selector manual')
+          directorioDestino = await (window as any).showDirectoryPicker()
+          ubicacionFinal = directorioDestino.name
+        }
+      } else {
+        const opciones = [
+          '1. Cambiar carpeta por defecto',
+          carpetaPorDefecto ? `2. Usar carpeta por defecto actual (${carpetaPorDefecto.name})` : '2. Establecer carpeta por defecto',
+          '3. Cancelar descarga',
+          '',
+          'Elige una opción (1, 2 o 3):'
+        ].join('\n')
+        
+        const eleccion = prompt(opciones)
+        
+        if (eleccion === '1' || eleccion === '2') {
+          directorioDestino = await (window as any).showDirectoryPicker()
+          ubicacionFinal = directorioDestino.name
+          
+          if (eleccion === '2') {
+            setCarpetaPorDefecto(directorioDestino)
+            console.log('📁 Carpeta por defecto establecida:', directorioDestino.name)
+          }
+        } else {
+          console.log('📁 Descarga cancelada por el usuario')
+          alert('📁 Descarga cancelada')
+          return
+        }
+      }
+      
+      // Generar reportes
+      await generarExcelCierreQuincena(facturas, quincena, totalRetenciones, directorioDestino)
+      await generarPDFCierreQuincena(facturas, quincena, totalRetenciones, directorioDestino)
+      
+      console.log('✅ Reportes cierre quincena generados exitosamente')
+      
+    } catch (error) {
+      console.error('Error generando reportes cierre quincena:', error)
+      throw error
+    }
+  }
+
+  // Generar Excel para cierre de quincena
+  const generarExcelCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
+    try {
+      console.log('📊 Generando Excel cierre quincena SICORE')
+      
+      // Importar XLSX dinámicamente
+      const XLSX = await import('xlsx')
+      
+      // Preparar datos para Excel
+      const datosExcel = facturas.map(factura => ({
+        'Fecha de Pago': factura.fecha_vencimiento || '',
+        'CUIT': factura.cuit || '',
+        'Proveedor': factura.denominacion_emisor || '',
+        'Tipo FC': factura.tipo_comprobante || '',
+        'Nro Factura': `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
+        'Retención Aplicada': factura.monto_sicore || 0
+      }))
+      
+      // Agregar fila de totales
+      datosExcel.push({
+        'Fecha de Pago': '',
+        'CUIT': '',
+        'Proveedor': 'TOTAL RETENCIONES',
+        'Tipo FC': '',
+        'Nro Factura': '',
+        'Retención Aplicada': totalRetenciones
+      })
+      
+      // Crear workbook
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(datosExcel)
+      
+      // Ajustar anchos de columnas
+      const colWidths = [
+        { wch: 15 }, // Quincena SICORE
+        { wch: 15 }, // CUIT
+        { wch: 40 }, // Proveedor
+        { wch: 15 }, // Retención SICORE
+        { wch: 10 }, // Estado
+        { wch: 15 }, // Fecha Vencimiento
+        { wch: 15 }  // Fecha Estimada
+      ]
+      ws['!cols'] = colWidths
+      
+      XLSX.utils.book_append_sheet(wb, ws, `SICORE ${quincena}`)
+      
+      // Generar archivo
+      const nombreArchivo = `SICORE_Cierre_${quincena.replace(/\//g, '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      
+      if (directorio) {
+        // Guardar en directorio seleccionado
+        const archivoHandle = await directorio.getFileHandle(nombreArchivo, { create: true })
+        const writableStream = await archivoHandle.createWritable()
+        
+        const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+        await writableStream.write(buffer)
+        await writableStream.close()
+        
+        console.log('📊 Excel guardado en:', nombreArchivo)
+      } else {
+        // Descarga normal
+        XLSX.writeFile(wb, nombreArchivo)
+      }
+      
+    } catch (error) {
+      console.error('Error generando Excel cierre quincena:', error)
+      throw error
+    }
+  }
+
+  // Generar PDF para cierre de quincena  
+  const generarPDFCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
+    try {
+      console.log('📄 Generando PDF cierre quincena SICORE')
+      
+      // Importar jsPDF dinámicamente
+      const { jsPDF } = await import('jspdf')
+      await import('jspdf-autotable')
+      
+      const doc = new jsPDF()
+      
+      // Header del documento
+      doc.setFontSize(16)
+      doc.text('CIERRE DE QUINCENA SICORE', 20, 20)
+      doc.setFontSize(12)
+      doc.text(`Quincena: ${quincena}`, 20, 30)
+      doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 40)
+      doc.text(`Total facturas: ${facturas.length}`, 20, 50)
+      doc.text(`Total retenciones: $${totalRetenciones.toLocaleString('es-AR')}`, 20, 60)
+      
+      // Tabla de facturas
+      const columnas = [
+        'Fecha de Pago',
+        'CUIT',
+        'Proveedor',
+        'Tipo FC',
+        'Nro Factura',
+        'Retención Aplicada'
+      ]
+      
+      const filas = facturas.map(factura => [
+        factura.fecha_vencimiento || '',
+        factura.cuit || '',
+        factura.denominacion_emisor || '',
+        factura.tipo_comprobante || '',
+        `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
+        `$${(factura.monto_sicore || 0).toLocaleString('es-AR')}`
+      ])
+      
+      // Agregar fila de total
+      filas.push([
+        '',
+        '',
+        'TOTAL RETENCIONES',
+        '',
+        '',
+        `$${totalRetenciones.toLocaleString('es-AR')}`
+      ])
+      
+      // Generar tabla
+      autoTable(doc, {
+        head: [columnas],
+        body: filas,
+        startY: 80,
+        styles: {
+          fontSize: 8,
+          cellPadding: 3
+        },
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: 255,
+          fontStyle: 'bold'
+        },
+        columnStyles: {
+          2: { halign: 'right' } // Alinear montos a la derecha
+        },
+        didParseCell: function(data: any) {
+          // Resaltar fila de totales
+          if (data.row.index === filas.length - 1 && data.section === 'body') {
+            data.cell.styles.fillColor = [230, 230, 230]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      })
+      
+      // Generar archivo
+      const nombreArchivo = `SICORE_Cierre_${quincena.replace(/\//g, '-')}_${new Date().toISOString().split('T')[0]}.pdf`
+      
+      if (directorio) {
+        // Guardar en directorio seleccionado
+        const archivoHandle = await directorio.getFileHandle(nombreArchivo, { create: true })
+        const writableStream = await archivoHandle.createWritable()
+        
+        const pdfBlob = doc.output('blob')
+        await writableStream.write(pdfBlob)
+        await writableStream.close()
+        
+        console.log('📄 PDF guardado en:', nombreArchivo)
+      } else {
+        // Descarga normal
+        doc.save(nombreArchivo)
+      }
+      
+    } catch (error) {
+      console.error('Error generando PDF cierre quincena:', error)
+      throw error
+    }
+  }
+
   // Componente SubdiariosContent
   const SubdiariosContent = () => (
     <div className="space-y-6">
@@ -2358,6 +3023,16 @@ export function VistaFacturasArca() {
           >
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
+          </Button>
+          
+          {/* Botón cierre quincena SICORE */}
+          <Button 
+            variant="outline"
+            className="bg-orange-50 hover:bg-orange-100 border-orange-300"
+            onClick={() => setMostrarModalCierreQuincena(true)}
+          >
+            <Calendar className="mr-2 h-4 w-4" />
+            Cierre Quincena SICORE
           </Button>
           
           {/* Selector de columnas */}
@@ -3017,6 +3692,228 @@ export function VistaFacturasArca() {
               Imputar {facturasSeleccionadas.size} Facturas
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal SICORE - Retenciones Ganancias */}
+      <Dialog open={mostrarModalSicore} onOpenChange={setMostrarModalSicore}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>🏛️ Retención SICORE - Ganancias</DialogTitle>
+            <DialogDescription>
+              {facturaEnProceso && (
+                <>Factura: {facturaEnProceso.denominacion_emisor} - ${facturaEnProceso.imp_neto_gravado?.toLocaleString('es-AR')}</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* PASO 1: Selección de tipo */}
+          {pasoSicore === 'tipo' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-700 mb-4">
+                  Esta factura supera el mínimo para retención SICORE.
+                  <br />
+                  Seleccione el tipo de operación:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {tiposSicore.map((tipo) => (
+                  <Button
+                    key={tipo.id}
+                    variant="outline" 
+                    className="h-auto p-4 flex items-center justify-between hover:bg-gray-50"
+                    onClick={() => calcularRetencionSicore(facturaEnProceso!, tipo)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{tipo.emoji}</span>
+                      <div className="text-left">
+                        <div className="font-medium">{tipo.tipo}</div>
+                        <div className="text-sm text-gray-500">
+                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2)}%)
+                        </div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  className="flex-1 bg-green-50 hover:bg-green-100 border-green-300"
+                  onClick={() => {
+                    setMostrarModalSicore(false)
+                    // Estado ya se cambió a "Pagar" automáticamente
+                  }}
+                >
+                  ✅ Continuar sin Retención
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={cancelarGuardadoPendiente}
+                >
+                  ❌ Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* PASO 2: Mostrar cálculo + opciones */}
+          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <h3 className="font-semibold text-green-800 mb-2">Cálculo de retención:</h3>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Total factura:</span>
+                    <span className="font-medium">${facturaEnProceso.imp_total?.toLocaleString('es-AR')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Retención SICORE:</span>
+                    <span className="font-medium text-red-600">${montoRetencion.toLocaleString('es-AR')} ({(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%)</span>
+                  </div>
+                  {descuentoAdicional > 0 && (
+                    <div className="flex justify-between">
+                      <span>Descuento adicional:</span>
+                      <span className="font-medium text-red-600">${descuentoAdicional.toLocaleString('es-AR')}</span>
+                    </div>
+                  )}
+                  <hr className="my-2" />
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Saldo a pagar:</span>
+                    <span className="text-green-600">${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR')}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  onClick={finalizarProcesoSicore}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  ✅ Confirmar
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    const monto = prompt('Ingrese monto descuento adicional:', '0')
+                    if (monto !== null) {
+                      const descuento = parseFloat(monto) || 0
+                      setDescuentoAdicional(descuento)
+                    }
+                  }}
+                >
+                  💰 Descuento Adicional
+                </Button>
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    const monto = prompt('Ingrese nuevo monto retención:', montoRetencion.toString())
+                    if (monto !== null) {
+                      const nuevaRetencion = parseFloat(monto) || 0
+                      setMontoRetencion(nuevaRetencion)
+                    }
+                  }}
+                >
+                  📝 Cambiar Monto Retención
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={cancelarGuardadoPendiente}
+                >
+                  ❌ Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Cierre Quincena SICORE */}
+      <Dialog open={mostrarModalCierreQuincena} onOpenChange={setMostrarModalCierreQuincena}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📅 Cierre de Quincena SICORE</DialogTitle>
+            <DialogDescription>
+              Selecciona la quincena para generar el reporte y actualizar template
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Selector de quincena */}
+            <div className="space-y-2">
+              <Label>Quincena SICORE</Label>
+              <Select value={quincenaSeleccionada} onValueChange={setQuincenaSeleccionada}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una quincena..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {generarQuincenasDisponibles().map((quincena) => (
+                    <SelectItem key={quincena} value={quincena}>
+                      {quincena}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Información del proceso */}
+            <div className="bg-blue-50 p-3 rounded-lg space-y-2 text-sm">
+              <p className="font-medium">El proceso incluirá:</p>
+              <ul className="space-y-1 text-gray-700">
+                <li>• Buscar todas las retenciones SICORE de la quincena</li>
+                <li>• Generar reportes PDF + Excel con detalles</li>
+                <li>• Calcular total y actualizar template correspondiente</li>
+                <li>• Usar carpeta configurada para guardar archivos</li>
+              </ul>
+            </div>
+
+            {/* Ejemplo de quincena */}
+            {quincenaSeleccionada && (
+              <div className="bg-orange-50 p-3 rounded-lg text-sm">
+                <p className="font-medium">Ejemplo: 2ª quincena septiembre 2024</p>
+                <p className="text-gray-600">
+                  Se procesarán todas las facturas con retención SICORE de la quincena "{quincenaSeleccionada}"
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => quincenaSeleccionada && procesarCierreQuincena(quincenaSeleccionada)}
+              disabled={!quincenaSeleccionada || procesandoCierre}
+              className="bg-orange-600 hover:bg-orange-700 flex-1"
+            >
+              {procesandoCierre ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Procesar Cierre
+                </>
+              )}
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setMostrarModalCierreQuincena(false)
+                setQuincenaSeleccionada('')
+              }}
+              disabled={procesandoCierre}
+            >
+              Cancelar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
