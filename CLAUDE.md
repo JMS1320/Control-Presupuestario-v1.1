@@ -1757,7 +1757,139 @@ ed543ea - Feature: Toggle columnas detalladas IVA en vista Subdiarios
 ### ⏳ **PENDIENTES PARA IMPLEMENTACIÓN:**
 - **Lógica cálculo**: Definir reglas y % retención por proveedor/monto
 - **Campos BD**: Migración agregar `sicore` y `monto_sicore`
-- **UI Modales**: Implementar flujo interactivo step-by-step  
+- **UI Modales**: Implementar flujo interactivo step-by-step
 - **Documentos**: Generar PDFs orden pago + comprobante retención
 - **Hook triggers**: Detectar cambio estado a "Pagar"
+
+---
+
+# 🔧 SESIÓN RECONSTRUCCIÓN BASE DE DATOS (2026-01-10)
+
+## 📋 **ESTADO ACTUAL - PRINCIPIO FUNDAMENTAL**
+
+> **"El código está intacto y funcional. TODOS los errores son problemas de estructura de base de datos"**
+
+Este principio guía toda la reconstrucción desde backup Sept 2025.
+
+## ✅ **PROBLEMAS RESUELTOS EN ESTA SESIÓN**
+
+### 1. ✅ **Importador Extractos Bancarios - Columna Control**
+
+**Problema**: Control mostraba errores de millones de pesos (-$13M, $296K, etc.)
+
+**Root Cause**: `data.reverse()` en línea 117 procesaba movimientos newest→oldest pero usaba saldoInicial (para el más viejo) como referencia del más nuevo.
+
+**Fix**: Eliminado `.reverse()` para procesar cronológicamente (oldest→newest)
+
+**Archivo**: `app/api/import-excel/route.ts` línea 117
+
+**Commit**: 234d35b - "Fix: Procesar extractos en orden cronologico"
+
+**Resultado**: Control ahora calcula correctamente (~$0, solo errores de redondeo)
+
+### 2. 🔍 **Subdiarios No Muestra Facturas - INVESTIGADO**
+
+**Problema**: Seleccionar período 12/2025 muestra 0 facturas (esperado: 44)
+
+**Root Cause Identificado**:
+- BD tiene: `ddjj_iva = 'Pendiente'` (44 facturas)
+- Código busca: `ddjj_iva = 'No'`
+- Mismatch: `'Pendiente' ≠ 'No'` → no encuentra nada
+
+**Archivos afectados**: `components/vista-facturas-arca.tsx` líneas 1030 y 1040
+
+**Fix identificado** (NO APLICADO AÚN):
+- Cambiar `'No'` → `'Pendiente'` en ambas líneas
+
+**Status**: ⏸️ Pendiente aplicación tras aclarar DEFAULT
+
+## 🎓 **CONOCIMIENTO CRÍTICO - VALORES DEFAULT PostgreSQL**
+
+### ⚠️ **IMPORTANTE PARA PRÓXIMAS SESIONES**
+
+**Pregunta del usuario respondida**: "no entiendo por que ahora se llena automaticamente con pendiente"
+
+### 📚 **Explicación Técnica - Valores DEFAULT**
+
+#### Definición
+Cuando una columna tiene un valor DEFAULT en PostgreSQL:
+```sql
+ddjj_iva VARCHAR DEFAULT 'Pendiente'
+```
+
+PostgreSQL automáticamente usa ese valor cuando:
+
+1. ✅ **El campo NO se menciona en el INSERT** ← **NUESTRO CASO**
+2. ✅ **Se pone explícitamente DEFAULT**
+
+PostgreSQL NO usa el DEFAULT cuando:
+
+- ❌ Se pone un valor específico: `ddjj_iva: 'No'`
+- ❌ Se pone NULL explícito: `ddjj_iva: null`
+
+#### Ejemplo Práctico - Script Importación
+
+En `app/api/import-facturas-arca/route.ts`:
+
+```typescript
+const resultado = {
+  fecha_emision: '2025-12-15',
+  cuit: '30617786016',
+  año_contable: null,      // ← NULL explícito (NO usa DEFAULT)
+  estado: 'pendiente',     // ← Valor específico
+  // ddjj_iva: ???         // ← NO SE MENCIONA (USA DEFAULT 'Pendiente')
+}
+```
+
+**Resultado**:
+- `año_contable` = NULL (dijimos NULL)
+- `ddjj_iva` = 'Pendiente' (omitido, usa DEFAULT)
+
+#### ✅ Conclusión
+
+**El llenado automático con 'Pendiente' NO es un error** - es comportamiento correcto de PostgreSQL.
+
+**El problema real**: El código de filtrado busca el valor incorrecto.
+
+- ✅ Script: Omite `ddjj_iva` → PostgreSQL pone 'Pendiente' (CORRECTO)
+- ❌ Filtro: Busca `ddjj_iva = 'No'` (INCORRECTO)
+- ❌ Resultado: No encuentra facturas porque `'Pendiente' ≠ 'No'`
+
+### 🔄 **Flujo de Imputación Correcto**
+
+**CONFIRMADO** en código (vista-facturas-arca.tsx líneas 1088-1092):
+
+```
+1. IMPORT    → ddjj_iva='Pendiente', año_contable=NULL, mes_contable=NULL
+2. IMPUTAR   → ddjj_iva='Imputado', año_contable=YYYY, mes_contable=MM
+3. CONFIRMAR → ddjj_iva='DDJJ OK'
+```
+
+Los campos `año_contable` y `mes_contable` **deliberadamente** se dejan NULL en import y se llenan durante imputación.
+
+## 📊 **ESTADO BASE DE DATOS**
+
+**Facturas ARCA actuales**: 44 facturas
+- `ddjj_iva` = 'Pendiente'
+- `año_contable` = NULL
+- `mes_contable` = NULL
+- `estado` = 'pendiente'
+
+**Esto es CORRECTO** según el flujo esperado.
+
+## 🎯 **PRÓXIMO PASO PENDIENTE**
+
+**Acción**: Aplicar fix en `vista-facturas-arca.tsx`
+- Línea 1030: `'No'` → `'Pendiente'`
+- Línea 1040: `'No'` → `'Pendiente'`
+
+**Resultado esperado**: Subdiarios mostrará las 44 facturas al seleccionar período 12/2025
+
+**Documentación completa**: Ver `RECONSTRUCCION_EXITOSA.md` líneas 1475-1690
+
+---
+
+**Fecha sesión**: 2026-01-10
+**Documentación**: ✅ COMPLETA en RECONSTRUCCION_EXITOSA.md
+**Recordatorio próxima sesión**: DEFAULT 'Pendiente' es comportamiento correcto PostgreSQL
 

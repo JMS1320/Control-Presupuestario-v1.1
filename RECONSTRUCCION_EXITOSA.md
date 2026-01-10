@@ -1469,3 +1469,222 @@ const filas = data  // Procesar en orden cronológico original
 **Status**: ✅ **IMPORTADOR EXTRACTOS 100% FUNCIONAL**
 **Fecha corrección**: 2026-01-10
 **Resultado**: Control calculado correctamente - Sistema validación extractos operativo
+
+---
+
+# 🔍 INVESTIGACIÓN EN PROCESO: SUBDIARIOS NO MUESTRA FACTURAS
+
+**Fecha inicio**: 2026-01-10
+**Status**: 🟡 **INVESTIGACIÓN ACTIVA - CAUSA IDENTIFICADA, FIX PENDIENTE**
+
+## Problema Reportado
+
+**Ubicación**: Egresos → Facturas ARCA → Subdiarios → Imputar Facturas
+**Síntoma**: Al seleccionar período 12/2025, no muestra ninguna factura (0 resultados)
+**Esperado**: Debería mostrar 44 facturas pendientes de imputar
+
+## Investigación Realizada
+
+### 1. Verificación Base de Datos
+
+```sql
+-- Query ejecutada para verificar estado actual:
+SELECT ddjj_iva, año_contable, mes_contable, COUNT(*)
+FROM msa.comprobantes_arca
+GROUP BY ddjj_iva, año_contable, mes_contable;
+
+-- RESULTADO:
+-- 44 facturas con: ddjj_iva = 'Pendiente', año_contable = NULL, mes_contable = NULL
+```
+
+**Hallazgo**: Las facturas importadas tienen valores correctos según el flujo esperado.
+
+### 2. Flujo Correcto de Imputación
+
+**CONFIRMADO** por código en `vista-facturas-arca.tsx` (líneas 1088-1092):
+
+```
+1. IMPORT → ddjj_iva = 'Pendiente', año_contable = NULL, mes_contable = NULL
+2. IMPUTAR → ddjj_iva = 'Imputado', año_contable = YYYY, mes_contable = MM
+3. CONFIRMAR DDJJ → ddjj_iva = 'DDJJ OK'
+```
+
+**Conclusión**: Los campos `año_contable` y `mes_contable` en NULL son CORRECTOS - se llenan cuando el usuario imputa.
+
+### 3. Root Cause Identificado
+
+**Archivo**: `components/vista-facturas-arca.tsx`
+**Líneas problemáticas**: 1030 y 1040
+
+**Código actual (INCORRECTO):**
+```typescript
+// Línea 1030 - Filtro para facturas sin imputar:
+query = query.eq('ddjj_iva', 'No')  // ❌ Busca 'No'
+
+// Línea 1040 - Filtro combinado:
+query = query.or(`ddjj_iva.eq.No,and(...)`)  // ❌ Busca 'No'
+```
+
+**Problema**:
+- El código busca facturas con `ddjj_iva = 'No'`
+- La base de datos tiene facturas con `ddjj_iva = 'Pendiente'`
+- `'Pendiente' ≠ 'No'` → No encuentra ninguna factura
+
+### 4. Verificación Script Importación
+
+**Archivo verificado**: `app/api/import-facturas-arca/route.ts` (líneas 266-285)
+
+**Hallazgo crítico**: El script de importación **NO establece** el campo `ddjj_iva`
+
+```typescript
+const resultado = {
+  ...datosBasicos,
+  ...camposIVA,
+  fecha_estimada: calcularFechaEstimada(fechaEmision),
+  monto_a_abonar: camposIVA.imp_total,
+  campana: null,
+  año_contable: null,  // ← Deliberadamente NULL (se llena en imputación)
+  mes_contable: null,  // ← Deliberadamente NULL (se llena en imputación)
+  estado: 'pendiente', // ← Único estado que SÍ se establece
+  // ddjj_iva NO SE MENCIONA - obtiene DEFAULT de la BD
+  ...
+}
+```
+
+**Comportamiento PostgreSQL confirmado**:
+- Campo omitido en INSERT → Aplica valor DEFAULT de la columna
+- Columna `ddjj_iva` tiene DEFAULT = `'Pendiente'`
+- Por lo tanto, facturas importadas obtienen `ddjj_iva = 'Pendiente'` automáticamente
+
+## Fix Identificado (NO APLICADO AÚN)
+
+**Archivos a modificar**: `components/vista-facturas-arca.tsx`
+
+**Cambio 1 - Línea 1030:**
+```typescript
+// ANTES:
+query = query.eq('ddjj_iva', 'No')
+
+// DESPUÉS:
+query = query.eq('ddjj_iva', 'Pendiente')
+```
+
+**Cambio 2 - Línea 1040:**
+```typescript
+// ANTES:
+query = query.or(`ddjj_iva.eq.No,and(...)`)
+
+// DESPUÉS:
+query = query.or(`ddjj_iva.eq.Pendiente,and(...)`)
+```
+
+**Resultado esperado**: Al seleccionar período 12/2025, debería mostrar las 44 facturas con `ddjj_iva = 'Pendiente'`
+
+---
+
+## 🚨 PREGUNTA DEL USUARIO - RESPONDIDA
+
+**PREGUNTA**:
+> "no entiendo por que ahora se llena automaticamente con pendiente"
+
+**CONTEXTO**: El script de importación NO establece `ddjj_iva`, pero las facturas aparecen con valor 'Pendiente'.
+
+---
+
+### 📚 EXPLICACIÓN: Valores DEFAULT en PostgreSQL
+
+#### ¿Qué es un Valor DEFAULT?
+
+Cuando creas una columna en PostgreSQL, puedes definir un **valor DEFAULT** (por defecto). Este es el valor que la base de datos pone automáticamente si NO le dices qué valor usar.
+
+**Ejemplo de la columna `ddjj_iva`:**
+```sql
+ddjj_iva VARCHAR DEFAULT 'Pendiente'
+```
+
+Significado: **"Si no me dices qué valor poner, yo automáticamente pongo 'Pendiente'"**
+
+#### ¿Cuándo se Aplica el DEFAULT?
+
+PostgreSQL aplica el DEFAULT en **DOS casos**:
+
+1. ✅ **Cuando el campo NO se menciona en el INSERT** ← **NUESTRO CASO**
+2. ✅ **Cuando explícitamente pones DEFAULT** (ej: `INSERT ... VALUES (DEFAULT)`)
+
+PostgreSQL **NO aplica** el DEFAULT cuando:
+
+- ❌ Pones un valor específico (ej: `ddjj_iva: 'No'`)
+- ❌ Pones NULL explícitamente (ej: `ddjj_iva: null`)
+
+#### Ejemplo Práctico - Nuestro Script
+
+En `app/api/import-facturas-arca/route.ts`, el objeto que se inserta es:
+
+```typescript
+const resultado = {
+  fecha_emision: '2025-12-15',
+  cuit: '30617786016',
+  imp_total: 150000,
+  año_contable: null,      // ← NULL explícito (NO usa DEFAULT)
+  estado: 'pendiente',     // ← Valor específico
+  // ddjj_iva: ???         // ← NO SE MENCIONA (USA DEFAULT)
+}
+```
+
+**Proceso PostgreSQL:**
+
+1. Ve que `ddjj_iva` NO está en el objeto
+2. Consulta: "¿Tiene esta columna un DEFAULT?"
+3. Respuesta: "Sí, DEFAULT = 'Pendiente'"
+4. **Resultado: Inserta `ddjj_iva = 'Pendiente'` automáticamente**
+
+#### Comparación: NULL explícito vs Campo omitido
+
+```typescript
+// Ejemplo 1: NULL explícito
+año_contable: null
+// → PostgreSQL guarda: NULL (ignora DEFAULT)
+
+// Ejemplo 2: Campo omitido
+// ddjj_iva no mencionado
+// → PostgreSQL guarda: 'Pendiente' (aplica DEFAULT)
+```
+
+**Ambos "no tienen valor asignado por el código"**, pero PostgreSQL los trata diferente:
+
+- `año_contable` = **NULL** (porque se lo dijimos explícitamente)
+- `ddjj_iva` = **'Pendiente'** (porque NO se lo dijimos y usa su DEFAULT)
+
+#### ¿Por Qué Pasó Esto?
+
+**ANTES de la reconstrucción** (aplicación funcionando):
+- Posibilidad 1: El script SÍ establecía `ddjj_iva: 'No'` explícitamente
+- Posibilidad 2: El DEFAULT de la columna era `'No'` en lugar de `'Pendiente'`
+- Posibilidad 3: La columna ni siquiera existía y se agregó después
+
+**DESPUÉS de la reconstrucción** (ahora):
+- El script NO establece `ddjj_iva` (campo omitido)
+- El DEFAULT de la columna es `'Pendiente'` (según backup Sept 2025)
+- **Resultado**: PostgreSQL pone 'Pendiente' automáticamente
+
+#### ✅ Conclusión Técnica
+
+**El llenado automático con 'Pendiente' NO es un error** - es el comportamiento **correcto** de PostgreSQL cuando:
+
+1. ✅ El campo tiene un DEFAULT definido en la estructura de tabla
+2. ✅ El script de importación no menciona ese campo en el INSERT
+3. ✅ PostgreSQL aplica su DEFAULT automáticamente
+
+**El problema real** está en otro lugar:
+
+- ❌ Script de importación: Pone `ddjj_iva = 'Pendiente'` (correcto, vía DEFAULT)
+- ❌ Código de filtrado: Busca `ddjj_iva = 'No'` (incorrecto, valor que no existe)
+- ❌ Resultado: No encuentra ninguna factura porque `'Pendiente' ≠ 'No'`
+
+**Fix necesario**: Cambiar los filtros de `'No'` → `'Pendiente'` en `vista-facturas-arca.tsx` (líneas 1030 y 1040)
+
+---
+
+**Status explicación**: ✅ **RESPONDIDA Y DOCUMENTADA**
+**Fecha**: 2026-01-10
+**Próxima sesión**: Recordar que DEFAULT 'Pendiente' es comportamiento correcto de PostgreSQL
