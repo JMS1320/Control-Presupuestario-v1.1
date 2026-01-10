@@ -113,8 +113,8 @@ export async function POST(req: Request) {
 
     console.log("Cabeceras detectadas en el Excel:", Object.keys(data[0]))
 
-    // Ordenar invertido (última fila debe ser la más reciente)
-    const filas = data.reverse()
+    // Procesar en orden cronológico (más viejo primero)
+    const filas = data
 
     // Traer última fila existente
     const { data: ultimaFila } = await supabase
