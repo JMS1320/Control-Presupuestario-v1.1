@@ -2018,3 +2018,90 @@ efaeaea - Docs: Cambio estructural POST-reconstrucción - DEFAULT ddjj_iva 'No'
 **Resultado**: ✅ Sistema DDJJ IVA completamente funcional
 **Lección aprendida**: Backups pueden no capturar todos los DEFAULT values - documentar cambios estructurales post-reconstrucción
 
+---
+
+## 🔧 **SESIÓN 2026-01-11 (CONTINUACIÓN): CARGA TIPOS AFIP COMPLETOS**
+
+### 🎯 **Objetivo Completado**: Preparar BD para Importaciones Reales
+
+**Problema detectado:** Tabla `tipos_comprobante_afip` incompleta
+- **Estado inicial**: 25 tipos (solo básicos A/B/C)
+- **Necesario**: 68+ tipos para compatibilidad AFIP completa
+
+**Riesgo sin completar:**
+- ❌ Import Excel AFIP fallaría con tipos no reconocidos
+- ❌ Sistema DDJJ IVA con errores en comprobantes especiales
+- ❌ Reportes incompletos (sin FCE MiPyMEs, tiques, liquidaciones)
+
+### ✅ **Solución Aplicada**
+
+**Carga masiva tipos AFIP:**
+```sql
+INSERT INTO tipos_comprobante_afip (codigo, descripcion, es_nota_credito) VALUES
+-- 43 tipos adicionales agregados:
+-- • Bienes usados (código 30)
+-- • Liquidaciones comerciales (43-48)
+-- • Tiques fiscales (109-117)
+-- • Documentos aduaneros (118-122)
+-- • FCE MiPyMEs A/B/C (201-213)
+-- • Liquidaciones granos (331-332)
+-- • Remitos electrónicos (995-996)
+-- • Anticipos Factura E (997-998)
+```
+
+### 📊 **Resultado Final**
+
+| Métrica | Antes | Después |
+|---------|-------|---------|
+| **Total tipos** | 25 (37%) | 68 (100%) ✅ |
+| **Notas crédito** | 5 | 14 ✅ |
+| **Cobertura FCE** | ❌ | ✅ Completa |
+| **Cobertura tiques** | ❌ | ✅ Completa |
+| **Import AFIP** | ⚠️ Riesgo | ✅ Ready |
+
+### 🎯 **Impacto en Sistema**
+
+**Archivos que usan tipos AFIP:**
+1. **`app/api/import-facturas-arca/route.ts`**
+   - Validación tipo_comprobante en imports
+   - Conversión automática NC → negativos
+
+2. **`components/vista-facturas-arca.tsx`**
+   - Sistema DDJJ IVA
+   - Cálculos correctos (facturas suman, NC restan)
+   - Generación Excel + PDF Libro IVA
+
+### 📝 **Documentación Actualizada**
+
+- **Archivo**: `RECONSTRUCCION_SUPABASE_2026-01-07.md` (líneas 2588-2785)
+- **Sección**: "CAMBIOS POST-RECONSTRUCCIÓN"
+- **Script reproducible**: ✅ Completo para futuras reconstrucciones
+- **Commit**: `bdbdcd3` - "Docs: Carga completa tipos AFIP (68 tipos)"
+
+### ⚠️ **Advertencia Crítica**
+
+**Si se reconstruye BD nuevamente:** Este cambio NO está en backup original, ejecutar manualmente:
+```sql
+-- DESPUÉS de script 08-seed-data.sql
+-- Ver script completo en RECONSTRUCCION_SUPABASE_2026-01-07.md líneas 2609-2679
+```
+
+### 🎉 **Estado Sistema Completo**
+
+✅ **BASE DE DATOS PRODUCCIÓN READY:**
+- ✅ Estructura completa (13 tablas)
+- ✅ Tipos AFIP completos (68 tipos)
+- ✅ DEFAULT ddjj_iva corregido ('No')
+- ✅ Sistema DDJJ IVA funcional
+- ✅ Import extractos funcionando
+- ✅ 44 facturas cargadas correctamente
+
+**📍 Próximo paso:** Testing completo sistema con datos reales
+
+---
+
+**Fecha sesión**: 2026-01-11 (tarde)
+**Tipo**: Completar datos semilla BD
+**Resultado**: ✅ BD 100% lista para producción
+**Lección aprendida**: Backups capturan estructura pero pueden perder datos semilla - documentar scripts de carga completa
+
