@@ -1691,6 +1691,81 @@ año_contable: null
 
 ---
 
+## ✅ **SOLUCIÓN APLICADA - DEFAULT ddjj_iva CORREGIDO**
+
+**Fecha aplicación**: 2026-01-10
+**Status**: ✅ **COMPLETADO - Sistema Subdiarios Funcional**
+
+### 🎯 **Decisión Final**
+
+Después de investigación exhaustiva, se determinó que:
+
+1. ✅ **BD actual tenía**: `ddjj_iva DEFAULT 'Pendiente'` (desde backup Sept 2025)
+2. ✅ **Código espera**: `ddjj_iva = 'No'` (nunca se actualizó)
+3. ✅ **Hipótesis usuario**: Entre Sept 2025 y ahora, el DEFAULT se cambió a 'No' pero no quedó en backup
+
+**Conclusión**: DEFAULT 'Pendiente' era del backup viejo, el sistema original usaba 'No'
+
+### 🔧 **Fix Aplicado - Opción 1 (Cambiar DEFAULT)**
+
+```sql
+-- PASO 1: Cambiar DEFAULT de la columna a 'No'
+ALTER TABLE msa.comprobantes_arca
+ALTER COLUMN ddjj_iva SET DEFAULT 'No';
+
+-- PASO 2: Actualizar 44 facturas existentes de 'Pendiente' a 'No'
+UPDATE msa.comprobantes_arca
+SET ddjj_iva = 'No'
+WHERE ddjj_iva = 'Pendiente';
+-- Resultado: 44 facturas actualizadas
+```
+
+### ✅ **Verificación Exitosa**
+
+**DEFAULT actualizado:**
+```sql
+SELECT column_default FROM information_schema.columns
+WHERE table_name = 'comprobantes_arca' AND column_name = 'ddjj_iva';
+-- Resultado: 'No'::character varying ✅
+```
+
+**Prueba inserción:**
+```sql
+-- Insert sin especificar ddjj_iva
+INSERT INTO msa.comprobantes_arca (...) VALUES (...);
+-- Resultado: ddjj_iva = 'No' ✅
+```
+
+**Estado final facturas:**
+```sql
+SELECT ddjj_iva, COUNT(*) FROM msa.comprobantes_arca GROUP BY ddjj_iva;
+-- Resultado: 44 facturas con ddjj_iva = 'No' ✅
+```
+
+### 🎯 **Resultado**
+
+- ✅ Script de importación NO se modificó (sigue sin mencionar ddjj_iva)
+- ✅ Código de filtrado NO se modificó (ya busca 'No')
+- ✅ DEFAULT automático ahora pone 'No' en nuevas importaciones
+- ✅ 44 facturas existentes actualizadas a 'No'
+- ✅ **Subdiarios ahora mostrará las facturas al seleccionar período 12/2025**
+
+### 📝 **Por Qué Esta Solución**
+
+**Ventajas de cambiar BD en lugar de código:**
+1. ✅ Más simple (2 líneas SQL vs modificar código + testing + deploy)
+2. ✅ Probablemente el valor original era 'No' (no quedó en backup)
+3. ✅ Código ya funcionaba con 'No', solo BD estaba desincronizada
+4. ✅ Sin riesgo de romper otras funcionalidades
+5. ✅ Fix inmediato sin esperar deployment
+
+**Por qué NO usar triggers:**
+- Innecesario: DEFAULT simple es suficiente
+- Más simple: Una sola línea vs función + trigger
+- Mejor performance: DEFAULT es más rápido que trigger
+
+---
+
 # 📚 SISTEMAS IMPLEMENTADOS - SICORE Y DDJJ IVA
 
 ## 🏛️ **SISTEMA SICORE - RETENCIONES GANANCIAS AFIP**
