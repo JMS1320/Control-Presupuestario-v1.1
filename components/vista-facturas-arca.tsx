@@ -4102,38 +4102,54 @@ export function VistaFacturasArca() {
           </DialogHeader>
 
           {/* Selector de Fecha de Pago */}
-          <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-4 mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">📅 Fecha de Pago:</span>
-              <input
-                type="date"
-                value={fechaPagoSeleccionada}
-                onChange={(e) => setFechaPagoSeleccionada(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              />
-              {fechaPagoSeleccionada && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setFechaPagoSeleccionada('')}
-                  className="h-7 px-2 text-gray-500"
-                >
-                  ✕
-                </Button>
-              )}
-            </div>
-            {fechaPagoSeleccionada && (
-              <span className="text-xs text-blue-700">
-                → Quincena SICORE: {(() => {
-                  const fecha = new Date(fechaPagoSeleccionada)
-                  const año = fecha.getFullYear().toString().slice(-2)
-                  const mes = (fecha.getMonth() + 1).toString().padStart(2, '0')
-                  const dia = fecha.getDate()
-                  return `${año}-${mes} - ${dia <= 15 ? '1ra' : '2da'}`
-                })()}
-              </span>
-            )}
-          </div>
+          {(() => {
+            // Determinar rol para mostrar/habilitar selector fecha
+            const pathArray = typeof window !== 'undefined' ? window.location.pathname.split('/') : []
+            const accessRoute = pathArray[1] || ''
+            const esAdminFecha = accessRoute === 'adminjms1320'
+            // Ulises solo puede cambiar fecha cuando hay facturas en 'pendiente' (no en pagar/preparado)
+            const hayFacturasEnProceso = facturasPagos.some(f => f.estado === 'pagar' || f.estado === 'preparado')
+            const puedeEditarFecha = esAdminFecha || !hayFacturasEnProceso
+
+            return (
+              <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-4 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">📅 Fecha de Pago:</span>
+                  <input
+                    type="date"
+                    value={fechaPagoSeleccionada}
+                    onChange={(e) => setFechaPagoSeleccionada(e.target.value)}
+                    disabled={!puedeEditarFecha}
+                    className={`border rounded px-2 py-1 text-sm ${!puedeEditarFecha ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                  />
+                  {fechaPagoSeleccionada && puedeEditarFecha && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setFechaPagoSeleccionada('')}
+                      className="h-7 px-2 text-gray-500"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
+                {!puedeEditarFecha && !esAdminFecha && (
+                  <span className="text-xs text-orange-600">
+                    ⚠️ No se puede cambiar fecha con facturas en proceso
+                  </span>
+                )}
+                {fechaPagoSeleccionada && (
+                  <span className="text-xs text-blue-700">
+                    → Quincena SICORE: {(() => {
+                      // Parsear fecha sin timezone issues
+                      const [año, mes, dia] = fechaPagoSeleccionada.split('-')
+                      return `${año.slice(-2)}-${mes} - ${parseInt(dia) <= 15 ? '1ra' : '2da'}`
+                    })()}
+                  </span>
+                )}
+              </div>
+            )
+          })()}
 
           {cargandoPagos ? (
             <div className="flex items-center justify-center py-8">
@@ -4146,10 +4162,19 @@ export function VistaFacturasArca() {
             const accessRoute = pathArray[1] || ''
             const esAdmin = accessRoute === 'adminjms1320'
 
-            // Filtrar facturas por estado
-            const facturasPreparado = facturasPagos.filter(f => f.estado === 'preparado')
-            const facturasPagar = facturasPagos.filter(f => f.estado === 'pagar')
-            const facturasPendiente = facturasPagos.filter(f => f.estado === 'pendiente')
+            // Función para ordenar por fecha (próximas a vencer primero)
+            const ordenarPorFecha = (facturas: FacturaArca[]) => {
+              return [...facturas].sort((a, b) => {
+                const fechaA = a.fecha_vencimiento || a.fecha_estimada || '9999-12-31'
+                const fechaB = b.fecha_vencimiento || b.fecha_estimada || '9999-12-31'
+                return fechaA.localeCompare(fechaB)
+              })
+            }
+
+            // Filtrar facturas por estado y ordenar por fecha
+            const facturasPreparado = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'preparado'))
+            const facturasPagar = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pagar'))
+            const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente'))
 
             // Calcular subtotales
             const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
@@ -4167,9 +4192,12 @@ export function VistaFacturasArca() {
               const facturasACambiar = facturasPagos.filter(f => ids.includes(f.id))
 
               // Preparar datos de actualización (incluye fecha si está seleccionada)
-              const datosUpdate: { estado: string; fecha_vencimiento?: string } = { estado: nuevoEstado }
+              const datosUpdate: { estado: string; fecha_vencimiento?: string; fecha_estimada?: string } = { estado: nuevoEstado }
               if (fechaPagoSeleccionada) {
+                // Actualizar ambas fechas (misma lógica que en templates)
                 datosUpdate.fecha_vencimiento = fechaPagoSeleccionada
+                datosUpdate.fecha_estimada = fechaPagoSeleccionada
+                console.log(`🔄 Vista Pagos: fecha_vencimiento + fecha_estimada = ${fechaPagoSeleccionada}`)
               }
 
               // SICORE: Detectar cambio pendiente → pagar
@@ -4183,8 +4211,9 @@ export function VistaFacturasArca() {
 
                 if (facturasCalificanSicore.length > 0) {
                   // Confirmar proceso SICORE (mostrar fecha de pago si está seleccionada)
+                  // Usar split/reverse para evitar problema timezone con new Date()
                   const mensajeFecha = fechaPagoSeleccionada
-                    ? `\n📅 Fecha de pago: ${new Date(fechaPagoSeleccionada).toLocaleDateString('es-AR')}`
+                    ? `\n📅 Fecha de pago: ${fechaPagoSeleccionada.split('-').reverse().join('/')}`
                     : ''
                   const confirmar = window.confirm(
                     `${facturasCalificanSicore.length} factura(s) califican para retención SICORE:\n\n` +
@@ -4205,7 +4234,7 @@ export function VistaFacturasArca() {
 
                     setFacturasPagos(prev => prev.map(f =>
                       idsNoSicore.includes(f.id)
-                        ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                        ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
                         : f
                     ))
                   }
@@ -4217,7 +4246,7 @@ export function VistaFacturasArca() {
                   // Tomar la primera y poner el resto en cola (con fecha actualizada)
                   const facturasConFecha = facturasCalificanSicore.map(f => ({
                     ...f,
-                    ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada })
+                    ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada })
                   }))
                   const [primera, ...resto] = facturasConFecha
                   setColaSicore(resto)
@@ -4236,7 +4265,7 @@ export function VistaFacturasArca() {
 
                   setFacturasPagos(prev => prev.map(f =>
                     f.id === primera.id
-                      ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                      ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
                       : f
                   ))
 
@@ -4255,7 +4284,7 @@ export function VistaFacturasArca() {
 
               // Cambio normal (sin SICORE) - incluye fecha si está seleccionada
               const mensajeFecha = fechaPagoSeleccionada
-                ? `\n📅 Fecha de pago: ${new Date(fechaPagoSeleccionada).toLocaleDateString('es-AR')}`
+                ? `\n📅 Fecha de pago: ${fechaPagoSeleccionada.split('-').reverse().join('/')}`
                 : ''
               const confirmar = window.confirm(
                 `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?${mensajeFecha}`
@@ -4274,7 +4303,7 @@ export function VistaFacturasArca() {
                 // Actualizar estado local (incluye fecha si aplica)
                 setFacturasPagos(prev => prev.map(f =>
                   ids.includes(f.id)
-                    ? { ...f, estado: nuevoEstado, ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                    ? { ...f, estado: nuevoEstado, ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
                     : f
                 ))
                 setFacturasSeleccionadasPagos(new Set())
