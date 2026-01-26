@@ -187,6 +187,13 @@ export function VistaFacturasArca() {
   const [mostrarModalCierreQuincena, setMostrarModalCierreQuincena] = useState(false)
   const [quincenaSeleccionada, setQuincenaSeleccionada] = useState('')
   const [procesandoCierre, setProcesandoCierre] = useState(false)
+
+  // Estados para Vista de Pagos
+  const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
+  const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
+  const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
+  const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
+  const [cargandoPagos, setCargandoPagos] = useState(false)
   
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
@@ -3026,7 +3033,7 @@ export function VistaFacturasArca() {
           </Button>
           
           {/* Botón cierre quincena SICORE */}
-          <Button 
+          <Button
             variant="outline"
             className="bg-orange-50 hover:bg-orange-100 border-orange-300"
             onClick={() => setMostrarModalCierreQuincena(true)}
@@ -3034,7 +3041,31 @@ export function VistaFacturasArca() {
             <Calendar className="mr-2 h-4 w-4" />
             Cierre Quincena SICORE
           </Button>
-          
+
+          {/* Botón Vista de Pagos */}
+          <Button
+            variant="outline"
+            className="bg-green-50 hover:bg-green-100 border-green-300"
+            onClick={async () => {
+              setCargandoPagos(true)
+              setMostrarModalPagos(true)
+              // Cargar facturas con estados relevantes para pagos
+              const { data, error } = await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .select('*')
+                .in('estado', ['pendiente', 'pagar', 'preparado'])
+                .order('fecha_vencimiento', { ascending: true })
+
+              if (!error && data) {
+                setFacturasPagos(data)
+              }
+              setCargandoPagos(false)
+            }}
+          >
+            💰 Pagos
+          </Button>
+
           {/* Selector de columnas */}
           <Popover>
           <PopoverTrigger asChild>
@@ -3914,6 +3945,246 @@ export function VistaFacturasArca() {
               Cancelar
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Vista de Pagos */}
+      <Dialog open={mostrarModalPagos} onOpenChange={setMostrarModalPagos}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>💰 Vista de Pagos</DialogTitle>
+            <DialogDescription>
+              Gestión de facturas pendientes de pago
+            </DialogDescription>
+          </DialogHeader>
+
+          {cargandoPagos ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="ml-2">Cargando facturas...</span>
+            </div>
+          ) : (() => {
+            // Determinar rol del usuario
+            const pathArray = typeof window !== 'undefined' ? window.location.pathname.split('/') : []
+            const accessRoute = pathArray[1] || ''
+            const esAdmin = accessRoute === 'adminjms1320'
+
+            // Filtrar facturas por estado
+            const facturasPreparado = facturasPagos.filter(f => f.estado === 'preparado')
+            const facturasPagar = facturasPagos.filter(f => f.estado === 'pagar')
+            const facturasPendiente = facturasPagos.filter(f => f.estado === 'pendiente')
+
+            // Calcular subtotales
+            const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
+            const subtotalPagar = facturasPagar.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
+            const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
+
+            // Función para cambiar estado de facturas seleccionadas
+            const cambiarEstadoSeleccionadas = async (nuevoEstado: string) => {
+              if (facturasSeleccionadasPagos.size === 0) {
+                alert('Selecciona al menos una factura')
+                return
+              }
+
+              const confirmar = window.confirm(
+                `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?`
+              )
+              if (!confirmar) return
+
+              try {
+                const ids = Array.from(facturasSeleccionadasPagos)
+                const { error } = await supabase
+                  .schema('msa')
+                  .from('comprobantes_arca')
+                  .update({ estado: nuevoEstado })
+                  .in('id', ids)
+
+                if (error) throw error
+
+                // Actualizar estado local
+                setFacturasPagos(prev => prev.map(f =>
+                  ids.includes(f.id) ? { ...f, estado: nuevoEstado } : f
+                ))
+                setFacturasSeleccionadasPagos(new Set())
+
+                // También actualizar facturas principales
+                cargarFacturas()
+              } catch (error) {
+                console.error('Error cambiando estado:', error)
+                alert('Error al cambiar estado')
+              }
+            }
+
+            // Función para renderizar tabla de facturas
+            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-lg">{titulo} ({facturas.length})</h3>
+                  <div className="flex items-center gap-4">
+                    {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
+                      <Button
+                        size="sm"
+                        onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {accionBoton.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
+                  </div>
+                </div>
+
+                {facturas.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-2">No hay facturas en este estado</p>
+                ) : (
+                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                          <TableHead>Fecha Vto.</TableHead>
+                          <TableHead>Proveedor</TableHead>
+                          <TableHead>CUIT</TableHead>
+                          <TableHead>Cuenta</TableHead>
+                          <TableHead className="text-right">Monto</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {facturas.map(f => (
+                          <TableRow key={f.id} className="hover:bg-muted/50">
+                            {mostrarCheckbox && (
+                              <TableCell>
+                                <Checkbox
+                                  checked={facturasSeleccionadasPagos.has(f.id)}
+                                  onCheckedChange={(checked) => {
+                                    setFacturasSeleccionadasPagos(prev => {
+                                      const next = new Set(prev)
+                                      if (checked) next.add(f.id)
+                                      else next.delete(f.id)
+                                      return next
+                                    })
+                                  }}
+                                />
+                              </TableCell>
+                            )}
+                            <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
+                            <TableCell>{f.cuit}</TableCell>
+                            <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )
+
+            return (
+              <div className="space-y-6">
+                {/* Checkboxes de filtro solo para Admin */}
+                {esAdmin && (
+                  <div className="flex gap-4 p-3 bg-muted/50 rounded-md">
+                    <Label className="font-medium">Mostrar:</Label>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={filtrosPagos.preparado}
+                        onCheckedChange={(checked) => setFiltrosPagos(prev => ({ ...prev, preparado: !!checked }))}
+                      />
+                      <span className="text-sm">Preparado ({facturasPreparado.length})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={filtrosPagos.pagar}
+                        onCheckedChange={(checked) => setFiltrosPagos(prev => ({ ...prev, pagar: !!checked }))}
+                      />
+                      <span className="text-sm">Pagar ({facturasPagar.length})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={filtrosPagos.pendiente}
+                        onCheckedChange={(checked) => setFiltrosPagos(prev => ({ ...prev, pendiente: !!checked }))}
+                      />
+                      <span className="text-sm">Pendiente ({facturasPendiente.length})</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Vista diferenciada por rol */}
+                {esAdmin ? (
+                  // ADMIN: Preparado > Pagar > Pendiente (con filtros)
+                  <>
+                    {filtrosPagos.preparado && renderTablaFacturas(
+                      facturasPreparado,
+                      '✅ Preparado',
+                      subtotalPreparado,
+                      'preparado',
+                      true,
+                      { label: 'Marcar como Pagado', estado: 'pagado' }
+                    )}
+                    {filtrosPagos.pagar && renderTablaFacturas(
+                      facturasPagar,
+                      '📋 Pagar',
+                      subtotalPagar,
+                      'pagar',
+                      true,
+                      { label: 'Marcar como Preparado', estado: 'preparado' }
+                    )}
+                    {filtrosPagos.pendiente && renderTablaFacturas(
+                      facturasPendiente,
+                      '⏳ Pendiente',
+                      subtotalPendiente,
+                      'pendiente',
+                      true,
+                      { label: 'Marcar como Pagar', estado: 'pagar' }
+                    )}
+                  </>
+                ) : (
+                  // ULISES (contable): Pagar > Preparado
+                  <>
+                    {renderTablaFacturas(
+                      facturasPagar,
+                      '📋 Por Pagar',
+                      subtotalPagar,
+                      'pagar',
+                      true,
+                      { label: 'Marcar como Preparado', estado: 'preparado' }
+                    )}
+                    {renderTablaFacturas(
+                      facturasPreparado,
+                      '✅ Preparado',
+                      subtotalPreparado,
+                      'preparado',
+                      false // Ulises no puede cambiar estado de preparado
+                    )}
+                  </>
+                )}
+
+                {/* Total general */}
+                <div className="pt-4 border-t">
+                  <div className="flex justify-end">
+                    <Badge className="text-xl px-4 py-2 bg-green-600">
+                      Total General: ${(subtotalPreparado + subtotalPagar + (esAdmin ? subtotalPendiente : 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setMostrarModalPagos(false)
+              setFacturasSeleccionadasPagos(new Set())
+            }}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
