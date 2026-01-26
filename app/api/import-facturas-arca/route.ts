@@ -122,6 +122,32 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
 }
 
 /**
+ * Busca regla de asignación automática por CUIT
+ * Si existe regla, devuelve cuenta_contable y estado a asignar
+ */
+async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string}> {
+  try {
+    const { data, error } = await supabase
+      .from('reglas_ctas_import_arca')
+      .select('cuenta_contable, estado')
+      .eq('cuit', cuit)
+      .eq('activo', true)
+      .single()
+
+    if (error || !data) {
+      // No hay regla para este CUIT - usar valores por defecto
+      return { cuenta_contable: null, estado: 'pendiente' }
+    }
+
+    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}`)
+    return data
+  } catch (err) {
+    console.error(`❌ Error buscando regla CUIT ${cuit}:`, err)
+    return { cuenta_contable: null, estado: 'pendiente' }
+  }
+}
+
+/**
  * Obtiene información del tipo de comprobante desde la tabla AFIP
  */
 async function obtenerTipoComprobante(codigo: number): Promise<{descripcion: string, es_nota_credito: boolean}> {
@@ -263,28 +289,31 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     })
   }
   
+  // Buscar regla de asignación automática por CUIT
+  const reglaCuit = await buscarReglaCuit(datosBasicos.cuit)
+
   // Combinar datos básicos + IVA + campos sistema
   const resultado = {
     ...datosBasicos,
     ...camposIVA,
-    
+
     // Campos calculados automáticamente (PRESERVAR LÓGICA EXISTENTE)
     fecha_estimada: calcularFechaEstimada(fechaEmision),
     monto_a_abonar: camposIVA.imp_total, // Inicialmente igual al importe total
-    
+
     // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
     año_contable: null, // Dejar en blanco (no usar default de BD)
     fc: null,
-    cuenta_contable: null,
+    cuenta_contable: reglaCuit.cuenta_contable, // ← Aplicar regla CUIT si existe
     centro_costo: null,
-    estado: 'pendiente',
+    estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
     observaciones_pago: null,
     detalle: `Factura ${datosBasicos.tipo_comprobante}-${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
     archivo_origen: nombreArchivo
   }
-  
-  console.log(`✅ Mapeo completado: ${Object.keys(resultado).length} campos`)
+
+  console.log(`✅ Mapeo completado: ${Object.keys(resultado).length} campos | Regla CUIT: ${reglaCuit.cuenta_contable ? 'SÍ' : 'NO'}`)
   return resultado
 }
 
