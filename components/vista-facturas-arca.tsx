@@ -194,6 +194,10 @@ export function VistaFacturasArca() {
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [cargandoPagos, setCargandoPagos] = useState(false)
+
+  // Cola de facturas pendientes de procesar SICORE (para múltiples selecciones)
+  const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
+  const [procesandoColaSicore, setProcesandoColaSicore] = useState(false)
   
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
@@ -2213,26 +2217,39 @@ export function VistaFacturasArca() {
   }
 
   // Cancelar cambio de estado pendiente
-  const cancelarGuardadoPendiente = () => {
-    console.log('❌ Cancelando guardado pendiente:', guardadoPendiente)
-    
+  const cancelarGuardadoPendiente = async (continuarSinSicore: boolean = false) => {
+    console.log('❌ Cancelando guardado pendiente:', guardadoPendiente, { continuarSinSicore })
+
     if (guardadoPendiente) {
-      // Restaurar estado anterior en la UI
-      const nuevasFacturas = facturas.map(factura => 
-        factura.id === guardadoPendiente.facturaId 
-          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
-          : factura
-      )
-      setFacturas(nuevasFacturas)
-      
-      const nuevasFacturasOriginales = facturasOriginales.map(factura => 
-        factura.id === guardadoPendiente.facturaId 
-          ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
-          : factura
-      )
-      setFacturasOriginales(nuevasFacturasOriginales)
+      if (continuarSinSicore) {
+        // Mantener el estado 'pagar' pero sin aplicar SICORE
+        // El estado ya fue actualizado en BD, solo actualizar UI
+        console.log('⏭️ Continuando sin SICORE, estado pagar mantenido')
+      } else {
+        // Restaurar estado anterior en la UI y BD
+        const nuevasFacturas = facturas.map(factura =>
+          factura.id === guardadoPendiente.facturaId
+            ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+            : factura
+        )
+        setFacturas(nuevasFacturas)
+
+        const nuevasFacturasOriginales = facturasOriginales.map(factura =>
+          factura.id === guardadoPendiente.facturaId
+            ? { ...factura, [guardadoPendiente.columna]: guardadoPendiente.estadoAnterior }
+            : factura
+        )
+        setFacturasOriginales(nuevasFacturasOriginales)
+
+        // Restaurar en BD también
+        await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update({ estado: guardadoPendiente.estadoAnterior })
+          .eq('id', guardadoPendiente.facturaId)
+      }
     }
-    
+
     // Limpiar estados SICORE y guardado pendiente
     setGuardadoPendiente(null)
     setMostrarModalSicore(false)
@@ -2241,6 +2258,24 @@ export function VistaFacturasArca() {
     setMontoRetencion(0)
     setDescuentoAdicional(0)
     setPasoSicore('tipo')
+
+    // Procesar siguiente factura de la cola si hay
+    if (colaSicore.length > 0) {
+      setTimeout(() => procesarSiguienteSicore(), 100)
+    } else if (procesandoColaSicore) {
+      setProcesandoColaSicore(false)
+      // Recargar facturas
+      if (mostrarModalPagos) {
+        const { data } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .select('*')
+          .in('estado', ['pendiente', 'pagar', 'preparado'])
+          .order('fecha_vencimiento', { ascending: true })
+        if (data) setFacturasPagos(data)
+      }
+      cargarFacturas()
+    }
   }
 
   // Finalizar proceso SICORE y actualizar BD
@@ -2302,11 +2337,63 @@ export function VistaFacturasArca() {
       setPasoSicore('tipo')
       
       alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
-      
+
+      // Procesar siguiente factura de la cola si hay
+      procesarSiguienteSicore()
+
     } catch (error) {
       console.error('Error finalizando proceso SICORE:', error)
       alert('Error finalizando proceso SICORE: ' + (error as Error).message)
     }
+  }
+
+  // Procesar siguiente factura de la cola SICORE
+  const procesarSiguienteSicore = async () => {
+    if (colaSicore.length === 0) {
+      setProcesandoColaSicore(false)
+      // Recargar facturas del modal de pagos si está abierto
+      if (mostrarModalPagos) {
+        const { data } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .select('*')
+          .in('estado', ['pendiente', 'pagar', 'preparado'])
+          .order('fecha_vencimiento', { ascending: true })
+        if (data) setFacturasPagos(data)
+      }
+      cargarFacturas()
+      return
+    }
+
+    // Tomar la primera factura de la cola
+    const [siguiente, ...resto] = colaSicore
+    setColaSicore(resto)
+
+    console.log(`🔄 SICORE Cola: Procesando siguiente (${resto.length} restantes)`, siguiente.denominacion_emisor)
+
+    // Actualizar estado a 'pagar' en BD primero
+    const { error } = await supabase
+      .schema('msa')
+      .from('comprobantes_arca')
+      .update({ estado: 'pagar' })
+      .eq('id', siguiente.id)
+
+    if (error) {
+      console.error('Error actualizando estado:', error)
+      procesarSiguienteSicore() // Continuar con la siguiente
+      return
+    }
+
+    // Guardar datos pendientes
+    setGuardadoPendiente({
+      facturaId: siguiente.id,
+      columna: 'estado',
+      valor: 'pagar',
+      estadoAnterior: 'pendiente'
+    })
+
+    // Evaluar SICORE para esta factura
+    await evaluarRetencionSicore({ ...siguiente, estado: 'pagar' })
   }
 
   // ============= FUNCIONES CIERRE QUINCENA SICORE =============
@@ -3994,51 +4081,66 @@ export function VistaFacturasArca() {
               if (nuevoEstado === 'pagar') {
                 const facturasDesdePendiente = facturasACambiar.filter(f => f.estado === 'pendiente')
                 const facturasCalificanSicore = facturasDesdePendiente.filter(f => (f.imp_neto_gravado || 0) > minimoSicore)
+                const facturasNoCalifican = facturasACambiar.filter(f =>
+                  f.estado !== 'pendiente' || (f.imp_neto_gravado || 0) <= minimoSicore
+                )
 
                 if (facturasCalificanSicore.length > 0) {
-                  // Hay facturas que califican para SICORE
-                  if (facturasCalificanSicore.length === 1) {
-                    // Una sola factura - usar flujo SICORE normal
-                    const factura = facturasCalificanSicore[0]
+                  // Confirmar proceso SICORE
+                  const confirmar = window.confirm(
+                    `${facturasCalificanSicore.length} factura(s) califican para retención SICORE:\n\n` +
+                    facturasCalificanSicore.map(f => `• ${f.denominacion_emisor}`).join('\n') +
+                    `\n\n¿Procesar SICORE una por una?`
+                  )
+                  if (!confirmar) return
 
-                    // Primero actualizar estado en BD
-                    const { error } = await supabase
+                  // Primero cambiar las que NO califican para SICORE
+                  if (facturasNoCalifican.length > 0) {
+                    const idsNoSicore = facturasNoCalifican.map(f => f.id)
+                    await supabase
                       .schema('msa')
                       .from('comprobantes_arca')
                       .update({ estado: 'pagar' })
-                      .eq('id', factura.id)
+                      .in('id', idsNoSicore)
 
-                    if (error) {
-                      alert('Error al cambiar estado')
-                      return
-                    }
-
-                    // Actualizar estado local
                     setFacturasPagos(prev => prev.map(f =>
-                      f.id === factura.id ? { ...f, estado: 'pagar' } : f
+                      idsNoSicore.includes(f.id) ? { ...f, estado: 'pagar' } : f
                     ))
+                  }
 
-                    // Guardar datos pendientes para SICORE
-                    setGuardadoPendiente({
-                      facturaId: factura.id,
-                      columna: 'estado',
-                      valor: 'pagar',
-                      estadoAnterior: 'pendiente'
-                    })
+                  // Iniciar cola SICORE
+                  setFacturasSeleccionadasPagos(new Set())
+                  setProcesandoColaSicore(true)
 
-                    // Abrir modal SICORE
-                    setFacturasSeleccionadasPagos(new Set())
-                    await evaluarRetencionSicore({ ...factura, estado: 'pagar' })
-                    cargarFacturas()
-                    return
-                  } else {
-                    // Múltiples facturas califican para SICORE
-                    const nombresProveedores = facturasCalificanSicore.map(f => f.denominacion_emisor).join('\n- ')
-                    alert(
-                      `⚠️ Las siguientes ${facturasCalificanSicore.length} facturas califican para retención SICORE:\n\n- ${nombresProveedores}\n\nPor favor, procésalas individualmente desde la vista de Facturas ARCA para aplicar SICORE correctamente.`
-                    )
+                  // Tomar la primera y poner el resto en cola
+                  const [primera, ...resto] = facturasCalificanSicore
+                  setColaSicore(resto)
+
+                  // Procesar la primera
+                  const { error } = await supabase
+                    .schema('msa')
+                    .from('comprobantes_arca')
+                    .update({ estado: 'pagar' })
+                    .eq('id', primera.id)
+
+                  if (error) {
+                    alert('Error al cambiar estado')
                     return
                   }
+
+                  setFacturasPagos(prev => prev.map(f =>
+                    f.id === primera.id ? { ...f, estado: 'pagar' } : f
+                  ))
+
+                  setGuardadoPendiente({
+                    facturaId: primera.id,
+                    columna: 'estado',
+                    valor: 'pagar',
+                    estadoAnterior: 'pendiente'
+                  })
+
+                  await evaluarRetencionSicore({ ...primera, estado: 'pagar' })
+                  return
                 }
               }
 
