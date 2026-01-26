@@ -18,7 +18,7 @@
 
 ---
 
-## 📆 2026-01-26 - Sesión: Implementación Reglas Importación ARCA
+## 📆 2026-01-26 - Sesión: Reglas Importación + Vista de Pagos
 
 ### ✅ **Logros del día:**
 
@@ -33,12 +33,34 @@
    - 4 reglas con estado `debito` (combustibles, seguros)
    - 10 reglas con estado `pendiente` (honorarios, asesores, varios)
 
-### 📊 **Commit:**
-- `03ba00c` - Feature: Reglas automáticas CUIT→Cuenta+Estado en importación ARCA
+3. **Vista de Pagos IMPLEMENTADA**
+   - Nuevo estado `preparado` agregado al constraint BD
+   - Botón "💰 Pagos" en tab Facturas ARCA
+   - Modal con lógica diferenciada por rol:
+     - **Admin**: ve Preparado > Pagar > Pendiente (con checkboxes filtro)
+     - **Ulises**: ve Pagar > Preparado (solo lectura preparado)
+   - Subtotales por sección + total general
+   - Selección múltiple y cambio masivo de estados
 
-### ✅ **OBJETIVO COMPLETADO:**
-- ✅ Parte 1 (Cuentas): 122 cuentas contables cargadas
-- ✅ Parte 2 (Reglas): 21 reglas implementadas y operativas
+4. **Flujo de estados actualizado:**
+   ```
+   pendiente → pagar → preparado → pagado → conciliado
+                ↑
+          (SICORE aquí)
+   ```
+
+### 📊 **Commits:**
+- `03ba00c` - Feature: Reglas automáticas CUIT→Cuenta+Estado
+- `7d7a0f0` - Feature: Vista de Pagos con gestión por rol
+
+### ⏳ **PENDIENTE - Verificar SICORE:**
+- El trigger SICORE debe activarse al pasar de `pendiente → pagar`
+- Verificar que funcione desde: Vista Pagos, Cash Flow, Facturas ARCA
+
+### ✅ **OBJETIVOS COMPLETADOS:**
+- ✅ Cuentas Contables: 122 cuentas cargadas
+- ✅ Reglas Importación: 21 reglas operativas
+- ✅ Vista de Pagos: Modal implementado con lógica por rol
 
 ---
 
@@ -147,6 +169,28 @@
 # 🎯 ESTADO ACTUAL DEL PROYECTO
 
 | Campo | Valor |
+|-------|-------|
+| **Objetivo activo** | 🔄 Verificar SICORE desde Vista Pagos |
+| **Objetivo 1 en cola** | ⏸️ Carga 53 Templates (ver líneas 3700+) |
+| **Estado BD** | ✅ 21 reglas + estado 'preparado' + Vista Pagos operativa |
+| **Fecha actualización** | 2026-01-26 |
+
+### 📋 **COLA DE OBJETIVOS:**
+
+| Orden | Objetivo | Estado |
+|-------|----------|--------|
+| 0 | Verificar SICORE en Vista Pagos | 🔄 Testing pendiente |
+| 1 | Carga 53 Templates | ⏸️ Pendiente |
+
+### ✅ **COMPLETADOS HOY:**
+- ✅ Reglas importación CUIT→Cuenta+Estado
+- ✅ Vista de Pagos con lógica por rol
+
+---
+
+# 🎯 ESTADO ANTERIOR (HISTÓRICO)
+
+| Campo | Valor
 |-------|-------|
 | **Objetivo completado** | ✅ Cuentas Contables + Reglas Importación Facturas |
 | **Objetivo en cola** | ⏸️ Carga 53 Templates (ver líneas 3623-3795) |
