@@ -200,6 +200,7 @@ export function VistaFacturasArca() {
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [cargandoPagos, setCargandoPagos] = useState(false)
+  const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
   // Cola de facturas pendientes de procesar SICORE (para múltiples selecciones)
   const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
@@ -4100,6 +4101,40 @@ export function VistaFacturasArca() {
             </DialogDescription>
           </DialogHeader>
 
+          {/* Selector de Fecha de Pago */}
+          <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-4 mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">📅 Fecha de Pago:</span>
+              <input
+                type="date"
+                value={fechaPagoSeleccionada}
+                onChange={(e) => setFechaPagoSeleccionada(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              />
+              {fechaPagoSeleccionada && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setFechaPagoSeleccionada('')}
+                  className="h-7 px-2 text-gray-500"
+                >
+                  ✕
+                </Button>
+              )}
+            </div>
+            {fechaPagoSeleccionada && (
+              <span className="text-xs text-blue-700">
+                → Quincena SICORE: {(() => {
+                  const fecha = new Date(fechaPagoSeleccionada)
+                  const año = fecha.getFullYear().toString().slice(-2)
+                  const mes = (fecha.getMonth() + 1).toString().padStart(2, '0')
+                  const dia = fecha.getDate()
+                  return `${año}-${mes} - ${dia <= 15 ? '1ra' : '2da'}`
+                })()}
+              </span>
+            )}
+          </div>
+
           {cargandoPagos ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -4131,6 +4166,12 @@ export function VistaFacturasArca() {
               const ids = Array.from(facturasSeleccionadasPagos)
               const facturasACambiar = facturasPagos.filter(f => ids.includes(f.id))
 
+              // Preparar datos de actualización (incluye fecha si está seleccionada)
+              const datosUpdate: { estado: string; fecha_vencimiento?: string } = { estado: nuevoEstado }
+              if (fechaPagoSeleccionada) {
+                datosUpdate.fecha_vencimiento = fechaPagoSeleccionada
+              }
+
               // SICORE: Detectar cambio pendiente → pagar
               const minimoSicore = 67170
               if (nuevoEstado === 'pagar') {
@@ -4141,25 +4182,31 @@ export function VistaFacturasArca() {
                 )
 
                 if (facturasCalificanSicore.length > 0) {
-                  // Confirmar proceso SICORE
+                  // Confirmar proceso SICORE (mostrar fecha de pago si está seleccionada)
+                  const mensajeFecha = fechaPagoSeleccionada
+                    ? `\n📅 Fecha de pago: ${new Date(fechaPagoSeleccionada).toLocaleDateString('es-AR')}`
+                    : ''
                   const confirmar = window.confirm(
                     `${facturasCalificanSicore.length} factura(s) califican para retención SICORE:\n\n` +
                     facturasCalificanSicore.map(f => `• ${f.denominacion_emisor}`).join('\n') +
+                    mensajeFecha +
                     `\n\n¿Procesar SICORE una por una?`
                   )
                   if (!confirmar) return
 
-                  // Primero cambiar las que NO califican para SICORE
+                  // Primero cambiar las que NO califican para SICORE (con fecha si aplica)
                   if (facturasNoCalifican.length > 0) {
                     const idsNoSicore = facturasNoCalifican.map(f => f.id)
                     await supabase
                       .schema('msa')
                       .from('comprobantes_arca')
-                      .update({ estado: 'pagar' })
+                      .update(datosUpdate)
                       .in('id', idsNoSicore)
 
                     setFacturasPagos(prev => prev.map(f =>
-                      idsNoSicore.includes(f.id) ? { ...f, estado: 'pagar' } : f
+                      idsNoSicore.includes(f.id)
+                        ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                        : f
                     ))
                   }
 
@@ -4167,15 +4214,19 @@ export function VistaFacturasArca() {
                   setFacturasSeleccionadasPagos(new Set())
                   setProcesandoColaSicore(true)
 
-                  // Tomar la primera y poner el resto en cola
-                  const [primera, ...resto] = facturasCalificanSicore
+                  // Tomar la primera y poner el resto en cola (con fecha actualizada)
+                  const facturasConFecha = facturasCalificanSicore.map(f => ({
+                    ...f,
+                    ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada })
+                  }))
+                  const [primera, ...resto] = facturasConFecha
                   setColaSicore(resto)
 
-                  // Procesar la primera
+                  // Procesar la primera (actualizar BD con fecha)
                   const { error } = await supabase
                     .schema('msa')
                     .from('comprobantes_arca')
-                    .update({ estado: 'pagar' })
+                    .update(datosUpdate)
                     .eq('id', primera.id)
 
                   if (error) {
@@ -4184,7 +4235,9 @@ export function VistaFacturasArca() {
                   }
 
                   setFacturasPagos(prev => prev.map(f =>
-                    f.id === primera.id ? { ...f, estado: 'pagar' } : f
+                    f.id === primera.id
+                      ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                      : f
                   ))
 
                   setGuardadoPendiente({
@@ -4194,14 +4247,18 @@ export function VistaFacturasArca() {
                     estadoAnterior: 'pendiente'
                   })
 
+                  // SICORE usará la fecha_vencimiento actualizada para calcular quincena
                   await evaluarRetencionSicore({ ...primera, estado: 'pagar' })
                   return
                 }
               }
 
-              // Cambio normal (sin SICORE)
+              // Cambio normal (sin SICORE) - incluye fecha si está seleccionada
+              const mensajeFecha = fechaPagoSeleccionada
+                ? `\n📅 Fecha de pago: ${new Date(fechaPagoSeleccionada).toLocaleDateString('es-AR')}`
+                : ''
               const confirmar = window.confirm(
-                `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?`
+                `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?${mensajeFecha}`
               )
               if (!confirmar) return
 
@@ -4209,14 +4266,16 @@ export function VistaFacturasArca() {
                 const { error } = await supabase
                   .schema('msa')
                   .from('comprobantes_arca')
-                  .update({ estado: nuevoEstado })
+                  .update(datosUpdate)
                   .in('id', ids)
 
                 if (error) throw error
 
-                // Actualizar estado local
+                // Actualizar estado local (incluye fecha si aplica)
                 setFacturasPagos(prev => prev.map(f =>
-                  ids.includes(f.id) ? { ...f, estado: nuevoEstado } : f
+                  ids.includes(f.id)
+                    ? { ...f, estado: nuevoEstado, ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada }) }
+                    : f
                 ))
                 setFacturasSeleccionadasPagos(new Set())
 
