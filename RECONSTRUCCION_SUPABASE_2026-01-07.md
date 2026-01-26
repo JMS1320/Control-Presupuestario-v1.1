@@ -9,6 +9,158 @@
 
 ---
 
+# 📅 BITÁCORA DE SESIONES
+
+> **Nota sobre documentación:**
+> - **CLAUDE.md** = Etapa v1 (pre-corrupción) - solo consulta para rescatar info antigua
+> - **RECONSTRUCCION_SUPABASE** = Etapa v2 (reconstrucción) - documentación activa cronológica
+> - Cada sesión incluye: fecha, logros, próximas tareas, y observaciones/código relevante
+
+---
+
+## 📆 2026-01-26 - Sesión: Implementación Reglas Importación ARCA
+
+### ✅ **Logros del día:**
+
+1. **Sistema Reglas CUIT→Cuenta+Estado COMPLETADO**
+   - Creada tabla `reglas_ctas_import_arca` (21 reglas)
+   - Modificado importador `app/api/import-facturas-arca/route.ts`
+   - Al importar: busca CUIT → aplica cuenta_contable + estado automáticamente
+   - Si no hay regla: valores default (null, pendiente)
+
+2. **Distribución reglas:**
+   - 7 reglas con estado `credito` (autopistas, TV, telecom, servicios)
+   - 4 reglas con estado `debito` (combustibles, seguros)
+   - 10 reglas con estado `pendiente` (honorarios, asesores, varios)
+
+### 📊 **Commit:**
+- `03ba00c` - Feature: Reglas automáticas CUIT→Cuenta+Estado en importación ARCA
+
+### ✅ **OBJETIVO COMPLETADO:**
+- ✅ Parte 1 (Cuentas): 122 cuentas contables cargadas
+- ✅ Parte 2 (Reglas): 21 reglas implementadas y operativas
+
+---
+
+## 📆 2026-01-25 - Sesión: Cuentas Contables + Reglas Importación
+
+### 🔄 **Transición de objetivos:**
+- ⏸️ **Templates PAUSADO** → Ver sección líneas 3623-3795 para retomar
+- 🟢 **Nuevo objetivo ACTIVO**: Cuentas Contables + Reglas Importación Facturas
+
+### ✅ **Logros del día:**
+
+1. **Carga Plan de Cuentas Contables COMPLETADA**
+   - Modificado ENUM `tipo_cuenta` (agregado valor 'NO')
+   - Agregadas 6 columnas nuevas a tabla `cuentas_contables`
+   - Eliminados 55 registros de prueba anteriores
+   - Insertadas 122 cuentas contables reales
+   - Archivo fuente: `- Cuentas Contables Inicio v2.csv`
+
+2. **Análisis Reglas CUIT→Cuenta+Estado**
+   - Recibido archivo: `- Cuentas Contables Inicio v2 - reglas.csv`
+   - Identificadas 21 reglas de asignación automática
+   - Análisis: 12 pendiente, 6 CREDITO, 3 DEBITO
+   - Continuado en sesión 2026-01-26
+
+### 📝 **Detalles técnicos:**
+- Ver sección "OBJETIVO ACTUAL" más abajo (después de línea 3815)
+
+---
+
+## 📆 2026-01-20 - Sesión: Documentación Templates + Organización
+
+### ✅ **Logros del día:**
+
+1. **Excel Templates Base generado**
+   - Archivo con todos los 53 templates del sistema
+   - Estructura completa lista para interpretación
+   - Fuente: `Templates.csv` / Excel original
+
+2. **Documentación estructura Templates en BD**
+   - Arquitectura 3 tablas documentada (templates_master → egresos_sin_factura → cuotas)
+   - Estado actual: Estructura 100% lista, datos vacíos (perdidos en corrupción)
+   - Agregada sección "6. SISTEMA TEMPLATES" a este documento
+
+3. **Definición estrategia documentación**
+   - CLAUDE.md = archivo histórico etapa v1 (solo consulta)
+   - RECONSTRUCCION_SUPABASE = documentación activa etapa v2
+
+### ⏸️ **OBJETIVO PAUSADO (2026-01-25):**
+
+1. **Cargar templates a BD desde Excel** ← PENDIENTE
+   - Interpretar Excel con los 53 templates
+   - Crear templates_master para 2025 y 2026
+   - Insertar registros en egresos_sin_factura
+   - Generar cuotas en cuotas_egresos_sin_factura
+   - **📍 Referencia para retomar:** Ver sección "6. SISTEMA TEMPLATES" (líneas 3623-3795)
+
+2. **Testing post-carga:** ← PENDIENTE
+   - Verificar templates aparecen en Cash Flow
+   - Probar conversión cuotas ↔ anual
+   - Validar integración con motor conciliación
+
+### 📝 **Observaciones:**
+
+- El Template 10 "Inmobiliario PAM" que existía como prototipo se perdió con la corrupción
+- La carga masiva debe respetar la estructura de 34 columnas de egresos_sin_factura
+- Triggers automáticos (update_template_count) actualizarán contadores en templates_master
+
+---
+
+## 📆 2026-01-19 - Sesión: Carga 41 Reglas Conciliación
+
+### ✅ **Logros del día:**
+- 41 reglas de conciliación cargadas desde Excel
+- Corrección orden de prioridad (específicas antes de genéricas)
+- Fix CRED T → CRED P
+- Testing exitoso del motor de conciliación
+
+### 📝 **Detalles técnicos:**
+- Ver sección "5. CARGA Y CORRECCIÓN 41 REGLAS CONCILIACIÓN" más abajo
+
+---
+
+## 📆 2026-01-11 - Sesión: Tipos AFIP + Fix DEFAULT ddjj_iva
+
+### ✅ **Logros del día:**
+- 68 tipos comprobantes AFIP cargados (de 25 a 68)
+- Fix DEFAULT ddjj_iva: 'Pendiente' → 'No'
+- Sistema Subdiarios funcional
+
+### 📝 **Detalles técnicos:**
+- Ver secciones "2026-01-10" y "2026-01-11" en CAMBIOS POST-RECONSTRUCCIÓN
+
+---
+
+## 📆 2026-01-07 al 2026-01-10 - Reconstrucción Base
+
+### ✅ **Logros:**
+- Auditoría completa estructura desde código TypeScript
+- Generación 8 scripts SQL de reconstrucción
+- Creación nuevo proyecto Supabase
+- Ejecución exitosa de todos los scripts
+- BD operativa con 13 tablas
+
+---
+
+# 🎯 ESTADO ACTUAL DEL PROYECTO
+
+| Campo | Valor |
+|-------|-------|
+| **Objetivo completado** | ✅ Cuentas Contables + Reglas Importación Facturas |
+| **Objetivo en cola** | ⏸️ Carga 53 Templates (ver líneas 3623-3795) |
+| **Estado BD** | ✅ Estructura completa, 21 reglas import activas |
+| **Fecha actualización** | 2026-01-26 |
+
+---
+
+# 📚 DOCUMENTACIÓN TÉCNICA DETALLADA
+
+*(Las secciones siguientes contienen el detalle técnico de la reconstrucción)*
+
+---
+
 ## 🎯 FASE 1: INVENTARIO ESTRUCTURA BASE DE DATOS
 
 ### **MÉTODO:**
@@ -3511,8 +3663,416 @@ PASO 2: Aplicar 41 reglas por orden de prioridad
 
 ---
 
-**📅 Última actualización:** 2026-01-19
+**📅 Última actualización:** 2026-01-20
 **Cambios estructurales post-backup:** 3 (DEFAULT ddjj_iva + Tipos AFIP + 41 Reglas Conciliación)
 **Análisis sistema:** 2 (Conciliación dual-level + mejora futura)
 **Reglas operativas:** ✅ **41 REGLAS CARGADAS Y OPERATIVAS**
 **Estado BD:** ✅ PRODUCCIÓN READY - Sistema conciliación completamente funcional
+
+---
+
+## 📊 **6. SISTEMA TEMPLATES - ESTADO ESTRUCTURA Y DATOS**
+
+### 📋 **Observación:**
+> **Estructura/Arquitectura documentada:** 2025-08-21 (sesiones desarrollo)
+> **Verificación estado BD:** 2026-01-20 (sesión actual)
+
+---
+
+### **Arquitectura 3 Tablas - 100% Implementada** ✅
+
+```
+templates_master (contenedor anual)
+    ↓ FK: template_master_id
+egresos_sin_factura (34 columnas Excel - templates individuales)
+    ↓ FK: egreso_id
+cuotas_egresos_sin_factura (cuotas individuales por template)
+```
+
+---
+
+### **Tabla 1: templates_master**
+
+```sql
+CREATE TABLE public.templates_master (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    nombre character varying(100) NOT NULL,
+    año integer NOT NULL,
+    descripcion text,
+    total_renglones integer DEFAULT 0,  -- Auto-contador via trigger
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+-- UNIQUE INDEX: Un solo master por nombre+año
+CREATE UNIQUE INDEX idx_template_master_año ON public.templates_master (nombre, año);
+```
+
+---
+
+### **Tabla 2: egresos_sin_factura (34 columnas Excel)**
+
+```sql
+CREATE TABLE public.egresos_sin_factura (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    template_master_id uuid,                    -- FK → templates_master
+    categ character varying(20),
+    centro_costo character varying(20),
+    nombre_referencia character varying(100) NOT NULL,
+    responsable character varying(20) NOT NULL,
+    cuit_quien_cobra character varying(11),
+    nombre_quien_cobra character varying(100),
+    tipo_recurrencia character varying(20) NOT NULL,
+    año integer NOT NULL,
+    activo boolean DEFAULT true,
+    responsable_interno text,
+    cuotas integer,
+    fecha_primera_cuota date,
+    monto_por_cuota numeric,
+    completar_cuotas text,
+    observaciones_template text,
+    actualizacion_proximas_cuotas text,
+    obs_opciones text,
+    codigo_contable text,
+    codigo_interno text,
+    alertas text,
+    pago_anual boolean DEFAULT false,
+    monto_anual numeric,
+    fecha_pago_anual date,
+    template_origen_id uuid,                    -- FK self-reference (replicación)
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+-- ÍNDICES
+CREATE INDEX idx_egresos_año ON public.egresos_sin_factura (año);
+CREATE INDEX idx_egresos_responsable ON public.egresos_sin_factura (responsable);
+CREATE INDEX idx_egresos_template_master ON public.egresos_sin_factura (template_master_id);
+```
+
+---
+
+### **Tabla 3: cuotas_egresos_sin_factura**
+
+```sql
+CREATE TABLE public.cuotas_egresos_sin_factura (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    egreso_id uuid,                             -- FK → egresos_sin_factura
+    fecha_estimada date NOT NULL,
+    fecha_vencimiento date,
+    monto numeric(15,2) NOT NULL,
+    descripcion text,
+    estado character varying(20) DEFAULT 'pendiente',
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+
+    -- Estados válidos (incluye 'desactivado' para conversión cuotas↔anual)
+    CONSTRAINT cuotas_egresos_sin_factura_estado_check CHECK (
+        estado IN ('pendiente', 'debito', 'pagar', 'pagado', 'credito', 'conciliado', 'desactivado')
+    )
+);
+
+-- ÍNDICES
+CREATE INDEX idx_cuotas_egreso_id ON public.cuotas_egresos_sin_factura (egreso_id);
+CREATE INDEX idx_cuotas_estado ON public.cuotas_egresos_sin_factura (estado);
+CREATE INDEX idx_cuotas_fecha_estimada ON public.cuotas_egresos_sin_factura (fecha_estimada);
+```
+
+---
+
+### **Funciones y Triggers Automáticos** ✅
+
+**1. update_template_count()** - Auto-contador:
+```sql
+-- Mantiene sincronizado total_renglones en templates_master
+-- Incrementa en INSERT, decrementa en DELETE, ajusta en UPDATE de master
+CREATE TRIGGER template_count_trigger
+AFTER INSERT OR DELETE OR UPDATE ON public.egresos_sin_factura
+FOR EACH ROW EXECUTE FUNCTION public.update_template_count();
+```
+
+**2. fix_template_counts()** - Corrección manual:
+```sql
+-- Función de mantenimiento para corregir contadores desincronizados
+-- Uso: SELECT * FROM fix_template_counts();
+```
+
+---
+
+### **Estado Datos en BD Reconstruida** ⚠️
+
+| Tabla | Registros | Observación |
+|-------|-----------|-------------|
+| templates_master | **0** (vacío) | Perdido con corrupción Supabase |
+| egresos_sin_factura | **0** (vacío) | Template 10 prototipo perdido |
+| cuotas_egresos_sin_factura | **0** (vacío) | 4 cuotas prototipo perdidas |
+
+**Contexto histórico (pre-corrupción):**
+- Template 10 "Inmobiliario PAM" existía como prototipo
+- 4 cuotas: Mar/Jun/Sep/Nov 2026 - $3.900.000 c/u
+- Proveedor: ARBA (CUIT 30710404611)
+- Estado: Ready for testing (nunca ejecutado)
+
+---
+
+### **Pendientes Carga Templates**
+
+**Fuente de datos:** `Templates.csv` / Excel original con 53 templates
+
+| Item | Estado |
+|------|--------|
+| Análisis 53 templates Excel | ✅ Completado (2025-08-20) |
+| Template 10 prototipo | ❌ Perdido - requiere recarga |
+| Templates 11-13 (grupo inmobiliario) | ⚠️ Pendiente |
+| Templates 14-61 (carga masiva) | ⚠️ Pendiente |
+| Sistema alertas Vista Principal | ⚠️ Pendiente |
+| Testing conversión cuotas↔anual | ⚠️ Pendiente |
+
+---
+
+### **Integración con Sistema Conciliación**
+
+**Motor conciliación (PASO 1) incluye templates:**
+```typescript
+// hooks/useMotorConciliacion.ts
+// Cash Flow = facturas ARCA + templates (cuotas_egresos_sin_factura)
+// Match automático por monto+fecha funciona con ambos
+```
+
+**Resultado esperado cuando se carguen templates:**
+- ✅ Cuotas templates aparecerán en Cash Flow
+- ✅ Motor conciliación matcheará automáticamente
+- ✅ Reglas configurables solo para gastos SIN template/factura
+
+---
+
+## 📆 2026-01-25 - Sesión: Transición Objetivos + Cuentas Contables
+
+### 🔄 **TRANSICIÓN DE OBJETIVOS**
+
+#### ⏸️ **OBJETIVO PAUSADO: Carga 53 Templates**
+
+| Campo | Valor |
+|-------|-------|
+| **Estado** | ⏸️ PENDIENTE - En espera |
+| **Prioridad** | Siguiente después del objetivo actual |
+| **Información detallada** | Sección "6. SISTEMA TEMPLATES" (líneas 3623-3795) |
+| **Fecha documentación** | 2026-01-20 |
+| **Excel fuente** | `Templates.csv` / Excel original con 53 templates |
+
+**Resumen pendientes Templates:**
+- Interpretar Excel con los 53 templates
+- Crear templates_master para 2025 y 2026
+- Insertar registros en egresos_sin_factura
+- Generar cuotas en cuotas_egresos_sin_factura
+- Testing conversión cuotas↔anual
+
+**Para retomar:** Ver sección "6. SISTEMA TEMPLATES" en este documento (líneas 3623-3795) donde está toda la arquitectura, estructura BD, y estado de datos.
+
+---
+
+### 🎯 **OBJETIVO ACTUAL: Cuentas Contables + Reglas Importación Facturas**
+
+**Fecha inicio:** 2026-01-25
+**Prioridad:** ACTIVO
+
+---
+
+## ✅ PARTE 1 COMPLETADA: Carga Plan de Cuentas Contables
+
+### 📊 **Fuente de Datos:**
+- **Archivo:** `- Cuentas Contables Inicio v2.csv`
+- **Total registros válidos:** 122 cuentas contables
+
+### 🔧 **Modificaciones Estructura BD Aplicadas:**
+
+**Migración:** `add_cuentas_contables_columns_and_enum`
+
+```sql
+-- 1. Agregar valor 'NO' al ENUM tipo_cuenta
+ALTER TYPE public.tipo_cuenta ADD VALUE IF NOT EXISTS 'NO';
+
+-- 2. Agregar 6 columnas nuevas
+ALTER TABLE public.cuentas_contables
+ADD COLUMN IF NOT EXISTS nro_cuenta text,
+ADD COLUMN IF NOT EXISTS imputable boolean DEFAULT false,
+ADD COLUMN IF NOT EXISTS cta_totalizadora text,
+ADD COLUMN IF NOT EXISTS nombre_totalizadora text,
+ADD COLUMN IF NOT EXISTS cambio_nombre_cta text,
+ADD COLUMN IF NOT EXISTS grupo_cuenta text;
+
+-- 3. Hacer tipo nullable (para valores 'NO' y vacíos)
+ALTER TABLE public.cuentas_contables
+ALTER COLUMN tipo DROP NOT NULL;
+```
+
+### 📋 **Estructura Final Tabla `cuentas_contables`:**
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| id | uuid | PK auto-generado |
+| nro_cuenta | text | Número de cuenta (ej: "1.1.1.01") |
+| categ | text | Categoría agrupadora |
+| cuenta_contable | text | Nombre de la cuenta |
+| tipo | ENUM | ingreso, egreso, financiero, distribucion, NO |
+| imputable | boolean | Si la cuenta es imputable (Si/No) |
+| cta_totalizadora | text | Código cuenta totalizadora padre |
+| nombre_totalizadora | text | Nombre cuenta totalizadora |
+| cambio_nombre_cta | text | Nombre alternativo si hubo cambio |
+| grupo_cuenta | text | Agrupación adicional |
+| activo | boolean | Si está activa (default true) |
+| created_at | timestamp | Fecha creación |
+
+### 📊 **Datos Cargados:**
+
+**Operaciones ejecutadas:**
+1. ✅ DELETE 55 registros anteriores (datos de prueba)
+2. ✅ INSERT 122 cuentas nuevas (3 batches)
+3. ✅ Verificación: `SELECT COUNT(*) = 122` ✅
+
+**Columnas del CSV mapeadas:**
+- `nro_cuenta` → nro_cuenta
+- `categ` → categ
+- `cuenta_contable` → cuenta_contable
+- `imputable` → imputable (convertido Si/No → true/false)
+- `cta_totalizadora` → cta_totalizadora
+- `nombre_totalizadora` → nombre_totalizadora
+- `cambio_nombre_cta` → cambio_nombre_cta
+- `grupo_cuenta` → grupo_cuenta
+- `tipo` → tipo (ENUM o NULL si vacío/NO)
+
+**Columnas ignoradas del CSV:**
+- orden anterior (no relevante para BD)
+- orden actual (no relevante para BD)
+- acceso (no relevante para BD)
+
+---
+
+## 🔄 PARTE 2 EN PROGRESO: Reglas CUIT → Cuenta + Estado
+
+### 📊 **Fuente de Datos:**
+- **Archivo:** `- Cuentas Contables Inicio v2 - reglas.csv`
+- **Total reglas:** 21 proveedores
+
+### 📋 **Estructura del Archivo Reglas:**
+
+| Columna | Descripción |
+|---------|-------------|
+| Nro. Doc. Emisor | CUIT del proveedor (sin guiones) |
+| Denominación Emisor | Nombre/razón social (referencia) |
+| Cuenta Contable | Cuenta a asignar automáticamente |
+| Estado | CREDITO, DEBITO, o vacío (= pendiente por defecto) |
+
+### 📊 **Análisis de las 21 Reglas:**
+
+**Por Estado asignado:**
+| Estado | Cantidad | Ejemplos |
+|--------|----------|----------|
+| Vacío (pendiente) | 12 | Asesores, telefonía, varios |
+| CREDITO | 6 | Autopistas, TV, Telecom, Luz |
+| DEBITO | 3 | Combustibles (YPF, Deheza), Seguros |
+
+**Detalle completo reglas:**
+```csv
+CUIT;Proveedor;Cuenta Contable;Estado
+30708482478;I.C.T. NET S.A.;TELEFONOS E INTERNET SAN PEDRO;(pendiente)
+30677237119;AUTOPISTAS DEL SOL S A;PEAJES, VIATICOS, FLETES ESTRUCTURA;CREDITO
+27312346155;MICELI LUCIANA YANINA;PEAJES, VIATICOS, FLETES ESTRUCTURA;(pendiente)
+20233952746;MASSAGLIA ALDO ENRIQUE;ASESOR GANADERO;(pendiente)
+30714279315;LA MERCURE S.R.L.;ASESORAMIENTO CONTABLE;(pendiente)
+30678774495;OPERADORA DE ESTACIONES DE SERVICIOS SA;COMBUSTIBLES Y LUBRICANTES;DEBITO
+20146994106;GONZALEZ OMAR ALFREDO;AGUADAS;(pendiente)
+33717253219;SMART FARMING S.R.L.;CAPACITACIONES E INVESTIGACION;(pendiente)
+30715804812;CORREDORES VIALES SOCIEDAD ANONIMA;PEAJES, VIATICOS, FLETES ESTRUCTURA;CREDITO
+30546771314;MEDICUS SA;GASTOS MEDICOS;CREDITO
+30685889397;DIRECTV ARGENTINA S.R.L.;TELEFONOS E INTERNET BS. AS.;CREDITO
+30639453738;TELECOM ARGENTINA SA;TELEFONOS E INTERNET BS. AS.;CREDITO
+30516186670;DEHEZA SA;COMBUSTIBLES Y LUBRICANTES;DEBITO
+30574876474;AUTOPISTAS URBANAS S.A.;PEAJES, VIATICOS, FLETES ESTRUCTURA;CREDITO
+30615803762;COOP RIO TALA;TELEFONOS E INTERNET SAN PEDRO;(pendiente)
+30545749994;COOP SAN PEDRO;LUZ;CREDITO
+33707366589;FEDERACION PATRONAL SEGUROS S.A.U;SEGUROS ESTRUCTURA;DEBITO
+30695542476;PAN AMERICAN ENERGY S.L.;COMBUSTIBLES Y LUBRICANTES;DEBITO
+20287492546;MARTINEZ PLACIDO ANDRES;HONORARIOS AMS;(pendiente)
+23342147739;MARTINEZ JOSE MARIA;HONORARIOS JMS;(pendiente)
+20443732145;SANCHEZ ULISES;HONORARIOS VARIOS;(pendiente)
+```
+
+### ❓ **PREGUNTAS PENDIENTES PARA PRÓXIMA SESIÓN:**
+
+> **⚠️ IMPORTANTE:** Estas preguntas deben responderse ANTES de implementar las reglas.
+> **Fecha registro:** 2026-01-25
+> **Para retomar:** Copiar estas preguntas y presentarlas al usuario al inicio de la próxima sesión.
+
+---
+
+**PREGUNTA 1: ¿Dónde guardar las reglas?**
+
+¿Debo crear una nueva tabla `reglas_cuit_cuenta` para estas reglas, o prefieres que modifique alguna tabla existente?
+
+- Opción A: Crear tabla nueva `reglas_cuit_cuenta`
+- Opción B: Usar/modificar tabla existente (especificar cuál)
+
+---
+
+**PREGUNTA 2: ¿Qué significan los estados CREDITO/DEBITO?**
+
+El campo `estado` en facturas ARCA (`msa.comprobantes_arca`) actualmente usa el ENUM:
+- `'pendiente'`
+- `'pagar'`
+- `'pagado'`
+- `'conciliado'`
+
+Las reglas del Excel traen valores: `CREDITO`, `DEBITO`, o vacío (= pendiente por defecto)
+
+¿Qué debo hacer con estos valores?
+- Opción A: Agregar CREDITO/DEBITO como nuevos valores al ENUM de estado
+- Opción B: Mapear a estados existentes (¿CREDITO = cuál? ¿DEBITO = cuál?)
+- Opción C: Guardarlos en otra columna diferente (¿cuál?)
+
+---
+
+**PREGUNTA 3: ¿Cuándo aplicar las reglas?**
+
+¿Las reglas se aplican solo en la importación de facturas nuevas, o también debo actualizar las 44 facturas ya cargadas en la BD?
+
+- Opción A: Solo facturas nuevas que se importen a futuro
+- Opción B: También actualizar retroactivamente las 44 facturas existentes
+- Opción C: Ambos
+
+---
+
+### ⏳ **Estado Actual Parte 2:**
+- ✅ Archivo reglas recibido y analizado
+- ✅ 21 reglas identificadas con estructura clara
+- ⏸️ **PAUSADO** - Esperando respuestas a las 3 preguntas anteriores
+- ⏳ Implementación tabla/sistema reglas
+- ⏳ Modificación importador facturas ARCA
+
+---
+
+### 📋 **COLA DE OBJETIVOS**
+
+| Prioridad | Objetivo | Estado | Progreso |
+|-----------|----------|--------|----------|
+| 1 | Cuentas Contables + Reglas Importación | 🟢 ACTIVO | 50% (Cuentas ✅, Reglas ⏳) |
+| 2 | Carga 53 Templates a BD | ⏸️ PENDIENTE | 0% |
+
+---
+
+### 📊 **RESUMEN ESTADO BD POST-SESIÓN 2026-01-25**
+
+| Tabla | Registros | Estado |
+|-------|-----------|--------|
+| cuentas_contables | 122 | ✅ Actualizada |
+| tipos_comprobante_afip | 68 | ✅ Completa |
+| reglas_conciliacion | 41 | ✅ Completa |
+| msa.comprobantes_arca | 44 | ✅ Operativa |
+| reglas_cuit_cuenta | (nueva) | ⏳ Por crear |
+
+---
+
+**📅 Última actualización:** 2026-01-25
+**Objetivo activo:** Cuentas Contables + Reglas Importación Facturas (50% completado)
+**Próximo paso:** Definir estructura tabla reglas + mapeo estados CREDITO/DEBITO
+**Objetivo en cola:** Carga 53 Templates (ver líneas 3623-3795)
