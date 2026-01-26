@@ -179,7 +179,13 @@ export function VistaFacturasArca() {
   const [montoRetencion, setMontoRetencion] = useState(0)
   const [descuentoAdicional, setDescuentoAdicional] = useState(0)
   const [pasoSicore, setPasoSicore] = useState<'tipo' | 'calculo' | 'descuento'>('tipo')
-  
+  const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
+    netoFactura: number
+    minimoAplicado: number
+    baseImponible: number
+    esRetencionAdicional: boolean
+  } | null>(null)
+
   // Estado para guardado pendiente - permite cancelar SICORE sin guardar estado
   const [guardadoPendiente, setGuardadoPendiente] = useState<{facturaId: string, columna: string, valor: any, estadoAnterior: string} | null>(null)
   
@@ -2087,26 +2093,33 @@ export function VistaFacturasArca() {
   }
   
   // Función principal: evaluar si corresponde retención SICORE
+  // FÓRMULA BASE: netoFactura = gravado + no_gravado + exento
   const evaluarRetencionSicore = async (factura: FacturaArca) => {
     try {
       const netoGravado = factura.imp_neto_gravado || 0
+      const netoNoGravado = factura.imp_neto_no_gravado || 0
+      const opExentas = factura.imp_op_exentas || 0
+      const netoFactura = netoGravado + netoNoGravado + opExentas
       const minimoServicios = 67170 // Mínimo más bajo (Servicios/Transporte)
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
-      
+
       console.log('🔍 SICORE: Evaluando factura', {
         id: factura.id,
         proveedor: factura.denominacion_emisor,
         netoGravado,
+        netoNoGravado,
+        opExentas,
+        netoFactura,
         minimoServicios,
-        esNegativa: netoGravado < 0
+        esNegativa: netoFactura < 0
       })
-      
+
       // CASO ESPECIAL: Facturas negativas
-      if (netoGravado < 0) {
+      if (netoFactura < 0) {
         // Para facturas negativas, verificar si ya hay retención previa
         const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
         console.log('💰 SICORE: Factura negativa - verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
-        
+
         if (yaRetuvo) {
           // Si ya retuvo, permitir retención negativa
           console.log('⚡ SICORE: Factura negativa con retención previa - PERMITIR')
@@ -2120,19 +2133,19 @@ export function VistaFacturasArca() {
           return
         }
       }
-      
+
       // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
-      if (netoGravado <= minimoServicios) {
+      if (netoFactura <= minimoServicios) {
         console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
         return
       }
-      
+
       // Sí corresponde evaluación → iniciar flujo interactivo
       console.log('⚡ SICORE: Corresponde evaluación - iniciando flujo')
       setFacturaEnProceso(factura)
       setPasoSicore('tipo')
       setMostrarModalSicore(true)
-      
+
     } catch (error) {
       console.error('Error evaluando retención SICORE:', error)
       alert('Error evaluando retención SICORE: ' + (error as Error).message)
@@ -2140,54 +2153,74 @@ export function VistaFacturasArca() {
   }
   
   // Calcular retención según tipo seleccionado
+  // FÓRMULA: (gravado + no_gravado + exento) - minimo_no_imponible = base_imponible * porcentaje
   const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
     try {
       const netoGravado = factura.imp_neto_gravado || 0
+      const netoNoGravado = factura.imp_neto_no_gravado || 0
+      const opExentas = factura.imp_op_exentas || 0
+      const netoFactura = netoGravado + netoNoGravado + opExentas
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
-      
+
       console.log('🧮 SICORE: Calculando retención', {
         tipo: tipo.tipo,
         netoGravado,
+        netoNoGravado,
+        opExentas,
+        netoFactura,
         minimo: tipo.minimo_no_imponible,
         porcentaje: tipo.porcentaje_retencion,
         quincena
       })
-      
+
       // PRIMERO: Verificar retención previa en quincena
       const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
       console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
-      
-      let montoBase = netoGravado
-      
+
+      let baseImponible = netoFactura
+      let minimoAplicado = 0
+
       if (!yaRetuvo) {
         // Primera retención: verificar si supera mínimo específico del tipo
-        if (netoGravado <= tipo.minimo_no_imponible) {
-          alert(`No corresponde retención para ${tipo.tipo}.\nMonto: $${netoGravado.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+        if (netoFactura <= tipo.minimo_no_imponible) {
+          alert(`No corresponde retención para ${tipo.tipo}.\nNeto Factura: $${netoFactura.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
           setMostrarModalSicore(false)
           return
         }
         // Descontar mínimo no imponible para primera retención
-        montoBase = netoGravado - tipo.minimo_no_imponible
+        baseImponible = netoFactura - tipo.minimo_no_imponible
+        minimoAplicado = tipo.minimo_no_imponible
         console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
       } else {
         // Retención adicional: retener sobre monto completo (sin aplicar mínimo)
-        montoBase = netoGravado
+        baseImponible = netoFactura
+        minimoAplicado = 0
         console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
       }
-      
-      const retencionCalculada = montoBase * tipo.porcentaje_retencion
-      
+
+      const retencionCalculada = baseImponible * tipo.porcentaje_retencion
+
       console.log('✅ SICORE: Retención calculada', {
-        montoBase,
+        netoFactura,
+        minimoAplicado,
+        baseImponible,
         retencion: retencionCalculada,
         yaRetuvoAntes: yaRetuvo
       })
-      
+
+      // Guardar datos adicionales para mostrar en el modal
+      setDatosSicoreCalculo({
+        netoFactura,
+        minimoAplicado,
+        baseImponible,
+        esRetencionAdicional: yaRetuvo
+      })
+
       setTipoSeleccionado(tipo)
       setMontoRetencion(retencionCalculada)
       setDescuentoAdicional(0)
       setPasoSicore('calculo')
-      
+
     } catch (error) {
       console.error('Error calculando retención SICORE:', error)
       alert('Error calculando retención: ' + (error as Error).message)
@@ -3879,29 +3912,51 @@ export function VistaFacturasArca() {
           )}
 
           {/* PASO 2: Mostrar cálculo + opciones */}
-          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && (
+          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && (
             <div className="space-y-4">
               <div className="bg-green-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-green-800 mb-2">Cálculo de retención:</h3>
-                <div className="space-y-1 text-sm">
+                <h3 className="font-semibold text-green-800 mb-3">Cálculo de retención: <span className="text-blue-600">{tipoSeleccionado.emoji} {tipoSeleccionado.tipo}</span></h3>
+                {datosSicoreCalculo.esRetencionAdicional && (
+                  <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded mb-3">
+                    ⚠️ Retención adicional en quincena - No se aplica mínimo no imponible
+                  </div>
+                )}
+                <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>Total factura:</span>
-                    <span className="font-medium">${facturaEnProceso.imp_total?.toLocaleString('es-AR')}</span>
+                    <span className="text-gray-600">Neto de la Factura:</span>
+                    <span className="font-medium">${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Retención SICORE:</span>
-                    <span className="font-medium text-red-600">${montoRetencion.toLocaleString('es-AR')} ({(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%)</span>
+                    <span className="text-gray-600">No Imponible:</span>
+                    <span className="font-medium">${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Base Imponible:</span>
+                    <span className="font-medium">${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">% Retención:</span>
+                    <span className="font-medium">{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%</span>
+                  </div>
+                  <hr className="my-2 border-gray-300" />
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Monto Total Retención:</span>
+                    <span className="font-bold text-red-600">${montoRetencion.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   {descuentoAdicional > 0 && (
                     <div className="flex justify-between">
-                      <span>Descuento adicional:</span>
-                      <span className="font-medium text-red-600">${descuentoAdicional.toLocaleString('es-AR')}</span>
+                      <span className="text-gray-600">Descuento adicional:</span>
+                      <span className="font-medium text-red-600">-${descuentoAdicional.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   )}
-                  <hr className="my-2" />
-                  <div className="flex justify-between font-bold text-lg">
-                    <span>Saldo a pagar:</span>
-                    <span className="text-green-600">${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR')}</span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Monto Total Factura:</span>
+                    <span className="font-medium">${(facturaEnProceso.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <hr className="my-2 border-gray-300" />
+                  <div className="flex justify-between text-lg">
+                    <span className="font-bold">Saldo a Pagar:</span>
+                    <span className="font-bold text-green-600">${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </div>
