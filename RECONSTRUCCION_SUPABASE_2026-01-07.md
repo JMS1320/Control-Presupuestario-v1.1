@@ -4223,10 +4223,41 @@ const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
 
 ---
 
+### ✅ **5. FECHA DE PAGO EN VISTA PAGOS → QUINCENA SICORE**
+
+**Commit:** `fc3c010`
+
+**Funcionalidad:**
+- Selector de fecha de pago en modal Vista Pagos
+- Preview automático de quincena SICORE correspondiente
+- Actualiza `fecha_vencimiento` en BD al cambiar estado
+- SICORE calcula retención usando la nueva fecha
+
+**Flujo:**
+```
+1. Usuario abre Vista de Pagos
+2. Selecciona fecha de pago (opcional)
+3. Ve preview: "→ Quincena SICORE: 26-01 - 2da"
+4. Selecciona facturas y cambia a "Pagar"
+5. BD actualiza estado + fecha_vencimiento
+6. SICORE usa fecha_vencimiento para calcular quincena
+```
+
+**UI agregada:**
+```
+┌──────────────────────────────────────────────────┐
+│ 📅 Fecha de Pago: [____/____/____] [✕]           │
+│ → Quincena SICORE: 26-01 - 2da                   │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
 ### 📊 **RESUMEN COMMITS SESIÓN**
 
 | Commit | Descripción |
 |--------|-------------|
+| `fc3c010` | Feature: Fecha de pago en Vista Pagos → quincena SICORE |
 | `779938f` | Feature: SICORE calculo mejorado + display ampliado validacion |
 | (anterior) | Feature: Vista Pagos + Cola SICORE múltiples facturas |
 | (anterior) | Migration: add_estado_preparado + create_reglas_ctas_import_arca |
@@ -4246,5 +4277,5 @@ const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
 ---
 
 **📅 Última actualización:** 2026-01-26
-**Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE mejorado ✅
+**Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE mejorado ✅, Fecha Pago → Quincena ✅
 **Objetivo en cola:** Carga 53 Templates (ver líneas 3623-3795)
