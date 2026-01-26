@@ -4116,7 +4116,135 @@ Las reglas del Excel traen valores: `CREDITO`, `DEBITO`, o vacío (= pendiente p
 
 ---
 
-**📅 Última actualización:** 2026-01-25
-**Objetivo activo:** Cuentas Contables + Reglas Importación Facturas (50% completado)
-**Próximo paso:** Definir estructura tabla reglas + mapeo estados CREDITO/DEBITO
+## 🚀 SESIÓN 2026-01-26: SICORE MEJORADO + VISTA PAGOS + REGLAS IMPORT
+
+### ✅ **1. REGLAS IMPORTACIÓN CUIT → CUENTA + ESTADO**
+
+**Tabla creada:** `reglas_ctas_import_arca`
+```sql
+CREATE TABLE reglas_ctas_import_arca (
+  id SERIAL PRIMARY KEY,
+  cuit VARCHAR(20) NOT NULL,
+  cuenta_contable VARCHAR(100),
+  estado VARCHAR(20) DEFAULT 'pendiente',
+  descripcion VARCHAR(255),
+  activo BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**21 reglas cargadas** - Auto-asignan cuenta_contable y estado al importar facturas ARCA según CUIT.
+
+**Archivo modificado:** `app/api/import-facturas-arca/route.ts`
+- Nueva función `buscarReglaCuit()` que busca regla activa por CUIT
+- Aplica cuenta_contable y estado automáticamente durante import
+
+---
+
+### ✅ **2. VISTA DE PAGOS IMPLEMENTADA**
+
+**Nuevo modal en Facturas ARCA** con comportamiento por rol:
+
+| Rol | Secciones Visibles |
+|-----|-------------------|
+| Ulises (contable) | "Pagar" → "Preparado" |
+| Admin | "Preparado" → "Pagar" → "Pendiente" + filtros checkbox |
+
+**Características:**
+- Selección múltiple facturas con subtotales por sección
+- Cambio masivo de estado con validación
+- Integración con SICORE cuando cambia a 'pagar'
+
+**Estado nuevo en BD:** `preparado` agregado al constraint `comprobantes_arca_estado_check`
+
+---
+
+### ✅ **3. COLA SICORE PARA MÚLTIPLES FACTURAS**
+
+**Problema:** Al seleccionar varias facturas y cambiar a 'pagar', SICORE debe evaluarse una por una.
+
+**Solución implementada:**
+```typescript
+const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
+const [procesandoColaSicore, setProcesandoColaSicore] = useState(false)
+
+// Función que procesa siguiente factura de la cola
+const procesarSiguienteSicore = async () => {
+  if (colaSicore.length === 0) {
+    setProcesandoColaSicore(false)
+    return
+  }
+  const siguiente = colaSicore[0]
+  setColaSicore(prev => prev.slice(1))
+  await evaluarRetencionSicore({ ...siguiente, estado: 'pagar' })
+}
+```
+
+**Flujo:** Confirmar/Cancelar SICORE → automáticamente abre siguiente factura de la cola.
+
+---
+
+### ✅ **4. SICORE CÁLCULO MEJORADO + DISPLAY AMPLIADO**
+
+**Commit:** `779938f`
+
+**Fórmula anterior:** `imp_neto_gravado - minimo_no_imponible`
+
+**Fórmula nueva:** `(imp_neto_gravado + imp_neto_no_gravado + imp_op_exentas) - minimo_no_imponible`
+
+**Display ampliado para validación previa:**
+```
+┌─────────────────────────────────────┐
+│ Cálculo de retención: 🔧 Servicios  │
+├─────────────────────────────────────┤
+│ Neto de la Factura:    $900.000,00  │
+│ No Imponible:          $100.000,00  │
+│ Base Imponible:        $800.000,00  │
+│ % Retención:                 2.00%  │
+├─────────────────────────────────────┤
+│ Monto Total Retención:  $16.000,00  │
+│ Monto Total Factura: $1.089.000,00  │
+├─────────────────────────────────────┤
+│ Saldo a Pagar:       $1.073.000,00  │
+└─────────────────────────────────────┘
+```
+
+**Nuevo estado agregado:**
+```typescript
+const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
+  netoFactura: number
+  minimoAplicado: number
+  baseImponible: number
+  esRetencionAdicional: boolean
+} | null>(null)
+```
+
+**Indicador visual:** Muestra advertencia cuando es retención adicional en quincena (sin mínimo).
+
+---
+
+### 📊 **RESUMEN COMMITS SESIÓN**
+
+| Commit | Descripción |
+|--------|-------------|
+| `779938f` | Feature: SICORE calculo mejorado + display ampliado validacion |
+| (anterior) | Feature: Vista Pagos + Cola SICORE múltiples facturas |
+| (anterior) | Migration: add_estado_preparado + create_reglas_ctas_import_arca |
+
+---
+
+### 📊 **ESTADO BD POST-SESIÓN 2026-01-26**
+
+| Tabla | Registros | Estado |
+|-------|-----------|--------|
+| cuentas_contables | 122 | ✅ Actualizada |
+| tipos_comprobante_afip | 68 | ✅ Completa |
+| reglas_conciliacion | 41 | ✅ Completa |
+| reglas_ctas_import_arca | 21 | ✅ **NUEVA** |
+| msa.comprobantes_arca | 44+ | ✅ Operativa |
+
+---
+
+**📅 Última actualización:** 2026-01-26
+**Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE mejorado ✅
 **Objetivo en cola:** Carga 53 Templates (ver líneas 3623-3795)
