@@ -4276,6 +4276,100 @@ const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
 
 ---
 
+### ✅ **6. FIXES ADICIONALES VISTA PAGOS + SICORE**
+
+**Commits:** `f5ce2fa`, `34a2436`
+
+#### 🐛 **Bugs Corregidos:**
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| Fecha 25 en vez de 26 | `new Date()` timezone issue | Usar `split('-').reverse().join('/')` |
+| Ulises puede cambiar fecha | Sin restricción por rol | Deshabilitar input cuando hay facturas en proceso |
+| fecha_estimada no sync | Faltaba en update | Agregar `fecha_estimada = fechaPagoSeleccionada` |
+| Facturas desordenadas | Sin ordenamiento | Función `ordenarPorFecha()` (próximas primero) |
+| Factura $557K no detecta SICORE | Filtro solo usaba gravado | Filtro ahora: `(gravado + no_gravado + exento) > mínimo` |
+| Fecha solo en 1 de 2 facturas | Cola no actualizaba fechas | `procesarSiguienteSicore` ahora incluye fechas en BD |
+
+#### 📋 **Funcionalidades Implementadas:**
+
+1. **Restricción por rol:**
+   - Ulises: No puede cambiar fecha si hay facturas en `pagar` o `preparado`
+   - Admin: Puede cambiar siempre
+
+2. **Sync automático fechas:**
+   - `fecha_vencimiento` → `fecha_estimada` (lógica frontend, igual que templates)
+
+3. **Ordenamiento Vista Pagos:**
+   - Facturas ordenadas por fecha (próximas a vencer primero)
+
+4. **SICORE fórmula completa:**
+   ```javascript
+   // Evaluación SICORE
+   netoFactura = imp_neto_gravado + imp_neto_no_gravado + imp_op_exentas
+
+   // Debe superar mínimo ($67,170 para servicios)
+   if (netoFactura > minimoSicore) → Abrir modal SICORE
+   ```
+
+5. **Cola SICORE con fechas:**
+   ```javascript
+   // Cada factura en cola actualiza:
+   { estado: 'pagar', fecha_vencimiento: fecha, fecha_estimada: fecha }
+   ```
+
+---
+
+### 📊 **RESUMEN COMPLETO COMMITS SESIÓN 2026-01-26**
+
+| Commit | Descripción |
+|--------|-------------|
+| `34a2436` | Fix: SICORE filtro suma 3 campos + fechas en cola |
+| `f5ce2fa` | Fix: Vista Pagos - 4 mejoras (timezone, rol, sync, orden) |
+| `fc3c010` | Feature: Fecha de pago en Vista Pagos → quincena SICORE |
+| `779938f` | Feature: SICORE calculo mejorado + display ampliado |
+| (previos) | Reglas Import + Vista Pagos + Cola SICORE |
+
+---
+
+### 📊 **ESTADO BD POST-SESIÓN 2026-01-26**
+
+| Tabla | Registros | Estado |
+|-------|-----------|--------|
+| cuentas_contables | 122 | ✅ Actualizada |
+| tipos_comprobante_afip | 68 | ✅ Completa |
+| reglas_conciliacion | 41 | ✅ Completa |
+| reglas_ctas_import_arca | 21 | ✅ Operativa |
+| msa.comprobantes_arca | 0 | ✅ Lista para importar |
+
+---
+
+### 🎯 **SISTEMA SICORE - ESTADO FINAL**
+
+**✅ COMPLETAMENTE FUNCIONAL:**
+
+1. **Evaluación automática:** Detecta facturas > $67,170 (suma gravado+no_gravado+exento)
+2. **Modal interactivo:** Selección tipo operación + display validación completo
+3. **Cálculo correcto:** Base imponible = Neto - Mínimo no imponible
+4. **Fecha de pago:** Determina quincena SICORE (1ra/2da)
+5. **Cola múltiples facturas:** Procesa una por una con fechas actualizadas
+6. **Restricción por rol:** Ulises limitado, Admin completo
+
+**Display validación SICORE:**
+```
+Neto de la Factura:    $XXX.XXX,XX
+No Imponible:          $XXX.XXX,XX
+Base Imponible:        $XXX.XXX,XX
+% Retención:           X.XX%
+─────────────────────────────────
+Monto Total Retención: $XX.XXX,XX
+Monto Total Factura:   $XXX.XXX,XX
+─────────────────────────────────
+Saldo a Pagar:         $XXX.XXX,XX
+```
+
+---
+
 **📅 Última actualización:** 2026-01-26
-**Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE mejorado ✅, Fecha Pago → Quincena ✅
+**Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE ✅, Fecha Pago ✅, Fixes adicionales ✅
 **Objetivo en cola:** Carga 53 Templates (ver líneas 3623-3795)
