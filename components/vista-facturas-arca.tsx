@@ -2406,10 +2406,18 @@ export function VistaFacturasArca() {
     console.log(`🔄 SICORE Cola: Procesando siguiente (${resto.length} restantes)`, siguiente.denominacion_emisor)
 
     // Actualizar estado a 'pagar' en BD primero
+    // Incluir fechas si están en el objeto (fueron seteadas al crear la cola)
+    const updateData: any = { estado: 'pagar' }
+    if (siguiente.fecha_vencimiento) {
+      updateData.fecha_vencimiento = siguiente.fecha_vencimiento
+      updateData.fecha_estimada = siguiente.fecha_vencimiento
+      console.log(`🔄 SICORE Cola: Actualizando fechas = ${siguiente.fecha_vencimiento}`)
+    }
+
     const { error } = await supabase
       .schema('msa')
       .from('comprobantes_arca')
-      .update({ estado: 'pagar' })
+      .update(updateData)
       .eq('id', siguiente.id)
 
     if (error) {
@@ -4201,12 +4209,15 @@ export function VistaFacturasArca() {
               }
 
               // SICORE: Detectar cambio pendiente → pagar
+              // Usar suma de gravado + no_gravado + exento para evaluar
               const minimoSicore = 67170
+              const calcularNetoFactura = (f: FacturaArca) => (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
+
               if (nuevoEstado === 'pagar') {
                 const facturasDesdePendiente = facturasACambiar.filter(f => f.estado === 'pendiente')
-                const facturasCalificanSicore = facturasDesdePendiente.filter(f => (f.imp_neto_gravado || 0) > minimoSicore)
+                const facturasCalificanSicore = facturasDesdePendiente.filter(f => calcularNetoFactura(f) > minimoSicore)
                 const facturasNoCalifican = facturasACambiar.filter(f =>
-                  f.estado !== 'pendiente' || (f.imp_neto_gravado || 0) <= minimoSicore
+                  f.estado !== 'pendiente' || calcularNetoFactura(f) <= minimoSicore
                 )
 
                 if (facturasCalificanSicore.length > 0) {
