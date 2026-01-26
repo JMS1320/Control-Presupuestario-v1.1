@@ -3986,13 +3986,69 @@ export function VistaFacturasArca() {
                 return
               }
 
+              const ids = Array.from(facturasSeleccionadasPagos)
+              const facturasACambiar = facturasPagos.filter(f => ids.includes(f.id))
+
+              // SICORE: Detectar cambio pendiente → pagar
+              const minimoSicore = 67170
+              if (nuevoEstado === 'pagar') {
+                const facturasDesdePendiente = facturasACambiar.filter(f => f.estado === 'pendiente')
+                const facturasCalificanSicore = facturasDesdePendiente.filter(f => (f.imp_neto_gravado || 0) > minimoSicore)
+
+                if (facturasCalificanSicore.length > 0) {
+                  // Hay facturas que califican para SICORE
+                  if (facturasCalificanSicore.length === 1) {
+                    // Una sola factura - usar flujo SICORE normal
+                    const factura = facturasCalificanSicore[0]
+
+                    // Primero actualizar estado en BD
+                    const { error } = await supabase
+                      .schema('msa')
+                      .from('comprobantes_arca')
+                      .update({ estado: 'pagar' })
+                      .eq('id', factura.id)
+
+                    if (error) {
+                      alert('Error al cambiar estado')
+                      return
+                    }
+
+                    // Actualizar estado local
+                    setFacturasPagos(prev => prev.map(f =>
+                      f.id === factura.id ? { ...f, estado: 'pagar' } : f
+                    ))
+
+                    // Guardar datos pendientes para SICORE
+                    setGuardadoPendiente({
+                      facturaId: factura.id,
+                      columna: 'estado',
+                      valor: 'pagar',
+                      estadoAnterior: 'pendiente'
+                    })
+
+                    // Abrir modal SICORE
+                    setFacturasSeleccionadasPagos(new Set())
+                    await evaluarRetencionSicore({ ...factura, estado: 'pagar' })
+                    cargarFacturas()
+                    return
+                  } else {
+                    // Múltiples facturas califican para SICORE
+                    const nombresProveedores = facturasCalificanSicore.map(f => f.denominacion_emisor).join('\n- ')
+                    alert(
+                      `⚠️ Las siguientes ${facturasCalificanSicore.length} facturas califican para retención SICORE:\n\n- ${nombresProveedores}\n\nPor favor, procésalas individualmente desde la vista de Facturas ARCA para aplicar SICORE correctamente.`
+                    )
+                    return
+                  }
+                }
+              }
+
+              // Cambio normal (sin SICORE)
               const confirmar = window.confirm(
                 `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?`
               )
               if (!confirmar) return
 
               try {
-                const ids = Array.from(facturasSeleccionadasPagos)
                 const { error } = await supabase
                   .schema('msa')
                   .from('comprobantes_arca')
