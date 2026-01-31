@@ -18,6 +18,106 @@
 
 ---
 
+## 📆 2026-01-31 - Sesión: Análisis Templates + Diseño Grupos Impuesto
+
+### 🎯 **Objetivo de la sesión:**
+Análisis completo del sistema de templates y diseño de nueva funcionalidad "Grupos de Impuesto" para vincular templates Anual/Cuota.
+
+### ✅ **Logros del día:**
+
+1. **Documentación Técnica Templates COMPLETADA**
+   - Análisis exhaustivo de hooks: usePagoAnual, usePagoCuotas, useMultiCashFlowData, useMotorConciliacion
+   - Análisis de componentes: wizard-templates-egresos, vista-templates-egresos
+   - Documentación de arquitectura 3 tablas, triggers, estados, conversiones
+   - **Ver Sección 7** al final del archivo para documentación completa
+
+2. **Análisis CSV "Templates para evaluación"**
+   - Archivo con ~128 templates planificados
+   - Identificado patrón: cada impuesto tiene versión ANUAL y CUOTA
+   - Usuario quiere conservar AMBOS registros (activo/desactivado)
+
+3. **Diseño Feature "Grupos de Impuesto"**
+   - Vincular templates que son el mismo impuesto (anual + cuotas)
+   - Lógica de exclusión mutua: solo 1 activo a la vez
+   - Al activar uno → desactiva el otro automáticamente
+
+---
+
+### 🔧 **PLAN TÉCNICO ACORDADO - Grupos de Impuesto**
+
+#### **Cambio en BD (único cambio):**
+```sql
+ALTER TABLE egresos_sin_factura
+ADD COLUMN grupo_impuesto_id VARCHAR(50) DEFAULT NULL;
+```
+
+#### **Lo que NO cambia:**
+- ❌ Arquitectura 3 tablas (templates_master → egresos → cuotas)
+- ❌ Triggers existentes (update_template_count)
+- ❌ Tabla cuotas_egresos_sin_factura
+- ❌ Datos existentes (quedan con grupo=NULL)
+
+#### **Lógica en código (NO en BD):**
+```typescript
+// Al activar un template con grupo:
+const activarTemplate = async (templateId: string, grupoId: string) => {
+  // 1. Desactivar otros del mismo grupo
+  await supabase
+    .from('egresos_sin_factura')
+    .update({ activo: false })
+    .eq('grupo_impuesto_id', grupoId)
+    .neq('id', templateId)
+
+  // 2. Activar el seleccionado
+  await supabase
+    .from('egresos_sin_factura')
+    .update({ activo: true })
+    .eq('id', templateId)
+}
+```
+
+#### **UX propuesto:**
+1. Usuario ve lista templates (algunos activos, otros desactivados)
+2. Click "Activar" en template desactivado con grupo
+3. Modal confirmación: "Esto desactivará [nombre del otro]. ¿Confirmar?"
+4. Sistema ejecuta cambio automático
+
+#### **Columna "Grupo" en CSV:**
+El usuario debe agregar columna al CSV para vincular templates:
+```
+Nombre Referencia              | Grupo
+Inmobiliario Anual Casco       | INMOB_CASCO_2026
+Inmobiliario Cuota Casco       | INMOB_CASCO_2026  ← Mismo valor = vinculados
+```
+
+---
+
+### ⏳ **PENDIENTE - Continuar próxima sesión:**
+
+1. **[ ] Crear branch** `feature/grupos-impuesto`
+2. **[ ] Migración BD**: Ejecutar ALTER TABLE en Supabase
+3. **[ ] Modificar vista-templates-egresos.tsx**:
+   - Agregar lógica de exclusión mutua
+   - Modal de confirmación al activar
+4. **[ ] Usuario**: Agregar columna "Grupo" al CSV
+5. **[ ] Importador**: Leer columna Grupo al cargar templates
+6. **[ ] Testing**: Probar con par de templates de prueba
+
+### 📊 **Decisiones tomadas:**
+- Siempre son pares de 2 (anual + cuotas)
+- NO se permite tener ambos activos
+- Activar uno desactiva el otro automáticamente (con confirmación)
+- Reportes agrupados son para futuro
+- Riesgo evaluado como BAJO (campo nullable, sin triggers)
+
+### 📁 **Archivos relevantes:**
+- CSV templates: `Templates para evaluacion.csv`
+- Hook conversión anual: `hooks/usePagoAnual.ts`
+- Hook conversión cuotas: `hooks/usePagoCuotas.ts`
+- Vista templates: `components/vista-templates-egresos.tsx`
+
+---
+
 ## 📆 2026-01-26 - Sesión: Reglas Importación + Vista de Pagos
 
 ### ✅ **Logros del día:**
@@ -4370,6 +4470,576 @@ Saldo a Pagar:         $XXX.XXX,XX
 
 ---
 
-**📅 Última actualización:** 2026-01-26
+**📅 Última actualización:** 2026-01-27
 **Completado:** Reglas Import ✅, Vista Pagos ✅, Cola SICORE ✅, Cálculo SICORE ✅, Fecha Pago ✅, Fixes adicionales ✅
 **Objetivo en cola:** Carga 53 Templates (ver líneas 3623-3795)
+
+---
+
+## 🔮 EVALUACIÓN POST-PRODUCCIÓN: INDEPENDENCIA DE SUPABASE
+
+> **Registrado:** 2026-01-27
+> **Prioridad:** Baja (evaluar cuando app esté en producción estable)
+> **Motivo:** Reducir dependencia de servicios terceros
+
+### 📋 **Contexto:**
+
+Supabase es conveniente para desarrollo, pero genera dependencia:
+- Si Supabase cierra o cambia precios → problema
+- Plan gratuito tiene límites (Disk IO, conexiones)
+
+### 🔍 **¿Qué nos da Supabase?**
+
+| Componente | ¿Lo usamos? | Reemplazable |
+|------------|-------------|--------------|
+| PostgreSQL | ✅ Sí | ✅ Estándar, funciona en cualquier lado |
+| API REST automática | ✅ Sí | ⚠️ Requiere trabajo |
+| Cliente JS | ✅ Sí | ⚠️ Requiere trabajo |
+| Dashboard visual | ✅ Sí | Comodidad, no esencial |
+| Autenticación | ❌ No | No aplica |
+| Realtime | ❌ No | No aplica |
+| Storage | ❌ No | No aplica |
+
+### 🛠️ **Opciones de migración:**
+
+#### **Opción A: Self-hosted Supabase** ✅ Recomendada
+```
+Esfuerzo: ~2 horas
+Costo: $10-20/mes (VPS)
+Cambios código: NINGUNO (solo variables de entorno)
+
+Supabase es open source - se puede levantar en Docker propio.
+```
+
+#### **Opción B: PostgreSQL puro + API custom**
+```
+Esfuerzo: 2-3 días desarrollo
+Costo: $5-10/mes (VPS)
+Cambios código: Reescribir llamadas API
+
+Crear backend Express/Fastify que reemplace cliente Supabase.
+```
+
+### 💰 **Comparativa costos:**
+
+| Opción | Costo mensual | Usuarios | Control |
+|--------|---------------|----------|---------|
+| Supabase Free | $0 | ~50 | Bajo |
+| Supabase Pro | $25 | 500+ | Bajo |
+| Self-hosted Supabase | $10-20 | 500+ | Total |
+| PostgreSQL puro | $5-10 | 500+ | Total |
+
+### 🎯 **Recomendación:**
+
+1. **Ahora:** Seguir con Supabase Free (desarrollo)
+2. **Producción inicial:** Evaluar si Free alcanza o upgrade a Pro
+3. **Futuro:** Si costos suben o hay problemas → Self-hosted Supabase
+
+### 📝 **Notas:**
+
+- La app ya soporta múltiples usuarios (~10 estimados)
+- El cuello de botella es Disk IO, no usuarios
+- Migración a self-hosted no requiere cambios de código
+- Backup actual funciona para cualquier opción
+
+---
+
+## 📊 7. DOCUMENTACIÓN TÉCNICA COMPLETA: SISTEMA DE TEMPLATES
+
+> **Fecha documentación:** 2026-01-31
+> **Fuente:** Análisis exhaustivo del código fuente
+> **Propósito:** Referencia completa para carga, control, conciliación y reportes
+
+---
+
+### 🏗️ **7.1 ARQUITECTURA DE BASE DE DATOS**
+
+#### **Modelo de 3 Tablas Relacionadas:**
+
+```
+┌─────────────────────────┐
+│   templates_master      │  ← Contenedor anual (2025, 2026, etc.)
+│   id, nombre, año       │
+│   total_renglones       │  ← Auto-contador via trigger
+└──────────┬──────────────┘
+           │ FK: template_master_id
+           ▼
+┌─────────────────────────┐
+│  egresos_sin_factura    │  ← Template individual (34 columnas)
+│  id, categ, responsable │
+│  tipo_recurrencia, año  │
+│  activo, pago_anual     │
+└──────────┬──────────────┘
+           │ FK: egreso_id
+           ▼
+┌─────────────────────────┐
+│ cuotas_egresos_sin_factura │  ← Cuotas individuales
+│ id, fecha_estimada         │
+│ monto, estado, descripcion │
+└────────────────────────────┘
+```
+
+#### **Tabla 1: `templates_master`**
+```sql
+id                uuid PRIMARY KEY
+nombre            varchar(100)     -- "Egresos sin Factura 2026"
+año               integer          -- 2025, 2026
+descripcion       text
+total_renglones   integer DEFAULT 0  -- Auto-sincronizado por trigger
+created_at        timestamp
+updated_at        timestamp
+
+-- UNIQUE INDEX: Un solo master por nombre+año
+CREATE UNIQUE INDEX idx_template_master_año ON templates_master (nombre, año);
+```
+
+#### **Tabla 2: `egresos_sin_factura` (34 columnas)**
+```sql
+-- Identificación
+id                    uuid PRIMARY KEY
+template_master_id    uuid FK → templates_master
+
+-- Datos básicos
+categ                 varchar(20)      -- Categoría contable
+centro_costo          varchar(20)
+nombre_referencia     varchar(100) NOT NULL  -- "Impuesto Inmobiliario"
+responsable           varchar(20) NOT NULL   -- MSA, PAM, MA, etc.
+
+-- Proveedor
+cuit_quien_cobra      varchar(11)
+nombre_quien_cobra    varchar(100)
+
+-- Configuración
+tipo_recurrencia      varchar(20) NOT NULL  -- 'mensual', 'anual', 'cuotas_especificas'
+año                   integer NOT NULL
+activo                boolean DEFAULT true
+pago_anual            boolean DEFAULT false  -- Flag conversión anual
+
+-- Campos adicionales para reglas
+responsable_interno   text
+cuotas               integer
+fecha_primera_cuota   date
+monto_por_cuota      numeric
+completar_cuotas     text
+observaciones_template text
+actualizacion_proximas_cuotas text
+obs_opciones         text
+codigo_contable      text
+codigo_interno       text
+alertas              text
+monto_anual          numeric
+fecha_pago_anual     date
+template_origen_id   uuid FK self-reference  -- Para replicación
+
+created_at           timestamp
+updated_at           timestamp
+
+-- ÍNDICES
+CREATE INDEX idx_egresos_año ON egresos_sin_factura (año);
+CREATE INDEX idx_egresos_responsable ON egresos_sin_factura (responsable);
+CREATE INDEX idx_egresos_template_master ON egresos_sin_factura (template_master_id);
+```
+
+#### **Tabla 3: `cuotas_egresos_sin_factura`**
+```sql
+id                uuid PRIMARY KEY
+egreso_id         uuid FK → egresos_sin_factura
+
+fecha_estimada    date NOT NULL
+fecha_vencimiento date
+monto             numeric(15,2) NOT NULL
+descripcion       text
+estado            varchar(20) DEFAULT 'pendiente'
+
+created_at        timestamp
+updated_at        timestamp
+
+-- Estados válidos (CONSTRAINT):
+CONSTRAINT cuotas_egresos_sin_factura_estado_check CHECK (
+  estado IN (
+    'pendiente',    -- Por pagar
+    'debito',       -- Marcado para débito
+    'pagar',        -- En proceso de pago
+    'pagado',       -- Pagado no conciliado
+    'credito',      -- Es un crédito
+    'conciliado',   -- Conciliado con extracto
+    'desactivado'   -- Cuota inactiva (conversión a anual)
+  )
+)
+
+-- ÍNDICES
+CREATE INDEX idx_cuotas_egreso_id ON cuotas_egresos_sin_factura (egreso_id);
+CREATE INDEX idx_cuotas_estado ON cuotas_egresos_sin_factura (estado);
+CREATE INDEX idx_cuotas_fecha_estimada ON cuotas_egresos_sin_factura (fecha_estimada);
+```
+
+---
+
+### 🔄 **7.2 TRIGGERS Y FUNCIONES AUTOMÁTICAS**
+
+#### **Trigger: `template_count_trigger`**
+
+**Ubicación:** Se ejecuta en tabla `egresos_sin_factura`
+**Eventos:** `AFTER INSERT OR DELETE OR UPDATE`
+
+```sql
+CREATE TRIGGER template_count_trigger
+AFTER INSERT OR DELETE OR UPDATE ON public.egresos_sin_factura
+FOR EACH ROW EXECUTE FUNCTION public.update_template_count();
+```
+
+**Función `update_template_count()`:**
+```sql
+CREATE OR REPLACE FUNCTION public.update_template_count()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  -- INSERT: Incrementa contador en templates_master
+  IF TG_OP = 'INSERT' AND NEW.template_master_id IS NOT NULL THEN
+    UPDATE templates_master
+    SET total_renglones = total_renglones + 1, updated_at = now()
+    WHERE id = NEW.template_master_id;
+
+  -- DELETE: Decrementa contador en templates_master
+  ELSIF TG_OP = 'DELETE' AND OLD.template_master_id IS NOT NULL THEN
+    UPDATE templates_master
+    SET total_renglones = total_renglones - 1, updated_at = now()
+    WHERE id = OLD.template_master_id;
+
+  -- UPDATE (cambio de master): Decrementa viejo, incrementa nuevo
+  ELSIF TG_OP = 'UPDATE' AND OLD.template_master_id != NEW.template_master_id THEN
+    IF OLD.template_master_id IS NOT NULL THEN
+      UPDATE templates_master
+      SET total_renglones = total_renglones - 1, updated_at = now()
+      WHERE id = OLD.template_master_id;
+    END IF;
+    IF NEW.template_master_id IS NOT NULL THEN
+      UPDATE templates_master
+      SET total_renglones = total_renglones + 1, updated_at = now()
+      WHERE id = NEW.template_master_id;
+    END IF;
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+```
+
+#### **Función de Mantenimiento: `fix_template_counts()`**
+
+**Propósito:** Corregir contadores desincronizados
+
+```sql
+-- Uso:
+SELECT * FROM fix_template_counts();
+
+-- Retorna: master_id | master_nombre | contador_anterior | contador_corregido
+```
+
+---
+
+### 📝 **7.3 CREACIÓN DE TEMPLATES (Wizard)**
+
+**Archivo:** `components/wizard-templates-egresos.tsx` (~770 líneas)
+
+#### **Proceso de 4 pasos:**
+
+**Paso 1: Datos Básicos**
+- Cuenta Contable (CATEG) * → Select de `cuentas_contables`
+- Centro de Costo (opcional)
+- Nombre de Referencia * → texto libre
+- Responsable * → Select: MSA, PAM, MA, Manuel, Soledad, etc.
+- Monto Base *
+- CUIT Quien Cobra (opcional)
+- Nombre Quien Cobra (opcional)
+
+**Paso 2: Configuración Recurrencia**
+```typescript
+tipo: 'mensual' | 'anual' | 'cuotas_especificas'
+
+// Mensual: Día del mes (1-31) O "Último día del mes" + Aguinaldo opcional
+// Anual: Fecha específica única
+// Cuotas Específicas: Selector de meses + día aproximado
+```
+
+**Paso 3: Vista Previa Cuotas**
+- Tabla con cuotas generadas automáticamente
+
+**Paso 4: Confirmación**
+- Resumen + Botón "Crear Template"
+
+#### **Flujo de Guardado:**
+```typescript
+// 1. Buscar o crear templates_master del año actual
+// 2. Insertar en egresos_sin_factura
+// 3. Insertar cuotas generadas en cuotas_egresos_sin_factura
+// 4. El trigger actualiza automáticamente total_renglones
+```
+
+---
+
+### 📊 **7.4 VISTA Y GESTIÓN DE TEMPLATES**
+
+**Archivo:** `components/vista-templates-egresos.tsx` (~1200 líneas)
+
+#### **Columnas Configurables (19 total):**
+```
+Visibles por defecto:
+- fecha_estimada, fecha_vencimiento, monto, descripcion, estado
+- categ, centro_costo, nombre_referencia, responsable
+- cuit_quien_cobra, nombre_quien_cobra, tipo_recurrencia, año, activo
+
+Ocultas por defecto (técnicas):
+- egreso_id, template_master_id, configuracion_reglas, created_at, updated_at
+```
+
+#### **Sistema de Filtros (13 filtros):**
+- Fecha desde/hasta, Responsable, Nombre referencia, Descripción
+- Estado, Monto mínimo/máximo, CATEG, Tipo recurrencia
+- Año, Activación (activos/inactivos/todos), Mostrar desactivados
+
+#### **Edición Inline (Ctrl+Click):**
+```typescript
+Campos editables: fecha_estimada, fecha_vencimiento, monto, descripcion,
+                  estado, categ, centro_costo, responsable,
+                  nombre_quien_cobra, cuit_quien_cobra
+
+// Regla automática:
+if (columna === 'fecha_vencimiento' && valor) {
+  updateData.fecha_estimada = valor  // Sincroniza fechas
+}
+```
+
+#### **Atajos Especiales:**
+- `Ctrl+Click` en celda editable → Edición inline
+- `Ctrl+Shift+Click` en monto (template activo) → Convertir a pago anual
+- `Ctrl+Shift+Click` en monto (template inactivo) → Convertir a cuotas
+
+---
+
+### 🔄 **7.5 CONVERSIÓN BIDIRECCIONAL CUOTAS ↔ ANUAL**
+
+#### **Hook: `usePagoAnual.ts` (Cuotas → Anual)**
+
+**Archivo:** `hooks/usePagoAnual.ts` (~265 líneas)
+
+**Flujo:**
+```
+1. Ctrl+Shift+Click en monto de cuota activa
+2. Modal pide: Monto anual + Fecha de pago (DD/MM/AAAA)
+3. Sistema:
+   a. Busca registro anual desactivado → REACTIVAR
+   b. Si no existe → CREAR nuevo con "(Anual)"
+   c. Cambiar template: pago_anual = true
+   d. DESACTIVAR todas las cuotas (estado = 'desactivado')
+```
+
+**Resultado:**
+```typescript
+interface PagoAnualResult {
+  success: boolean
+  cuotasDesactivadas: number
+  cuotaActualizada: boolean
+  templateCreado: boolean  // true si creó nuevo, false si reactivó
+}
+```
+
+#### **Hook: `usePagoCuotas.ts` (Anual → Cuotas)**
+
+**Archivo:** `hooks/usePagoCuotas.ts` (~436 líneas)
+
+**Flujo:**
+```
+1. Ctrl+Shift+Click en monto de template inactivo/anual
+2. Verifica si existen cuotas inactivas:
+   CASO A: Existen → Solo reactivar
+   CASO B: No existen → Modal pidiendo datos nuevas cuotas
+3. Sistema:
+   a. Cambiar template: pago_anual = false
+   b. DESACTIVAR registro anual
+   c. REACTIVAR cuotas existentes O crear nuevas
+```
+
+**Resultado:**
+```typescript
+interface PagoCuotasResult {
+  success: boolean
+  cuotasCreadas: number
+  templateReactivado: boolean
+  templateCreado: boolean
+}
+```
+
+---
+
+### 🔗 **7.6 PROPAGACIÓN DE MONTOS**
+
+**Archivo:** `hooks/usePropagacionCuotas.ts` (~122 líneas)
+
+**Propósito:** Al cambiar monto de una cuota, propagar a cuotas futuras
+
+**Flujo:**
+```
+1. Usuario edita monto de una cuota (Ctrl+Click)
+2. Si monto > 0, confirmación: "¿Propagar a cuotas futuras?"
+3. Si acepta: Actualiza todas cuotas con fecha > fecha editada
+4. Resultado: "X cuotas futuras actualizadas"
+```
+
+---
+
+### 📊 **7.7 INTEGRACIÓN CON CASH FLOW**
+
+**Archivo:** `hooks/useMultiCashFlowData.ts` (~352 líneas)
+
+**Interface unificada:**
+```typescript
+interface CashFlowRow {
+  id: string
+  origen: 'ARCA' | 'TEMPLATE'
+  origen_tabla: string  // 'msa.comprobantes_arca' o 'cuotas_egresos_sin_factura'
+  egreso_id?: string    // Solo templates: ID del egreso padre
+  fecha_estimada: string
+  fecha_vencimiento: string | null
+  categ: string
+  centro_costo: string
+  cuit_proveedor: string
+  nombre_proveedor: string
+  detalle: string
+  debitos: number
+  creditos: number
+  saldo_cta_cte: number  // Saldo acumulativo
+  estado: string
+}
+```
+
+**Mapeo Templates → Cash Flow:**
+```typescript
+categ: c.egreso?.categ
+centro_costo: c.egreso?.centro_costo
+cuit_proveedor: c.egreso?.cuit_quien_cobra
+nombre_proveedor: c.egreso?.nombre_quien_cobra
+detalle: c.descripcion || c.egreso?.nombre_referencia
+debitos: c.monto  // Templates egresos siempre son débitos
+```
+
+**Filtros en carga:**
+```sql
+.neq('estado', 'conciliado')
+.neq('estado', 'desactivado')
+.neq('estado', 'credito')
+.eq('egreso.activo', true)
+```
+
+---
+
+### ⚙️ **7.8 INTEGRACIÓN CON CONCILIACIÓN BANCARIA**
+
+**Archivo:** `hooks/useMotorConciliacion.ts` (~339 líneas)
+
+**Flujo de conciliación:**
+```
+Para cada movimiento bancario con estado 'Pendiente':
+
+PASO 1: Match automático monto+fecha (Cash Flow incluye templates)
+├─ Buscar: monto EXACTO + fecha ±5 días
+├─ Match exacto fecha → estado 'conciliado'
+├─ Match diferencia 1-5 días → estado 'auditar'
+└─ NO match → PASO 2
+
+PASO 2: Aplicar reglas configurables (41 reglas)
+├─ Procesar por orden de prioridad
+├─ Match → Asignar categ, centro_costo, detalle → 'conciliado'
+└─ NO match → 'Pendiente' para revisión manual
+```
+
+**Clave:** `cashFlowData` incluye templates vía `useMultiCashFlowData`, permitiendo match automático contra cuotas.
+
+---
+
+### 🔄 **7.9 ESTADOS Y FLUJO DE VIDA**
+
+```
+┌───────────────┐
+│   CREACIÓN    │  Wizard crea cuotas estado 'pendiente'
+└───────┬───────┘
+        ▼
+┌───────────────┐
+│   pendiente   │  Visible en Cash Flow y Templates
+└───────┬───────┘
+        ├─────────────────────────────┐
+        ▼                             ▼
+┌───────────────┐             ┌───────────────┐
+│    debito     │             │    pagar      │  ← SICORE se activa aquí
+└───────┬───────┘             └───────┬───────┘
+        ▼                             ▼
+┌───────────────┐             ┌───────────────┐
+│    pagado     │             │   preparado   │
+└───────┬───────┘             └───────┬───────┘
+        └─────────────┬───────────────┘
+                      ▼
+              ┌───────────────┐
+              │  conciliado   │  Match con extracto bancario
+              └───────────────┘
+
+Estado especial:
+┌───────────────┐
+│  desactivado  │  Cuotas inactivas (conversión a anual)
+└───────────────┘  NO aparecen en Cash Flow
+```
+
+---
+
+### 📈 **7.10 POSIBILIDAD DE REPORTES**
+
+**Datos disponibles:**
+
+| Fuente | Reportes Posibles |
+|--------|-------------------|
+| `cuotas_egresos_sin_factura` | Total por período, por estado, vencidas, proyección futura |
+| `egresos_sin_factura` | Por responsable, categoría, centro_costo, tipo_recurrencia |
+| `templates_master` | Cantidad por año, total renglones |
+| Cash Flow combinado | ARCA + Templates unificado |
+
+**Estadísticas disponibles en `useMultiCashFlowData`:**
+```typescript
+const estadisticas = {
+  total_registros: data.length,
+  total_debitos: sum(debitos),
+  total_creditos: sum(creditos),
+  saldo_final: último saldo_cta_cte,
+  registros_arca: count(origen === 'ARCA'),
+  registros_templates: count(origen === 'TEMPLATE')
+}
+```
+
+---
+
+### 📁 **7.11 ARCHIVOS DEL SISTEMA**
+
+| Archivo | Líneas | Función |
+|---------|--------|---------|
+| `components/vista-templates-egresos.tsx` | ~1200 | Vista principal gestión |
+| `components/wizard-templates-egresos.tsx` | ~770 | Wizard creación 4 pasos |
+| `components/alertas-templates.tsx` | ~150 | Alertas vencimientos |
+| `hooks/usePagoAnual.ts` | ~265 | Conversión cuotas → anual |
+| `hooks/usePagoCuotas.ts` | ~436 | Conversión anual → cuotas |
+| `hooks/usePropagacionCuotas.ts` | ~122 | Propagar montos futuros |
+| `hooks/useMultiCashFlowData.ts` | ~352 | Integración Cash Flow |
+| `hooks/useMotorConciliacion.ts` | ~339 | Match bancario |
+| `hooks/useInlineEditor.ts` | ~88 | Edición centralizada |
+
+---
+
+### ⚠️ **7.12 ESTADO ACTUAL BD**
+
+| Tabla | Registros | Observación |
+|-------|-----------|-------------|
+| templates_master | **0** | Vacío - pendiente carga |
+| egresos_sin_factura | **0** | Vacío - pendiente carga |
+| cuotas_egresos_sin_factura | **0** | Vacío - pendiente carga |
+
+**Próximo paso:** Carga de templates desde Excel
+
+---
+
+**📅 Última actualización sección:** 2026-01-31
+**Documentación generada desde:** Análisis código fuente completo
