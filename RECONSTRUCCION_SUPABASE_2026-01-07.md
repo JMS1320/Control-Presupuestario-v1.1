@@ -18,6 +18,147 @@
 
 ---
 
+## 📆 2026-02-01 - Sesión: Definiciones Completas Carga Templates
+
+### 🎯 **Objetivo de la sesión:**
+Definir TODOS los cambios estructurales de BD necesarios para la carga masiva de templates, basado en análisis completo del CSV final.
+
+### ✅ **Análisis CSV Completado:**
+- **Archivo**: `Templates para evaluacion.csv`
+- **Total templates**: 127 registros
+- **48 Grupos de Impuesto** identificados y validados (todos correctos: 1 activo + 1 desactivado)
+- **Template especial**: "Sueldo Jornales Ocasionales" → tipo_template='abierto' (sin cuotas predefinidas)
+
+### 🔧 **CAMBIOS ESTRUCTURALES BD (6 MIGRACIONES):**
+
+> ⚠️ **IMPORTANTE**: Ejecutar en Supabase SOLO desde branch desarrollo. Documentar todo para rollback.
+
+#### **Migración 1: Campo grupo_impuesto_id**
+```sql
+-- Vincular pares Anual/Cuota para exclusión mutua
+ALTER TABLE egresos_sin_factura
+ADD COLUMN grupo_impuesto_id VARCHAR(50) DEFAULT NULL;
+
+-- Índice para búsquedas rápidas
+CREATE INDEX idx_grupo_impuesto ON egresos_sin_factura(grupo_impuesto_id);
+```
+**Propósito**: Activar uno desactiva el otro automáticamente.
+
+#### **Migración 2: Campo cuenta_agrupadora**
+```sql
+-- Agrupación para reportes (extraído de extracto_bancario via JOINs)
+ALTER TABLE egresos_sin_factura
+ADD COLUMN cuenta_agrupadora VARCHAR(50) DEFAULT NULL;
+```
+**Propósito**: Permitir agrupar templates en reportes sin duplicar en cuentas_contables.
+
+#### **Migración 3: Campo año flexible**
+```sql
+-- Soportar "2026" (año) y "25/26" (campaña)
+ALTER TABLE egresos_sin_factura
+ALTER COLUMN año TYPE VARCHAR(10);
+```
+**Propósito**: Cierres contables MSA son por campaña (Jul-Jun), no año calendario.
+
+#### **Migración 4: Campo tipo_template**
+```sql
+-- Distinguir templates fijos vs abiertos (sin cuotas predefinidas)
+ALTER TABLE egresos_sin_factura
+ADD COLUMN tipo_template VARCHAR(20) DEFAULT 'fijo';
+
+-- Valores: 'fijo' (cuotas predefinidas) | 'abierto' (cuotas a demanda)
+```
+**Propósito**: Template "Jornales Ocasionales" no tiene cuotas predefinidas.
+
+#### **Migración 5: Consistencia templates_master**
+```sql
+-- Mismo tipo que egresos_sin_factura para consistencia
+ALTER TABLE templates_master
+ALTER COLUMN año TYPE VARCHAR(10);
+```
+**Propósito**: Evitar errores de tipo en JOINs.
+
+#### **Migración 6: Estados adicionales cuotas**
+```sql
+-- Agregar estados faltantes al constraint
+ALTER TABLE cuotas_egresos_sin_factura
+DROP CONSTRAINT IF EXISTS cuotas_egresos_sin_factura_estado_check;
+
+ALTER TABLE cuotas_egresos_sin_factura
+ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado IN ('pendiente', 'conciliado', 'auditado', 'desactivado', 'debito', 'pagar', 'credito'));
+```
+**Propósito**: 'debito' para débitos automáticos, 'pagar'/'credito' para consistencia con facturas.
+
+---
+
+### 📋 **LÓGICA IMPORTACIÓN ACORDADA:**
+
+#### **Fecha de corte para datos históricos:**
+```typescript
+// Al importar cuotas:
+if (fecha_cuota < FECHA_CORTE) {
+  estado = 'conciliado';
+  monto = 0;  // Evita datos incorrectos si no se carga histórico
+} else {
+  estado = columna_estado_csv || 'pendiente';
+  monto = columna_monto_csv;
+}
+```
+**Razón**: Cuotas pasadas sin monto real podrían contaminar reportes.
+
+#### **Mapeo columnas CSV → BD:**
+| CSV | BD | Notas |
+|-----|-----|-------|
+| Nombre Referencia | nombre | - |
+| Año/Campaña | año | VARCHAR(10) |
+| Proveedor | nombre_quien_cobra | - |
+| CUIT | cuit | - |
+| CATEG | categ | = Cuenta Contable funcional |
+| Centro Costo | centro_costo | - |
+| Resp. Contable | responsable | - |
+| Resp. Interno | responsable_interno | - |
+| Cuotas | total_renglones | 0 = tipo_template='abierto' |
+| Tipo Fecha | tipo_fecha | 'Real'/'Estimada' |
+| Fecha 1ra Cuota | → genera cuotas | - |
+| Monto por Cuota | → genera cuotas | - |
+| Activo | activo | boolean |
+| Cuenta Agrupadora | cuenta_agrupadora | NUEVO |
+| Grupo Impuesto id | grupo_impuesto_id | NUEVO |
+
+---
+
+### ⏳ **PENDIENTE PRÓXIMOS PASOS:**
+
+1. **[ ] Ejecutar 6 migraciones** en Supabase (desde desarrollo)
+2. **[ ] Desarrollar importador CSV** con lógica fecha_corte
+3. **[ ] Modificar wizard-templates** para nuevos campos
+4. **[ ] Lógica exclusión mutua** grupos impuesto
+5. **[ ] Testing con subset** de templates
+
+### 🔄 **ROLLBACK (si algo falla):**
+```sql
+-- Revertir Migración 1
+ALTER TABLE egresos_sin_factura DROP COLUMN IF EXISTS grupo_impuesto_id;
+
+-- Revertir Migración 2
+ALTER TABLE egresos_sin_factura DROP COLUMN IF EXISTS cuenta_agrupadora;
+
+-- Revertir Migración 3 (requiere verificar tipo original)
+-- ALTER TABLE egresos_sin_factura ALTER COLUMN año TYPE INTEGER USING año::integer;
+
+-- Revertir Migración 4
+ALTER TABLE egresos_sin_factura DROP COLUMN IF EXISTS tipo_template;
+
+-- Revertir Migración 5 (requiere verificar tipo original)
+-- ALTER TABLE templates_master ALTER COLUMN año TYPE INTEGER USING año::integer;
+
+-- Revertir Migración 6 (restaurar constraint original)
+-- Requiere conocer estados originales del constraint
+```
+
+---
+
 ## 📆 2026-01-31 - Sesión: Análisis Templates + Diseño Grupos Impuesto
 
 ### 🎯 **Objetivo de la sesión:**
