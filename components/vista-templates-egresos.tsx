@@ -25,6 +25,8 @@ import { usePagoCuotas } from "@/hooks/usePagoCuotas"
 import useInlineEditor, { CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
 
 interface CuotaEgresoSinFactura {
   id: string
@@ -803,21 +805,34 @@ export function VistaTemplatesEgresos() {
 
   return (
     <div className="space-y-6">
-      {/* Template Testing Suite - Solo para Template 10 como prototipo */}
-      {cuotas.some(c => c.egreso?.nombre_referencia === 'Inmobiliario' && c.egreso?.año === 2026) && (
-        <TemplateTestSuite 
-          templateId="387da693-9238-4aed-82ea-1feddd85bda8"
-          templateName="Template 10 - Inmobiliario 2026"
-        />
-      )}
+      {/* Encabezado principal */}
+      <div className="space-y-1">
+        <h2 className="text-2xl font-bold tracking-tight">Egresos sin Factura</h2>
+        <p className="text-muted-foreground">
+          Cuotas y compromisos recurrentes generados desde templates
+        </p>
+      </div>
 
-      {/* Encabezado con controles */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h2 className="text-2xl font-bold tracking-tight">Egresos sin Factura</h2>
-          <p className="text-muted-foreground">
-            Cuotas y compromisos recurrentes generados desde templates
-          </p>
+      {/* Sub-solapas */}
+      <Tabs defaultValue="cuotas" className="w-full">
+        <TabsList>
+          <TabsTrigger value="cuotas">Cuotas</TabsTrigger>
+          <TabsTrigger value="agrupada">Vista Agrupada</TabsTrigger>
+        </TabsList>
+
+        {/* Tab: Cuotas (vista actual) */}
+        <TabsContent value="cuotas" className="space-y-6">
+          {/* Template Testing Suite - Solo para Template 10 como prototipo */}
+          {cuotas.some(c => c.egreso?.nombre_referencia === 'Inmobiliario' && c.egreso?.año === 2026) && (
+            <TemplateTestSuite
+              templateId="387da693-9238-4aed-82ea-1feddd85bda8"
+              templateName="Template 10 - Inmobiliario 2026"
+            />
+          )}
+
+          {/* Encabezado con controles */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
           {modoEdicion && (
             <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
               💡 <strong>Procesos Templates:</strong> Ctrl+Click = Editar | Ctrl+Shift+Click en monto = Pago Anual ↔ Cuotas (bidireccional) | Editar monto = Opción propagación
@@ -1306,6 +1321,13 @@ export function VistaTemplatesEgresos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        {/* Tab: Vista Agrupada */}
+        <TabsContent value="agrupada">
+          <VistaTemplatesAgrupada />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
