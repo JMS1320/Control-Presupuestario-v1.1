@@ -5526,5 +5526,279 @@ ffdf931 - Fix: Lógica bidireccional conversión Anual/Cuotas
 
 ---
 
+## 📆 2026-02-02 - Propuesta: Mejoras UX Tipo Excel
+
+### 🎯 **Objetivo:**
+Mejorar la experiencia de usuario en todas las vistas de tablas para que sean más parecidas a Excel: navegación rápida, menos mouse, más teclado.
+
+---
+
+### 📊 **DIAGNÓSTICO ESTADO ACTUAL**
+
+#### **Vista Facturas ARCA:**
+| Funcionalidad | Estado |
+|---------------|--------|
+| Sticky Headers | ❌ NO |
+| Redimensionar columnas | ⚠️ Widths guardados, sin UI |
+| Reordenar columnas | ❌ NO |
+| Mostrar/Ocultar columnas | ✅ SÍ (funciona) |
+| Persistencia localStorage | ✅ SÍ |
+| Navegación teclado | ⚠️ Solo Enter/Escape |
+| Autocompletado | ✅ SÍ (CategCombobox) |
+| Edición inline | ✅ SÍ (Ctrl+Click) |
+
+#### **Vista Templates Egresos:**
+| Funcionalidad | Estado |
+|---------------|--------|
+| Sticky Headers | ❌ NO |
+| Redimensionar columnas | ⚠️ Widths guardados, sin UI |
+| Reordenar columnas | ❌ NO |
+| Mostrar/Ocultar columnas | ✅ SÍ (funciona) |
+| Persistencia localStorage | ✅ SÍ |
+| Navegación teclado | ⚠️ Solo Enter/Escape |
+| Autocompletado | ✅ SÍ (CategCombobox) |
+| Edición inline | ✅ SÍ (Ctrl+Click) |
+
+#### **Vista Cash Flow:**
+| Funcionalidad | Estado |
+|---------------|--------|
+| Sticky Headers | ❌ NO |
+| Redimensionar columnas | ❌ NO |
+| Reordenar columnas | ❌ NO |
+| Mostrar/Ocultar columnas | ❌ NO |
+| Persistencia localStorage | ❌ NO |
+| Navegación teclado | ⚠️ Solo Enter/Escape |
+| Autocompletado | ✅ SÍ (CategCombobox) |
+| Edición inline | ✅ SÍ (Ctrl+Click) |
+
+#### **Vista Extracto Bancario:**
+| Funcionalidad | Estado |
+|---------------|--------|
+| Sticky Headers | ❌ NO |
+| Redimensionar columnas | ❌ NO |
+| Reordenar columnas | ❌ NO |
+| Mostrar/Ocultar columnas | ❌ NO |
+| Persistencia localStorage | ❌ NO |
+| Navegación teclado | ⚠️ Parcial |
+| Autocompletado | ✅ SÍ (CategCombobox) |
+| Edición inline | ⚠️ Via modal |
+
+**Cobertura UX actual estimada: 55%**
+
+---
+
+### 🔴 **MEJORAS PRIORIDAD ALTA - Impacto Inmediato**
+
+#### **1. Sticky Headers (Headers Fijos)**
+- **Problema**: Al hacer scroll vertical, los títulos de columnas desaparecen
+- **Solución**: CSS `position: sticky; top: 0;` en TableHeader
+- **Complejidad**: Baja (CSS puro)
+- **Vistas afectadas**: TODAS
+- **Estado**: ⏳ PENDIENTE
+
+#### **2. Navegación con Flechas y Tab**
+- **Problema**: Solo Enter/Escape funcionan, no hay navegación entre celdas
+- **Solución**: Extender `useInlineEditor` con:
+  - `Tab` → siguiente celda editable
+  - `Shift+Tab` → celda anterior
+  - `↑` `↓` → fila superior/inferior
+  - `Enter` → guardar y bajar a siguiente fila
+- **Complejidad**: Media
+- **Vistas afectadas**: ARCA, Templates, Cash Flow
+- **Estado**: ⏳ PENDIENTE
+
+#### **3. Enter = Confirmar en Modales**
+- **Problema**: Modales no responden a Enter para confirmar
+- **Solución**: `onKeyDown` en Dialog con Enter → acción principal
+- **Complejidad**: Baja
+- **Vistas afectadas**: TODAS (modales de confirmación)
+- **Estado**: ⏳ PENDIENTE
+
+#### **4. Redimensionar Columnas con Mouse**
+- **Problema**: Widths definidos pero no hay UI para arrastrar bordes
+- **Solución**: Usar `react-resizable` (ya instalado) o CSS resize
+- **Complejidad**: Media
+- **Vistas afectadas**: ARCA, Templates
+- **Estado**: ⏳ PENDIENTE
+
+---
+
+### 🟡 **MEJORAS PRIORIDAD MEDIA - Productividad**
+
+#### **5. Reordenar Columnas (Drag & Drop)**
+- **Problema**: Orden de columnas es fijo
+- **Solución**: Librería `@dnd-kit/core` para drag & drop headers
+- **Persistencia**: Guardar orden en localStorage
+- **Complejidad**: Media-Alta
+- **Vistas afectadas**: ARCA, Templates
+- **Estado**: ⏳ PENDIENTE
+
+#### **6. Click en Header = Ordenar**
+- **Problema**: No hay forma de ordenar por columna
+- **Solución**: Click en header → ordenar asc, segundo click → desc
+- **Indicador visual**: ▲ ▼ en header activo
+- **Complejidad**: Media
+- **Vistas afectadas**: TODAS
+- **Estado**: ⏳ PENDIENTE
+
+#### **7. Doble-Click para Editar**
+- **Problema**: Actualmente solo Ctrl+Click activa edición
+- **Solución**: Agregar `onDoubleClick` como alternativa
+- **Mantener**: Ctrl+Click sigue funcionando
+- **Complejidad**: Baja
+- **Vistas afectadas**: ARCA, Templates, Cash Flow
+- **Estado**: ⏳ PENDIENTE
+
+#### **8. Autocompletado en TODOS los Campos BD**
+- **Problema**: Solo CATEG tiene autocompletado
+- **Solución**: Crear hooks de sugerencias para:
+  - `useSugerenciasProveedor` → nombre_quien_cobra, razon_social
+  - `useSugerenciasCUIT` → CUITs existentes
+  - `useSugerenciasResponsable` → responsables usados
+  - `useSugerenciasCentroCosto` → centros de costo
+- **Reutilizar**: Patrón de CategCombobox
+- **Complejidad**: Media
+- **Vistas afectadas**: ARCA, Templates
+- **Estado**: ⏳ PENDIENTE
+
+#### **9. Unificar Selector Columnas en Todas las Vistas**
+- **Problema**: Cash Flow y Extracto no tienen selector de columnas
+- **Solución**: Agregar `COLUMNAS_CONFIG` + Popover de checkboxes
+- **Complejidad**: Baja-Media
+- **Vistas afectadas**: Cash Flow, Extracto
+- **Estado**: ⏳ PENDIENTE
+
+---
+
+### 🟢 **MEJORAS PRIORIDAD BAJA - Nice to Have**
+
+#### **10. Selección Múltiple de Celdas**
+- **Problema**: No se pueden seleccionar múltiples celdas
+- **Solución**: Shift+Click para rango, Ctrl+Click para añadir
+- **Complejidad**: Alta
+- **Estado**: ⏳ PENDIENTE (futuro)
+
+#### **11. Búsqueda Global (Ctrl+F)**
+- **Problema**: Filtros separados por campo
+- **Solución**: Input único que busca en todas las columnas
+- **Complejidad**: Media
+- **Estado**: ⏳ PENDIENTE (futuro)
+
+#### **12. Copiar con Ctrl+C**
+- **Problema**: No se puede copiar contenido de celdas fácilmente
+- **Solución**: Seleccionar celda + Ctrl+C → clipboard
+- **Complejidad**: Baja
+- **Estado**: ⏳ PENDIENTE (futuro)
+
+#### **13. Atajos de Teclado Visibles**
+- **Problema**: Usuario no sabe qué shortcuts existen
+- **Solución**: Tooltips con shortcuts, modal de ayuda (?)
+- **Complejidad**: Baja
+- **Estado**: ⏳ PENDIENTE (futuro)
+
+#### **14. Columnas Frozen (Fijas al Scroll Horizontal)**
+- **Problema**: Al hacer scroll horizontal, se pierde contexto
+- **Solución**: Fijar primeras N columnas (ej: fecha, proveedor)
+- **Complejidad**: Media-Alta
+- **Estado**: ⏳ PENDIENTE (futuro)
+
+---
+
+### 🛠️ **PROPUESTA TÉCNICA: Componente Unificado**
+
+Para implementar todas las mejoras de forma consistente, se propone crear:
+
+```typescript
+// components/ui/data-table-excel.tsx
+
+interface DataTableExcelProps<T> {
+  // Datos
+  data: T[]
+  columns: ColumnConfig[]
+
+  // Features toggleables
+  stickyHeader?: boolean      // Default: true
+  resizableColumns?: boolean  // Default: true
+  reorderableColumns?: boolean // Default: false
+  sortable?: boolean          // Default: true
+
+  // Edición
+  editable?: boolean
+  onCellEdit?: (row: T, column: string, value: any) => Promise<void>
+  editTrigger?: 'ctrl-click' | 'double-click' | 'both' // Default: 'both'
+
+  // Persistencia
+  storageKey?: string         // Para localStorage
+
+  // Navegación
+  keyboardNavigation?: boolean // Tab, flechas, Enter
+
+  // Callbacks
+  onSort?: (column: string, direction: 'asc' | 'desc') => void
+  onColumnReorder?: (newOrder: string[]) => void
+  onColumnResize?: (column: string, width: number) => void
+}
+```
+
+**Beneficios:**
+- ✅ Aplicar mejoras a TODAS las vistas de una vez
+- ✅ Consistencia UX garantizada
+- ✅ Mantenimiento centralizado
+- ✅ Testing unificado
+- ✅ Nuevas vistas automáticamente tienen todas las features
+
+---
+
+### 📋 **PLAN DE FASES SUGERIDO**
+
+#### **Fase 1: Quick Wins (1-2 días)**
+- [ ] 1. Sticky Headers
+- [ ] 3. Enter en modales
+- [ ] 7. Doble-click para editar
+
+#### **Fase 2: Navegación Excel (3-4 días)**
+- [ ] 2. Navegación flechas/Tab
+- [ ] 6. Ordenar por columna
+
+#### **Fase 3: Columnas Avanzadas (4-5 días)**
+- [ ] 4. Redimensionar columnas
+- [ ] 5. Reordenar columnas (drag & drop)
+- [ ] 9. Unificar selector columnas
+
+#### **Fase 4: Autocompletado Extendido (2-3 días)**
+- [ ] 8. Autocompletar proveedor, CUIT, responsable, etc.
+
+#### **Fase 5: Nice to Have (cuando haya tiempo)**
+- [ ] 10-14. Mejoras adicionales
+
+---
+
+### ❓ **DECISIONES PENDIENTES**
+
+1. **¿Componente unificado o mejoras vista por vista?**
+   - Unificado: Más trabajo inicial, mejor mantenimiento
+   - Por vista: Más rápido inicial, posible inconsistencia
+
+2. **¿Qué fases priorizar?**
+   - Fase 1 es de bajo riesgo y alto impacto
+   - Fase 2 mejora significativamente productividad
+
+3. **¿Qué vistas priorizar?**
+   - ARCA: Más usada para facturación
+   - Templates: Uso frecuente para proyecciones
+   - Cash Flow: Vista principal de operaciones
+
+4. **¿Librerías adicionales?**
+   - `@tanstack/react-table` - Tabla avanzada (sorting, filtering, etc.)
+   - `@dnd-kit/core` - Drag & drop
+   - Ya instalado: `react-resizable-panels`
+
+---
+
+**📅 Fecha propuesta:** 2026-02-02
+**Estado:** ⏳ PENDIENTE DECISIÓN - Registrado para evaluación
+
+---
+
 **📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel
