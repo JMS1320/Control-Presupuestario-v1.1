@@ -1068,10 +1068,10 @@ export function VistaCashFlow() {
 
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[600px]">
               <table className="w-full">
                 {/* Header */}
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-50 border-b sticky top-0 z-10">
                   <tr>
                     {/* Columna checkbox solo en modo PAGOS */}
                     {modoPagos && (
@@ -1146,7 +1146,14 @@ export function VistaCashFlow() {
 
       {/* Modal cambio de estado (Shift+Click débitos/créditos) */}
       {filaParaCambioEstado && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setFilaParaCambioEstado(null)
+          }}
+          tabIndex={-1}
+          ref={(el) => el?.focus()}
+        >
           <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
             <h3 className="text-lg font-semibold mb-4">
               Cambiar Estado

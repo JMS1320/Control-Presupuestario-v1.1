@@ -2919,7 +2919,7 @@ export function VistaFacturasArca() {
           <CardContent>
             <div className="overflow-auto max-h-96">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     {mostrarGestionMasiva && (
                       <TableHead className="w-12">
@@ -3465,7 +3465,7 @@ export function VistaFacturasArca() {
             <div className="w-full overflow-auto max-h-[600px] border rounded-md">
               <div style={{ minWidth: 'fit-content' }}>
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow>
                       {columnasVisiblesArray.map(columna => (
                         <TableHead 
@@ -3785,7 +3785,7 @@ export function VistaFacturasArca() {
                 </p>
                 <div className="overflow-auto max-h-64 border rounded">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
                         <TableHead className="w-12">
                           <Checkbox
@@ -4353,7 +4353,7 @@ export function VistaFacturasArca() {
                 ) : (
                   <div className="border rounded-md max-h-60 overflow-y-auto">
                     <Table>
-                      <TableHeader>
+                      <TableHeader className="sticky top-0 z-10 bg-background">
                         <TableRow>
                           {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
                           <TableHead>Fecha Vto.</TableHead>

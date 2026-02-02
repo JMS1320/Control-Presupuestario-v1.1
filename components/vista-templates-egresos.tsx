@@ -1221,7 +1221,7 @@ export function VistaTemplatesEgresos() {
             <div className="w-full overflow-auto max-h-[600px] border rounded-md">
               <div style={{ minWidth: 'fit-content' }}>
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow>
                       {columnasVisiblesArray.map(columna => {
                         const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]
