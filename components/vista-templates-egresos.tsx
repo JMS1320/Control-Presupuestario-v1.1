@@ -51,6 +51,7 @@ interface CuotaEgresoSinFactura {
     configuracion_reglas: any
     año: number
     activo: boolean
+    grupo_impuesto_id: string | null
     created_at: string
     updated_at: string
   }
@@ -404,25 +405,25 @@ export function VistaTemplatesEgresos() {
     }
   }
 
-  // Función para activar proceso de pago anual
+  // Función para activar proceso de pago anual (conversión de Cuotas → Anual)
   const activarPagoAnual = async (cuotaId: string) => {
     try {
       // Obtener información del template para mostrar en confirmación
       const cuota = cuotas.find(c => c.id === cuotaId)
       const nombreTemplate = cuota?.egreso?.nombre_referencia || 'Template'
-      
-      const confirmacion = await confirmarPagoAnual(cuotaId, nombreTemplate)
-      
-      if (confirmacion.confirmed && confirmacion.montoAnual && confirmacion.fechaPago) {
+      const grupoImpuestoId = cuota?.egreso?.grupo_impuesto_id || null
+
+      const confirmacion = await confirmarPagoAnual(cuotaId, nombreTemplate, grupoImpuestoId)
+
+      if (confirmacion.confirmed && confirmacion.grupoImpuestoId) {
         const resultado = await ejecutarPagoAnual({
           templateId: cuota?.egreso_id || '',
           cuotaId: cuotaId,
-          montoAnual: confirmacion.montoAnual,
-          fechaPagoAnual: confirmacion.fechaPago
+          grupoImpuestoId: confirmacion.grupoImpuestoId
         })
-        
+
         if (resultado.success) {
-          alert(`✅ Pago anual configurado\n• Cuotas desactivadas: ${resultado.cuotasDesactivadas}\n• Monto anual: $${confirmacion.montoAnual.toLocaleString('es-AR')}\n• Fecha pago: ${confirmacion.fechaPago}`)
+          alert(`✅ Conversión a PAGO ANUAL completada\n• Template Cuotas desactivado: ${resultado.templateCuotasDesactivado}\n• Template Anual activado: ${resultado.templateAnualActivado}\n• Cuotas desactivadas: ${resultado.cuotasDesactivadas}\n• Cuotas activadas: ${resultado.cuotasActivadas}`)
           // Recargar datos
           await cargarCuotas()
         } else {
@@ -434,29 +435,25 @@ export function VistaTemplatesEgresos() {
     }
   }
 
-  // Función para activar proceso de pago por cuotas (reversa de pago anual)
+  // Función para activar proceso de pago por cuotas (conversión de Anual → Cuotas)
   const activarPagoCuotas = async (cuotaId: string) => {
     try {
       // Obtener información del template para mostrar en confirmación
       const cuota = cuotas.find(c => c.id === cuotaId)
       const nombreTemplate = cuota?.egreso?.nombre_referencia || 'Template'
-      
-      const confirmacion = await confirmarPagoCuotas(cuotaId, nombreTemplate)
-      
-      if (confirmacion.confirmed && confirmacion.montoPorCuota && confirmacion.numeroCuotas && 
-          confirmacion.fechaPrimeraCuota && confirmacion.frecuenciaMeses) {
-        
+      const grupoImpuestoId = cuota?.egreso?.grupo_impuesto_id || null
+
+      const confirmacion = await confirmarPagoCuotas(cuotaId, nombreTemplate, grupoImpuestoId)
+
+      if (confirmacion.confirmed && confirmacion.grupoImpuestoId) {
         const resultado = await ejecutarPagoCuotas({
           templateId: cuota?.egreso_id || '',
           cuotaId: cuotaId,
-          montoPorCuota: confirmacion.montoPorCuota,
-          numeroCuotas: confirmacion.numeroCuotas,
-          fechaPrimeraCuota: confirmacion.fechaPrimeraCuota,
-          frecuenciaMeses: confirmacion.frecuenciaMeses
+          grupoImpuestoId: confirmacion.grupoImpuestoId
         })
-        
+
         if (resultado.success) {
-          alert(`✅ Template convertido a cuotas\n• Template reactivado: SÍ\n• Cuotas creadas: ${resultado.cuotasCreadas + 1}\n• Monto por cuota: $${confirmacion.montoPorCuota.toLocaleString('es-AR')}`)
+          alert(`✅ Conversión a CUOTAS completada\n• Template Anual desactivado: ${resultado.templateAnualDesactivado}\n• Template Cuotas activado: ${resultado.templateCuotasActivado}\n• Cuotas desactivadas: ${resultado.cuotasDesactivadas}\n• Cuotas activadas: ${resultado.cuotasActivadas}`)
           // Recargar datos
           await cargarCuotas()
         } else {

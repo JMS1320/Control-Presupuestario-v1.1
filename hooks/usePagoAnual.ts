@@ -6,15 +6,15 @@ import { supabase } from "@/lib/supabase"
 interface PagoAnualConfig {
   templateId: string
   cuotaId: string
-  montoAnual: number
-  fechaPagoAnual: string
+  grupoImpuestoId: string
 }
 
 interface PagoAnualResult {
   success: boolean
+  templateAnualActivado: string | null
+  templateCuotasDesactivado: string | null
   cuotasDesactivadas: number
-  cuotaActualizada: boolean
-  templateCreado: boolean
+  cuotasActivadas: number
   error?: string
 }
 
@@ -27,154 +27,110 @@ export function usePagoAnual() {
     setLastResult(null)
 
     try {
-      // 1. Obtener información de la cuota seleccionada y el template padre
-      const { data: cuotaActual, error: errorCuota } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .select(`
-          fecha_estimada, 
-          egreso_id,
-          egreso:egresos_sin_factura!inner(
-            categ,
-            centro_costo,
-            nombre_referencia,
-            responsable,
-            cuit_quien_cobra,
-            nombre_quien_cobra,
-            template_master_id,
-            pago_anual
-          )
-        `)
-        .eq('id', config.cuotaId)
-        .single()
+      const { grupoImpuestoId } = config
 
-      if (errorCuota || !cuotaActual) {
-        throw new Error(`Error obteniendo cuota actual: ${errorCuota?.message}`)
+      if (!grupoImpuestoId) {
+        throw new Error('Este template no tiene grupo_impuesto_id. No se puede convertir.')
       }
 
-      // 2. VERIFICAR si existe registro anual inactivo para reactivar
-      const { data: registrosAnuales, error: errorBuscarAnual } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .select('id, monto, fecha_estimada, descripcion, estado')
-        .eq('egreso_id', cuotaActual.egreso_id)
-        .ilike('descripcion', '%anual%')
-
-      if (errorBuscarAnual) {
-        throw new Error(`Error buscando registro anual: ${errorBuscarAnual.message}`)
-      }
-
-      const registroAnualInactivo = registrosAnuales?.find(r => r.estado === 'desactivado')
-      const tieneRegistroAnualActivo = registrosAnuales?.some(r => r.estado === 'pendiente')
-      let templateCreado = false // Variable para resultado
-
-      console.log(`🔍 Verificación registro anual template ${cuotaActual.egreso_id}:`)
-      console.log(`- Registros anuales encontrados: ${registrosAnuales?.length || 0}`)
-      console.log(`- Registro anual inactivo: ${registroAnualInactivo ? 'SÍ' : 'NO'}`)
-      console.log(`- Registro anual activo: ${tieneRegistroAnualActivo ? 'SÍ' : 'NO'}`)
-
-      // Cambiar template a modo anual
-      const { error: errorCambiarTemplate } = await supabase
+      // 1. Buscar todos los templates del mismo grupo
+      const { data: templatesGrupo, error: errorGrupo } = await supabase
         .from('egresos_sin_factura')
-        .update({ pago_anual: true })
-        .eq('id', cuotaActual.egreso_id)
+        .select('id, nombre_referencia, activo')
+        .eq('grupo_impuesto_id', grupoImpuestoId)
 
-      if (errorCambiarTemplate) {
-        throw new Error(`Error cambiando template a anual: ${errorCambiarTemplate.message}`)
+      if (errorGrupo) throw new Error(`Error buscando grupo: ${errorGrupo.message}`)
+      if (!templatesGrupo || templatesGrupo.length < 2) {
+        throw new Error('No se encontró el par de templates en el grupo')
       }
 
-      // CASO A: Existe registro anual inactivo → REACTIVAR
-      if (registroAnualInactivo) {
-        console.log('✅ REACTIVANDO registro anual existente')
-        
-        // Reactivar y actualizar datos
-        const { error: errorReactivarAnual } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update({
-            estado: 'pendiente',
-            monto: config.montoAnual,
-            fecha_estimada: config.fechaPagoAnual,
-            fecha_vencimiento: config.fechaPagoAnual
-          })
-          .eq('id', registroAnualInactivo.id)
+      // 2. Identificar template Anual y Cuota
+      const templateAnual = templatesGrupo.find(t =>
+        t.nombre_referencia.toLowerCase().includes('anual')
+      )
+      const templateCuota = templatesGrupo.find(t =>
+        t.nombre_referencia.toLowerCase().includes('cuota')
+      )
 
-        if (errorReactivarAnual) {
-          throw new Error(`Error reactivando registro anual: ${errorReactivarAnual.message}`)
-        }
-
-      } else {
-        // CASO B: NO existe registro anual → CREAR nuevo
-        console.log('🆕 CREANDO nuevo registro anual')
-        templateCreado = true // Se está creando registro nuevo
-
-        const descripcionAnual = cuotaActual.egreso?.nombre_referencia?.includes('Cuota') 
-          ? cuotaActual.egreso.nombre_referencia.replace(/Cuota \d+\/\d+/, '(Anual)')
-          : `${cuotaActual.egreso?.nombre_referencia} (Anual)`
-
-        const { error: errorCuotaAnual } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .insert({
-            egreso_id: cuotaActual.egreso_id,
-            fecha_estimada: config.fechaPagoAnual,
-            fecha_vencimiento: config.fechaPagoAnual,
-            monto: config.montoAnual,
-            descripcion: descripcionAnual,
-            estado: 'pendiente'
-          })
-
-        if (errorCuotaAnual) {
-          throw new Error(`Error creando cuota anual: ${errorCuotaAnual.message}`)
-        }
+      if (!templateAnual || !templateCuota) {
+        throw new Error('No se encontró par Anual/Cuota en el grupo')
       }
 
-      // 3. Desactivar cuotas (NO template) y contar
-      // Obtener cuotas activas (no anuales) para desactivar
-      const { data: cuotasActivas, error: errorCuotasActivas } = await supabase
+      console.log(`🔄 Conversión a ANUAL - Grupo: ${grupoImpuestoId}`)
+      console.log(`   Template Cuota: ${templateCuota.nombre_referencia} (activo: ${templateCuota.activo})`)
+      console.log(`   Template Anual: ${templateAnual.nombre_referencia} (activo: ${templateAnual.activo})`)
+
+      // 3. Desactivar template de Cuotas
+      const { error: errorDesactivarTemplate } = await supabase
+        .from('egresos_sin_factura')
+        .update({ activo: false })
+        .eq('id', templateCuota.id)
+
+      if (errorDesactivarTemplate) {
+        throw new Error(`Error desactivando template cuotas: ${errorDesactivarTemplate.message}`)
+      }
+
+      // 4. Desactivar cuotas del template de Cuotas (pendiente → desactivado)
+      const { data: cuotasDesactivadas, error: errorDesactivarCuotas } = await supabase
         .from('cuotas_egresos_sin_factura')
-        .select('id, descripcion')
-        .eq('egreso_id', cuotaActual.egreso_id)
+        .update({ estado: 'desactivado' })
+        .eq('egreso_id', templateCuota.id)
         .eq('estado', 'pendiente')
-        .not('descripcion', 'ilike', '%anual%')
+        .select('id')
 
-      if (errorCuotasActivas) {
-        throw new Error(`Error obteniendo cuotas activas: ${errorCuotasActivas.message}`)
+      if (errorDesactivarCuotas) {
+        console.warn('Warning desactivando cuotas:', errorDesactivarCuotas.message)
       }
 
-      const cuotasDesactivadas = cuotasActivas?.length || 0
+      // 5. Activar template Anual
+      const { error: errorActivarTemplate } = await supabase
+        .from('egresos_sin_factura')
+        .update({ activo: true })
+        .eq('id', templateAnual.id)
 
-      // Desactivar las cuotas activas (NO template)
-      if (cuotasActivas && cuotasActivas.length > 0) {
-        const { error: errorDesactivarCuotas } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update({ estado: 'desactivado' })
-          .eq('egreso_id', cuotaActual.egreso_id)
-          .eq('estado', 'pendiente')
-          .not('descripcion', 'ilike', '%anual%')
-
-        if (errorDesactivarCuotas) {
-          throw new Error(`Error desactivando cuotas: ${errorDesactivarCuotas.message}`)
-        } else {
-          console.log(`✅ ${cuotasDesactivadas} cuotas desactivadas correctamente`)
-        }
+      if (errorActivarTemplate) {
+        throw new Error(`Error activando template anual: ${errorActivarTemplate.message}`)
       }
+
+      // 6. Activar cuotas del template Anual (desactivado → pendiente)
+      const { data: cuotasActivadas, error: errorActivarCuotas } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .update({ estado: 'pendiente' })
+        .eq('egreso_id', templateAnual.id)
+        .eq('estado', 'desactivado')
+        .select('id')
+
+      if (errorActivarCuotas) {
+        console.warn('Warning activando cuotas:', errorActivarCuotas.message)
+      }
+
+      console.log(`✅ Conversión completada:`)
+      console.log(`   - Template Cuota desactivado: ${templateCuota.nombre_referencia}`)
+      console.log(`   - Cuotas desactivadas: ${cuotasDesactivadas?.length || 0}`)
+      console.log(`   - Template Anual activado: ${templateAnual.nombre_referencia}`)
+      console.log(`   - Cuotas activadas: ${cuotasActivadas?.length || 0}`)
 
       const result: PagoAnualResult = {
         success: true,
-        cuotasDesactivadas,
-        cuotaActualizada: true,
-        templateCreado
+        templateAnualActivado: templateAnual.nombre_referencia,
+        templateCuotasDesactivado: templateCuota.nombre_referencia,
+        cuotasDesactivadas: cuotasDesactivadas?.length || 0,
+        cuotasActivadas: cuotasActivadas?.length || 0
       }
-      
+
       setLastResult(result)
       return result
 
     } catch (error) {
       const result: PagoAnualResult = {
         success: false,
+        templateAnualActivado: null,
+        templateCuotasDesactivado: null,
         cuotasDesactivadas: 0,
-        cuotaActualizada: false,
-        templateCreado: false,
+        cuotasActivadas: 0,
         error: error instanceof Error ? error.message : 'Error desconocido'
       }
-      
+
       setLastResult(result)
       return result
 
@@ -185,73 +141,29 @@ export function usePagoAnual() {
 
   const confirmarPagoAnual = async (
     cuotaId: string,
-    templateNombre: string
-  ): Promise<{ confirmed: boolean; montoAnual?: number; fechaPago?: string }> => {
+    templateNombre: string,
+    grupoImpuestoId: string | null
+  ): Promise<{ confirmed: boolean; grupoImpuestoId?: string }> => {
     return new Promise((resolve) => {
-      // Solicitar monto anual
-      const montoIngresado = window.prompt(
-        `🔄 CONVERTIR A PAGO ANUAL - ${templateNombre}\n\n` +
-        `Esta acción creará (o actualizará) un template de pago anual y desactivará el template de cuotas.\n\n` +
-        `Ingrese el monto anual total:`
-      )
-
-      if (montoIngresado === null) {
-        // Usuario canceló
+      if (!grupoImpuestoId) {
+        alert(`❌ Este template no tiene grupo_impuesto_id configurado.\n\nNo se puede convertir a pago anual.`)
         resolve({ confirmed: false })
         return
       }
 
-      const montoAnual = parseFloat(montoIngresado.replace(/[,.]/g, ''))
-      
-      if (isNaN(montoAnual) || montoAnual <= 0) {
-        alert('Monto inválido. Operación cancelada.')
-        resolve({ confirmed: false })
-        return
-      }
-
-      // Solicitar fecha de pago anual
-      const fechaIngresada = window.prompt(
-        `📅 FECHA PAGO ANUAL - ${templateNombre}\n\n` +
-        `Monto anual: $${montoAnual.toLocaleString('es-AR')}\n\n` +
-        `Ingrese la fecha del pago anual (DD/MM/AAAA):`
-      )
-
-      if (fechaIngresada === null) {
-        // Usuario canceló
-        resolve({ confirmed: false })
-        return
-      }
-
-      // Validar y convertir formato de fecha DD/MM/AAAA → YYYY-MM-DD
-      let fechaFormateada = fechaIngresada
-      if (fechaIngresada.includes('/')) {
-        const partes = fechaIngresada.split('/')
-        if (partes.length === 3) {
-          const [dia, mes, ano] = partes
-          fechaFormateada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`
-        }
-      }
-      
-      if (!Date.parse(fechaFormateada)) {
-        alert('Fecha inválida. Use formato DD/MM/AAAA. Operación cancelada.')
-        resolve({ confirmed: false })
-        return
-      }
-
-      // Confirmar la operación
       const confirmar = window.confirm(
-        `¿Confirma conversión a pago anual?\n\n` +
-        `• Monto anual: $${montoAnual.toLocaleString('es-AR')}\n` +
-        `• Fecha pago: ${fechaIngresada}\n` +
-        `• Se creará NUEVO template anual\n` +
-        `• Se desactivarán todas las cuotas existentes\n\n` +
-        `⚠️ El template de cuotas original quedará inactivo`
+        `🔄 CONVERTIR A PAGO ANUAL\n\n` +
+        `Template: ${templateNombre}\n` +
+        `Grupo: ${grupoImpuestoId}\n\n` +
+        `Esta acción:\n` +
+        `• Desactivará el template de CUOTAS\n` +
+        `• Activará el template ANUAL del mismo grupo\n\n` +
+        `¿Confirmar conversión?`
       )
 
-      resolve({ 
-        confirmed: confirmar, 
-        montoAnual: confirmar ? montoAnual : undefined,
-        fechaPago: confirmar ? fechaFormateada : undefined
+      resolve({
+        confirmed: confirmar,
+        grupoImpuestoId: confirmar ? grupoImpuestoId : undefined
       })
     })
   }
