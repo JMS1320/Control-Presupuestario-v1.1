@@ -5307,17 +5307,131 @@ WHERE c.egreso_id = e.id
 - Solo activos (88)
 - Solo desactivados (49)
 
-#### **ARCHIVOS AFECTADOS:**
-- `components/vista-templates-egresos.tsx` (~1200 líneas)
+#### **ESTADO**: ❌ DESCARTADA - Se decidió crear vista nueva separada (ver 7.17)
 
-#### **EVALUACIÓN:**
-- **Complejidad**: Media-Alta (reestructurar vista completa)
-- **Riesgo**: Medio (funcionalidad existente podría afectarse)
-- **Recomendación**: Desarrollar en branch `desarrollo`, testing exhaustivo antes de merge
+---
 
-#### **ESTADO**: ⏳ PENDIENTE - Propuesta registrada para futura implementación
+### 🔧 **7.16 CORRECCIÓN CUENTA_AGRUPADORA NULL (2026-02-02)**
+
+#### **PROBLEMA IDENTIFICADO:**
+
+25 templates tenían `cuenta_agrupadora = NULL` cuando debían tener valor según CSV.
+
+#### **TEMPLATES AFECTADOS:**
+
+| CATEG | Cuenta Agrupadora Correcta | Templates |
+|-------|---------------------------|-----------|
+| Impuesto inmobiliario | Impuestos Rurales | 9 |
+| Impuesto inmobiliario Complementario | Impuestos Rurales | 4 |
+| Impuesto Red Vial | Impuestos Rurales | 4 |
+| Impuestos ARCA | Impuestos General | 6 |
+| Impuestos Laborales ARCA | Impuestos General | 2 |
+| **TOTAL** | | **25** |
+
+#### **SQL APLICADO:**
+
+```sql
+UPDATE egresos_sin_factura
+SET cuenta_agrupadora = CASE
+  WHEN categ IN ('Impuesto inmobiliario', 'Impuesto inmobiliario Complementario', 'Impuesto Red Vial')
+    THEN 'Impuestos Rurales'
+  WHEN categ IN ('Impuestos ARCA', 'Impuestos Laborales ARCA')
+    THEN 'Impuestos General'
+END
+WHERE cuenta_agrupadora IS NULL;
+```
+
+#### **DISTRIBUCIÓN FINAL CUENTA_AGRUPADORA:**
+
+| Cuenta Agrupadora | Templates |
+|-------------------|-----------|
+| Impuestos Rurales | 72 |
+| Impuestos Urbanos | 12 |
+| Impuestos General | 12 |
+| Sueldos y Jornales | 9 |
+| Impuestos Automotores | 8 |
+| Retiros / Distribucion Socios | 7 |
+| Fijos Buenos Aires MA | 3 |
+| Movimientos Internos empresa | 3 |
+| Tarjetas | 3 |
+| Impuestos Buenos Aires MA | 3 |
+| Seguros | 2 |
+| Impuestos Buenos Aires General | 2 |
+| Fijos Buenos Aires General | 1 |
+| **TOTAL** | **137** ✅ |
+
+---
+
+### 🆕 **7.17 TAREA PENDIENTE: VISTA AGRUPADA TEMPLATES (SOLO CONSULTA)**
+
+#### **DECISIÓN:**
+
+Crear vista NUEVA separada en lugar de modificar la existente, para no afectar integración con Cash Flow.
+
+#### **UBICACIÓN EN UI:**
+
+Sub-solapas dentro de "Egresos sin Factura":
+```
+┌─────────────────────────────────────────────────────────┐
+│  Egresos sin Factura                                    │
+├─────────────────────────────────────────────────────────┤
+│  [Cuotas]  [Vista Agrupada]                            │  ← Sub-solapas
+└─────────────────────────────────────────────────────────┘
+```
+
+- **Sub-solapa "Cuotas"** = Vista actual (613 cuotas, vinculada a Cash Flow)
+- **Sub-solapa "Vista Agrupada"** = Nueva vista jerárquica (SOLO CONSULTA)
+
+#### **ESTRUCTURA JERÁRQUICA:**
+
+```
+☑ Solo Activos  ☐ Solo Desactivados  ☐ Todos    ← Filtros (default: Solo Activos)
+
+▼ Impuestos Rurales (72 templates)
+  ▼ Impuesto inmobiliario (34 templates)
+    ▼ Inmobiliario PAM 2026 (4 cuotas) - $15.600.000
+      └─ Cuota 1: 05/03/2026 - $3.900.000 - pendiente
+      └─ Cuota 2: 05/06/2026 - $3.900.000 - pendiente
+      └─ ...
+    ▼ Inmobiliario MSA 2026 (4 cuotas) - $21.600.000
+      └─ ...
+  ▼ Impuesto Red Vial (38 templates)
+    └─ ...
+
+▼ Sueldos y Jornales (9 templates)
+  ▼ Sueldos y Jornales (9 templates)
+    ▼ Sueldo JMS (12 cuotas) - $23.903.371
+      └─ ...
+```
+
+**Niveles de jerarquía:**
+1. **Cuenta Agrupadora** (13 grupos) - colapsable
+2. **CATEG** - colapsable
+3. **Nombre Referencia** (template) - colapsable
+4. **Cuotas** - detalle final
+
+#### **FILTROS:**
+
+| Filtro | Descripción | Default |
+|--------|-------------|---------|
+| Solo Activos | 88 templates activos | ✅ |
+| Solo Desactivados | 49 templates desactivados | |
+| Todos | 137 templates | |
+
+#### **CARACTERÍSTICAS:**
+
+- ✅ SOLO CONSULTA - no permite edición
+- ✅ Vista separada - no afecta Cash Flow
+- ✅ Jerárquica - fácil navegación
+- ✅ Expandible/colapsable por nivel
+
+#### **ARCHIVO A CREAR:**
+
+`components/vista-templates-agrupada.tsx` (NUEVO)
+
+#### **ESTADO**: ⏳ **PRÓXIMA TAREA** - Implementar en branch `desarrollo`
 
 ---
 
 **📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates desde CSV + verificación SQL + correcciones
+**Documentación generada desde:** Carga masiva templates + correcciones + planificación vista nueva
