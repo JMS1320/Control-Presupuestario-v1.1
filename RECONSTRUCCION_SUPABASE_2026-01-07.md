@@ -5251,5 +5251,73 @@ Los siguientes registros fueron eliminados por ser notas/recordatorios:
 
 ---
 
+### 🔧 **7.14 CORRECCIÓN FECHAS SEGÚN TIPO_FECHA (2026-02-02)**
+
+#### **PROBLEMA IDENTIFICADO:**
+
+Todas las cuotas tenían `fecha_vencimiento` con valor, pero la lógica correcta es:
+
+| tipo_fecha | fecha_vencimiento | fecha_estimada |
+|------------|-------------------|----------------|
+| **Real** | fecha del CSV | fecha del CSV (ambas iguales) |
+| **Estimada** | NULL (vacía) | fecha del CSV |
+
+#### **DISTRIBUCIÓN:**
+
+- **125 templates** con tipo_fecha='Estimada' → 504 cuotas
+- **12 templates** con tipo_fecha='Real' → 109 cuotas
+
+#### **SQL APLICADO:**
+
+```sql
+-- Corregir cuotas de templates con tipo_fecha='Estimada'
+UPDATE cuotas_egresos_sin_factura c
+SET fecha_vencimiento = NULL
+FROM egresos_sin_factura e
+WHERE c.egreso_id = e.id
+  AND e.tipo_fecha = 'Estimada';
+```
+
+#### **VERIFICACIÓN:**
+
+| tipo_fecha | cuotas | con_fecha_vencimiento | con_fecha_estimada |
+|------------|--------|----------------------|-------------------|
+| Real | 109 | 109 ✅ | 109 ✅ |
+| Estimada | 504 | 0 ✅ | 504 ✅ |
+
+---
+
+### 💡 **7.15 MEJORA PROPUESTA: VISTA TEMPLATES AGRUPADA**
+
+#### **ESTADO ACTUAL:**
+- Vista muestra 613 cuotas individuales (todas mezcladas)
+- Checkbox "mostrar desactivados" con lógica obsoleta
+
+#### **MEJORA PROPUESTA:**
+
+**Vista Principal (por defecto):**
+- Mostrar 137 templates como filas principales
+- Al hacer clic en un template → expandir/ver sus cuotas dentro
+
+**Vista Alternativa:**
+- Checkbox "Ver todas las cuotas sin agrupar" → vista actual (613 cuotas)
+
+**Filtros (en ambas vistas):**
+- Ver todos
+- Solo activos (88)
+- Solo desactivados (49)
+
+#### **ARCHIVOS AFECTADOS:**
+- `components/vista-templates-egresos.tsx` (~1200 líneas)
+
+#### **EVALUACIÓN:**
+- **Complejidad**: Media-Alta (reestructurar vista completa)
+- **Riesgo**: Medio (funcionalidad existente podría afectarse)
+- **Recomendación**: Desarrollar en branch `desarrollo`, testing exhaustivo antes de merge
+
+#### **ESTADO**: ⏳ PENDIENTE - Propuesta registrada para futura implementación
+
+---
+
 **📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates desde CSV + verificación SQL
+**Documentación generada desde:** Carga masiva templates desde CSV + verificación SQL + correcciones
