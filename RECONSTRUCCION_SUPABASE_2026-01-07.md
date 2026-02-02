@@ -5752,9 +5752,9 @@ interface DataTableExcelProps<T> {
 ### 📋 **PLAN DE FASES SUGERIDO**
 
 #### **Fase 1: Quick Wins (1-2 días)**
-- [ ] 1. Sticky Headers
-- [ ] 3. Enter en modales
-- [ ] 7. Doble-click para editar
+- [x] 1. Sticky Headers ✅ IMPLEMENTADO 2026-02-02
+- [x] 2. Escape en modales ✅ IMPLEMENTADO 2026-02-02
+- [ ] 7. Doble-click para editar (descartado - usuario prefiere Ctrl+Click)
 
 #### **Fase 2: Navegación Excel (3-4 días)**
 - [ ] 2. Navegación flechas/Tab
@@ -5796,9 +5796,80 @@ interface DataTableExcelProps<T> {
 ---
 
 **📅 Fecha propuesta:** 2026-02-02
-**Estado:** ⏳ PENDIENTE DECISIÓN - Registrado para evaluación
+**Estado:** 🔄 EN PROGRESO - Fase 1 implementada
+
+---
+
+## 📆 2026-02-02 - Implementación: Mejoras UX Fase 1
+
+### ✅ **MEJORAS IMPLEMENTADAS:**
+
+#### **1. Sticky Headers - COMPLETADO**
+
+Headers de tablas ahora quedan fijos al hacer scroll vertical.
+
+**Archivos modificados:**
+
+| Archivo | Línea | Cambio |
+|---------|-------|--------|
+| `vista-templates-egresos.tsx` | ~1224 | `<TableHeader className="sticky top-0 z-10 bg-background">` |
+| `vista-facturas-arca.tsx` | 2922, 3468, 3788, 4356 | 4 tablas con sticky |
+| `vista-extracto-bancario.tsx` | ~1198 | `<TableHeader className="sticky top-0 z-10 bg-background">` |
+| `vista-cash-flow.tsx` | ~1074 | `<thead className="... sticky top-0 z-10">` + `max-h-[600px]` |
+
+**Clases CSS aplicadas:**
+```css
+sticky top-0 z-10 bg-background
+```
+- `sticky top-0`: Fija el header en la parte superior
+- `z-10`: Asegura que quede por encima del contenido
+- `bg-background`: Fondo sólido para tapar filas que pasan debajo
+
+#### **2. Escape en Modales - COMPLETADO**
+
+Modales custom ahora responden a tecla Escape para cerrar.
+
+**Archivos modificados:**
+
+| Archivo | Modal | Cambio |
+|---------|-------|--------|
+| `vista-cash-flow.tsx` | Modal cambio estado | `onKeyDown` + `tabIndex` + auto-focus |
+| `modal-validar-categ.tsx` | Modal validar categ | `onKeyDown` + `tabIndex` + auto-focus |
+
+**Patrón aplicado:**
+```tsx
+<div
+  className="fixed inset-0 ..."
+  onKeyDown={(e) => {
+    if (e.key === 'Escape') onCancel()
+  }}
+  tabIndex={-1}
+  ref={(el) => el?.focus()}
+>
+```
+
+### 📊 **COMMIT:**
+```
+260a2ab - Feature: Mejoras UX - Sticky Headers + Escape en modales
+```
+
+### 🧪 **PENDIENTE TESTING:**
+
+1. **Sticky Headers:**
+   - [ ] Templates: Scroll vertical con headers fijos
+   - [ ] ARCA Facturas: 4 tablas con scroll
+   - [ ] Cash Flow: Scroll con header fijo
+   - [ ] Extracto Bancario: Scroll con header fijo
+
+2. **Escape en modales:**
+   - [ ] Cash Flow: Abrir modal cambio estado → presionar Escape
+   - [ ] Modal validar categ: Abrir modal → presionar Escape
+
+### ⏳ **ESTADO BRANCHES:**
+- **desarrollo**: ✅ Commit pusheado (260a2ab)
+- **main**: ⏳ Pendiente merge después de testing
 
 ---
 
 **📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1
