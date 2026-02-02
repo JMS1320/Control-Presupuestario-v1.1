@@ -5433,5 +5433,98 @@ Sub-solapas dentro de "Egresos sin Factura":
 
 ---
 
+## 📆 2026-02-02 - Sesión: Sistema Conversión Bidireccional Anual/Cuotas
+
+### 🎯 **Objetivo de la sesión:**
+Actualizar hooks de conversión para soportar la nueva arquitectura de templates con `grupo_impuesto_id`.
+
+### ✅ **CAMBIOS COMPLETADOS:**
+
+#### **1. Reescritura completa de hooks:**
+
+**`hooks/usePagoAnual.ts`** - Conversión Cuotas → Anual:
+```typescript
+// NUEVA LÓGICA:
+// 1. Recibe grupo_impuesto_id del template actual
+// 2. Busca TODOS los templates con mismo grupo_impuesto_id
+// 3. Identifica cuál es "Anual" y cuál es "Cuota" por nombre
+// 4. Desactiva template Cuotas + sus cuotas (pendiente → desactivado)
+// 5. Activa template Anual + sus cuotas (desactivado → pendiente)
+
+interface PagoAnualConfig {
+  templateId: string
+  cuotaId: string
+  grupoImpuestoId: string  // ← NUEVO parámetro clave
+}
+```
+
+**`hooks/usePagoCuotas.ts`** - Conversión Anual → Cuotas:
+```typescript
+// Misma lógica pero inversa
+interface PagoCuotasConfig {
+  templateId: string
+  cuotaId: string
+  grupoImpuestoId: string  // ← NUEVO parámetro clave
+}
+```
+
+#### **2. Actualización vista-templates-egresos.tsx:**
+
+**Interfaz actualizada:**
+```typescript
+egreso?: {
+  // ... campos existentes
+  grupo_impuesto_id: string | null  // ← AGREGADO
+}
+```
+
+**Lógica de decisión corregida:**
+```typescript
+// ANTES (bug): Basado en activo/inactivo
+if (esTemplateInactivo) {
+  activarPagoCuotas(cuotaId)  // ❌ Incorrecto
+} else {
+  activarPagoAnual(cuotaId)
+}
+
+// DESPUÉS (fix): Basado en NOMBRE del template
+const esTemplateAnual = nombreTemplate.includes('anual')
+const esTemplateCuotas = nombreTemplate.includes('cuota')
+
+if (esTemplateAnual) {
+  activarPagoCuotas(cuotaId)  // ✅ Anual → quiere Cuotas
+} else if (esTemplateCuotas) {
+  activarPagoAnual(cuotaId)   // ✅ Cuotas → quiere Anual
+}
+```
+
+### 🔧 **CÓMO USAR:**
+
+1. Ir a **Templates** → tab "Cuotas"
+2. Activar **Modo Edición**
+3. **Ctrl + Shift + Click** en columna **MONTO** de cualquier cuota
+4. El sistema detecta automáticamente:
+   - Si es template "Anual" → ofrece cambiar a Cuotas
+   - Si es template "Cuotas" → ofrece cambiar a Anual
+
+### 📊 **COMMITS:**
+
+```
+3ba0d8f - Fix: Actualizar hooks conversión Anual/Cuotas para usar grupo_impuesto_id
+ffdf931 - Fix: Lógica bidireccional conversión Anual/Cuotas
+```
+
+### ✅ **ESTADO FINAL:**
+
+| Componente | Estado |
+|------------|--------|
+| usePagoAnual.ts | ✅ Reescrito con grupo_impuesto_id |
+| usePagoCuotas.ts | ✅ Reescrito con grupo_impuesto_id |
+| vista-templates-egresos.tsx | ✅ Lógica bidireccional corregida |
+| Branch desarrollo | ✅ Pusheado |
+| Branch main | ✅ Mergeado y pusheado |
+
+---
+
 **📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates + correcciones + planificación vista nueva
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional
