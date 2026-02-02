@@ -361,15 +361,23 @@ export function VistaTemplatesEgresos() {
     console.log('🔍 Templates iniciarEdicion called:', columna, 'ctrlKey:', event.ctrlKey, 'modoEdicion:', modoEdicion)
     
     const cuota = cuotas.find(c => c.id === cuotaId)
-    const esTemplateInactivo = cuota?.egreso?.activo === false
-    
-    // Ctrl+Shift+Click en monto = Activar pago anual (si template activo) o convertir a cuotas (si inactivo)
+    const nombreTemplate = cuota?.egreso?.nombre_referencia?.toLowerCase() || ''
+    const esTemplateAnual = nombreTemplate.includes('anual')
+    const esTemplateCuotas = nombreTemplate.includes('cuota')
+
+    // Ctrl+Shift+Click en monto = Conversión bidireccional Anual ↔ Cuotas
+    // Si es template Anual → convertir a Cuotas
+    // Si es template Cuotas → convertir a Anual
     if (event.ctrlKey && event.shiftKey && columna === 'monto' && modoEdicion) {
       event.preventDefault()
-      if (esTemplateInactivo) {
+      if (esTemplateAnual) {
+        // Template Anual activo → quiere cambiar a Cuotas
         activarPagoCuotas(cuotaId)
-      } else {
+      } else if (esTemplateCuotas) {
+        // Template Cuotas activo → quiere cambiar a Anual
         activarPagoAnual(cuotaId)
+      } else {
+        alert('❌ Este template no tiene par Anual/Cuotas.\nEl nombre debe contener "Anual" o "Cuota".')
       }
       return
     }
