@@ -3461,11 +3461,10 @@ export function VistaFacturasArca() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Scroll horizontal simple */}
+            {/* Scroll horizontal y vertical con headers fijos */}
             <div className="w-full overflow-auto max-h-[600px] border rounded-md">
-              <div style={{ minWidth: 'fit-content' }}>
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-background">
+              <Table style={{ minWidth: 'fit-content' }}>
+                <TableHeader className="sticky top-0 z-10 bg-background">
                     <TableRow>
                       {columnasVisiblesArray.map(columna => (
                         <TableHead 
@@ -3509,7 +3508,6 @@ export function VistaFacturasArca() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
             </div>
           </CardContent>
         </Card>
