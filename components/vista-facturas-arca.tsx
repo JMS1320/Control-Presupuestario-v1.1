@@ -286,15 +286,21 @@ export function VistaFacturasArca() {
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<{facturaId: string, columna: string, valor: any} | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
   const inputRefLocal = useRef<HTMLInputElement>(null)
+  const celdaAnteriorRef = useRef<string | null>(null)
 
-  // Auto-focus y auto-select al iniciar edición
+  // Auto-focus y auto-select SOLO al iniciar edición (no en cada cambio de valor)
   useEffect(() => {
-    if (celdaEnEdicion && inputRefLocal.current) {
+    const celdaActualId = celdaEnEdicion ? `${celdaEnEdicion.facturaId}-${celdaEnEdicion.columna}` : null
+
+    // Solo ejecutar si cambió la celda (nueva edición), no si solo cambió el valor
+    if (celdaActualId && celdaActualId !== celdaAnteriorRef.current && inputRefLocal.current) {
       setTimeout(() => {
         inputRefLocal.current?.focus()
         inputRefLocal.current?.select()
       }, 50)
     }
+
+    celdaAnteriorRef.current = celdaActualId
   }, [celdaEnEdicion])
   
   // Estado para modal validación categorías
