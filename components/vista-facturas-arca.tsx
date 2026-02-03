@@ -518,6 +518,17 @@ export function VistaFacturasArca() {
     setCeldaEnEdicion(null)
   }
 
+  // Manejador de teclado para edición inline (Enter=guardar, Escape=cancelar)
+  const manejarKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      guardarCambio()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelarEdicion()
+    }
+  }
+
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
     
@@ -744,6 +755,7 @@ export function VistaFacturasArca() {
               type="date"
               value={String(celdaEnEdicion.valor)}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              onKeyDown={manejarKeyDown}
               className="h-6 text-xs p-1 w-full"
               disabled={guardandoCambio}
             />
@@ -753,33 +765,41 @@ export function VistaFacturasArca() {
               step="0.01"
               value={String(celdaEnEdicion.valor)}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              onKeyDown={manejarKeyDown}
               className="h-6 text-xs p-1 w-full text-right"
               disabled={guardandoCambio}
             />
           ) : (columna === 'estado') ? (
-            <Select 
-              value={String(celdaEnEdicion.valor)} 
-              onValueChange={(value) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: value } : null)}
-              disabled={guardandoCambio}
-              defaultOpen={true}
-            >
-              <SelectTrigger className="h-6 text-xs p-1 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pendiente">Pendiente</SelectItem>
-                <SelectItem value="debito">Débito</SelectItem>
-                <SelectItem value="pagar">Pagar</SelectItem>
-                <SelectItem value="pagado">Pagado</SelectItem>
-                <SelectItem value="credito">Crédito</SelectItem>
-                <SelectItem value="conciliado">Conciliado</SelectItem>
-              </SelectContent>
-            </Select>
+            <div onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelarEdicion(); } }}>
+              <Select
+                value={String(celdaEnEdicion.valor)}
+                onValueChange={(value) => {
+                  setCeldaEnEdicion(prev => prev ? { ...prev, valor: value } : null)
+                  // Auto-guardar al seleccionar estado
+                  setTimeout(() => guardarCambio(), 50)
+                }}
+                disabled={guardandoCambio}
+                defaultOpen={true}
+              >
+                <SelectTrigger className="h-6 text-xs p-1 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pendiente">Pendiente</SelectItem>
+                  <SelectItem value="debito">Débito</SelectItem>
+                  <SelectItem value="pagar">Pagar</SelectItem>
+                  <SelectItem value="pagado">Pagado</SelectItem>
+                  <SelectItem value="credito">Crédito</SelectItem>
+                  <SelectItem value="conciliado">Conciliado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           ) : (
             <Input
               type="text"
               value={String(celdaEnEdicion.valor)}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+              onKeyDown={manejarKeyDown}
               className="h-6 text-xs p-1 w-full"
               disabled={guardandoCambio}
             />

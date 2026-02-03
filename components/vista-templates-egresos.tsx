@@ -664,8 +664,11 @@ export function VistaTemplatesEgresos() {
       // Manejar edición de estado con dropdown
       if (columna === 'estado') {
         return (
-          <div className="flex items-center gap-1 min-w-[120px]">
-            <Select 
+          <div
+            className="flex items-center gap-1 min-w-[120px]"
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelarEdicion(); } }}
+          >
+            <Select
               value={celdaEnEdicion.valor}
               onValueChange={(value) => guardarCambio(value)}
               defaultOpen={true}
@@ -684,7 +687,7 @@ export function VistaTemplatesEgresos() {
             </Select>
             <Button
               size="sm"
-              variant="ghost" 
+              variant="ghost"
               className="h-6 w-6 p-0"
               onClick={cancelarEdicion}
             >
