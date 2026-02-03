@@ -18,6 +18,204 @@
 
 ---
 
+## 📆 2026-02-03 - Sesión: Fix Edición Inline ARCA + Cash Flow
+
+### 🎯 **Objetivo de la sesión:**
+Corregir problemas de edición inline: auto-focus, auto-select, autocompletado cuentas contables, y mapeo de campos entre Cash Flow y tablas BD.
+
+### ✅ **Problemas Resueltos:**
+
+#### **1. Auto-focus y Auto-select en ARCA**
+- **Problema**: Al hacer Ctrl+Click para editar, el input no recibía foco automático. Enter/Escape no funcionaban hasta hacer clic dentro del input.
+- **Solución**: Agregar `useRef` + `useEffect` que hace `focus()` y `select()` solo al INICIAR edición (no en cada tecla).
+- **Archivos**: `components/vista-facturas-arca.tsx`
+
+#### **2. Autocompletado Cuenta Contable en ARCA**
+- **Problema**: No mostraba sugerencias al escribir en cuenta_contable.
+- **Solución**: Agregar `<datalist>` con todas las cuentas del hook `useCuentasContables`.
+- **Archivos**: `components/vista-facturas-arca.tsx`
+
+#### **3. Autocompletado Categ en Cash Flow**
+- **Problema**: No mostraba sugerencias al escribir en categ.
+- **Solución**: Agregar caso especial para `categ` con `<datalist>` en el renderizado del hook.
+- **Archivos**: `components/vista-cash-flow.tsx`
+
+#### **4. Mapeo Campos Cash Flow → BD**
+- **Problema**: Al editar débitos/categ desde Cash Flow en filas ARCA, el hook intentaba actualizar campos que no existen (`debitos` en vez de `monto_a_abonar`).
+- **Solución**: Agregar mapeo `campoReal` al iniciar edición:
+  - `debitos` → `monto_a_abonar` (ARCA)
+  - `categ` → `cuenta_contable` (ARCA)
+  - `debitos` → `monto` (TEMPLATE)
+  - `detalle` → `descripcion` (TEMPLATE)
+- **Archivos**: `components/vista-cash-flow.tsx`
+
+### 📊 **Commits de la sesión:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `01d956f` | Fix: Auto-focus, auto-select y autocompletado en edición inline ARCA |
+| `7c35431` | Fix: Auto-select solo al iniciar edición, no en cada tecla |
+| `33ab315` | Fix: Cash Flow edición inline con mapeo campos correcto |
+
+### 📋 **Archivos Modificados:**
+- `components/vista-facturas-arca.tsx` - Auto-focus, auto-select, datalist cuenta_contable
+- `components/vista-cash-flow.tsx` - Datalist categ, mapeo campoReal
+
+### 🔧 **Patrón Técnico Implementado (Auto-select sin re-select en cada tecla):**
+```typescript
+const inputRefLocal = useRef<HTMLInputElement>(null)
+const celdaAnteriorRef = useRef<string | null>(null)
+
+useEffect(() => {
+  const celdaActualId = celdaEnEdicion ? `${celdaEnEdicion.facturaId}-${celdaEnEdicion.columna}` : null
+
+  // Solo ejecutar si cambió la celda (nueva edición), no si solo cambió el valor
+  if (celdaActualId && celdaActualId !== celdaAnteriorRef.current && inputRefLocal.current) {
+    setTimeout(() => {
+      inputRefLocal.current?.focus()
+      inputRefLocal.current?.select()
+    }, 50)
+  }
+
+  celdaAnteriorRef.current = celdaActualId
+}, [celdaEnEdicion])
+```
+
+### ⏳ **Pendiente:**
+- ✅ Analizar template "Sueldo Jornales Ocasionales" (tipo abierto) - COMPLETADO
+- Modificar wizard templates para soportar templates abiertos - PLANIFICADO
+
+---
+
+## 🔧 ANÁLISIS: Template Abierto "Sueldo Jornales Ocasionales"
+
+### 📋 **Datos del template en CSV:**
+```
+Nombre: Sueldo Jornales Ocasionales
+Año/Campaña: (vacío)
+Proveedor: (vacío)
+CUIT: (vacío)
+CATEG: Sueldos y Jornales
+Centro Costo: Estructura
+Resp. Contable: MSA
+Cuotas: (vacío) ← SIN CUOTAS PREDEFINIDAS
+Tipo Fecha: (vacío)
+Fecha 1ra Cuota: (vacío)
+Monto: (vacío)
+Activo: Activo
+Cuenta Agrupadora: Sueldos y Jornales
+```
+
+### 🎯 **Definición de Template Abierto:**
+- **NO tiene cuotas predefinidas** al crearse
+- Las cuotas se **agregan manualmente** según necesidad (jornales ocasionales)
+- Solo requiere datos básicos de identificación
+- Campo `tipo_template = 'abierto'` en BD (migración pendiente)
+
+### 🔧 **Cambios Requeridos en Wizard (wizard-templates-egresos.tsx):**
+
+#### **1. Interface ConfiguracionRecurrencia (línea 35):**
+```typescript
+// ANTES
+tipo: 'mensual' | 'anual' | 'cuotas_especificas'
+
+// DESPUÉS
+tipo: 'mensual' | 'anual' | 'cuotas_especificas' | 'abierto'
+```
+
+#### **2. Función generarCuotas() (línea 134):**
+```typescript
+// AGREGAR al inicio de la función:
+if (configuracion.tipo === 'abierto') {
+  return [] // Templates abiertos no generan cuotas
+}
+```
+
+#### **3. Función guardarTemplate() (línea 271):**
+```typescript
+// MODIFICAR insert de egresos_sin_factura:
+.insert({
+  // ... campos existentes ...
+  tipo_template: state.configuracion.tipo === 'abierto' ? 'abierto' : 'fijo', // NUEVO
+  tipo_recurrencia: state.configuracion.tipo,
+  // ...
+})
+
+// MODIFICAR inserción de cuotas (líneas 292-304):
+// Solo insertar cuotas si NO es abierto
+if (state.cuotas_generadas.length > 0) {
+  const cuotasParaInsertar = state.cuotas_generadas.map(...)
+  // ... insert ...
+}
+```
+
+#### **4. Función validarPaso() (línea 348):**
+```typescript
+// Para paso 1, NO requerir monto_base si es abierto
+case 1:
+  const esAbierto = state.configuracion.tipo === 'abierto'
+  return !!(
+    state.datos_basicos.categ &&
+    state.datos_basicos.nombre_referencia &&
+    state.datos_basicos.responsable &&
+    (esAbierto || state.datos_basicos.monto_base > 0) // monto solo si NO es abierto
+  )
+```
+
+#### **5. UI Paso 2 - Configuración (agregar opción):**
+```tsx
+<RadioGroup value={state.configuracion.tipo} onValueChange={...}>
+  <div className="flex items-center space-x-2">
+    <RadioGroupItem value="mensual" id="mensual" />
+    <Label htmlFor="mensual">Mensual (12 cuotas)</Label>
+  </div>
+  <div className="flex items-center space-x-2">
+    <RadioGroupItem value="anual" id="anual" />
+    <Label htmlFor="anual">Anual (1 cuota)</Label>
+  </div>
+  <div className="flex items-center space-x-2">
+    <RadioGroupItem value="cuotas_especificas" id="cuotas_especificas" />
+    <Label htmlFor="cuotas_especificas">Cuotas específicas</Label>
+  </div>
+  {/* NUEVO */}
+  <div className="flex items-center space-x-2">
+    <RadioGroupItem value="abierto" id="abierto" />
+    <Label htmlFor="abierto">Abierto (sin cuotas predefinidas)</Label>
+  </div>
+</RadioGroup>
+```
+
+#### **6. Mensaje en Paso 3 - Preview:**
+```tsx
+// Si es abierto, mostrar mensaje explicativo en vez de tabla de cuotas
+{state.configuracion.tipo === 'abierto' ? (
+  <Alert>
+    <AlertDescription>
+      Este template es <strong>abierto</strong>. Las cuotas se agregarán
+      manualmente desde la vista de Templates según necesidad.
+    </AlertDescription>
+  </Alert>
+) : (
+  // Tabla de cuotas existente
+)}
+```
+
+### 📋 **Prerequisitos (Migraciones BD pendientes):**
+- [ ] Migración 4: Campo `tipo_template` en `egresos_sin_factura`
+```sql
+ALTER TABLE egresos_sin_factura
+ADD COLUMN tipo_template VARCHAR(20) DEFAULT 'fijo';
+-- Valores: 'fijo' | 'abierto'
+```
+
+### 🎯 **Orden de Implementación:**
+1. **Ejecutar migración BD** - Agregar campo `tipo_template`
+2. **Modificar wizard** - Agregar opción "abierto"
+3. **Modificar vista-templates-egresos** - Botón "Agregar Cuota" para templates abiertos
+4. **Testing** - Crear template abierto y agregar cuotas manualmente
+
+---
+
 ## 📆 2026-02-01 - Sesión: Definiciones Completas Carga Templates
 
 ### 🎯 **Objetivo de la sesión:**
