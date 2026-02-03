@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X } from "lucide-react"
+import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -91,6 +93,14 @@ export function VistaCashFlow() {
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
+
+  // Estado para modal Pago Manual (templates abiertos)
+  const [modalPagoManual, setModalPagoManual] = useState(false)
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string}[]>([])
+  const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
+  const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
+  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
+  const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
 
@@ -573,6 +583,67 @@ export function VistaCashFlow() {
     }
   }
 
+  // Funciones para Pago Manual (templates abiertos)
+  const cargarTemplatesAbiertos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('egresos_sin_factura')
+        .select('id, nombre_referencia, categ')
+        .eq('tipo_template', 'abierto')
+        .eq('activo', true)
+        .order('nombre_referencia')
+
+      if (error) throw error
+      setTemplatesAbiertos(data || [])
+    } catch (error) {
+      console.error('Error cargando templates abiertos:', error)
+    }
+  }
+
+  const abrirModalPagoManual = async () => {
+    await cargarTemplatesAbiertos()
+    setTemplateSeleccionado(null)
+    setPasoModal('seleccionar')
+    setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+    setModalPagoManual(true)
+  }
+
+  const guardarPagoManual = async () => {
+    if (!templateSeleccionado || !nuevaCuota.fecha || !nuevaCuota.monto) {
+      toast.error('Debe completar todos los campos')
+      return
+    }
+
+    const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
+
+    setGuardandoNuevaCuota(true)
+    try {
+      const { error } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .insert({
+          egreso_id: templateSeleccionado,
+          fecha_estimada: nuevaCuota.fecha,
+          fecha_vencimiento: nuevaCuota.fecha,
+          monto: parseFloat(nuevaCuota.monto),
+          descripcion: nuevaCuota.descripcion || `${template?.nombre_referencia || 'Pago'} - Manual`,
+          estado: 'pendiente'
+        })
+
+      if (error) throw error
+
+      toast.success('Pago manual agregado exitosamente')
+      setModalPagoManual(false)
+      setTemplateSeleccionado(null)
+      setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+      await cargarDatos()
+    } catch (error) {
+      console.error('Error guardando pago manual:', error)
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    } finally {
+      setGuardandoNuevaCuota(false)
+    }
+  }
+
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
@@ -836,7 +907,7 @@ export function VistaCashFlow() {
                 <Filter className="h-4 w-4 mr-2" />
                 Filtros
               </Button>
-              <Button 
+              <Button
                 variant={modoPagos ? "default" : "outline"}
                 size="sm"
                 onClick={modoPagos ? desactivarModoPagos : activarModoPagos}
@@ -845,8 +916,18 @@ export function VistaCashFlow() {
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
               </Button>
-              <Button 
-                variant="outline" 
+              {/* Botón Pago Manual - Templates Abiertos */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={abrirModalPagoManual}
+                className="border-purple-500 text-purple-600 hover:bg-purple-50"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Pago Manual
+              </Button>
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={cargarDatos}
               >
@@ -1240,6 +1321,127 @@ export function VistaCashFlow() {
         onConfirm={confirmarCateg}
         onCancel={cancelarValidacionCateg}
       />
+
+      {/* Modal Pago Manual - Templates Abiertos */}
+      <Dialog open={modalPagoManual} onOpenChange={setModalPagoManual}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {pasoModal === 'seleccionar' ? '💰 Pago Manual' : '📝 Datos del Pago'}
+            </DialogTitle>
+            <DialogDescription>
+              {pasoModal === 'seleccionar'
+                ? 'Seleccione el template abierto al que desea agregar una cuota'
+                : `Agregando pago a: ${templatesAbiertos.find(t => t.id === templateSeleccionado)?.nombre_referencia}`
+              }
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Paso 1: Seleccionar template */}
+          {pasoModal === 'seleccionar' && (
+            <div className="py-4 space-y-3">
+              {templatesAbiertos.length === 0 ? (
+                <div className="text-center text-gray-500 py-6">
+                  <p>No hay templates abiertos disponibles.</p>
+                  <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {templatesAbiertos.map(template => (
+                    <div
+                      key={template.id}
+                      onClick={() => setTemplateSeleccionado(template.id)}
+                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
+                        templateSeleccionado === template.id
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium">{template.nombre_referencia}</div>
+                      <div className="text-xs text-gray-500">{template.categ}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Paso 2: Ingresar datos */}
+          {pasoModal === 'datos' && (
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fecha-pago-cf">Fecha</Label>
+                <Input
+                  id="fecha-pago-cf"
+                  type="date"
+                  value={nuevaCuota.fecha}
+                  onChange={(e) => setNuevaCuota(prev => ({ ...prev, fecha: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="monto-pago-cf">Monto</Label>
+                <Input
+                  id="monto-pago-cf"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={nuevaCuota.monto}
+                  onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="descripcion-pago-cf">Descripción (opcional)</Label>
+                <Input
+                  id="descripcion-pago-cf"
+                  type="text"
+                  placeholder="Descripción del pago..."
+                  value={nuevaCuota.descripcion}
+                  onChange={(e) => setNuevaCuota(prev => ({ ...prev, descripcion: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            {pasoModal === 'seleccionar' ? (
+              <>
+                <Button variant="outline" onClick={() => setModalPagoManual(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => setPasoModal('datos')}
+                  disabled={!templateSeleccionado}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  Siguiente
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setPasoModal('seleccionar')}>
+                  Volver
+                </Button>
+                <Button
+                  onClick={guardarPagoManual}
+                  disabled={guardandoNuevaCuota || !nuevaCuota.fecha || !nuevaCuota.monto}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  {guardandoNuevaCuota ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    'Guardar Pago'
+                  )}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
