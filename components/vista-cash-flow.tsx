@@ -182,17 +182,35 @@ export function VistaCashFlow() {
     if (fila.origen === 'ARCA') {
       origenHook = 'ARCA' // Para que use schema msa
     }
-    
+
+    // Mapear campo del Cash Flow al campo real de BD
+    let campoReal = columna.key
+    if (fila.origen === 'ARCA') {
+      if (columna.key === 'debitos') {
+        campoReal = 'monto_a_abonar'
+      } else if (columna.key === 'categ') {
+        campoReal = 'cuenta_contable'
+      }
+      // creditos no se puede editar en ARCA (no hay campo destino)
+    } else if (fila.origen === 'TEMPLATE') {
+      if (columna.key === 'debitos') {
+        campoReal = 'monto'
+      } else if (columna.key === 'detalle') {
+        campoReal = 'descripcion'
+      }
+    }
+
     const celdaHook: CeldaEnEdicionHook = {
       filaId: fila.id,
       columna: columna.key,
       valor: valor || '',
       tableName,
-      origen: origenHook
+      origen: origenHook,
+      campoReal: campoReal // ← Mapeo del campo real en BD
     }
-    
+
     console.log('🎯 Cash Flow celdaHook:', celdaHook)
-    
+
     hookEditor.iniciarEdicion(celdaHook)
   }
 
@@ -589,6 +607,27 @@ export function VistaCashFlow() {
                 className="h-6 text-xs p-1 w-full text-right"
                 disabled={hookEditor.guardandoCambio}
               />
+            ) : columna.key === 'categ' ? (
+              <>
+                <Input
+                  ref={hookEditor.inputRef}
+                  type="text"
+                  list="cuentas-contables-list-cf"
+                  value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                  onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                  onKeyDown={hookEditor.manejarKeyDown}
+                  className="h-6 text-xs p-1 w-full"
+                  disabled={hookEditor.guardandoCambio}
+                  placeholder="Escribí para buscar..."
+                />
+                <datalist id="cuentas-contables-list-cf">
+                  {cuentas.map(cuenta => (
+                    <option key={cuenta.categ} value={cuenta.categ}>
+                      {cuenta.cuenta_contable}
+                    </option>
+                  ))}
+                </datalist>
+              </>
             ) : (
               <Input
                 ref={hookEditor.inputRef}
