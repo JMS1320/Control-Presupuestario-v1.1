@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -285,6 +285,17 @@ export function VistaFacturasArca() {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<{facturaId: string, columna: string, valor: any} | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
+  const inputRefLocal = useRef<HTMLInputElement>(null)
+
+  // Auto-focus y auto-select al iniciar edición
+  useEffect(() => {
+    if (celdaEnEdicion && inputRefLocal.current) {
+      setTimeout(() => {
+        inputRefLocal.current?.focus()
+        inputRefLocal.current?.select()
+      }, 50)
+    }
+  }, [celdaEnEdicion])
   
   // Estado para modal validación categorías
   const [validandoCateg, setValidandoCateg] = useState<{
@@ -761,6 +772,7 @@ export function VistaFacturasArca() {
             />
           ) : (['monto_a_abonar', 'imp_total'].includes(columna as string)) ? (
             <Input
+              ref={inputRefLocal}
               type="number"
               step="0.01"
               value={String(celdaEnEdicion.valor)}
@@ -794,17 +806,39 @@ export function VistaFacturasArca() {
                 </SelectContent>
               </Select>
             </div>
+          ) : (columna === 'cuenta_contable') ? (
+            <>
+              <Input
+                ref={inputRefLocal}
+                type="text"
+                list="cuentas-contables-list"
+                value={String(celdaEnEdicion.valor || '')}
+                onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                onKeyDown={manejarKeyDown}
+                className="h-6 text-xs p-1 w-full"
+                disabled={guardandoCambio}
+                placeholder="Escribí para buscar..."
+              />
+              <datalist id="cuentas-contables-list">
+                {cuentas.map(cuenta => (
+                  <option key={cuenta.categ} value={cuenta.categ}>
+                    {cuenta.cuenta_contable}
+                  </option>
+                ))}
+              </datalist>
+            </>
           ) : (
             <Input
+              ref={inputRefLocal}
               type="text"
-              value={String(celdaEnEdicion.valor)}
+              value={String(celdaEnEdicion.valor || '')}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
               onKeyDown={manejarKeyDown}
               className="h-6 text-xs p-1 w-full"
               disabled={guardandoCambio}
             />
           )}
-          
+
           <Button
             size="sm"
             variant="ghost"
