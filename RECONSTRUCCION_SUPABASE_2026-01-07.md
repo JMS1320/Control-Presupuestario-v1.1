@@ -5871,5 +5871,154 @@ Modales custom ahora responden a tecla Escape para cerrar.
 
 ---
 
-**📅 Última actualización sección:** 2026-02-02
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1
+## 📆 2026-02-02 - Sesión: Fix Sticky Headers (Continuación)
+
+### 🐛 **PROBLEMA ORIGINAL:**
+Sticky headers no funcionaban en Templates, ARCA, Extracto. Solo funcionaba en Cash Flow.
+
+### 🔍 **DIAGNÓSTICO:**
+
+**Cash Flow (funcionaba):**
+```html
+<div className="overflow-auto max-h-[600px]">
+  <table>
+    <thead className="bg-gray-50 border-b sticky top-0 z-10">
+```
+
+**Otras vistas (no funcionaban):**
+```html
+<div className="overflow-auto max-h-[600px]">
+  <Table>
+    <TableHeader className="sticky top-0 z-10 bg-background">
+```
+
+**2 problemas identificados:**
+1. Estructura de divs redundante en componente Table base
+2. `bg-background` era semi-transparente → filas se veían a través del header
+
+### ✅ **CORRECCIONES APLICADAS:**
+
+#### **Commit 7849c54 - Fix estructura divs:**
+- Quitar div wrapper redundante del componente `Table` base (`components/ui/table.tsx`)
+- Simplificar estructura en vistas para que `sticky top-0` funcione
+- El `overflow-auto` ahora va en contenedor padre, no dentro de Table
+
+#### **Commit 0720c39 - Fix fondo sólido:**
+- Cambiar `bg-background` → `bg-white border-b` en 6 tablas:
+  - `vista-templates-egresos.tsx` (1 tabla)
+  - `vista-facturas-arca.tsx` (4 tablas)
+  - `vista-extracto-bancario.tsx` (1 tabla)
+
+### ✅ **RESULTADO:**
+- ✅ Sticky headers funcionando en TODAS las vistas
+- ✅ Usuario confirmó que funciona correctamente
+
+### 📊 **COMMITS SESIÓN:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `7849c54` | Fix: Corregir estructura divs para sticky headers funcional |
+| `0720c39` | Fix: Sticky headers con fondo sólido bg-white |
+
+### ⏳ **PENDIENTE TESTING:**
+
+**Escape en modales** (implementado en commit anterior `260a2ab`):
+- [ ] Cash Flow: Abrir modal cambio estado → presionar Escape → debe cerrar
+- [ ] Modal validar categ: Abrir modal → presionar Escape → debe cerrar
+
+### 📋 **ESTADO BRANCHES:**
+
+| Branch | Commit | Estado |
+|--------|--------|--------|
+| desarrollo | `0720c39` | ✅ Actualizado |
+| main | `1f1c839` | ⏳ Pendiente merge (5 commits atrás) |
+
+### 🔄 **PARA MERGE A MAIN:**
+
+Cuando se confirme testing completo:
+```bash
+git checkout main
+git merge desarrollo
+git push origin main
+```
+
+---
+
+---
+
+## 🐛 PENDIENTE: Enter/Escape en Edición Inline (Diagnóstico Completo)
+
+### 📊 **ESTADO ACTUAL POR VISTA:**
+
+#### **Cash Flow:**
+| Funcionalidad | Estado | Campos |
+|---------------|--------|--------|
+| ✅ Escape funciona | OK | Modal cambio estado |
+| ✅ Enter funciona | OK | fechas, centro_costo, detalle |
+| ❌ Enter NO funciona | BUG | debitos, creditos, categ |
+
+**Código:** Usa `hookEditor.manejarKeyDown` para TODOS los campos (línea 577, 588, 598), pero hay algo que interfiere en debitos/creditos/categ. Posible causa: evento se detiene antes de llegar al hook.
+
+#### **Facturas ARCA:**
+| Funcionalidad | Estado | Campos |
+|---------------|--------|--------|
+| ⚠️ Enter requiere Tab | BUG | Todos (excepto fechas) |
+| ❌ Escape NO funciona | BUG | monto_a_abonar, detalle, obs_pago, cuenta_contable, centro_costo |
+| ⚠️ Estado dropdown | PARCIAL | Escape cierra dropdown pero no el editor |
+
+**Root Cause Identificado:**
+```
+ARCA tiene 2 sistemas de edición:
+
+1. Hook (líneas 700-736): Solo fechas
+   → onKeyDown={hookEditor.manejarKeyDown} ✅
+
+2. Lógica original (líneas 739-799): Todo lo demás
+   → NO tiene onKeyDown ❌ ← ESTE ES EL BUG
+```
+
+Los inputs en la "lógica original" (líneas 741-786) NO tienen ningún `onKeyDown`.
+
+### 🔧 **FIX REQUERIDO:**
+
+**Archivo:** `components/vista-facturas-arca.tsx`
+**Ubicación:** Líneas 741-786 (lógica original de edición)
+
+**Cambios necesarios:**
+1. Agregar `onKeyDown` a todos los inputs (number, text)
+2. Agregar manejador de Escape para el Select de estado
+3. O mejor: Migrar TODO a usar el hookEditor (como Cash Flow)
+
+**Ejemplo de fix rápido:**
+```tsx
+// Crear función local para manejar teclado
+const manejarKeyDownLocal = (e: React.KeyboardEvent) => {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    guardarCambio()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    setCeldaEnEdicion(null)
+  }
+}
+
+// Agregar a cada Input:
+<Input
+  ...
+  onKeyDown={manejarKeyDownLocal}  // ← AGREGAR
+/>
+```
+
+### 📋 **VISTAS PENDIENTES DE REVISAR:**
+- [ ] Templates Egresos
+- [ ] Extracto Bancario
+
+### ⏳ **ESTADO:**
+- **Diagnóstico:** ✅ Completo
+- **Fix:** ⏳ Pendiente próxima sesión
+- **Prioridad:** Media (funciona con mouse, solo falta teclado)
+
+---
+
+**📅 Última actualización sección:** 2026-02-03
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape
