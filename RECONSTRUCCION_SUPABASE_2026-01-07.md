@@ -83,7 +83,88 @@ useEffect(() => {
 
 ### ⏳ **Pendiente:**
 - ✅ Analizar template "Sueldo Jornales Ocasionales" (tipo abierto) - COMPLETADO
-- Modificar wizard templates para soportar templates abiertos - PLANIFICADO
+- ✅ Implementar botón "Pago Manual" para templates abiertos - COMPLETADO
+- Modificar wizard templates para soportar creación de templates abiertos - PLANIFICADO
+
+---
+
+## 📆 2026-02-03 (continuación) - Feature: Botón Pago Manual
+
+### 🎯 **Objetivo:**
+Implementar botón "Pago Manual" que permite agregar cuotas manuales a templates abiertos (tipo_template='abierto').
+
+### ✅ **Implementación Completada:**
+
+#### **Ubicaciones del botón:**
+1. **Vista Templates** (`vista-templates-egresos.tsx`) - Línea ~958
+2. **Vista Cash Flow** (`vista-cash-flow.tsx`) - Línea ~915
+
+#### **Flujo de uso:**
+1. Click en botón "Pago Manual" (color púrpura)
+2. **Paso 1**: Muestra lista de templates abiertos activos para seleccionar
+3. **Paso 2**: Formulario para ingresar fecha, monto y descripción (opcional)
+4. Click "Guardar Pago" → Inserta cuota en `cuotas_egresos_sin_factura`
+
+### 📋 **Estados agregados:**
+```typescript
+// Ambas vistas (Templates y Cash Flow)
+const [modalPagoManual, setModalPagoManual] = useState(false)
+const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string}[]>([])
+const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
+const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
+const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
+const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
+```
+
+### 🔧 **Funciones implementadas:**
+```typescript
+// Cargar templates abiertos desde BD
+const cargarTemplatesAbiertos = async () => {
+  const { data } = await supabase
+    .from('egresos_sin_factura')
+    .select('id, nombre_referencia, categ')
+    .eq('tipo_template', 'abierto')
+    .eq('activo', true)
+    .order('nombre_referencia')
+  setTemplatesAbiertos(data || [])
+}
+
+// Guardar nueva cuota manual
+const guardarPagoManual = async () => {
+  await supabase
+    .from('cuotas_egresos_sin_factura')
+    .insert({
+      egreso_id: templateSeleccionado,
+      fecha_estimada: nuevaCuota.fecha,
+      fecha_vencimiento: nuevaCuota.fecha,
+      monto: parseFloat(nuevaCuota.monto),
+      descripcion: nuevaCuota.descripcion || `${template?.nombre_referencia} - Manual`,
+      estado: 'pendiente'
+    })
+}
+```
+
+### 📊 **Commit de la sesión:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `fdc38d2` | Feature: Boton Pago Manual para templates abiertos |
+
+### 📋 **Archivos Modificados:**
+- `components/vista-templates-egresos.tsx` - Botón + modal + funciones
+- `components/vista-cash-flow.tsx` - Botón + modal + funciones (duplicado)
+
+### ✅ **Template de prueba existente:**
+- **Nombre**: "Sueldo Jornales Ocasionales"
+- **tipo_template**: 'abierto'
+- **activo**: true
+- **Cuotas actuales**: 0 (listo para recibir cuotas manuales)
+
+### 🎨 **Diseño UI:**
+- Botón color púrpura para diferenciarlo de otros botones
+- Modal de 2 pasos con navegación "Siguiente" / "Volver"
+- Lista de templates clickeables con highlight al seleccionar
+- Validación: requiere fecha y monto obligatorios
 
 ---
 
