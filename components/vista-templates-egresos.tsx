@@ -1220,7 +1220,7 @@ export function VistaTemplatesEgresos() {
             {/* Scroll horizontal y vertical con headers fijos */}
             <div className="w-full overflow-auto max-h-[600px] border rounded-md">
               <Table style={{ minWidth: 'fit-content' }}>
-                  <TableHeader className="sticky top-0 z-10 bg-background">
+                  <TableHeader className="sticky top-0 z-10 bg-white border-b">
                     <TableRow>
                       {columnasVisiblesArray.map(columna => {
                         const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]

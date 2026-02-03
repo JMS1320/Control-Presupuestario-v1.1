@@ -1195,7 +1195,7 @@ export function VistaExtractoBancario() {
               ) : (
                 <div className="overflow-auto max-h-[600px]">
                   <Table>
-                    <TableHeader className="sticky top-0 z-10 bg-background">
+                    <TableHeader className="sticky top-0 z-10 bg-white border-b">
                       <TableRow>
                         {modoEdicion && (
                           <TableHead className="w-12">
