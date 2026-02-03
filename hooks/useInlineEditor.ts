@@ -69,7 +69,7 @@ function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEdi
       return fechaStr
     }
     
-    if (['monto', 'monto_a_abonar', 'imp_total'].includes(columna)) {
+    if (['monto', 'monto_a_abonar', 'imp_total', 'debitos', 'creditos'].includes(columna)) {
       return parseFloat(String(valor)) || 0
     }
     
