@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase"
 // Tipos para el wizard
 interface DatosBasicos {
   tipo_template: 'fijo' | 'abierto'
+  es_bidireccional: boolean
   categ: string
   cuenta_agrupadora: string
   centro_costo: string
@@ -80,6 +81,7 @@ export function WizardTemplatesEgresos() {
     paso: 1,
     datos_basicos: {
       tipo_template: 'fijo',
+      es_bidireccional: false,
       categ: '',
       cuenta_agrupadora: '',
       centro_costo: '',
@@ -287,6 +289,7 @@ export function WizardTemplatesEgresos() {
           nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
           tipo_recurrencia: esAbierto ? 'abierto' : state.configuracion.tipo,
           tipo_template: state.datos_basicos.tipo_template,
+          es_bidireccional: state.datos_basicos.es_bidireccional,
           configuracion_reglas: esAbierto ? null : state.configuracion,
           año: año_actual,
           activo: true
@@ -336,6 +339,7 @@ export function WizardTemplatesEgresos() {
         paso: 1,
         datos_basicos: {
           tipo_template: 'fijo',
+          es_bidireccional: false,
           categ: '',
           cuenta_agrupadora: '',
           centro_costo: '',
@@ -453,6 +457,30 @@ export function WizardTemplatesEgresos() {
                   <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded text-sm text-purple-800">
                     📂 <strong>Template Abierto:</strong> No genera cuotas automáticas.
                     Agregue cuotas manualmente desde "Pago Manual".
+                  </div>
+                )}
+
+                {/* Opción Bidireccional */}
+                <div className="mt-4 flex items-center space-x-2">
+                  <Checkbox
+                    id="es_bidireccional"
+                    checked={state.datos_basicos.es_bidireccional}
+                    onCheckedChange={(checked) => actualizarDatosBasicos('es_bidireccional', checked === true)}
+                  />
+                  <Label htmlFor="es_bidireccional" className="font-normal">
+                    <span className="font-medium">🔄 Template Bidireccional</span>
+                    <span className="text-sm text-gray-500 ml-2">(acepta egresos e ingresos)</span>
+                  </Label>
+                </div>
+
+                {state.datos_basicos.es_bidireccional && (
+                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                    <strong>Ejemplos de uso:</strong>
+                    <ul className="mt-1 ml-4 list-disc">
+                      <li><strong>FCI:</strong> Suscripción (egreso) / Rescate (ingreso)</li>
+                      <li><strong>Caja:</strong> Retiro (egreso) / Depósito (ingreso)</li>
+                      <li><strong>Préstamos:</strong> Pago cuota (egreso) / Recepción (ingreso)</li>
+                    </ul>
                   </div>
                 )}
               </div>
@@ -800,6 +828,11 @@ export function WizardTemplatesEgresos() {
                           {state.datos_basicos.tipo_template === 'abierto' ? '📂 ABIERTO' : '📋 FIJO'}
                         </span>
                       </div>
+                      {state.datos_basicos.es_bidireccional && (
+                        <div className="text-blue-700">
+                          <strong>🔄 Bidireccional:</strong> Acepta egresos e ingresos
+                        </div>
+                      )}
                       <div><strong>Categoría:</strong> {state.datos_basicos.categ}</div>
                       {state.datos_basicos.cuenta_agrupadora && (
                         <div><strong>Cuenta Agrupadora:</strong> {state.datos_basicos.cuenta_agrupadora}</div>
