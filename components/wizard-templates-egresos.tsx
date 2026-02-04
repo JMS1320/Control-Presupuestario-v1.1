@@ -17,7 +17,9 @@ import { supabase } from "@/lib/supabase"
 
 // Tipos para el wizard
 interface DatosBasicos {
+  tipo_template: 'fijo' | 'abierto'
   categ: string
+  cuenta_agrupadora: string
   centro_costo: string
   nombre_referencia: string
   responsable: string
@@ -26,14 +28,8 @@ interface DatosBasicos {
   monto_base: number
 }
 
-interface CuentaContable {
-  categ: string
-  cuenta_contable: string
-  tipo: string
-}
-
 interface ConfiguracionRecurrencia {
-  tipo: 'mensual' | 'anual' | 'cuotas_especificas' | 'abierto'
+  tipo: 'mensual' | 'anual' | 'cuotas_especificas'
   dia_mes?: number
   ultimo_dia_mes?: boolean
   fecha_anual?: string
@@ -79,11 +75,13 @@ const MESES = [
 ]
 
 export function WizardTemplatesEgresos() {
-  const [cuentasContables, setCuentasContables] = useState<CuentaContable[]>([])
+  const [categoriasTemplates, setCategoriasTemplates] = useState<string[]>([])
   const [state, setState] = useState<WizardState>({
     paso: 1,
     datos_basicos: {
+      tipo_template: 'fijo',
       categ: '',
+      cuenta_agrupadora: '',
       centro_costo: '',
       nombre_referencia: '',
       responsable: '',
@@ -100,29 +98,31 @@ export function WizardTemplatesEgresos() {
     cuotas_generadas: []
   })
 
-  // Cargar cuentas contables al inicializar
+  // Cargar categorías existentes de templates al inicializar
   useEffect(() => {
-    async function cargarCuentasContables() {
+    async function cargarCategoriasTemplates() {
       try {
         const { data, error } = await supabase
-          .from('cuentas_contables')
-          .select('categ, cuenta_contable, tipo')
+          .from('egresos_sin_factura')
+          .select('categ')
           .order('categ')
 
         if (error) {
-          console.error('Error cargando cuentas contables:', error)
+          console.error('Error cargando categorías templates:', error)
           return
         }
 
         if (data) {
-          setCuentasContables(data)
+          // Extraer categorías únicas
+          const categsUnicas = [...new Set(data.map(d => d.categ).filter(Boolean))] as string[]
+          setCategoriasTemplates(categsUnicas)
         }
       } catch (error) {
-        console.error('Error en cargarCuentasContables:', error)
+        console.error('Error en cargarCategoriasTemplates:', error)
       }
     }
 
-    cargarCuentasContables()
+    cargarCategoriasTemplates()
   }, [])
 
   // Función para obtener último día del mes
@@ -137,7 +137,7 @@ export function WizardTemplatesEgresos() {
     const año_actual = new Date().getFullYear()
 
     // Templates abiertos no generan cuotas predefinidas
-    if (configuracion.tipo === 'abierto') {
+    if (datos_basicos.tipo_template === 'abierto') {
       return []
     }
 
@@ -273,20 +273,21 @@ export function WizardTemplatesEgresos() {
       }
 
       // 2. Crear renglón de egreso
-      const esAbierto = state.configuracion.tipo === 'abierto'
+      const esAbierto = state.datos_basicos.tipo_template === 'abierto'
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
           template_master_id: templateMaster.id,
           categ: state.datos_basicos.categ,
+          cuenta_agrupadora: state.datos_basicos.cuenta_agrupadora || null,
           centro_costo: state.datos_basicos.centro_costo,
           nombre_referencia: state.datos_basicos.nombre_referencia,
           responsable: state.datos_basicos.responsable,
           cuit_quien_cobra: state.datos_basicos.cuit_quien_cobra || null,
           nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
-          tipo_recurrencia: state.configuracion.tipo,
-          tipo_template: esAbierto ? 'abierto' : 'fijo', // NUEVO: tipo_template
-          configuracion_reglas: state.configuracion,
+          tipo_recurrencia: esAbierto ? 'abierto' : state.configuracion.tipo,
+          tipo_template: state.datos_basicos.tipo_template,
+          configuracion_reglas: esAbierto ? null : state.configuracion,
           año: año_actual,
           activo: true
         })
@@ -334,7 +335,9 @@ export function WizardTemplatesEgresos() {
       setState({
         paso: 1,
         datos_basicos: {
+          tipo_template: 'fijo',
           categ: '',
+          cuenta_agrupadora: '',
           centro_costo: '',
           nombre_referencia: '',
           responsable: '',
@@ -358,7 +361,7 @@ export function WizardTemplatesEgresos() {
 
   // Validar paso actual
   const validarPaso = (): boolean => {
-    const esAbierto = state.configuracion.tipo === 'abierto'
+    const esAbierto = state.datos_basicos.tipo_template === 'abierto'
 
     switch (state.paso) {
       case 1:
@@ -422,25 +425,70 @@ export function WizardTemplatesEgresos() {
 
             {/* PASO 1: Datos Básicos */}
             <TabsContent value="paso-1" className="space-y-4">
+              {/* Tipo de Template - PRIMERO */}
+              <div className="p-4 border rounded-lg bg-gray-50">
+                <Label className="text-base font-semibold">Tipo de Template *</Label>
+                <RadioGroup
+                  value={state.datos_basicos.tipo_template}
+                  onValueChange={(value: 'fijo' | 'abierto') => actualizarDatosBasicos('tipo_template', value)}
+                  className="mt-3 flex gap-6"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="fijo" id="tipo_fijo" />
+                    <Label htmlFor="tipo_fijo" className="font-normal">
+                      <span className="font-medium">Fijo</span>
+                      <span className="text-sm text-gray-500 ml-2">(cuotas predefinidas)</span>
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="abierto" id="tipo_abierto" />
+                    <Label htmlFor="tipo_abierto" className="font-normal text-purple-700">
+                      <span className="font-medium">Abierto</span>
+                      <span className="text-sm text-purple-500 ml-2">(cuotas manuales)</span>
+                    </Label>
+                  </div>
+                </RadioGroup>
+
+                {state.datos_basicos.tipo_template === 'abierto' && (
+                  <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded text-sm text-purple-800">
+                    📂 <strong>Template Abierto:</strong> No genera cuotas automáticas.
+                    Agregue cuotas manualmente desde "Pago Manual".
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* CATEG con datalist */}
                 <div>
-                  <Label htmlFor="categ">Cuenta Contable (CATEG) *</Label>
-                  <Select 
-                    value={state.datos_basicos.categ} 
-                    onValueChange={(value) => actualizarDatosBasicos('categ', value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar cuenta contable" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cuentasContables.map(cuenta => (
-                        <SelectItem key={cuenta.categ} value={cuenta.categ}>
-                          {cuenta.categ} - {cuenta.cuenta_contable}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="categ">Categoría (CATEG) *</Label>
+                  <Input
+                    id="categ"
+                    list="categs-existentes"
+                    value={state.datos_basicos.categ}
+                    onChange={(e) => actualizarDatosBasicos('categ', e.target.value)}
+                    placeholder="Seleccionar o escribir nueva categoría"
+                  />
+                  <datalist id="categs-existentes">
+                    {categoriasTemplates.map(categ => (
+                      <option key={categ} value={categ} />
+                    ))}
+                  </datalist>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Escriba para buscar o cree una nueva
+                  </p>
                 </div>
+
+                {/* Cuenta Agrupadora */}
+                <div>
+                  <Label htmlFor="cuenta_agrupadora">Cuenta Agrupadora</Label>
+                  <Input
+                    id="cuenta_agrupadora"
+                    value={state.datos_basicos.cuenta_agrupadora}
+                    onChange={(e) => actualizarDatosBasicos('cuenta_agrupadora', e.target.value)}
+                    placeholder="Ej: IMP 1, FIJOS BS AS (opcional)"
+                  />
+                </div>
+
                 <div>
                   <Label htmlFor="centro_costo">Centro de Costo</Label>
                   <Input
@@ -450,19 +498,11 @@ export function WizardTemplatesEgresos() {
                     placeholder="Ej: ADM (opcional)"
                   />
                 </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="nombre_referencia">Nombre de Referencia *</Label>
-                  <Input
-                    id="nombre_referencia"
-                    value={state.datos_basicos.nombre_referencia}
-                    onChange={(e) => actualizarDatosBasicos('nombre_referencia', e.target.value)}
-                    placeholder="Ej: Impuesto Inmobiliario"
-                  />
-                </div>
+
                 <div>
                   <Label htmlFor="responsable">Responsable *</Label>
-                  <Select 
-                    value={state.datos_basicos.responsable} 
+                  <Select
+                    value={state.datos_basicos.responsable}
                     onValueChange={(value) => actualizarDatosBasicos('responsable', value)}
                   >
                     <SelectTrigger>
@@ -477,17 +517,32 @@ export function WizardTemplatesEgresos() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label htmlFor="monto_base">Monto Base *</Label>
+
+                <div className="md:col-span-2">
+                  <Label htmlFor="nombre_referencia">Nombre de Referencia *</Label>
                   <Input
-                    id="monto_base"
-                    type="number"
-                    step="0.01"
-                    value={state.datos_basicos.monto_base}
-                    onChange={(e) => actualizarDatosBasicos('monto_base', parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
+                    id="nombre_referencia"
+                    value={state.datos_basicos.nombre_referencia}
+                    onChange={(e) => actualizarDatosBasicos('nombre_referencia', e.target.value)}
+                    placeholder="Ej: Impuesto Inmobiliario"
                   />
                 </div>
+
+                {/* Monto Base - Solo visible para templates FIJO */}
+                {state.datos_basicos.tipo_template === 'fijo' && (
+                  <div>
+                    <Label htmlFor="monto_base">Monto Base *</Label>
+                    <Input
+                      id="monto_base"
+                      type="number"
+                      step="0.01"
+                      value={state.datos_basicos.monto_base}
+                      onChange={(e) => actualizarDatosBasicos('monto_base', parseFloat(e.target.value) || 0)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
+
                 <div>
                   <Label htmlFor="cuit_quien_cobra">CUIT Quien Cobra</Label>
                   <Input
@@ -511,46 +566,45 @@ export function WizardTemplatesEgresos() {
 
             {/* PASO 2: Recurrencia */}
             <TabsContent value="paso-2" className="space-y-4">
-              <div>
-                <Label>Tipo de Recurrencia *</Label>
-                <RadioGroup
-                  value={state.configuracion.tipo}
-                  onValueChange={(value) => actualizarConfiguracion('tipo', value)}
-                  className="mt-2"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="mensual" id="mensual" />
-                    <Label htmlFor="mensual">Mensual (12 cuotas fijas)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="anual" id="anual" />
-                    <Label htmlFor="anual">Anual (1 cuota fija)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="cuotas_especificas" id="cuotas_especificas" />
-                    <Label htmlFor="cuotas_especificas">Cuotas Específicas (meses seleccionados)</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="abierto" id="abierto" />
-                    <Label htmlFor="abierto" className="text-purple-700">
-                      Abierto (sin cuotas predefinidas - agregar manualmente)
-                    </Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              {/* Información para Template Abierto */}
-              {state.configuracion.tipo === 'abierto' && (
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                  <p className="text-sm text-purple-800">
-                    <strong>Template Abierto:</strong> No se generarán cuotas automáticamente.
-                    Las cuotas se agregarán manualmente desde el botón <strong>"Pago Manual"</strong> en la vista de Templates o Cash Flow.
+              {/* Templates abiertos - mensaje especial */}
+              {state.datos_basicos.tipo_template === 'abierto' ? (
+                <div className="p-6 bg-purple-50 border border-purple-200 rounded-lg text-center">
+                  <div className="text-4xl mb-4">📂</div>
+                  <h4 className="text-lg font-semibold text-purple-800 mb-2">Template Abierto</h4>
+                  <p className="text-sm text-purple-700 mb-4">
+                    Este tipo de template no requiere configuración de recurrencia.
                   </p>
-                  <p className="text-xs text-purple-600 mt-2">
+                  <p className="text-sm text-gray-600">
+                    Las cuotas se agregarán manualmente usando el botón <strong>"Pago Manual"</strong>
+                    disponible en la vista de Templates y Cash Flow.
+                  </p>
+                  <p className="text-xs text-purple-600 mt-4">
                     Ideal para: Jornales ocasionales, pagos variables, gastos no recurrentes.
                   </p>
                 </div>
-              )}
+              ) : (
+                <>
+                  <div>
+                    <Label>Tipo de Recurrencia *</Label>
+                    <RadioGroup
+                      value={state.configuracion.tipo}
+                      onValueChange={(value: 'mensual' | 'anual' | 'cuotas_especificas') => actualizarConfiguracion('tipo', value)}
+                      className="mt-2"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="mensual" id="mensual" />
+                        <Label htmlFor="mensual">Mensual (12 cuotas fijas)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="anual" id="anual" />
+                        <Label htmlFor="anual">Anual (1 cuota fija)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="cuotas_especificas" id="cuotas_especificas" />
+                        <Label htmlFor="cuotas_especificas">Cuotas Específicas (meses seleccionados)</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
 
               {/* Configuración Mensual */}
               {state.configuracion.tipo === 'mensual' && (
@@ -664,6 +718,8 @@ export function WizardTemplatesEgresos() {
                   )}
                 </div>
               )}
+                </>
+              )}
             </TabsContent>
 
             {/* PASO 3: Fechas (Preview automático) */}
@@ -672,7 +728,7 @@ export function WizardTemplatesEgresos() {
                 <h3 className="text-lg font-semibold mb-4">Vista Previa de Cuotas Generadas</h3>
 
                 {/* Mensaje especial para templates abiertos */}
-                {state.configuracion.tipo === 'abierto' ? (
+                {state.datos_basicos.tipo_template === 'abierto' ? (
                   <div className="p-6 bg-purple-50 border border-purple-200 rounded-lg text-center">
                     <div className="text-4xl mb-4">📂</div>
                     <h4 className="text-lg font-semibold text-purple-800 mb-2">Template Abierto</h4>
@@ -738,11 +794,24 @@ export function WizardTemplatesEgresos() {
                       <CardTitle className="text-base">Datos Básicos</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div><strong>Cuenta:</strong> {state.datos_basicos.categ}</div>
-                      <div><strong>Centro Costo:</strong> {state.datos_basicos.centro_costo}</div>
+                      <div>
+                        <strong>Tipo Template:</strong>{' '}
+                        <span className={state.datos_basicos.tipo_template === 'abierto' ? 'text-purple-700 font-semibold' : ''}>
+                          {state.datos_basicos.tipo_template === 'abierto' ? '📂 ABIERTO' : '📋 FIJO'}
+                        </span>
+                      </div>
+                      <div><strong>Categoría:</strong> {state.datos_basicos.categ}</div>
+                      {state.datos_basicos.cuenta_agrupadora && (
+                        <div><strong>Cuenta Agrupadora:</strong> {state.datos_basicos.cuenta_agrupadora}</div>
+                      )}
+                      {state.datos_basicos.centro_costo && (
+                        <div><strong>Centro Costo:</strong> {state.datos_basicos.centro_costo}</div>
+                      )}
                       <div><strong>Referencia:</strong> {state.datos_basicos.nombre_referencia}</div>
                       <div><strong>Responsable:</strong> {state.datos_basicos.responsable}</div>
-                      <div><strong>Monto Base:</strong> ${state.datos_basicos.monto_base.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                      {state.datos_basicos.tipo_template === 'fijo' && (
+                        <div><strong>Monto Base:</strong> ${state.datos_basicos.monto_base.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                      )}
                       {state.datos_basicos.cuit_quien_cobra && (
                         <div><strong>CUIT Cobra:</strong> {state.datos_basicos.cuit_quien_cobra}</div>
                       )}
@@ -754,31 +823,32 @@ export function WizardTemplatesEgresos() {
 
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">Configuración</CardTitle>
+                      <CardTitle className="text-base">Configuración Recurrencia</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div><strong>Tipo:</strong> {state.configuracion.tipo === 'abierto' ? '📂 ABIERTO' : state.configuracion.tipo}</div>
-                      {state.configuracion.tipo === 'mensual' && (
-                        <>
-                          <div><strong>Día del mes:</strong> {state.configuracion.ultimo_dia_mes ? 'Último día' : state.configuracion.dia_mes}</div>
-                          <div><strong>Aguinaldo:</strong> {state.configuracion.incluir_aguinaldo ? 'Sí' : 'No'}</div>
-                        </>
-                      )}
-                      {state.configuracion.tipo === 'anual' && (
-                        <div><strong>Fecha:</strong> {state.configuracion.fecha_anual}</div>
-                      )}
-                      {state.configuracion.tipo === 'cuotas_especificas' && (
-                        <>
-                          <div><strong>Cantidad cuotas:</strong> {state.configuracion.meses_especificos?.length || 0}</div>
-                          <div><strong>Meses:</strong> {state.configuracion.meses_especificos?.map(m => MESES[m-1].label).join(', ')}</div>
-                        </>
-                      )}
-                      {state.configuracion.tipo === 'abierto' ? (
+                      {state.datos_basicos.tipo_template === 'abierto' ? (
                         <div className="text-purple-700">
-                          <strong>Cuotas:</strong> Se agregarán manualmente con "Pago Manual"
+                          <p className="mb-2"><strong>Recurrencia:</strong> Sin cuotas predefinidas</p>
+                          <p><strong>Cuotas:</strong> Se agregarán manualmente con "Pago Manual"</p>
                         </div>
                       ) : (
                         <>
+                          <div><strong>Recurrencia:</strong> {state.configuracion.tipo}</div>
+                          {state.configuracion.tipo === 'mensual' && (
+                            <>
+                              <div><strong>Día del mes:</strong> {state.configuracion.ultimo_dia_mes ? 'Último día' : state.configuracion.dia_mes}</div>
+                              <div><strong>Aguinaldo:</strong> {state.configuracion.incluir_aguinaldo ? 'Sí' : 'No'}</div>
+                            </>
+                          )}
+                          {state.configuracion.tipo === 'anual' && (
+                            <div><strong>Fecha:</strong> {state.configuracion.fecha_anual}</div>
+                          )}
+                          {state.configuracion.tipo === 'cuotas_especificas' && (
+                            <>
+                              <div><strong>Cantidad cuotas:</strong> {state.configuracion.meses_especificos?.length || 0}</div>
+                              <div><strong>Meses:</strong> {state.configuracion.meses_especificos?.map(m => MESES[m-1].label).join(', ')}</div>
+                            </>
+                          )}
                           <div><strong>Total cuotas generadas:</strong> {state.cuotas_generadas.length}</div>
                           <div><strong>Monto total anual:</strong> ${state.cuotas_generadas.reduce((sum, c) => sum + c.monto, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
                         </>
