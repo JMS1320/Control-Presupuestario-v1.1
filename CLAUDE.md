@@ -2105,3 +2105,266 @@ INSERT INTO tipos_comprobante_afip (codigo, descripcion, es_nota_credito) VALUES
 **Resultado**: ✅ BD 100% lista para producción
 **Lección aprendida**: Backups capturan estructura pero pueden perder datos semilla - documentar scripts de carga completa
 
+---
+
+## 🏦 **ARQUITECTURA TEMPLATES BIDIRECCIONALES (FCI, Caja, etc.)** `#arquitectura #fci #pendiente`
+
+### 📅 **Fecha diseño**: 2026-02-04
+### 📍 **Estado**: DISEÑADO - Pendiente implementación
+
+---
+
+### 🎯 **CONTEXTO Y NECESIDAD**
+
+El usuario creó el template "FIMA Premium" (tipo abierto, categoría FCI) para gestionar Fondos Comunes de Inversión de corto plazo. Esto generó la necesidad de soportar **movimientos bidireccionales** en templates:
+
+- **Suscripción** (compra cuotapartes) → Débito bancario (sale dinero del banco, va al FCI)
+- **Rescate** (venta cuotapartes) → Crédito bancario (entra dinero al banco, sale del FCI)
+- **Tenencia actual** → Debe mostrarse como disponibilidad en Cash Flow
+
+### 🏗️ **ARQUITECTURA APROBADA**
+
+#### **Principio fundamental**: Arquitectura GENÉRICA, no específica para FCI
+
+La arquitectura debe servir para CUALQUIER template bidireccional:
+
+| Template | Movimiento que SUMA | Movimiento que RESTA |
+|----------|---------------------|----------------------|
+| **FCI** | Rescate (entra $) | Suscripción (sale $) |
+| **Caja** | Ingreso (entra $) | Egreso (sale $) |
+| **Préstamo** | Recibo (entra $) | Doy (sale $) |
+| **Genérico** | Entrada | Salida |
+
+#### **Campo en BD**: `tipo_movimiento` (valores genéricos)
+
+```sql
+-- En tabla cuotas_egresos_sin_factura
+tipo_movimiento VARCHAR(20) DEFAULT 'egreso'
+-- Valores: 'egreso' (default) | 'ingreso'
+```
+
+- **'egreso'** = sale dinero (reduce disponibilidad) - DEFAULT para templates normales
+- **'ingreso'** = entra dinero (aumenta disponibilidad)
+
+#### **Campo en BD**: `es_bidireccional` (identifica templates especiales)
+
+```sql
+-- En tabla egresos_sin_factura
+es_bidireccional BOOLEAN DEFAULT FALSE
+```
+
+- **TRUE** = El template acepta movimientos en ambas direcciones
+- **FALSE** = Template normal (solo egresos)
+
+### 📊 **ALMACENAMIENTO DE DATOS**
+
+**Decisión**: Monto SIEMPRE POSITIVO + campo tipo_movimiento
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ cuotas_egresos_sin_factura                                              │
+├──────────┬─────────────────┬─────────────┬──────────────────────────────┤
+│ egreso   │ tipo_movimiento │ monto       │ descripcion                  │
+├──────────┼─────────────────┼─────────────┼──────────────────────────────┤
+│ FIMA     │ egreso          │ 1.000.000   │ Suscripción FIMA Premium     │
+│ FIMA     │ ingreso         │ 300.000     │ Rescate FIMA Premium         │
+│ Caja     │ ingreso         │ 50.000      │ Venta mostrador              │
+│ Caja     │ egreso          │ 15.000      │ Compra insumos               │
+└──────────┴─────────────────┴─────────────┴──────────────────────────────┘
+```
+
+**Razones**:
+- Usuario siempre ingresa monto positivo (más intuitivo)
+- No hay confusión con signos
+- Conciliación bancaria más simple (débito 1M = egreso 1M)
+- Validación simple: `monto > 0`
+
+### 🧮 **CÁLCULO DE SALDO/TENENCIA**
+
+Query genérica que funciona para CUALQUIER template bidireccional:
+
+```sql
+SELECT
+  SUM(CASE WHEN tipo_movimiento = 'ingreso' THEN monto ELSE -monto END) AS saldo
+FROM cuotas_egresos_sin_factura
+WHERE egreso_id = '[template-id]'
+  AND estado != 'conciliado';  -- o filtro según necesidad
+```
+
+Para FCI:
+- Saldo positivo = Tenencia actual en el fondo
+- Saldo negativo = Inconsistencia (rescaté más de lo que suscribí)
+
+### 🎨 **UI/UX - IMPORTANTE**
+
+#### **En el modal "Pago Manual"**:
+
+Aunque internamente se guarda como 'egreso'/'ingreso', la UI debe mostrar términos específicos según el template:
+
+| Template | UI muestra | BD guarda |
+|----------|------------|-----------|
+| **FCI** | "Suscripción" / "Rescate" | 'egreso' / 'ingreso' |
+| **Caja** | "Egreso" / "Ingreso" | 'egreso' / 'ingreso' |
+| **Genérico** | "Salida" / "Entrada" | 'egreso' / 'ingreso' |
+
+#### **Descripción automática para FCI**:
+
+Cuando el template es FCI (o bidireccional con categ='FCI'):
+- Si elige "Suscripción" → descripcion = "Suscripción [nombre_referencia]"
+- Si elige "Rescate" → descripcion = "Rescate [nombre_referencia]"
+
+Ejemplo: "Suscripción FIMA Premium" / "Rescate FIMA Premium"
+
+### 📝 **MIGRACIÓN BD PENDIENTE**
+
+```sql
+-- 1. Agregar campo tipo_movimiento a cuotas
+ALTER TABLE cuotas_egresos_sin_factura
+ADD COLUMN tipo_movimiento VARCHAR(20) DEFAULT 'egreso';
+
+COMMENT ON COLUMN cuotas_egresos_sin_factura.tipo_movimiento
+IS 'Tipo de movimiento: egreso (default, sale dinero), ingreso (entra dinero)';
+
+-- 2. Agregar campo es_bidireccional a templates
+ALTER TABLE egresos_sin_factura
+ADD COLUMN es_bidireccional BOOLEAN DEFAULT FALSE;
+
+COMMENT ON COLUMN egresos_sin_factura.es_bidireccional
+IS 'Si true, el template acepta movimientos bidireccionales (FCI, Caja, etc.)';
+
+-- 3. Marcar templates FCI existentes como bidireccionales
+UPDATE egresos_sin_factura
+SET es_bidireccional = TRUE
+WHERE categ = 'FCI';
+```
+
+### 🔧 **MODIFICACIONES UI PENDIENTES**
+
+#### **1. Modal "Pago Manual" (vista-templates-egresos.tsx y vista-cash-flow.tsx)**
+
+Cuando el template seleccionado tiene `es_bidireccional = true`:
+
+```tsx
+// Mostrar selector de tipo movimiento
+{templateSeleccionado?.es_bidireccional && (
+  <div>
+    <Label>Tipo de Movimiento *</Label>
+    <RadioGroup value={tipoMovimiento} onValueChange={setTipoMovimiento}>
+      {/* Para FCI */}
+      {templateSeleccionado.categ === 'FCI' ? (
+        <>
+          <RadioGroupItem value="egreso" label="Suscripción" />
+          <RadioGroupItem value="ingreso" label="Rescate" />
+        </>
+      ) : (
+        <>
+          <RadioGroupItem value="egreso" label="Egreso" />
+          <RadioGroupItem value="ingreso" label="Ingreso" />
+        </>
+      )}
+    </RadioGroup>
+  </div>
+)}
+```
+
+#### **2. Generación automática de descripción para FCI**
+
+```tsx
+// Al guardar la cuota
+const descripcionFinal = template.categ === 'FCI'
+  ? `${tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate'} ${template.nombre_referencia}`
+  : descripcionIngresada;
+```
+
+#### **3. Cash Flow - Mostrar tenencia FCI como disponibilidad**
+
+**⚠️ PENDIENTE DEFINIR**: Cómo mostrar la tenencia de FCI en el Cash Flow.
+Opciones a evaluar:
+- Sección separada "Inversiones líquidas"
+- Sumada a disponibilidad bancaria
+- Vista expandible por FCI
+
+### 🔄 **CONCILIACIÓN BANCARIA**
+
+Para extracto bancario:
+- **Débito** en extracto = Debe matchear con `tipo_movimiento = 'egreso'` (Suscripción FCI)
+- **Crédito** en extracto = Debe matchear con `tipo_movimiento = 'ingreso'` (Rescate FCI)
+
+La conciliación es solo sobre los pesos que entran/salen de la cuenta corriente.
+
+### 📊 **CONCILIACIÓN INTERNA FCI (FUTURO)**
+
+Se requerirá una conciliación separada del FCI que NO es con extracto bancario:
+- Verificar cantidad de cuotapartes
+- Valor cuotaparte actual
+- Rendimiento generado
+
+**Campos opcionales futuros en cuotas**:
+- `cantidad_cuotapartes` (se confirma posterior)
+- `valor_cuotaparte` (se confirma posterior)
+
+Esto es para una etapa posterior, no bloquea la implementación actual.
+
+### ❓ **DUDAS PENDIENTES A RESOLVER**
+
+1. **UI del selector**: ¿RadioGroup o Select para elegir Suscripción/Rescate?
+2. **Descripción**: ¿El usuario puede editarla o es siempre automática para FCI?
+3. **Cash Flow disponibilidad**: ¿Cómo mostrar tenencia FCI? ¿Sección separada?
+4. **Múltiples FCIs**: ¿Vista resumen de todos los FCIs con sus tenencias?
+5. **Wizard templates**: ¿Agregar checkbox "Es bidireccional" al crear template?
+
+### ✅ **RESUMEN DECISIONES TOMADAS**
+
+| Decisión | Valor |
+|----------|-------|
+| Campo tipo_movimiento | 'egreso' / 'ingreso' (genérico) |
+| Monto | Siempre positivo |
+| Campo es_bidireccional | Boolean en egresos_sin_factura |
+| UI para FCI | Muestra "Suscripción/Rescate" |
+| Descripción FCI | Automática: "[Tipo] [nombre_referencia]" |
+| Arquitectura | Genérica para cualquier template bidireccional |
+
+### 🚀 **PRÓXIMOS PASOS IMPLEMENTACIÓN**
+
+1. **[ ]** Ejecutar migración BD (agregar campos)
+2. **[ ]** Modificar modal "Pago Manual" en Templates
+3. **[ ]** Modificar modal "Pago Manual" en Cash Flow
+4. **[ ]** Agregar lógica descripción automática FCI
+5. **[ ]** Testear con template FIMA Premium existente
+6. **[ ]** Definir cómo mostrar tenencia en Cash Flow
+7. **[ ]** (Opcional) Agregar checkbox "bidireccional" en Wizard
+
+---
+
+## 🚀 **AVANCES SESIÓN 2026-02-04**
+
+### ✅ **WIZARD TEMPLATES REESTRUCTURADO**
+
+**Commit**: `a741a99`
+
+Cambios implementados en `wizard-templates-egresos.tsx`:
+
+1. **Tipo template movido a Paso 1**: Selección Fijo/Abierto ahora es lo primero
+2. **CATEG con datalist**: Reemplazado Select por Input + datalist con categorías existentes de templates
+3. **Campo cuenta_agrupadora**: Agregado en Paso 1
+4. **Monto base condicional**: Solo visible para templates Fijo
+5. **Paso 2 adaptativo**: Muestra mensaje especial para templates Abiertos
+
+### ✅ **PAGO MANUAL IMPLEMENTADO**
+
+**Commits**: `fdc38d2`, `a8a25b6`
+
+- Botón "Pago Manual" en vista Templates y Cash Flow
+- Modal 2 pasos: seleccionar template abierto → ingresar fecha/monto/descripción
+- Solo muestra templates con `tipo_template = 'abierto'`
+
+### ⏳ **PENDIENTE**: Implementación arquitectura bidireccional (FCI, Caja)
+
+Ver sección anterior para detalles completos.
+
+---
+
+**Fecha sesión**: 2026-02-04
+**Tipo**: Diseño arquitectura + implementación wizard
+**Resultado**: Wizard reestructurado ✅, Arquitectura FCI diseñada ✅, Implementación FCI pendiente ⏳
+
