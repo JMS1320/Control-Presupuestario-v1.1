@@ -135,7 +135,7 @@ export function VistaTemplatesEgresos() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, es_bidireccional: boolean}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, es_bidireccional: boolean, responsable: string}[]>([])
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
@@ -589,7 +589,7 @@ export function VistaTemplatesEgresos() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ, es_bidireccional')
+        .select('id, nombre_referencia, categ, es_bidireccional, responsable')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
         .order('nombre_referencia')
@@ -1466,7 +1466,10 @@ export function VistaTemplatesEgresos() {
                       }`}
                     >
                       <div className="font-medium">{template.nombre_referencia}</div>
-                      <div className="text-xs text-gray-500">{template.categ}</div>
+                      <div className="text-xs text-gray-500">
+                        {template.categ}
+                        {template.responsable && <span className="ml-2 text-blue-600">• {template.responsable}</span>}
+                      </div>
                     </div>
                   ))}
                 </div>
