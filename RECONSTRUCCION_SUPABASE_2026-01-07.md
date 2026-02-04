@@ -3676,11 +3676,34 @@ CREATE INDEX idx_anticipos_estado ON anticipos_proveedores(estado);
 | 01/02 | ANTICIPO - Proveedor X | $500.000 | | 🟡 Pendiente Vincular |
 | 15/02 | Factura Proveedor X (vinculada) | $500.000 | | ✅ Vinculado |
 
-#### **❓ Preguntas Pendientes Definir:**
-- [ ] ¿Anticipo siempre 100% o puede ser parcial?
-- [ ] ¿Múltiples anticipos por factura?
-- [ ] ¿Qué pasa si anticipo > factura? (saldo a favor)
-- [ ] ¿Vincular desde ARCA o desde Cash Flow?
+#### **✅ Decisiones Tomadas (2026-02-04):**
+- [x] **Parcial**: Sí, anticipo puede ser menor que factura
+- [x] **Múltiples anticipos**: Sí, varios anticipos pueden aplicar a una factura
+- [x] **Anticipo > factura**: Queda saldo para próxima factura (casos excepcionales)
+- [x] **Vinculación**: AUTOMÁTICA al importar factura ARCA
+
+#### **🔄 Flujo Final Simplificado:**
+
+```
+1. CREAR ANTICIPO (Cash Flow)
+   → Botón "Nuevo Anticipo"
+   → CUIT + Nombre + Monto + Fecha
+   → Se guarda estado 'pendiente_vincular'
+   → Aparece en Cash Flow como débito
+
+2. IMPORTAR FACTURA (ARCA - automático)
+   → Al importar, buscar anticipos pendientes del mismo CUIT
+   → Si hay anticipos:
+      a) Restar del monto_a_abonar (puede quedar en 0 o parcial)
+      b) Agregar en detalle: "Anticipo aplicado: $X (DD/MM/AAAA)"
+      c) Marcar anticipo como 'vinculado' o 'parcial'
+   → Usuario que importa no necesita hacer nada extra
+
+3. VISUALIZACIÓN
+   → En factura: detalle muestra anticipo aplicado
+   → En Cash Flow: anticipo y factura aparecen relacionados
+   → Anticipos con saldo restante siguen visibles
+```
 
 #### **📍 Estado:** EN DESARROLLO (branch: desarrollo)
 #### **📅 Inicio:** 2026-02-04

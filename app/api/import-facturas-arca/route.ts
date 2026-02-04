@@ -520,6 +520,83 @@ export async function POST(req: Request) {
         } else {
           console.log(`✅ Fila ${indice + 2} insertada correctamente:`, data)
           filasImportadas++
+
+          // === APLICAR ANTICIPOS AUTOMÁTICAMENTE ===
+          if (data && data[0]) {
+            const facturaInsertada = data[0]
+            const cuitFactura = facturaInsertada.cuit?.replace(/-/g, '') || ''
+
+            if (cuitFactura) {
+              // Buscar anticipos pendientes del mismo CUIT
+              const { data: anticiposPendientes } = await supabase
+                .from('anticipos_proveedores')
+                .select('*')
+                .eq('cuit_proveedor', cuitFactura)
+                .neq('estado', 'vinculado')
+                .gt('monto_restante', 0)
+                .order('fecha_pago', { ascending: true })
+
+              if (anticiposPendientes && anticiposPendientes.length > 0) {
+                let montoFactura = facturaInsertada.monto_a_abonar || facturaInsertada.imp_total || 0
+                let totalAnticiposAplicados = 0
+                const anticiposAplicadosTexto: string[] = []
+
+                for (const anticipo of anticiposPendientes) {
+                  if (montoFactura <= 0) break
+
+                  const montoAplicar = Math.min(anticipo.monto_restante, montoFactura)
+                  totalAnticiposAplicados += montoAplicar
+
+                  // Actualizar el anticipo
+                  const nuevoRestante = anticipo.monto_restante - montoAplicar
+                  const nuevoEstado = nuevoRestante <= 0 ? 'vinculado' : 'parcial'
+
+                  await supabase
+                    .from('anticipos_proveedores')
+                    .update({
+                      monto_restante: nuevoRestante,
+                      estado: nuevoEstado,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', anticipo.id)
+
+                  // Registrar la relación anticipo-factura
+                  await supabase
+                    .from('anticipos_facturas')
+                    .insert({
+                      anticipo_id: anticipo.id,
+                      factura_arca_id: facturaInsertada.id,
+                      monto_aplicado: montoAplicar
+                    })
+
+                  // Texto para el detalle
+                  const fechaAnticipo = new Date(anticipo.fecha_pago).toLocaleDateString('es-AR')
+                  anticiposAplicadosTexto.push(`Anticipo $${montoAplicar.toLocaleString('es-AR')} (${fechaAnticipo})`)
+
+                  montoFactura -= montoAplicar
+                  console.log(`💰 Anticipo aplicado: $${montoAplicar} de ${anticipo.nombre_proveedor}`)
+                }
+
+                // Actualizar la factura con el nuevo monto y nota
+                if (totalAnticiposAplicados > 0) {
+                  const nuevoMontoAbonar = (facturaInsertada.monto_a_abonar || facturaInsertada.imp_total || 0) - totalAnticiposAplicados
+                  const detalleActualizado = `${facturaInsertada.detalle || ''} | ${anticiposAplicadosTexto.join(', ')}`.trim()
+
+                  await supabase
+                    .schema(esquema)
+                    .from('comprobantes_arca')
+                    .update({
+                      monto_a_abonar: nuevoMontoAbonar,
+                      detalle: detalleActualizado
+                    })
+                    .eq('id', facturaInsertada.id)
+
+                  console.log(`✅ Factura actualizada con anticipos: monto_a_abonar = $${nuevoMontoAbonar}`)
+                }
+              }
+            }
+          }
+          // === FIN APLICAR ANTICIPOS ===
         }
 
       } catch (error) {

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase"
 // Interface unificada para Cash Flow (10 columnas finales)
 export interface CashFlowRow {
   id: string
-  origen: 'ARCA' | 'TEMPLATE'
+  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO'
   origen_tabla: string // Para identificar tabla específica al editar
   egreso_id?: string // Para templates: ID del egreso padre
   fecha_estimada: string
@@ -28,7 +28,7 @@ export interface CashFlowFilters {
   fechaHasta?: string
   responsables?: string[]
   estados?: string[]
-  origenes?: ('ARCA' | 'TEMPLATE')[]
+  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO')[]
   empresas?: ('MSA' | 'PAM')[]
   busquedaDetalle?: string
   busquedaCateg?: string
@@ -91,6 +91,26 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         estado: c.estado || 'pendiente'
       }
     })
+  }
+
+  // Mapear anticipos a formato Cash Flow
+  const mapearAnticipos = (anticipos: any[]): CashFlowRow[] => {
+    return anticipos.map(a => ({
+      id: a.id,
+      origen: 'ANTICIPO' as const,
+      origen_tabla: 'anticipos_proveedores',
+      fecha_estimada: a.fecha_pago,
+      fecha_vencimiento: null,
+      categ: 'ANTICIPO',
+      centro_costo: '',
+      cuit_proveedor: a.cuit_proveedor || '',
+      nombre_proveedor: a.nombre_proveedor || '',
+      detalle: `ANTICIPO: ${a.descripcion || a.nombre_proveedor}${a.monto_restante < a.monto ? ` (Restante: $${a.monto_restante.toLocaleString('es-AR')})` : ''}`,
+      debitos: a.monto_restante || 0, // Solo mostrar el monto restante
+      creditos: 0,
+      saldo_cta_cte: 0,
+      estado: a.estado || 'pendiente_vincular'
+    }))
   }
 
   // Calcular saldos acumulativos
@@ -189,23 +209,37 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         throw new Error(`Error templates: ${errorTemplates.message}`)
       }
 
-      // 3. Mapear ambas fuentes a formato unificado
+      // 3. Cargar anticipos pendientes (no vinculados completamente)
+      const { data: anticipos, error: errorAnticipos } = await supabase
+        .from('anticipos_proveedores')
+        .select('*')
+        .neq('estado', 'vinculado') // Solo mostrar pendientes y parciales
+        .gt('monto_restante', 0) // Solo si queda saldo
+        .order('fecha_pago', { ascending: true })
+
+      if (errorAnticipos) {
+        console.error('Error cargando anticipos:', errorAnticipos)
+        // No es crítico, continuamos sin anticipos
+      }
+
+      // 4. Mapear todas las fuentes a formato unificado
       const filasArca = mapearFacturasArca(facturasArca || [])
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
+      const filasAnticipos = mapearAnticipos(anticipos || [])
 
-      // 4. Combinar y ordenar por fecha_estimada
-      const todasLasFilas = [...filasArca, ...filasTemplates]
+      // 5. Combinar y ordenar por fecha_estimada
+      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
-      // 5. Aplicar filtros
+      // 6. Aplicar filtros
       const filasFiltradas = aplicarFiltros(todasLasFilas, filtros)
 
-      // 6. Calcular saldos acumulativos
+      // 7. Calcular saldos acumulativos
       const filasConSaldo = calcularSaldosAcumulativos(filasFiltradas)
 
       setData(filasConSaldo)
 
-      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates = ${filasConSaldo.length} total (filtradas)`)
+      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos = ${filasConSaldo.length} total`)
 
     } catch (error) {
       console.error('Error en useMultiCashFlowData:', error)
@@ -342,7 +376,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     total_creditos: data.reduce((sum, row) => sum + row.creditos, 0),
     saldo_final: data.length > 0 ? data[data.length - 1].saldo_cta_cte : 0,
     registros_arca: data.filter(row => row.origen === 'ARCA').length,
-    registros_templates: data.filter(row => row.origen === 'TEMPLATE').length
+    registros_templates: data.filter(row => row.origen === 'TEMPLATE').length,
+    registros_anticipos: data.filter(row => row.origen === 'ANTICIPO').length
   }
 
   return {

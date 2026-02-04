@@ -102,6 +102,17 @@ export function VistaCashFlow() {
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
   const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
+
+  // Estado para modal Nuevo Anticipo
+  const [modalAnticipo, setModalAnticipo] = useState(false)
+  const [nuevoAnticipo, setNuevoAnticipo] = useState({
+    cuit: '',
+    nombre: '',
+    monto: '',
+    fecha: '',
+    descripcion: ''
+  })
+  const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
 
@@ -660,6 +671,48 @@ export function VistaCashFlow() {
     }
   }
 
+  // Funciones para Anticipos
+  const abrirModalAnticipo = () => {
+    setNuevoAnticipo({ cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+    setModalAnticipo(true)
+  }
+
+  const guardarAnticipo = async () => {
+    if (!nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha) {
+      toast.error('Debe completar CUIT, Nombre, Monto y Fecha')
+      return
+    }
+
+    setGuardandoAnticipo(true)
+    try {
+      const monto = parseFloat(nuevoAnticipo.monto)
+
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .insert({
+          cuit_proveedor: nuevoAnticipo.cuit.replace(/-/g, ''), // Guardar sin guiones
+          nombre_proveedor: nuevoAnticipo.nombre,
+          monto: monto,
+          monto_restante: monto, // Inicialmente todo el monto está pendiente
+          fecha_pago: nuevoAnticipo.fecha,
+          descripcion: nuevoAnticipo.descripcion || null,
+          estado: 'pendiente_vincular'
+        })
+
+      if (error) throw error
+
+      toast.success('Anticipo registrado exitosamente')
+      setModalAnticipo(false)
+      setNuevoAnticipo({ cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+      await cargarDatos()
+    } catch (error) {
+      console.error('Error guardando anticipo:', error)
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
+    } finally {
+      setGuardandoAnticipo(false)
+    }
+  }
+
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
@@ -941,6 +994,16 @@ export function VistaCashFlow() {
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Pago Manual
+              </Button>
+              {/* Botón Nuevo Anticipo */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={abrirModalAnticipo}
+                className="border-orange-500 text-orange-600 hover:bg-orange-50"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Anticipo
               </Button>
               <Button
                 variant="outline"
@@ -1520,6 +1583,102 @@ export function VistaCashFlow() {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Nuevo Anticipo */}
+      <Dialog open={modalAnticipo} onOpenChange={setModalAnticipo}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>💵 Nuevo Anticipo a Proveedor</DialogTitle>
+            <DialogDescription>
+              Registrar un pago anticipado antes de recibir la factura
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="anticipo-cuit">CUIT Proveedor *</Label>
+              <Input
+                id="anticipo-cuit"
+                type="text"
+                placeholder="30-12345678-9"
+                value={nuevoAnticipo.cuit}
+                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, cuit: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="anticipo-nombre">Nombre Proveedor *</Label>
+              <Input
+                id="anticipo-nombre"
+                type="text"
+                placeholder="Nombre del proveedor"
+                value={nuevoAnticipo.nombre}
+                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, nombre: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="anticipo-monto">Monto *</Label>
+                <Input
+                  id="anticipo-monto"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={nuevoAnticipo.monto}
+                  onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, monto: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="anticipo-fecha">Fecha Pago *</Label>
+                <Input
+                  id="anticipo-fecha"
+                  type="date"
+                  value={nuevoAnticipo.fecha}
+                  onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, fecha: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="anticipo-descripcion">Descripción (opcional)</Label>
+              <Input
+                id="anticipo-descripcion"
+                type="text"
+                placeholder="Motivo del anticipo..."
+                value={nuevoAnticipo.descripcion}
+                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, descripcion: e.target.value }))}
+              />
+            </div>
+
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
+              💡 <strong>Tip:</strong> Cuando importes una factura del mismo CUIT,
+              el sistema aplicará automáticamente este anticipo al monto a abonar.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalAnticipo(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={guardarAnticipo}
+              disabled={guardandoAnticipo || !nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {guardandoAnticipo ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                'Registrar Anticipo'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
