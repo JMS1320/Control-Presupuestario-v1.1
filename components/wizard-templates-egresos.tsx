@@ -33,7 +33,7 @@ interface CuentaContable {
 }
 
 interface ConfiguracionRecurrencia {
-  tipo: 'mensual' | 'anual' | 'cuotas_especificas'
+  tipo: 'mensual' | 'anual' | 'cuotas_especificas' | 'abierto'
   dia_mes?: number
   ultimo_dia_mes?: boolean
   fecha_anual?: string
@@ -135,6 +135,11 @@ export function WizardTemplatesEgresos() {
     const { datos_basicos, configuracion } = state
     const cuotas: CuotaGenerada[] = []
     const año_actual = new Date().getFullYear()
+
+    // Templates abiertos no generan cuotas predefinidas
+    if (configuracion.tipo === 'abierto') {
+      return []
+    }
 
     if (configuracion.tipo === 'mensual') {
       for (let mes = 1; mes <= 12; mes++) {
@@ -268,6 +273,7 @@ export function WizardTemplatesEgresos() {
       }
 
       // 2. Crear renglón de egreso
+      const esAbierto = state.configuracion.tipo === 'abierto'
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
@@ -279,6 +285,7 @@ export function WizardTemplatesEgresos() {
           cuit_quien_cobra: state.datos_basicos.cuit_quien_cobra || null,
           nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
           tipo_recurrencia: state.configuracion.tipo,
+          tipo_template: esAbierto ? 'abierto' : 'fijo', // NUEVO: tipo_template
           configuracion_reglas: state.configuracion,
           año: año_actual,
           activo: true
@@ -288,22 +295,24 @@ export function WizardTemplatesEgresos() {
 
       if (egresoError) throw egresoError
 
-      // 3. Crear cuotas generadas
-      const cuotasParaInsertar = state.cuotas_generadas.map(cuota => ({
-        egreso_id: egresoData.id,
-        mes: cuota.mes,
-        fecha_estimada: cuota.fecha_estimada,
-        fecha_vencimiento: cuota.fecha_vencimiento,
-        monto: cuota.monto,
-        descripcion: cuota.descripcion,
-        estado: 'pendiente'
-      }))
+      // 3. Crear cuotas generadas (solo si NO es abierto)
+      if (state.cuotas_generadas.length > 0) {
+        const cuotasParaInsertar = state.cuotas_generadas.map(cuota => ({
+          egreso_id: egresoData.id,
+          mes: cuota.mes,
+          fecha_estimada: cuota.fecha_estimada,
+          fecha_vencimiento: cuota.fecha_vencimiento,
+          monto: cuota.monto,
+          descripcion: cuota.descripcion,
+          estado: 'pendiente'
+        }))
 
-      const { error: cuotasError } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .insert(cuotasParaInsertar)
+        const { error: cuotasError } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert(cuotasParaInsertar)
 
-      if (cuotasError) throw cuotasError
+        if (cuotasError) throw cuotasError
+      }
 
       // 4. Actualizar contador en template master
       const { error: updateError } = await supabase
@@ -316,7 +325,10 @@ export function WizardTemplatesEgresos() {
 
       if (updateError) throw updateError
 
-      toast.success(`Template creado exitosamente: ${state.cuotas_generadas.length} cuotas generadas`)
+      const mensajeExito = esAbierto
+        ? 'Template ABIERTO creado exitosamente. Agregue cuotas desde el botón "Pago Manual".'
+        : `Template creado exitosamente: ${state.cuotas_generadas.length} cuotas generadas`
+      toast.success(mensajeExito)
       
       // Reset wizard
       setState({
@@ -346,15 +358,22 @@ export function WizardTemplatesEgresos() {
 
   // Validar paso actual
   const validarPaso = (): boolean => {
+    const esAbierto = state.configuracion.tipo === 'abierto'
+
     switch (state.paso) {
       case 1:
+        // Para templates abiertos, NO requerir monto_base
         return !!(
           state.datos_basicos.categ &&
           state.datos_basicos.nombre_referencia &&
           state.datos_basicos.responsable &&
-          state.datos_basicos.monto_base > 0
+          (esAbierto || state.datos_basicos.monto_base > 0)
         )
       case 2:
+        // Templates abiertos no requieren configuración adicional
+        if (esAbierto) {
+          return true
+        }
         if (state.configuracion.tipo === 'mensual') {
           return !!(state.configuracion.ultimo_dia_mes || (state.configuracion.dia_mes && state.configuracion.dia_mes >= 1 && state.configuracion.dia_mes <= 31))
         } else if (state.configuracion.tipo === 'anual') {
@@ -364,7 +383,8 @@ export function WizardTemplatesEgresos() {
         }
         return true
       case 3:
-        return state.cuotas_generadas.length > 0
+        // Templates abiertos no generan cuotas, pero es válido
+        return esAbierto || state.cuotas_generadas.length > 0
       case 4:
         return true
       default:
@@ -493,25 +513,44 @@ export function WizardTemplatesEgresos() {
             <TabsContent value="paso-2" className="space-y-4">
               <div>
                 <Label>Tipo de Recurrencia *</Label>
-                <RadioGroup 
+                <RadioGroup
                   value={state.configuracion.tipo}
                   onValueChange={(value) => actualizarConfiguracion('tipo', value)}
                   className="mt-2"
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="mensual" id="mensual" />
-                    <Label htmlFor="mensual">Mensual</Label>
+                    <Label htmlFor="mensual">Mensual (12 cuotas fijas)</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="anual" id="anual" />
-                    <Label htmlFor="anual">Anual</Label>
+                    <Label htmlFor="anual">Anual (1 cuota fija)</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="cuotas_especificas" id="cuotas_especificas" />
-                    <Label htmlFor="cuotas_especificas">Cuotas Específicas</Label>
+                    <Label htmlFor="cuotas_especificas">Cuotas Específicas (meses seleccionados)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="abierto" id="abierto" />
+                    <Label htmlFor="abierto" className="text-purple-700">
+                      Abierto (sin cuotas predefinidas - agregar manualmente)
+                    </Label>
                   </div>
                 </RadioGroup>
               </div>
+
+              {/* Información para Template Abierto */}
+              {state.configuracion.tipo === 'abierto' && (
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                  <p className="text-sm text-purple-800">
+                    <strong>Template Abierto:</strong> No se generarán cuotas automáticamente.
+                    Las cuotas se agregarán manualmente desde el botón <strong>"Pago Manual"</strong> en la vista de Templates o Cash Flow.
+                  </p>
+                  <p className="text-xs text-purple-600 mt-2">
+                    Ideal para: Jornales ocasionales, pagos variables, gastos no recurrentes.
+                  </p>
+                </div>
+              )}
 
               {/* Configuración Mensual */}
               {state.configuracion.tipo === 'mensual' && (
@@ -631,41 +670,59 @@ export function WizardTemplatesEgresos() {
             <TabsContent value="paso-3" className="space-y-4">
               <div>
                 <h3 className="text-lg font-semibold mb-4">Vista Previa de Cuotas Generadas</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  A continuación se muestran las cuotas que se generarán según la configuración:
-                </p>
-                
-                {state.cuotas_generadas.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border border-gray-200 rounded-lg">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-sm font-medium">Mes</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium">Fecha Estimada</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium">Fecha Vencimiento</th>
-                          <th className="px-4 py-2 text-right text-sm font-medium">Monto</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium">Descripción</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {state.cuotas_generadas.map((cuota, index) => (
-                          <tr key={index} className="border-t">
-                            <td className="px-4 py-2 text-sm">{MESES[cuota.mes - 1].label}</td>
-                            <td className="px-4 py-2 text-sm">{cuota.fecha_estimada}</td>
-                            <td className="px-4 py-2 text-sm">{cuota.fecha_vencimiento}</td>
-                            <td className="px-4 py-2 text-sm text-right">
-                              ${cuota.monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-4 py-2 text-sm">{cuota.descripcion}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+
+                {/* Mensaje especial para templates abiertos */}
+                {state.configuracion.tipo === 'abierto' ? (
+                  <div className="p-6 bg-purple-50 border border-purple-200 rounded-lg text-center">
+                    <div className="text-4xl mb-4">📂</div>
+                    <h4 className="text-lg font-semibold text-purple-800 mb-2">Template Abierto</h4>
+                    <p className="text-sm text-purple-700 mb-4">
+                      Este template no genera cuotas predefinidas.
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Las cuotas se agregarán manualmente usando el botón <strong>"Pago Manual"</strong>
+                      disponible en la vista de Templates y Cash Flow.
+                    </p>
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    No se generaron cuotas. Verificar configuración.
-                  </div>
+                  <>
+                    <p className="text-sm text-gray-600 mb-4">
+                      A continuación se muestran las cuotas que se generarán según la configuración:
+                    </p>
+
+                    {state.cuotas_generadas.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border border-gray-200 rounded-lg">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-sm font-medium">Mes</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium">Fecha Estimada</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium">Fecha Vencimiento</th>
+                              <th className="px-4 py-2 text-right text-sm font-medium">Monto</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium">Descripción</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {state.cuotas_generadas.map((cuota, index) => (
+                              <tr key={index} className="border-t">
+                                <td className="px-4 py-2 text-sm">{MESES[cuota.mes - 1].label}</td>
+                                <td className="px-4 py-2 text-sm">{cuota.fecha_estimada}</td>
+                                <td className="px-4 py-2 text-sm">{cuota.fecha_vencimiento}</td>
+                                <td className="px-4 py-2 text-sm text-right">
+                                  ${cuota.monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-4 py-2 text-sm">{cuota.descripcion}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        No se generaron cuotas. Verificar configuración.
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </TabsContent>
@@ -700,10 +757,10 @@ export function WizardTemplatesEgresos() {
                       <CardTitle className="text-base">Configuración</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2 text-sm">
-                      <div><strong>Tipo:</strong> {state.configuracion.tipo}</div>
+                      <div><strong>Tipo:</strong> {state.configuracion.tipo === 'abierto' ? '📂 ABIERTO' : state.configuracion.tipo}</div>
                       {state.configuracion.tipo === 'mensual' && (
                         <>
-                          <div><strong>Día del mes:</strong> {state.configuracion.dia_mes}</div>
+                          <div><strong>Día del mes:</strong> {state.configuracion.ultimo_dia_mes ? 'Último día' : state.configuracion.dia_mes}</div>
                           <div><strong>Aguinaldo:</strong> {state.configuracion.incluir_aguinaldo ? 'Sí' : 'No'}</div>
                         </>
                       )}
@@ -716,8 +773,16 @@ export function WizardTemplatesEgresos() {
                           <div><strong>Meses:</strong> {state.configuracion.meses_especificos?.map(m => MESES[m-1].label).join(', ')}</div>
                         </>
                       )}
-                      <div><strong>Total cuotas generadas:</strong> {state.cuotas_generadas.length}</div>
-                      <div><strong>Monto total anual:</strong> ${state.cuotas_generadas.reduce((sum, c) => sum + c.monto, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                      {state.configuracion.tipo === 'abierto' ? (
+                        <div className="text-purple-700">
+                          <strong>Cuotas:</strong> Se agregarán manualmente con "Pago Manual"
+                        </div>
+                      ) : (
+                        <>
+                          <div><strong>Total cuotas generadas:</strong> {state.cuotas_generadas.length}</div>
+                          <div><strong>Monto total anual:</strong> ${state.cuotas_generadas.reduce((sum, c) => sum + c.monto, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
