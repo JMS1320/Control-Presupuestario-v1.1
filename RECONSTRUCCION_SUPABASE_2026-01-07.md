@@ -3496,6 +3496,123 @@ const totalPeriodo = facturas.reduce((sum, f) => {
 
 ---
 
+### **2026-02-04: Templates Bidireccionales (FCI) + Estado 'pagado'**
+
+#### **🎯 Funcionalidad Implementada:**
+
+Sistema de templates bidireccionales para FCI (Fondos Comunes de Inversión) y otros templates que requieren movimientos en ambas direcciones (egreso/ingreso).
+
+#### **📋 Cambios en Base de Datos:**
+
+**1. Nuevos campos agregados:**
+
+```sql
+-- Migración aplicada 2026-02-04
+
+-- Campo tipo_movimiento en cuotas (egreso por defecto)
+ALTER TABLE cuotas_egresos_sin_factura
+ADD COLUMN tipo_movimiento VARCHAR(20) DEFAULT 'egreso';
+
+-- Campo es_bidireccional en templates
+ALTER TABLE egresos_sin_factura
+ADD COLUMN es_bidireccional BOOLEAN DEFAULT FALSE;
+
+-- Marcar templates FCI como bidireccionales
+UPDATE egresos_sin_factura
+SET es_bidireccional = TRUE
+WHERE categ = 'FCI';
+```
+
+**2. Estado 'pagado' agregado al constraint:**
+
+```sql
+-- Problema: Usuario no podía marcar cuotas como 'pagado'
+-- Error: violates check constraint "cuotas_egresos_sin_factura_estado_check"
+
+-- Solución:
+ALTER TABLE cuotas_egresos_sin_factura
+DROP CONSTRAINT cuotas_egresos_sin_factura_estado_check;
+
+ALTER TABLE cuotas_egresos_sin_factura
+ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado IN ('pendiente', 'conciliado', 'auditado', 'desactivado', 'debito', 'pagar', 'credito', 'pagado'));
+```
+
+#### **📊 Arquitectura Templates Bidireccionales:**
+
+**Conceptos:**
+- **tipo_movimiento = 'egreso'**: Dinero que sale (Débito en Cash Flow)
+- **tipo_movimiento = 'ingreso'**: Dinero que entra (Crédito en Cash Flow)
+- **es_bidireccional = true**: Template acepta ambos tipos de movimiento
+
+**Para FCI:**
+- 📤 **Suscripción** = tipo_movimiento 'egreso' (compra cuotapartes)
+- 📥 **Rescate** = tipo_movimiento 'ingreso' (venta cuotapartes)
+- Descripción automática: "[Tipo] [nombre_referencia]" ej: "Suscripción FIMA Premium"
+
+**UI vs BD:**
+| Concepto | BD (genérico) | UI FCI (específico) |
+|----------|---------------|---------------------|
+| Salida dinero | 'egreso' | 'Suscripción' |
+| Entrada dinero | 'ingreso' | 'Rescate' |
+
+**Montos:**
+- Siempre almacenados como **POSITIVOS**
+- El campo `tipo_movimiento` determina si suma o resta en Cash Flow
+
+#### **🔧 Archivos Modificados:**
+
+1. **`hooks/useMultiCashFlowData.ts`**:
+   - `mapearTemplatesEgresos()` ahora considera `tipo_movimiento`
+   - Si 'egreso' → monto va a columna Débitos
+   - Si 'ingreso' → monto va a columna Créditos
+
+2. **`components/vista-templates-egresos.tsx`**:
+   - Selector tipo movimiento en modal pago manual para templates bidireccionales
+   - Generación automática descripción para FCI
+
+3. **`components/vista-cash-flow.tsx`**:
+   - Misma funcionalidad que Templates para consistencia
+
+#### **⚠️ Script Post-Reconstrucción:**
+
+Si se reconstruye la BD, ejecutar después de scripts principales:
+
+```sql
+-- 1. Agregar campos bidireccionales
+ALTER TABLE cuotas_egresos_sin_factura
+ADD COLUMN IF NOT EXISTS tipo_movimiento VARCHAR(20) DEFAULT 'egreso';
+
+ALTER TABLE egresos_sin_factura
+ADD COLUMN IF NOT EXISTS es_bidireccional BOOLEAN DEFAULT FALSE;
+
+-- 2. Actualizar constraint estado
+ALTER TABLE cuotas_egresos_sin_factura
+DROP CONSTRAINT IF EXISTS cuotas_egresos_sin_factura_estado_check;
+
+ALTER TABLE cuotas_egresos_sin_factura
+ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado IN ('pendiente', 'conciliado', 'auditado', 'desactivado', 'debito', 'pagar', 'credito', 'pagado'));
+
+-- 3. Marcar templates FCI como bidireccionales
+UPDATE egresos_sin_factura
+SET es_bidireccional = TRUE
+WHERE categ = 'FCI';
+```
+
+#### **📋 Casos de Uso Bidireccional:**
+
+| Template | Egreso (salida) | Ingreso (entrada) |
+|----------|-----------------|-------------------|
+| **FCI** | Suscripción | Rescate |
+| **Caja** | Retiro | Depósito |
+| **Préstamos** | Pago cuota | Recepción préstamo |
+
+#### **📚 Commits:**
+- `d622ca5` - Feature: Templates bidireccionales + estado 'pagado'
+
+---
+
 ## 🔍 **3. TABLA REGLAS_CONCILIACION VACÍA - ANÁLISIS SISTEMA**
 
 ### 📋 **Problema Detectado (2026-01-11):**
