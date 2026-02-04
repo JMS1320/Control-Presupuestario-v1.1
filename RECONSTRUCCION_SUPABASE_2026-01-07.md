@@ -7120,5 +7120,237 @@ e2a5961 - Feature: Sistema completo anticipos proveedores
 
 ---
 
+---
+
+# 💰 SISTEMA VISTA DE PAGOS UNIFICADA
+
+## 📋 DESCRIPCIÓN GENERAL
+
+Sistema de gestión de pagos que unifica facturas ARCA y Templates en una sola vista, con filtros por origen y estado, permitiendo gestionar todos los egresos pendientes desde un único lugar.
+
+### Ubicaciones del Sistema
+
+1. **Vista ARCA Facturas** → Botón "💰 Pagos" → Modal Vista de Pagos
+2. **Vista Cash Flow** → Botón "PAGOS" (Ctrl+Click) → Modo PAGOS inline
+
+---
+
+## 🎯 MODAL VISTA DE PAGOS (ARCA)
+
+### Acceso
+- **Ubicación**: Vista "Egresos Facturas ARCA"
+- **Botón**: "💰 Pagos" (verde)
+- **Acción**: Abre modal con facturas ARCA + Templates
+
+### Filtros Disponibles
+
+#### Filtros de Origen
+| Filtro | Descripción | Datos |
+|--------|-------------|-------|
+| **ARCA** | Facturas importadas de AFIP | `msa.comprobantes_arca` |
+| **Templates** | Cuotas de templates activos | `cuotas_egresos_sin_factura` |
+
+#### Filtros de Estado (Solo Admin)
+| Estado | Color | Descripción |
+|--------|-------|-------------|
+| Preparado | ✅ Verde | Listo para pagar |
+| Pagar | 📋 Azul | Marcado para pago |
+| Pendiente | ⏳ Amarillo | Sin procesar |
+
+### Estructura de Datos Cargados
+
+```typescript
+// Al abrir modal:
+
+// 1. Cargar facturas ARCA
+const { data: arcaData } = await supabase
+  .schema('msa')
+  .from('comprobantes_arca')
+  .select('*')
+  .in('estado', ['pendiente', 'pagar', 'preparado'])
+  .order('fecha_vencimiento', { ascending: true })
+
+// 2. Cargar templates/cuotas
+const { data: templatesData } = await supabase
+  .from('cuotas_egresos_sin_factura')
+  .select(`*, egreso:egresos_sin_factura!inner(*)`)
+  .in('estado', ['pendiente', 'pagar', 'preparado'])
+  .eq('egreso.activo', true)
+  .order('fecha_vencimiento', { ascending: true })
+```
+
+### Visualización por Rol
+
+#### Admin (adminjms1320)
+```
+┌─────────────────────────────────────────────┐
+│ Filtros: [x] Preparado [x] Pagar [x] Pendiente │
+├─────────────────────────────────────────────┤
+│ ✅ ARCA Preparado (N)     Subtotal: $X.XXX  │
+│ ✅ Template Preparado (N) Subtotal: $X.XXX  │
+├─────────────────────────────────────────────┤
+│ 📋 ARCA Pagar (N)         Subtotal: $X.XXX  │
+│ 📋 Template Pagar (N)     Subtotal: $X.XXX  │
+├─────────────────────────────────────────────┤
+│ ⏳ ARCA Pendiente (N)     Subtotal: $X.XXX  │
+│ ⏳ Template Pendiente (N) Subtotal: $X.XXX  │
+├─────────────────────────────────────────────┤
+│                    Total General: $XX.XXX   │
+└─────────────────────────────────────────────┘
+```
+
+#### Contable (ulises)
+```
+┌─────────────────────────────────────────────┐
+│ 📋 ARCA Por Pagar (N)     Subtotal: $X.XXX  │
+│ 📋 Template Por Pagar (N) Subtotal: $X.XXX  │
+├─────────────────────────────────────────────┤
+│ ✅ ARCA Preparado (N)     Subtotal: $X.XXX  │
+│ ✅ Template Preparado (N) Subtotal: $X.XXX  │
+├─────────────────────────────────────────────┤
+│                    Total General: $XX.XXX   │
+└─────────────────────────────────────────────┘
+```
+
+### Funcionalidades
+
+| Función | Descripción |
+|---------|-------------|
+| **Seleccionar todo** | Selecciona todas las filas visibles según filtros |
+| **Deseleccionar** | Limpia toda la selección |
+| **Fecha de Pago** | Selector para asignar fecha a facturas seleccionadas |
+| **Cambio de Estado** | Botones para cambiar estado masivamente |
+| **SICORE automático** | Detecta facturas que califican para retención |
+
+---
+
+## 🔄 MODO PAGOS (CASH FLOW)
+
+### Acceso
+- **Ubicación**: Vista "Cash Flow"
+- **Activación**: Ctrl+Click en botón "PAGOS"
+- **Modo**: Inline (sin modal)
+
+### Filtros de Origen
+
+```typescript
+const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({
+  arca: true,
+  template: true,
+  anticipo: true
+})
+```
+
+| Filtro | Badge | Descripción |
+|--------|-------|-------------|
+| ARCA | Púrpura | Facturas AFIP |
+| Template | Verde | Cuotas templates |
+| Anticipo | Naranja | Pagos anticipados |
+
+### Panel de Control
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│ 💰 Modo PAGOS - X filas seleccionadas de Y                    │
+│                                    [Seleccionar todas] [Deseleccionar] │
+├───────────────────────────────────────────────────────────────┤
+│ Mostrar: [x] ARCA (N) [x] Template (N) [x] Anticipo (N)       │
+├───────────────────────────────────────────────────────────────┤
+│ [x] Cambiar fecha vencimiento  [Fecha: ____]                  │
+│ [x] Cambiar estado             [Estado: pagado ▼]             │
+│                                           [Aplicar a X filas] │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Funcionalidades
+
+| Función | Descripción |
+|---------|-------------|
+| **Filtrado dinámico** | Tabla muestra solo orígenes seleccionados |
+| **Selección múltiple** | Checkboxes en cada fila |
+| **Cambio fecha lote** | Actualiza fecha_vencimiento + fecha_estimada |
+| **Cambio estado lote** | Actualiza estado masivamente |
+| **Contadores en tiempo real** | Muestra cantidad por origen |
+
+---
+
+## 📁 ARCHIVOS INVOLUCRADOS
+
+### Vista ARCA Facturas
+**Archivo:** `components/vista-facturas-arca.tsx`
+
+```typescript
+// Estados para Vista de Pagos
+const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
+const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
+const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
+const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
+const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
+const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
+const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true })
+```
+
+### Vista Cash Flow
+**Archivo:** `components/vista-cash-flow.tsx`
+
+```typescript
+// Filtros de origen para modo PAGOS
+const [filtroOrigenPagos, setFiltroOrigenPagos] = useState<{
+  arca: boolean
+  template: boolean
+  anticipo: boolean
+}>({ arca: true, template: true, anticipo: true })
+
+// Filtrar datos según origen seleccionado
+const datosFiltradosPagos = modoPagos ? data.filter(fila => {
+  if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
+  if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
+  if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
+  return true
+}) : data
+```
+
+---
+
+## 🔧 COMMITS RELACIONADOS
+
+```
+2c8a3a7 - Feature: Templates en Vista de Pagos (ARCA)
+6fb65c0 - Feature: Filtros de origen en modo PAGOS
+```
+
+---
+
+## 📋 TESTING CHECKLIST
+
+### Modal Vista de Pagos (ARCA)
+- [x] Abrir modal → Carga ARCA y Templates
+- [x] Filtro ARCA → Muestra solo facturas ARCA
+- [x] Filtro Templates → Muestra solo cuotas templates
+- [x] Ambos filtros → Muestra todo combinado
+- [x] Contadores correctos por origen
+- [x] Total general suma según filtros activos
+- [x] Seleccionar todo → Selecciona visible
+- [x] Deseleccionar → Limpia selección
+
+### Modo PAGOS (Cash Flow)
+- [x] Ctrl+Click activa modo PAGOS
+- [x] Filtros ARCA/Template/Anticipo funcionan
+- [x] Contadores muestran cantidad por tipo
+- [x] Seleccionar todas → Solo filas filtradas
+- [x] Aplicar cambios → Actualiza correctamente
+
+---
+
+## 🚀 MEJORAS FUTURAS
+
+1. **Cambio de estado para Templates**: Actualmente solo muestra, falta implementar cambio masivo
+2. **SICORE para múltiples facturas**: Optimizar procesamiento en cola
+3. **Exportar selección**: Generar Excel/PDF de facturas seleccionadas
+4. **Filtros avanzados**: Por proveedor, rango de montos, etc.
+5. **Ordenamiento**: Por fecha, monto, proveedor
+
+---
+
 **📅 Última actualización sección:** 2026-02-04
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada
