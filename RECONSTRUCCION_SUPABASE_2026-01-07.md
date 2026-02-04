@@ -3610,6 +3610,80 @@ WHERE categ = 'FCI';
 
 #### **📚 Commits:**
 - `d622ca5` - Feature: Templates bidireccionales + estado 'pagado'
+- `0e6c1d1` - Feature: Opción bidireccional en wizard creación templates
+- `62744e4` - Fix: Mostrar responsable en selector de templates
+
+---
+
+### **2026-02-04: Sistema Anticipos Proveedores (PENDIENTE)**
+
+#### **🎯 Objetivo:**
+Registrar pagos adelantados cuando aún no existe la factura, para luego vincularla cuando llegue.
+
+#### **📋 Caso de Uso:**
+1. Se hace un pago anticipado a un proveedor (ej: adelanto $500K)
+2. Aún no hay factura emitida
+3. Semanas después llega la factura por $500K
+4. Se vincula el anticipo con la factura → monto_a_abonar = 0
+
+#### **🏗️ Arquitectura Decidida (Tabla separada):**
+
+```sql
+-- PENDIENTE APLICAR EN DESARROLLO
+CREATE TABLE anticipos_proveedores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuit_proveedor VARCHAR(20) NOT NULL,
+  nombre_proveedor VARCHAR(255) NOT NULL,
+  monto DECIMAL(15,2) NOT NULL,
+  fecha_pago DATE NOT NULL,
+  descripcion TEXT,
+  estado VARCHAR(20) DEFAULT 'pendiente_vincular',
+  -- Estados: 'pendiente_vincular' | 'vinculado' | 'parcial'
+  factura_arca_id UUID REFERENCES msa.comprobantes_arca(id),
+  monto_aplicado DECIMAL(15,2) DEFAULT 0, -- Para anticipos parciales
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Índice para búsqueda por proveedor
+CREATE INDEX idx_anticipos_cuit ON anticipos_proveedores(cuit_proveedor);
+CREATE INDEX idx_anticipos_estado ON anticipos_proveedores(estado);
+```
+
+#### **🔄 Flujo Propuesto:**
+
+**Paso 1 - Crear Anticipo (Cash Flow):**
+- Botón "Nuevo Anticipo" en Cash Flow
+- Modal: CUIT + Nombre Proveedor + Monto + Fecha + Descripción
+- Se guarda con estado 'pendiente_vincular'
+- Aparece en Cash Flow como débito con badge "ANTICIPO"
+
+**Paso 2 - Importar Factura (ARCA):**
+- Se importa factura normalmente
+- Sistema detecta anticipos pendientes del mismo CUIT
+- Alerta: "Hay anticipo de $X pendiente para este proveedor"
+
+**Paso 3 - Vincular:**
+- Opción de vincular anticipo con factura
+- Si anticipo = factura → estado 'vinculado', monto_a_abonar = 0
+- Si anticipo < factura → estado 'vinculado', monto_a_abonar = diferencia
+- Si anticipo > factura → estado 'parcial', queda saldo para próxima
+
+#### **📊 Visualización en Cash Flow:**
+
+| Fecha | Detalle | Débitos | Créditos | Estado |
+|-------|---------|---------|----------|--------|
+| 01/02 | ANTICIPO - Proveedor X | $500.000 | | 🟡 Pendiente Vincular |
+| 15/02 | Factura Proveedor X (vinculada) | $500.000 | | ✅ Vinculado |
+
+#### **❓ Preguntas Pendientes Definir:**
+- [ ] ¿Anticipo siempre 100% o puede ser parcial?
+- [ ] ¿Múltiples anticipos por factura?
+- [ ] ¿Qué pasa si anticipo > factura? (saldo a favor)
+- [ ] ¿Vincular desde ARCA o desde Cash Flow?
+
+#### **📍 Estado:** EN DESARROLLO (branch: desarrollo)
+#### **📅 Inicio:** 2026-02-04
 
 ---
 
