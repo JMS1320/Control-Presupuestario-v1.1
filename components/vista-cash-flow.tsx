@@ -93,6 +93,12 @@ export function VistaCashFlow() {
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
+  // Filtros de origen para modo PAGOS
+  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState<{
+    arca: boolean
+    template: boolean
+    anticipo: boolean
+  }>({ arca: true, template: true, anticipo: true })
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
@@ -500,6 +506,7 @@ export function VistaCashFlow() {
     event.preventDefault()
     setModoPagos(true)
     setFilasSeleccionadas(new Set())
+    setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
     toast.success("Modo PAGOS activado. Selecciona filas con checkboxes")
   }
 
@@ -510,6 +517,26 @@ export function VistaCashFlow() {
     setCambiarEstadoLote(true)
     setValorFechaLote('')
     setValorEstadoLote('pagado')
+    setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
+  }
+
+  // Filtrar datos según origen seleccionado en modo PAGOS
+  const datosFiltradosPagos = modoPagos ? data.filter(fila => {
+    if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
+    if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
+    if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
+    return true
+  }) : data
+
+  // Seleccionar/Deseleccionar todas las filas visibles
+  const seleccionarTodasVisibles = () => {
+    const idsVisibles = new Set(datosFiltradosPagos.map(f => f.id))
+    setFilasSeleccionadas(idsVisibles)
+    toast.success(`${idsVisibles.size} filas seleccionadas`)
+  }
+
+  const deseleccionarTodas = () => {
+    setFilasSeleccionadas(new Set())
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
@@ -1205,10 +1232,66 @@ export function VistaCashFlow() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="font-medium text-blue-800">
-                    💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas
+                    💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}
                   </h4>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={seleccionarTodasVisibles}
+                      className="text-xs"
+                    >
+                      Seleccionar todas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={deseleccionarTodas}
+                      className="text-xs"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      Deseleccionar
+                    </Button>
+                  </div>
                 </div>
-                
+
+                {/* Filtros por origen */}
+                <div className="flex items-center gap-6 p-2 bg-white rounded border">
+                  <span className="text-sm font-medium text-gray-700">Mostrar:</span>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={filtroOrigenPagos.arca}
+                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, arca: !!checked }))}
+                      />
+                      <span className="text-sm flex items-center gap-1">
+                        <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">ARCA</Badge>
+                        ({data.filter(f => f.origen === 'ARCA').length})
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={filtroOrigenPagos.template}
+                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, template: !!checked }))}
+                      />
+                      <span className="text-sm flex items-center gap-1">
+                        <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">Template</Badge>
+                        ({data.filter(f => f.origen === 'TEMPLATE').length})
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={filtroOrigenPagos.anticipo}
+                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, anticipo: !!checked }))}
+                      />
+                      <span className="text-sm flex items-center gap-1">
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs">Anticipo</Badge>
+                        ({data.filter(f => f.origen === 'ANTICIPO').length})
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-4">
                   {/* Checkboxes independientes */}
                   <div className="flex items-center gap-2">
@@ -1219,7 +1302,7 @@ export function VistaCashFlow() {
                     />
                     <Label htmlFor="cambiar-fecha">Cambiar fecha vencimiento</Label>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     <Checkbox
                       id="cambiar-estado"
@@ -1309,18 +1392,18 @@ export function VistaCashFlow() {
 
                 {/* Body */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {data.length === 0 ? (
+                  {(modoPagos ? datosFiltradosPagos : data).length === 0 ? (
                     <tr>
                       <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
-                        No hay datos para mostrar en Cash Flow
+                        {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
                         <br />
                         <span className="text-xs">
-                          Verifica que existan facturas ARCA o templates con estado pendiente/pagar/debito
+                          {modoPagos ? 'Activa al menos un filtro de origen (ARCA, Template, Anticipo)' : 'Verifica que existan facturas ARCA o templates con estado pendiente/pagar/debito'}
                         </span>
                       </td>
                     </tr>
                   ) : (
-                    data.map((fila, index) => (
+                    (modoPagos ? datosFiltradosPagos : data).map((fila, index) => (
                       <tr 
                         key={fila.id} 
                         className={`group hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'} ${filasSeleccionadas.has(fila.id) ? 'bg-blue-50' : ''}`}
