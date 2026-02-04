@@ -6807,5 +6807,318 @@ const descripcionFinal = template.categ === 'FCI'
 
 ---
 
+---
+
+# 💵 SISTEMA ANTICIPOS PROVEEDORES/CLIENTES
+
+## 📋 DESCRIPCIÓN GENERAL
+
+Sistema para registrar pagos o cobros anticipados ANTES de que exista la factura correspondiente. Cuando se importa una factura del mismo CUIT, el sistema aplica automáticamente el anticipo al monto a abonar.
+
+### Casos de Uso
+
+1. **Anticipo de Pago (Egreso)**: Pago adelantado a proveedor antes de recibir factura
+2. **Anticipo de Cobro (Ingreso)**: Cobro adelantado a cliente antes de emitir factura
+
+---
+
+## 🗄️ ESTRUCTURA BASE DE DATOS
+
+### Tabla: `anticipos_proveedores`
+
+```sql
+CREATE TABLE anticipos_proveedores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tipo VARCHAR(10) DEFAULT 'pago' CHECK (tipo IN ('pago', 'cobro')),
+  cuit_proveedor VARCHAR(20) NOT NULL,
+  nombre_proveedor VARCHAR(255) NOT NULL,
+  monto DECIMAL(15,2) NOT NULL,
+  monto_restante DECIMAL(15,2) NOT NULL,
+  fecha_pago DATE NOT NULL,
+  descripcion TEXT,
+  estado VARCHAR(50) DEFAULT 'pendiente_vincular',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índice para búsqueda por CUIT
+CREATE INDEX idx_anticipos_cuit ON anticipos_proveedores(cuit_proveedor);
+```
+
+### Tabla: `anticipos_facturas` (Relación Many-to-Many)
+
+```sql
+CREATE TABLE anticipos_facturas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  anticipo_id UUID NOT NULL REFERENCES anticipos_proveedores(id),
+  factura_id UUID NOT NULL,
+  monto_aplicado DECIMAL(15,2) NOT NULL,
+  fecha_aplicacion TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### Migraciones Aplicadas
+
+```sql
+-- Migración: create_anticipos_proveedores
+CREATE TABLE anticipos_proveedores (...);
+
+-- Migración: add_tipo_anticipo
+ALTER TABLE anticipos_proveedores
+ADD COLUMN tipo VARCHAR(10) DEFAULT 'pago' CHECK (tipo IN ('pago', 'cobro'));
+```
+
+---
+
+## 🔄 FLUJO DE FUNCIONAMIENTO
+
+### 1. Crear Anticipo (desde Cash Flow)
+
+```
+Usuario → Botón "Anticipo" (naranja) → Modal
+         ↓
+    Selecciona tipo:
+    • Pago (Egreso) → Aparece en columna DÉBITOS
+    • Cobro (Ingreso) → Aparece en columna CRÉDITOS
+         ↓
+    Completa datos: CUIT, Nombre, Monto, Fecha, Descripción
+         ↓
+    INSERT anticipos_proveedores (monto = monto_restante)
+         ↓
+    Aparece en Cash Flow con CATEG = "ANTICIPO" o "ANTICIPO COBRO"
+```
+
+### 2. Aplicación Automática (al importar factura ARCA)
+
+```
+Import factura ARCA
+         ↓
+    Buscar anticipos pendientes mismo CUIT:
+    SELECT * FROM anticipos_proveedores
+    WHERE cuit_proveedor = [CUIT_FACTURA]
+      AND estado != 'vinculado'
+      AND monto_restante > 0
+         ↓
+    SI encuentra anticipo(s):
+      • Calcular monto a aplicar (min de monto_restante y monto_factura)
+      • UPDATE factura: monto_a_abonar = imp_total - monto_aplicado
+      • UPDATE anticipo: monto_restante -= monto_aplicado
+      • INSERT anticipos_facturas (registro de vinculación)
+      • SI monto_restante = 0 → estado = 'vinculado'
+      • SI monto_restante > 0 → estado = 'parcial'
+         ↓
+    Factura queda con monto reducido en Cash Flow
+```
+
+### 3. Edición de Anticipos (desde Cash Flow)
+
+```
+Usuario → Ctrl+Click en monto anticipo
+         ↓
+    Hook detecta origen = 'ANTICIPO'
+         ↓
+    Mapeo especial de campos:
+    • debitos/creditos → monto Y monto_restante
+    • fecha_estimada → fecha_pago
+    • detalle → descripcion
+         ↓
+    UPDATE anticipos_proveedores
+```
+
+---
+
+## 📁 ARCHIVOS INVOLUCRADOS
+
+### 1. `hooks/useMultiCashFlowData.ts`
+
+**Función `mapearAnticipos()`:**
+```typescript
+const mapearAnticipos = (anticipos: any[]): CashFlowRow[] => {
+  return anticipos.map(a => {
+    const esCobro = a.tipo === 'cobro'
+    const montoRestante = a.monto_restante || 0
+    const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
+
+    return {
+      id: a.id,
+      origen: 'ANTICIPO' as const,
+      origen_tabla: 'anticipos_proveedores',
+      fecha_estimada: a.fecha_pago,
+      categ: tipoLabel,
+      debitos: esCobro ? 0 : montoRestante,   // Pago = débito
+      creditos: esCobro ? montoRestante : 0,  // Cobro = crédito
+      estado: a.estado || 'pendiente_vincular'
+    }
+  })
+}
+```
+
+**Función `actualizarRegistro()` - Manejo ANTICIPO:**
+```typescript
+} else if (origen === 'ANTICIPO') {
+  let anticipoUpdateData: any = {}
+
+  if (campo === 'debitos' || campo === 'creditos') {
+    anticipoUpdateData.monto = valor
+    anticipoUpdateData.monto_restante = valor
+  } else if (campo === 'fecha_estimada') {
+    anticipoUpdateData.fecha_pago = valor
+  } else if (campo === 'detalle') {
+    anticipoUpdateData.descripcion = valor
+  }
+
+  await supabase
+    .from('anticipos_proveedores')
+    .update(anticipoUpdateData)
+    .eq('id', id)
+}
+```
+
+### 2. `hooks/useInlineEditor.ts`
+
+**Tipo CeldaEnEdicion actualizado:**
+```typescript
+origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW' | 'ANTICIPO'
+```
+
+**Función `aplicarReglasAutomaticas()` - Mapeo ANTICIPO:**
+```typescript
+if (celda.origen === 'ANTICIPO') {
+  if (celda.columna === 'debitos' || celda.columna === 'creditos') {
+    updateData.monto = valorProcesado
+    updateData.monto_restante = valorProcesado
+  } else if (celda.columna === 'fecha_estimada') {
+    updateData.fecha_pago = valorProcesado
+  } else if (celda.columna === 'detalle') {
+    updateData.descripcion = valorProcesado
+  }
+}
+```
+
+### 3. `components/vista-cash-flow.tsx`
+
+**Estado del modal:**
+```typescript
+const [nuevoAnticipo, setNuevoAnticipo] = useState({
+  tipo: 'pago' as 'pago' | 'cobro',
+  cuit: '',
+  nombre: '',
+  monto: '',
+  fecha: '',
+  descripcion: ''
+})
+```
+
+**Modal con selector de tipo:**
+- Radio buttons: Pago (TrendingDown rojo) / Cobro (TrendingUp verde)
+- Labels dinámicos: "Proveedor" vs "Cliente"
+- Colores dinámicos: naranja (pago) vs verde (cobro)
+- Tips contextuales según tipo
+
+### 4. `app/api/import-facturas-arca/route.ts`
+
+**Aplicación automática post-import:**
+```typescript
+// === APLICAR ANTICIPOS AUTOMÁTICAMENTE ===
+const { data: anticiposPendientes } = await supabase
+  .from('anticipos_proveedores')
+  .select('*')
+  .eq('cuit_proveedor', cuitFactura)
+  .neq('estado', 'vinculado')
+  .gt('monto_restante', 0)
+
+if (anticiposPendientes?.length) {
+  for (const anticipo of anticiposPendientes) {
+    const montoAplicar = Math.min(anticipo.monto_restante, montoFactura)
+    // ... aplicar y actualizar
+  }
+}
+```
+
+---
+
+## 🎨 INTERFAZ DE USUARIO
+
+### Modal Nuevo Anticipo
+
+| Campo | Tipo Pago | Tipo Cobro |
+|-------|-----------|------------|
+| Título | 💵 Nuevo Anticipo | 💵 Nuevo Anticipo |
+| Tipo selector | ⬇️ Pago (Egreso) | ⬆️ Cobro (Ingreso) |
+| Label CUIT | CUIT Proveedor | CUIT Cliente |
+| Label Nombre | Nombre Proveedor | Nombre Cliente |
+| Color botón | Naranja | Verde |
+| Tip inferior | "Al importar factura..." | "Se mostrará como CRÉDITO..." |
+
+### Visualización en Cash Flow
+
+| Tipo | Columna | CATEG | Color Badge |
+|------|---------|-------|-------------|
+| Pago | Débitos | ANTICIPO | Naranja |
+| Cobro | Créditos | ANTICIPO COBRO | Verde |
+
+---
+
+## ✅ DECISIONES DE ARQUITECTURA
+
+### 1. Anticipos Parciales
+**Decisión:** ✅ SÍ permitidos
+- Un anticipo puede aplicarse parcialmente a una factura
+- `monto_restante` trackea cuánto queda disponible
+- Estado `parcial` indica aplicación incompleta
+
+### 2. Múltiples Anticipos por Factura
+**Decisión:** ✅ SÍ permitidos
+- Una factura puede recibir varios anticipos
+- Tabla `anticipos_facturas` registra cada vinculación
+- Se aplican en orden cronológico (fecha_pago ASC)
+
+### 3. Anticipos de Cobro → Ventas
+**Decisión:** ⏳ PENDIENTE
+- Los anticipos de cobro se registran pero no se vinculan automáticamente
+- Requiere desarrollo de sección "Ventas" para vinculación automática
+- Por ahora solo aparecen como créditos manuales en Cash Flow
+
+### 4. Edición Post-Vinculación
+**Decisión:** ❌ NO permitido (implícito)
+- Si `monto_restante = 0` y `estado = vinculado`, el anticipo no aparece en Cash Flow
+- Solo se muestran anticipos con `monto_restante > 0`
+
+---
+
+## 🔧 COMMITS RELACIONADOS
+
+```
+621c02e - Feature: Anticipos de Cobro + Edición de Anticipos
+e2a5961 - Feature: Sistema completo anticipos proveedores
+[migration] - create_anticipos_proveedores
+[migration] - add_tipo_anticipo
+```
+
+---
+
+## 📋 TESTING CHECKLIST
+
+- [x] Crear anticipo de PAGO → Aparece en débitos
+- [x] Crear anticipo de COBRO → Aparece en créditos
+- [x] Editar monto anticipo con Ctrl+Click → Guarda correctamente
+- [x] Editar fecha anticipo → Guarda como fecha_pago
+- [x] Importar factura mismo CUIT → Aplica anticipo automáticamente
+- [x] Anticipo parcial → monto_restante se actualiza
+- [x] Anticipo completamente usado → Desaparece de Cash Flow
+- [ ] Múltiples anticipos para una factura → Se aplican en orden
+
+---
+
+## 🚀 MEJORAS FUTURAS
+
+1. **Vista dedicada de Anticipos**: Listado completo con historial de aplicaciones
+2. **Vinculación manual**: Poder vincular anticipo a factura específica manualmente
+3. **Anticipos de Cobro → Ventas**: Vinculación automática cuando se desarrolle sección Ventas
+4. **Reportes**: Resumen de anticipos por proveedor/cliente
+5. **Alertas**: Notificar anticipos antiguos sin vincular
+
+---
+
 **📅 Última actualización sección:** 2026-02-04
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes
