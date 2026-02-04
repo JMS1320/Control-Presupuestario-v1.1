@@ -106,6 +106,7 @@ export function VistaCashFlow() {
   // Estado para modal Nuevo Anticipo
   const [modalAnticipo, setModalAnticipo] = useState(false)
   const [nuevoAnticipo, setNuevoAnticipo] = useState({
+    tipo: 'pago' as 'pago' | 'cobro',
     cuit: '',
     nombre: '',
     monto: '',
@@ -195,14 +196,19 @@ export function VistaCashFlow() {
     if (fila.origen === 'ARCA') {
       tableName = 'comprobantes_arca'
       console.log('✅ Cash Flow: Detectado ARCA → tabla comprobantes_arca')
+    } else if (fila.origen === 'ANTICIPO') {
+      tableName = 'anticipos_proveedores'
+      console.log('💵 Cash Flow: Detectado ANTICIPO → tabla anticipos_proveedores')
     } else {
       console.log('📋 Cash Flow: Default Templates → tabla cuotas_egresos_sin_factura')
     }
-    
+
     // Determinar origen para el hook
     let origenHook: any = 'CASH_FLOW'
     if (fila.origen === 'ARCA') {
       origenHook = 'ARCA' // Para que use schema msa
+    } else if (fila.origen === 'ANTICIPO') {
+      origenHook = 'ANTICIPO' // Para mapeo especial de campos
     }
 
     // Mapear campo del Cash Flow al campo real de BD
@@ -219,6 +225,15 @@ export function VistaCashFlow() {
         campoReal = 'monto'
       } else if (columna.key === 'detalle') {
         campoReal = 'descripcion'
+      }
+    } else if (fila.origen === 'ANTICIPO') {
+      // Para anticipos, el hook maneja el mapeo internamente
+      if (columna.key === 'debitos' || columna.key === 'creditos') {
+        campoReal = columna.key // El hook mapeará a monto/monto_restante
+      } else if (columna.key === 'fecha_estimada') {
+        campoReal = 'fecha_estimada' // El hook mapeará a fecha_pago
+      } else if (columna.key === 'detalle') {
+        campoReal = 'detalle' // El hook mapeará a descripcion
       }
     }
 
@@ -673,7 +688,7 @@ export function VistaCashFlow() {
 
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
-    setNuevoAnticipo({ cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
     setModalAnticipo(true)
   }
 
@@ -690,6 +705,7 @@ export function VistaCashFlow() {
       const { error } = await supabase
         .from('anticipos_proveedores')
         .insert({
+          tipo: nuevoAnticipo.tipo, // 'pago' o 'cobro'
           cuit_proveedor: nuevoAnticipo.cuit.replace(/-/g, ''), // Guardar sin guiones
           nombre_proveedor: nuevoAnticipo.nombre,
           monto: monto,
@@ -701,9 +717,10 @@ export function VistaCashFlow() {
 
       if (error) throw error
 
-      toast.success('Anticipo registrado exitosamente')
+      const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
+      toast.success(`${tipoLabel} registrado exitosamente`)
       setModalAnticipo(false)
-      setNuevoAnticipo({ cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
       await cargarDatos()
     } catch (error) {
       console.error('Error guardando anticipo:', error)
@@ -1591,15 +1608,50 @@ export function VistaCashFlow() {
       <Dialog open={modalAnticipo} onOpenChange={setModalAnticipo}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>💵 Nuevo Anticipo a Proveedor</DialogTitle>
+            <DialogTitle>💵 Nuevo Anticipo</DialogTitle>
             <DialogDescription>
-              Registrar un pago anticipado antes de recibir la factura
+              Registrar un pago o cobro anticipado antes de recibir/emitir la factura
             </DialogDescription>
           </DialogHeader>
 
           <div className="py-4 space-y-4">
+            {/* Selector de tipo */}
             <div className="space-y-2">
-              <Label htmlFor="anticipo-cuit">CUIT Proveedor *</Label>
+              <Label>Tipo de Anticipo *</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipo-anticipo"
+                    value="pago"
+                    checked={nuevoAnticipo.tipo === 'pago'}
+                    onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'pago' }))}
+                    className="w-4 h-4 text-orange-600"
+                  />
+                  <span className="flex items-center gap-1">
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                    Pago (Egreso)
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="tipo-anticipo"
+                    value="cobro"
+                    checked={nuevoAnticipo.tipo === 'cobro'}
+                    onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'cobro' }))}
+                    className="w-4 h-4 text-green-600"
+                  />
+                  <span className="flex items-center gap-1">
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                    Cobro (Ingreso)
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="anticipo-cuit">CUIT {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
               <Input
                 id="anticipo-cuit"
                 type="text"
@@ -1610,11 +1662,11 @@ export function VistaCashFlow() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="anticipo-nombre">Nombre Proveedor *</Label>
+              <Label htmlFor="anticipo-nombre">Nombre {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
               <Input
                 id="anticipo-nombre"
                 type="text"
-                placeholder="Nombre del proveedor"
+                placeholder={`Nombre del ${nuevoAnticipo.tipo === 'cobro' ? 'cliente' : 'proveedor'}`}
                 value={nuevoAnticipo.nombre}
                 onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, nombre: e.target.value }))}
               />
@@ -1655,9 +1707,10 @@ export function VistaCashFlow() {
               />
             </div>
 
-            <div className="p-3 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
-              💡 <strong>Tip:</strong> Cuando importes una factura del mismo CUIT,
-              el sistema aplicará automáticamente este anticipo al monto a abonar.
+            <div className={`p-3 ${nuevoAnticipo.tipo === 'cobro' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-orange-50 border-orange-200 text-orange-800'} border rounded text-sm`}>
+              💡 <strong>Tip:</strong> {nuevoAnticipo.tipo === 'cobro'
+                ? 'Los anticipos de cobro se mostrarán como CRÉDITOS en el Cash Flow. Cuando desarrollemos la sección Ventas, se vincularán automáticamente.'
+                : 'Cuando importes una factura del mismo CUIT, el sistema aplicará automáticamente este anticipo al monto a abonar.'}
             </div>
           </div>
 
@@ -1668,7 +1721,7 @@ export function VistaCashFlow() {
             <Button
               onClick={guardarAnticipo}
               disabled={guardandoAnticipo || !nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha}
-              className="bg-orange-600 hover:bg-orange-700"
+              className={nuevoAnticipo.tipo === 'cobro' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
             >
               {guardandoAnticipo ? (
                 <>
@@ -1676,7 +1729,7 @@ export function VistaCashFlow() {
                   Guardando...
                 </>
               ) : (
-                'Registrar Anticipo'
+                `Registrar Anticipo de ${nuevoAnticipo.tipo === 'cobro' ? 'Cobro' : 'Pago'}`
               )}
             </Button>
           </DialogFooter>

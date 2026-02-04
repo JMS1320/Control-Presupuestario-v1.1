@@ -95,22 +95,28 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
   // Mapear anticipos a formato Cash Flow
   const mapearAnticipos = (anticipos: any[]): CashFlowRow[] => {
-    return anticipos.map(a => ({
-      id: a.id,
-      origen: 'ANTICIPO' as const,
-      origen_tabla: 'anticipos_proveedores',
-      fecha_estimada: a.fecha_pago,
-      fecha_vencimiento: null,
-      categ: 'ANTICIPO',
-      centro_costo: '',
-      cuit_proveedor: a.cuit_proveedor || '',
-      nombre_proveedor: a.nombre_proveedor || '',
-      detalle: `ANTICIPO: ${a.descripcion || a.nombre_proveedor}${a.monto_restante < a.monto ? ` (Restante: $${a.monto_restante.toLocaleString('es-AR')})` : ''}`,
-      debitos: a.monto_restante || 0, // Solo mostrar el monto restante
-      creditos: 0,
-      saldo_cta_cte: 0,
-      estado: a.estado || 'pendiente_vincular'
-    }))
+    return anticipos.map(a => {
+      const esCobro = a.tipo === 'cobro'
+      const montoRestante = a.monto_restante || 0
+      const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
+
+      return {
+        id: a.id,
+        origen: 'ANTICIPO' as const,
+        origen_tabla: 'anticipos_proveedores',
+        fecha_estimada: a.fecha_pago,
+        fecha_vencimiento: null,
+        categ: tipoLabel,
+        centro_costo: '',
+        cuit_proveedor: a.cuit_proveedor || '',
+        nombre_proveedor: a.nombre_proveedor || '',
+        detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${a.monto_restante < a.monto ? ` (Restante: $${a.monto_restante.toLocaleString('es-AR')})` : ''}`,
+        debitos: esCobro ? 0 : montoRestante,   // Pago = débito (dinero sale)
+        creditos: esCobro ? montoRestante : 0,  // Cobro = crédito (dinero entra)
+        saldo_cta_cte: 0,
+        estado: a.estado || 'pendiente_vincular'
+      }
+    })
   }
 
   // Calcular saldos acumulativos
@@ -251,16 +257,16 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
   // Función para actualizar un registro individual
   const actualizarRegistro = async (
-    id: string, 
-    campo: string, 
-    valor: any, 
-    origen: 'ARCA' | 'TEMPLATE',
+    id: string,
+    campo: string,
+    valor: any,
+    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO',
     egresoId?: string
   ): Promise<boolean> => {
     try {
       // Preparar objeto de actualización
       let updateData: any = { [campo]: valor }
-      
+
       // Regla automática: Si se actualiza fecha_vencimiento, actualizar fecha_estimada para coincidir
       if (campo === 'fecha_vencimiento' && valor) {
         updateData.fecha_estimada = valor
@@ -275,13 +281,37 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           .eq('id', id)
 
         if (error) throw error
+      } else if (origen === 'ANTICIPO') {
+        // Para anticipos: mapear campos según la BD
+        let anticipoUpdateData: any = {}
+
+        if (campo === 'debitos' || campo === 'creditos') {
+          // El monto editable es monto_restante (y también monto si es el total original)
+          anticipoUpdateData.monto = valor
+          anticipoUpdateData.monto_restante = valor
+          console.log(`💵 Anticipo: actualizando monto/monto_restante = ${valor}`)
+        } else if (campo === 'fecha_estimada') {
+          anticipoUpdateData.fecha_pago = valor
+        } else if (campo === 'detalle') {
+          anticipoUpdateData.descripcion = valor
+        } else {
+          // Otros campos directos
+          anticipoUpdateData[campo] = valor
+        }
+
+        const { error } = await supabase
+          .from('anticipos_proveedores')
+          .update(anticipoUpdateData)
+          .eq('id', id)
+
+        if (error) throw error
       } else {
         // Para templates: categ y centro_costo van a la tabla padre
         if (campo === 'categ' || campo === 'centro_costo') {
           if (!egresoId) {
             throw new Error('Se requiere egreso_id para actualizar categ/centro_costo')
           }
-          
+
           const { error } = await supabase
             .from('egresos_sin_factura')
             .update(updateData)

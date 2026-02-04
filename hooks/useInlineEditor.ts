@@ -10,7 +10,7 @@ export interface CeldaEnEdicion {
   valor: any
   tableName?: string
   campoReal?: string
-  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW'
+  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW' | 'ANTICIPO'
   egresoId?: string
 }
 
@@ -77,11 +77,30 @@ function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEdi
   }, [])
 
   const aplicarReglasAutomaticas = useCallback((celda: CeldaEnEdicion, valorProcesado: any) => {
-    let updateData: any = { [celda.campoReal || celda.columna]: valorProcesado }
-    
-    if (celda.columna === 'fecha_vencimiento' && valorProcesado !== null) {
-      updateData.fecha_estimada = valorProcesado
-      console.log(`🔄 Auto-actualización ${celda.origen}: fecha_vencimiento = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
+    let updateData: any = {}
+
+    // Mapeo especial para ANTICIPO
+    if (celda.origen === 'ANTICIPO') {
+      if (celda.columna === 'debitos' || celda.columna === 'creditos') {
+        // El monto editable es monto y monto_restante (ambos)
+        updateData.monto = valorProcesado
+        updateData.monto_restante = valorProcesado
+        console.log(`💵 Anticipo: actualizando monto/monto_restante = ${valorProcesado}`)
+      } else if (celda.columna === 'fecha_estimada') {
+        updateData.fecha_pago = valorProcesado
+      } else if (celda.columna === 'detalle') {
+        updateData.descripcion = valorProcesado
+      } else {
+        updateData[celda.campoReal || celda.columna] = valorProcesado
+      }
+    } else {
+      // Comportamiento normal para otros orígenes
+      updateData = { [celda.campoReal || celda.columna]: valorProcesado }
+
+      if (celda.columna === 'fecha_vencimiento' && valorProcesado !== null) {
+        updateData.fecha_estimada = valorProcesado
+        console.log(`🔄 Auto-actualización ${celda.origen}: fecha_vencimiento = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
+      }
     }
 
     Object.keys(updateData).forEach(key => {
