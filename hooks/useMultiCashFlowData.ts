@@ -69,23 +69,28 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
   // Mapear templates egresos a formato Cash Flow
   const mapearTemplatesEgresos = (cuotas: any[]): CashFlowRow[] => {
-    return cuotas.map(c => ({
-      id: c.id,
-      origen: 'TEMPLATE' as const,
-      origen_tabla: 'cuotas_egresos_sin_factura',
-      egreso_id: c.egreso_id, // ID del egreso padre para editar categ/centro_costo
-      fecha_estimada: c.fecha_estimada,
-      fecha_vencimiento: c.fecha_vencimiento,
-      categ: c.egreso?.categ || 'SIN_CATEG',
-      centro_costo: c.egreso?.centro_costo || 'SIN_CC',
-      cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
-      nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
-      detalle: c.descripcion || c.egreso?.nombre_referencia || '',
-      debitos: c.monto || 0,
-      creditos: 0, // Los templates egresos son siempre débitos
-      saldo_cta_cte: 0, // Se calcula después
-      estado: c.estado || 'pendiente'
-    }))
+    return cuotas.map(c => {
+      const esIngreso = c.tipo_movimiento === 'ingreso'
+      const monto = c.monto || 0
+
+      return {
+        id: c.id,
+        origen: 'TEMPLATE' as const,
+        origen_tabla: 'cuotas_egresos_sin_factura',
+        egreso_id: c.egreso_id, // ID del egreso padre para editar categ/centro_costo
+        fecha_estimada: c.fecha_estimada,
+        fecha_vencimiento: c.fecha_vencimiento,
+        categ: c.egreso?.categ || 'SIN_CATEG',
+        centro_costo: c.egreso?.centro_costo || 'SIN_CC',
+        cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
+        nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
+        detalle: c.descripcion || c.egreso?.nombre_referencia || '',
+        debitos: esIngreso ? 0 : monto,   // Egreso = débito (sale dinero)
+        creditos: esIngreso ? monto : 0,  // Ingreso = crédito (entra dinero)
+        saldo_cta_cte: 0, // Se calcula después
+        estado: c.estado || 'pendiente'
+      }
+    })
   }
 
   // Calcular saldos acumulativos
