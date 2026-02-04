@@ -135,9 +135,10 @@ export function VistaTemplatesEgresos() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, es_bidireccional: boolean}[]>([])
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
+  const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
   const [nuevaCuota, setNuevaCuota] = useState({
     fecha: '',
     monto: '',
@@ -588,7 +589,7 @@ export function VistaTemplatesEgresos() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ')
+        .select('id, nombre_referencia, categ, es_bidireccional')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
         .order('nombre_referencia')
@@ -605,6 +606,7 @@ export function VistaTemplatesEgresos() {
     await cargarTemplatesAbiertos()
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
+    setTipoMovimiento('egreso')
     setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
     setModalPagoManual(true)
   }
@@ -618,6 +620,15 @@ export function VistaTemplatesEgresos() {
 
     const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
 
+    // Generar descripción automática para FCI o usar la ingresada
+    let descripcionFinal = nuevaCuota.descripcion
+    if (template?.es_bidireccional && template?.categ === 'FCI') {
+      const tipoLabel = tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate'
+      descripcionFinal = `${tipoLabel} ${template.nombre_referencia}`
+    } else if (!descripcionFinal) {
+      descripcionFinal = `${template?.nombre_referencia || 'Pago'} - Manual`
+    }
+
     setGuardandoNuevaCuota(true)
     try {
       const { error } = await supabase
@@ -627,15 +638,20 @@ export function VistaTemplatesEgresos() {
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
           monto: parseFloat(nuevaCuota.monto),
-          descripcion: nuevaCuota.descripcion || `${template?.nombre_referencia || 'Pago'} - Manual`,
-          estado: 'pendiente'
+          descripcion: descripcionFinal,
+          estado: 'pendiente',
+          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
         })
 
       if (error) throw error
 
-      alert('Pago manual agregado exitosamente')
+      const tipoMsg = template?.es_bidireccional
+        ? (tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate')
+        : 'Pago manual'
+      alert(`${tipoMsg} agregado exitosamente`)
       setModalPagoManual(false)
       setTemplateSeleccionado(null)
+      setTipoMovimiento('egreso')
       setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
       await cargarCuotas()
     } catch (error) {
@@ -1461,6 +1477,55 @@ export function VistaTemplatesEgresos() {
           {/* Paso 2: Ingresar datos */}
           {pasoModal === 'datos' && (
             <div className="py-4 space-y-4">
+              {/* Selector tipo movimiento para templates bidireccionales (FCI, etc.) */}
+              {(() => {
+                const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
+                if (template?.es_bidireccional) {
+                  const esFCI = template.categ === 'FCI'
+                  return (
+                    <div className="space-y-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <Label className="font-semibold">Tipo de Movimiento *</Label>
+                      <div className="flex gap-4 mt-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tipoMovimiento"
+                            value="egreso"
+                            checked={tipoMovimiento === 'egreso'}
+                            onChange={() => setTipoMovimiento('egreso')}
+                            className="w-4 h-4 text-purple-600"
+                          />
+                          <span className={tipoMovimiento === 'egreso' ? 'font-medium text-purple-700' : ''}>
+                            {esFCI ? '📤 Suscripción' : '📤 Egreso'}
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tipoMovimiento"
+                            value="ingreso"
+                            checked={tipoMovimiento === 'ingreso'}
+                            onChange={() => setTipoMovimiento('ingreso')}
+                            className="w-4 h-4 text-purple-600"
+                          />
+                          <span className={tipoMovimiento === 'ingreso' ? 'font-medium text-purple-700' : ''}>
+                            {esFCI ? '📥 Rescate' : '📥 Ingreso'}
+                          </span>
+                        </label>
+                      </div>
+                      {esFCI && (
+                        <p className="text-xs text-purple-600 mt-1">
+                          {tipoMovimiento === 'egreso'
+                            ? 'Suscripción: Compra de cuotapartes (sale dinero del banco)'
+                            : 'Rescate: Venta de cuotapartes (entra dinero al banco)'}
+                        </p>
+                      )}
+                    </div>
+                  )
+                }
+                return null
+              })()}
+
               <div className="space-y-2">
                 <Label htmlFor="fecha-pago">Fecha</Label>
                 <Input
@@ -1483,16 +1548,29 @@ export function VistaTemplatesEgresos() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="descripcion-pago">Descripción (opcional)</Label>
-                <Input
-                  id="descripcion-pago"
-                  type="text"
-                  placeholder="Descripción del pago..."
-                  value={nuevaCuota.descripcion}
-                  onChange={(e) => setNuevaCuota(prev => ({ ...prev, descripcion: e.target.value }))}
-                />
-              </div>
+              {/* Descripción: oculta para FCI (es automática) */}
+              {(() => {
+                const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
+                if (template?.es_bidireccional && template?.categ === 'FCI') {
+                  return (
+                    <div className="text-xs text-gray-500 italic">
+                      Descripción automática: "{tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate'} {template.nombre_referencia}"
+                    </div>
+                  )
+                }
+                return (
+                  <div className="space-y-2">
+                    <Label htmlFor="descripcion-pago">Descripción (opcional)</Label>
+                    <Input
+                      id="descripcion-pago"
+                      type="text"
+                      placeholder="Descripción del pago..."
+                      value={nuevaCuota.descripcion}
+                      onChange={(e) => setNuevaCuota(prev => ({ ...prev, descripcion: e.target.value }))}
+                    />
+                  </div>
+                )
+              })()}
             </div>
           )}
 
