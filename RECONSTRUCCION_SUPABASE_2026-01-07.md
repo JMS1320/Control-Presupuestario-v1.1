@@ -7352,5 +7352,332 @@ const datosFiltradosPagos = modoPagos ? data.filter(fila => {
 
 ---
 
+# 🔲 SISTEMA EDICIÓN MASIVA CON CHECKBOXES
+
+## 📋 DESCRIPCIÓN GENERAL
+
+Sistema de edición masiva que permite seleccionar múltiples registros mediante checkboxes y aplicar cambios de estado en lote. Implementado en:
+- **Vista Facturas ARCA** (tab Facturas principal)
+- **Vista Templates Egresos**
+
+### 🎯 CASOS DE USO
+
+1. **Datos históricos**: Cambiar masivamente a estado "anterior" facturas/templates importados que son históricos
+2. **Preparación de pagos**: Marcar múltiples registros como "pagar" o "preparado"
+3. **Conciliación masiva**: Marcar como "conciliado" después de verificar lote
+4. **Corrección de errores**: Cambiar estado incorrecto de múltiples registros
+
+---
+
+## 🆕 ESTADO "ANTERIOR"
+
+### Propósito
+Estado especial para datos históricos que:
+- **NO deben aparecer en Cash Flow** (ya pasaron)
+- **NO están conciliados** (no se importaron movimientos bancarios históricos)
+- **Requieren trabajo futuro** (armar conciliación histórica cuando sea posible)
+
+### Diferencia con otros estados
+| Estado | En Cash Flow | Significado |
+|--------|-------------|-------------|
+| pendiente | ✅ Sí | Pendiente de pago |
+| pagar | ✅ Sí | Marcado para pagar |
+| preparado | ✅ Sí | Listo para procesar |
+| pagado | ✅ Sí | Pagado, pendiente conciliar |
+| conciliado | ❌ No | Vinculado con movimiento bancario |
+| credito | ❌ No | Pagado con tarjeta de crédito |
+| **anterior** | ❌ No | **Histórico sin conciliar** |
+| desactivado | ❌ No | Template desactivado (solo templates) |
+
+### Implementación BD
+```sql
+-- Ya aplicado en migración anterior
+ALTER TABLE msa.comprobantes_arca
+DROP CONSTRAINT IF EXISTS comprobantes_arca_estado_check;
+
+ALTER TABLE msa.comprobantes_arca
+ADD CONSTRAINT comprobantes_arca_estado_check
+CHECK (estado IN ('pendiente', 'debito', 'pagar', 'preparado', 'pagado', 'credito', 'conciliado', 'anterior'));
+
+-- Para templates (cuotas_egresos_sin_factura)
+ALTER TABLE public.cuotas_egresos_sin_factura
+DROP CONSTRAINT IF EXISTS cuotas_egresos_sin_factura_estado_check;
+
+ALTER TABLE public.cuotas_egresos_sin_factura
+ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado IN ('pendiente', 'debito', 'pagar', 'preparado', 'pagado', 'credito', 'conciliado', 'desactivado', 'anterior'));
+```
+
+### Exclusión del Cash Flow
+**Archivo:** `hooks/useMultiCashFlowData.ts`
+
+```typescript
+// Facturas ARCA - excluir estados que no van en Cash Flow
+const { data: facturasArca, error: errorArca } = await supabase
+  .schema('msa')
+  .from('comprobantes_arca')
+  .select('*')
+  .neq('estado', 'conciliado')
+  .neq('estado', 'credito')
+  .neq('estado', 'anterior')  // ← NUEVO
+  .order('fecha_estimada', { ascending: true, nullsFirst: false })
+
+// Templates - excluir estados que no van en Cash Flow
+const { data: templatesEgresos, error: errorTemplates } = await supabase
+  .from('cuotas_egresos_sin_factura')
+  .select(`*, egreso:egresos_sin_factura!inner(*)`)
+  .neq('estado', 'conciliado')
+  .neq('estado', 'desactivado')
+  .neq('estado', 'credito')
+  .neq('estado', 'anterior')  // ← NUEVO
+  .eq('egreso.activo', true)
+  .order('fecha_estimada', { ascending: true })
+```
+
+---
+
+## 🖥️ IMPLEMENTACIÓN UI
+
+### Vista Facturas ARCA (Tab Facturas)
+
+**Archivo:** `components/vista-facturas-arca.tsx`
+
+#### Estados agregados
+```typescript
+// Estados para edición masiva en tab Facturas principal
+const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
+const [facturasSeleccionadasMasiva, setFacturasSeleccionadasMasiva] = useState<Set<string>>(new Set())
+const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
+```
+
+#### Botón de activación
+```tsx
+<Button
+  variant={modoEdicionMasiva ? "default" : "outline"}
+  onClick={() => {
+    setModoEdicionMasiva(!modoEdicionMasiva)
+    if (modoEdicionMasiva) {
+      setFacturasSeleccionadasMasiva(new Set())
+      setNuevoEstadoMasivo('')
+    }
+  }}
+  className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
+>
+  <Check className="mr-2 h-4 w-4" />
+  {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
+</Button>
+```
+
+#### Función de ejecución
+```typescript
+const ejecutarEdicionMasivaFacturas = async () => {
+  if (facturasSeleccionadasMasiva.size === 0) {
+    alert('Selecciona al menos una factura')
+    return
+  }
+
+  if (!nuevoEstadoMasivo) {
+    alert('Selecciona un estado para aplicar')
+    return
+  }
+
+  try {
+    const facturasIds = Array.from(facturasSeleccionadasMasiva)
+    const LOTE_SIZE = 20
+
+    for (let i = 0; i < facturasIds.length; i += LOTE_SIZE) {
+      const lote = facturasIds.slice(i, i + LOTE_SIZE)
+      const { error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .update({ estado: nuevoEstadoMasivo })
+        .in('id', lote)
+
+      if (error) throw new Error(`Error en lote: ${error.message}`)
+    }
+
+    // Limpiar y recargar
+    setFacturasSeleccionadasMasiva(new Set())
+    setNuevoEstadoMasivo('')
+    setModoEdicionMasiva(false)
+    await cargarFacturas()
+
+    alert(`✅ ${facturasIds.length} facturas actualizadas a "${nuevoEstadoMasivo}"`)
+  } catch (error) {
+    alert('Error: ' + (error as Error).message)
+  }
+}
+```
+
+### Vista Templates Egresos
+
+**Archivo:** `components/vista-templates-egresos.tsx`
+
+#### Estados agregados
+```typescript
+const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
+const [cuotasSeleccionadasMasiva, setCuotasSeleccionadasMasiva] = useState<Set<string>>(new Set())
+const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
+```
+
+#### Función de ejecución
+```typescript
+const ejecutarEdicionMasivaCuotas = async () => {
+  // Misma lógica que facturas, pero usando:
+  // - cuotasSeleccionadasMasiva
+  // - supabase.from('cuotas_egresos_sin_factura')
+  // - cargarCuotas()
+}
+```
+
+---
+
+## 🎨 COMPONENTES UI
+
+### Checkbox en Header (Seleccionar todos)
+```tsx
+{modoEdicionMasiva && (
+  <TableHead style={{ width: '50px', minWidth: '50px' }}>
+    <Checkbox
+      checked={facturasSeleccionadasMasiva.size === facturas.length && facturas.length > 0}
+      onCheckedChange={(checked) => {
+        if (checked) {
+          setFacturasSeleccionadasMasiva(new Set(facturas.map(f => f.id)))
+        } else {
+          setFacturasSeleccionadasMasiva(new Set())
+        }
+      }}
+    />
+  </TableHead>
+)}
+```
+
+### Checkbox en cada fila
+```tsx
+{modoEdicionMasiva && (
+  <TableCell style={{ width: '50px', minWidth: '50px' }}>
+    <Checkbox
+      checked={facturasSeleccionadasMasiva.has(factura.id)}
+      onCheckedChange={(checked) => {
+        const nuevaSeleccion = new Set(facturasSeleccionadasMasiva)
+        if (checked) {
+          nuevaSeleccion.add(factura.id)
+        } else {
+          nuevaSeleccion.delete(factura.id)
+        }
+        setFacturasSeleccionadasMasiva(nuevaSeleccion)
+      }}
+    />
+  </TableCell>
+)}
+```
+
+### Panel de control flotante
+```tsx
+{modoEdicionMasiva && facturasSeleccionadasMasiva.size > 0 && (
+  <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="font-medium text-purple-900">
+        ✏️ Edición Masiva - {facturasSeleccionadasMasiva.size} facturas seleccionadas
+      </h3>
+      <Button variant="outline" size="sm"
+        onClick={() => setFacturasSeleccionadasMasiva(new Set())}>
+        Limpiar selección
+      </Button>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label>Nuevo Estado</Label>
+        <Select value={nuevoEstadoMasivo} onValueChange={setNuevoEstadoMasivo}>
+          <SelectTrigger><SelectValue placeholder="Seleccionar estado" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pendiente">Pendiente</SelectItem>
+            <SelectItem value="debito">Débito</SelectItem>
+            <SelectItem value="pagar">Pagar</SelectItem>
+            <SelectItem value="preparado">Preparado</SelectItem>
+            <SelectItem value="pagado">Pagado</SelectItem>
+            <SelectItem value="credito">Crédito</SelectItem>
+            <SelectItem value="conciliado">Conciliado</SelectItem>
+            <SelectItem value="anterior">Anterior</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Acción</Label>
+        <Button
+          onClick={ejecutarEdicionMasivaFacturas}
+          disabled={!nuevoEstadoMasivo}
+          className="w-full bg-purple-600 hover:bg-purple-700"
+        >
+          ✅ Aplicar Estado a {facturasSeleccionadasMasiva.size} facturas
+        </Button>
+      </div>
+    </div>
+  </div>
+)}
+```
+
+---
+
+## 📋 ESTADOS DISPONIBLES POR VISTA
+
+### Facturas ARCA
+| Estado | Descripción |
+|--------|-------------|
+| pendiente | Estado inicial al importar |
+| debito | Marcado como débito |
+| pagar | Listo para pagar |
+| preparado | Preparado para procesar |
+| pagado | Pagado, pendiente conciliar |
+| credito | Pagado con tarjeta crédito |
+| conciliado | Vinculado con mov. bancario |
+| anterior | Histórico sin conciliar |
+
+### Templates Egresos
+| Estado | Descripción |
+|--------|-------------|
+| pendiente | Estado inicial |
+| debito | Marcado como débito |
+| pagar | Listo para pagar |
+| preparado | Preparado para procesar |
+| pagado | Pagado, pendiente conciliar |
+| credito | Pagado con tarjeta crédito |
+| conciliado | Vinculado con mov. bancario |
+| desactivado | Template desactivado |
+| anterior | Histórico sin conciliar |
+
+---
+
+## 🔧 COMMITS RELACIONADOS
+
+```
+3497316 - Feature: Edicion masiva checkboxes + estado Anterior
+```
+
+---
+
+## 📋 TESTING CHECKLIST
+
+### Vista Facturas ARCA
+- [ ] Botón "Edición Masiva" activa/desactiva modo
+- [ ] Columna checkbox aparece cuando está activo
+- [ ] Checkbox header selecciona/deselecciona todas
+- [ ] Checkboxes individuales funcionan
+- [ ] Filas seleccionadas tienen fondo púrpura
+- [ ] Panel flotante aparece con selecciones
+- [ ] Dropdown muestra todos los estados
+- [ ] Botón aplicar ejecuta cambio masivo
+- [ ] Facturas se actualizan correctamente
+- [ ] Estado "anterior" excluye del Cash Flow
+
+### Vista Templates Egresos
+- [ ] Mismos tests que facturas ARCA
+- [ ] Estado "desactivado" disponible
+- [ ] Cuotas actualizadas correctamente
+
+---
+
 **📅 Última actualización sección:** 2026-02-04
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes
