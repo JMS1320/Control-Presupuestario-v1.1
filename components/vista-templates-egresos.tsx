@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -146,6 +146,11 @@ export function VistaTemplatesEgresos() {
   })
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
   
+  // Estados para edición masiva
+  const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
+  const [cuotasSeleccionadasMasiva, setCuotasSeleccionadasMasiva] = useState<Set<string>>(new Set())
+  const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
+
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
     // Intentar cargar desde localStorage
@@ -229,6 +234,54 @@ export function VistaTemplatesEgresos() {
   useEffect(() => {
     cargarCuotas()
   }, [mostrarDesactivados])
+
+  // Función edición masiva de cuotas templates
+  const ejecutarEdicionMasivaCuotas = async () => {
+    if (cuotasSeleccionadasMasiva.size === 0) {
+      alert('Selecciona al menos una cuota')
+      return
+    }
+
+    if (!nuevoEstadoMasivo) {
+      alert('Selecciona un estado para aplicar')
+      return
+    }
+
+    try {
+      const cuotasIds = Array.from(cuotasSeleccionadasMasiva)
+      const LOTE_SIZE = 20
+
+      console.log('🔄 Ejecutando edición masiva cuotas templates:', {
+        cuotas: cuotasIds.length,
+        nuevoEstado: nuevoEstadoMasivo
+      })
+
+      for (let i = 0; i < cuotasIds.length; i += LOTE_SIZE) {
+        const lote = cuotasIds.slice(i, i + LOTE_SIZE)
+
+        const { error } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update({ estado: nuevoEstadoMasivo })
+          .in('id', lote)
+
+        if (error) {
+          throw new Error(`Error en lote ${Math.floor(i/LOTE_SIZE) + 1}: ${error.message}`)
+        }
+      }
+
+      // Limpiar selecciones y recargar
+      setCuotasSeleccionadasMasiva(new Set())
+      setNuevoEstadoMasivo('')
+      setModoEdicionMasiva(false)
+
+      await cargarCuotas()
+
+      alert(`✅ Edición masiva completada: ${cuotasIds.length} cuotas actualizadas a estado "${nuevoEstadoMasivo}"`)
+    } catch (error) {
+      console.error('Error en edición masiva cuotas:', error)
+      alert('Error en edición masiva: ' + (error as Error).message)
+    }
+  }
 
   // Hook unificado (DESPUÉS de cargarCuotas para evitar error inicialización)
   const hookEditor = useInlineEditor({
@@ -772,9 +825,12 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="pendiente">Pendiente</SelectItem>
                 <SelectItem value="debito">Débito</SelectItem>
                 <SelectItem value="pagar">Pagar</SelectItem>
+                <SelectItem value="preparado">Preparado</SelectItem>
                 <SelectItem value="pagado">Pagado</SelectItem>
                 <SelectItem value="credito">Crédito</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
+                <SelectItem value="desactivado">Desactivado</SelectItem>
+                <SelectItem value="anterior">Anterior</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -954,7 +1010,23 @@ export function VistaTemplatesEgresos() {
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? "Salir Edición" : "Modo Edición"}
           </Button>
-          
+
+          {/* Botón edición masiva */}
+          <Button
+            variant={modoEdicionMasiva ? "default" : "outline"}
+            onClick={() => {
+              setModoEdicionMasiva(!modoEdicionMasiva)
+              if (modoEdicionMasiva) {
+                setCuotasSeleccionadasMasiva(new Set())
+                setNuevoEstadoMasivo('')
+              }
+            }}
+            className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
+          </Button>
+
           <Button
             onClick={() => setMostrarWizard(true)}
             className="bg-green-600 hover:bg-green-700"
@@ -1327,13 +1399,27 @@ export function VistaTemplatesEgresos() {
               <Table style={{ minWidth: 'fit-content' }}>
                   <TableHeader className="sticky top-0 z-10 bg-white border-b">
                     <TableRow>
+                      {modoEdicionMasiva && (
+                        <TableHead style={{ width: '50px', minWidth: '50px' }}>
+                          <Checkbox
+                            checked={cuotasSeleccionadasMasiva.size === cuotas.length && cuotas.length > 0}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setCuotasSeleccionadasMasiva(new Set(cuotas.map(c => c.id)))
+                              } else {
+                                setCuotasSeleccionadasMasiva(new Set())
+                              }
+                            }}
+                          />
+                        </TableHead>
+                      )}
                       {columnasVisiblesArray.map(columna => {
                         const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]
                         if (!config) return null // Protección adicional
                         return (
-                          <TableHead 
-                            key={columna} 
-                            style={{ 
+                          <TableHead
+                            key={columna}
+                            style={{
                               width: anchosColumnas[columna] || config.width,
                               minWidth: anchosColumnas[columna] || config.width
                             }}
@@ -1347,8 +1433,8 @@ export function VistaTemplatesEgresos() {
                   <TableBody>
                     {cuotas.length === 0 ? (
                       <TableRow>
-                        <TableCell 
-                          colSpan={columnasVisiblesArray.length} 
+                        <TableCell
+                          colSpan={columnasVisiblesArray.length + (modoEdicionMasiva ? 1 : 0)}
                           className="h-24 text-center text-muted-foreground"
                         >
                           No hay egresos sin factura para mostrar
@@ -1356,14 +1442,30 @@ export function VistaTemplatesEgresos() {
                       </TableRow>
                     ) : (
                       cuotas.map(cuota => (
-                        <TableRow key={cuota.id}>
+                        <TableRow key={cuota.id} className={cuotasSeleccionadasMasiva.has(cuota.id) ? 'bg-purple-50' : ''}>
+                          {modoEdicionMasiva && (
+                            <TableCell style={{ width: '50px', minWidth: '50px' }}>
+                              <Checkbox
+                                checked={cuotasSeleccionadasMasiva.has(cuota.id)}
+                                onCheckedChange={(checked) => {
+                                  const nuevaSeleccion = new Set(cuotasSeleccionadasMasiva)
+                                  if (checked) {
+                                    nuevaSeleccion.add(cuota.id)
+                                  } else {
+                                    nuevaSeleccion.delete(cuota.id)
+                                  }
+                                  setCuotasSeleccionadasMasiva(nuevaSeleccion)
+                                }}
+                              />
+                            </TableCell>
+                          )}
                           {columnasVisiblesArray.map(columna => {
                             const config = COLUMNAS_CONFIG[columna as keyof typeof COLUMNAS_CONFIG]
                             if (!config) return null // Protección adicional
                             return (
-                              <TableCell 
+                              <TableCell
                                 key={columna}
-                                style={{ 
+                                style={{
                                   width: anchosColumnas[columna] || config.width,
                                   minWidth: anchosColumnas[columna] || config.width
                                 }}
@@ -1378,6 +1480,59 @@ export function VistaTemplatesEgresos() {
                   </TableBody>
                 </Table>
             </div>
+
+            {/* Panel de control edición masiva */}
+            {modoEdicionMasiva && cuotasSeleccionadasMasiva.size > 0 && (
+              <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-medium text-purple-900">
+                    ✏️ Edición Masiva - {cuotasSeleccionadasMasiva.size} cuotas seleccionadas
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCuotasSeleccionadasMasiva(new Set())}
+                  >
+                    Limpiar selección
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Selector de estado */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-purple-900">Nuevo Estado</Label>
+                    <Select value={nuevoEstadoMasivo} onValueChange={setNuevoEstadoMasivo}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pendiente">Pendiente</SelectItem>
+                        <SelectItem value="debito">Débito</SelectItem>
+                        <SelectItem value="pagar">Pagar</SelectItem>
+                        <SelectItem value="preparado">Preparado</SelectItem>
+                        <SelectItem value="pagado">Pagado</SelectItem>
+                        <SelectItem value="credito">Crédito</SelectItem>
+                        <SelectItem value="conciliado">Conciliado</SelectItem>
+                        <SelectItem value="desactivado">Desactivado</SelectItem>
+                        <SelectItem value="anterior">Anterior</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Botón aplicar */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-purple-900">Acción</Label>
+                    <Button
+                      onClick={ejecutarEdicionMasivaCuotas}
+                      disabled={cuotasSeleccionadasMasiva.size === 0 || !nuevoEstadoMasivo}
+                      className="w-full bg-purple-600 hover:bg-purple-700"
+                    >
+                      ✅ Aplicar Estado a {cuotasSeleccionadasMasiva.size} cuotas
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

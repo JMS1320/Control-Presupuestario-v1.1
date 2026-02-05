@@ -183,13 +183,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     setError(null)
 
     try {
-      // 1. Cargar facturas ARCA (estado ≠ 'conciliado' AND estado ≠ 'credito')
+      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior)
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
         .select('*')
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
+        .neq('estado', 'anterior')
         .order('fecha_estimada', { ascending: true, nullsFirst: false })
 
       if (errorArca) {
@@ -197,7 +198,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         throw new Error(`Error facturas ARCA: ${errorArca.message}`)
       }
 
-      // 2. Cargar templates egresos (solo templates activos + filtro estados)
+      // 2. Cargar templates egresos (excluir: conciliado, desactivado, credito, anterior)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
@@ -207,6 +208,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .neq('estado', 'conciliado')
         .neq('estado', 'desactivado')
         .neq('estado', 'credito')
+        .neq('estado', 'anterior')
         .eq('egreso.activo', true)
         .order('fecha_estimada', { ascending: true })
 

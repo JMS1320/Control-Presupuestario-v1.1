@@ -198,6 +198,11 @@ export function VistaFacturasArca() {
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
   const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
+
+  // Estados para edición masiva en tab Facturas principal
+  const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
+  const [facturasSeleccionadasMasiva, setFacturasSeleccionadasMasiva] = useState<Set<string>>(new Set())
+  const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
@@ -809,9 +814,11 @@ export function VistaFacturasArca() {
                   <SelectItem value="pendiente">Pendiente</SelectItem>
                   <SelectItem value="debito">Débito</SelectItem>
                   <SelectItem value="pagar">Pagar</SelectItem>
+                  <SelectItem value="preparado">Preparado</SelectItem>
                   <SelectItem value="pagado">Pagado</SelectItem>
                   <SelectItem value="credito">Crédito</SelectItem>
                   <SelectItem value="conciliado">Conciliado</SelectItem>
+                  <SelectItem value="anterior">Anterior</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -2120,6 +2127,55 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Función edición masiva tab Facturas principal (cambio de estado)
+  const ejecutarEdicionMasivaFacturas = async () => {
+    if (facturasSeleccionadasMasiva.size === 0) {
+      alert('Selecciona al menos una factura')
+      return
+    }
+
+    if (!nuevoEstadoMasivo) {
+      alert('Selecciona un estado para aplicar')
+      return
+    }
+
+    try {
+      const facturasIds = Array.from(facturasSeleccionadasMasiva)
+      const LOTE_SIZE = 20
+
+      console.log('🔄 Ejecutando edición masiva facturas:', {
+        facturas: facturasIds.length,
+        nuevoEstado: nuevoEstadoMasivo
+      })
+
+      for (let i = 0; i < facturasIds.length; i += LOTE_SIZE) {
+        const lote = facturasIds.slice(i, i + LOTE_SIZE)
+
+        const { error } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update({ estado: nuevoEstadoMasivo })
+          .in('id', lote)
+
+        if (error) {
+          throw new Error(`Error en lote ${Math.floor(i/LOTE_SIZE) + 1}: ${error.message}`)
+        }
+      }
+
+      // Limpiar selecciones y recargar
+      setFacturasSeleccionadasMasiva(new Set())
+      setNuevoEstadoMasivo('')
+      setModoEdicionMasiva(false)
+
+      await cargarFacturas()
+
+      alert(`✅ Edición masiva completada: ${facturasIds.length} facturas actualizadas a estado "${nuevoEstadoMasivo}"`)
+    } catch (error) {
+      console.error('Error en edición masiva facturas:', error)
+      alert('Error en edición masiva: ' + (error as Error).message)
+    }
+  }
+
   // FUNCIONES SICORE - RETENCIONES GANANCIAS
   
   // Generar quincena según fecha vencimiento
@@ -3216,14 +3272,30 @@ export function VistaFacturasArca() {
           </Button>
           
           {/* Botón modo edición */}
-          <Button 
+          <Button
             variant={modoEdicion ? "default" : "outline"}
             onClick={() => setModoEdicion(!modoEdicion)}
           >
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
           </Button>
-          
+
+          {/* Botón edición masiva */}
+          <Button
+            variant={modoEdicionMasiva ? "default" : "outline"}
+            onClick={() => {
+              setModoEdicionMasiva(!modoEdicionMasiva)
+              if (modoEdicionMasiva) {
+                setFacturasSeleccionadasMasiva(new Set())
+                setNuevoEstadoMasivo('')
+              }
+            }}
+            className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
+          >
+            <Check className="mr-2 h-4 w-4" />
+            {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
+          </Button>
+
           {/* Botón cierre quincena SICORE */}
           <Button
             variant="outline"
@@ -3549,10 +3621,24 @@ export function VistaFacturasArca() {
               <Table style={{ minWidth: 'fit-content' }}>
                 <TableHeader className="sticky top-0 z-10 bg-white border-b">
                     <TableRow>
+                      {modoEdicionMasiva && (
+                        <TableHead style={{ width: '50px', minWidth: '50px' }}>
+                          <Checkbox
+                            checked={facturasSeleccionadasMasiva.size === facturas.length && facturas.length > 0}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setFacturasSeleccionadasMasiva(new Set(facturas.map(f => f.id)))
+                              } else {
+                                setFacturasSeleccionadasMasiva(new Set())
+                              }
+                            }}
+                          />
+                        </TableHead>
+                      )}
                       {columnasVisiblesArray.map(columna => (
-                        <TableHead 
-                          key={columna} 
-                          style={{ 
+                        <TableHead
+                          key={columna}
+                          style={{
                             width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
                             minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width
                           }}
@@ -3565,8 +3651,8 @@ export function VistaFacturasArca() {
                   <TableBody>
                     {facturas.length === 0 ? (
                       <TableRow>
-                        <TableCell 
-                          colSpan={columnasVisiblesArray.length} 
+                        <TableCell
+                          colSpan={columnasVisiblesArray.length + (modoEdicionMasiva ? 1 : 0)}
                           className="h-24 text-center text-muted-foreground"
                         >
                           No hay facturas para mostrar
@@ -3574,11 +3660,27 @@ export function VistaFacturasArca() {
                       </TableRow>
                     ) : (
                       facturas.map(factura => (
-                        <TableRow key={factura.id}>
+                        <TableRow key={factura.id} className={facturasSeleccionadasMasiva.has(factura.id) ? 'bg-purple-50' : ''}>
+                          {modoEdicionMasiva && (
+                            <TableCell style={{ width: '50px', minWidth: '50px' }}>
+                              <Checkbox
+                                checked={facturasSeleccionadasMasiva.has(factura.id)}
+                                onCheckedChange={(checked) => {
+                                  const nuevaSeleccion = new Set(facturasSeleccionadasMasiva)
+                                  if (checked) {
+                                    nuevaSeleccion.add(factura.id)
+                                  } else {
+                                    nuevaSeleccion.delete(factura.id)
+                                  }
+                                  setFacturasSeleccionadasMasiva(nuevaSeleccion)
+                                }}
+                              />
+                            </TableCell>
+                          )}
                           {columnasVisiblesArray.map(columna => (
-                            <TableCell 
+                            <TableCell
                               key={columna}
-                              style={{ 
+                              style={{
                                 width: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width,
                                 minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width
                               }}
@@ -3592,6 +3694,58 @@ export function VistaFacturasArca() {
                   </TableBody>
                 </Table>
             </div>
+
+            {/* Panel de control edición masiva */}
+            {modoEdicionMasiva && facturasSeleccionadasMasiva.size > 0 && (
+              <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-medium text-purple-900">
+                    ✏️ Edición Masiva - {facturasSeleccionadasMasiva.size} facturas seleccionadas
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFacturasSeleccionadasMasiva(new Set())}
+                  >
+                    Limpiar selección
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Selector de estado */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-purple-900">Nuevo Estado</Label>
+                    <Select value={nuevoEstadoMasivo} onValueChange={setNuevoEstadoMasivo}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pendiente">Pendiente</SelectItem>
+                        <SelectItem value="debito">Débito</SelectItem>
+                        <SelectItem value="pagar">Pagar</SelectItem>
+                        <SelectItem value="preparado">Preparado</SelectItem>
+                        <SelectItem value="pagado">Pagado</SelectItem>
+                        <SelectItem value="credito">Crédito</SelectItem>
+                        <SelectItem value="conciliado">Conciliado</SelectItem>
+                        <SelectItem value="anterior">Anterior</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Botón aplicar */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-purple-900">Acción</Label>
+                    <Button
+                      onClick={ejecutarEdicionMasivaFacturas}
+                      disabled={facturasSeleccionadasMasiva.size === 0 || !nuevoEstadoMasivo}
+                      className="w-full bg-purple-600 hover:bg-purple-700"
+                    >
+                      ✅ Aplicar Estado a {facturasSeleccionadasMasiva.size} facturas
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
