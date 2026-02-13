@@ -18,6 +18,94 @@
 
 ---
 
+## 📆 2026-02-13 - Sesión: Fix Modal Propagación Cuotas Templates
+
+### 🎯 **Objetivo de la sesión:**
+Corregir bug crítico de bucle infinito en edición de montos de templates + mejorar UX con 3 opciones de propagación.
+
+### 🐛 **Bug Reportado:**
+Al editar monto de una cuota en Templates, aparecía un `window.confirm()` en bucle infinito. Cualquier opción (Aceptar/Cancelar) volvía a mostrar el mismo mensaje, obligando a cerrar la app.
+
+### 🔍 **Diagnóstico:**
+```
+1. Usuario edita monto → guardarCambio() se ejecuta
+2. Si monto > 0 → window.confirm() aparece
+3. El confirm hace que el input pierda foco → dispara onBlur
+4. onBlur llama a guardarCambio() de nuevo
+5. Como celdaEnEdicion existe y monto > 0 → OTRO CONFIRM → BUCLE
+```
+
+### ✅ **Solución Implementada:**
+
+#### **1. Reemplazo de window.confirm por Dialog modal:**
+- Modal custom con shadcn Dialog
+- 3 opciones claras: SÍ propagar / NO solo esta / Cancelar
+
+#### **2. Protección anti-rebote:**
+```typescript
+const guardarCambio = async (nuevoValor: string) => {
+  // Protección: no ejecutar si modal está abierto
+  if (!celdaEnEdicion || guardandoEnProgreso || modalPropagacion.isOpen) return
+  // ...
+}
+```
+
+#### **3. Nueva funcionalidad: Monto personalizado para propagar:**
+- Input opcional en el modal para especificar monto diferente
+- Si vacío → propaga el mismo monto de la cuota editada
+- Si con valor → cuota actual queda con monto editado, futuras con monto ingresado
+
+**Ejemplo:**
+- Edito cuota a $153.546
+- En input pongo $150.000
+- Resultado: cuota actual = $153.546, cuotas futuras = $150.000
+
+### 📊 **Commits de la sesión:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `2eeab09` | Fix: Modal propagación cuotas con 3 opciones (evita bucle infinito) |
+| `4b4059e` | Fix: Enter en edición monto + input monto personalizado para propagar |
+| `fa735f8` | Fix: Botones modal propagación habilitados correctamente |
+
+### 📋 **Archivos Modificados:**
+- `components/vista-templates-egresos.tsx`
+  - Estado `modalPropagacion` para controlar modal
+  - Estado `montoPropagacionPersonalizado` para input opcional
+  - Estado `guardandoEnProgreso` para deshabilitar botones durante guardado
+  - Funciones `handlePropagacionSi`, `handlePropagacionNo`, `handlePropagacionCancelar`
+  - JSX del modal con 3 botones + input monto personalizado
+
+### 🎨 **UI del Modal:**
+```
+💰 Modificar Monto
+Monto cuota actual: $153.546,00
+
+¿Desea propagar a las cuotas futuras de este template?
+
+Monto a propagar (opcional):
+[________________] Dejar vacío = $153.546
+
+• SÍ, propagar: Cuotas futuras con monto igual (o personalizado)
+• NO, solo esta: Solo se modificará esta cuota
+• Cancelar: No hacer ningún cambio
+
+[Cancelar] [NO, solo esta] [SÍ, propagar]
+```
+
+### 🔧 **Alcance:**
+- Aplica a **TODOS los templates** con cuotas editables
+- Se activa cuando se edita columna `monto` con valor > 0
+- No hay filtro por `tipo_template` ni categoría
+
+### 📝 **Cambio adicional en BD:**
+- Actualización de fechas de template "Cargas Sociales" (12 cuotas)
+- Antes: día 10, Ene-Dic 2025
+- Después: día 9, Ago 2025 - Jul 2026
+- Solo `fecha_estimada` (fecha_vencimiento quedó NULL)
+
+---
+
 ## 📆 2026-02-03 - Sesión: Fix Edición Inline ARCA + Cash Flow
 
 ### 🎯 **Objetivo de la sesión:**
