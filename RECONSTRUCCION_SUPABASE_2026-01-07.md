@@ -98,11 +98,51 @@ Monto a propagar (opcional):
 - Se activa cuando se edita columna `monto` con valor > 0
 - No hay filtro por `tipo_template` ni categoría
 
-### 📝 **Cambio adicional en BD:**
-- Actualización de fechas de template "Cargas Sociales" (12 cuotas)
+### 📝 **Cambios adicionales en BD:**
+
+#### **1. Actualización fechas template "Cargas Sociales":**
+- 12 cuotas actualizadas
 - Antes: día 10, Ene-Dic 2025
 - Después: día 9, Ago 2025 - Jul 2026
 - Solo `fecha_estimada` (fecha_vencimiento quedó NULL)
+
+#### **2. Corrección tabla `tipos_comprobante_afip` - Códigos Tiques:**
+
+**Problema detectado:** Usuario tenía documento "Tique Factura A" con código 81, pero en BD solo existía código 109.
+
+**Causa:** AFIP tiene **DOS sistemas de codificación** para tiques:
+- **Controladores Fiscales** (hardware): códigos 81-89
+- **Facturación Electrónica** (online): códigos 109-117
+
+**Solución:** Agregar códigos faltantes y clarificar descripciones.
+
+**Códigos agregados (Controladores Fiscales):**
+| Código | Descripción | es_nota_credito |
+|--------|-------------|-----------------|
+| 81 | Tique Factura A - Controlador Fiscal | false |
+| 82 | Tique Factura B - Controlador Fiscal | false |
+| 83 | Tique - Controlador Fiscal | false |
+| 84 | Tique Nota de Crédito A - Controlador Fiscal | true |
+| 85 | Tique Nota de Crédito B - Controlador Fiscal | true |
+| 86 | Tique Nota de Crédito C - Controlador Fiscal | true |
+| 87 | Tique Nota de Débito A - Controlador Fiscal | false |
+| 88 | Tique Nota de Débito B - Controlador Fiscal | false |
+| 89 | Tique Nota de Débito C - Controlador Fiscal | false |
+
+**Códigos actualizados (Electrónicos - descripción clarificada):**
+| Código | Nueva Descripción |
+|--------|-------------------|
+| 109 | Tique Factura A - Electrónico |
+| 110 | Tique Factura B - Electrónico |
+| 111 | Tique Factura C - Electrónico |
+| 112 | Tique - Electrónico |
+| 113 | Tique Nota de Crédito - Electrónico |
+| 114 | Tique Nota de Débito - Electrónico |
+| 115 | Tique Factura M - Electrónico |
+| 116 | Tique Nota de Crédito M - Electrónico |
+| 117 | Tique Nota de Débito M - Electrónico |
+
+**Fuente oficial:** [AFIP - Tabla Comprobantes](https://www.afip.gob.ar/fe/documentos/TABLACOMPROBANTES.xls)
 
 ---
 
