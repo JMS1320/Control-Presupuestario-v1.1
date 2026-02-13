@@ -2080,8 +2080,15 @@ export function VistaFacturasArca() {
       
       if (nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') {
         updateData.ddjj_iva = nuevoEstadoDDJJ
+
+        // Si se cambia a "No", limpiar año_contable y mes_contable
+        if (nuevoEstadoDDJJ === 'No') {
+          updateData.año_contable = null
+          updateData.mes_contable = null
+          console.log('🧹 Limpiando año_contable y mes_contable por cambio a "No"')
+        }
       }
-      
+
       if (nuevoPeriodo && nuevoPeriodo !== 'sin-cambios') {
         const [mes, año] = nuevoPeriodo.split('/')
         updateData.mes_contable = parseInt(mes)
