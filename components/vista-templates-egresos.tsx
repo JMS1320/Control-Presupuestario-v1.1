@@ -560,7 +560,7 @@ export function VistaTemplatesEgresos() {
   }
 
   const guardarCambio = async (nuevoValor: string) => {
-    if (!celdaEnEdicion || guardandoEnProgreso) return  // Protección anti-rebote
+    if (!celdaEnEdicion || guardandoEnProgreso || modalPropagacion.isOpen) return  // Protección anti-rebote
 
     // Si está editando categ, validar si existe primero
     if (celdaEnEdicion.columna === 'categ') {
@@ -596,9 +596,7 @@ export function VistaTemplatesEgresos() {
 
         // PROCESO ESPECIAL TEMPLATES: Abrir modal para confirmar propagación
         if (valorFinal > 0) {
-          // Setear flag ANTES de abrir modal para evitar rebote por onBlur
-          setGuardandoEnProgreso(true)
-          // Abrir modal con 3 opciones en lugar de window.confirm (evita bucle)
+          // Abrir modal con 3 opciones (el check modalPropagacion.isOpen evita rebote por onBlur)
           setModalPropagacion({
             isOpen: true,
             cuotaId: datosEdicion.cuotaId,
@@ -650,6 +648,7 @@ export function VistaTemplatesEgresos() {
   // Funciones para modal propagación (3 opciones)
   const handlePropagacionSi = async () => {
     if (!modalPropagacion.datosEdicion) return
+    setGuardandoEnProgreso(true)
 
     try {
       // Determinar monto a propagar (personalizado o el mismo de la cuota)
@@ -696,6 +695,7 @@ export function VistaTemplatesEgresos() {
 
   const handlePropagacionNo = async () => {
     if (!modalPropagacion.datosEdicion) return
+    setGuardandoEnProgreso(true)
 
     try {
       // Solo guardar la cuota actual (sin propagar)
