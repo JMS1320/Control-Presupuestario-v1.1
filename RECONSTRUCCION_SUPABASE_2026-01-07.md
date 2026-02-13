@@ -144,6 +144,33 @@ Monto a propagar (opcional):
 
 **Fuente oficial:** [AFIP - Tabla Comprobantes](https://www.afip.gob.ar/fe/documentos/TABLACOMPROBANTES.xls)
 
+#### **3. Corrección facturas duplicadas/incorrectas:**
+- **3 facturas eliminadas**: tipo_comprobante=0 (inválido)
+- **2 facturas corregidas** (CUIT 30615803762): exento/otros_tributos intercambiados
+  - MARR MONTES: `exento=3718.00, otros_tributos=0`
+  - MARR MONTES 2da: `exento=3718.00, otros_tributos=0`
+
+#### **4. Fix bug "Gestionar Facturas" - Limpiar período contable:**
+- **Problema**: Al cambiar ddjj_iva de "Imputado" a "No" con "Gestionar Facturas", año_contable y mes_contable quedaban con valores residuales.
+- **Impacto**: Facturas aparecían en Subdiarios incorrectamente (con período asignado pero estado "No").
+- **Solución**: Agregar lógica que limpia año_contable y mes_contable automáticamente cuando ddjj_iva se cambia a "No".
+- **Archivo**: `components/vista-facturas-arca.tsx` línea ~2083
+- **Commit**: `dffe768`
+
+```typescript
+if (nuevoEstadoDDJJ === 'No') {
+  updateData.año_contable = null
+  updateData.mes_contable = null
+  console.log('🧹 Limpiando año_contable y mes_contable por cambio a "No"')
+}
+```
+
+### 📊 **Commits adicionales de la sesión:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `dffe768` | Fix: Limpiar año_contable y mes_contable al cambiar ddjj_iva a 'No' |
+
 ---
 
 ## 📆 2026-02-03 - Sesión: Fix Edición Inline ARCA + Cash Flow
