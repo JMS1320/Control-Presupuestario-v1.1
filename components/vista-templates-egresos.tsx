@@ -1294,6 +1294,7 @@ export function VistaTemplatesEgresos() {
                   placeholder="Buscar por responsable..."
                   value={busquedaResponsable}
                   onChange={(e) => setBusquedaResponsable(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
@@ -1305,6 +1306,7 @@ export function VistaTemplatesEgresos() {
                   placeholder="Buscar por nombre referencia..."
                   value={busquedaNombreReferencia}
                   onChange={(e) => setBusquedaNombreReferencia(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
@@ -1316,6 +1318,7 @@ export function VistaTemplatesEgresos() {
                   placeholder="Buscar en descripción..."
                   value={busquedaDescripcion}
                   onChange={(e) => setBusquedaDescripcion(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
@@ -1411,6 +1414,7 @@ export function VistaTemplatesEgresos() {
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                   <Input
@@ -1418,6 +1422,7 @@ export function VistaTemplatesEgresos() {
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                 </div>

@@ -3485,6 +3485,7 @@ export function VistaFacturasArca() {
                   placeholder="Buscar por nombre proveedor..."
                   value={busquedaProveedor}
                   onChange={(e) => setBusquedaProveedor(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
@@ -3496,6 +3497,7 @@ export function VistaFacturasArca() {
                   placeholder="Buscar por CUIT..."
                   value={busquedaCUIT}
                   onChange={(e) => setBusquedaCUIT(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
@@ -3507,10 +3509,11 @@ export function VistaFacturasArca() {
                   placeholder="Buscar en detalle..."
                   value={busquedaDetalle}
                   onChange={(e) => setBusquedaDetalle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                   className="text-xs"
                 />
               </div>
-              
+
               {/* Selector de estado */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">⚡ Estado</Label>
@@ -3551,6 +3554,7 @@ export function VistaFacturasArca() {
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                   <Input
@@ -3558,6 +3562,7 @@ export function VistaFacturasArca() {
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                 </div>

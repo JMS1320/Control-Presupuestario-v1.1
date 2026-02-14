@@ -854,6 +854,7 @@ export function VistaExtractoBancario() {
                         placeholder="Desde"
                         value={fechaMovDesde}
                         onChange={(e) => setFechaMovDesde(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
                       <Input
@@ -861,6 +862,7 @@ export function VistaExtractoBancario() {
                         placeholder="Hasta"
                         value={fechaMovHasta}
                         onChange={(e) => setFechaMovHasta(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
                     </div>
@@ -875,6 +877,7 @@ export function VistaExtractoBancario() {
                         placeholder="Monto desde"
                         value={montoDesde}
                         onChange={(e) => setMontoDesde(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
                       <Input
@@ -882,6 +885,7 @@ export function VistaExtractoBancario() {
                         placeholder="Monto hasta"
                         value={montoHasta}
                         onChange={(e) => setMontoHasta(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
                     </div>
@@ -905,6 +909,7 @@ export function VistaExtractoBancario() {
                       placeholder="Buscar en detalle..."
                       value={busquedaDetalle}
                       onChange={(e) => setBusquedaDetalleExtracto(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                       className="text-xs"
                     />
                   </div>

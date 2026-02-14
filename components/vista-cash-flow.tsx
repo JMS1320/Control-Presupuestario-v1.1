@@ -1095,6 +1095,7 @@ export function VistaCashFlow() {
                     placeholder="Buscar por nombre proveedor..."
                     value={busquedaProveedor}
                     onChange={(e) => setBusquedaProveedor(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                 </div>
@@ -1106,6 +1107,7 @@ export function VistaCashFlow() {
                     placeholder="Buscar por CUIT..."
                     value={busquedaCUIT}
                     onChange={(e) => setBusquedaCUIT(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                 </div>
@@ -1117,6 +1119,7 @@ export function VistaCashFlow() {
                     placeholder="Buscar en detalle..."
                     value={busquedaDetalle}
                     onChange={(e) => setBusquedaDetalle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
                 </div>
