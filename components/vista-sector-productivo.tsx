@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import useInlineEditor from "@/hooks/useInlineEditor"
 
 // ============================================================
 // TIPOS
@@ -173,6 +174,15 @@ export function VistaSectorProductivo() {
 // TAB HACIENDA
 // ============================================================
 
+const TIPOS_MOV_HACIENDA = [
+  { value: 'compra', label: 'Compra' },
+  { value: 'venta', label: 'Venta' },
+  { value: 'nacimiento', label: 'Nacimiento' },
+  { value: 'mortandad', label: 'Mortandad' },
+  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'ajuste_stock', label: 'Ajuste de Stock' },
+]
+
 function TabHacienda() {
   const [stock, setStock] = useState<StockHacienda[]>([])
   const [categorias, setCategorias] = useState<CategoriaHacienda[]>([])
@@ -180,6 +190,32 @@ function TabHacienda() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
+
+  // Hook edición inline (mismo patrón que Cash Flow)
+  const hookEditor = useInlineEditor({
+    onLocalUpdate: (filaId, campo, valor, updateData) => {
+      setMovimientos(prev => prev.map(m =>
+        m.id === filaId ? { ...m, ...updateData, [campo]: valor } : m
+      ))
+    }
+  })
+
+  const iniciarEdicionMov = (mov: MovimientoHacienda, campo: string, event: React.MouseEvent) => {
+    if (!event.ctrlKey) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    let valor: any = (mov as any)[campo] || ''
+
+    hookEditor.iniciarEdicion({
+      filaId: mov.id,
+      columna: campo,
+      valor,
+      tableName: 'movimientos_hacienda',
+      origen: 'PRODUCTIVO',
+      campoReal: campo
+    })
+  }
 
   // Form nuevo movimiento
   const [nuevoMov, setNuevoMov] = useState({
@@ -359,22 +395,92 @@ function TabHacienda() {
                 </TableCell>
               </TableRow>
             ) : (
-              movimientos.map(m => (
+              movimientos.map(m => {
+                const enEdicion = (campo: string) =>
+                  hookEditor.celdaEnEdicion?.filaId === m.id && hookEditor.celdaEnEdicion?.columna === campo
+
+                const celdaEditable = (campo: string, contenido: React.ReactNode, tipo: 'text' | 'date' | 'number' = 'text') => {
+                  if (enEdicion(campo)) {
+                    if (campo === 'categoria_id') {
+                      return (
+                        <Select
+                          value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                          onValueChange={(v) => {
+                            hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: v } : null)
+                            hookEditor.guardarCambio(v)
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent position="popper" className="z-[9999]">
+                            {categorias.map(c => (
+                              <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
+                    }
+                    if (campo === 'tipo') {
+                      return (
+                        <Select
+                          value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                          onValueChange={(v) => {
+                            hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: v } : null)
+                            hookEditor.guardarCambio(v)
+                          }}
+                        >
+                          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent position="popper" className="z-[9999]">
+                            {TIPOS_MOV_HACIENDA.map(t => (
+                              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
+                    }
+                    return (
+                      <Input
+                        ref={hookEditor.inputRef}
+                        type={tipo === 'date' ? 'date' : tipo === 'number' ? 'number' : 'text'}
+                        step={tipo === 'number' ? '0.01' : undefined}
+                        value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                        onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                        onKeyDown={hookEditor.manejarKeyDown}
+                        className="h-7 text-xs p-1 w-full"
+                        disabled={hookEditor.guardandoCambio}
+                      />
+                    )
+                  }
+                  return (
+                    <div
+                      className="cursor-pointer hover:bg-blue-50 p-1 rounded group"
+                      title="Ctrl+Click para editar"
+                      onClick={(e) => iniciarEdicionMov(m, campo, e)}
+                    >
+                      <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 float-right" />
+                      {contenido}
+                    </div>
+                  )
+                }
+
+                return (
                 <TableRow key={m.id}>
-                  <TableCell>{formatoFecha(m.fecha)}</TableCell>
+                  <TableCell>{celdaEditable('fecha', formatoFecha(m.fecha), 'date')}</TableCell>
                   <TableCell>
-                    <Badge variant={m.tipo === 'compra' ? 'default' : m.tipo === 'venta' ? 'secondary' : 'outline'}>
-                      {m.tipo}
-                    </Badge>
+                    {celdaEditable('tipo',
+                      <Badge variant={m.tipo === 'compra' ? 'default' : m.tipo === 'venta' ? 'secondary' : 'outline'}>
+                        {TIPOS_MOV_HACIENDA.find(t => t.value === m.tipo)?.label || m.tipo}
+                      </Badge>
+                    )}
                   </TableCell>
-                  <TableCell>{m.categorias_hacienda?.nombre || '-'}</TableCell>
-                  <TableCell className="text-right">{formatoNumero(m.cantidad)}</TableCell>
-                  <TableCell className="text-right">{m.peso_total_kg ? `${formatoNumero(m.peso_total_kg)}` : '-'}</TableCell>
-                  <TableCell className="text-right">{formatoMoneda(m.monto_total)}</TableCell>
-                  <TableCell>{m.proveedor_cliente || '-'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{m.observaciones || '-'}</TableCell>
+                  <TableCell>{celdaEditable('categoria_id', m.categorias_hacienda?.nombre || '-')}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('cantidad', formatoNumero(m.cantidad), 'number')}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('peso_total_kg', m.peso_total_kg ? formatoNumero(m.peso_total_kg) : '-', 'number')}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
+                  <TableCell>{celdaEditable('proveedor_cliente', m.proveedor_cliente || '-')}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
                 </TableRow>
-              ))
+                )
+              })
             )}
           </TableBody>
         </Table>

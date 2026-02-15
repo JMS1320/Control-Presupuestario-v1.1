@@ -10,7 +10,7 @@ export interface CeldaEnEdicion {
   valor: any
   tableName?: string
   campoReal?: string
-  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW' | 'ANTICIPO'
+  origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW' | 'ANTICIPO' | 'PRODUCTIVO'
   egresoId?: string
 }
 
@@ -133,8 +133,10 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       const tabla = celdaEnEdicion.tableName || 'cuotas_egresos_sin_factura'
       const filtro = { id: celdaEnEdicion.filaId }
 
-      const query = celdaEnEdicion.origen === 'ARCA' 
+      const query = celdaEnEdicion.origen === 'ARCA'
         ? supabase.schema('msa').from(tabla)
+        : celdaEnEdicion.origen === 'PRODUCTIVO'
+        ? supabase.schema('productivo').from(tabla)
         : supabase.from(tabla)
       
       console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
