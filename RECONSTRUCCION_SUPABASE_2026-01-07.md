@@ -7892,5 +7892,38 @@ CHECK (estado_pago IN ('pendiente', 'pagado'));
 
 **Commit**: `1a3cb02`
 
-**📅 Última actualización sección:** 2026-02-14
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos
+### ✅ Feature: Actualización Optimista - Sin refresh automático al editar
+
+**Problema**: Cada edición inline recargaba TODOS los datos desde BD, causando:
+- Demora de varios segundos entre ediciones
+- Reordenamiento de filas al cambiar fechas/montos
+- Flujo de trabajo interrumpido al editar múltiples campos
+
+**Solución**: Actualización local del estado sin recargar desde BD.
+
+```
+ANTES: Edit → Save BD → cargarDatos() → re-render completo (lento)
+AHORA: Edit → Save BD → actualizar valor local → re-render mínimo (instantáneo)
+```
+
+#### Archivos modificados:
+- **`hooks/useInlineEditor.ts`**: Nuevo callback `onLocalUpdate(filaId, campo, valor, updateData)` como alternativa a `onSuccess`
+- **`hooks/useMultiCashFlowData.ts`**: Nueva función `actualizarLocal(id, campo, valor)` que modifica array en memoria. `actualizarRegistro()` y `actualizarBatch()` ya no llaman `cargarDatos()`
+- **`components/vista-cash-flow.tsx`**: Hook usa `onLocalUpdate` en vez de `onSuccess: cargarDatos`
+- **`components/vista-facturas-arca.tsx`**: Hook usa `onLocalUpdate`, botón "Actualizar" agregado
+- **`components/vista-templates-egresos.tsx`**: Hook usa `onLocalUpdate`, guardado simple usa `actualizarCuotaLocal`, botón "Actualizar" agregado
+- **`components/vista-extracto-bancario.tsx`**: Botón "Actualizar" agregado
+
+#### Excepciones (sí recargan todo):
+- Propagación de montos a cuotas futuras (afecta múltiples filas)
+- Conversión Anual ↔ Cuotas (afecta múltiples filas)
+
+#### Botón "Actualizar" en cada vista:
+- Icono: RefreshCw
+- Acción: Recarga completa desde BD (reordena filas, sincroniza todo)
+- Ubicación: Toolbar junto a botones existentes
+
+**Commit**: `f055ed7`
+
+**📅 Última actualización sección:** 2026-02-15
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista
