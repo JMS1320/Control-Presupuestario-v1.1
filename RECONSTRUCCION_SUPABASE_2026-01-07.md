@@ -7925,5 +7925,97 @@ AHORA: Edit → Save BD → actualizar valor local → re-render mínimo (instan
 
 **Commit**: `f055ed7`
 
+---
+
+## 📆 2026-02-15 - Sesión: Sector Productivo - Schema BD + Vista Básica
+
+### 🎯 **Objetivo de la sesión:**
+Crear nuevo módulo "Sector Productivo" para gestión agropecuaria: stock de hacienda, insumos, movimientos y lotes agrícolas.
+
+### 🏗️ **Arquitectura elegida:**
+- **Schema separado**: `productivo` (mismo patrón que `msa` para facturas AFIP)
+- **7 tablas**: categorias_hacienda, stock_hacienda, movimientos_hacienda, categorias_insumo, stock_insumos, movimientos_insumos, lotes_agricolas
+- **RLS permisivo**: anon + authenticated full access (mismo patrón tablas existentes)
+- **Vista con 3 sub-tabs**: Hacienda, Insumos, Lotes Agrícolas
+
+### ✅ **Migración BD aplicada:**
+
+#### Schema + Tablas:
+```sql
+CREATE SCHEMA IF NOT EXISTS productivo;
+
+-- categorias_hacienda: id (uuid), nombre (unique), activo, created_at
+-- stock_hacienda: id (uuid), categoria_id (FK), cantidad, peso_promedio_kg, campo, observaciones, updated_at
+-- movimientos_hacienda: id (uuid), fecha, categoria_id (FK), tipo (check constraint), cantidad, peso_total_kg, precio_por_kg, monto_total, campo_origen, campo_destino, proveedor_cliente, cuit, observaciones, created_at
+-- categorias_insumo: id (uuid), nombre (unique), unidad_medida, activo, created_at
+-- stock_insumos: id (uuid), categoria_id (FK), producto, cantidad, costo_unitario, observaciones, updated_at
+-- movimientos_insumos: id (uuid), fecha, insumo_stock_id (FK nullable), tipo (check), cantidad, costo_unitario, monto_total, destino_campo, proveedor, cuit, observaciones, created_at
+-- lotes_agricolas: id (uuid), nombre_lote, campo, hectareas, cultivo, campaña, fecha_siembra, fecha_cosecha_estimada, estado (check), observaciones, created_at
+```
+
+#### Tipos movimiento hacienda:
+`compra`, `venta`, `nacimiento`, `mortandad`, `transferencia`, `ajuste_stock`
+
+#### Tipos movimiento insumos:
+`compra`, `uso`, `ajuste`
+
+#### Estados lotes:
+`sembrado`, `en_crecimiento`, `cosechado`
+
+#### Datos semilla - 11 Categorías Hacienda:
+Vaca, Vaquillona Preñada, Vaquillona de Reposicion, Ternera Recria, Ternera al Pie, Toro, Torito, Novillo, Ternero Recria, Ternero al Pie, Vaca CUT/Descarte
+
+#### Datos semilla - 9 Categorías Insumo:
+Semilla, Fertilizante, Herbicida, Insecticida, Fungicida, Combustible, Lubricante, Repuesto, Varios
+
+### 🔧 **Archivos creados/modificados:**
+
+- **NUEVO**: `components/vista-sector-productivo.tsx`
+  - Componente principal `VistaSectorProductivo` con 3 sub-tabs
+  - `TabHacienda`: Stock + movimientos (toggle) + modal nuevo movimiento
+  - `TabInsumos`: Stock + movimientos (toggle) + modal nuevo movimiento
+  - `TabLotesAgricolas`: Tabla lotes + modal nuevo lote
+  - Queries con `supabase.schema('productivo').from(...)`
+  - Formato moneda argentino + fechas DD/MM/AAAA
+
+- **MODIFICADO**: `dashboard.tsx`
+  - Import `VistaSectorProductivo`
+  - Tab "Productivo" con icono Tractor (solo admin via `shouldShowTab`)
+  - grid-cols-8 → grid-cols-9
+  - TabsContent con `<VistaSectorProductivo />`
+
+### 🐛 **Bugs encontrados y resueltos:**
+
+#### 1. IDs UUID tratados como number
+- **Problema**: Interfaces TypeScript definían `id: number` y `categoria_id: number`, pero BD usa UUID (string)
+- **Síntoma**: `parseInt(uuid)` = NaN → insert fallaba silenciosamente
+- **Fix**: Cambiar tipos a `string`, eliminar `parseInt()` en categoria_id
+
+#### 2. Select no seleccionable dentro de Dialog
+- **Problema**: Dropdown de categorías no respondía al click dentro del modal
+- **Investigación**: Se probó z-index y position=popper (no resolvió)
+- **Root cause**: Schema `productivo` NO estaba expuesto en Supabase API (PostgREST)
+- **Síntoma real**: Query devolvía array vacío → Select sin opciones → parecía no funcionar
+- **Fix**: Exponer schema `productivo` en Supabase Dashboard → Settings → API → Exposed schemas
+
+### ⚠️ **IMPORTANTE para futuras reconstrucciones:**
+Si se recrea el proyecto Supabase, además de ejecutar las migraciones:
+1. Ir a Dashboard → Settings → API → Schema Settings
+2. Agregar `productivo` a la lista de schemas expuestos (junto a `public` y `msa`)
+3. Sin esto, `supabase.schema('productivo')` no devuelve datos desde el cliente
+
+### 📊 **Commits aplicados:**
+```
+f12a7ee - Feature: Sector Productivo - schema BD + vista con 3 sub-tabs
+fb39d43 - Fix: Categorias hacienda UUID + 11 categorias especificas + Ajuste de Stock
+cd6264f - Fix: SelectContent z-index en modales (no era el problema real)
+```
+
+### 📍 **Estado al cierre:**
+- **Branch**: `desarrollo` (NO mergeado a main)
+- **Testing**: Pendiente por parte del usuario
+- **Funcionalidad**: Tab Productivo visible, categorías cargadas, modales funcionando
+- **Pendiente**: Probar creación movimientos, verificar stock, probar lotes agrícolas
+
 **📅 Última actualización sección:** 2026-02-15
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo
