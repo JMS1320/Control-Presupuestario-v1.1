@@ -200,14 +200,34 @@ function TabHacienda() {
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
-      const [catRes, stockRes, movRes] = await Promise.all([
+      const [catRes, movRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_hacienda').select('*').eq('activo', true).order('nombre'),
-        supabase.schema('productivo').from('stock_hacienda').select('*, categorias_hacienda(nombre)').order('categoria_id'),
-        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false }).limit(50)
+        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false })
       ])
       if (catRes.data) setCategorias(catRes.data)
-      if (stockRes.data) setStock(stockRes.data)
-      if (movRes.data) setMovimientos(movRes.data)
+      if (movRes.data) {
+        setMovimientos(movRes.data)
+        // Calcular stock desde movimientos
+        const stockMap: Record<string, { categoria_id: string, nombre: string, cantidad: number }> = {}
+        for (const m of movRes.data) {
+          const catId = m.categoria_id
+          if (!stockMap[catId]) {
+            stockMap[catId] = { categoria_id: catId, nombre: m.categorias_hacienda?.nombre || '-', cantidad: 0 }
+          }
+          if (m.tipo === 'compra' || m.tipo === 'nacimiento') {
+            stockMap[catId].cantidad += m.cantidad
+          } else if (m.tipo === 'venta' || m.tipo === 'mortandad') {
+            stockMap[catId].cantidad -= m.cantidad
+          } else if (m.tipo === 'ajuste_stock') {
+            stockMap[catId].cantidad += m.cantidad // puede ser negativo
+          }
+          // transferencia: no cambia total (solo cambia ubicación)
+        }
+        const stockCalculado = Object.values(stockMap)
+          .filter(s => s.cantidad !== 0)
+          .sort((a, b) => a.nombre.localeCompare(b.nombre))
+        setStock(stockCalculado as any)
+      }
     } catch (err) {
       console.error('Error cargando hacienda:', err)
       toast.error('Error al cargar datos de hacienda')
@@ -290,28 +310,30 @@ function TabHacienda() {
             <TableRow>
               <TableHead>Categoria</TableHead>
               <TableHead className="text-right">Cantidad</TableHead>
-              <TableHead className="text-right">Peso Prom. (kg)</TableHead>
-              <TableHead>Campo</TableHead>
-              <TableHead>Observaciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {stock.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
                   Sin registros de stock. Registre movimientos para actualizar.
                 </TableCell>
               </TableRow>
             ) : (
-              stock.map(s => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.categorias_hacienda?.nombre || '-'}</TableCell>
-                  <TableCell className="text-right">{formatoNumero(s.cantidad)}</TableCell>
-                  <TableCell className="text-right">{s.peso_promedio_kg ? `${formatoNumero(s.peso_promedio_kg)} kg` : '-'}</TableCell>
-                  <TableCell>{s.campo || '-'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{s.observaciones || '-'}</TableCell>
+              <>
+                {stock.map((s: any) => (
+                  <TableRow key={s.categoria_id}>
+                    <TableCell className="font-medium">{s.nombre}</TableCell>
+                    <TableCell className="text-right">{formatoNumero(s.cantidad)}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="font-bold border-t-2">
+                  <TableCell>TOTAL</TableCell>
+                  <TableCell className="text-right">
+                    {formatoNumero((stock as any[]).reduce((sum, s) => sum + s.cantidad, 0))}
+                  </TableCell>
                 </TableRow>
-              ))
+              </>
             )}
           </TableBody>
         </Table>
