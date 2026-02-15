@@ -375,7 +375,7 @@ function TabHacienda() {
                 <Label>Tipo *</Label>
                 <Select value={nuevoMov.tipo} onValueChange={v => setNuevoMov(p => ({ ...p, tipo: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="z-[9999]">
                     <SelectItem value="compra">Compra</SelectItem>
                     <SelectItem value="venta">Venta</SelectItem>
                     <SelectItem value="nacimiento">Nacimiento</SelectItem>
@@ -391,7 +391,7 @@ function TabHacienda() {
                 <Label>Categoria *</Label>
                 <Select value={nuevoMov.categoria_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="z-[9999]">
                     {categorias.map(c => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
                     ))}
@@ -654,7 +654,7 @@ function TabInsumos() {
                 <Label>Tipo *</Label>
                 <Select value={nuevoMov.tipo} onValueChange={v => setNuevoMov(p => ({ ...p, tipo: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="z-[9999]">
                     <SelectItem value="compra">Compra</SelectItem>
                     <SelectItem value="uso">Uso</SelectItem>
                     <SelectItem value="ajuste">Ajuste</SelectItem>
@@ -666,7 +666,7 @@ function TabInsumos() {
               <Label>Producto (stock existente)</Label>
               <Select value={nuevoMov.insumo_stock_id} onValueChange={v => setNuevoMov(p => ({ ...p, insumo_stock_id: v }))}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar (opcional)" /></SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" className="z-[9999]">
                   {stock.map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.producto} ({s.categorias_insumo?.nombre})</SelectItem>
                   ))}
@@ -897,7 +897,7 @@ function TabLotesAgricolas() {
                 <Label>Estado</Label>
                 <Select value={nuevoLote.estado} onValueChange={v => setNuevoLote(p => ({ ...p, estado: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="z-[9999]">
                     <SelectItem value="sembrado">Sembrado</SelectItem>
                     <SelectItem value="en_crecimiento">En Crecimiento</SelectItem>
                     <SelectItem value="cosechado">Cosechado</SelectItem>
