@@ -7834,5 +7834,63 @@ const ejecutarEdicionMasivaCuotas = async () => {
 
 ---
 
-**📅 Última actualización sección:** 2026-02-04
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes
+---
+
+## 🔧 SESIÓN 2026-02-14: Enter Filtros + Estado Pago Anticipos + Vista Anticipos
+
+### ✅ Feature: Enter aplica filtros en todas las vistas
+
+Agregado `onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}` a todos los inputs de texto en paneles de filtros.
+
+| Vista | Inputs agregados |
+|-------|-----------------|
+| ARCA Facturas | detalle, monto mínimo, monto máximo |
+| Templates | descripción, monto mínimo, monto máximo |
+| Cash Flow | detalle |
+| Extracto Bancario | monto desde, monto hasta, buscar detalle |
+
+**Commit**: `f4cd172`
+
+### ✅ Feature: Estado Pago Anticipos + Vista Anticipos Existentes
+
+**Problema**: No se podía marcar anticipos como "pagado" - constraint BD solo permitía estados de vinculación.
+
+**Solución**: Separar pago de vinculación con columna independiente.
+
+#### Migración BD aplicada:
+```sql
+ALTER TABLE anticipos_proveedores
+ADD COLUMN estado_pago VARCHAR(20) DEFAULT 'pendiente';
+
+ALTER TABLE anticipos_proveedores
+ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+CHECK (estado_pago IN ('pendiente', 'pagado'));
+```
+
+#### Campos anticipos_proveedores (actualizado):
+| Columna | Tipo | Propósito |
+|---------|------|-----------|
+| `estado` | VARCHAR(20) | Vinculación con factura: pendiente_vincular / vinculado / parcial |
+| `estado_pago` | VARCHAR(20) | Pago del anticipo: pendiente / pagado |
+
+#### Archivos modificados:
+- **`hooks/useMultiCashFlowData.ts`**: Mapea `estado_pago` en Cash Flow, update escribe a `estado_pago`
+- **`components/vista-cash-flow.tsx`**:
+  - Modal anticipos con 2 tabs: "Nuevo Anticipo" + "Anticipos Existentes"
+  - Vista existentes: tabla con fecha, tipo, proveedor, CUIT, monto, restante, estado pago (editable), vinculación, descripción
+  - Estados específicos ANTICIPO en modal cambio estado Cash Flow (solo pendiente/pagado)
+
+#### ⚠️ Post-reconstrucción:
+```sql
+-- Ejecutar DESPUÉS de scripts base
+ALTER TABLE anticipos_proveedores
+ADD COLUMN estado_pago VARCHAR(20) DEFAULT 'pendiente';
+ALTER TABLE anticipos_proveedores
+ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+CHECK (estado_pago IN ('pendiente', 'pagado'));
+```
+
+**Commit**: `1a3cb02`
+
+**📅 Última actualización sección:** 2026-02-14
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos
