@@ -16,11 +16,12 @@ export interface CeldaEnEdicion {
 
 interface UseInlineEditorProps {
   onSuccess?: () => void
+  onLocalUpdate?: (filaId: string, campo: string, valor: any, updateData: Record<string, any>) => void
   onError?: (error: string) => void
   customValidations?: (celda: CeldaEnEdicion) => Promise<boolean>
 }
 
-function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEditorProps = {}) {
+function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations }: UseInlineEditorProps = {}) {
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -150,8 +151,13 @@ function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEdi
       }
 
       toast.success('Campo actualizado correctamente')
+      const celdaGuardada = { ...celdaEnEdicion }
       setCeldaEnEdicion(null)
-      onSuccess?.()
+      if (onLocalUpdate) {
+        onLocalUpdate(celdaGuardada.filaId, celdaGuardada.columna, valorProcesado, updateData)
+      } else {
+        onSuccess?.()
+      }
       return true
 
     } catch (error) {
@@ -163,7 +169,7 @@ function useInlineEditor({ onSuccess, onError, customValidations }: UseInlineEdi
     } finally {
       setGuardandoCambio(false)
     }
-  }, [celdaEnEdicion, onSuccess, onError, customValidations, procesarValor, aplicarReglasAutomaticas])
+  }, [celdaEnEdicion, onSuccess, onLocalUpdate, onError, customValidations, procesarValor, aplicarReglasAutomaticas])
 
   const manejarKeyDown = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Enter') {

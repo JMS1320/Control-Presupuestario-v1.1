@@ -131,11 +131,18 @@ export function VistaCashFlow() {
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
   const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
   
-  const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
+  const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
   // Hook unificado para edición inline (DESPUÉS de cargarDatos para evitar error inicialización)
   const hookEditor = useInlineEditor({
-    onSuccess: cargarDatos,
+    onLocalUpdate: (filaId, campo, valor, updateData) => {
+      // Actualizar cada campo del updateData localmente
+      Object.entries(updateData).forEach(([key, val]) => {
+        // Mapear campos BD a campos CashFlowRow
+        const campoLocal = key === 'monto_a_abonar' ? 'debitos' : key
+        actualizarLocal(filaId, campoLocal, val)
+      })
+    },
     onError: (error) => console.error('Hook error Cash Flow:', error),
     customValidations: async (celda) => {
       // Validación especial para categorías en Cash Flow

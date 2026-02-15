@@ -257,6 +257,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     }
   }
 
+  // Actualizar valor localmente sin recargar desde BD
+  const actualizarLocal = (id: string, campo: string, valor: any) => {
+    setData(prev => prev.map(fila =>
+      fila.id === id ? { ...fila, [campo]: valor } : fila
+    ))
+  }
+
   // Función para actualizar un registro individual
   const actualizarRegistro = async (
     id: string,
@@ -334,8 +341,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         }
       }
 
-      // Recargar datos después de actualización exitosa
-      await cargarDatos()
+      // Actualización local sin recargar desde BD
+      actualizarLocal(id, campo, valor)
       return true
 
     } catch (error) {
@@ -388,8 +395,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         if (error) throw error
       }
 
-      // Recargar datos
-      await cargarDatos()
+      // Actualización local de cada registro del batch
+      for (const update of actualizaciones) {
+        actualizarLocal(update.id, update.campo, update.valor)
+      }
       return true
 
     } catch (error) {
@@ -422,6 +431,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     estadisticas,
     cargarDatos,
     actualizarRegistro,
-    actualizarBatch
+    actualizarBatch,
+    actualizarLocal
   }
 }

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check, RefreshCw } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -298,9 +298,20 @@ export function VistaTemplatesEgresos() {
     }
   }
 
+  // Actualizar valor localmente sin recargar desde BD
+  const actualizarCuotaLocal = (filaId: string, campo: string, valor: any) => {
+    setCuotas(prev => prev.map(c =>
+      c.id === filaId ? { ...c, [campo]: valor } : c
+    ))
+  }
+
   // Hook unificado (DESPUÉS de cargarCuotas para evitar error inicialización)
   const hookEditor = useInlineEditor({
-    onSuccess: cargarCuotas,
+    onLocalUpdate: (filaId, campo, valor, updateData) => {
+      Object.entries(updateData).forEach(([key, val]) => {
+        actualizarCuotaLocal(filaId, key, val)
+      })
+    },
     onError: (error) => console.error('Hook error Templates:', error)
   })
 
@@ -634,8 +645,10 @@ export function VistaTemplatesEgresos() {
         return
       }
 
-      // Recargar datos y limpiar edición (igual que ARCA)
-      await cargarCuotas()
+      // Actualización local sin recargar
+      Object.entries(updateData).forEach(([key, val]) => {
+        actualizarCuotaLocal(datosEdicion.cuotaId, key, val)
+      })
       setCeldaEnEdicion(null)
 
       console.log(`✅ Templates: ${datosEdicion.columna} actualizado`)
@@ -706,7 +719,7 @@ export function VistaTemplatesEgresos() {
 
       if (error) throw error
 
-      await cargarCuotas()
+      actualizarCuotaLocal(modalPropagacion.cuotaId, 'monto', modalPropagacion.nuevoMonto)
       setCeldaEnEdicion(null)
       setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
       setMontoPropagacionPersonalizado('')
@@ -1098,6 +1111,16 @@ export function VistaTemplatesEgresos() {
           >
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? "Salir Edición" : "Modo Edición"}
+          </Button>
+
+          {/* Botón actualizar */}
+          <Button
+            variant="outline"
+            onClick={() => cargarCuotas()}
+            title="Recargar datos desde BD"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Actualizar
           </Button>
 
           {/* Botón edición masiva */}

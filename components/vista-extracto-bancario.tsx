@@ -32,7 +32,8 @@ import {
   Search,
   Check,
   ChevronsUpDown,
-  Filter
+  Filter,
+  RefreshCw
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
@@ -804,8 +805,16 @@ export function VistaExtractoBancario() {
                   <Filter className="h-4 w-4 mr-2" />
                   Filtros Avanzados
                 </Button>
-                <Button 
-                  onClick={() => setModoEdicion(!modoEdicion)} 
+                <Button
+                  variant="outline"
+                  onClick={() => recargar()}
+                  title="Recargar datos desde BD"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Actualizar
+                </Button>
+                <Button
+                  onClick={() => setModoEdicion(!modoEdicion)}
                   variant={modoEdicion ? "destructive" : "outline"}
                   className="flex items-center gap-2"
                 >

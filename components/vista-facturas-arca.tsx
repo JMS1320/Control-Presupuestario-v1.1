@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -393,9 +393,20 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Actualizar valor localmente sin recargar desde BD
+  const actualizarFacturaLocal = (filaId: string, campo: string, valor: any) => {
+    setFacturas(prev => prev.map(f =>
+      f.id === filaId ? { ...f, [campo]: valor } : f
+    ))
+  }
+
   // Hook unificado (DESPUÉS de cargarFacturas para evitar error inicialización)
   const hookEditor = useInlineEditor({
-    onSuccess: cargarFacturas,
+    onLocalUpdate: (filaId, campo, valor, updateData) => {
+      Object.entries(updateData).forEach(([key, val]) => {
+        actualizarFacturaLocal(filaId, key, val)
+      })
+    },
     onError: (error) => console.error('Hook error:', error)
   })
 
@@ -3278,6 +3289,16 @@ export function VistaFacturasArca() {
             Filtros
           </Button>
           
+          {/* Botón actualizar */}
+          <Button
+            variant="outline"
+            onClick={() => cargarFacturas()}
+            title="Recargar datos desde BD"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Actualizar
+          </Button>
+
           {/* Botón modo edición */}
           <Button
             variant={modoEdicion ? "default" : "outline"}
