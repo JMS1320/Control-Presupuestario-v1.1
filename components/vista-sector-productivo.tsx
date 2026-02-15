@@ -19,14 +19,14 @@ import { toast } from "sonner"
 // ============================================================
 
 interface CategoriaHacienda {
-  id: number
+  id: string
   nombre: string
   activo: boolean
 }
 
 interface StockHacienda {
   id: string
-  categoria_id: number
+  categoria_id: string
   cantidad: number
   peso_promedio_kg: number | null
   campo: string | null
@@ -38,7 +38,7 @@ interface StockHacienda {
 interface MovimientoHacienda {
   id: string
   fecha: string
-  categoria_id: number
+  categoria_id: string
   tipo: string
   cantidad: number
   peso_total_kg: number | null
@@ -54,7 +54,7 @@ interface MovimientoHacienda {
 }
 
 interface CategoriaInsumo {
-  id: number
+  id: string
   nombre: string
   unidad_medida: string
   activo: boolean
@@ -226,7 +226,7 @@ function TabHacienda() {
 
     const datos: any = {
       fecha: nuevoMov.fecha,
-      categoria_id: parseInt(nuevoMov.categoria_id),
+      categoria_id: nuevoMov.categoria_id,
       tipo: nuevoMov.tipo,
       cantidad: parseInt(nuevoMov.cantidad),
     }
@@ -381,6 +381,7 @@ function TabHacienda() {
                     <SelectItem value="nacimiento">Nacimiento</SelectItem>
                     <SelectItem value="mortandad">Mortandad</SelectItem>
                     <SelectItem value="transferencia">Transferencia</SelectItem>
+                    <SelectItem value="ajuste_stock">Ajuste de Stock</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
