@@ -114,7 +114,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         debitos: esCobro ? 0 : montoRestante,   // Pago = débito (dinero sale)
         creditos: esCobro ? montoRestante : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
-        estado: a.estado || 'pendiente_vincular'
+        estado: a.estado_pago || 'pendiente'
       }
     })
   }
@@ -296,6 +296,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           anticipoUpdateData.fecha_pago = valor
         } else if (campo === 'detalle') {
           anticipoUpdateData.descripcion = valor
+        } else if (campo === 'estado') {
+          // Estado en Cash Flow mapea a estado_pago (pago del anticipo)
+          anticipoUpdateData.estado_pago = valor
         } else {
           // Otros campos directos
           anticipoUpdateData[campo] = valor

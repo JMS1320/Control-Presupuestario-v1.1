@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
@@ -40,6 +41,12 @@ const ESTADOS_DISPONIBLES = [
   { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' },
   { value: 'credito', label: 'Crédito', color: 'bg-purple-100 text-purple-800' },
   { value: 'conciliado', label: 'Conciliado', color: 'bg-gray-100 text-gray-800' }
+]
+
+// Estados disponibles para anticipos (estado de pago)
+const ESTADOS_ANTICIPO = [
+  { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' }
 ]
 
 // Interface para celda en edición
@@ -109,8 +116,9 @@ export function VistaCashFlow() {
   const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
 
-  // Estado para modal Nuevo Anticipo
+  // Estado para modal Anticipos (crear + ver existentes)
   const [modalAnticipo, setModalAnticipo] = useState(false)
+  const [tabAnticipo, setTabAnticipo] = useState<string>('nuevo')
   const [nuevoAnticipo, setNuevoAnticipo] = useState({
     tipo: 'pago' as 'pago' | 'cobro',
     cuit: '',
@@ -120,6 +128,8 @@ export function VistaCashFlow() {
     descripcion: ''
   })
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
+  const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
+  const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch } = useMultiCashFlowData(filtros)
 
@@ -716,7 +726,9 @@ export function VistaCashFlow() {
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
     setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+    setTabAnticipo('nuevo')
     setModalAnticipo(true)
+    cargarAnticiposExistentes()
   }
 
   const guardarAnticipo = async () => {
@@ -746,14 +758,49 @@ export function VistaCashFlow() {
 
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
       toast.success(`${tipoLabel} registrado exitosamente`)
-      setModalAnticipo(false)
       setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
       await cargarDatos()
+      await cargarAnticiposExistentes()
     } catch (error) {
       console.error('Error guardando anticipo:', error)
       toast.error(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     } finally {
       setGuardandoAnticipo(false)
+    }
+  }
+
+  const cargarAnticiposExistentes = async () => {
+    setCargandoAnticipos(true)
+    try {
+      const { data, error } = await supabase
+        .from('anticipos_proveedores')
+        .select('*')
+        .order('fecha_pago', { ascending: false })
+
+      if (error) throw error
+      setAnticiposExistentes(data || [])
+    } catch (error) {
+      console.error('Error cargando anticipos:', error)
+      toast.error('Error al cargar anticipos')
+    } finally {
+      setCargandoAnticipos(false)
+    }
+  }
+
+  const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string) => {
+    try {
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({ estado_pago: nuevoEstado })
+        .eq('id', anticipoId)
+
+      if (error) throw error
+      toast.success(`Estado actualizado a ${nuevoEstado}`)
+      await cargarAnticiposExistentes()
+      await cargarDatos()
+    } catch (error) {
+      console.error('Error actualizando estado anticipo:', error)
+      toast.error('Error al actualizar estado')
     }
   }
 
@@ -1465,7 +1512,7 @@ export function VistaCashFlow() {
             </p>
             
             <div className="grid grid-cols-2 gap-2">
-              {ESTADOS_DISPONIBLES.map((estado) => (
+              {(filaParaCambioEstado.origen === 'ANTICIPO' ? ESTADOS_ANTICIPO : ESTADOS_DISPONIBLES).map((estado) => (
                 <Button
                   key={estado.value}
                   variant={filaParaCambioEstado.estado === estado.value ? "default" : "outline"}
@@ -1690,135 +1737,231 @@ export function VistaCashFlow() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Nuevo Anticipo */}
+      {/* Modal Anticipos (Nuevo + Existentes) */}
       <Dialog open={modalAnticipo} onOpenChange={setModalAnticipo}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>💵 Nuevo Anticipo</DialogTitle>
+            <DialogTitle>💵 Anticipos</DialogTitle>
             <DialogDescription>
-              Registrar un pago o cobro anticipado antes de recibir/emitir la factura
+              Registrar anticipos o ver los existentes
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-4">
-            {/* Selector de tipo */}
-            <div className="space-y-2">
-              <Label>Tipo de Anticipo *</Label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="tipo-anticipo"
-                    value="pago"
-                    checked={nuevoAnticipo.tipo === 'pago'}
-                    onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'pago' }))}
-                    className="w-4 h-4 text-orange-600"
+          <Tabs value={tabAnticipo} onValueChange={setTabAnticipo}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="nuevo">Nuevo Anticipo</TabsTrigger>
+              <TabsTrigger value="existentes">
+                Anticipos Existentes {anticiposExistentes.length > 0 && `(${anticiposExistentes.length})`}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="nuevo">
+              <div className="py-4 space-y-4">
+                {/* Selector de tipo */}
+                <div className="space-y-2">
+                  <Label>Tipo de Anticipo *</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipo-anticipo"
+                        value="pago"
+                        checked={nuevoAnticipo.tipo === 'pago'}
+                        onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'pago' }))}
+                        className="w-4 h-4 text-orange-600"
+                      />
+                      <span className="flex items-center gap-1">
+                        <TrendingDown className="h-4 w-4 text-red-500" />
+                        Pago (Egreso)
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipo-anticipo"
+                        value="cobro"
+                        checked={nuevoAnticipo.tipo === 'cobro'}
+                        onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'cobro' }))}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <span className="flex items-center gap-1">
+                        <TrendingUp className="h-4 w-4 text-green-500" />
+                        Cobro (Ingreso)
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="anticipo-cuit">CUIT {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
+                  <Input
+                    id="anticipo-cuit"
+                    type="text"
+                    placeholder="30-12345678-9"
+                    value={nuevoAnticipo.cuit}
+                    onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, cuit: e.target.value }))}
                   />
-                  <span className="flex items-center gap-1">
-                    <TrendingDown className="h-4 w-4 text-red-500" />
-                    Pago (Egreso)
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="tipo-anticipo"
-                    value="cobro"
-                    checked={nuevoAnticipo.tipo === 'cobro'}
-                    onChange={() => setNuevoAnticipo(prev => ({ ...prev, tipo: 'cobro' }))}
-                    className="w-4 h-4 text-green-600"
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="anticipo-nombre">Nombre {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
+                  <Input
+                    id="anticipo-nombre"
+                    type="text"
+                    placeholder={`Nombre del ${nuevoAnticipo.tipo === 'cobro' ? 'cliente' : 'proveedor'}`}
+                    value={nuevoAnticipo.nombre}
+                    onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, nombre: e.target.value }))}
                   />
-                  <span className="flex items-center gap-1">
-                    <TrendingUp className="h-4 w-4 text-green-500" />
-                    Cobro (Ingreso)
-                  </span>
-                </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="anticipo-monto">Monto *</Label>
+                    <Input
+                      id="anticipo-monto"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={nuevoAnticipo.monto}
+                      onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, monto: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="anticipo-fecha">Fecha Pago *</Label>
+                    <Input
+                      id="anticipo-fecha"
+                      type="date"
+                      value={nuevoAnticipo.fecha}
+                      onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, fecha: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="anticipo-descripcion">Descripción (opcional)</Label>
+                  <Input
+                    id="anticipo-descripcion"
+                    type="text"
+                    placeholder="Motivo del anticipo..."
+                    value={nuevoAnticipo.descripcion}
+                    onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, descripcion: e.target.value }))}
+                  />
+                </div>
+
+                <div className={`p-3 ${nuevoAnticipo.tipo === 'cobro' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-orange-50 border-orange-200 text-orange-800'} border rounded text-sm`}>
+                  💡 <strong>Tip:</strong> {nuevoAnticipo.tipo === 'cobro'
+                    ? 'Los anticipos de cobro se mostrarán como CRÉDITOS en el Cash Flow. Cuando desarrollemos la sección Ventas, se vincularán automáticamente.'
+                    : 'Cuando importes una factura del mismo CUIT, el sistema aplicará automáticamente este anticipo al monto a abonar.'}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setModalAnticipo(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={guardarAnticipo}
+                    disabled={guardandoAnticipo || !nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha}
+                    className={nuevoAnticipo.tipo === 'cobro' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
+                  >
+                    {guardandoAnticipo ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      `Registrar Anticipo de ${nuevoAnticipo.tipo === 'cobro' ? 'Cobro' : 'Pago'}`
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
+            </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="anticipo-cuit">CUIT {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
-              <Input
-                id="anticipo-cuit"
-                type="text"
-                placeholder="30-12345678-9"
-                value={nuevoAnticipo.cuit}
-                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, cuit: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="anticipo-nombre">Nombre {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
-              <Input
-                id="anticipo-nombre"
-                type="text"
-                placeholder={`Nombre del ${nuevoAnticipo.tipo === 'cobro' ? 'cliente' : 'proveedor'}`}
-                value={nuevoAnticipo.nombre}
-                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, nombre: e.target.value }))}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="anticipo-monto">Monto *</Label>
-                <Input
-                  id="anticipo-monto"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={nuevoAnticipo.monto}
-                  onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, monto: e.target.value }))}
-                />
+            <TabsContent value="existentes">
+              <div className="py-4">
+                {cargandoAnticipos ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+                    <span className="ml-2 text-sm text-gray-500">Cargando anticipos...</span>
+                  </div>
+                ) : anticiposExistentes.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No hay anticipos registrados
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="px-2 py-2 text-left">Fecha</th>
+                          <th className="px-2 py-2 text-left">Tipo</th>
+                          <th className="px-2 py-2 text-left">Proveedor</th>
+                          <th className="px-2 py-2 text-left">CUIT</th>
+                          <th className="px-2 py-2 text-right">Monto</th>
+                          <th className="px-2 py-2 text-right">Restante</th>
+                          <th className="px-2 py-2 text-center">Pago</th>
+                          <th className="px-2 py-2 text-center">Vinculación</th>
+                          <th className="px-2 py-2 text-left">Descripción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {anticiposExistentes.map((a) => (
+                          <tr key={a.id} className="border-b hover:bg-gray-50">
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              {a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}
+                            </td>
+                            <td className="px-2 py-2">
+                              <Badge variant="outline" className={a.tipo === 'cobro' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}>
+                                {a.tipo === 'cobro' ? 'Cobro' : 'Pago'}
+                              </Badge>
+                            </td>
+                            <td className="px-2 py-2">{a.nombre_proveedor}</td>
+                            <td className="px-2 py-2 text-xs">{a.cuit_proveedor}</td>
+                            <td className="px-2 py-2 text-right whitespace-nowrap">
+                              ${Number(a.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-2 py-2 text-right whitespace-nowrap">
+                              ${Number(a.monto_restante).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-2 py-2 text-center">
+                              <Select
+                                value={a.estado_pago || 'pendiente'}
+                                onValueChange={(val) => cambiarEstadoPagoAnticipo(a.id, val)}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-28">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {ESTADOS_ANTICIPO.map((e) => (
+                                    <SelectItem key={e.value} value={e.value}>
+                                      <Badge variant="outline" className={`${e.color} text-xs`}>{e.label}</Badge>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="px-2 py-2 text-center">
+                              <Badge variant="outline" className={
+                                a.estado === 'vinculado' ? 'bg-green-50 text-green-700' :
+                                a.estado === 'parcial' ? 'bg-blue-50 text-blue-700' :
+                                'bg-yellow-50 text-yellow-700'
+                              }>
+                                {a.estado === 'vinculado' ? 'Vinculado' :
+                                 a.estado === 'parcial' ? 'Parcial' : 'Pendiente'}
+                              </Badge>
+                            </td>
+                            <td className="px-2 py-2 text-xs text-gray-600 max-w-[200px] truncate">
+                              {a.descripcion || '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="anticipo-fecha">Fecha Pago *</Label>
-                <Input
-                  id="anticipo-fecha"
-                  type="date"
-                  value={nuevoAnticipo.fecha}
-                  onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, fecha: e.target.value }))}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="anticipo-descripcion">Descripción (opcional)</Label>
-              <Input
-                id="anticipo-descripcion"
-                type="text"
-                placeholder="Motivo del anticipo..."
-                value={nuevoAnticipo.descripcion}
-                onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, descripcion: e.target.value }))}
-              />
-            </div>
-
-            <div className={`p-3 ${nuevoAnticipo.tipo === 'cobro' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-orange-50 border-orange-200 text-orange-800'} border rounded text-sm`}>
-              💡 <strong>Tip:</strong> {nuevoAnticipo.tipo === 'cobro'
-                ? 'Los anticipos de cobro se mostrarán como CRÉDITOS en el Cash Flow. Cuando desarrollemos la sección Ventas, se vincularán automáticamente.'
-                : 'Cuando importes una factura del mismo CUIT, el sistema aplicará automáticamente este anticipo al monto a abonar.'}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAnticipo(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={guardarAnticipo}
-              disabled={guardandoAnticipo || !nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha}
-              className={nuevoAnticipo.tipo === 'cobro' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}
-            >
-              {guardandoAnticipo ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                `Registrar Anticipo de ${nuevoAnticipo.tipo === 'cobro' ? 'Cobro' : 'Pago'}`
-              )}
-            </Button>
-          </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
