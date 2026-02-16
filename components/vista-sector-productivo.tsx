@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -122,6 +124,8 @@ interface LineaOrdenAplicacion {
   cantidad_total_ml: number
   unidad_medida: string
   observaciones: string | null
+  recuento: boolean
+  cantidad_recuento: number | null
   created_at: string
 }
 
@@ -220,23 +224,68 @@ const dosisPorCabeza = (
   return { valor: 0, texto: '-' }
 }
 
+// Wraps text on canvas, returns number of lines used
+const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number => {
+  const words = text.split(' ')
+  let line = ''
+  let linesUsed = 0
+  for (let i = 0; i < words.length; i++) {
+    const testLine = line + words[i] + ' '
+    if (ctx.measureText(testLine).width > maxWidth && line !== '') {
+      ctx.fillText(line.trim(), x, y + linesUsed * lineHeight)
+      line = words[i] + ' '
+      linesUsed++
+    } else {
+      line = testLine
+    }
+  }
+  if (line.trim()) {
+    ctx.fillText(line.trim(), x, y + linesUsed * lineHeight)
+    linesUsed++
+  }
+  return linesUsed
+}
+
 // Genera imagen PNG de la orden para enviar por WhatsApp
 const exportarOrdenImagen = (orden: OrdenAplicacion) => {
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
   const lineas = orden.lineas || []
   const padding = 30
-  const lineHeight = 28
-  const headerH = 140
   const tableHeaderH = 35
   const rowH = 30
   const canvasW = 700
+  const obsLineH = 18
+
+  // Pre-calcular alto de observaciones
+  const tempCanvas = document.createElement('canvas')
+  const tempCtx = tempCanvas.getContext('2d')
+  let obsLines = 0
+  if (tempCtx && orden.observaciones) {
+    tempCtx.font = '13px Arial'
+    const words = orden.observaciones.split(' ')
+    let line = ''
+    const maxW = canvasW - padding * 2 - 30
+    for (const word of words) {
+      const test = line + word + ' '
+      if (tempCtx.measureText(test).width > maxW && line !== '') {
+        obsLines++
+        line = word + ' '
+      } else {
+        line = test
+      }
+    }
+    if (line.trim()) obsLines++
+  }
+
+  const headerBaseH = 100
+  const obsH = obsLines > 0 ? obsLines * obsLineH + 10 : 0
+  const headerH = headerBaseH + obsH
   const canvasH = headerH + tableHeaderH + (lineas.length * rowH) + padding * 2 + 40
 
+  const canvas = document.createElement('canvas')
   canvas.width = canvasW
   canvas.height = canvasH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
 
   // Fondo
   ctx.fillStyle = '#ffffff'
@@ -250,8 +299,7 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   // Info cabecera
   ctx.font = '14px Arial'
   ctx.fillStyle = '#333'
-  const fechaStr = formatoFecha(orden.fecha)
-  ctx.fillText(`Fecha: ${fechaStr}`, padding, padding + 52)
+  ctx.fillText(`Fecha: ${formatoFecha(orden.fecha)}`, padding, padding + 52)
 
   const rodeoNombres = orden.rodeos && orden.rodeos.length > 0
     ? orden.rodeos.map(r => r.categorias_hacienda?.nombre || '-').join(', ')
@@ -261,8 +309,12 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   if (orden.peso_promedio_kg) {
     ctx.fillText(`Peso prom.: ${orden.peso_promedio_kg} kg/cab`, padding + 250, padding + 92)
   }
+
+  // Observaciones con word-wrap
   if (orden.observaciones) {
-    ctx.fillText(`Obs: ${orden.observaciones}`, padding, padding + 112)
+    ctx.font = '13px Arial'
+    ctx.fillStyle = '#555'
+    wrapText(ctx, `Obs: ${orden.observaciones}`, padding, padding + 112, canvasW - padding * 2, obsLineH)
   }
 
   // Tabla header
@@ -279,25 +331,17 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   ctx.font = '14px Arial'
   lineas.forEach((l, i) => {
     const y = tableY + tableHeaderH + (i * rowH)
-    // Alternar fondo
     if (i % 2 === 0) {
       ctx.fillStyle = '#f8f8f8'
       ctx.fillRect(padding, y, canvasW - padding * 2, rowH)
     }
     ctx.fillStyle = '#333'
-
-    // Nombre insumo
     ctx.font = 'bold 14px Arial'
     ctx.fillText(l.insumo_nombre, padding + 8, y + 20)
-
-    // Dosis por cabeza
     ctx.font = '14px Arial'
-    const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg)
+    const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || orden.peso_promedio_kg)
     ctx.fillText(dpc.texto, 320, y + 20)
-
-    // Total
-    const unidad = l.unidad_medida || 'ml'
-    ctx.fillText(formatoCantidad(l.cantidad_total_ml, unidad), 480, y + 20)
+    ctx.fillText(formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml'), 480, y + 20)
   })
 
   // Borde tabla
@@ -1088,6 +1132,14 @@ function SubTabOrdenesAplicacion() {
   const [mostrarModal, setMostrarModal] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
+  // Modo edicion: null = nueva orden, string = id de orden editando
+  const [ordenEditandoId, setOrdenEditandoId] = useState<string | null>(null)
+
+  // Modal confirmar/ejecutar orden
+  const [mostrarModalConfirmar, setMostrarModalConfirmar] = useState(false)
+  const [ordenConfirmando, setOrdenConfirmando] = useState<OrdenAplicacion | null>(null)
+  const [recuentoLineas, setRecuentoLineas] = useState<Record<string, { checked: boolean, cantidad: string }>>({})
+
   // Form cabecera
   const [nuevaOrden, setNuevaOrden] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -1180,6 +1232,88 @@ function SubTabOrdenesAplicacion() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
+  // Abrir edicion de orden existente
+  const abrirEdicion = (orden: OrdenAplicacion) => {
+    setOrdenEditandoId(orden.id)
+    setNuevaOrden({
+      fecha: orden.fecha,
+      peso_promedio_kg: orden.peso_promedio_kg ? String(orden.peso_promedio_kg) : '',
+      observaciones: orden.observaciones || ''
+    })
+    // Restaurar rodeos seleccionados
+    const rodeos: Record<string, boolean> = {}
+    if (orden.rodeos && orden.rodeos.length > 0) {
+      orden.rodeos.forEach(r => { rodeos[r.categoria_hacienda_id] = true })
+    } else if (orden.categoria_hacienda_id) {
+      rodeos[orden.categoria_hacienda_id] = true
+    }
+    setRodeosSeleccionados(rodeos)
+    // Restaurar lineas
+    setLineas((orden.lineas || []).map(l => ({
+      key: Date.now() + Math.random(),
+      insumo_nombre: l.insumo_nombre,
+      insumo_stock_id: l.insumo_stock_id || '',
+      tipo_dosis: l.tipo_dosis as 'por_cabeza' | 'por_kilo' | 'por_dosis',
+      dosis_ml: String(l.dosis_ml),
+      dosis_cada_kg: l.dosis_cada_kg ? String(l.dosis_cada_kg) : ''
+    })))
+    setMostrarModal(true)
+  }
+
+  // Cerrar modal y limpiar estado
+  const cerrarModal = () => {
+    setMostrarModal(false)
+    setOrdenEditandoId(null)
+    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
+    setRodeosSeleccionados({})
+    setLineas([])
+  }
+
+  // Abrir modal confirmar/ejecutar orden
+  const abrirConfirmacion = (orden: OrdenAplicacion) => {
+    setOrdenConfirmando(orden)
+    const recuento: Record<string, { checked: boolean, cantidad: string }> = {}
+    ;(orden.lineas || []).forEach(l => {
+      recuento[l.id] = {
+        checked: l.recuento || false,
+        cantidad: l.cantidad_recuento !== null ? String(l.cantidad_recuento) : String(l.cantidad_total_ml)
+      }
+    })
+    setRecuentoLineas(recuento)
+    setMostrarModalConfirmar(true)
+  }
+
+  // Ejecutar/confirmar orden
+  const ejecutarOrden = async () => {
+    if (!ordenConfirmando) return
+    setGuardando(true)
+    try {
+      // Actualizar recuento en cada linea
+      for (const [lineaId, rec] of Object.entries(recuentoLineas)) {
+        await supabase.schema('productivo').from('lineas_orden_aplicacion')
+          .update({
+            recuento: rec.checked,
+            cantidad_recuento: rec.checked ? (parseFloat(rec.cantidad) || 0) : null
+          })
+          .eq('id', lineaId)
+      }
+      // Cambiar estado a ejecutada
+      await supabase.schema('productivo').from('ordenes_aplicacion')
+        .update({ estado: 'ejecutada' })
+        .eq('id', ordenConfirmando.id)
+
+      toast.success('Orden confirmada como ejecutada')
+      setMostrarModalConfirmar(false)
+      setOrdenConfirmando(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error ejecutando orden:', err)
+      toast.error(err.message || 'Error al ejecutar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
   const guardarOrden = async () => {
     const rodeosIds = Object.entries(rodeosSeleccionados).filter(([_, sel]) => sel).map(([id]) => id)
     if (rodeosIds.length === 0) {
@@ -1215,46 +1349,59 @@ function SubTabOrdenesAplicacion() {
 
     setGuardando(true)
     try {
-      // 1. Crear orden cabecera (cantidad_cabezas = total, categoria_hacienda_id = null para multi)
-      const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
-        .from('ordenes_aplicacion')
-        .insert({
-          fecha: nuevaOrden.fecha,
-          categoria_hacienda_id: rodeosIds.length === 1 ? rodeosIds[0] : null,
-          cantidad_cabezas: totalCabezas,
-          peso_promedio_kg: nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null,
-          estado: 'planificada',
-          observaciones: nuevaOrden.observaciones || null
-        })
-        .select('id')
-        .single()
-
-      if (ordenError || !ordenData) {
-        throw new Error(ordenError?.message || 'Error creando orden')
+      const pesoHeaderKg = nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null
+      const cabeceraData = {
+        fecha: nuevaOrden.fecha,
+        categoria_hacienda_id: rodeosIds.length === 1 ? rodeosIds[0] : null,
+        cantidad_cabezas: totalCabezas,
+        peso_promedio_kg: pesoHeaderKg,
+        observaciones: nuevaOrden.observaciones || null
       }
 
-      // 2. Crear registros de rodeos en junction table
+      let ordenId: string
+
+      if (ordenEditandoId) {
+        // === MODO EDICION ===
+        const { error: updError } = await supabase.schema('productivo')
+          .from('ordenes_aplicacion')
+          .update(cabeceraData)
+          .eq('id', ordenEditandoId)
+        if (updError) throw new Error(updError.message)
+        ordenId = ordenEditandoId
+
+        // Borrar rodeos y lineas anteriores (cascade en lineas no aplica a rodeos)
+        await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').delete().eq('orden_id', ordenId)
+        await supabase.schema('productivo').from('lineas_orden_aplicacion').delete().eq('orden_id', ordenId)
+      } else {
+        // === MODO CREACION ===
+        const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
+          .from('ordenes_aplicacion')
+          .insert({ ...cabeceraData, estado: 'planificada' })
+          .select('id')
+          .single()
+        if (ordenError || !ordenData) throw new Error(ordenError?.message || 'Error creando orden')
+        ordenId = ordenData.id
+      }
+
+      // Crear registros de rodeos
       const rodeosData = rodeosIds.map(catId => ({
-        orden_id: ordenData.id,
+        orden_id: ordenId,
         categoria_hacienda_id: catId,
         cantidad_cabezas: stockHaciendaMap[catId] || 0
       }))
-
       await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').insert(rodeosData)
 
-      // 3. Crear lineas
-      const pesoHeaderKg = nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null
+      // Crear lineas
       const lineasData = lineas.map(l => {
         const dosis = parseFloat(l.dosis_ml)
         const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
         const pesoPromedio = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : null
         const { total } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
-
         const insumoStock = l.insumo_stock_id ? insumosVet.find(i => i.id === l.insumo_stock_id) : null
         const nombre = insumoStock ? insumoStock.producto : l.insumo_nombre
 
         return {
-          orden_id: ordenData.id,
+          orden_id: ordenId,
           insumo_nombre: nombre,
           insumo_stock_id: l.insumo_stock_id || null,
           tipo_dosis: l.tipo_dosis,
@@ -1267,31 +1414,27 @@ function SubTabOrdenesAplicacion() {
       })
 
       const { error: lineasError } = await supabase.schema('productivo')
-        .from('lineas_orden_aplicacion')
-        .insert(lineasData)
-
+        .from('lineas_orden_aplicacion').insert(lineasData)
       if (lineasError) throw new Error(lineasError.message)
 
-      // 4. Crear movimientos de uso para lineas con insumo_stock_id
-      const movimientosUso = lineasData
-        .filter(l => l.insumo_stock_id)
-        .map(l => ({
-          fecha: nuevaOrden.fecha,
-          insumo_stock_id: l.insumo_stock_id,
-          tipo: 'uso',
-          cantidad: l.cantidad_total_ml,
-          observaciones: `Orden aplicacion - ${l.insumo_nombre}`
-        }))
-
-      if (movimientosUso.length > 0) {
-        await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+      // Crear movimientos de uso (solo en creacion, en edicion los movimientos previos quedan)
+      if (!ordenEditandoId) {
+        const movimientosUso = lineasData
+          .filter(l => l.insumo_stock_id)
+          .map(l => ({
+            fecha: nuevaOrden.fecha,
+            insumo_stock_id: l.insumo_stock_id,
+            tipo: 'uso',
+            cantidad: l.cantidad_total_ml,
+            observaciones: `Orden aplicacion - ${l.insumo_nombre}`
+          }))
+        if (movimientosUso.length > 0) {
+          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+        }
       }
 
-      toast.success('Orden de aplicacion creada')
-      setMostrarModal(false)
-      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
-      setRodeosSeleccionados({})
-      setLineas([])
+      toast.success(ordenEditandoId ? 'Orden actualizada' : 'Orden de aplicacion creada')
+      cerrarModal()
       cargarDatos()
     } catch (err: any) {
       console.error('Error guardando orden:', err)
@@ -1323,7 +1466,7 @@ function SubTabOrdenesAplicacion() {
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Ordenes de Aplicacion Veterinaria</h3>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => { setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
+          <Button size="sm" onClick={() => { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
           </Button>
@@ -1342,8 +1485,8 @@ function SubTabOrdenesAplicacion() {
             <TableHead className="text-right">Cabezas</TableHead>
             <TableHead>Insumos (Dosis/Cab → Total)</TableHead>
             <TableHead>Estado</TableHead>
-            <TableHead>Obs.</TableHead>
-            <TableHead className="w-[40px]"></TableHead>
+            <TableHead className="max-w-[300px]">Observaciones</TableHead>
+            <TableHead className="w-[100px]">Acciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1376,15 +1519,31 @@ function SubTabOrdenesAplicacion() {
                     {o.estado}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                <TableCell className="text-xs text-muted-foreground max-w-[300px] whitespace-pre-wrap">
                   {o.observaciones || '-'}
                 </TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                    title="Exportar imagen para WhatsApp"
-                    onClick={() => exportarOrdenImagen(o)}>
-                    <Download className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex gap-1">
+                    {o.estado === 'planificada' && (
+                      <>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          title="Editar orden"
+                          onClick={() => abrirEdicion(o)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600"
+                          title="Confirmar como ejecutada"
+                          onClick={() => abrirConfirmacion(o)}>
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                      title="Exportar imagen para WhatsApp"
+                      onClick={() => exportarOrdenImagen(o)}>
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))
@@ -1392,11 +1551,11 @@ function SubTabOrdenesAplicacion() {
         </TableBody>
       </Table>
 
-      {/* Modal Nueva Orden */}
-      <Dialog open={mostrarModal} onOpenChange={setMostrarModal}>
+      {/* Modal Nueva/Editar Orden */}
+      <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nueva Orden de Aplicacion</DialogTitle>
+            <DialogTitle>{ordenEditandoId ? 'Editar Orden de Aplicacion' : 'Nueva Orden de Aplicacion'}</DialogTitle>
             <DialogDescription>Seleccione rodeos, agregue insumos con dosis y el sistema calcula totales.</DialogDescription>
           </DialogHeader>
 
@@ -1416,7 +1575,7 @@ function SubTabOrdenesAplicacion() {
               </div>
               <div>
                 <Label>Observaciones</Label>
-                <Input value={nuevaOrden.observaciones}
+                <Textarea className="min-h-[38px] resize-none" rows={1} value={nuevaOrden.observaciones}
                   onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
               </div>
             </div>
@@ -1551,10 +1710,91 @@ function SubTabOrdenesAplicacion() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMostrarModal(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
             <Button onClick={guardarOrden} disabled={guardando}>
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Guardar Orden
+              {ordenEditandoId ? 'Actualizar Orden' : 'Guardar Orden'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar/Ejecutar Orden */}
+      <Dialog open={mostrarModalConfirmar} onOpenChange={(open) => { if (!open) { setMostrarModalConfirmar(false); setOrdenConfirmando(null) } }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Confirmar Orden como Ejecutada</DialogTitle>
+            <DialogDescription>
+              Marque los insumos aplicados y ajuste cantidades si difieren de lo planificado.
+            </DialogDescription>
+          </DialogHeader>
+
+          {ordenConfirmando && (
+            <div className="space-y-4">
+              {/* Resumen orden */}
+              <div className="bg-muted/50 rounded p-3 text-sm space-y-1">
+                <p><span className="font-medium">Fecha:</span> {formatoFecha(ordenConfirmando.fecha)}</p>
+                <p><span className="font-medium">Rodeo:</span> {getNombresRodeos(ordenConfirmando)}</p>
+                <p><span className="font-medium">Cabezas:</span> {formatoNumero(ordenConfirmando.cantidad_cabezas)}</p>
+                {ordenConfirmando.observaciones && (
+                  <p className="text-muted-foreground whitespace-pre-wrap">{ordenConfirmando.observaciones}</p>
+                )}
+              </div>
+
+              {/* Tabla recuento */}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[40px]">Ok</TableHead>
+                    <TableHead>Insumo</TableHead>
+                    <TableHead className="text-right">Dosis/Cab</TableHead>
+                    <TableHead className="text-right">Planificado</TableHead>
+                    <TableHead className="w-[130px] text-right">Recuento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(ordenConfirmando.lineas || []).map(l => {
+                    const rec = recuentoLineas[l.id] || { checked: false, cantidad: String(l.cantidad_total_ml) }
+                    const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || ordenConfirmando.peso_promedio_kg)
+                    return (
+                      <TableRow key={l.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={rec.checked}
+                            onCheckedChange={(v) => setRecuentoLineas(prev => ({
+                              ...prev,
+                              [l.id]: { ...prev[l.id], checked: !!v }
+                            }))} />
+                        </TableCell>
+                        <TableCell className="font-medium">{l.insumo_nombre}</TableCell>
+                        <TableCell className="text-right text-sm">{dpc.texto}</TableCell>
+                        <TableCell className="text-right text-sm">
+                          {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                            value={rec.cantidad}
+                            onChange={e => setRecuentoLineas(prev => ({
+                              ...prev,
+                              [l.id]: { ...prev[l.id], cantidad: e.target.value }
+                            }))} />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setMostrarModalConfirmar(false); setOrdenConfirmando(null) }}>
+              Cancelar
+            </Button>
+            <Button onClick={ejecutarOrden} disabled={guardando} className="bg-green-600 hover:bg-green-700">
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Confirmar Ejecutada
             </Button>
           </DialogFooter>
         </DialogContent>
