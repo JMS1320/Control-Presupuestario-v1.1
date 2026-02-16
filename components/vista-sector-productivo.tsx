@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3 } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -88,6 +88,43 @@ interface MovimientoInsumo {
   stock_insumos?: { producto: string; categorias_insumo?: { nombre: string } }
 }
 
+interface OrdenAplicacion {
+  id: string
+  fecha: string
+  categoria_hacienda_id: string
+  cantidad_cabezas: number
+  estado: string
+  observaciones: string | null
+  created_at: string
+  categorias_hacienda?: { nombre: string }
+  lineas?: LineaOrdenAplicacion[]
+}
+
+interface LineaOrdenAplicacion {
+  id: string
+  orden_id: string
+  insumo_nombre: string
+  insumo_stock_id: string | null
+  tipo_dosis: string
+  dosis_ml: number
+  dosis_cada_kg: number | null
+  peso_promedio_kg: number | null
+  cantidad_total_ml: number
+  unidad_medida: string
+  observaciones: string | null
+  created_at: string
+}
+
+interface LineaFormulario {
+  key: number
+  insumo_nombre: string
+  insumo_stock_id: string
+  tipo_dosis: 'por_cabeza' | 'por_kilo'
+  dosis_ml: string
+  dosis_cada_kg: string
+  peso_promedio_kg: string
+}
+
 interface LoteAgricola {
   id: string
   nombre_lote: string
@@ -120,6 +157,30 @@ const formatoFecha = (fecha: string | null): string => {
 const formatoNumero = (valor: number | null): string => {
   if (valor === null || valor === undefined) return '-'
   return new Intl.NumberFormat('es-AR').format(valor)
+}
+
+const formatoMl = (ml: number): string => {
+  if (ml >= 1000) {
+    return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(ml / 1000)} L`
+  }
+  return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(ml)} ml`
+}
+
+const calcularTotalMl = (
+  tipoDosis: string,
+  dosisMl: number,
+  cantidadCabezas: number,
+  dosisCadaKg?: number | null,
+  pesoPromedioKg?: number | null
+): number => {
+  if (tipoDosis === 'por_cabeza') {
+    return dosisMl * cantidadCabezas
+  }
+  // por_kilo: (peso_promedio / cada_kg) * dosis_ml * cantidad_cabezas
+  if (dosisCadaKg && pesoPromedioKg) {
+    return (pesoPromedioKg / dosisCadaKg) * dosisMl * cantidadCabezas
+  }
+  return 0
 }
 
 // ============================================================
@@ -581,10 +642,49 @@ function TabHacienda() {
 }
 
 // ============================================================
-// TAB INSUMOS
+// TAB INSUMOS (contenedor con sub-tabs)
 // ============================================================
 
 function TabInsumos() {
+  const [subTab, setSubTab] = useState("stock")
+
+  return (
+    <div className="space-y-4 pt-4">
+      <Tabs value={subTab} onValueChange={setSubTab}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="stock" className="flex items-center gap-1 text-xs">
+            <Package className="h-3.5 w-3.5" />
+            Stock & Movimientos
+          </TabsTrigger>
+          <TabsTrigger value="ordenes" className="flex items-center gap-1 text-xs">
+            <Syringe className="h-3.5 w-3.5" />
+            Ordenes Aplicacion
+          </TabsTrigger>
+          <TabsTrigger value="compras" className="flex items-center gap-1 text-xs">
+            <ShoppingCart className="h-3.5 w-3.5" />
+            Necesidad de Compra
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="stock">
+          <SubTabStockInsumos />
+        </TabsContent>
+        <TabsContent value="ordenes">
+          <SubTabOrdenesAplicacion />
+        </TabsContent>
+        <TabsContent value="compras">
+          <SubTabNecesidadCompra />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+// ============================================================
+// SUB-TAB: STOCK & MOVIMIENTOS INSUMOS
+// ============================================================
+
+function SubTabStockInsumos() {
   const [stock, setStock] = useState<StockInsumo[]>([])
   const [categorias, setCategorias] = useState<CategoriaInsumo[]>([])
   const [movimientos, setMovimientos] = useState<MovimientoInsumo[]>([])
@@ -836,6 +936,573 @@ function TabInsumos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ============================================================
+// SUB-TAB: ORDENES DE APLICACION VETERINARIA
+// ============================================================
+
+function SubTabOrdenesAplicacion() {
+  const [ordenes, setOrdenes] = useState<OrdenAplicacion[]>([])
+  const [categoriasHacienda, setCategoriasHacienda] = useState<CategoriaHacienda[]>([])
+  const [insumosVet, setInsumosVet] = useState<StockInsumo[]>([])
+  const [stockHaciendaMap, setStockHaciendaMap] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [mostrarModal, setMostrarModal] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  // Form cabecera
+  const [nuevaOrden, setNuevaOrden] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    categoria_hacienda_id: '',
+    cantidad_cabezas: '',
+    observaciones: ''
+  })
+
+  // Lineas de la orden
+  const [lineas, setLineas] = useState<LineaFormulario[]>([])
+
+  const agregarLinea = () => {
+    setLineas(prev => [...prev, {
+      key: Date.now(),
+      insumo_nombre: '',
+      insumo_stock_id: '',
+      tipo_dosis: 'por_cabeza',
+      dosis_ml: '',
+      dosis_cada_kg: '',
+      peso_promedio_kg: ''
+    }])
+  }
+
+  const actualizarLinea = (key: number, campo: string, valor: any) => {
+    setLineas(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
+  }
+
+  const eliminarLinea = (key: number) => {
+    setLineas(prev => prev.filter(l => l.key !== key))
+  }
+
+  const cargarDatos = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [ordenesRes, catHacRes, insRes, movHacRes] = await Promise.all([
+        supabase.schema('productivo').from('ordenes_aplicacion')
+          .select('*, categorias_hacienda(nombre), lineas_orden_aplicacion(*)')
+          .order('fecha', { ascending: false }),
+        supabase.schema('productivo').from('categorias_hacienda')
+          .select('*').eq('activo', true).order('nombre'),
+        supabase.schema('productivo').from('stock_insumos')
+          .select('*, categorias_insumo(nombre, unidad_medida)')
+          .order('producto'),
+        supabase.schema('productivo').from('movimientos_hacienda')
+          .select('categoria_id, tipo, cantidad')
+      ])
+
+      if (ordenesRes.data) {
+        setOrdenes(ordenesRes.data.map((o: any) => ({
+          ...o,
+          lineas: o.lineas_orden_aplicacion || []
+        })))
+      }
+      if (catHacRes.data) setCategoriasHacienda(catHacRes.data)
+      if (insRes.data) setInsumosVet(insRes.data)
+
+      // Calcular stock hacienda desde movimientos
+      if (movHacRes.data) {
+        const map: Record<string, number> = {}
+        for (const m of movHacRes.data) {
+          if (!map[m.categoria_id]) map[m.categoria_id] = 0
+          if (m.tipo === 'compra' || m.tipo === 'nacimiento') {
+            map[m.categoria_id] += m.cantidad
+          } else if (m.tipo === 'venta' || m.tipo === 'mortandad') {
+            map[m.categoria_id] -= m.cantidad
+          } else if (m.tipo === 'ajuste_stock') {
+            map[m.categoria_id] += m.cantidad
+          }
+        }
+        setStockHaciendaMap(map)
+      }
+    } catch (err) {
+      console.error('Error cargando ordenes:', err)
+      toast.error('Error al cargar ordenes de aplicacion')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { cargarDatos() }, [cargarDatos])
+
+  // Auto-completar cabezas al seleccionar categoria
+  const onCategoriaChange = (catId: string) => {
+    setNuevaOrden(p => ({
+      ...p,
+      categoria_hacienda_id: catId,
+      cantidad_cabezas: String(stockHaciendaMap[catId] || 0)
+    }))
+  }
+
+  const guardarOrden = async () => {
+    if (!nuevaOrden.categoria_hacienda_id || !nuevaOrden.cantidad_cabezas) {
+      toast.error('Seleccione rodeo y cantidad de cabezas')
+      return
+    }
+    if (lineas.length === 0) {
+      toast.error('Agregue al menos un insumo')
+      return
+    }
+
+    const cabezas = parseInt(nuevaOrden.cantidad_cabezas)
+    // Validar lineas
+    for (const l of lineas) {
+      if (!l.insumo_nombre && !l.insumo_stock_id) {
+        toast.error('Cada linea debe tener un insumo')
+        return
+      }
+      if (!l.dosis_ml || parseFloat(l.dosis_ml) <= 0) {
+        toast.error('Cada linea debe tener dosis en ml')
+        return
+      }
+      if (l.tipo_dosis === 'por_kilo') {
+        if (!l.dosis_cada_kg || !l.peso_promedio_kg) {
+          toast.error('Para dosis por kilo, complete "Cada X kg" y "Peso Promedio"')
+          return
+        }
+      }
+    }
+
+    setGuardando(true)
+    try {
+      // 1. Crear orden cabecera
+      const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
+        .from('ordenes_aplicacion')
+        .insert({
+          fecha: nuevaOrden.fecha,
+          categoria_hacienda_id: nuevaOrden.categoria_hacienda_id,
+          cantidad_cabezas: cabezas,
+          estado: 'planificada',
+          observaciones: nuevaOrden.observaciones || null
+        })
+        .select('id')
+        .single()
+
+      if (ordenError || !ordenData) {
+        throw new Error(ordenError?.message || 'Error creando orden')
+      }
+
+      // 2. Crear lineas
+      const lineasData = lineas.map(l => {
+        const dosisMl = parseFloat(l.dosis_ml)
+        const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
+        const pesoPromedio = l.tipo_dosis === 'por_kilo' ? parseFloat(l.peso_promedio_kg) : null
+        const totalMl = calcularTotalMl(l.tipo_dosis, dosisMl, cabezas, dosisCadaKg, pesoPromedio)
+
+        // Determinar nombre insumo
+        const insumoStock = l.insumo_stock_id ? insumosVet.find(i => i.id === l.insumo_stock_id) : null
+        const nombre = insumoStock ? insumoStock.producto : l.insumo_nombre
+
+        return {
+          orden_id: ordenData.id,
+          insumo_nombre: nombre,
+          insumo_stock_id: l.insumo_stock_id || null,
+          tipo_dosis: l.tipo_dosis,
+          dosis_ml: dosisMl,
+          dosis_cada_kg: dosisCadaKg,
+          peso_promedio_kg: pesoPromedio,
+          cantidad_total_ml: totalMl,
+          unidad_medida: 'ml'
+        }
+      })
+
+      const { error: lineasError } = await supabase.schema('productivo')
+        .from('lineas_orden_aplicacion')
+        .insert(lineasData)
+
+      if (lineasError) throw new Error(lineasError.message)
+
+      // 3. Crear movimientos de uso en stock_insumos para las lineas que tengan insumo_stock_id
+      const movimientosUso = lineasData
+        .filter(l => l.insumo_stock_id)
+        .map(l => ({
+          fecha: nuevaOrden.fecha,
+          insumo_stock_id: l.insumo_stock_id,
+          tipo: 'uso',
+          cantidad: l.cantidad_total_ml,
+          observaciones: `Orden aplicacion - ${l.insumo_nombre}`
+        }))
+
+      if (movimientosUso.length > 0) {
+        await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+      }
+
+      toast.success('Orden de aplicacion creada')
+      setMostrarModal(false)
+      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], categoria_hacienda_id: '', cantidad_cabezas: '', observaciones: '' })
+      setLineas([])
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error guardando orden:', err)
+      toast.error(err.message || 'Error al guardar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+        <span>Cargando ordenes...</span>
+      </div>
+    )
+  }
+
+  const cabezasForm = parseInt(nuevaOrden.cantidad_cabezas) || 0
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Ordenes de Aplicacion Veterinaria</h3>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => { setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nueva Orden
+          </Button>
+          <Button variant="outline" size="sm" onClick={cargarDatos}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Tabla ordenes existentes */}
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Rodeo</TableHead>
+            <TableHead className="text-right">Cabezas</TableHead>
+            <TableHead>Insumos</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Obs.</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ordenes.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                Sin ordenes de aplicacion registradas.
+              </TableCell>
+            </TableRow>
+          ) : (
+            ordenes.map(o => (
+              <TableRow key={o.id}>
+                <TableCell>{formatoFecha(o.fecha)}</TableCell>
+                <TableCell className="font-medium">{o.categorias_hacienda?.nombre || '-'}</TableCell>
+                <TableCell className="text-right">{formatoNumero(o.cantidad_cabezas)}</TableCell>
+                <TableCell>
+                  <div className="space-y-0.5">
+                    {o.lineas && o.lineas.length > 0 ? o.lineas.map((l, i) => (
+                      <div key={l.id} className="text-xs">
+                        {l.insumo_nombre}: {formatoMl(l.cantidad_total_ml)}
+                      </div>
+                    )) : <span className="text-muted-foreground text-xs">-</span>}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={o.estado === 'ejecutada' ? 'default' : 'outline'}>
+                    {o.estado}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                  {o.observaciones || '-'}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      {/* Modal Nueva Orden */}
+      <Dialog open={mostrarModal} onOpenChange={setMostrarModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nueva Orden de Aplicacion</DialogTitle>
+            <DialogDescription>Seleccione rodeo, agregue insumos con dosis y el sistema calcula totales.</DialogDescription>
+          </DialogHeader>
+
+          {/* Cabecera */}
+          <div className="grid gap-3 border-b pb-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Fecha *</Label>
+                <Input type="date" value={nuevaOrden.fecha}
+                  onChange={e => setNuevaOrden(p => ({ ...p, fecha: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Rodeo (Categoria) *</Label>
+                <Select value={nuevaOrden.categoria_hacienda_id} onValueChange={onCategoriaChange}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar rodeo" /></SelectTrigger>
+                  <SelectContent position="popper" className="z-[9999]">
+                    {categoriasHacienda.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre} ({stockHaciendaMap[c.id] || 0} cab.)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Cantidad Cabezas *</Label>
+                <Input type="number" value={nuevaOrden.cantidad_cabezas}
+                  onChange={e => setNuevaOrden(p => ({ ...p, cantidad_cabezas: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <Input value={nuevaOrden.observaciones}
+                onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Lineas de insumos */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">Insumos</Label>
+              <Button variant="outline" size="sm" onClick={agregarLinea}>
+                <Plus className="mr-1 h-3 w-3" />
+                Agregar Insumo
+              </Button>
+            </div>
+
+            {lineas.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Agregue al menos un insumo para la orden.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[200px]">Insumo</TableHead>
+                    <TableHead className="w-[120px]">Tipo Dosis</TableHead>
+                    <TableHead className="w-[80px] text-right">Dosis (ml)</TableHead>
+                    <TableHead className="w-[90px] text-right">Cada X kg</TableHead>
+                    <TableHead className="w-[90px] text-right">Peso Prom. kg</TableHead>
+                    <TableHead className="w-[100px] text-right">Total</TableHead>
+                    <TableHead className="w-[40px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lineas.map(l => {
+                    const dosisMl = parseFloat(l.dosis_ml) || 0
+                    const dosisCadaKg = parseFloat(l.dosis_cada_kg) || 0
+                    const pesoPromedio = parseFloat(l.peso_promedio_kg) || 0
+                    const totalMl = calcularTotalMl(l.tipo_dosis, dosisMl, cabezasForm, dosisCadaKg, pesoPromedio)
+
+                    return (
+                      <TableRow key={l.key}>
+                        <TableCell>
+                          {insumosVet.length > 0 ? (
+                            <Select value={l.insumo_stock_id} onValueChange={v => actualizarLinea(l.key, 'insumo_stock_id', v)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar o escribir" /></SelectTrigger>
+                              <SelectContent position="popper" className="z-[9999]">
+                                {insumosVet.map(ins => (
+                                  <SelectItem key={ins.id} value={ins.id}>{ins.producto}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input className="h-8 text-xs" placeholder="Nombre insumo"
+                              value={l.insumo_nombre}
+                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
+                          )}
+                          {!l.insumo_stock_id && insumosVet.length > 0 && (
+                            <Input className="h-7 text-xs mt-1" placeholder="O escriba nombre"
+                              value={l.insumo_nombre}
+                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select value={l.tipo_dosis} onValueChange={v => actualizarLinea(l.key, 'tipo_dosis', v)}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent position="popper" className="z-[9999]">
+                              <SelectItem value="por_cabeza">Por cabeza</SelectItem>
+                              <SelectItem value="por_kilo">Por kilo</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                            value={l.dosis_ml}
+                            onChange={e => actualizarLinea(l.key, 'dosis_ml', e.target.value)} />
+                        </TableCell>
+                        <TableCell>
+                          {l.tipo_dosis === 'por_kilo' ? (
+                            <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                              value={l.dosis_cada_kg}
+                              onChange={e => actualizarLinea(l.key, 'dosis_cada_kg', e.target.value)} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {l.tipo_dosis === 'por_kilo' ? (
+                            <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                              value={l.peso_promedio_kg}
+                              onChange={e => actualizarLinea(l.key, 'peso_promedio_kg', e.target.value)} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-sm">
+                          {totalMl > 0 ? formatoMl(totalMl) : '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                            onClick={() => eliminarLinea(l.key)}>
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarModal(false)}>Cancelar</Button>
+            <Button onClick={guardarOrden} disabled={guardando}>
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar Orden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ============================================================
+// SUB-TAB: NECESIDAD DE COMPRA
+// ============================================================
+
+function SubTabNecesidadCompra() {
+  const [datos, setDatos] = useState<{
+    insumo_nombre: string
+    stock_actual: number
+    necesario: number
+    a_comprar: number
+  }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const cargarDatos = useCallback(async () => {
+    setLoading(true)
+    try {
+      // Obtener lineas de ordenes planificadas + stock actual
+      const [lineasRes, stockRes] = await Promise.all([
+        supabase.schema('productivo').from('lineas_orden_aplicacion')
+          .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, ordenes_aplicacion!inner(estado)')
+          .eq('ordenes_aplicacion.estado', 'planificada'),
+        supabase.schema('productivo').from('stock_insumos')
+          .select('id, producto, cantidad')
+      ])
+
+      // Consolidar necesidades por insumo
+      const necesidadMap: Record<string, { nombre: string, stockId: string | null, necesario: number }> = {}
+      if (lineasRes.data) {
+        for (const l of lineasRes.data) {
+          const key = l.insumo_stock_id || l.insumo_nombre
+          if (!necesidadMap[key]) {
+            necesidadMap[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0 }
+          }
+          necesidadMap[key].necesario += l.cantidad_total_ml
+        }
+      }
+
+      // Mapear stock actual
+      const stockMap: Record<string, number> = {}
+      if (stockRes.data) {
+        for (const s of stockRes.data) {
+          stockMap[s.id] = s.cantidad
+        }
+      }
+
+      // Combinar
+      const resultado = Object.values(necesidadMap).map(n => {
+        const stockActual = n.stockId ? (stockMap[n.stockId] || 0) : 0
+        return {
+          insumo_nombre: n.nombre,
+          stock_actual: stockActual,
+          necesario: n.necesario,
+          a_comprar: Math.max(0, n.necesario - stockActual)
+        }
+      }).sort((a, b) => b.a_comprar - a.a_comprar)
+
+      setDatos(resultado)
+    } catch (err) {
+      console.error('Error cargando necesidad compra:', err)
+      toast.error('Error al cargar necesidad de compra')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { cargarDatos() }, [cargarDatos])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+        <span>Calculando necesidades...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Necesidad de Compra</h3>
+        <Button variant="outline" size="sm" onClick={cargarDatos}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Consolidado de insumos necesarios para ordenes planificadas vs stock disponible.
+      </p>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Insumo</TableHead>
+            <TableHead className="text-right">Stock Actual</TableHead>
+            <TableHead className="text-right">Necesario (planificadas)</TableHead>
+            <TableHead className="text-right">A Comprar</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {datos.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                Sin ordenes planificadas pendientes.
+              </TableCell>
+            </TableRow>
+          ) : (
+            datos.map((d, i) => (
+              <TableRow key={i}>
+                <TableCell className="font-medium">{d.insumo_nombre}</TableCell>
+                <TableCell className="text-right">{formatoMl(d.stock_actual)}</TableCell>
+                <TableCell className="text-right">{formatoMl(d.necesario)}</TableCell>
+                <TableCell className={`text-right font-semibold ${d.a_comprar > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {d.a_comprar > 0 ? formatoMl(d.a_comprar) : 'OK'}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
     </div>
   )
 }
