@@ -88,16 +88,25 @@ interface MovimientoInsumo {
   stock_insumos?: { producto: string; categorias_insumo?: { nombre: string } }
 }
 
+interface OrdenAplicacionRodeo {
+  id: string
+  orden_id: string
+  categoria_hacienda_id: string
+  cantidad_cabezas: number
+  categorias_hacienda?: { nombre: string }
+}
+
 interface OrdenAplicacion {
   id: string
   fecha: string
-  categoria_hacienda_id: string
+  categoria_hacienda_id: string | null
   cantidad_cabezas: number
   estado: string
   observaciones: string | null
   created_at: string
   categorias_hacienda?: { nombre: string }
   lineas?: LineaOrdenAplicacion[]
+  rodeos?: OrdenAplicacionRodeo[]
 }
 
 interface LineaOrdenAplicacion {
@@ -119,7 +128,7 @@ interface LineaFormulario {
   key: number
   insumo_nombre: string
   insumo_stock_id: string
-  tipo_dosis: 'por_cabeza' | 'por_kilo'
+  tipo_dosis: 'por_cabeza' | 'por_kilo' | 'por_dosis'
   dosis_ml: string
   dosis_cada_kg: string
   peso_promedio_kg: string
@@ -159,28 +168,35 @@ const formatoNumero = (valor: number | null): string => {
   return new Intl.NumberFormat('es-AR').format(valor)
 }
 
-const formatoMl = (ml: number): string => {
-  if (ml >= 1000) {
-    return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(ml / 1000)} L`
+const formatoCantidad = (cantidad: number, unidad: string): string => {
+  if (unidad === 'dosis') {
+    return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cantidad)} dosis`
   }
-  return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(ml)} ml`
+  if (cantidad >= 1000) {
+    return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(cantidad / 1000)} L`
+  }
+  return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(cantidad)} ml`
 }
 
-const calcularTotalMl = (
+const calcularTotal = (
   tipoDosis: string,
-  dosisMl: number,
+  dosis: number,
   cantidadCabezas: number,
   dosisCadaKg?: number | null,
   pesoPromedioKg?: number | null
-): number => {
+): { total: number; unidad: string } => {
+  if (tipoDosis === 'por_dosis') {
+    // 1 dosis por cabeza (dosis = cantidad de dosis por animal, usualmente 1)
+    return { total: dosis * cantidadCabezas, unidad: 'dosis' }
+  }
   if (tipoDosis === 'por_cabeza') {
-    return dosisMl * cantidadCabezas
+    return { total: dosis * cantidadCabezas, unidad: 'ml' }
   }
   // por_kilo: (peso_promedio / cada_kg) * dosis_ml * cantidad_cabezas
   if (dosisCadaKg && pesoPromedioKg) {
-    return (pesoPromedioKg / dosisCadaKg) * dosisMl * cantidadCabezas
+    return { total: (pesoPromedioKg / dosisCadaKg) * dosis * cantidadCabezas, unidad: 'ml' }
   }
-  return 0
+  return { total: 0, unidad: 'ml' }
 }
 
 // ============================================================
@@ -956,10 +972,11 @@ function SubTabOrdenesAplicacion() {
   // Form cabecera
   const [nuevaOrden, setNuevaOrden] = useState({
     fecha: new Date().toISOString().split('T')[0],
-    categoria_hacienda_id: '',
-    cantidad_cabezas: '',
     observaciones: ''
   })
+
+  // Rodeos seleccionados (multi-select)
+  const [rodeosSeleccionados, setRodeosSeleccionados] = useState<Record<string, boolean>>({})
 
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
@@ -984,12 +1001,21 @@ function SubTabOrdenesAplicacion() {
     setLineas(prev => prev.filter(l => l.key !== key))
   }
 
+  const toggleRodeo = (catId: string) => {
+    setRodeosSeleccionados(prev => ({ ...prev, [catId]: !prev[catId] }))
+  }
+
+  // Total cabezas = suma de stock de todos los rodeos seleccionados
+  const totalCabezas = Object.entries(rodeosSeleccionados)
+    .filter(([_, sel]) => sel)
+    .reduce((sum, [catId]) => sum + (stockHaciendaMap[catId] || 0), 0)
+
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
       const [ordenesRes, catHacRes, insRes, movHacRes] = await Promise.all([
         supabase.schema('productivo').from('ordenes_aplicacion')
-          .select('*, categorias_hacienda(nombre), lineas_orden_aplicacion(*)')
+          .select('*, categorias_hacienda(nombre), lineas_orden_aplicacion(*), ordenes_aplicacion_rodeos(*, categorias_hacienda(nombre))')
           .order('fecha', { ascending: false }),
         supabase.schema('productivo').from('categorias_hacienda')
           .select('*').eq('activo', true).order('nombre'),
@@ -1003,7 +1029,8 @@ function SubTabOrdenesAplicacion() {
       if (ordenesRes.data) {
         setOrdenes(ordenesRes.data.map((o: any) => ({
           ...o,
-          lineas: o.lineas_orden_aplicacion || []
+          lineas: o.lineas_orden_aplicacion || [],
+          rodeos: o.ordenes_aplicacion_rodeos || []
         })))
       }
       if (catHacRes.data) setCategoriasHacienda(catHacRes.data)
@@ -1034,18 +1061,10 @@ function SubTabOrdenesAplicacion() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
-  // Auto-completar cabezas al seleccionar categoria
-  const onCategoriaChange = (catId: string) => {
-    setNuevaOrden(p => ({
-      ...p,
-      categoria_hacienda_id: catId,
-      cantidad_cabezas: String(stockHaciendaMap[catId] || 0)
-    }))
-  }
-
   const guardarOrden = async () => {
-    if (!nuevaOrden.categoria_hacienda_id || !nuevaOrden.cantidad_cabezas) {
-      toast.error('Seleccione rodeo y cantidad de cabezas')
+    const rodeosIds = Object.entries(rodeosSeleccionados).filter(([_, sel]) => sel).map(([id]) => id)
+    if (rodeosIds.length === 0) {
+      toast.error('Seleccione al menos un rodeo')
       return
     }
     if (lineas.length === 0) {
@@ -1053,7 +1072,6 @@ function SubTabOrdenesAplicacion() {
       return
     }
 
-    const cabezas = parseInt(nuevaOrden.cantidad_cabezas)
     // Validar lineas
     for (const l of lineas) {
       if (!l.insumo_nombre && !l.insumo_stock_id) {
@@ -1061,7 +1079,7 @@ function SubTabOrdenesAplicacion() {
         return
       }
       if (!l.dosis_ml || parseFloat(l.dosis_ml) <= 0) {
-        toast.error('Cada linea debe tener dosis en ml')
+        toast.error('Cada linea debe tener dosis')
         return
       }
       if (l.tipo_dosis === 'por_kilo') {
@@ -1074,13 +1092,13 @@ function SubTabOrdenesAplicacion() {
 
     setGuardando(true)
     try {
-      // 1. Crear orden cabecera
+      // 1. Crear orden cabecera (cantidad_cabezas = total, categoria_hacienda_id = null para multi)
       const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
         .from('ordenes_aplicacion')
         .insert({
           fecha: nuevaOrden.fecha,
-          categoria_hacienda_id: nuevaOrden.categoria_hacienda_id,
-          cantidad_cabezas: cabezas,
+          categoria_hacienda_id: rodeosIds.length === 1 ? rodeosIds[0] : null,
+          cantidad_cabezas: totalCabezas,
           estado: 'planificada',
           observaciones: nuevaOrden.observaciones || null
         })
@@ -1091,14 +1109,22 @@ function SubTabOrdenesAplicacion() {
         throw new Error(ordenError?.message || 'Error creando orden')
       }
 
-      // 2. Crear lineas
+      // 2. Crear registros de rodeos en junction table
+      const rodeosData = rodeosIds.map(catId => ({
+        orden_id: ordenData.id,
+        categoria_hacienda_id: catId,
+        cantidad_cabezas: stockHaciendaMap[catId] || 0
+      }))
+
+      await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').insert(rodeosData)
+
+      // 3. Crear lineas
       const lineasData = lineas.map(l => {
-        const dosisMl = parseFloat(l.dosis_ml)
+        const dosis = parseFloat(l.dosis_ml)
         const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
         const pesoPromedio = l.tipo_dosis === 'por_kilo' ? parseFloat(l.peso_promedio_kg) : null
-        const totalMl = calcularTotalMl(l.tipo_dosis, dosisMl, cabezas, dosisCadaKg, pesoPromedio)
+        const { total } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
 
-        // Determinar nombre insumo
         const insumoStock = l.insumo_stock_id ? insumosVet.find(i => i.id === l.insumo_stock_id) : null
         const nombre = insumoStock ? insumoStock.producto : l.insumo_nombre
 
@@ -1107,11 +1133,11 @@ function SubTabOrdenesAplicacion() {
           insumo_nombre: nombre,
           insumo_stock_id: l.insumo_stock_id || null,
           tipo_dosis: l.tipo_dosis,
-          dosis_ml: dosisMl,
+          dosis_ml: dosis,
           dosis_cada_kg: dosisCadaKg,
           peso_promedio_kg: pesoPromedio,
-          cantidad_total_ml: totalMl,
-          unidad_medida: 'ml'
+          cantidad_total_ml: total,
+          unidad_medida: l.tipo_dosis === 'por_dosis' ? 'dosis' : 'ml'
         }
       })
 
@@ -1121,7 +1147,7 @@ function SubTabOrdenesAplicacion() {
 
       if (lineasError) throw new Error(lineasError.message)
 
-      // 3. Crear movimientos de uso en stock_insumos para las lineas que tengan insumo_stock_id
+      // 4. Crear movimientos de uso para lineas con insumo_stock_id
       const movimientosUso = lineasData
         .filter(l => l.insumo_stock_id)
         .map(l => ({
@@ -1138,7 +1164,8 @@ function SubTabOrdenesAplicacion() {
 
       toast.success('Orden de aplicacion creada')
       setMostrarModal(false)
-      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], categoria_hacienda_id: '', cantidad_cabezas: '', observaciones: '' })
+      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], observaciones: '' })
+      setRodeosSeleccionados({})
       setLineas([])
       cargarDatos()
     } catch (err: any) {
@@ -1158,7 +1185,13 @@ function SubTabOrdenesAplicacion() {
     )
   }
 
-  const cabezasForm = parseInt(nuevaOrden.cantidad_cabezas) || 0
+  // Helper para mostrar nombres de rodeos de una orden
+  const getNombresRodeos = (o: OrdenAplicacion): string => {
+    if (o.rodeos && o.rodeos.length > 0) {
+      return o.rodeos.map(r => r.categorias_hacienda?.nombre || '-').join(', ')
+    }
+    return o.categorias_hacienda?.nombre || '-'
+  }
 
   return (
     <div className="space-y-4 pt-4">
@@ -1180,7 +1213,7 @@ function SubTabOrdenesAplicacion() {
         <TableHeader>
           <TableRow>
             <TableHead>Fecha</TableHead>
-            <TableHead>Rodeo</TableHead>
+            <TableHead>Rodeo(s)</TableHead>
             <TableHead className="text-right">Cabezas</TableHead>
             <TableHead>Insumos</TableHead>
             <TableHead>Estado</TableHead>
@@ -1198,13 +1231,13 @@ function SubTabOrdenesAplicacion() {
             ordenes.map(o => (
               <TableRow key={o.id}>
                 <TableCell>{formatoFecha(o.fecha)}</TableCell>
-                <TableCell className="font-medium">{o.categorias_hacienda?.nombre || '-'}</TableCell>
+                <TableCell className="font-medium">{getNombresRodeos(o)}</TableCell>
                 <TableCell className="text-right">{formatoNumero(o.cantidad_cabezas)}</TableCell>
                 <TableCell>
                   <div className="space-y-0.5">
-                    {o.lineas && o.lineas.length > 0 ? o.lineas.map((l, i) => (
+                    {o.lineas && o.lineas.length > 0 ? o.lineas.map(l => (
                       <div key={l.id} className="text-xs">
-                        {l.insumo_nombre}: {formatoMl(l.cantidad_total_ml)}
+                        {l.insumo_nombre}: {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
                       </div>
                     )) : <span className="text-muted-foreground text-xs">-</span>}
                   </div>
@@ -1228,40 +1261,46 @@ function SubTabOrdenesAplicacion() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nueva Orden de Aplicacion</DialogTitle>
-            <DialogDescription>Seleccione rodeo, agregue insumos con dosis y el sistema calcula totales.</DialogDescription>
+            <DialogDescription>Seleccione rodeos, agregue insumos con dosis y el sistema calcula totales.</DialogDescription>
           </DialogHeader>
 
           {/* Cabecera */}
           <div className="grid gap-3 border-b pb-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Fecha *</Label>
                 <Input type="date" value={nuevaOrden.fecha}
                   onChange={e => setNuevaOrden(p => ({ ...p, fecha: e.target.value }))} />
               </div>
               <div>
-                <Label>Rodeo (Categoria) *</Label>
-                <Select value={nuevaOrden.categoria_hacienda_id} onValueChange={onCategoriaChange}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar rodeo" /></SelectTrigger>
-                  <SelectContent position="popper" className="z-[9999]">
-                    {categoriasHacienda.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.nombre} ({stockHaciendaMap[c.id] || 0} cab.)
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Cantidad Cabezas *</Label>
-                <Input type="number" value={nuevaOrden.cantidad_cabezas}
-                  onChange={e => setNuevaOrden(p => ({ ...p, cantidad_cabezas: e.target.value }))} />
+                <Label>Observaciones</Label>
+                <Input value={nuevaOrden.observaciones}
+                  onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
               </div>
             </div>
+
+            {/* Multi-select rodeos */}
             <div>
-              <Label>Observaciones</Label>
-              <Input value={nuevaOrden.observaciones}
-                onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
+              <Label className="mb-2 block">Rodeos * <span className="text-muted-foreground text-xs">(seleccione uno o mas)</span></Label>
+              <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto border rounded p-2">
+                {categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0).map(c => {
+                  const stock = stockHaciendaMap[c.id] || 0
+                  const seleccionado = rodeosSeleccionados[c.id] || false
+                  return (
+                    <label key={c.id}
+                      className={`flex items-center gap-2 p-2 rounded cursor-pointer text-sm border transition-colors ${seleccionado ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50 border-transparent'}`}>
+                      <input type="checkbox" checked={seleccionado}
+                        onChange={() => toggleRodeo(c.id)}
+                        className="rounded" />
+                      <span className="font-medium">{c.nombre}</span>
+                      <span className="text-muted-foreground text-xs">({stock} cab.)</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {totalCabezas > 0 && (
+                <p className="text-sm font-semibold mt-1">Total: {formatoNumero(totalCabezas)} cabezas</p>
+              )}
             </div>
           </div>
 
@@ -1285,7 +1324,7 @@ function SubTabOrdenesAplicacion() {
                   <TableRow>
                     <TableHead className="w-[200px]">Insumo</TableHead>
                     <TableHead className="w-[120px]">Tipo Dosis</TableHead>
-                    <TableHead className="w-[80px] text-right">Dosis (ml)</TableHead>
+                    <TableHead className="w-[80px] text-right">Dosis</TableHead>
                     <TableHead className="w-[90px] text-right">Cada X kg</TableHead>
                     <TableHead className="w-[90px] text-right">Peso Prom. kg</TableHead>
                     <TableHead className="w-[100px] text-right">Total</TableHead>
@@ -1294,10 +1333,10 @@ function SubTabOrdenesAplicacion() {
                 </TableHeader>
                 <TableBody>
                   {lineas.map(l => {
-                    const dosisMl = parseFloat(l.dosis_ml) || 0
+                    const dosis = parseFloat(l.dosis_ml) || 0
                     const dosisCadaKg = parseFloat(l.dosis_cada_kg) || 0
                     const pesoPromedio = parseFloat(l.peso_promedio_kg) || 0
-                    const totalMl = calcularTotalMl(l.tipo_dosis, dosisMl, cabezasForm, dosisCadaKg, pesoPromedio)
+                    const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
 
                     return (
                       <TableRow key={l.key}>
@@ -1326,13 +1365,15 @@ function SubTabOrdenesAplicacion() {
                           <Select value={l.tipo_dosis} onValueChange={v => actualizarLinea(l.key, 'tipo_dosis', v)}>
                             <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent position="popper" className="z-[9999]">
-                              <SelectItem value="por_cabeza">Por cabeza</SelectItem>
-                              <SelectItem value="por_kilo">Por kilo</SelectItem>
+                              <SelectItem value="por_cabeza">Por cabeza (ml)</SelectItem>
+                              <SelectItem value="por_kilo">Por kilo (ml)</SelectItem>
+                              <SelectItem value="por_dosis">Por dosis</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
                         <TableCell>
                           <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                            placeholder={l.tipo_dosis === 'por_dosis' ? 'dosis/cab' : 'ml'}
                             value={l.dosis_ml}
                             onChange={e => actualizarLinea(l.key, 'dosis_ml', e.target.value)} />
                         </TableCell>
@@ -1355,7 +1396,7 @@ function SubTabOrdenesAplicacion() {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-medium text-sm">
-                          {totalMl > 0 ? formatoMl(totalMl) : '-'}
+                          {total > 0 ? formatoCantidad(total, unidad) : '-'}
                         </TableCell>
                         <TableCell>
                           <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
@@ -1394,34 +1435,32 @@ function SubTabNecesidadCompra() {
     stock_actual: number
     necesario: number
     a_comprar: number
+    unidad: string
   }[]>([])
   const [loading, setLoading] = useState(true)
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
-      // Obtener lineas de ordenes planificadas + stock actual
       const [lineasRes, stockRes] = await Promise.all([
         supabase.schema('productivo').from('lineas_orden_aplicacion')
-          .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, ordenes_aplicacion!inner(estado)')
+          .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, unidad_medida, ordenes_aplicacion!inner(estado)')
           .eq('ordenes_aplicacion.estado', 'planificada'),
         supabase.schema('productivo').from('stock_insumos')
           .select('id, producto, cantidad')
       ])
 
-      // Consolidar necesidades por insumo
-      const necesidadMap: Record<string, { nombre: string, stockId: string | null, necesario: number }> = {}
+      const necesidadMap: Record<string, { nombre: string, stockId: string | null, necesario: number, unidad: string }> = {}
       if (lineasRes.data) {
         for (const l of lineasRes.data) {
           const key = l.insumo_stock_id || l.insumo_nombre
           if (!necesidadMap[key]) {
-            necesidadMap[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0 }
+            necesidadMap[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0, unidad: l.unidad_medida || 'ml' }
           }
           necesidadMap[key].necesario += l.cantidad_total_ml
         }
       }
 
-      // Mapear stock actual
       const stockMap: Record<string, number> = {}
       if (stockRes.data) {
         for (const s of stockRes.data) {
@@ -1429,14 +1468,14 @@ function SubTabNecesidadCompra() {
         }
       }
 
-      // Combinar
       const resultado = Object.values(necesidadMap).map(n => {
         const stockActual = n.stockId ? (stockMap[n.stockId] || 0) : 0
         return {
           insumo_nombre: n.nombre,
           stock_actual: stockActual,
           necesario: n.necesario,
-          a_comprar: Math.max(0, n.necesario - stockActual)
+          a_comprar: Math.max(0, n.necesario - stockActual),
+          unidad: n.unidad
         }
       }).sort((a, b) => b.a_comprar - a.a_comprar)
 
@@ -1493,10 +1532,10 @@ function SubTabNecesidadCompra() {
             datos.map((d, i) => (
               <TableRow key={i}>
                 <TableCell className="font-medium">{d.insumo_nombre}</TableCell>
-                <TableCell className="text-right">{formatoMl(d.stock_actual)}</TableCell>
-                <TableCell className="text-right">{formatoMl(d.necesario)}</TableCell>
+                <TableCell className="text-right">{formatoCantidad(d.stock_actual, d.unidad)}</TableCell>
+                <TableCell className="text-right">{formatoCantidad(d.necesario, d.unidad)}</TableCell>
                 <TableCell className={`text-right font-semibold ${d.a_comprar > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {d.a_comprar > 0 ? formatoMl(d.a_comprar) : 'OK'}
+                  {d.a_comprar > 0 ? formatoCantidad(d.a_comprar, d.unidad) : 'OK'}
                 </TableCell>
               </TableRow>
             ))
