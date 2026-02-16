@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2 } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -101,6 +101,7 @@ interface OrdenAplicacion {
   fecha: string
   categoria_hacienda_id: string | null
   cantidad_cabezas: number
+  peso_promedio_kg: number | null
   estado: string
   observaciones: string | null
   created_at: string
@@ -131,7 +132,6 @@ interface LineaFormulario {
   tipo_dosis: 'por_cabeza' | 'por_kilo' | 'por_dosis'
   dosis_ml: string
   dosis_cada_kg: string
-  peso_promedio_kg: string
 }
 
 interface LoteAgricola {
@@ -197,6 +197,125 @@ const calcularTotal = (
     return { total: (pesoPromedioKg / dosisCadaKg) * dosis * cantidadCabezas, unidad: 'ml' }
   }
   return { total: 0, unidad: 'ml' }
+}
+
+// Calcula la dosis individual que se aplica a cada animal
+const dosisPorCabeza = (
+  tipoDosis: string,
+  dosis: number,
+  dosisCadaKg?: number | null,
+  pesoPromedioKg?: number | null
+): { valor: number; texto: string } => {
+  if (tipoDosis === 'por_dosis') {
+    return { valor: dosis, texto: `${dosis} dosis` }
+  }
+  if (tipoDosis === 'por_cabeza') {
+    return { valor: dosis, texto: `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(dosis)} ml` }
+  }
+  // por_kilo
+  if (dosisCadaKg && pesoPromedioKg) {
+    const mlPorCabeza = (pesoPromedioKg / dosisCadaKg) * dosis
+    return { valor: mlPorCabeza, texto: `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(mlPorCabeza)} ml` }
+  }
+  return { valor: 0, texto: '-' }
+}
+
+// Genera imagen PNG de la orden para enviar por WhatsApp
+const exportarOrdenImagen = (orden: OrdenAplicacion) => {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const lineas = orden.lineas || []
+  const padding = 30
+  const lineHeight = 28
+  const headerH = 140
+  const tableHeaderH = 35
+  const rowH = 30
+  const canvasW = 700
+  const canvasH = headerH + tableHeaderH + (lineas.length * rowH) + padding * 2 + 40
+
+  canvas.width = canvasW
+  canvas.height = canvasH
+
+  // Fondo
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvasW, canvasH)
+
+  // Titulo
+  ctx.fillStyle = '#1a1a2e'
+  ctx.font = 'bold 22px Arial'
+  ctx.fillText('ORDEN DE APLICACION', padding, padding + 24)
+
+  // Info cabecera
+  ctx.font = '14px Arial'
+  ctx.fillStyle = '#333'
+  const fechaStr = formatoFecha(orden.fecha)
+  ctx.fillText(`Fecha: ${fechaStr}`, padding, padding + 52)
+
+  const rodeoNombres = orden.rodeos && orden.rodeos.length > 0
+    ? orden.rodeos.map(r => r.categorias_hacienda?.nombre || '-').join(', ')
+    : orden.categorias_hacienda?.nombre || '-'
+  ctx.fillText(`Rodeo: ${rodeoNombres}`, padding, padding + 72)
+  ctx.fillText(`Cabezas: ${orden.cantidad_cabezas}`, padding, padding + 92)
+  if (orden.peso_promedio_kg) {
+    ctx.fillText(`Peso prom.: ${orden.peso_promedio_kg} kg/cab`, padding + 250, padding + 92)
+  }
+  if (orden.observaciones) {
+    ctx.fillText(`Obs: ${orden.observaciones}`, padding, padding + 112)
+  }
+
+  // Tabla header
+  const tableY = headerH + padding
+  ctx.fillStyle = '#e8e8e8'
+  ctx.fillRect(padding, tableY, canvasW - padding * 2, tableHeaderH)
+  ctx.fillStyle = '#1a1a2e'
+  ctx.font = 'bold 13px Arial'
+  ctx.fillText('Insumo', padding + 8, tableY + 23)
+  ctx.fillText('Dosis/Cab', 320, tableY + 23)
+  ctx.fillText('Total Necesario', 480, tableY + 23)
+
+  // Filas
+  ctx.font = '14px Arial'
+  lineas.forEach((l, i) => {
+    const y = tableY + tableHeaderH + (i * rowH)
+    // Alternar fondo
+    if (i % 2 === 0) {
+      ctx.fillStyle = '#f8f8f8'
+      ctx.fillRect(padding, y, canvasW - padding * 2, rowH)
+    }
+    ctx.fillStyle = '#333'
+
+    // Nombre insumo
+    ctx.font = 'bold 14px Arial'
+    ctx.fillText(l.insumo_nombre, padding + 8, y + 20)
+
+    // Dosis por cabeza
+    ctx.font = '14px Arial'
+    const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg)
+    ctx.fillText(dpc.texto, 320, y + 20)
+
+    // Total
+    const unidad = l.unidad_medida || 'ml'
+    ctx.fillText(formatoCantidad(l.cantidad_total_ml, unidad), 480, y + 20)
+  })
+
+  // Borde tabla
+  const tableEndY = tableY + tableHeaderH + (lineas.length * rowH)
+  ctx.strokeStyle = '#ccc'
+  ctx.lineWidth = 1
+  ctx.strokeRect(padding, tableY, canvasW - padding * 2, tableEndY - tableY)
+
+  // Footer
+  ctx.fillStyle = '#999'
+  ctx.font = '11px Arial'
+  ctx.fillText(`Generado: ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`, padding, canvasH - 12)
+
+  // Descargar
+  const link = document.createElement('a')
+  link.download = `Orden_Aplicacion_${orden.fecha}.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
 }
 
 // ============================================================
@@ -972,6 +1091,7 @@ function SubTabOrdenesAplicacion() {
   // Form cabecera
   const [nuevaOrden, setNuevaOrden] = useState({
     fecha: new Date().toISOString().split('T')[0],
+    peso_promedio_kg: '',
     observaciones: ''
   })
 
@@ -988,8 +1108,7 @@ function SubTabOrdenesAplicacion() {
       insumo_stock_id: '',
       tipo_dosis: 'por_cabeza',
       dosis_ml: '',
-      dosis_cada_kg: '',
-      peso_promedio_kg: ''
+      dosis_cada_kg: ''
     }])
   }
 
@@ -1083,8 +1202,12 @@ function SubTabOrdenesAplicacion() {
         return
       }
       if (l.tipo_dosis === 'por_kilo') {
-        if (!l.dosis_cada_kg || !l.peso_promedio_kg) {
-          toast.error('Para dosis por kilo, complete "Cada X kg" y "Peso Promedio"')
+        if (!l.dosis_cada_kg) {
+          toast.error('Para dosis por kilo, complete "Cada X kg"')
+          return
+        }
+        if (!nuevaOrden.peso_promedio_kg) {
+          toast.error('Para dosis por kilo, complete "Peso Prom. kg/cab" en la cabecera')
           return
         }
       }
@@ -1099,6 +1222,7 @@ function SubTabOrdenesAplicacion() {
           fecha: nuevaOrden.fecha,
           categoria_hacienda_id: rodeosIds.length === 1 ? rodeosIds[0] : null,
           cantidad_cabezas: totalCabezas,
+          peso_promedio_kg: nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null,
           estado: 'planificada',
           observaciones: nuevaOrden.observaciones || null
         })
@@ -1119,10 +1243,11 @@ function SubTabOrdenesAplicacion() {
       await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').insert(rodeosData)
 
       // 3. Crear lineas
+      const pesoHeaderKg = nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null
       const lineasData = lineas.map(l => {
         const dosis = parseFloat(l.dosis_ml)
         const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
-        const pesoPromedio = l.tipo_dosis === 'por_kilo' ? parseFloat(l.peso_promedio_kg) : null
+        const pesoPromedio = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : null
         const { total } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
 
         const insumoStock = l.insumo_stock_id ? insumosVet.find(i => i.id === l.insumo_stock_id) : null
@@ -1164,7 +1289,7 @@ function SubTabOrdenesAplicacion() {
 
       toast.success('Orden de aplicacion creada')
       setMostrarModal(false)
-      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], observaciones: '' })
+      setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
       setRodeosSeleccionados({})
       setLineas([])
       cargarDatos()
@@ -1215,15 +1340,16 @@ function SubTabOrdenesAplicacion() {
             <TableHead>Fecha</TableHead>
             <TableHead>Rodeo(s)</TableHead>
             <TableHead className="text-right">Cabezas</TableHead>
-            <TableHead>Insumos</TableHead>
+            <TableHead>Insumos (Dosis/Cab → Total)</TableHead>
             <TableHead>Estado</TableHead>
             <TableHead>Obs.</TableHead>
+            <TableHead className="w-[40px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {ordenes.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                 Sin ordenes de aplicacion registradas.
               </TableCell>
             </TableRow>
@@ -1235,11 +1361,14 @@ function SubTabOrdenesAplicacion() {
                 <TableCell className="text-right">{formatoNumero(o.cantidad_cabezas)}</TableCell>
                 <TableCell>
                   <div className="space-y-0.5">
-                    {o.lineas && o.lineas.length > 0 ? o.lineas.map(l => (
-                      <div key={l.id} className="text-xs">
-                        {l.insumo_nombre}: {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
-                      </div>
-                    )) : <span className="text-muted-foreground text-xs">-</span>}
+                    {o.lineas && o.lineas.length > 0 ? o.lineas.map(l => {
+                      const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || o.peso_promedio_kg)
+                      return (
+                        <div key={l.id} className="text-xs">
+                          <span className="font-medium">{l.insumo_nombre}</span>: {dpc.texto} → {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
+                        </div>
+                      )
+                    }) : <span className="text-muted-foreground text-xs">-</span>}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -1249,6 +1378,13 @@ function SubTabOrdenesAplicacion() {
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
                   {o.observaciones || '-'}
+                </TableCell>
+                <TableCell>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                    title="Exportar imagen para WhatsApp"
+                    onClick={() => exportarOrdenImagen(o)}>
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))
@@ -1266,11 +1402,17 @@ function SubTabOrdenesAplicacion() {
 
           {/* Cabecera */}
           <div className="grid gap-3 border-b pb-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label>Fecha *</Label>
                 <Input type="date" value={nuevaOrden.fecha}
                   onChange={e => setNuevaOrden(p => ({ ...p, fecha: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Peso Prom. kg/cab <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                <Input type="number" step="0.1" placeholder="Ej: 200"
+                  value={nuevaOrden.peso_promedio_kg}
+                  onChange={e => setNuevaOrden(p => ({ ...p, peso_promedio_kg: e.target.value }))} />
               </div>
               <div>
                 <Label>Observaciones</Label>
@@ -1326,7 +1468,7 @@ function SubTabOrdenesAplicacion() {
                     <TableHead className="w-[120px]">Tipo Dosis</TableHead>
                     <TableHead className="w-[80px] text-right">Dosis</TableHead>
                     <TableHead className="w-[90px] text-right">Cada X kg</TableHead>
-                    <TableHead className="w-[90px] text-right">Peso Prom. kg</TableHead>
+                    <TableHead className="w-[90px] text-right">Dosis/Cab</TableHead>
                     <TableHead className="w-[100px] text-right">Total</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
@@ -1335,8 +1477,10 @@ function SubTabOrdenesAplicacion() {
                   {lineas.map(l => {
                     const dosis = parseFloat(l.dosis_ml) || 0
                     const dosisCadaKg = parseFloat(l.dosis_cada_kg) || 0
-                    const pesoPromedio = parseFloat(l.peso_promedio_kg) || 0
-                    const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
+                    const pesoHeaderKg = parseFloat(nuevaOrden.peso_promedio_kg) || 0
+                    const pesoParaCalc = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : 0
+                    const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoParaCalc)
+                    const dpc = dosisPorCabeza(l.tipo_dosis, dosis, dosisCadaKg, pesoParaCalc)
 
                     return (
                       <TableRow key={l.key}>
@@ -1386,14 +1530,8 @@ function SubTabOrdenesAplicacion() {
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          {l.tipo_dosis === 'por_kilo' ? (
-                            <Input type="number" step="0.01" className="h-8 text-xs text-right"
-                              value={l.peso_promedio_kg}
-                              onChange={e => actualizarLinea(l.key, 'peso_promedio_kg', e.target.value)} />
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
+                        <TableCell className="text-right text-sm font-medium">
+                          {dpc.texto}
                         </TableCell>
                         <TableCell className="text-right font-medium text-sm">
                           {total > 0 ? formatoCantidad(total, unidad) : '-'}
