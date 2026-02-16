@@ -68,6 +68,7 @@ interface StockInsumo {
   categoria_id: number
   producto: string
   cantidad: number
+  unidad_medida: string
   costo_unitario: number | null
   observaciones: string | null
   updated_at: string
@@ -869,7 +870,16 @@ function SubTabStockInsumos() {
   const [movimientos, setMovimientos] = useState<MovimientoInsumo[]>([])
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
+  const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
+
+  // Form nuevo insumo
+  const [nuevoInsumo, setNuevoInsumo] = useState({
+    producto: '',
+    categoria_id: '',
+    unidad_medida: 'ml',
+    observaciones: ''
+  })
 
   const [nuevoMov, setNuevoMov] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -941,6 +951,36 @@ function SubTabStockInsumos() {
     cargarDatos()
   }
 
+  const guardarInsumo = async () => {
+    if (!nuevoInsumo.producto.trim()) {
+      toast.error('El nombre del producto es obligatorio')
+      return
+    }
+    if (!nuevoInsumo.categoria_id) {
+      toast.error('Seleccione una categoria')
+      return
+    }
+
+    const { error } = await supabase.schema('productivo').from('stock_insumos').insert({
+      producto: nuevoInsumo.producto.trim(),
+      categoria_id: parseInt(nuevoInsumo.categoria_id),
+      unidad_medida: nuevoInsumo.unidad_medida,
+      cantidad: 0,
+      observaciones: nuevoInsumo.observaciones || null
+    })
+
+    if (error) {
+      console.error('Error creando insumo:', error)
+      toast.error('Error al crear insumo')
+      return
+    }
+
+    toast.success('Insumo creado')
+    setMostrarModalInsumo(false)
+    setNuevoInsumo({ producto: '', categoria_id: '', unidad_medida: 'ml', observaciones: '' })
+    cargarDatos()
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -962,6 +1002,10 @@ function SubTabStockInsumos() {
             <Plus className="mr-1 h-4 w-4" />
             Nuevo Movimiento
           </Button>
+          <Button variant="secondary" size="sm" onClick={() => setMostrarModalInsumo(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nuevo Insumo
+          </Button>
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -974,8 +1018,7 @@ function SubTabStockInsumos() {
             <TableRow>
               <TableHead>Producto</TableHead>
               <TableHead>Categoria</TableHead>
-              <TableHead className="text-right">Cantidad</TableHead>
-              <TableHead>Unidad</TableHead>
+              <TableHead className="text-right">Stock</TableHead>
               <TableHead className="text-right">Costo Unit.</TableHead>
               <TableHead>Observaciones</TableHead>
             </TableRow>
@@ -983,7 +1026,7 @@ function SubTabStockInsumos() {
           <TableBody>
             {stock.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                   Sin registros de stock de insumos.
                 </TableCell>
               </TableRow>
@@ -992,8 +1035,7 @@ function SubTabStockInsumos() {
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.producto}</TableCell>
                   <TableCell>{s.categorias_insumo?.nombre || '-'}</TableCell>
-                  <TableCell className="text-right">{formatoNumero(s.cantidad)}</TableCell>
-                  <TableCell>{s.categorias_insumo?.unidad_medida || '-'}</TableCell>
+                  <TableCell className="text-right">{formatoCantidad(s.cantidad, s.unidad_medida || 'ml')}</TableCell>
                   <TableCell className="text-right">{formatoMoneda(s.costo_unitario)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.observaciones || '-'}</TableCell>
                 </TableRow>
@@ -1112,6 +1154,56 @@ function SubTabStockInsumos() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setMostrarModalMov(false)}>Cancelar</Button>
             <Button onClick={guardarMovimiento}>Guardar Movimiento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Nuevo Insumo */}
+      <Dialog open={mostrarModalInsumo} onOpenChange={setMostrarModalInsumo}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo Insumo</DialogTitle>
+            <DialogDescription>Crear un producto nuevo en el inventario.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div>
+              <Label>Nombre del Producto *</Label>
+              <Input value={nuevoInsumo.producto} placeholder="Ej: Ivermectina"
+                onChange={e => setNuevoInsumo(p => ({ ...p, producto: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Categoria *</Label>
+                <Select value={nuevoInsumo.categoria_id} onValueChange={v => setNuevoInsumo(p => ({ ...p, categoria_id: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                  <SelectContent position="popper" className="z-[9999]">
+                    {categorias.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Unidad de Medida *</Label>
+                <Select value={nuevoInsumo.unidad_medida} onValueChange={v => setNuevoInsumo(p => ({ ...p, unidad_medida: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent position="popper" className="z-[9999]">
+                    <SelectItem value="ml">ml (mililitros)</SelectItem>
+                    <SelectItem value="dosis">dosis</SelectItem>
+                    <SelectItem value="kg">kg</SelectItem>
+                    <SelectItem value="unidad">unidad</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <Input value={nuevoInsumo.observaciones} onChange={e => setNuevoInsumo(p => ({ ...p, observaciones: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarModalInsumo(false)}>Cancelar</Button>
+            <Button onClick={guardarInsumo}>Crear Insumo</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1409,7 +1501,7 @@ function SubTabOrdenesAplicacion() {
           dosis_cada_kg: dosisCadaKg,
           peso_promedio_kg: pesoPromedio,
           cantidad_total_ml: total,
-          unidad_medida: l.tipo_dosis === 'por_dosis' ? 'dosis' : 'ml'
+          unidad_medida: insumoStock?.unidad_medida || (l.tipo_dosis === 'por_dosis' ? 'dosis' : 'ml')
         }
       })
 
@@ -1825,7 +1917,7 @@ function SubTabNecesidadCompra() {
           .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, unidad_medida, ordenes_aplicacion!inner(estado)')
           .eq('ordenes_aplicacion.estado', 'planificada'),
         supabase.schema('productivo').from('stock_insumos')
-          .select('id, producto, cantidad')
+          .select('id, producto, cantidad, unidad_medida')
       ])
 
       const necesidadMap: Record<string, { nombre: string, stockId: string | null, necesario: number, unidad: string }> = {}
@@ -1839,21 +1931,24 @@ function SubTabNecesidadCompra() {
         }
       }
 
-      const stockMap: Record<string, number> = {}
+      const stockMap: Record<string, { cantidad: number, unidad: string }> = {}
       if (stockRes.data) {
         for (const s of stockRes.data) {
-          stockMap[s.id] = s.cantidad
+          stockMap[s.id] = { cantidad: s.cantidad, unidad: s.unidad_medida || 'ml' }
         }
       }
 
       const resultado = Object.values(necesidadMap).map(n => {
-        const stockActual = n.stockId ? (stockMap[n.stockId] || 0) : 0
+        const stockInfo = n.stockId ? stockMap[n.stockId] : null
+        const stockActual = stockInfo?.cantidad || 0
+        // Preferir la unidad del stock_insumos (fuente de verdad)
+        const unidad = stockInfo?.unidad || n.unidad
         return {
           insumo_nombre: n.nombre,
           stock_actual: stockActual,
           necesario: n.necesario,
           a_comprar: Math.max(0, n.necesario - stockActual),
-          unidad: n.unidad
+          unidad
         }
       }).sort((a, b) => b.a_comprar - a.a_comprar)
 
