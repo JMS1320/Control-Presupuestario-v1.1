@@ -8004,18 +8004,37 @@ Si se recrea el proyecto Supabase, además de ejecutar las migraciones:
 2. Agregar `productivo` a la lista de schemas expuestos (junto a `public` y `msa`)
 3. Sin esto, `supabase.schema('productivo')` no devuelve datos desde el cliente
 
+### 🔧 **Mejoras post-testing (misma sesión):**
+
+#### 3. Stock calculado desde movimientos
+- **Problema**: Movimientos se guardaban en `movimientos_hacienda` pero stock se leía de tabla separada `stock_hacienda` sin conexión
+- **Fix**: Stock ahora se calcula dinámicamente desde movimientos:
+  - Compra/Nacimiento: suman cantidad
+  - Venta/Mortandad: restan cantidad
+  - Ajuste de Stock: suma o resta (permite valores negativos)
+  - Transferencia: no cambia total
+- Fila TOTAL al pie de tabla stock
+
+#### 4. Edición inline Ctrl+Click en movimientos hacienda
+- **Implementación**: Mismo patrón que Cash Flow/ARCA/Templates
+- **Hook**: `useInlineEditor` extendido con origen `PRODUCTIVO` → usa `supabase.schema('productivo')`
+- **Campos editables**: Fecha, Tipo (Select), Categoría (Select), Cantidad, Peso, Monto, Proveedor/Cliente, Observaciones
+- **Actualización optimista**: Sin refresh, actualiza estado local
+- **Archivo modificado**: `hooks/useInlineEditor.ts` - Agregado origen `PRODUCTIVO` al tipo y al query builder
+
 ### 📊 **Commits aplicados:**
 ```
 f12a7ee - Feature: Sector Productivo - schema BD + vista con 3 sub-tabs
 fb39d43 - Fix: Categorias hacienda UUID + 11 categorias especificas + Ajuste de Stock
 cd6264f - Fix: SelectContent z-index en modales (no era el problema real)
+3c400c6 - Fix: Stock hacienda calculado desde movimientos + total + ajuste +/-
+a87ec6c - Feature: Edicion inline Ctrl+Click en movimientos hacienda
 ```
 
 ### 📍 **Estado al cierre:**
-- **Branch**: `desarrollo` (NO mergeado a main)
-- **Testing**: Pendiente por parte del usuario
-- **Funcionalidad**: Tab Productivo visible, categorías cargadas, modales funcionando
-- **Pendiente**: Probar creación movimientos, verificar stock, probar lotes agrícolas
+- **Branch**: `main` (mergeado tras testing exitoso)
+- **Testing**: Completado por usuario - creación movimientos, stock calculado, edición inline
+- **Funcionalidad completa**: Tab Productivo con Hacienda (stock + movimientos editables), Insumos, Lotes Agrícolas
 
-**📅 Última actualización sección:** 2026-02-15
+**📅 Última actualización sección:** 2026-02-16
 **Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo
