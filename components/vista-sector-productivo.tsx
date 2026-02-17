@@ -882,12 +882,36 @@ function SubTabStockInsumos() {
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
 
+  // Recalcular stock de un insumo desde sus movimientos
+  const recalcularStockInsumo = async (insumoStockId: string) => {
+    const { data } = await supabase.schema('productivo').from('movimientos_insumos')
+      .select('tipo, cantidad')
+      .eq('insumo_stock_id', insumoStockId)
+    if (data) {
+      const total = data.reduce((sum, m) => {
+        const cant = Number(m.cantidad)
+        return sum + (m.tipo === 'compra' || m.tipo === 'ajuste' ? cant : -cant)
+      }, 0)
+      await supabase.schema('productivo').from('stock_insumos')
+        .update({ cantidad: total })
+        .eq('id', insumoStockId)
+    }
+  }
+
   // Inline editing movimientos
   const hookEditor = useInlineEditor({
-    onLocalUpdate: (filaId, campo, valor, updateData) => {
+    onLocalUpdate: async (filaId, campo, valor, updateData) => {
       setMovimientos(prev => prev.map(m =>
         m.id === filaId ? { ...m, ...updateData, [campo]: valor } : m
       ))
+      // Si se editó cantidad, recalcular stock del insumo
+      if (campo === 'cantidad') {
+        const mov = movimientos.find(m => m.id === filaId)
+        if (mov?.insumo_stock_id) {
+          await recalcularStockInsumo(mov.insumo_stock_id)
+          cargarDatos()
+        }
+      }
     }
   })
 
