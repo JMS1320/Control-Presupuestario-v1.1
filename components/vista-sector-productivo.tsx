@@ -249,20 +249,69 @@ const wrapText = (ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 }
 
 // Genera imagen PNG de la orden para enviar por WhatsApp
+// Dibujar marca/hierro NZ en canvas
+const dibujarMarcaNZ = (ctx: CanvasRenderingContext2D, x: number, y: number, escala: number = 1) => {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.scale(escala, escala)
+  ctx.strokeStyle = '#2c1810'
+  ctx.lineWidth = 3.5
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  // Parte izquierda: curva tipo "señal" (gancho/J invertida)
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(0, 28)
+  ctx.quadraticCurveTo(0, 42, 14, 42)
+  ctx.quadraticCurveTo(28, 42, 28, 28)
+  ctx.lineTo(28, 18)
+  ctx.stroke()
+
+  // Parte inferior: L angular
+  ctx.beginPath()
+  ctx.moveTo(0, 56)
+  ctx.lineTo(0, 48)
+  ctx.lineTo(14, 48)
+  ctx.stroke()
+
+  // Asterisco/estrella (marca *)
+  const cx = 38, cy = 10
+  const r = 7
+  for (let i = 0; i < 3; i++) {
+    const angle = (i * 60) * Math.PI / 180
+    ctx.beginPath()
+    ctx.moveTo(cx - Math.cos(angle) * r, cy - Math.sin(angle) * r)
+    ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
 const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   const lineas = orden.lineas || []
   const padding = 30
-  const tableHeaderH = 35
-  const rowH = 30
-  const canvasW = 700
-  const obsLineH = 18
+  const tableHeaderH = 32
+  const rowH = 28
+  const canvasW = 720
+  const obsLineH = 17
+
+  // Colores sobrios ganaderos
+  const colPrimario = '#2c1810'    // Marrón oscuro
+  const colSecundario = '#5a3a28'  // Marrón medio
+  const colTerciario = '#8b7355'   // Marrón claro
+  const colFondo = '#faf8f5'       // Crema
+  const colLinea = '#c4a882'       // Dorado/arena
+  const colTablaHeader = '#3d2b1f' // Marrón tabla header
+  const colTablaAlt = '#f5f0ea'    // Crema alternado
 
   // Pre-calcular alto de observaciones
   const tempCanvas = document.createElement('canvas')
   const tempCtx = tempCanvas.getContext('2d')
   let obsLines = 0
   if (tempCtx && orden.observaciones) {
-    tempCtx.font = '13px Arial'
+    tempCtx.font = '12px Georgia'
     const words = orden.observaciones.split(' ')
     let line = ''
     const maxW = canvasW - padding * 2 - 30
@@ -279,12 +328,14 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   }
 
   const laboresOrden = orden.labores || []
-  const laboresH = laboresOrden.length > 0 ? 30 : 0
+  const laboresH = laboresOrden.length > 0 ? 28 : 0
 
-  const headerBaseH = 100
+  const brandHeaderH = 85
+  const infoH = 80
   const obsH = obsLines > 0 ? obsLines * obsLineH + 10 : 0
-  const headerH = headerBaseH + obsH + laboresH
-  const canvasH = headerH + tableHeaderH + (lineas.length * rowH) + padding * 2 + 40
+  const headerH = brandHeaderH + infoH + obsH + laboresH
+  const tableH = lineas.length > 0 ? tableHeaderH + (lineas.length * rowH) : 0
+  const canvasH = headerH + tableH + padding * 2 + 35
 
   const canvas = document.createElement('canvas')
   canvas.width = canvasW
@@ -292,83 +343,162 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // Fondo
-  ctx.fillStyle = '#ffffff'
+  // Fondo crema
+  ctx.fillStyle = colFondo
   ctx.fillRect(0, 0, canvasW, canvasH)
 
-  // Titulo
-  ctx.fillStyle = '#1a1a2e'
-  ctx.font = 'bold 22px Arial'
-  ctx.fillText('ORDEN DE APLICACION', padding, padding + 24)
+  // Linea superior decorativa
+  ctx.fillStyle = colPrimario
+  ctx.fillRect(0, 0, canvasW, 4)
 
-  // Info cabecera
-  ctx.font = '14px Arial'
-  ctx.fillStyle = '#333'
-  ctx.fillText(`Fecha: ${formatoFecha(orden.fecha)}`, padding, padding + 52)
+  // === CABECERA CON MARCA ===
+  // Marca/hierro NZ a la izquierda
+  dibujarMarcaNZ(ctx, padding + 5, 18, 1.1)
+
+  // Rótulo estancia
+  ctx.fillStyle = colPrimario
+  ctx.font = 'bold 11px Georgia'
+  ctx.letterSpacing = '3px'
+  ctx.fillText('E S T A N C I A', padding + 75, 30)
+  ctx.letterSpacing = '0px'
+
+  ctx.font = 'bold 26px Georgia'
+  ctx.fillText('NAZARENAS', padding + 75, 56)
+
+  ctx.font = 'italic 13px Georgia'
+  ctx.fillStyle = colSecundario
+  ctx.fillText('De Martinez Sobrado', padding + 77, 72)
+
+  // Titulo orden - derecha
+  ctx.textAlign = 'right'
+  ctx.fillStyle = colPrimario
+  ctx.font = 'bold 16px Georgia'
+  ctx.fillText('ORDEN DE APLICACIÓN', canvasW - padding, 35)
+
+  ctx.font = '13px Georgia'
+  ctx.fillStyle = colSecundario
+  ctx.fillText(`${formatoFecha(orden.fecha)}`, canvasW - padding, 55)
+
+  ctx.font = '11px Georgia'
+  ctx.fillStyle = colTerciario
+  const estadoTexto = orden.estado === 'ejecutada' ? '● EJECUTADA' : orden.estado === 'eliminada' ? '✕ ELIMINADA' : '○ PLANIFICADA'
+  ctx.fillText(estadoTexto, canvasW - padding, 72)
+  ctx.textAlign = 'left'
+
+  // Linea separadora bajo cabecera
+  ctx.strokeStyle = colLinea
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(padding, brandHeaderH)
+  ctx.lineTo(canvasW - padding, brandHeaderH)
+  ctx.stroke()
+
+  // === INFO ORDEN ===
+  const infoY = brandHeaderH + 8
+  ctx.font = '13px Georgia'
+  ctx.fillStyle = colPrimario
 
   const rodeoNombres = orden.rodeos && orden.rodeos.length > 0
     ? orden.rodeos.map(r => r.categorias_hacienda?.nombre || '-').join(', ')
     : orden.categorias_hacienda?.nombre || '-'
-  ctx.fillText(`Rodeo: ${rodeoNombres}`, padding, padding + 72)
-  ctx.fillText(`Cabezas: ${orden.cantidad_cabezas}`, padding, padding + 92)
+
+  // Fila 1
+  ctx.font = 'bold 12px Georgia'
+  ctx.fillText('Rodeo:', padding, infoY + 18)
+  ctx.font = '13px Georgia'
+  ctx.fillText(rodeoNombres, padding + 52, infoY + 18)
+
+  // Fila 2
+  ctx.font = 'bold 12px Georgia'
+  ctx.fillText('Cabezas:', padding, infoY + 38)
+  ctx.font = '13px Georgia'
+  ctx.fillText(String(orden.cantidad_cabezas), padding + 62, infoY + 38)
+
   if (orden.peso_promedio_kg) {
-    ctx.fillText(`Peso prom.: ${orden.peso_promedio_kg} kg/cab`, padding + 250, padding + 92)
+    ctx.font = 'bold 12px Georgia'
+    ctx.fillText('Peso prom.:', padding + 160, infoY + 38)
+    ctx.font = '13px Georgia'
+    ctx.fillText(`${orden.peso_promedio_kg} kg/cab`, padding + 240, infoY + 38)
   }
 
-  // Observaciones con word-wrap
+  // Observaciones
+  let nextY = infoY + 55
   if (orden.observaciones) {
-    ctx.font = '13px Arial'
-    ctx.fillStyle = '#555'
-    wrapText(ctx, `Obs: ${orden.observaciones}`, padding, padding + 112, canvasW - padding * 2, obsLineH)
+    ctx.font = 'bold 12px Georgia'
+    ctx.fillStyle = colSecundario
+    ctx.fillText('Obs:', padding, nextY)
+    ctx.font = '12px Georgia'
+    wrapText(ctx, orden.observaciones, padding + 35, nextY, canvasW - padding * 2 - 35, obsLineH)
+    nextY += obsH
   }
 
   // Labores
   if (laboresOrden.length > 0) {
-    const laboresY = padding + 112 + obsH
-    ctx.font = 'bold 13px Arial'
-    ctx.fillStyle = '#1a6b3a'
-    ctx.fillText('Labores: ', padding, laboresY)
-    ctx.font = '13px Arial'
-    ctx.fillText(laboresOrden.join(', '), padding + 60, laboresY)
+    const laboresY = brandHeaderH + infoH + obsH + 5
+    ctx.font = 'bold 12px Georgia'
+    ctx.fillStyle = colPrimario
+    ctx.fillText('Labores:', padding, laboresY)
+    ctx.font = '13px Georgia'
+    ctx.fillStyle = colSecundario
+    ctx.fillText(laboresOrden.join('  ·  '), padding + 60, laboresY)
   }
 
-  // Tabla header
-  const tableY = headerH + padding
-  ctx.fillStyle = '#e8e8e8'
-  ctx.fillRect(padding, tableY, canvasW - padding * 2, tableHeaderH)
-  ctx.fillStyle = '#1a1a2e'
-  ctx.font = 'bold 13px Arial'
-  ctx.fillText('Insumo', padding + 8, tableY + 23)
-  ctx.fillText('Dosis/Cab', 320, tableY + 23)
-  ctx.fillText('Total Necesario', 480, tableY + 23)
+  // === TABLA INSUMOS ===
+  if (lineas.length > 0) {
+    const tableY = headerH + padding - 10
 
-  // Filas
-  ctx.font = '14px Arial'
-  lineas.forEach((l, i) => {
-    const y = tableY + tableHeaderH + (i * rowH)
-    if (i % 2 === 0) {
-      ctx.fillStyle = '#f8f8f8'
+    // Header tabla
+    ctx.fillStyle = colTablaHeader
+    ctx.fillRect(padding, tableY, canvasW - padding * 2, tableHeaderH)
+    ctx.fillStyle = '#f5f0ea'
+    ctx.font = 'bold 11px Georgia'
+    ctx.fillText('INSUMO', padding + 10, tableY + 21)
+    ctx.fillText('DOSIS/CAB', 330, tableY + 21)
+    ctx.fillText('TOTAL NECESARIO', 490, tableY + 21)
+
+    // Filas
+    lineas.forEach((l, i) => {
+      const y = tableY + tableHeaderH + (i * rowH)
+      ctx.fillStyle = i % 2 === 0 ? colTablaAlt : colFondo
       ctx.fillRect(padding, y, canvasW - padding * 2, rowH)
-    }
-    ctx.fillStyle = '#333'
-    ctx.font = 'bold 14px Arial'
-    ctx.fillText(l.insumo_nombre, padding + 8, y + 20)
-    ctx.font = '14px Arial'
-    const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || orden.peso_promedio_kg)
-    ctx.fillText(dpc.texto, 320, y + 20)
-    ctx.fillText(formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml'), 480, y + 20)
-  })
 
-  // Borde tabla
-  const tableEndY = tableY + tableHeaderH + (lineas.length * rowH)
-  ctx.strokeStyle = '#ccc'
-  ctx.lineWidth = 1
-  ctx.strokeRect(padding, tableY, canvasW - padding * 2, tableEndY - tableY)
+      ctx.fillStyle = colPrimario
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText(l.insumo_nombre, padding + 10, y + 19)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || orden.peso_promedio_kg)
+      ctx.fillText(dpc.texto, 330, y + 19)
+      ctx.fillText(formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml'), 490, y + 19)
+    })
 
-  // Footer
-  ctx.fillStyle = '#999'
-  ctx.font = '11px Arial'
-  ctx.fillText(`Generado: ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`, padding, canvasH - 12)
+    // Borde tabla
+    const tableEndY = tableY + tableHeaderH + (lineas.length * rowH)
+    ctx.strokeStyle = colLinea
+    ctx.lineWidth = 0.5
+    ctx.strokeRect(padding, tableY, canvasW - padding * 2, tableEndY - tableY)
+  }
+
+  // === FOOTER ===
+  // Linea inferior decorativa
+  ctx.strokeStyle = colLinea
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(padding, canvasH - 25)
+  ctx.lineTo(canvasW - padding, canvasH - 25)
+  ctx.stroke()
+
+  ctx.fillStyle = colTerciario
+  ctx.font = '10px Georgia'
+  ctx.fillText(`Generado: ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`, padding, canvasH - 10)
+  ctx.textAlign = 'right'
+  ctx.font = 'italic 10px Georgia'
+  ctx.fillText('Ea. Nazarenas — Martinez Sobrado Agro SRL', canvasW - padding, canvasH - 10)
+  ctx.textAlign = 'left'
+
+  // Linea inferior gruesa
+  ctx.fillStyle = colPrimario
+  ctx.fillRect(0, canvasH - 4, canvasW, 4)
 
   // Descargar
   const link = document.createElement('a')
