@@ -8036,5 +8036,104 @@ a87ec6c - Feature: Edicion inline Ctrl+Click en movimientos hacienda
 - **Testing**: Completado por usuario - creación movimientos, stock calculado, edición inline
 - **Funcionalidad completa**: Tab Productivo con Hacienda (stock + movimientos editables), Insumos, Lotes Agrícolas
 
-**📅 Última actualización sección:** 2026-02-16
-**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo
+---
+
+## 📋 SESIÓN 2026-02-17: ORDENES APLICACIÓN VETERINARIA (continuación)
+
+### 🎯 **Contexto**
+Continuación de sesión anterior donde se implementó sistema completo de órdenes de aplicación veterinaria (multi-rodeo, labores, insumos, PNG export Ea. Nazarenas). Esta sesión completó features pendientes y corrigió bugs.
+
+### ✅ **FEATURES IMPLEMENTADOS**
+
+#### 1. Cabezas por línea de insumo
+- **Problema**: MinVit Mineral con 200ml stock a 5ml/cab = solo 40 cabezas. El resto (149) necesita Cobre. Sistema calculaba todo contra totalCabezas sin permitir diferenciación por línea.
+- **Solución**: Campo `cabezas` editable por cada línea de insumo en el formulario
+- **Si vacío**: Usa total de cabezas de rodeos seleccionados (comportamiento anterior)
+- **Si lleno**: Calcula total solo para esas cabezas específicas
+- **BD**: Columna `cabezas_linea INTEGER` en `productivo.lineas_orden_aplicacion` (migración `add_cabezas_linea_orden`)
+- **UI Modal**: Nueva columna "Cabezas" con input numérico (placeholder muestra total como referencia)
+- **Lista órdenes**: Muestra "(X cab)" junto al insumo cuando difiere del total
+- **PNG export**: Nueva columna "CABEZAS" en tabla de imagen exportada
+- **Interface**: `LineaOrdenAplicacion` actualizada con `cabezas_linea: number | null`
+- **Cálculo**: `calcularTotal()` recibe `cabezasLinea = parseInt(l.cabezas) || totalCabezas` por línea
+- **Guardado**: `guardarOrden()` incluye `cabezas_linea: l.cabezas ? parseInt(l.cabezas) : null`
+- **Edición**: `abrirEdicion()` restaura `cabezas` desde `l.cabezas_linea` guardado
+
+#### 2. Nombre archivo PNG descriptivo
+- **Antes**: `Orden_Aplicacion_2026-02-17.png` (genérico)
+- **Ahora**: Composición dinámica: `fecha_labores_Sanidad.png`
+  - Solo labores: `2026-02-17_MarcaNZ_Señal.png`
+  - Solo insumos: `2026-02-17_Sanidad.png`
+  - Ambos: `2026-02-17_MarcaNZ_Señal_Sanidad.png`
+- **Lógica**: Partes array → join con `_`, labores sin espacios, "Sanidad" solo si `lineas.length > 0`
+
+#### 3. Gestión de labores desde la app
+- **Crear**: Botón "Nueva Labor" junto al título → input inline, confirmar con Enter o botón "Crear"
+- **Eliminar**: Icono tacho (Trash2) aparece al hover sobre cada labor (soft delete: `activo: false` en BD)
+- **Validación**: No permite duplicados (comparación case-insensitive)
+- **Persistencia**: Insert/update directo en `productivo.labores` vía Supabase
+- **UX**: Todo inline en la sección Labores del formulario, sin modal extra
+- **Estados agregados**: `nuevaLabor`, `mostrarInputLabor`
+- **Funciones**: `agregarLabor()`, `eliminarLabor(laborId)`
+
+### 📊 **Commits aplicados:**
+```
+5c31386 - Feature: Cabezas por linea en ordenes de aplicacion
+952a9bc - Feature: Nombre archivo PNG descriptivo + gestion labores desde app
+```
+
+### 🔄 **Merge**: desarrollo → main completado y pusheado ✅
+
+### 📋 **Decisión arquitectura: Dosis diferentes por rodeo**
+- **Propuesta**: Poder asignar dosis distintas del mismo insumo según rodeo (ej: terneros 3ml, vacas 5ml)
+- **Decisión**: NO implementar — complejidad alta (matriz rodeo × insumo × dosis)
+- **Alternativa adoptada**: Crear órdenes separadas por rodeo cuando las dosis difieren
+- **Razonamiento**: Flujo natural, sin complejidad extra en BD/UI/cálculos, cubre el caso de uso
+
+### 🏗️ **Estado sistema ordenes aplicación — COMPLETO:**
+
+| Feature | Estado |
+|---------|--------|
+| Multi-rodeo (checkboxes) | ✅ |
+| Labores (selección + gestión CRUD) | ✅ |
+| Insumos con dosis (por_cabeza/por_kilo/por_dosis) | ✅ |
+| Cabezas por línea | ✅ |
+| Stock automático (compra/ajuste/uso) | ✅ |
+| Recalculación stock en edición inline | ✅ |
+| Confirmar/ejecutar orden con recuento | ✅ |
+| Eliminar orden (soft delete + motivo) | ✅ |
+| PNG export (Ea. Nazarenas branding + marca hierro) | ✅ |
+| Nombre archivo descriptivo | ✅ |
+| Edición inline movimientos (Ctrl+Click) | ✅ |
+| Modal multi-línea compra/ajuste | ✅ |
+| Sub-tab Necesidad de Compra | ✅ |
+
+### 🗄️ **Migraciones BD completas (todas las sesiones):**
+```sql
+-- Sesión anterior:
+-- create_ordenes_aplicacion — Tablas ordenes + lineas + rodeos
+-- add_estado_eliminada_ordenes — Estado 'eliminada' + motivo_eliminacion
+-- create_labores_sistema — Catálogo labores + lineas_orden_labores + 10 labores seed
+
+-- Esta sesión:
+-- add_cabezas_linea_orden:
+ALTER TABLE productivo.lineas_orden_aplicacion
+ADD COLUMN cabezas_linea INTEGER;
+COMMENT ON COLUMN productivo.lineas_orden_aplicacion.cabezas_linea
+IS 'Cantidad de cabezas específica para esta línea. Si NULL usa el total de la orden.';
+```
+
+### ⚠️ **Bugs resueltos sesión anterior (referencia rápida):**
+- Stock no se actualizaba al crear movimientos → update stock en `guardarMovimientos()`
+- Supabase numeric como string ("0.00" + 1000 = "0.001000") → `Number()` antes de sumar
+- Stock no se actualizaba en edición inline → `recalcularStockInsumo()` suma todos los movimientos
+- Orden no se guardaba con solo labores → removida validación vieja + filtro `lineasValidas`
+- Línea vacía por defecto bloqueaba guardado → `lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)`
+
+### 📍 **Estado al cierre:**
+- **Branch**: `main` (mergeado tras implementación completa)
+- **Funcionalidad**: Sistema ordenes de aplicación veterinaria 100% operativo
+- **Archivo principal**: `components/vista-sector-productivo.tsx`
+
+**📅 Última actualización sección:** 2026-02-17
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo + Ordenes Aplicación Veterinaria
