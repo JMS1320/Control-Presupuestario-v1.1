@@ -1835,21 +1835,20 @@ function SubTabOrdenesAplicacion() {
       toast.error('Seleccione al menos un rodeo')
       return
     }
+    // Filtrar lineas vacías (sin insumo seleccionado)
+    const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
+
     // Validar que haya al menos insumos o labores
     const laboresIds = Object.entries(laboresSeleccionadas).filter(([_, sel]) => sel).map(([id]) => parseInt(id))
-    if (lineas.length === 0 && laboresIds.length === 0) {
+    if (lineasValidas.length === 0 && laboresIds.length === 0) {
       toast.error('Agregue al menos un insumo o una labor')
       return
     }
 
-    // Validar lineas
-    for (const l of lineas) {
-      if (!l.insumo_nombre && !l.insumo_stock_id) {
-        toast.error('Cada linea debe tener un insumo')
-        return
-      }
+    // Validar lineas con datos
+    for (const l of lineasValidas) {
       if (!l.dosis_ml || parseFloat(l.dosis_ml) <= 0) {
-        toast.error('Cada linea debe tener dosis')
+        toast.error('Cada insumo debe tener dosis')
         return
       }
       if (l.tipo_dosis === 'por_kilo') {
@@ -1918,8 +1917,8 @@ function SubTabOrdenesAplicacion() {
         await supabase.schema('productivo').from('lineas_orden_labores').insert(laboresData)
       }
 
-      // Crear lineas
-      const lineasData = lineas.map(l => {
+      // Crear lineas (solo las que tienen insumo)
+      const lineasData = lineasValidas.map(l => {
         const dosis = parseFloat(l.dosis_ml)
         const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
         const pesoPromedio = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : null
@@ -1940,12 +1939,14 @@ function SubTabOrdenesAplicacion() {
         }
       })
 
-      const { error: lineasError } = await supabase.schema('productivo')
-        .from('lineas_orden_aplicacion').insert(lineasData)
-      if (lineasError) throw new Error(lineasError.message)
+      if (lineasData.length > 0) {
+        const { error: lineasError } = await supabase.schema('productivo')
+          .from('lineas_orden_aplicacion').insert(lineasData)
+        if (lineasError) throw new Error(lineasError.message)
+      }
 
       // Crear movimientos de uso (solo en creacion, en edicion los movimientos previos quedan)
-      if (!ordenEditandoId) {
+      if (!ordenEditandoId && lineasData.length > 0) {
         const movimientosUso = lineasData
           .filter(l => l.insumo_stock_id)
           .map(l => ({
