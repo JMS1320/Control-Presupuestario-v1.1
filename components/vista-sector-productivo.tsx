@@ -111,6 +111,7 @@ interface OrdenAplicacion {
   categorias_hacienda?: { nombre: string }
   lineas?: LineaOrdenAplicacion[]
   rodeos?: OrdenAplicacionRodeo[]
+  labores?: string[]
 }
 
 interface LineaOrdenAplicacion {
@@ -277,9 +278,12 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
     if (line.trim()) obsLines++
   }
 
+  const laboresOrden = orden.labores || []
+  const laboresH = laboresOrden.length > 0 ? 30 : 0
+
   const headerBaseH = 100
   const obsH = obsLines > 0 ? obsLines * obsLineH + 10 : 0
-  const headerH = headerBaseH + obsH
+  const headerH = headerBaseH + obsH + laboresH
   const canvasH = headerH + tableHeaderH + (lineas.length * rowH) + padding * 2 + 40
 
   const canvas = document.createElement('canvas')
@@ -316,6 +320,16 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
     ctx.font = '13px Arial'
     ctx.fillStyle = '#555'
     wrapText(ctx, `Obs: ${orden.observaciones}`, padding, padding + 112, canvasW - padding * 2, obsLineH)
+  }
+
+  // Labores
+  if (laboresOrden.length > 0) {
+    const laboresY = padding + 112 + obsH
+    ctx.font = 'bold 13px Arial'
+    ctx.fillStyle = '#1a6b3a'
+    ctx.fillText('Labores: ', padding, laboresY)
+    ctx.font = '13px Arial'
+    ctx.fillText(laboresOrden.join(', '), padding + 60, laboresY)
   }
 
   // Tabla header
@@ -1424,6 +1438,10 @@ function SubTabOrdenesAplicacion() {
   // Rodeos seleccionados (multi-select)
   const [rodeosSeleccionados, setRodeosSeleccionados] = useState<Record<string, boolean>>({})
 
+  // Labores
+  const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string }[]>([])
+  const [laboresSeleccionadas, setLaboresSeleccionadas] = useState<Record<number, boolean>>({})
+
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
 
@@ -1458,9 +1476,9 @@ function SubTabOrdenesAplicacion() {
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
-      const [ordenesRes, catHacRes, insRes, movHacRes] = await Promise.all([
+      const [ordenesRes, catHacRes, insRes, movHacRes, laboresRes] = await Promise.all([
         supabase.schema('productivo').from('ordenes_aplicacion')
-          .select('*, categorias_hacienda(nombre), lineas_orden_aplicacion(*), ordenes_aplicacion_rodeos(*, categorias_hacienda(nombre))')
+          .select('*, categorias_hacienda(nombre), lineas_orden_aplicacion(*), ordenes_aplicacion_rodeos(*, categorias_hacienda(nombre)), lineas_orden_labores(*, labores(nombre))')
           .order('fecha', { ascending: false }),
         supabase.schema('productivo').from('categorias_hacienda')
           .select('*').eq('activo', true).order('nombre'),
@@ -1468,18 +1486,22 @@ function SubTabOrdenesAplicacion() {
           .select('*, categorias_insumo(nombre, unidad_medida)')
           .order('producto'),
         supabase.schema('productivo').from('movimientos_hacienda')
-          .select('categoria_id, tipo, cantidad')
+          .select('categoria_id, tipo, cantidad'),
+        supabase.schema('productivo').from('labores')
+          .select('id, nombre').eq('activo', true).order('orden_display')
       ])
 
       if (ordenesRes.data) {
         setOrdenes(ordenesRes.data.map((o: any) => ({
           ...o,
           lineas: o.lineas_orden_aplicacion || [],
-          rodeos: o.ordenes_aplicacion_rodeos || []
+          rodeos: o.ordenes_aplicacion_rodeos || [],
+          labores: (o.lineas_orden_labores || []).map((ll: any) => ll.labores?.nombre).filter(Boolean)
         })))
       }
       if (catHacRes.data) setCategoriasHacienda(catHacRes.data)
       if (insRes.data) setInsumosVet(insRes.data)
+      if (laboresRes.data) setLaboresDisponibles(laboresRes.data)
 
       // Calcular stock hacienda desde movimientos
       if (movHacRes.data) {
@@ -1522,6 +1544,15 @@ function SubTabOrdenesAplicacion() {
       rodeos[orden.categoria_hacienda_id] = true
     }
     setRodeosSeleccionados(rodeos)
+    // Restaurar labores
+    const labs: Record<number, boolean> = {}
+    if (orden.labores) {
+      for (const nombre of orden.labores) {
+        const labor = laboresDisponibles.find(l => l.nombre === nombre)
+        if (labor) labs[labor.id] = true
+      }
+    }
+    setLaboresSeleccionadas(labs)
     // Restaurar lineas
     setLineas((orden.lineas || []).map(l => ({
       key: Date.now() + Math.random(),
@@ -1540,6 +1571,7 @@ function SubTabOrdenesAplicacion() {
     setOrdenEditandoId(null)
     setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
     setRodeosSeleccionados({})
+    setLaboresSeleccionadas({})
     setLineas([])
   }
 
@@ -1678,6 +1710,13 @@ function SubTabOrdenesAplicacion() {
       return
     }
 
+    // Validar que haya al menos insumos o labores
+    const laboresIds = Object.entries(laboresSeleccionadas).filter(([_, sel]) => sel).map(([id]) => parseInt(id))
+    if (lineas.length === 0 && laboresIds.length === 0) {
+      toast.error('Agregue al menos un insumo o una labor')
+      return
+    }
+
     // Validar lineas
     for (const l of lineas) {
       if (!l.insumo_nombre && !l.insumo_stock_id) {
@@ -1722,8 +1761,9 @@ function SubTabOrdenesAplicacion() {
         if (updError) throw new Error(updError.message)
         ordenId = ordenEditandoId
 
-        // Borrar rodeos y lineas anteriores (cascade en lineas no aplica a rodeos)
+        // Borrar rodeos, labores y lineas anteriores
         await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').delete().eq('orden_id', ordenId)
+        await supabase.schema('productivo').from('lineas_orden_labores').delete().eq('orden_id', ordenId)
         await supabase.schema('productivo').from('lineas_orden_aplicacion').delete().eq('orden_id', ordenId)
       } else {
         // === MODO CREACION ===
@@ -1743,6 +1783,15 @@ function SubTabOrdenesAplicacion() {
         cantidad_cabezas: stockHaciendaMap[catId] || 0
       }))
       await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').insert(rodeosData)
+
+      // Crear labores
+      if (laboresIds.length > 0) {
+        const laboresData = laboresIds.map(laborId => ({
+          orden_id: ordenId,
+          labor_id: laborId
+        }))
+        await supabase.schema('productivo').from('lineas_orden_labores').insert(laboresData)
+      }
 
       // Crear lineas
       const lineasData = lineas.map(l => {
@@ -1836,7 +1885,7 @@ function SubTabOrdenesAplicacion() {
             <TableHead>Fecha</TableHead>
             <TableHead>Rodeo(s)</TableHead>
             <TableHead className="text-right">Cabezas</TableHead>
-            <TableHead>Insumos (Dosis/Cab → Total)</TableHead>
+            <TableHead>Labores / Insumos</TableHead>
             <TableHead>Estado</TableHead>
             <TableHead className="max-w-[300px]">Observaciones</TableHead>
             <TableHead className="w-[100px]">Acciones</TableHead>
@@ -1857,6 +1906,13 @@ function SubTabOrdenesAplicacion() {
                 <TableCell className="text-right">{formatoNumero(o.cantidad_cabezas)}</TableCell>
                 <TableCell>
                   <div className="space-y-0.5">
+                    {o.labores && o.labores.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {o.labores.map((nombre, i) => (
+                          <Badge key={i} variant="secondary" className="text-xs py-0">{nombre}</Badge>
+                        ))}
+                      </div>
+                    )}
                     {o.lineas && o.lineas.length > 0 ? o.lineas.map(l => {
                       const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || o.peso_promedio_kg)
                       return (
@@ -1864,7 +1920,7 @@ function SubTabOrdenesAplicacion() {
                           <span className="font-medium">{l.insumo_nombre}</span>: {dpc.texto} → {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
                         </div>
                       )
-                    }) : <span className="text-muted-foreground text-xs">-</span>}
+                    }) : (!o.labores || o.labores.length === 0) && <span className="text-muted-foreground text-xs">-</span>}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -1964,6 +2020,25 @@ function SubTabOrdenesAplicacion() {
               {totalCabezas > 0 && (
                 <p className="text-sm font-semibold mt-1">Total: {formatoNumero(totalCabezas)} cabezas</p>
               )}
+            </div>
+          </div>
+
+          {/* Labores */}
+          <div className="space-y-2">
+            <Label className="text-base font-semibold">Labores</Label>
+            <div className="flex flex-wrap gap-2">
+              {laboresDisponibles.map(labor => {
+                const seleccionada = laboresSeleccionadas[labor.id] || false
+                return (
+                  <label key={labor.id}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-sm border transition-colors ${seleccionada ? 'bg-green-50 border-green-300 text-green-800' : 'hover:bg-gray-50 border-gray-200'}`}>
+                    <input type="checkbox" checked={seleccionada}
+                      onChange={() => setLaboresSeleccionadas(prev => ({ ...prev, [labor.id]: !prev[labor.id] }))}
+                      className="rounded" />
+                    {labor.nombre}
+                  </label>
+                )
+              })}
             </div>
           </div>
 
