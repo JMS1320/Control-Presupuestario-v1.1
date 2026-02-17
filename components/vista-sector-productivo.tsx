@@ -864,6 +864,14 @@ function TabInsumos() {
 // SUB-TAB: STOCK & MOVIMIENTOS INSUMOS
 // ============================================================
 
+interface LineaMovInsumo {
+  key: number
+  insumo_stock_id: string
+  cantidad: string
+  costo_unitario: string
+  observaciones: string
+}
+
 function SubTabStockInsumos() {
   const [stock, setStock] = useState<StockInsumo[]>([])
   const [categorias, setCategorias] = useState<CategoriaInsumo[]>([])
@@ -872,6 +880,30 @@ function SubTabStockInsumos() {
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
+  const [guardandoMov, setGuardandoMov] = useState(false)
+
+  // Inline editing movimientos
+  const hookEditor = useInlineEditor({
+    onLocalUpdate: (filaId, campo, valor, updateData) => {
+      setMovimientos(prev => prev.map(m =>
+        m.id === filaId ? { ...m, ...updateData, [campo]: valor } : m
+      ))
+    }
+  })
+
+  const iniciarEdicionMov = (mov: MovimientoInsumo, campo: string, event: React.MouseEvent) => {
+    if (!event.ctrlKey) return
+    event.preventDefault()
+    event.stopPropagation()
+    hookEditor.iniciarEdicion({
+      filaId: mov.id,
+      columna: campo,
+      valor: (mov as any)[campo] || '',
+      tableName: 'movimientos_insumos',
+      origen: 'PRODUCTIVO',
+      campoReal: campo
+    })
+  }
 
   // Form nuevo insumo
   const [nuevoInsumo, setNuevoInsumo] = useState({
@@ -881,18 +913,45 @@ function SubTabStockInsumos() {
     observaciones: ''
   })
 
-  const [nuevoMov, setNuevoMov] = useState({
+  // Form movimiento multi-linea
+  const [movCabecera, setMovCabecera] = useState({
     fecha: new Date().toISOString().split('T')[0],
-    insumo_stock_id: '',
     tipo: 'compra',
-    cantidad: '',
-    costo_unitario: '',
-    monto_total: '',
-    destino_campo: '',
     proveedor: '',
     cuit: '',
     observaciones: ''
   })
+  const [movLineas, setMovLineas] = useState<LineaMovInsumo[]>([])
+
+  const agregarLineaMov = () => {
+    setMovLineas(prev => [...prev, {
+      key: Date.now(),
+      insumo_stock_id: '',
+      cantidad: '',
+      costo_unitario: '',
+      observaciones: ''
+    }])
+  }
+
+  const actualizarLineaMov = (key: number, campo: string, valor: any) => {
+    setMovLineas(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
+  }
+
+  const eliminarLineaMov = (key: number) => {
+    setMovLineas(prev => prev.filter(l => l.key !== key))
+  }
+
+  const abrirModalMov = (tipo: string) => {
+    setMovCabecera(p => ({ ...p, tipo, fecha: new Date().toISOString().split('T')[0], proveedor: '', cuit: '', observaciones: '' }))
+    setMovLineas([])
+    agregarLineaMov()
+    setMostrarModalMov(true)
+  }
+
+  const cerrarModalMov = () => {
+    setMostrarModalMov(false)
+    setMovLineas([])
+  }
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -900,7 +959,7 @@ function SubTabStockInsumos() {
       const [catRes, stockRes, movRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_insumo').select('*').eq('activo', true).order('nombre'),
         supabase.schema('productivo').from('stock_insumos').select('*, categorias_insumo(nombre, unidad_medida)').order('producto'),
-        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre))').order('fecha', { ascending: false }).limit(50)
+        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre))').order('fecha', { ascending: false }).limit(100)
       ])
       if (catRes.data) setCategorias(catRes.data)
       if (stockRes.data) setStock(stockRes.data)
@@ -915,40 +974,51 @@ function SubTabStockInsumos() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
-  const guardarMovimiento = async () => {
-    if (!nuevoMov.cantidad) {
-      toast.error('Cantidad es obligatoria')
+  const guardarMovimientos = async () => {
+    if (movLineas.length === 0) {
+      toast.error('Agregue al menos un insumo')
       return
     }
-
-    const datos: any = {
-      fecha: nuevoMov.fecha,
-      tipo: nuevoMov.tipo,
-      cantidad: parseFloat(nuevoMov.cantidad),
-    }
-    if (nuevoMov.insumo_stock_id) datos.insumo_stock_id = nuevoMov.insumo_stock_id
-    if (nuevoMov.costo_unitario) datos.costo_unitario = parseFloat(nuevoMov.costo_unitario)
-    if (nuevoMov.monto_total) datos.monto_total = parseFloat(nuevoMov.monto_total)
-    if (nuevoMov.destino_campo) datos.destino_campo = nuevoMov.destino_campo
-    if (nuevoMov.proveedor) datos.proveedor = nuevoMov.proveedor
-    if (nuevoMov.cuit) datos.cuit = nuevoMov.cuit
-    if (nuevoMov.observaciones) datos.observaciones = nuevoMov.observaciones
-
-    const { error } = await supabase.schema('productivo').from('movimientos_insumos').insert(datos)
-    if (error) {
-      console.error('Error guardando movimiento insumo:', error)
-      toast.error('Error al guardar movimiento')
-      return
+    for (const l of movLineas) {
+      if (!l.insumo_stock_id) {
+        toast.error('Seleccione un insumo en cada linea')
+        return
+      }
+      if (!l.cantidad || parseFloat(l.cantidad) <= 0) {
+        toast.error('Cada linea debe tener cantidad')
+        return
+      }
     }
 
-    toast.success('Movimiento de insumo registrado')
-    setMostrarModalMov(false)
-    setNuevoMov({
-      fecha: new Date().toISOString().split('T')[0],
-      insumo_stock_id: '', tipo: 'compra', cantidad: '', costo_unitario: '',
-      monto_total: '', destino_campo: '', proveedor: '', cuit: '', observaciones: ''
-    })
-    cargarDatos()
+    setGuardandoMov(true)
+    try {
+      const inserts = movLineas.map(l => {
+        const datos: any = {
+          fecha: movCabecera.fecha,
+          tipo: movCabecera.tipo,
+          insumo_stock_id: l.insumo_stock_id,
+          cantidad: parseFloat(l.cantidad),
+        }
+        if (l.costo_unitario) datos.costo_unitario = parseFloat(l.costo_unitario)
+        if (movCabecera.proveedor) datos.proveedor = movCabecera.proveedor
+        if (movCabecera.cuit) datos.cuit = movCabecera.cuit
+        const obs = [movCabecera.observaciones, l.observaciones].filter(Boolean).join(' - ')
+        if (obs) datos.observaciones = obs
+        return datos
+      })
+
+      const { error } = await supabase.schema('productivo').from('movimientos_insumos').insert(inserts)
+      if (error) throw new Error(error.message)
+
+      toast.success(`${inserts.length} movimiento(s) registrado(s)`)
+      cerrarModalMov()
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error guardando movimientos:', err)
+      toast.error(err.message || 'Error al guardar movimientos')
+    } finally {
+      setGuardandoMov(false)
+    }
   }
 
   const guardarInsumo = async () => {
@@ -998,9 +1068,13 @@ function SubTabStockInsumos() {
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
           </Button>
-          <Button size="sm" onClick={() => setMostrarModalMov(true)}>
+          <Button size="sm" onClick={() => abrirModalMov('compra')}>
             <Plus className="mr-1 h-4 w-4" />
-            Nuevo Movimiento
+            Compra
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => abrirModalMov('ajuste')}>
+            <Plus className="mr-1 h-4 w-4" />
+            Ajuste
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setMostrarModalInsumo(true)}>
             <Plus className="mr-1 h-4 w-4" />
@@ -1065,95 +1139,163 @@ function SubTabStockInsumos() {
                 </TableCell>
               </TableRow>
             ) : (
-              movimientos.map(m => (
+              movimientos.map(m => {
+                const esEditable = m.tipo === 'compra' || m.tipo === 'ajuste'
+                const enEdicion = (campo: string) =>
+                  hookEditor.celdaEnEdicion?.filaId === m.id && hookEditor.celdaEnEdicion?.columna === campo
+
+                const celdaEditable = (campo: string, contenido: React.ReactNode, tipo: 'text' | 'date' | 'number' = 'text') => {
+                  if (!esEditable) return contenido
+                  if (enEdicion(campo)) {
+                    return (
+                      <Input
+                        ref={hookEditor.inputRef}
+                        type={tipo === 'date' ? 'date' : tipo === 'number' ? 'number' : 'text'}
+                        step={tipo === 'number' ? '0.01' : undefined}
+                        value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                        onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
+                        onKeyDown={hookEditor.manejarKeyDown}
+                        className="h-7 text-xs p-1 w-full"
+                        disabled={hookEditor.guardandoCambio}
+                      />
+                    )
+                  }
+                  return (
+                    <div
+                      className="cursor-pointer hover:bg-blue-50 p-1 rounded group"
+                      title="Ctrl+Click para editar"
+                      onClick={(e) => iniciarEdicionMov(m, campo, e)}
+                    >
+                      <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 float-right" />
+                      {contenido}
+                    </div>
+                  )
+                }
+
+                return (
                 <TableRow key={m.id}>
-                  <TableCell>{formatoFecha(m.fecha)}</TableCell>
+                  <TableCell>{celdaEditable('fecha', formatoFecha(m.fecha), 'date')}</TableCell>
                   <TableCell>
                     <Badge variant={m.tipo === 'compra' ? 'default' : m.tipo === 'uso' ? 'secondary' : 'outline'}>
                       {m.tipo}
                     </Badge>
                   </TableCell>
                   <TableCell>{m.stock_insumos?.producto || '-'}</TableCell>
-                  <TableCell className="text-right">{formatoNumero(m.cantidad)}</TableCell>
-                  <TableCell className="text-right">{formatoMoneda(m.costo_unitario)}</TableCell>
-                  <TableCell className="text-right">{formatoMoneda(m.monto_total)}</TableCell>
-                  <TableCell>{m.proveedor || '-'}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{m.observaciones || '-'}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('cantidad', formatoNumero(m.cantidad), 'number')}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('costo_unitario', formatoMoneda(m.costo_unitario), 'number')}</TableCell>
+                  <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
+                  <TableCell>{celdaEditable('proveedor', m.proveedor || '-')}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
                 </TableRow>
-              ))
+                )
+              })
             )}
           </TableBody>
         </Table>
       )}
 
-      {/* Modal Nuevo Movimiento Insumo */}
-      <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>
-        <DialogContent className="max-w-lg">
+      {/* Modal Movimiento Insumos Multi-linea */}
+      <Dialog open={mostrarModalMov} onOpenChange={(open) => { if (!open) cerrarModalMov() }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nuevo Movimiento Insumo</DialogTitle>
-            <DialogDescription>Registrar compra, uso o ajuste de insumos.</DialogDescription>
+            <DialogTitle>{movCabecera.tipo === 'compra' ? 'Nueva Compra de Insumos' : 'Ajuste de Insumos'}</DialogTitle>
+            <DialogDescription>
+              {movCabecera.tipo === 'compra'
+                ? 'Registrar compra de uno o varios insumos.'
+                : 'Registrar ajuste de stock de uno o varios insumos.'}
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Fecha *</Label>
-                <Input type="date" value={nuevoMov.fecha} onChange={e => setNuevoMov(p => ({ ...p, fecha: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Tipo *</Label>
-                <Select value={nuevoMov.tipo} onValueChange={v => setNuevoMov(p => ({ ...p, tipo: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent position="popper" className="z-[9999]">
-                    <SelectItem value="compra">Compra</SelectItem>
-                    <SelectItem value="uso">Uso</SelectItem>
-                    <SelectItem value="ajuste">Ajuste</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
+          {/* Cabecera */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <Label>Fecha *</Label>
+              <Input type="date" value={movCabecera.fecha}
+                onChange={e => setMovCabecera(p => ({ ...p, fecha: e.target.value }))} />
             </div>
             <div>
-              <Label>Producto (stock existente)</Label>
-              <Select value={nuevoMov.insumo_stock_id} onValueChange={v => setNuevoMov(p => ({ ...p, insumo_stock_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar (opcional)" /></SelectTrigger>
-                <SelectContent position="popper" className="z-[9999]">
-                  {stock.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.producto} ({s.categorias_insumo?.nombre})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Cantidad *</Label>
-                <Input type="number" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Costo Unitario</Label>
-                <Input type="number" value={nuevoMov.costo_unitario} onChange={e => setNuevoMov(p => ({ ...p, costo_unitario: e.target.value }))} />
-              </div>
+              <Label>Proveedor</Label>
+              <Input value={movCabecera.proveedor} placeholder="Nombre proveedor"
+                onChange={e => setMovCabecera(p => ({ ...p, proveedor: e.target.value }))} />
             </div>
             <div>
-              <Label>Monto Total</Label>
-              <Input type="number" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Destino/Campo</Label>
-                <Input value={nuevoMov.destino_campo} onChange={e => setNuevoMov(p => ({ ...p, destino_campo: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Proveedor</Label>
-                <Input value={nuevoMov.proveedor} onChange={e => setNuevoMov(p => ({ ...p, proveedor: e.target.value }))} />
-              </div>
+              <Label>CUIT</Label>
+              <Input value={movCabecera.cuit} placeholder="Ej: 30123456789"
+                onChange={e => setMovCabecera(p => ({ ...p, cuit: e.target.value }))} />
             </div>
             <div>
               <Label>Observaciones</Label>
-              <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
+              <Input value={movCabecera.observaciones} placeholder="Obs. general"
+                onChange={e => setMovCabecera(p => ({ ...p, observaciones: e.target.value }))} />
             </div>
           </div>
+
+          {/* Tabla de lineas */}
+          <div className="border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[200px]">Insumo *</TableHead>
+                  <TableHead className="w-[100px] text-right">Cantidad *</TableHead>
+                  <TableHead className="w-[120px] text-right">Costo Unit.</TableHead>
+                  <TableHead className="w-[180px]">Observaciones</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movLineas.map((linea, idx) => (
+                  <TableRow key={linea.key}>
+                    <TableCell>
+                      <Select value={linea.insumo_stock_id} onValueChange={v => actualizarLineaMov(linea.key, 'insumo_stock_id', v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                        <SelectContent position="popper" className="z-[9999]">
+                          {stock.map(s => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.producto} ({s.unidad_medida || 'ml'})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                        value={linea.cantidad} placeholder="0"
+                        onChange={e => actualizarLineaMov(linea.key, 'cantidad', e.target.value)} />
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                        value={linea.costo_unitario} placeholder="$0"
+                        onChange={e => actualizarLineaMov(linea.key, 'costo_unitario', e.target.value)} />
+                    </TableCell>
+                    <TableCell>
+                      <Input className="h-8 text-xs" value={linea.observaciones} placeholder="Obs. línea"
+                        onChange={e => actualizarLineaMov(linea.key, 'observaciones', e.target.value)} />
+                    </TableCell>
+                    <TableCell>
+                      {movLineas.length > 1 && (
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          onClick={() => eliminarLineaMov(linea.key)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <Button variant="outline" size="sm" onClick={agregarLineaMov}>
+            <Plus className="mr-1 h-4 w-4" />
+            Agregar Línea
+          </Button>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMostrarModalMov(false)}>Cancelar</Button>
-            <Button onClick={guardarMovimiento}>Guardar Movimiento</Button>
+            <Button variant="outline" onClick={cerrarModalMov}>Cancelar</Button>
+            <Button onClick={guardarMovimientos} disabled={guardandoMov}>
+              {guardandoMov && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar {movLineas.length > 1 ? `${movLineas.length} Movimientos` : 'Movimiento'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
