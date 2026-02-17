@@ -1835,11 +1835,6 @@ function SubTabOrdenesAplicacion() {
       toast.error('Seleccione al menos un rodeo')
       return
     }
-    if (lineas.length === 0) {
-      toast.error('Agregue al menos un insumo')
-      return
-    }
-
     // Validar que haya al menos insumos o labores
     const laboresIds = Object.entries(laboresSeleccionadas).filter(([_, sel]) => sel).map(([id]) => parseInt(id))
     if (lineas.length === 0 && laboresIds.length === 0) {
