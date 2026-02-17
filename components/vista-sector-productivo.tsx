@@ -1010,6 +1010,22 @@ function SubTabStockInsumos() {
       const { error } = await supabase.schema('productivo').from('movimientos_insumos').insert(inserts)
       if (error) throw new Error(error.message)
 
+      // Actualizar stock: compra/ajuste suman
+      const stockUpdates: Record<string, number> = {}
+      for (const l of movLineas) {
+        const cant = parseFloat(l.cantidad)
+        stockUpdates[l.insumo_stock_id] = (stockUpdates[l.insumo_stock_id] || 0) + cant
+      }
+      for (const [insumoId, delta] of Object.entries(stockUpdates)) {
+        const insumo = stock.find(s => s.id === insumoId)
+        if (insumo) {
+          const nuevaCantidad = insumo.cantidad + delta
+          await supabase.schema('productivo').from('stock_insumos')
+            .update({ cantidad: nuevaCantidad })
+            .eq('id', insumoId)
+        }
+      }
+
       toast.success(`${inserts.length} movimiento(s) registrado(s)`)
       cerrarModalMov()
       cargarDatos()
@@ -1535,6 +1551,27 @@ function SubTabOrdenesAplicacion() {
       await supabase.schema('productivo').from('ordenes_aplicacion')
         .update({ estado: 'ejecutada' })
         .eq('id', ordenConfirmando.id)
+
+      // Descontar stock por uso
+      if (ordenConfirmando.lineas) {
+        const descuentos: Record<string, number> = {}
+        for (const l of ordenConfirmando.lineas) {
+          if (l.insumo_stock_id) {
+            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + l.cantidad_total_ml
+          }
+        }
+        // Leer stock actual y restar
+        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
+          .select('id, cantidad').in('id', Object.keys(descuentos))
+        if (stockActual) {
+          for (const s of stockActual) {
+            const nuevaCantidad = s.cantidad - (descuentos[s.id] || 0)
+            await supabase.schema('productivo').from('stock_insumos')
+              .update({ cantidad: nuevaCantidad })
+              .eq('id', s.id)
+          }
+        }
+      }
 
       toast.success('Orden confirmada como ejecutada')
       setMostrarModalConfirmar(false)
