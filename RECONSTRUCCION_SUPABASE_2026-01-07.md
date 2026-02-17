@@ -8130,8 +8130,28 @@ IS 'Cantidad de cabezas específica para esta línea. Si NULL usa el total de la
 - Orden no se guardaba con solo labores → removida validación vieja + filtro `lineasValidas`
 - Línea vacía por defecto bloqueaba guardado → `lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)`
 
+### 🐛 **Fix: Crear insumo no funcionaba** (commit `8aadf19`)
+- **Síntoma**: Botón "Crear Insumo" no respondía, sin error visible
+- **Root cause**: `categoria_id` es UUID en BD (`productivo.stock_insumos`) pero el código hacía `parseInt(nuevoInsumo.categoria_id)` que convertía el UUID a `NaN`
+- **Ejemplo**: `parseInt("6c362182-12a8-43dd-84bc-f7d95b4c3d27")` → `NaN`
+- **Fix**: Removido `parseInt()`, se pasa UUID directamente
+- **También**: Corregida interface `StockInsumo.categoria_id` de `number` a `string`
+
+### 📝 **Pendiente próxima sesión: Marca/hierro en PNG**
+- **Situación**: La marca NZ dibujada con código Canvas no coincide exactamente con la real
+- **Decisión**: En vez de corregir el dibujo por código, usar imagen PNG con fondo transparente
+- **Acción**: Usuario proporcionará imagen limpia de la marca → cargar con `drawImage()` en canvas
+- **Impacto**: Reemplazar función `dibujarMarcaNZ()` por carga de imagen
+
+### 📊 **Commits completos sesión:**
+```
+5c31386 - Feature: Cabezas por linea en ordenes de aplicacion
+952a9bc - Feature: Nombre archivo PNG descriptivo + gestion labores desde app
+8aadf19 - Fix: Crear insumo fallaba por parseInt en categoria_id UUID
+```
+
 ### 📍 **Estado al cierre:**
-- **Branch**: `main` (mergeado tras implementación completa)
+- **Branch**: `main` (mergeado tras cada fix/feature)
 - **Funcionalidad**: Sistema ordenes de aplicación veterinaria 100% operativo
 - **Archivo principal**: `components/vista-sector-productivo.tsx`
 
