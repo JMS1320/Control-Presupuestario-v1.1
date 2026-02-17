@@ -507,9 +507,19 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   ctx.fillStyle = colPrimario
   ctx.fillRect(0, canvasH - 4, canvasW, 4)
 
+  // Nombre archivo: fecha + labores + "Sanidad" si tiene insumos
+  const partes: string[] = [orden.fecha]
+  if (laboresOrden.length > 0) {
+    partes.push(laboresOrden.join('_').replace(/\s+/g, ''))
+  }
+  if (lineas.length > 0) {
+    partes.push('Sanidad')
+  }
+  const nombreArchivo = partes.join('_') + '.png'
+
   // Descargar
   const link = document.createElement('a')
-  link.download = `Orden_Aplicacion_${orden.fecha}.png`
+  link.download = nombreArchivo
   link.href = canvas.toDataURL('image/png')
   link.click()
 }
@@ -1578,6 +1588,8 @@ function SubTabOrdenesAplicacion() {
   // Labores
   const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string }[]>([])
   const [laboresSeleccionadas, setLaboresSeleccionadas] = useState<Record<number, boolean>>({})
+  const [nuevaLabor, setNuevaLabor] = useState('')
+  const [mostrarInputLabor, setMostrarInputLabor] = useState(false)
 
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
@@ -1600,6 +1612,45 @@ function SubTabOrdenesAplicacion() {
 
   const eliminarLinea = (key: number) => {
     setLineas(prev => prev.filter(l => l.key !== key))
+  }
+
+  const agregarLabor = async () => {
+    const nombre = nuevaLabor.trim()
+    if (!nombre) return
+    if (laboresDisponibles.some(l => l.nombre.toLowerCase() === nombre.toLowerCase())) {
+      toast.error('Esa labor ya existe')
+      return
+    }
+    const maxOrden = laboresDisponibles.length > 0 ? Math.max(...laboresDisponibles.map((_, i) => i + 1)) : 0
+    const { data, error } = await supabase.schema('productivo').from('labores')
+      .insert({ nombre, orden_display: maxOrden + 1 })
+      .select('id, nombre')
+      .single()
+    if (error) {
+      toast.error('Error al crear labor')
+      return
+    }
+    setLaboresDisponibles(prev => [...prev, data])
+    setNuevaLabor('')
+    setMostrarInputLabor(false)
+    toast.success(`Labor "${nombre}" creada`)
+  }
+
+  const eliminarLabor = async (laborId: number) => {
+    const { error } = await supabase.schema('productivo').from('labores')
+      .update({ activo: false })
+      .eq('id', laborId)
+    if (error) {
+      toast.error('Error al eliminar labor')
+      return
+    }
+    setLaboresDisponibles(prev => prev.filter(l => l.id !== laborId))
+    setLaboresSeleccionadas(prev => {
+      const copy = { ...prev }
+      delete copy[laborId]
+      return copy
+    })
+    toast.success('Labor eliminada')
   }
 
   const toggleRodeo = (catId: string) => {
@@ -2163,17 +2214,38 @@ function SubTabOrdenesAplicacion() {
 
           {/* Labores */}
           <div className="space-y-2">
-            <Label className="text-base font-semibold">Labores</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">Labores</Label>
+              <Button variant="ghost" size="sm" className="h-7 text-xs"
+                onClick={() => setMostrarInputLabor(!mostrarInputLabor)}>
+                <Plus className="mr-1 h-3 w-3" />
+                {mostrarInputLabor ? 'Cancelar' : 'Nueva Labor'}
+              </Button>
+            </div>
+            {mostrarInputLabor && (
+              <div className="flex gap-2 items-center">
+                <Input className="h-8 text-sm" placeholder="Nombre de la labor"
+                  value={nuevaLabor}
+                  onChange={e => setNuevaLabor(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarLabor() } }} />
+                <Button size="sm" className="h-8" onClick={agregarLabor} disabled={!nuevaLabor.trim()}>Crear</Button>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {laboresDisponibles.map(labor => {
                 const seleccionada = laboresSeleccionadas[labor.id] || false
                 return (
                   <label key={labor.id}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-sm border transition-colors ${seleccionada ? 'bg-green-50 border-green-300 text-green-800' : 'hover:bg-gray-50 border-gray-200'}`}>
+                    className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-sm border transition-colors ${seleccionada ? 'bg-green-50 border-green-300 text-green-800' : 'hover:bg-gray-50 border-gray-200'}`}>
                     <input type="checkbox" checked={seleccionada}
                       onChange={() => setLaboresSeleccionadas(prev => ({ ...prev, [labor.id]: !prev[labor.id] }))}
                       className="rounded" />
                     {labor.nombre}
+                    <button type="button" className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
+                      title="Eliminar labor"
+                      onClick={e => { e.preventDefault(); e.stopPropagation(); eliminarLabor(labor.id) }}>
+                      <Trash2 className="h-3 w-3" />
+                    </button>
                   </label>
                 )
               })}
