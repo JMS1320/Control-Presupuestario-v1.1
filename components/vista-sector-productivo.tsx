@@ -65,7 +65,7 @@ interface CategoriaInsumo {
 
 interface StockInsumo {
   id: string
-  categoria_id: number
+  categoria_id: string
   producto: string
   cantidad: number
   unidad_medida: string
@@ -1234,7 +1234,7 @@ function SubTabStockInsumos() {
 
     const { error } = await supabase.schema('productivo').from('stock_insumos').insert({
       producto: nuevoInsumo.producto.trim(),
-      categoria_id: parseInt(nuevoInsumo.categoria_id),
+      categoria_id: nuevoInsumo.categoria_id,
       unidad_medida: nuevoInsumo.unidad_medida,
       cantidad: 0,
       observaciones: nuevoInsumo.observaciones || null
