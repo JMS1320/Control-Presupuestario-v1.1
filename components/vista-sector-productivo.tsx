@@ -1019,7 +1019,7 @@ function SubTabStockInsumos() {
       for (const [insumoId, delta] of Object.entries(stockUpdates)) {
         const insumo = stock.find(s => s.id === insumoId)
         if (insumo) {
-          const nuevaCantidad = insumo.cantidad + delta
+          const nuevaCantidad = Number(insumo.cantidad) + delta
           await supabase.schema('productivo').from('stock_insumos')
             .update({ cantidad: nuevaCantidad })
             .eq('id', insumoId)
