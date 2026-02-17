@@ -1557,6 +1557,64 @@ function SubTabOrdenesAplicacion() {
     setMostrarModalConfirmar(true)
   }
 
+  // Eliminar orden (soft delete)
+  const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
+  const [ordenEliminando, setOrdenEliminando] = useState<OrdenAplicacion | null>(null)
+  const [motivoEliminacion, setMotivoEliminacion] = useState('')
+
+  const abrirEliminacion = (orden: OrdenAplicacion) => {
+    setOrdenEliminando(orden)
+    setMotivoEliminacion('')
+    setMostrarModalEliminar(true)
+  }
+
+  const eliminarOrden = async () => {
+    if (!ordenEliminando) return
+    if (!motivoEliminacion.trim()) {
+      toast.error('Debe ingresar un motivo de eliminación')
+      return
+    }
+    setGuardando(true)
+    try {
+      await supabase.schema('productivo').from('ordenes_aplicacion')
+        .update({
+          estado: 'eliminada',
+          motivo_eliminacion: motivoEliminacion.trim(),
+          observaciones: [ordenEliminando.observaciones, `[ELIMINADA] ${motivoEliminacion.trim()}`].filter(Boolean).join('\n')
+        })
+        .eq('id', ordenEliminando.id)
+
+      // Si estaba ejecutada, recalcular stock (los movimientos de uso siguen existiendo pero la orden está eliminada)
+      if (ordenEliminando.estado === 'ejecutada' && ordenEliminando.lineas) {
+        const insumoIds = new Set(ordenEliminando.lineas.map(l => l.insumo_stock_id).filter(Boolean))
+        for (const id of insumoIds) {
+          if (id) {
+            const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
+              .select('id, cantidad').eq('id', id).single()
+            if (stockActual) {
+              const devolver = ordenEliminando.lineas
+                .filter(l => l.insumo_stock_id === id)
+                .reduce((sum, l) => sum + l.cantidad_total_ml, 0)
+              await supabase.schema('productivo').from('stock_insumos')
+                .update({ cantidad: Number(stockActual.cantidad) + devolver })
+                .eq('id', id)
+            }
+          }
+        }
+      }
+
+      toast.success('Orden marcada como eliminada')
+      setMostrarModalEliminar(false)
+      setOrdenEliminando(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error eliminando orden:', err)
+      toast.error(err.message || 'Error al eliminar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
   // Ejecutar/confirmar orden
   const ejecutarOrden = async () => {
     if (!ordenConfirmando) return
@@ -1810,7 +1868,7 @@ function SubTabOrdenesAplicacion() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={o.estado === 'ejecutada' ? 'default' : 'outline'}>
+                  <Badge variant={o.estado === 'ejecutada' ? 'default' : o.estado === 'eliminada' ? 'destructive' : 'outline'}>
                     {o.estado}
                   </Badge>
                 </TableCell>
@@ -1833,11 +1891,20 @@ function SubTabOrdenesAplicacion() {
                         </Button>
                       </>
                     )}
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                      title="Exportar imagen para WhatsApp"
-                      onClick={() => exportarOrdenImagen(o)}>
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
+                    {o.estado !== 'eliminada' && (
+                      <>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          title="Exportar imagen para WhatsApp"
+                          onClick={() => exportarOrdenImagen(o)}>
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                          title="Eliminar orden"
+                          onClick={() => abrirEliminacion(o)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -2090,6 +2157,40 @@ function SubTabOrdenesAplicacion() {
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Confirmar Ejecutada
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Eliminar Orden */}
+      <Dialog open={mostrarModalEliminar} onOpenChange={(open) => { if (!open) { setMostrarModalEliminar(false); setOrdenEliminando(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar Orden de Aplicación</DialogTitle>
+            <DialogDescription>
+              {ordenEliminando && (
+                <>Orden del {formatoFecha(ordenEliminando.fecha)} - {getNombresRodeos(ordenEliminando)} ({formatoNumero(ordenEliminando.cantidad_cabezas)} cab.)
+                {ordenEliminando.estado === 'ejecutada' && (
+                  <span className="block mt-1 text-orange-600 font-medium">Esta orden ya fue ejecutada. Al eliminarla se devolverá el stock descontado.</span>
+                )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Motivo de eliminación *</Label>
+            <Textarea
+              value={motivoEliminacion}
+              onChange={e => setMotivoEliminacion(e.target.value)}
+              placeholder="Ingrese el motivo por el cual se elimina esta orden..."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setMostrarModalEliminar(false); setOrdenEliminando(null) }}>Cancelar</Button>
+            <Button variant="destructive" onClick={eliminarOrden} disabled={guardando}>
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Eliminar Orden
             </Button>
           </DialogFooter>
         </DialogContent>
