@@ -128,6 +128,7 @@ interface LineaOrdenAplicacion {
   observaciones: string | null
   recuento: boolean
   cantidad_recuento: number | null
+  cabezas_linea: number | null
   created_at: string
 }
 
@@ -138,6 +139,7 @@ interface LineaFormulario {
   tipo_dosis: 'por_cabeza' | 'por_kilo' | 'por_dosis'
   dosis_ml: string
   dosis_cada_kg: string
+  cabezas: string  // por defecto total, editable por línea
 }
 
 interface LoteAgricola {
@@ -453,8 +455,9 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
     ctx.fillStyle = '#f5f0ea'
     ctx.font = 'bold 11px Georgia'
     ctx.fillText('INSUMO', padding + 10, tableY + 21)
-    ctx.fillText('DOSIS/CAB', 330, tableY + 21)
-    ctx.fillText('TOTAL NECESARIO', 490, tableY + 21)
+    ctx.fillText('CABEZAS', 280, tableY + 21)
+    ctx.fillText('DOSIS/CAB', 370, tableY + 21)
+    ctx.fillText('TOTAL NECESARIO', 510, tableY + 21)
 
     // Filas
     lineas.forEach((l, i) => {
@@ -467,9 +470,13 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
       ctx.fillText(l.insumo_nombre, padding + 10, y + 19)
       ctx.font = '13px Georgia'
       ctx.fillStyle = colSecundario
+      const cabezasTexto = l.cabezas_linea && l.cabezas_linea !== orden.cantidad_cabezas
+        ? String(l.cabezas_linea)
+        : String(orden.cantidad_cabezas)
+      ctx.fillText(cabezasTexto, 280, y + 19)
       const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || orden.peso_promedio_kg)
-      ctx.fillText(dpc.texto, 330, y + 19)
-      ctx.fillText(formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml'), 490, y + 19)
+      ctx.fillText(dpc.texto, 370, y + 19)
+      ctx.fillText(formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml'), 510, y + 19)
     })
 
     // Borde tabla
@@ -1582,7 +1589,8 @@ function SubTabOrdenesAplicacion() {
       insumo_stock_id: '',
       tipo_dosis: 'por_cabeza',
       dosis_ml: '',
-      dosis_cada_kg: ''
+      dosis_cada_kg: '',
+      cabezas: ''
     }])
   }
 
@@ -1690,7 +1698,8 @@ function SubTabOrdenesAplicacion() {
       insumo_stock_id: l.insumo_stock_id || '',
       tipo_dosis: l.tipo_dosis as 'por_cabeza' | 'por_kilo' | 'por_dosis',
       dosis_ml: String(l.dosis_ml),
-      dosis_cada_kg: l.dosis_cada_kg ? String(l.dosis_cada_kg) : ''
+      dosis_cada_kg: l.dosis_cada_kg ? String(l.dosis_cada_kg) : '',
+      cabezas: l.cabezas_linea ? String(l.cabezas_linea) : ''
     })))
     setMostrarModal(true)
   }
@@ -1922,7 +1931,8 @@ function SubTabOrdenesAplicacion() {
         const dosis = parseFloat(l.dosis_ml)
         const dosisCadaKg = l.tipo_dosis === 'por_kilo' ? parseFloat(l.dosis_cada_kg) : null
         const pesoPromedio = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : null
-        const { total } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoPromedio)
+        const cabezasLinea = l.cabezas ? parseInt(l.cabezas) : totalCabezas
+        const { total } = calcularTotal(l.tipo_dosis, dosis, cabezasLinea, dosisCadaKg, pesoPromedio)
         const insumoStock = l.insumo_stock_id ? insumosVet.find(i => i.id === l.insumo_stock_id) : null
         const nombre = insumoStock ? insumoStock.producto : l.insumo_nombre
 
@@ -1935,6 +1945,7 @@ function SubTabOrdenesAplicacion() {
           dosis_cada_kg: dosisCadaKg,
           peso_promedio_kg: pesoPromedio,
           cantidad_total_ml: total,
+          cabezas_linea: l.cabezas ? parseInt(l.cabezas) : null,
           unidad_medida: insumoStock?.unidad_medida || (l.tipo_dosis === 'por_dosis' ? 'dosis' : 'ml')
         }
       })
@@ -2041,9 +2052,10 @@ function SubTabOrdenesAplicacion() {
                     )}
                     {o.lineas && o.lineas.length > 0 ? o.lineas.map(l => {
                       const dpc = dosisPorCabeza(l.tipo_dosis, l.dosis_ml, l.dosis_cada_kg, l.peso_promedio_kg || o.peso_promedio_kg)
+                      const cabInfo = l.cabezas_linea && l.cabezas_linea !== o.cantidad_cabezas ? ` (${l.cabezas_linea} cab)` : ''
                       return (
                         <div key={l.id} className="text-xs">
-                          <span className="font-medium">{l.insumo_nombre}</span>: {dpc.texto} → {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
+                          <span className="font-medium">{l.insumo_nombre}</span>{cabInfo}: {dpc.texto} → {formatoCantidad(l.cantidad_total_ml, l.unidad_medida || 'ml')}
                         </div>
                       )
                     }) : (!o.labores || o.labores.length === 0) && <span className="text-muted-foreground text-xs">-</span>}
@@ -2186,12 +2198,13 @@ function SubTabOrdenesAplicacion() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[200px]">Insumo</TableHead>
-                    <TableHead className="w-[120px]">Tipo Dosis</TableHead>
-                    <TableHead className="w-[80px] text-right">Dosis</TableHead>
-                    <TableHead className="w-[90px] text-right">Cada X kg</TableHead>
-                    <TableHead className="w-[90px] text-right">Dosis/Cab</TableHead>
-                    <TableHead className="w-[100px] text-right">Total</TableHead>
+                    <TableHead className="w-[180px]">Insumo</TableHead>
+                    <TableHead className="w-[110px]">Tipo Dosis</TableHead>
+                    <TableHead className="w-[70px] text-right">Dosis</TableHead>
+                    <TableHead className="w-[80px] text-right">Cada X kg</TableHead>
+                    <TableHead className="w-[70px] text-right">Cabezas</TableHead>
+                    <TableHead className="w-[80px] text-right">Dosis/Cab</TableHead>
+                    <TableHead className="w-[90px] text-right">Total</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2201,7 +2214,8 @@ function SubTabOrdenesAplicacion() {
                     const dosisCadaKg = parseFloat(l.dosis_cada_kg) || 0
                     const pesoHeaderKg = parseFloat(nuevaOrden.peso_promedio_kg) || 0
                     const pesoParaCalc = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : 0
-                    const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, totalCabezas, dosisCadaKg, pesoParaCalc)
+                    const cabezasLinea = l.cabezas ? parseInt(l.cabezas) : totalCabezas
+                    const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, cabezasLinea, dosisCadaKg, pesoParaCalc)
                     const dpc = dosisPorCabeza(l.tipo_dosis, dosis, dosisCadaKg, pesoParaCalc)
 
                     return (
@@ -2251,6 +2265,12 @@ function SubTabOrdenesAplicacion() {
                           ) : (
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" step="1" className="h-8 text-xs text-right"
+                            placeholder={String(totalCabezas)}
+                            value={l.cabezas}
+                            onChange={e => actualizarLinea(l.key, 'cabezas', e.target.value)} />
                         </TableCell>
                         <TableCell className="text-right text-sm font-medium">
                           {dpc.texto}
