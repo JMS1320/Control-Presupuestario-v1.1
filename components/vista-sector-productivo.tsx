@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info } from "lucide-react"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -724,6 +725,38 @@ function TabHacienda() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
+  const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, fecha: string, caravanas: string[] }[] | null>(null)
+  const [cargandoCUT, setCargandoCUT] = useState(false)
+
+  const cargarDetalleCUT = async () => {
+    if (detalleCUT) return // ya cargado
+    setCargandoCUT(true)
+    try {
+      // Buscar ciclos que tienen vacías registradas
+      const { data: ciclos } = await supabase.schema('productivo').from('ciclos_cria')
+        .select('id, rodeo, cabezas_vacias, fecha_tacto, anio_servicio')
+        .gt('cabezas_vacias', 0)
+        .order('fecha_tacto', { ascending: false })
+      if (ciclos) {
+        const detalles = []
+        for (const c of ciclos) {
+          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
+            .select('caravana').eq('ciclo_id', c.id)
+          detalles.push({
+            rodeo: c.rodeo,
+            vacias: c.cabezas_vacias,
+            fecha: c.fecha_tacto,
+            caravanas: desc?.map(d => d.caravana).filter(Boolean) || []
+          })
+        }
+        setDetalleCUT(detalles)
+      }
+    } catch (err) {
+      console.error('Error cargando detalle CUT:', err)
+    } finally {
+      setCargandoCUT(false)
+    }
+  }
 
   // Hook edición inline (mismo patrón que Cash Flow)
   const hookEditor = useInlineEditor({
@@ -891,12 +924,65 @@ function TabHacienda() {
               </TableRow>
             ) : (
               <>
-                {stock.map((s: any) => (
-                  <TableRow key={s.categoria_id}>
-                    <TableCell className="font-medium">{s.nombre}</TableCell>
-                    <TableCell className="text-right">{formatoNumero(s.cantidad)}</TableCell>
-                  </TableRow>
-                ))}
+                {stock.map((s: any) => {
+                  const esCUT = s.nombre.toLowerCase().includes('cut') || s.nombre.toLowerCase().includes('descarte')
+                  return (
+                    <TableRow key={s.categoria_id}>
+                      <TableCell className="font-medium">
+                        {esCUT ? (
+                          <Popover onOpenChange={(open) => { if (open) cargarDetalleCUT() }}>
+                            <PopoverTrigger asChild>
+                              <button className="flex items-center gap-1.5 hover:text-blue-600 cursor-pointer underline decoration-dotted underline-offset-4">
+                                {s.nombre}
+                                <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-96" align="start">
+                              <div className="space-y-3">
+                                <h4 className="font-semibold text-sm">Composicion {s.nombre}</h4>
+                                {cargandoCUT ? (
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando...
+                                  </div>
+                                ) : detalleCUT && detalleCUT.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {detalleCUT.map((d, i) => (
+                                      <div key={i} className="border rounded p-2 text-sm">
+                                        <div className="flex justify-between items-center">
+                                          <span className="font-medium">{d.vacias} {d.rodeo}{d.vacias > 1 ? 's' : ''}</span>
+                                          <Badge variant="outline" className="text-xs">Vacias tacto {new Date(d.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</Badge>
+                                        </div>
+                                        {d.caravanas.length > 0 && (
+                                          <div className="mt-1.5 pt-1.5 border-t">
+                                            <span className="text-xs text-muted-foreground">Caravanas:</span>
+                                            <div className="flex flex-wrap gap-1 mt-1">
+                                              {d.caravanas.map((car, j) => (
+                                                <span key={j} className="text-xs bg-muted px-1.5 py-0.5 rounded">{car}</span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                    <div className="text-xs text-muted-foreground pt-1 border-t">
+                                      Total por tacto: {detalleCUT.reduce((s, d) => s + d.vacias, 0)} cab.
+                                      {s.cantidad > detalleCUT.reduce((sum: number, d: any) => sum + d.vacias, 0) &&
+                                        ` · ${s.cantidad - detalleCUT.reduce((sum: number, d: any) => sum + d.vacias, 0)} cab. de otros movimientos`
+                                      }
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">Sin detalle de vacías registrado en ciclos de cría.</p>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        ) : s.nombre}
+                      </TableCell>
+                      <TableCell className="text-right">{formatoNumero(s.cantidad)}</TableCell>
+                    </TableRow>
+                  )
+                })}
                 <TableRow className="font-bold border-t-2">
                   <TableCell>TOTAL</TableCell>
                   <TableCell className="text-right">
