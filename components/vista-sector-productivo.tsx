@@ -2113,7 +2113,7 @@ function SubTabOrdenesAplicacion() {
       }
 
       // === CICLOS DE CRIA ===
-      if (laborEspecial && !ordenEditandoId) {
+      if (laborEspecial) {
         const fecha = nuevaOrden.fecha
 
         if (laborEspecial === 'servicio') {
