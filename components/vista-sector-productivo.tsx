@@ -1599,7 +1599,7 @@ function SubTabOrdenesAplicacion() {
   const [laborEspecial, setLaborEspecial] = useState<'servicio' | 'tacto' | 'paricion' | 'destete' | null>(null)
   // Servicio
   const [añoServicio, setAñoServicio] = useState(String(new Date().getFullYear()))
-  const [cabezasServicio, setCabezasServicio] = useState('')
+  const [cabezasServicioPorRodeo, setCabezasServicioPorRodeo] = useState<Record<string, string>>({})
   // Tacto
   const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, año_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
   const [cicloSeleccionado, setCicloSeleccionado] = useState('')
@@ -1704,7 +1704,7 @@ function SubTabOrdenesAplicacion() {
 
   const limpiarDatosCiclo = () => {
     setCicloSeleccionado('')
-    setCabezasServicio('')
+    setCabezasServicioPorRodeo({})
     setCabezasPrenadas('')
     setCabezasVacias('')
     setCaravanasVacias('')
@@ -2106,12 +2106,12 @@ function SubTabOrdenesAplicacion() {
 
         if (laborEspecial === 'servicio') {
           const año = parseInt(añoServicio)
-          const cabezas = cabezasServicio ? parseInt(cabezasServicio) : totalCabezas
-          // Crear 1 ciclo por cada rodeo seleccionado
           for (const catId of rodeosIds) {
             const cat = categoriasHacienda.find(c => c.id === catId)
             const nombreRodeo = cat?.nombre || catId
-            const cabezasRodeo = rodeosIds.length === 1 ? cabezas : (stockHaciendaMap[catId] || 0)
+            const cabezasRodeo = cabezasServicioPorRodeo[catId]
+              ? parseInt(cabezasServicioPorRodeo[catId])
+              : (stockHaciendaMap[catId] || 0)
             await supabase.schema('productivo').from('ciclos_cria').upsert({
               año_servicio: año,
               rodeo: nombreRodeo,
@@ -2433,22 +2433,38 @@ function SubTabOrdenesAplicacion() {
                 Datos Ciclo de Cria - {laborEspecial === 'servicio' ? 'Servicio/Entore' : laborEspecial === 'tacto' ? 'Tacto' : laborEspecial === 'paricion' ? 'Paricion' : 'Destete'}
               </Label>
 
-              {laborEspecial === 'servicio' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-sm">Año Servicio</Label>
-                    <Input type="number" className="h-8 text-sm" value={añoServicio}
-                      onChange={e => setAñoServicio(e.target.value)} />
+              {laborEspecial === 'servicio' && (() => {
+                const rodeosIds = Object.entries(rodeosSeleccionados).filter(([_, sel]) => sel).map(([id]) => id)
+                return (
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm">Año Servicio</Label>
+                      <Input type="number" className="h-8 text-sm w-[200px]" value={añoServicio}
+                        onChange={e => setAñoServicio(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Cabezas a Servicio por Rodeo</Label>
+                      <div className="space-y-2 mt-1">
+                        {rodeosIds.map(catId => {
+                          const cat = categoriasHacienda.find(c => c.id === catId)
+                          const stockActual = stockHaciendaMap[catId] || 0
+                          return (
+                            <div key={catId} className="flex items-center gap-3">
+                              <span className="text-sm font-medium w-[160px]">{cat?.nombre || '-'}</span>
+                              <Input type="number" className="h-8 text-sm w-[120px]"
+                                value={cabezasServicioPorRodeo[catId] || ''}
+                                placeholder={String(stockActual)}
+                                onChange={e => setCabezasServicioPorRodeo(prev => ({ ...prev, [catId]: e.target.value }))} />
+                              <span className="text-xs text-muted-foreground">stock actual: {stockActual}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {rodeosIds.length === 0 && <p className="text-xs text-amber-600 mt-1">Seleccione al menos un rodeo arriba</p>}
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-sm">Cabezas a Servicio</Label>
-                    <Input type="number" className="h-8 text-sm" value={cabezasServicio}
-                      placeholder={String(totalCabezas)}
-                      onChange={e => setCabezasServicio(e.target.value)} />
-                    <p className="text-xs text-muted-foreground mt-0.5">Total rodeos: {totalCabezas}</p>
-                  </div>
-                </div>
-              )}
+                )
+              })()}
 
               {laborEspecial === 'tacto' && (
                 <div className="space-y-3">
