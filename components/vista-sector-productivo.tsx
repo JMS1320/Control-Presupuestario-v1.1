@@ -2003,10 +2003,22 @@ function SubTabOrdenesAplicacion() {
     setGuardando(true)
     try {
       const pesoHeaderKg = nuevaOrden.peso_promedio_kg ? parseFloat(nuevaOrden.peso_promedio_kg) : null
+
+      // Si es labor servicio, usar cabezas ingresadas por rodeo en vez de stock actual
+      const getCabezasRodeo = (catId: string): number => {
+        if (laborEspecial === 'servicio' && cabezasServicioPorRodeo[catId]) {
+          return parseInt(cabezasServicioPorRodeo[catId])
+        }
+        return stockHaciendaMap[catId] || 0
+      }
+      const totalCabezasOrden = laborEspecial === 'servicio'
+        ? rodeosIds.reduce((sum, catId) => sum + getCabezasRodeo(catId), 0)
+        : totalCabezas
+
       const cabeceraData = {
         fecha: nuevaOrden.fecha,
         categoria_hacienda_id: rodeosIds.length === 1 ? rodeosIds[0] : null,
-        cantidad_cabezas: totalCabezas,
+        cantidad_cabezas: totalCabezasOrden,
         peso_promedio_kg: pesoHeaderKg,
         observaciones: nuevaOrden.observaciones || null
       }
@@ -2041,7 +2053,7 @@ function SubTabOrdenesAplicacion() {
       const rodeosData = rodeosIds.map(catId => ({
         orden_id: ordenId,
         categoria_hacienda_id: catId,
-        cantidad_cabezas: stockHaciendaMap[catId] || 0
+        cantidad_cabezas: getCabezasRodeo(catId)
       }))
       await supabase.schema('productivo').from('ordenes_aplicacion_rodeos').insert(rodeosData)
 
