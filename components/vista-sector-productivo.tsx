@@ -1715,7 +1715,7 @@ function SubTabOrdenesAplicacion() {
     setCargaRetrospectiva(false)
   }
 
-  const cargarCiclosParaLabor = async (tipo: string) => {
+  const cargarCiclosParaLabor = async (tipo: string, ordenIdEdicion?: string) => {
     let query = supabase.schema('productivo').from('ciclos_cria')
       .select('id, anio_servicio, rodeo, cabezas_servicio')
 
@@ -1728,7 +1728,28 @@ function SubTabOrdenesAplicacion() {
     }
 
     const { data } = await query.order('anio_servicio', { ascending: false })
-    if (data) setCiclosAbiertos(data)
+    let ciclos = data || []
+
+    // Si estamos editando, incluir el ciclo ya vinculado a esta orden (aunque ya tenga datos)
+    if (ordenIdEdicion) {
+      const campo = tipo === 'tacto' ? 'orden_tacto_id'
+        : tipo === 'paricion' ? 'orden_paricion_id'
+        : tipo === 'destete' ? 'orden_destete_id'
+        : tipo === 'servicio' ? 'orden_servicio_id' : null
+      if (campo) {
+        const { data: vinculado } = await supabase.schema('productivo').from('ciclos_cria')
+          .select('id, anio_servicio, rodeo, cabezas_servicio')
+          .eq(campo, ordenIdEdicion)
+        if (vinculado) {
+          const idsExistentes = new Set(ciclos.map(c => c.id))
+          for (const cv of vinculado) {
+            if (!idsExistentes.has(cv.id)) ciclos.push(cv)
+          }
+        }
+      }
+    }
+
+    setCiclosAbiertos(ciclos)
   }
 
   const toggleRodeo = (catId: string) => {
@@ -1820,6 +1841,46 @@ function SubTabOrdenesAplicacion() {
       }
     }
     setLaboresSeleccionadas(labs)
+    // Restaurar labor especial si hay una labor con tipo
+    let laborEspecialDetectada: 'servicio' | 'tacto' | 'paricion' | 'destete' | null = null
+    for (const [id, sel] of Object.entries(labs)) {
+      if (sel) {
+        const labor = laboresDisponibles.find(l => l.id === parseInt(id))
+        if (labor?.tipo) {
+          laborEspecialDetectada = labor.tipo as any
+          break
+        }
+      }
+    }
+    setLaborEspecial(laborEspecialDetectada)
+    if (laborEspecialDetectada && laborEspecialDetectada !== 'servicio') {
+      // Cargar ciclos incluyendo el vinculado a esta orden
+      cargarCiclosParaLabor(laborEspecialDetectada, orden.id).then(() => {
+        // Preseleccionar el ciclo vinculado a esta orden buscándolo en BD
+        const campo = laborEspecialDetectada === 'tacto' ? 'orden_tacto_id'
+          : laborEspecialDetectada === 'paricion' ? 'orden_paricion_id'
+          : laborEspecialDetectada === 'destete' ? 'orden_destete_id' : null
+        if (campo) {
+          supabase.schema('productivo').from('ciclos_cria')
+            .select('id, cabezas_prenadas, cabezas_vacias, terneros_nacidos, terneros_destetados')
+            .eq(campo, orden.id)
+            .single()
+            .then(({ data: ciclo }) => {
+              if (ciclo) {
+                setCicloSeleccionado(ciclo.id)
+                if (laborEspecialDetectada === 'tacto') {
+                  setCabezasPrenadas(ciclo.cabezas_prenadas != null ? String(ciclo.cabezas_prenadas) : '')
+                  setCabezasVacias(ciclo.cabezas_vacias != null ? String(ciclo.cabezas_vacias) : '')
+                } else if (laborEspecialDetectada === 'paricion') {
+                  setTernerosNacidos(ciclo.terneros_nacidos != null ? String(ciclo.terneros_nacidos) : '')
+                } else if (laborEspecialDetectada === 'destete') {
+                  setTernerosDestetados(ciclo.terneros_destetados != null ? String(ciclo.terneros_destetados) : '')
+                }
+              }
+            })
+        }
+      })
+    }
     // Restaurar lineas
     setLineas((orden.lineas || []).map(l => ({
       key: Date.now() + Math.random(),
