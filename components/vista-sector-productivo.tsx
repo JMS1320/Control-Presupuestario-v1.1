@@ -2009,12 +2009,12 @@ function SubTabOrdenesAplicacion() {
 
       // Si es labor servicio, usar cabezas ingresadas por rodeo en vez de stock actual
       const getCabezasRodeo = (catId: string): number => {
-        if (laborEspecial === 'servicio' && cabezasServicioPorRodeo[catId]) {
+        if (laborEspecial && cabezasServicioPorRodeo[catId]) {
           return parseInt(cabezasServicioPorRodeo[catId])
         }
         return stockHaciendaMap[catId] || 0
       }
-      const totalCabezasOrden = laborEspecial === 'servicio'
+      const totalCabezasOrden = laborEspecial
         ? rodeosIds.reduce((sum, catId) => sum + getCabezasRodeo(catId), 0)
         : totalCabezas
 
@@ -2452,34 +2452,36 @@ function SubTabOrdenesAplicacion() {
                 Datos Ciclo de Cria - {laborEspecial === 'servicio' ? 'Servicio/Entore' : laborEspecial === 'tacto' ? 'Tacto' : laborEspecial === 'paricion' ? 'Paricion' : 'Destete'}
               </Label>
 
-              {laborEspecial === 'servicio' && (() => {
+              {laborEspecial === 'servicio' && (
+                <div>
+                  <Label className="text-sm">Año Servicio</Label>
+                  <Input type="number" className="h-8 text-sm w-[200px]" value={añoServicio}
+                    onChange={e => setAñoServicio(e.target.value)} />
+                </div>
+              )}
+
+              {/* Cabezas por rodeo - editable para cualquier labor de ciclo */}
+              {(() => {
                 const rodeosIds = Object.entries(rodeosSeleccionados).filter(([_, sel]) => sel).map(([id]) => id)
+                if (rodeosIds.length === 0) return null
                 return (
-                  <div className="space-y-3">
-                    <div>
-                      <Label className="text-sm">Año Servicio</Label>
-                      <Input type="number" className="h-8 text-sm w-[200px]" value={añoServicio}
-                        onChange={e => setAñoServicio(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label className="text-sm">Cabezas a Servicio por Rodeo</Label>
-                      <div className="space-y-2 mt-1">
-                        {rodeosIds.map(catId => {
-                          const cat = categoriasHacienda.find(c => c.id === catId)
-                          const stockActual = stockHaciendaMap[catId] || 0
-                          return (
-                            <div key={catId} className="flex items-center gap-3">
-                              <span className="text-sm font-medium w-[160px]">{cat?.nombre || '-'}</span>
-                              <Input type="number" className="h-8 text-sm w-[120px]"
-                                value={cabezasServicioPorRodeo[catId] || ''}
-                                placeholder={String(stockActual)}
-                                onChange={e => setCabezasServicioPorRodeo(prev => ({ ...prev, [catId]: e.target.value }))} />
-                              <span className="text-xs text-muted-foreground">stock actual: {stockActual}</span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                      {rodeosIds.length === 0 && <p className="text-xs text-amber-600 mt-1">Seleccione al menos un rodeo arriba</p>}
+                  <div>
+                    <Label className="text-sm">Cabezas por Rodeo</Label>
+                    <div className="space-y-2 mt-1">
+                      {rodeosIds.map(catId => {
+                        const cat = categoriasHacienda.find(c => c.id === catId)
+                        const stockActual = stockHaciendaMap[catId] || 0
+                        return (
+                          <div key={catId} className="flex items-center gap-3">
+                            <span className="text-sm font-medium w-[160px]">{cat?.nombre || '-'}</span>
+                            <Input type="number" className="h-8 text-sm w-[120px]"
+                              value={cabezasServicioPorRodeo[catId] || ''}
+                              placeholder={String(stockActual)}
+                              onChange={e => setCabezasServicioPorRodeo(prev => ({ ...prev, [catId]: e.target.value }))} />
+                            <span className="text-xs text-muted-foreground">stock actual: {stockActual}</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )
