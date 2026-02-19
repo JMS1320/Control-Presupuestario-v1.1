@@ -2124,13 +2124,17 @@ function SubTabOrdenesAplicacion() {
             const cabezasRodeo = cabezasServicioPorRodeo[catId]
               ? parseInt(cabezasServicioPorRodeo[catId])
               : (stockHaciendaMap[catId] || 0)
-            await supabase.schema('productivo').from('ciclos_cria').upsert({
+            const { error: cicloErr } = await supabase.schema('productivo').from('ciclos_cria').upsert({
               año_servicio: año,
               rodeo: nombreRodeo,
               fecha_servicio: fecha,
               cabezas_servicio: cabezasRodeo,
               orden_servicio_id: ordenId
             }, { onConflict: 'año_servicio,rodeo' })
+            if (cicloErr) {
+              console.error('Error creando ciclo:', cicloErr)
+              toast.error(`Error ciclo ${nombreRodeo}: ${cicloErr.message}`)
+            }
           }
           toast.success(`Ciclo ${año} creado para ${rodeosIds.length} rodeo(s)`)
         }
