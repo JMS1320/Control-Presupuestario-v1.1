@@ -1724,7 +1724,8 @@ function SubTabOrdenesAplicacion() {
     } else if (tipo === 'paricion') {
       query = query.is('fecha_paricion', null).not('fecha_tacto', 'is', null)
     } else if (tipo === 'destete') {
-      query = query.is('fecha_destete', null).not('fecha_paricion', 'is', null)
+      // Destete requiere al menos tacto (paricion es opcional)
+      query = query.is('fecha_destete', null).not('fecha_tacto', 'is', null)
     }
 
     const { data } = await query.order('anio_servicio', { ascending: false })
