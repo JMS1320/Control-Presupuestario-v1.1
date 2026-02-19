@@ -725,30 +725,50 @@ function TabHacienda() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
-  const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, fecha: string, caravanas: string[] }[] | null>(null)
+  const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[] }[] | null>(null)
   const [cargandoCUT, setCargandoCUT] = useState(false)
 
-  const cargarDetalleCUT = async () => {
+  const cargarDetalleCUT = async (stockActual: number) => {
     if (detalleCUT) return // ya cargado
     setCargandoCUT(true)
     try {
-      // Buscar ciclos que tienen vacías registradas
+      // Buscar ciclos que tienen vacías registradas (más viejo primero para FIFO)
       const { data: ciclos } = await supabase.schema('productivo').from('ciclos_cria')
         .select('id, rodeo, cabezas_vacias, fecha_tacto, anio_servicio')
         .gt('cabezas_vacias', 0)
-        .order('fecha_tacto', { ascending: false })
+        .order('fecha_tacto', { ascending: true })
       if (ciclos) {
+        // Total ingresado por tacto
+        const totalIngresado = ciclos.reduce((s, c) => s + c.cabezas_vacias, 0)
+        // Cuántas se vendieron = total ingresado - stock actual
+        let vendidas = Math.max(0, totalIngresado - stockActual)
+
         const detalles = []
         for (const c of ciclos) {
+          // FIFO: descontar vendidas de las entradas más viejas primero
+          if (vendidas >= c.cabezas_vacias) {
+            vendidas -= c.cabezas_vacias
+            continue // Este lote completo fue vendido
+          }
+          const restantes = c.cabezas_vacias - vendidas
+          vendidas = 0
+
           const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
             .select('caravana').eq('ciclo_id', c.id)
+          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
+
           detalles.push({
             rodeo: c.rodeo,
-            vacias: c.cabezas_vacias,
+            vacias: restantes,
+            vaciasTotales: c.cabezas_vacias,
             fecha: c.fecha_tacto,
-            caravanas: desc?.map(d => d.caravana).filter(Boolean) || []
+            caravanas: restantes < c.cabezas_vacias
+              ? caravanas.slice(-restantes) // Si vendieron algunas, mostrar las últimas
+              : caravanas
           })
         }
+        // Mostrar más recientes primero
+        detalles.reverse()
         setDetalleCUT(detalles)
       }
     } catch (err) {
@@ -802,6 +822,7 @@ function TabHacienda() {
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
+    setDetalleCUT(null) // Resetear cache detalle CUT al recargar
     try {
       const [catRes, movRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_hacienda').select('*').eq('activo', true).order('nombre'),
@@ -930,7 +951,7 @@ function TabHacienda() {
                     <TableRow key={s.categoria_id}>
                       <TableCell className="font-medium">
                         {esCUT ? (
-                          <Popover onOpenChange={(open) => { if (open) cargarDetalleCUT() }}>
+                          <Popover onOpenChange={(open) => { if (open) cargarDetalleCUT(s.cantidad) }}>
                             <PopoverTrigger asChild>
                               <button className="flex items-center gap-1.5 hover:text-blue-600 cursor-pointer underline decoration-dotted underline-offset-4">
                                 {s.nombre}
