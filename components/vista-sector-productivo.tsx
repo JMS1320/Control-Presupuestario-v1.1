@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
+import CiclosCriaPanel from "./ciclos-cria-panel"
 
 // ============================================================
 // TIPOS
@@ -888,6 +889,9 @@ function TabHacienda() {
         </Table>
       )}
 
+      {/* Panel Ciclos de Cria */}
+      <CiclosCriaPanel />
+
       {/* Modal Nuevo Movimiento Hacienda */}
       <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>
         <DialogContent className="max-w-lg">
@@ -1586,10 +1590,26 @@ function SubTabOrdenesAplicacion() {
   const [rodeosSeleccionados, setRodeosSeleccionados] = useState<Record<string, boolean>>({})
 
   // Labores
-  const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string }[]>([])
+  const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string, tipo: string | null }[]>([])
   const [laboresSeleccionadas, setLaboresSeleccionadas] = useState<Record<number, boolean>>({})
   const [nuevaLabor, setNuevaLabor] = useState('')
   const [mostrarInputLabor, setMostrarInputLabor] = useState(false)
+
+  // === CICLOS DE CRIA ===
+  const [laborEspecial, setLaborEspecial] = useState<'servicio' | 'tacto' | 'paricion' | 'destete' | null>(null)
+  // Servicio
+  const [añoServicio, setAñoServicio] = useState(String(new Date().getFullYear()))
+  const [cabezasServicio, setCabezasServicio] = useState('')
+  // Tacto
+  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, año_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
+  const [cicloSeleccionado, setCicloSeleccionado] = useState('')
+  const [cabezasPrenadas, setCabezasPrenadas] = useState('')
+  const [cabezasVacias, setCabezasVacias] = useState('')
+  const [caravanasVacias, setCaravanasVacias] = useState('')
+  // Paricion
+  const [ternerosNacidos, setTernerosNacidos] = useState('')
+  // Destete
+  const [ternerosDestetados, setTernerosDestetados] = useState('')
 
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
@@ -1653,6 +1673,61 @@ function SubTabOrdenesAplicacion() {
     toast.success('Labor eliminada')
   }
 
+  // Toggle labor con detección de tipo especial
+  const toggleLabor = (laborId: number) => {
+    const labor = laboresDisponibles.find(l => l.id === laborId)
+    const estabaSeleccionada = laboresSeleccionadas[laborId] || false
+
+    if (labor?.tipo) {
+      if (estabaSeleccionada) {
+        // Deseleccionar labor especial
+        setLaborEspecial(null)
+        limpiarDatosCiclo()
+      } else {
+        // Deseleccionar cualquier otra labor especial previa
+        const nuevasSelecciones = { ...laboresSeleccionadas }
+        for (const [id, sel] of Object.entries(nuevasSelecciones)) {
+          if (sel) {
+            const otra = laboresDisponibles.find(l => l.id === parseInt(id))
+            if (otra?.tipo) nuevasSelecciones[parseInt(id)] = false
+          }
+        }
+        nuevasSelecciones[laborId] = true
+        setLaboresSeleccionadas(nuevasSelecciones)
+        setLaborEspecial(labor.tipo as any)
+        cargarCiclosParaLabor(labor.tipo as any)
+        return
+      }
+    }
+    setLaboresSeleccionadas(prev => ({ ...prev, [laborId]: !prev[laborId] }))
+  }
+
+  const limpiarDatosCiclo = () => {
+    setCicloSeleccionado('')
+    setCabezasServicio('')
+    setCabezasPrenadas('')
+    setCabezasVacias('')
+    setCaravanasVacias('')
+    setTernerosNacidos('')
+    setTernerosDestetados('')
+  }
+
+  const cargarCiclosParaLabor = async (tipo: string) => {
+    let query = supabase.schema('productivo').from('ciclos_cria')
+      .select('id, año_servicio, rodeo, cabezas_servicio')
+
+    if (tipo === 'tacto') {
+      query = query.is('fecha_tacto', null).not('fecha_servicio', 'is', null)
+    } else if (tipo === 'paricion') {
+      query = query.is('fecha_paricion', null).not('fecha_tacto', 'is', null)
+    } else if (tipo === 'destete') {
+      query = query.is('fecha_destete', null).not('fecha_paricion', 'is', null)
+    }
+
+    const { data } = await query.order('año_servicio', { ascending: false })
+    if (data) setCiclosAbiertos(data)
+  }
+
   const toggleRodeo = (catId: string) => {
     setRodeosSeleccionados(prev => ({ ...prev, [catId]: !prev[catId] }))
   }
@@ -1677,7 +1752,7 @@ function SubTabOrdenesAplicacion() {
         supabase.schema('productivo').from('movimientos_hacienda')
           .select('categoria_id, tipo, cantidad'),
         supabase.schema('productivo').from('labores')
-          .select('id, nombre').eq('activo', true).order('orden_display')
+          .select('id, nombre, tipo').eq('activo', true).order('orden_display')
       ])
 
       if (ordenesRes.data) {
@@ -1763,6 +1838,8 @@ function SubTabOrdenesAplicacion() {
     setRodeosSeleccionados({})
     setLaboresSeleccionadas({})
     setLineas([])
+    setLaborEspecial(null)
+    limpiarDatosCiclo()
   }
 
   // Abrir modal confirmar/ejecutar orden
@@ -2023,6 +2100,100 @@ function SubTabOrdenesAplicacion() {
         }
       }
 
+      // === CICLOS DE CRIA ===
+      if (laborEspecial && !ordenEditandoId) {
+        const fecha = nuevaOrden.fecha
+
+        if (laborEspecial === 'servicio') {
+          const año = parseInt(añoServicio)
+          const cabezas = cabezasServicio ? parseInt(cabezasServicio) : totalCabezas
+          // Crear 1 ciclo por cada rodeo seleccionado
+          for (const catId of rodeosIds) {
+            const cat = categoriasHacienda.find(c => c.id === catId)
+            const nombreRodeo = cat?.nombre || catId
+            const cabezasRodeo = rodeosIds.length === 1 ? cabezas : (stockHaciendaMap[catId] || 0)
+            await supabase.schema('productivo').from('ciclos_cria').upsert({
+              año_servicio: año,
+              rodeo: nombreRodeo,
+              fecha_servicio: fecha,
+              cabezas_servicio: cabezasRodeo,
+              orden_servicio_id: ordenId
+            }, { onConflict: 'año_servicio,rodeo' })
+          }
+          toast.success(`Ciclo ${año} creado para ${rodeosIds.length} rodeo(s)`)
+        }
+
+        if (laborEspecial === 'tacto' && cicloSeleccionado) {
+          const prenadas = parseInt(cabezasPrenadas) || 0
+          const vacias = parseInt(cabezasVacias) || 0
+          await supabase.schema('productivo').from('ciclos_cria')
+            .update({
+              fecha_tacto: fecha,
+              cabezas_prenadas: prenadas,
+              cabezas_vacias: vacias,
+              orden_tacto_id: ordenId
+            })
+            .eq('id', cicloSeleccionado)
+
+          // Mover vacias a CUT si hay
+          if (vacias > 0) {
+            const ciclo = ciclosAbiertos.find(c => c.id === cicloSeleccionado)
+            const catOrigen = categoriasHacienda.find(c => c.nombre === ciclo?.rodeo)
+            const catCUT = 'ce627450-565c-4c68-b8ea-81deab93eabf' // Vaca CUT/Descarte
+
+            if (catOrigen) {
+              await supabase.schema('productivo').from('movimientos_hacienda').insert([
+                {
+                  fecha, categoria_id: catOrigen.id, tipo: 'ajuste_stock',
+                  cantidad: -vacias, observaciones: 'Vacias tacto - pasan a CUT'
+                },
+                {
+                  fecha, categoria_id: catCUT, tipo: 'ajuste_stock',
+                  cantidad: vacias, observaciones: 'Vacias tacto - ingreso CUT'
+                }
+              ])
+            }
+
+            // Registrar caravanas en detalle_descarte
+            if (caravanasVacias.trim()) {
+              const caravanas = caravanasVacias.split('\n').map(c => c.trim()).filter(Boolean)
+              if (caravanas.length > 0) {
+                await supabase.schema('productivo').from('detalle_descarte').insert(
+                  caravanas.map(caravana => ({
+                    ciclo_id: cicloSeleccionado,
+                    caravana,
+                    categoria_origen: ciclo?.rodeo || '-'
+                  }))
+                )
+              }
+            }
+          }
+          toast.success(`Tacto registrado: ${prenadas} preñadas, ${vacias} vacias`)
+        }
+
+        if (laborEspecial === 'paricion' && cicloSeleccionado) {
+          await supabase.schema('productivo').from('ciclos_cria')
+            .update({
+              fecha_paricion: fecha,
+              terneros_nacidos: parseInt(ternerosNacidos) || 0,
+              orden_paricion_id: ordenId
+            })
+            .eq('id', cicloSeleccionado)
+          toast.success(`Paricion registrada: ${ternerosNacidos} terneros nacidos`)
+        }
+
+        if (laborEspecial === 'destete' && cicloSeleccionado) {
+          await supabase.schema('productivo').from('ciclos_cria')
+            .update({
+              fecha_destete: fecha,
+              terneros_destetados: parseInt(ternerosDestetados) || 0,
+              orden_destete_id: ordenId
+            })
+            .eq('id', cicloSeleccionado)
+          toast.success(`Destete registrado: ${ternerosDestetados} terneros destetados`)
+        }
+      }
+
       toast.success(ordenEditandoId ? 'Orden actualizada' : 'Orden de aplicacion creada')
       cerrarModal()
       cargarDatos()
@@ -2236,21 +2407,140 @@ function SubTabOrdenesAplicacion() {
                 const seleccionada = laboresSeleccionadas[labor.id] || false
                 return (
                   <label key={labor.id}
-                    className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-sm border transition-colors ${seleccionada ? 'bg-green-50 border-green-300 text-green-800' : 'hover:bg-gray-50 border-gray-200'}`}>
+                    className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-md cursor-pointer text-sm border transition-colors ${seleccionada ? (labor.tipo ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-green-50 border-green-300 text-green-800') : 'hover:bg-gray-50 border-gray-200'}`}>
                     <input type="checkbox" checked={seleccionada}
-                      onChange={() => setLaboresSeleccionadas(prev => ({ ...prev, [labor.id]: !prev[labor.id] }))}
+                      onChange={() => toggleLabor(labor.id)}
                       className="rounded" />
                     {labor.nombre}
-                    <button type="button" className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
-                      title="Eliminar labor"
-                      onClick={e => { e.preventDefault(); e.stopPropagation(); eliminarLabor(labor.id) }}>
-                      <Trash2 className="h-3 w-3" />
-                    </button>
+                    {labor.tipo && <span className="text-[10px] opacity-60">(ciclo)</span>}
+                    {!labor.tipo && (
+                      <button type="button" className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
+                        title="Eliminar labor"
+                        onClick={e => { e.preventDefault(); e.stopPropagation(); eliminarLabor(labor.id) }}>
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
                   </label>
                 )
               })}
             </div>
           </div>
+
+          {/* === SECCION CICLO DE CRIA CONDICIONAL === */}
+          {laborEspecial && (
+            <div className="space-y-3 p-3 rounded-lg border-2 border-orange-200 bg-orange-50/50">
+              <Label className="text-base font-semibold text-orange-800">
+                Datos Ciclo de Cria - {laborEspecial === 'servicio' ? 'Servicio/Entore' : laborEspecial === 'tacto' ? 'Tacto' : laborEspecial === 'paricion' ? 'Paricion' : 'Destete'}
+              </Label>
+
+              {laborEspecial === 'servicio' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-sm">Año Servicio</Label>
+                    <Input type="number" className="h-8 text-sm" value={añoServicio}
+                      onChange={e => setAñoServicio(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Cabezas a Servicio</Label>
+                    <Input type="number" className="h-8 text-sm" value={cabezasServicio}
+                      placeholder={String(totalCabezas)}
+                      onChange={e => setCabezasServicio(e.target.value)} />
+                    <p className="text-xs text-muted-foreground mt-0.5">Total rodeos: {totalCabezas}</p>
+                  </div>
+                </div>
+              )}
+
+              {laborEspecial === 'tacto' && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm">Campaña / Ciclo</Label>
+                    <Select value={cicloSeleccionado} onValueChange={setCicloSeleccionado}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seleccione ciclo..." /></SelectTrigger>
+                      <SelectContent>
+                        {ciclosAbiertos.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.año_servicio} - {c.rodeo} ({c.cabezas_servicio} cab.)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-sm">Preñadas</Label>
+                      <Input type="number" className="h-8 text-sm" value={cabezasPrenadas}
+                        onChange={e => setCabezasPrenadas(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Vacias</Label>
+                      <Input type="number" className="h-8 text-sm" value={cabezasVacias}
+                        onChange={e => setCabezasVacias(e.target.value)} />
+                    </div>
+                  </div>
+                  {cicloSeleccionado && cabezasPrenadas && cabezasVacias && (() => {
+                    const ciclo = ciclosAbiertos.find(c => c.id === cicloSeleccionado)
+                    const total = parseInt(cabezasPrenadas) + parseInt(cabezasVacias)
+                    if (ciclo?.cabezas_servicio && total !== ciclo.cabezas_servicio) {
+                      return <p className="text-xs text-amber-600">Preñadas + Vacias ({total}) no coincide con cabezas servicio ({ciclo.cabezas_servicio})</p>
+                    }
+                    return null
+                  })()}
+                  <div>
+                    <Label className="text-sm">Caravanas Vacias (opcional, una por linea)</Label>
+                    <Textarea className="text-sm h-20" value={caravanasVacias}
+                      onChange={e => setCaravanasVacias(e.target.value)}
+                      placeholder="001&#10;002&#10;003" />
+                  </div>
+                </div>
+              )}
+
+              {laborEspecial === 'paricion' && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm">Campaña / Ciclo</Label>
+                    <Select value={cicloSeleccionado} onValueChange={setCicloSeleccionado}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seleccione ciclo..." /></SelectTrigger>
+                      <SelectContent>
+                        {ciclosAbiertos.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.año_servicio} - {c.rodeo} (preñadas: {c.cabezas_servicio})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Terneros Nacidos</Label>
+                    <Input type="number" className="h-8 text-sm" value={ternerosNacidos}
+                      onChange={e => setTernerosNacidos(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {laborEspecial === 'destete' && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm">Campaña / Ciclo</Label>
+                    <Select value={cicloSeleccionado} onValueChange={setCicloSeleccionado}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seleccione ciclo..." /></SelectTrigger>
+                      <SelectContent>
+                        {ciclosAbiertos.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.año_servicio} - {c.rodeo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm">Terneros Destetados</Label>
+                    <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
+                      onChange={e => setTernerosDestetados(e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Lineas de insumos */}
           <div className="space-y-3">
