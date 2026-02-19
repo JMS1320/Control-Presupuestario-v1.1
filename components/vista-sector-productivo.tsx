@@ -1601,7 +1601,7 @@ function SubTabOrdenesAplicacion() {
   const [añoServicio, setAñoServicio] = useState(String(new Date().getFullYear()))
   const [cabezasServicioPorRodeo, setCabezasServicioPorRodeo] = useState<Record<string, string>>({})
   // Tacto
-  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, año_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
+  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, anio_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
   const [cicloSeleccionado, setCicloSeleccionado] = useState('')
   const [cabezasPrenadas, setCabezasPrenadas] = useState('')
   const [cabezasVacias, setCabezasVacias] = useState('')
@@ -1714,7 +1714,7 @@ function SubTabOrdenesAplicacion() {
 
   const cargarCiclosParaLabor = async (tipo: string) => {
     let query = supabase.schema('productivo').from('ciclos_cria')
-      .select('id, año_servicio, rodeo, cabezas_servicio')
+      .select('id, anio_servicio, rodeo, cabezas_servicio')
 
     if (tipo === 'tacto') {
       query = query.is('fecha_tacto', null).not('fecha_servicio', 'is', null)
@@ -1724,7 +1724,7 @@ function SubTabOrdenesAplicacion() {
       query = query.is('fecha_destete', null).not('fecha_paricion', 'is', null)
     }
 
-    const { data } = await query.order('año_servicio', { ascending: false })
+    const { data } = await query.order('anio_servicio', { ascending: false })
     if (data) setCiclosAbiertos(data)
   }
 
@@ -2125,12 +2125,12 @@ function SubTabOrdenesAplicacion() {
               ? parseInt(cabezasServicioPorRodeo[catId])
               : (stockHaciendaMap[catId] || 0)
             const { error: cicloErr } = await supabase.schema('productivo').from('ciclos_cria').upsert({
-              año_servicio: año,
+              anio_servicio: año,
               rodeo: nombreRodeo,
               fecha_servicio: fecha,
               cabezas_servicio: cabezasRodeo,
               orden_servicio_id: ordenId
-            }, { onConflict: 'año_servicio,rodeo' })
+            }, { onConflict: 'anio_servicio,rodeo' })
             if (cicloErr) {
               console.error('Error creando ciclo:', cicloErr)
               toast.error(`Error ciclo ${nombreRodeo}: ${cicloErr.message}`)
@@ -2491,7 +2491,7 @@ function SubTabOrdenesAplicacion() {
                       <SelectContent>
                         {ciclosAbiertos.map(c => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.año_servicio} - {c.rodeo} ({c.cabezas_servicio} cab.)
+                            {c.anio_servicio} - {c.rodeo} ({c.cabezas_servicio} cab.)
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2535,7 +2535,7 @@ function SubTabOrdenesAplicacion() {
                       <SelectContent>
                         {ciclosAbiertos.map(c => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.año_servicio} - {c.rodeo} (preñadas: {c.cabezas_servicio})
+                            {c.anio_servicio} - {c.rodeo} (preñadas: {c.cabezas_servicio})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2558,7 +2558,7 @@ function SubTabOrdenesAplicacion() {
                       <SelectContent>
                         {ciclosAbiertos.map(c => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.año_servicio} - {c.rodeo}
+                            {c.anio_servicio} - {c.rodeo}
                           </SelectItem>
                         ))}
                       </SelectContent>

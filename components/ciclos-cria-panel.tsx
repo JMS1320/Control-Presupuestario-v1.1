@@ -11,7 +11,7 @@ import { supabase } from "@/lib/supabase"
 
 interface CicloCria {
   id: string
-  año_servicio: number
+  anio_servicio: number
   rodeo: string
   fecha_servicio: string | null
   cabezas_servicio: number | null
@@ -53,9 +53,9 @@ export default function CiclosCriaPanel() {
   const cargarAños = useCallback(async () => {
     const { data } = await supabase.schema('productivo')
       .from('ciclos_cria')
-      .select('año_servicio')
+      .select('anio_servicio')
     if (data) {
-      const años = [...new Set(data.map(d => d.año_servicio))].sort((a, b) => b - a)
+      const años = [...new Set(data.map(d => d.anio_servicio))].sort((a, b) => b - a)
       setAñosDisponibles(años)
       if (años.length > 0 && !añoSeleccionado) {
         setAñoSeleccionado(String(años[0]))
@@ -69,7 +69,7 @@ export default function CiclosCriaPanel() {
     const { data } = await supabase.schema('productivo')
       .from('ciclos_cria')
       .select('*')
-      .eq('año_servicio', parseInt(añoSeleccionado))
+      .eq('anio_servicio', parseInt(añoSeleccionado))
       .order('rodeo')
     if (data) setCiclos(data)
   }, [añoSeleccionado])
