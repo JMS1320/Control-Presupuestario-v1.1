@@ -1610,6 +1610,8 @@ function SubTabOrdenesAplicacion() {
   const [ternerosNacidos, setTernerosNacidos] = useState('')
   // Destete
   const [ternerosDestetados, setTernerosDestetados] = useState('')
+  // Retrospectiva
+  const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
 
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
@@ -1710,6 +1712,7 @@ function SubTabOrdenesAplicacion() {
     setCaravanasVacias('')
     setTernerosNacidos('')
     setTernerosDestetados('')
+    setCargaRetrospectiva(false)
   }
 
   const cargarCiclosParaLabor = async (tipo: string) => {
@@ -2151,8 +2154,8 @@ function SubTabOrdenesAplicacion() {
             })
             .eq('id', cicloSeleccionado)
 
-          // Mover vacias a CUT si hay
-          if (vacias > 0) {
+          // Mover vacias a CUT si hay (solo si NO es retrospectiva)
+          if (vacias > 0 && !cargaRetrospectiva) {
             const ciclo = ciclosAbiertos.find(c => c.id === cicloSeleccionado)
             const catOrigen = categoriasHacienda.find(c => c.nombre === ciclo?.rodeo)
             const catCUT = 'ce627450-565c-4c68-b8ea-81deab93eabf' // Vaca CUT/Descarte
@@ -2571,6 +2574,13 @@ function SubTabOrdenesAplicacion() {
                   </div>
                 </div>
               )}
+
+              {/* Checkbox retrospectiva */}
+              <label className="flex items-center gap-2 mt-2 cursor-pointer text-sm text-orange-700"
+                onClick={() => setCargaRetrospectiva(!cargaRetrospectiva)}>
+                <input type="checkbox" checked={cargaRetrospectiva} readOnly className="rounded" />
+                Click aca para no generar movimientos de stock (carga retrospectiva)
+              </label>
             </div>
           )}
 
