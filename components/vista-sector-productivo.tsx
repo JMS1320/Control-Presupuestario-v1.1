@@ -292,13 +292,36 @@ const dibujarMarcaNZ = (ctx: CanvasRenderingContext2D, x: number, y: number, esc
   ctx.restore()
 }
 
-const exportarOrdenImagen = (orden: OrdenAplicacion) => {
+const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
   const lineas = orden.lineas || []
   const padding = 30
   const tableHeaderH = 32
   const rowH = 28
   const canvasW = 720
   const obsLineH = 17
+
+  // Buscar datos de ciclo vinculados a esta orden
+  let datosCiclo: { tipo: string, ciclo: any, caravanas: string[] } | null = null
+  const campos = [
+    { campo: 'orden_servicio_id', tipo: 'servicio' },
+    { campo: 'orden_tacto_id', tipo: 'tacto' },
+    { campo: 'orden_paricion_id', tipo: 'paricion' },
+    { campo: 'orden_destete_id', tipo: 'destete' },
+  ]
+  for (const { campo, tipo } of campos) {
+    const { data } = await supabase.schema('productivo').from('ciclos_cria')
+      .select('*').eq(campo, orden.id)
+    if (data && data.length > 0) {
+      let caravanas: string[] = []
+      if (tipo === 'tacto') {
+        const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
+          .select('caravana').eq('ciclo_id', data[0].id)
+        if (desc) caravanas = desc.map(d => d.caravana).filter(Boolean)
+      }
+      datosCiclo = { tipo, ciclo: data[0], caravanas }
+      break
+    }
+  }
 
   // Colores sobrios ganaderos
   const colPrimario = '#2c1810'    // Marrón oscuro
@@ -333,12 +356,30 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
   const laboresOrden = orden.labores || []
   const laboresH = laboresOrden.length > 0 ? 28 : 0
 
+  // Calcular alto sección resultados ciclo
+  let cicloH = 0
+  if (datosCiclo) {
+    const c = datosCiclo.ciclo
+    if (datosCiclo.tipo === 'servicio') {
+      cicloH = 55 // Título + 1 línea datos
+    } else if (datosCiclo.tipo === 'tacto') {
+      cicloH = 75 // Título + preñadas/vacías + porcentaje
+      if (datosCiclo.caravanas.length > 0) {
+        cicloH += 20 + Math.ceil(datosCiclo.caravanas.length / 4) * 18 // Caravanas en columnas
+      }
+    } else if (datosCiclo.tipo === 'paricion') {
+      cicloH = 55
+    } else if (datosCiclo.tipo === 'destete') {
+      cicloH = 75
+    }
+  }
+
   const brandHeaderH = 85
   const infoH = 80
   const obsH = obsLines > 0 ? obsLines * obsLineH + 10 : 0
   const headerH = brandHeaderH + infoH + obsH + laboresH
   const tableH = lineas.length > 0 ? tableHeaderH + (lineas.length * rowH) : 0
-  const canvasH = headerH + tableH + padding * 2 + 35
+  const canvasH = headerH + tableH + cicloH + padding * 2 + 35
 
   const canvas = document.createElement('canvas')
   canvas.width = canvasW
@@ -485,6 +526,96 @@ const exportarOrdenImagen = (orden: OrdenAplicacion) => {
     ctx.strokeStyle = colLinea
     ctx.lineWidth = 0.5
     ctx.strokeRect(padding, tableY, canvasW - padding * 2, tableEndY - tableY)
+  }
+
+  // === SECCION RESULTADOS CICLO ===
+  if (datosCiclo && cicloH > 0) {
+    const cicloY = headerH + tableH + padding + 5
+    const c = datosCiclo.ciclo
+
+    // Linea separadora
+    ctx.strokeStyle = colLinea
+    ctx.lineWidth = 0.5
+    ctx.beginPath()
+    ctx.moveTo(padding, cicloY)
+    ctx.lineTo(canvasW - padding, cicloY)
+    ctx.stroke()
+
+    ctx.fillStyle = colPrimario
+
+    if (datosCiclo.tipo === 'servicio') {
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText('RESULTADO SERVICIO', padding, cicloY + 20)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Cabezas a servicio: ${c.cabezas_servicio || '-'}`, padding, cicloY + 40)
+    }
+
+    if (datosCiclo.tipo === 'tacto') {
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText('RESULTADO TACTO', padding, cicloY + 20)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      const pctPrenez = c.cabezas_servicio > 0 ? ((c.cabezas_prenadas || 0) / c.cabezas_servicio * 100).toFixed(1) : '-'
+      ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Entoradas: ${c.cabezas_servicio || '-'}`, padding, cicloY + 40)
+
+      ctx.fillStyle = colPrimario
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText(`Preñadas: ${c.cabezas_prenadas || 0}`, padding, cicloY + 60)
+      ctx.fillStyle = '#8b4513'
+      ctx.fillText(`Vacías: ${c.cabezas_vacias || 0}`, padding + 160, cicloY + 60)
+      ctx.fillStyle = '#2d5016'
+      ctx.font = 'bold 14px Georgia'
+      ctx.fillText(`% Preñez: ${pctPrenez}%`, padding + 320, cicloY + 60)
+
+      // Caravanas vacías
+      if (datosCiclo.caravanas.length > 0) {
+        let caravY = cicloY + 85
+        ctx.fillStyle = colSecundario
+        ctx.font = 'bold 11px Georgia'
+        ctx.fillText('Caravanas vacías:', padding, caravY)
+        ctx.font = '11px Georgia'
+        const cols = 4
+        const colW = (canvasW - padding * 2 - 120) / cols
+        datosCiclo.caravanas.forEach((car, i) => {
+          const col = i % cols
+          const row = Math.floor(i / cols)
+          ctx.fillText(car, padding + 120 + col * colW, caravY + row * 18)
+        })
+      }
+    }
+
+    if (datosCiclo.tipo === 'paricion') {
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText('RESULTADO PARICIÓN', padding, cicloY + 20)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      const pctParicion = (c.cabezas_prenadas || 0) > 0 ? ((c.terneros_nacidos || 0) / c.cabezas_prenadas * 100).toFixed(1) : '-'
+      ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Preñadas: ${c.cabezas_prenadas || '-'}`, padding, cicloY + 40)
+      ctx.fillStyle = colPrimario
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText(`Terneros nacidos: ${c.terneros_nacidos || 0}`, padding, cicloY + 60)
+      ctx.fillStyle = '#2d5016'
+      ctx.font = 'bold 14px Georgia'
+      ctx.fillText(`% Parición: ${pctParicion}%`, padding + 250, cicloY + 60)
+    }
+
+    if (datosCiclo.tipo === 'destete') {
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText('RESULTADO DESTETE', padding, cicloY + 20)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Entoradas: ${c.cabezas_servicio || '-'}`, padding, cicloY + 40)
+      const pctDestNac = (c.terneros_nacidos || 0) > 0 ? ((c.terneros_destetados || 0) / c.terneros_nacidos * 100).toFixed(1) : '-'
+      const pctDestEnt = (c.cabezas_servicio || 0) > 0 ? ((c.terneros_destetados || 0) / c.cabezas_servicio * 100).toFixed(1) : '-'
+      ctx.fillStyle = colPrimario
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText(`Destetados: ${c.terneros_destetados || 0}`, padding, cicloY + 60)
+      ctx.fillStyle = '#2d5016'
+      ctx.font = 'bold 14px Georgia'
+      ctx.fillText(`% s/Nac: ${pctDestNac}%`, padding + 200, cicloY + 60)
+      ctx.fillText(`% s/Ent: ${pctDestEnt}%`, padding + 400, cicloY + 60)
+    }
   }
 
   // === FOOTER ===
