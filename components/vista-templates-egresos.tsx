@@ -859,6 +859,23 @@ export function VistaTemplatesEgresos() {
     .filter(([key, visible]) => visible && key in COLUMNAS_CONFIG)
     .map(([key]) => key)
 
+  // Colores por estado (usado en badges)
+  const colorEstado = (estado: string): string => {
+    const mapa: Record<string, string> = {
+      pendiente:   'bg-gray-100 text-gray-600 border-gray-200',
+      debito:      'bg-violet-100 text-violet-800 border-violet-200',
+      pagar:       'bg-yellow-100 text-yellow-800 border-yellow-200',
+      preparado:   'bg-orange-100 text-orange-800 border-orange-200',
+      pagado:      'bg-green-100 text-green-800 border-green-200',
+      programado:  'bg-violet-100 text-violet-800 border-violet-200',
+      credito:     'bg-gray-100 text-gray-600 border-gray-200',
+      conciliado:  'bg-gray-100 text-gray-600 border-gray-200',
+      desactivado: 'bg-gray-100 text-gray-400 border-gray-200',
+      anterior:    'bg-gray-100 text-gray-600 border-gray-200',
+    }
+    return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
+  }
+
   // Renderizar valor de celda según el tipo de columna con soporte para edición
   const renderizarCelda = (cuota: CuotaEgresoSinFactura, columna: string) => {
     let valor: any
@@ -929,6 +946,7 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="pagar">Pagar</SelectItem>
                 <SelectItem value="preparado">Preparado</SelectItem>
                 <SelectItem value="pagado">Pagado</SelectItem>
+                <SelectItem value="programado">Programado</SelectItem>
                 <SelectItem value="credito">Crédito</SelectItem>
                 <SelectItem value="conciliado">Conciliado</SelectItem>
                 <SelectItem value="desactivado">Desactivado</SelectItem>
@@ -1012,7 +1030,7 @@ export function VistaTemplatesEgresos() {
         
         case 'estado':
           return (
-            <Badge variant={valor === 'pendiente' ? 'secondary' : 'default'}>
+            <Badge className={colorEstado(valor as string)}>
               {valor as string}
             </Badge>
           )
@@ -1628,6 +1646,7 @@ export function VistaTemplatesEgresos() {
                         <SelectItem value="pagar">Pagar</SelectItem>
                         <SelectItem value="preparado">Preparado</SelectItem>
                         <SelectItem value="pagado">Pagado</SelectItem>
+                        <SelectItem value="programado">Programado</SelectItem>
                         <SelectItem value="credito">Crédito</SelectItem>
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="desactivado">Desactivado</SelectItem>

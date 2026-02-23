@@ -733,6 +733,22 @@ export function VistaFacturasArca() {
     'centro_costo', 'estado', 'observaciones_pago', 'detalle', 'campana'
   ]
 
+  // Colores por estado (usado en badges)
+  const colorEstado = (estado: string): string => {
+    const mapa: Record<string, string> = {
+      pendiente:  'bg-gray-100 text-gray-600 border-gray-200',
+      debito:     'bg-violet-100 text-violet-800 border-violet-200',
+      pagar:      'bg-yellow-100 text-yellow-800 border-yellow-200',
+      preparado:  'bg-orange-100 text-orange-800 border-orange-200',
+      pagado:     'bg-green-100 text-green-800 border-green-200',
+      programado: 'bg-violet-100 text-violet-800 border-violet-200',
+      credito:    'bg-gray-100 text-gray-600 border-gray-200',
+      conciliado: 'bg-gray-100 text-gray-600 border-gray-200',
+      anterior:   'bg-gray-100 text-gray-600 border-gray-200',
+    }
+    return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
+  }
+
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
@@ -827,6 +843,7 @@ export function VistaFacturasArca() {
                   <SelectItem value="pagar">Pagar</SelectItem>
                   <SelectItem value="preparado">Preparado</SelectItem>
                   <SelectItem value="pagado">Pagado</SelectItem>
+                  <SelectItem value="programado">Programado</SelectItem>
                   <SelectItem value="credito">Crédito</SelectItem>
                   <SelectItem value="conciliado">Conciliado</SelectItem>
                   <SelectItem value="anterior">Anterior</SelectItem>
@@ -963,7 +980,7 @@ export function VistaFacturasArca() {
       
       case 'estado':
         const contenidoEstado = (
-          <Badge variant={valor === 'pendiente' ? 'secondary' : 'default'}>
+          <Badge className={colorEstado(valor as string)}>
             {valor as string}
           </Badge>
         )
@@ -3758,6 +3775,7 @@ export function VistaFacturasArca() {
                         <SelectItem value="pagar">Pagar</SelectItem>
                         <SelectItem value="preparado">Preparado</SelectItem>
                         <SelectItem value="pagado">Pagado</SelectItem>
+                        <SelectItem value="programado">Programado</SelectItem>
                         <SelectItem value="credito">Crédito</SelectItem>
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="anterior">Anterior</SelectItem>

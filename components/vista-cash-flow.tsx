@@ -35,12 +35,14 @@ const columnasDefinicion = [
 
 // Estados disponibles para edición
 const ESTADOS_DISPONIBLES = [
-  { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'debito', label: 'Débito', color: 'bg-blue-100 text-blue-800' },
-  { value: 'pagar', label: 'Pagar', color: 'bg-orange-100 text-orange-800' },
-  { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' },
-  { value: 'credito', label: 'Crédito', color: 'bg-purple-100 text-purple-800' },
-  { value: 'conciliado', label: 'Conciliado', color: 'bg-gray-100 text-gray-800' }
+  { value: 'pendiente',  label: 'Pendiente',  color: 'bg-gray-100 text-gray-600' },
+  { value: 'debito',     label: 'Débito',      color: 'bg-violet-100 text-violet-800' },
+  { value: 'pagar',      label: 'Pagar',       color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'preparado',  label: 'Preparado',   color: 'bg-orange-100 text-orange-800' },
+  { value: 'pagado',     label: 'Pagado',      color: 'bg-green-100 text-green-800' },
+  { value: 'programado', label: 'Programado',  color: 'bg-violet-100 text-violet-800' },
+  { value: 'credito',    label: 'Crédito',     color: 'bg-gray-100 text-gray-600' },
+  { value: 'conciliado', label: 'Conciliado',  color: 'bg-gray-100 text-gray-800' },
 ]
 
 // Estados disponibles para anticipos (estado de pago)
@@ -929,6 +931,10 @@ export function VistaCashFlow() {
               colorClase = 'text-white bg-green-600 px-2 py-1 rounded'
             } else if (fila.estado === 'pagar') {
               colorClase = 'text-black bg-yellow-300 px-2 py-1 rounded'
+            } else if (fila.estado === 'preparado') {
+              colorClase = 'text-white bg-orange-500 px-2 py-1 rounded'
+            } else if (fila.estado === 'debito' || fila.estado === 'programado') {
+              colorClase = 'text-white bg-violet-600 px-2 py-1 rounded'
             }
           }
           
