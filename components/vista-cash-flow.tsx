@@ -924,17 +924,22 @@ export function VistaCashFlow() {
           return formatearFecha(valor as string)
         
         case 'currency':
-          // Colorización según estado para débitos/créditos
-          let colorClase = 'text-black' // Por defecto números negros
-          if (columna.key === 'debitos') {
+          // Colorización según estado — solo en la columna que tiene valor (debitos o creditos)
+          let colorClase = 'text-black'
+          const montoActual = valor != null ? Number(valor) : 0
+          if (montoActual > 0) {
             if (fila.estado === 'pagado') {
+              // Aplica a debitos (egresos pagados) y creditos (cobros pagados)
               colorClase = 'text-white bg-green-600 px-2 py-1 rounded'
-            } else if (fila.estado === 'pagar') {
-              colorClase = 'text-black bg-yellow-300 px-2 py-1 rounded'
-            } else if (fila.estado === 'preparado') {
-              colorClase = 'text-white bg-orange-500 px-2 py-1 rounded'
-            } else if (fila.estado === 'debito' || fila.estado === 'programado') {
-              colorClase = 'text-white bg-violet-600 px-2 py-1 rounded'
+            } else if (columna.key === 'debitos') {
+              // Estados de proceso solo aplican a egresos (columna debitos)
+              if (fila.estado === 'pagar') {
+                colorClase = 'text-black bg-yellow-300 px-2 py-1 rounded'
+              } else if (fila.estado === 'preparado') {
+                colorClase = 'text-white bg-orange-500 px-2 py-1 rounded'
+              } else if (fila.estado === 'debito' || fila.estado === 'programado') {
+                colorClase = 'text-white bg-violet-600 px-2 py-1 rounded'
+              }
             }
           }
           
