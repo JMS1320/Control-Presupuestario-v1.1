@@ -4738,17 +4738,53 @@ export function VistaFacturasArca() {
               </div>
             )
 
+            // Función para cambiar estado de templates seleccionados
+            const cambiarEstadoTemplatesSeleccionados = async (nuevoEstado: string) => {
+              if (templatesSeleccionadosPagos.size === 0) {
+                alert('Selecciona al menos un template')
+                return
+              }
+              const ids = Array.from(templatesSeleccionadosPagos)
+              const confirmar = window.confirm(`¿Cambiar ${ids.length} template(s) a estado "${nuevoEstado}"?`)
+              if (!confirmar) return
+              try {
+                const { error } = await supabase
+                  .from('cuotas_egresos_sin_factura')
+                  .update({ estado: nuevoEstado })
+                  .in('id', ids)
+                if (error) throw error
+                setTemplatesPagos(prev => prev.map(t =>
+                  ids.includes(t.id) ? { ...t, estado: nuevoEstado } : t
+                ))
+                setTemplatesSeleccionadosPagos(new Set())
+              } catch (error) {
+                console.error('Error cambiando estado templates:', error)
+                alert('Error al cambiar estado')
+              }
+            }
+
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true) => (
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Badge variant="outline" className="bg-green-50 text-green-700">Template</Badge>
                     {titulo} ({templates.length})
                   </h3>
-                  <Badge variant="outline" className="text-lg px-3 py-1">
-                    Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </Badge>
+                  <div className="flex items-center gap-4">
+                    {accionBoton && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
+                      <Button
+                        size="sm"
+                        onClick={() => cambiarEstadoTemplatesSeleccionados(accionBoton.estado)}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {accionBoton.label} ({Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length})
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
+                  </div>
                 </div>
 
                 {templates.length === 0 ? (
@@ -4852,13 +4888,14 @@ export function VistaFacturasArca() {
                           subtotalPreparado,
                           'preparado',
                           true,
-                          { label: 'Marcar como Pagado', estado: 'pagado' }
+                          { label: 'Marcar como Programado', estado: 'programado' }
                         )}
                         {filtroOrigenPagos.template && renderTablaTemplates(
                           templatesPreparado,
                           '✅ Preparado',
                           subtotalTemplatesPreparado,
-                          true
+                          true,
+                          { label: 'Marcar como Programado', estado: 'programado' }
                         )}
                       </>
                     )}
