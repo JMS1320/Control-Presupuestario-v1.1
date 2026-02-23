@@ -2230,7 +2230,14 @@ export function VistaFacturasArca() {
     const quincena = dia <= 15 ? '1ra' : '2da'
     return `${año}-${mes} - ${quincena}`
   }
-  
+
+  // Convertir quincena a nombre de carpeta: '26-02 - 1ra' → '26-02-01', '26-02 - 2da' → '26-02-02'
+  const quincenaACarpeta = (quincena: string): string => {
+    const esPrimera = quincena.includes('1ra')
+    const base = quincena.replace(' - 1ra', '').replace(' - 2da', '').trim()
+    return `${base}-${esPrimera ? '01' : '02'}`
+  }
+
   // Verificar si ya se retuvo a este proveedor en esta quincena
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
     try {
@@ -2714,52 +2721,25 @@ export function VistaFacturasArca() {
   // Generar reportes Excel + PDF para cierre de quincena
   const generarReportesCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number) => {
     try {
-      // Gestión de carpeta (misma lógica que subdiarios)
-      let directorioDestino = null
-      let ubicacionFinal = 'Descargas'
-      
-      if (carpetaPorDefecto) {
-        try {
-          await (carpetaPorDefecto as any).requestPermission({ mode: 'readwrite' })
-          directorioDestino = carpetaPorDefecto
-          ubicacionFinal = carpetaPorDefecto.name
-        } catch (error) {
-          console.log('Error accediendo carpeta por defecto, usando selector manual')
-          directorioDestino = await (window as any).showDirectoryPicker()
-          ubicacionFinal = directorioDestino.name
-        }
+      // 1. Obtener carpeta base (pedir si no hay handle real)
+      let carpetaBase = carpetaPorDefecto
+      if (!carpetaBase || carpetaBase.isFromStorage) {
+        carpetaBase = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
+        setCarpetaPorDefecto(carpetaBase)
       } else {
-        const opciones = [
-          '1. Cambiar carpeta por defecto',
-          carpetaPorDefecto ? `2. Usar carpeta por defecto actual (${carpetaPorDefecto.name})` : '2. Establecer carpeta por defecto',
-          '3. Cancelar descarga',
-          '',
-          'Elige una opción (1, 2 o 3):'
-        ].join('\n')
-        
-        const eleccion = prompt(opciones)
-        
-        if (eleccion === '1' || eleccion === '2') {
-          directorioDestino = await (window as any).showDirectoryPicker()
-          ubicacionFinal = directorioDestino.name
-          
-          if (eleccion === '2') {
-            setCarpetaPorDefecto(directorioDestino)
-            console.log('📁 Carpeta por defecto establecida:', directorioDestino.name)
-          }
-        } else {
-          console.log('📁 Descarga cancelada por el usuario')
-          alert('📁 Descarga cancelada')
-          return
-        }
+        await carpetaBase.requestPermission({ mode: 'readwrite' })
       }
-      
-      // Generar reportes
-      await generarExcelCierreQuincena(facturas, quincena, totalRetenciones, directorioDestino)
-      await generarPDFCierreQuincena(facturas, quincena, totalRetenciones, directorioDestino)
-      
-      console.log('✅ Reportes cierre quincena generados exitosamente')
-      
+
+      // 2. Crear subcarpeta con nombre de quincena: '26-02-01' o '26-02-02'
+      const nombreCarpeta = quincenaACarpeta(quincena)
+      const subcarpeta = await carpetaBase.getDirectoryHandle(nombreCarpeta, { create: true })
+
+      // 3. Generar ambos archivos dentro de la subcarpeta
+      await generarExcelCierreQuincena(facturas, quincena, totalRetenciones, subcarpeta)
+      await generarPDFCierreQuincena(facturas, quincena, totalRetenciones, subcarpeta)
+
+      console.log(`✅ Reportes SICORE guardados en ${carpetaBase.name}/${nombreCarpeta}`)
+
     } catch (error) {
       console.error('Error generando reportes cierre quincena:', error)
       throw error
@@ -2813,7 +2793,7 @@ export function VistaFacturasArca() {
       XLSX.utils.book_append_sheet(wb, ws, `SICORE ${quincena}`)
       
       // Generar archivo
-      const nombreArchivo = `SICORE_Cierre_${quincena.replace(/\//g, '-')}_${new Date().toISOString().split('T')[0]}.xlsx`
+      const nombreArchivo = `SICORE_${quincenaACarpeta(quincena)}.xlsx`
       
       if (directorio) {
         // Guardar en directorio seleccionado
@@ -2912,7 +2892,7 @@ export function VistaFacturasArca() {
       })
       
       // Generar archivo
-      const nombreArchivo = `SICORE_Cierre_${quincena.replace(/\//g, '-')}_${new Date().toISOString().split('T')[0]}.pdf`
+      const nombreArchivo = `SICORE_${quincenaACarpeta(quincena)}.pdf`
       
       if (directorio) {
         // Guardar en directorio seleccionado
@@ -4441,6 +4421,33 @@ export function VistaFacturasArca() {
 
             {/* TAB: Cerrar Quincena */}
             <TabsContent value="cerrar" className="space-y-4 mt-4">
+
+              {/* Carpeta por defecto */}
+              <div className="flex items-center justify-between bg-gray-50 border rounded-lg px-3 py-2">
+                <div className="text-sm">
+                  <span className="font-medium">📁 Carpeta destino: </span>
+                  <span className={carpetaPorDefecto ? 'text-green-700 font-medium' : 'text-red-500'}>
+                    {carpetaPorDefecto ? carpetaPorDefecto.name : 'No configurada'}
+                  </span>
+                  {carpetaPorDefecto && quincenaSeleccionada && (
+                    <span className="text-gray-400 ml-1">/ {quincenaACarpeta(quincenaSeleccionada)}/</span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={async () => {
+                    try {
+                      const carpeta = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
+                      setCarpetaPorDefecto(carpeta)
+                    } catch (e) { /* cancelado */ }
+                  }}
+                >
+                  {carpetaPorDefecto ? 'Cambiar' : 'Configurar'}
+                </Button>
+              </div>
+
               <div className="space-y-2">
                 <Label>Quincena SICORE</Label>
                 <Select value={quincenaSeleccionada} onValueChange={setQuincenaSeleccionada}>
