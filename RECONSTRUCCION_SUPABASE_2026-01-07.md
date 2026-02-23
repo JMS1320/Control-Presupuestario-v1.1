@@ -8157,3 +8157,284 @@ IS 'Cantidad de cabezas específica para esta línea. Si NULL usa el total de la
 
 **📅 Última actualización sección:** 2026-02-17
 **Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo + Ordenes Aplicación Veterinaria
+
+---
+
+## 📆 2026-02-19 - Sesión: Ciclos de Cría + Popover CUT (SESIÓN TRUNCADA - documentada a posterior)
+
+### 🎯 **Objetivo de la sesión:**
+Implementar sistema de seguimiento de ciclos de cría bovino (Servicio → Tacto → Parición → Destete) integrado con las órdenes de aplicación veterinaria ya existentes.
+
+### 🏗️ **Arquitectura implementada:**
+
+Las órdenes de aplicación con labores de tipo "ciclo" disparan automáticamente la creación/actualización del registro correspondiente en `ciclos_cria`. Cada etapa del ciclo se vincula a la orden que la originó mediante FK (`orden_servicio_id`, `orden_tacto_id`, etc.).
+
+**Flujo:**
+```
+Orden con labor "Servicio/Entore" → crea ciclos_cria (anio_servicio, rodeo, cabezas_servicio)
+Orden con labor "Tacto"           → actualiza ciclo (prenadas, vacias, fecha_tacto) + mueve vacías a CUT
+Orden con labor "Paricion"        → actualiza ciclo (terneros_nacidos, fecha_paricion)
+Orden con labor "Destete"         → actualiza ciclo (terneros_destetados, fecha_destete)
+```
+
+### ✅ **Migraciones BD aplicadas (5 migraciones):**
+
+```sql
+-- 1. add_tipo_labores_and_create_cria_labores
+--    Agrega campo tipo a productivo.labores para marcar labores especiales de ciclo
+ALTER TABLE productivo.labores ADD COLUMN tipo VARCHAR(50);
+-- Labores especiales: tipo = 'servicio' | 'tacto' | 'paricion' | 'destete'
+-- Labores normales: tipo = NULL
+-- Seed: 4 labores de ciclo creadas (Servicio/Entore, Tacto, Parición, Destete)
+
+-- 2. create_ciclos_cria_table
+CREATE TABLE productivo.ciclos_cria (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  anio_servicio INTEGER NOT NULL,
+  rodeo VARCHAR(100) NOT NULL,
+  fecha_servicio DATE,
+  cabezas_servicio INTEGER,
+  orden_servicio_id UUID,
+  fecha_tacto DATE,
+  cabezas_prenadas INTEGER,
+  cabezas_vacias INTEGER,
+  orden_tacto_id UUID,
+  fecha_paricion DATE,
+  terneros_nacidos INTEGER,
+  orden_paricion_id UUID,
+  fecha_destete DATE,
+  terneros_destetados INTEGER,
+  orden_destete_id UUID,
+  observaciones TEXT,
+  created_at TIMESTAMP DEFAULT now(),
+  UNIQUE(anio_servicio, rodeo)
+);
+
+-- 3. create_detalle_descarte_table
+CREATE TABLE productivo.detalle_descarte (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ciclo_id UUID REFERENCES productivo.ciclos_cria(id),
+  caravana VARCHAR(50),
+  categoria_origen VARCHAR(100),
+  observaciones TEXT,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- 4. rename_año_to_anio_servicio
+--    CRÍTICO: PostgREST falla silenciosamente con columnas que contienen ñ
+--    año_servicio → anio_servicio
+
+-- 5. grant_permissions_ciclos_cria_and_detalle_descarte
+--    RLS permisivo (mismo patrón schema productivo)
+```
+
+### ⚠️ **BUG CRÍTICO DOCUMENTADO: ñ en nombres de columnas**
+
+PostgREST (la capa REST de Supabase) falla **silenciosamente** cuando una columna contiene la letra `ñ`. El upsert no da error pero tampoco escribe datos. Solución: usar siempre `anio` en lugar de `año` en nombres de columnas.
+
+### ✅ **Archivos creados:**
+
+#### `components/ciclos-cria-panel.tsx` (NUEVO)
+Panel independiente integrado en el Tab Hacienda:
+- Selector de año/campaña
+- **Tabla KPIs** por rodeo: Entoradas | Preñadas | Vacías | % Preñez | Nacidos | % Parición | Destetados | % Dest s/Nac | % Dest s/Ent
+- Fila **TOTAL** consolidada al pie (cuando hay más de un rodeo)
+- **Tabla detalle** por rodeo con etapa actual (badge) + fechas/datos de cada etapa
+- Etapas con colores: Servicio (amarillo) → Tacto (azul) → Parición (violeta) → Completado (verde)
+
+### ✅ **Archivos modificados:**
+
+#### `components/vista-sector-productivo.tsx`
+
+**1. Modal órdenes - Sección ciclo condicional:**
+- Detecta si una labor seleccionada tiene `tipo` (es labor de ciclo)
+- Si `tipo` detectado → muestra sección especial según etapa:
+  - **Servicio**: Inputs de cabezas por rodeo (uno por cada rodeo seleccionado, placeholder = stock actual)
+  - **Tacto**: Selector de ciclo a vincular + inputs preñadas/vacías + opción ingresar caravanas
+  - **Parición**: Selector de ciclo + input terneros nacidos
+  - **Destete**: Selector de ciclo + input terneros destetados
+- Las labores normales (tipo NULL) funcionan igual que antes
+
+**2. Cabezas por rodeo individual:**
+- En vez de un campo total de cabezas, cada rodeo seleccionado tiene su propio input
+- Placeholder muestra stock actual del rodeo como referencia
+- La orden usa el valor ingresado manualmente (no el stock actual)
+
+**3. Checkbox "Carga retrospectiva":**
+- Visible cuando la labor es de ciclo
+- Al marcarlo: registra datos del ciclo pero **NO genera movimientos de stock**
+- Uso: cargar datos históricos sin impactar el stock actual
+- Ejemplo: tacto histórico registra preñadas/vacías en `ciclos_cria` sin mover animales a CUT
+
+**4. PNG export con resultados del ciclo:**
+- Si la orden tiene ciclo vinculado, el PNG incluye una sección extra al pie de la tabla
+- Contenido según etapa:
+  - **Servicio**: Campaña · Rodeo · Cabezas a servicio
+  - **Tacto**: Entoradas · Preñadas · Vacías · % Preñez · listado caravanas vacías (en columnas)
+  - **Parición**: Terneros nacidos · % Parición
+  - **Destete**: Destetados · % s/Nacidos · % s/Entoradas
+- Canvas se redimensiona dinámicamente para incluir la sección extra
+
+**5. Popover composición CUT/Descarte:**
+- Click en la categoría "Vaca CUT/Descarte" en la tabla de stock → abre Popover
+- Muestra desglose de origen: por rodeo, fecha de tacto, motivo (vacías tacto)
+- Lista caravanas individuales si fueron registradas en `detalle_descarte`
+- **Lógica FIFO**: Si se vendieron CUT (stock actual < total ingresado por tacto), descuenta las más antiguas primero y solo muestra las vigentes
+
+**6. Edición de órdenes con labores de ciclo:**
+- Al abrir una orden existente con labor de ciclo, restaura la labor especial
+- Carga el ciclo vinculado (aunque ya tenga datos) para poder corregirlos
+- Precarga todos los valores existentes (preñadas, vacías, etc.)
+
+### 🐛 **Bugs resueltos (7 fixes):**
+
+| # | Fix | Descripción |
+|---|-----|-------------|
+| 1 | `año_servicio` → `anio_servicio` | ñ causa fallo silencioso en PostgREST |
+| 2 | Error handling ciclos | upsert no lanzaba error visible al fallar |
+| 3 | Ciclo al editar orden | Al editar orden existente no se actualizaba el ciclo |
+| 4 | Cabezas en orden y ciclo | Usaba stock actual en vez de cabezas ingresadas manualmente |
+| 5 | Cabezas por rodeo en todas las etapas | Input solo aparecía en Servicio, no en Tacto/Parición/Destete |
+| 6 | Destete sin parición previa | Requería parición, bloqueaba cargas históricas incompletas |
+| 7 | Popover CUT vigentes (FIFO) | Mostraba todos los ingresos históricos ignorando ventas |
+
+### 📊 **Commits sesión (13 commits):**
+```
+1549562 - Feature: Sistema Ciclos de Cria - Servicio/Tacto/Paricion/Destete
+ac18ec0 - Feature: Cabezas a servicio por rodeo individual
+99137cc - Fix: Usar cabezas ingresadas por rodeo en orden y ciclo (no stock actual)
+c1378d6 - Fix: Crear/actualizar ciclo cria tambien al editar orden existente
+07b0813 - Fix: Error handling en creacion ciclos cria (upsert silencioso)
+3410246 - Fix: Renombrar año_servicio a anio_servicio (ñ causa fallo silencioso PostgREST)
+d8cdc92 - Feature: Checkbox carga retrospectiva - no generar movimientos stock
+59b04a9 - Fix: Cabezas por rodeo editable para todas las labores de ciclo
+22bb570 - Fix: Permitir editar ordenes con labor especial de ciclo
+0676f1f - Fix: Destete no requiere paricion previa (solo tacto)
+948e75d - Feature: PNG orden muestra resultados ciclo cria
+72dfe41 - Feature: Popover detalle composicion CUT/Descarte en stock
+a50cfd4 - Fix: Popover CUT muestra solo animales vigentes (FIFO)
+```
+
+### ⚠️ **Para futuras reconstrucciones BD:**
+Las 5 migraciones de esta sesión están en Supabase y se aplicarán automáticamente. El schema `productivo` necesita estar expuesto en API Settings (igual que las sesiones anteriores).
+
+### 📍 **Estado al cierre:**
+- **Branch**: `main` (todos los commits mergeados)
+- **Sistema Ciclos de Cría**: Completo y funcional
+- **Pendiente conocido**: Reemplazar dibujo Canvas de marca NZ por imagen PNG real (usuario debe proveer imagen — pendiente desde sesión 2026-02-17)
+
+**📅 Última actualización sección:** 2026-02-19
+
+---
+
+## 🔧 SESIÓN 2026-02-23: SICORE - Panel Unificado + Estado Programado
+
+### 🎯 Objetivos completados
+
+1. **Estado `programado`** + esquema de colores unificado para todos los estados
+2. **Vista de Pagos**: admin puede pasar `preparado` → `programado` (además de pagado)
+3. **Panel SICORE** unificado con tabs "Ver Retenciones" y "Cerrar Quincena"
+4. **Export SICORE**: subcarpeta por quincena + carpeta default configurable
+
+---
+
+### 🎨 Esquema de Colores Estados (definitivo)
+
+| Estado | Color | Aparece en Cash Flow |
+|--------|-------|---------------------|
+| pendiente | gris neutro | ✅ |
+| pagar | amarillo | ✅ |
+| preparado | naranja | ✅ |
+| pagado | verde | ✅ |
+| debito | violeta | ✅ |
+| programado | violeta | ✅ (NUEVO) |
+| credito | gris | ❌ excluido |
+| conciliado | gris | ❌ excluido |
+| anterior | gris | ❌ excluido |
+| desactivado | gris | ❌ excluido (templates) |
+
+**`programado`**: representa transferencias bancarias preparadas para fecha futura (ej: 5 días adelante). La orden de pago se ejecutó pero el débito real ocurrirá después.
+
+### 🗃️ Migraciones BD aplicadas
+
+```sql
+-- Migración 1: add_estado_programado_arca
+ALTER TABLE msa.comprobantes_arca
+DROP CONSTRAINT IF EXISTS comprobantes_arca_estado_check;
+ALTER TABLE msa.comprobantes_arca
+ADD CONSTRAINT comprobantes_arca_estado_check
+CHECK (estado IN ('pendiente','debito','pagar','preparado','pagado','credito','conciliado','anterior','programado'));
+
+-- Migración 2: add_estado_programado_templates
+ALTER TABLE public.cuotas_egresos_sin_factura
+DROP CONSTRAINT IF EXISTS cuotas_egresos_sin_factura_estado_check;
+ALTER TABLE public.cuotas_egresos_sin_factura
+ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado IN ('pendiente','debito','pagar','preparado','pagado','credito','conciliado','desactivado','anterior','programado'));
+```
+
+### 🔧 Archivos modificados
+
+- **`components/vista-cash-flow.tsx`**: `ESTADOS_DISPONIBLES` con colores nuevos + color violeta para montos debito/programado en tabla
+- **`components/vista-facturas-arca.tsx`**:
+  - Función `colorEstado()` para badges consistentes
+  - SelectItem `programado` en dropdown inline y edición masiva
+  - Vista Pagos: tab "Preparado" tiene acción "Marcar como Programado" (solo admin)
+  - `cambiarEstadoTemplatesSeleccionados()` para templates en Vista Pagos
+  - Panel SICORE unificado (ver sección abajo)
+- **`components/vista-templates-egresos.tsx`**: `colorEstado()` + SelectItem `programado` en dropdowns
+
+### 📊 Panel SICORE Unificado
+
+Reemplaza el botón "Cierre Quincena SICORE" por botón **"SICORE"** que abre modal con 2 tabs:
+
+**Tab "Ver Retenciones":**
+- Selector de quincena (default = quincena actual al abrir)
+- Badge "En curso" (azul, quincena actual) o "Histórico" (gris, quincenas pasadas)
+- Tabla: Proveedor | CUIT | Fecha Venc | Estado | Neto Gravado | Retención
+- Total de retenciones al pie
+- Auto-carga al cambiar quincena
+
+**Tab "Cerrar Quincena":**
+- Muestra carpeta destino configurada (con botón Cambiar/Configurar)
+- Preview del path: `carpeta / 26-02 - 1ra/`
+- Selector quincena + botón Procesar Cierre
+- Al cerrar: crea subcarpeta `26-02 - 1ra` (o `26-02 - 2da`) dentro de la carpeta default
+- Guarda `SICORE_26-02 - 1ra.xlsx` y `SICORE_26-02 - 1ra.pdf` en la subcarpeta
+
+**Carpeta default SICORE:**
+- Configurable desde el tab "Cerrar Quincena"
+- Si no hay handle real (recarga de página) → abre picker automáticamente
+- Nombre guardado en localStorage para display (el handle se pierde al recargar — limitación del browser)
+- Carpeta recomendada: `I:\Mi unidad\SAN MANUEL\IMPUESTOS\SICORE\2025-26`
+
+**Estructura de archivos resultante:**
+```
+📁 2025-26\
+  └── 📁 26-02 - 1ra\
+        ├── SICORE_26-02 - 1ra.xlsx
+        └── SICORE_26-02 - 1ra.pdf
+  └── 📁 26-02 - 2da\
+        ├── SICORE_26-02 - 2da.xlsx
+        └── SICORE_26-02 - 2da.pdf
+```
+
+**Nota**: "Cerrar Quincena" solo exporta archivos — **no escribe nada en BD**. Se puede ejecutar múltiples veces (sobreescribe archivos). No hay concepto de quincena "declarada" en el sistema todavía.
+
+### 📋 Commits sesión (5 commits)
+
+```
+f906345 - Feature: Estado 'programado' + esquema de colores estados
+f05a917 - Feature: Vista Pagos - Preparado pasa a Programado (solo admin)
+dfb11dc - Feature: Panel SICORE unificado con tabs Ver Retenciones + Cerrar Quincena
+8320777 - Feature: SICORE exporta en subcarpeta aa-mm-01/02 con carpeta default configurable
+6773f99 - Fix: Subcarpeta SICORE usa formato quincena '26-02 - 1ra' / '26-02 - 2da'
+```
+
+### 📍 Estado al cierre
+- **Branch**: `main` (todos los commits mergeados)
+- **Estado `programado`**: en BD ARCA + Templates + UI completo
+- **Panel SICORE**: funcional con Ver Retenciones + Cerrar Quincena + export subcarpetas
+
+**📅 Última actualización sección:** 2026-02-23
+**Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo + Ordenes Aplicación Veterinaria + Ciclos de Cría + Popover CUT
