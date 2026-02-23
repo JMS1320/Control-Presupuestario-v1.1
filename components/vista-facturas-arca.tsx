@@ -194,6 +194,13 @@ export function VistaFacturasArca() {
   const [quincenaSeleccionada, setQuincenaSeleccionada] = useState('')
   const [procesandoCierre, setProcesandoCierre] = useState(false)
 
+  // Estados para panel SICORE (botón unificado)
+  const [mostrarModalPanelSicore, setMostrarModalPanelSicore] = useState(false)
+  const [tabPanelSicore, setTabPanelSicore] = useState<'ver' | 'cerrar'>('ver')
+  const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
+  const [retencionesVer, setRetencionesVer] = useState<any[]>([])
+  const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
+
   // Estados para Vista de Pagos
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
@@ -2650,6 +2657,27 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Cargar retenciones para vista "Ver Retenciones"
+  const cargarRetencionesVer = async (quincena: string) => {
+    if (!quincena) { setRetencionesVer([]); return }
+    setCargandoRetencionesVer(true)
+    try {
+      const { data, error } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, denominacion_emisor, cuit, monto_sicore, imp_total, imp_neto_gravado, fecha_vencimiento, estado')
+        .eq('sicore', quincena)
+        .not('monto_sicore', 'is', null)
+        .gt('monto_sicore', 0)
+        .order('fecha_vencimiento', { ascending: true })
+      if (!error && data) setRetencionesVer(data)
+    } catch (e) {
+      console.error('Error cargando retenciones SICORE:', e)
+    } finally {
+      setCargandoRetencionesVer(false)
+    }
+  }
+
   // Procesar cierre completo de quincena
   const procesarCierreQuincena = async (quincena: string) => {
     try {
@@ -3341,14 +3369,20 @@ export function VistaFacturasArca() {
             {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
           </Button>
 
-          {/* Botón cierre quincena SICORE */}
+          {/* Botón Panel SICORE */}
           <Button
             variant="outline"
             className="bg-orange-50 hover:bg-orange-100 border-orange-300"
-            onClick={() => setMostrarModalCierreQuincena(true)}
+            onClick={() => {
+              const quincenaActual = generarQuincenaSicore(new Date().toISOString())
+              setQuincenaVerRetenciones(quincenaActual)
+              cargarRetencionesVer(quincenaActual)
+              setTabPanelSicore('ver')
+              setMostrarModalPanelSicore(true)
+            }}
           >
             <Calendar className="mr-2 h-4 w-4" />
-            Cierre Quincena SICORE
+            SICORE
           </Button>
 
           {/* Botón Vista de Pagos */}
@@ -4303,85 +4337,172 @@ export function VistaFacturasArca() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Cierre Quincena SICORE */}
-      <Dialog open={mostrarModalCierreQuincena} onOpenChange={setMostrarModalCierreQuincena}>
-        <DialogContent className="max-w-md">
+      {/* Panel SICORE - Modal combinado */}
+      <Dialog open={mostrarModalPanelSicore} onOpenChange={setMostrarModalPanelSicore}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>📅 Cierre de Quincena SICORE</DialogTitle>
+            <DialogTitle>📊 SICORE - Retenciones Ganancias</DialogTitle>
             <DialogDescription>
-              Selecciona la quincena para generar el reporte y actualizar template
+              Visualización y cierre de quincenas SICORE
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Selector de quincena */}
-            <div className="space-y-2">
-              <Label>Quincena SICORE</Label>
-              <Select value={quincenaSeleccionada} onValueChange={setQuincenaSeleccionada}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona una quincena..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {generarQuincenasDisponibles().map((quincena) => (
-                    <SelectItem key={quincena} value={quincena}>
-                      {quincena}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <Tabs value={tabPanelSicore} onValueChange={(v) => setTabPanelSicore(v as 'ver' | 'cerrar')}>
+            <TabsList className="w-full">
+              <TabsTrigger value="ver" className="flex-1">🔍 Ver Retenciones</TabsTrigger>
+              <TabsTrigger value="cerrar" className="flex-1">📅 Cerrar Quincena</TabsTrigger>
+            </TabsList>
 
-            {/* Información del proceso */}
-            <div className="bg-blue-50 p-3 rounded-lg space-y-2 text-sm">
-              <p className="font-medium">El proceso incluirá:</p>
-              <ul className="space-y-1 text-gray-700">
-                <li>• Buscar todas las retenciones SICORE de la quincena</li>
-                <li>• Generar reportes PDF + Excel con detalles</li>
-                <li>• Calcular total y actualizar template correspondiente</li>
-                <li>• Usar carpeta configurada para guardar archivos</li>
-              </ul>
-            </div>
-
-            {/* Ejemplo de quincena */}
-            {quincenaSeleccionada && (
-              <div className="bg-orange-50 p-3 rounded-lg text-sm">
-                <p className="font-medium">Ejemplo: 2ª quincena septiembre 2024</p>
-                <p className="text-gray-600">
-                  Se procesarán todas las facturas con retención SICORE de la quincena "{quincenaSeleccionada}"
-                </p>
+            {/* TAB: Ver Retenciones */}
+            <TabsContent value="ver" className="space-y-4 mt-4">
+              <div className="flex items-center gap-3">
+                <Label className="whitespace-nowrap">Quincena:</Label>
+                <Select
+                  value={quincenaVerRetenciones}
+                  onValueChange={(v) => {
+                    setQuincenaVerRetenciones(v)
+                    cargarRetencionesVer(v)
+                  }}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Seleccionar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generarQuincenasDisponibles().map((q) => (
+                      <SelectItem key={q} value={q}>{q}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {quincenaVerRetenciones && (() => {
+                  const actual = generarQuincenaSicore(new Date().toISOString())
+                  const esActual = quincenaVerRetenciones === actual
+                  return (
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${esActual ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {esActual ? '● En curso' : '● Histórico'}
+                    </span>
+                  )
+                })()}
               </div>
-            )}
-          </div>
 
-          <div className="flex gap-2">
-            <Button 
-              onClick={() => quincenaSeleccionada && procesarCierreQuincena(quincenaSeleccionada)}
-              disabled={!quincenaSeleccionada || procesandoCierre}
-              className="bg-orange-600 hover:bg-orange-700 flex-1"
-            >
-              {procesandoCierre ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Procesando...
-                </>
+              {cargandoRetencionesVer ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin text-orange-500" />
+                  <span className="text-sm text-gray-500">Cargando retenciones...</span>
+                </div>
+              ) : retencionesVer.length === 0 ? (
+                <div className="text-center py-8 text-sm text-gray-400">
+                  {quincenaVerRetenciones ? 'Sin retenciones SICORE para esta quincena' : 'Selecciona una quincena para ver las retenciones'}
+                </div>
               ) : (
                 <>
-                  <Calendar className="mr-2 h-4 w-4" />
-                  Procesar Cierre
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Proveedor</TableHead>
+                        <TableHead>CUIT</TableHead>
+                        <TableHead className="text-right">Fecha Venc.</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead className="text-right">Neto Gravado</TableHead>
+                        <TableHead className="text-right">Retención</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {retencionesVer.map((f) => (
+                        <TableRow key={f.id}>
+                          <TableCell className="text-sm font-medium">{f.denominacion_emisor}</TableCell>
+                          <TableCell className="text-xs text-gray-500">{f.cuit}</TableCell>
+                          <TableCell className="text-right text-xs">
+                            {f.fecha_vencimiento ? new Date(f.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-AR') : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`text-xs ${colorEstado(f.estado)}`}>{f.estado}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm">
+                            {f.imp_neto_gravado != null ? `$${Number(f.imp_neto_gravado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '-'}
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-semibold text-orange-700">
+                            ${Number(f.monto_sicore).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-300 font-bold">
+                        <td colSpan={5} className="pt-2 pr-2 text-right text-sm">Total retenciones ({retencionesVer.length} facturas):</td>
+                        <td className="pt-2 text-right text-sm text-orange-700">
+                          ${retencionesVer.reduce((s, f) => s + (Number(f.monto_sicore) || 0), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </Table>
                 </>
               )}
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setMostrarModalCierreQuincena(false)
-                setQuincenaSeleccionada('')
-              }}
-              disabled={procesandoCierre}
-            >
-              Cancelar
-            </Button>
-          </div>
+            </TabsContent>
+
+            {/* TAB: Cerrar Quincena */}
+            <TabsContent value="cerrar" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>Quincena SICORE</Label>
+                <Select value={quincenaSeleccionada} onValueChange={setQuincenaSeleccionada}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona una quincena..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generarQuincenasDisponibles().map((quincena) => (
+                      <SelectItem key={quincena} value={quincena}>
+                        {quincena}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="bg-blue-50 p-3 rounded-lg space-y-2 text-sm">
+                <p className="font-medium">El proceso incluirá:</p>
+                <ul className="space-y-1 text-gray-700">
+                  <li>• Buscar todas las retenciones SICORE de la quincena</li>
+                  <li>• Generar reportes PDF + Excel con detalles</li>
+                  <li>• Calcular total y actualizar template correspondiente</li>
+                  <li>• Usar carpeta configurada para guardar archivos</li>
+                </ul>
+              </div>
+
+              {quincenaSeleccionada && (
+                <div className="bg-orange-50 p-3 rounded-lg text-sm">
+                  <p className="text-gray-600">
+                    Se procesarán todas las facturas con retención SICORE de la quincena <strong>"{quincenaSeleccionada}"</strong>
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => quincenaSeleccionada && procesarCierreQuincena(quincenaSeleccionada)}
+                  disabled={!quincenaSeleccionada || procesandoCierre}
+                  className="bg-orange-600 hover:bg-orange-700 flex-1"
+                >
+                  {procesandoCierre ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Procesar Cierre
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setQuincenaSeleccionada('')}
+                  disabled={procesandoCierre}
+                >
+                  Limpiar
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
