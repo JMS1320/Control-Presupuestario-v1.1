@@ -924,10 +924,11 @@ export function VistaCashFlow() {
           return formatearFecha(valor as string)
         
         case 'currency':
-          // Colorización según estado — solo en la columna que tiene valor (debitos o creditos)
+          // Colorización según estado — solo en debitos/creditos, nunca en saldo
           let colorClase = 'text-black'
           const montoActual = valor != null ? Number(valor) : 0
-          if (montoActual > 0) {
+          const esColumnaColor = columna.key === 'debitos' || columna.key === 'creditos'
+          if (esColumnaColor && montoActual > 0) {
             if (fila.estado === 'pagado') {
               // Aplica a debitos (egresos pagados) y creditos (cobros pagados)
               colorClase = 'text-white bg-green-600 px-2 py-1 rounded'
