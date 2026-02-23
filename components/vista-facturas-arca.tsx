@@ -2231,12 +2231,8 @@ export function VistaFacturasArca() {
     return `${año}-${mes} - ${quincena}`
   }
 
-  // Convertir quincena a nombre de carpeta: '26-02 - 1ra' → '26-02-01', '26-02 - 2da' → '26-02-02'
-  const quincenaACarpeta = (quincena: string): string => {
-    const esPrimera = quincena.includes('1ra')
-    const base = quincena.replace(' - 1ra', '').replace(' - 2da', '').trim()
-    return `${base}-${esPrimera ? '01' : '02'}`
-  }
+  // Nombre de carpeta: mismo formato de quincena '26-02 - 1ra' / '26-02 - 2da'
+  const quincenaACarpeta = (quincena: string): string => quincena
 
   // Verificar si ya se retuvo a este proveedor en esta quincena
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
