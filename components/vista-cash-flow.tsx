@@ -140,8 +140,10 @@ export function VistaCashFlow() {
     onLocalUpdate: (filaId, campo, valor, updateData) => {
       // Actualizar cada campo del updateData localmente
       Object.entries(updateData).forEach(([key, val]) => {
-        // Mapear campos BD a campos CashFlowRow
-        const campoLocal = key === 'monto_a_abonar' ? 'debitos' : key
+        let campoLocal = key
+        if (key === 'monto_a_abonar') campoLocal = 'debitos'
+        // ANTICIPO: monto/monto_restante mapean a la columna editada (debitos o creditos)
+        else if (key === 'monto' || key === 'monto_restante') campoLocal = campo
         actualizarLocal(filaId, campoLocal, val)
       })
     },
