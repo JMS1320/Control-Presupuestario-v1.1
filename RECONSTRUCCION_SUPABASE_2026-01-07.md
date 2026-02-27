@@ -8476,3 +8476,115 @@ bb59a28 - Fix: Colores estado Cash Flow no aplican a columna saldo
 - **Anticipos**: edición inline funcionando end-to-end (BD + visual)
 
 **📅 Última actualización sección:** 2026-02-26
+
+---
+
+## 📧 SESIÓN 2026-02-26 — DISEÑO SISTEMA MAIL + BBDD PROVEEDORES
+
+> **Tipo**: Diseño — sin implementación de código
+> **Archivo de referencia completo**: `DISEÑO_MAIL_PROVEEDORES.md`
+
+### Objetivo del sistema
+Permitir al admin enviar un aviso al proveedor cuando asienta un pago como `pagado` o `programado`. El admin solo asienta el estado cuando ya ejecutó el pago, por lo que ese es el momento correcto para avisar.
+
+### BBDD Proveedores — estructura acordada
+
+```sql
+CREATE TABLE public.proveedores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre VARCHAR(200) NOT NULL,   -- único campo realmente obligatorio
+  cuit VARCHAR(20),               -- opcional, permite auto-vinculación con facturas ARCA
+  email VARCHAR(200),             -- requerido solo si se usa el sistema de mail
+  telefono VARCHAR(50),
+  notas TEXT,
+  activo BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+- Si tiene CUIT → vinculación automática con facturas ARCA y templates
+- Sin CUIT → existe igual, sin vinculación automática
+- Es complementaria al flujo actual, no lo reemplaza
+- Alta rápida desde el momento del envío (nombre + email mínimo)
+- Si el proveedor no tiene email → alerta + ingresar en el momento sin perder avance
+
+### Trigger y flujo
+
+- **Evento**: admin cambia estado a `pagado` o `programado`
+- **Independiente de SICORE**: si aplica SICORE, corre primero; después aparece la opción de mail
+- **UX en ARCA Facturas**: checkbox "Avisar al proveedor" a la izquierda del selector de estado, default OFF
+- **UX en Cash Flow**: al cambiar estado, pregunta "¿Querés enviar aviso al proveedor?"
+
+```
+Flujo si checkbox marcado:
+1. Busca proveedor por CUIT en tabla proveedores
+2. Si no encuentra o no tiene email → alerta + opción de ingresar en el momento
+3. Genera borrador editable con template base
+4. Admin revisa/modifica cualquier parte (incluido asunto)
+5. Confirma → mail sale
+```
+
+### Template base (todo editable antes de enviar)
+
+```
+Asunto: Pago [Proveedor] - [DD/MM/AAAA]
+
+Estimado/a [Nombre Proveedor]:
+
+Le informamos que el pago correspondiente a [descripción/detalle factura]
+fue [programado para el DD/MM/AAAA] / [acreditado el DD/MM/AAAA].
+
+  Importe transferido:          $ XXX.XXX,XX
+  Retención Ganancias (SICORE): $ XX.XXX,XX   ← se omite si monto_sicore = 0
+  Importe neto acreditado:      $ XXX.XXX,XX
+
+[Campo libre opcional]
+
+Saludos,
+[Firma configurable]
+```
+
+### Decisiones técnicas
+
+| Decisión | Valor acordado |
+|----------|----------------|
+| Método envío | SMTP Gmail con App Password (nodemailer) |
+| Cuenta emisora | `sanmanuel.sp@gmail.com` |
+| Historial | Gmail "Enviados" automático — sin BD extra |
+| Reply-to | Sí — proveedores pueden responder |
+| Firma | Genérica para empezar, por empresa en fase futura |
+| Multi-cuenta futura | Variables de entorno por empresa (arquitectura preparada) |
+| PDF SICORE | Flexible — cuerpo del mail o adjunto, a definir en implementación |
+| Caso uso alternativo | Generador de texto para copiar en portal bancario (sin enviar mail) |
+
+### Prerequisito antes de implementar
+
+**Verificar 2FA activo en `sanmanuel.sp@gmail.com`**
+→ myaccount.google.com → Seguridad → Verificación en dos pasos
+→ Si no está activo: habilitarlo primero
+→ Luego generar "Contraseña de aplicación" y guardar en variables de entorno Vercel
+
+### Fases de implementación
+
+| Fase | Descripción |
+|------|-------------|
+| 1 | Tabla `proveedores` + alta rápida desde modal |
+| 2 | API route SMTP + config básica + test envío |
+| 3 | Checkbox ARCA Facturas + pregunta Cash Flow + borrador editable |
+| 4 | Auto-vinculación CUIT + reply-to configurable |
+| 5 | Historial BD interno + PDF SICORE adjunto |
+| 6 | Firma por empresa (MSA/PAM) + multi-cuenta |
+
+**MVP recomendado**: Fase 1 + 2 + 3 juntas.
+
+### Commits sesión
+```
+3b12c31 - Docs: Diseño completo sistema mail + BBDD proveedores
+```
+
+### 📍 Estado al cierre
+- **Diseño**: completo y documentado en `DISEÑO_MAIL_PROVEEDORES.md`
+- **Implementación**: pendiente — prerequisito: confirmar 2FA Gmail
+- **Branch**: `desarrollo`
+
+**📅 Última actualización sección:** 2026-02-26
