@@ -8588,3 +8588,51 @@ Saludos,
 - **Branch**: `desarrollo`
 
 **📅 Última actualización sección:** 2026-02-26
+
+---
+
+## 🌾 SESIÓN 2026-02-27 — DISEÑO MÓDULO AGROQUÍMICOS
+
+> **Tipo**: Diseño — sin implementación de código
+> **Archivo de referencia completo**: `DISEÑO_AGROQUIMICOS.md`
+
+### Objetivo
+Nueva fase del módulo productivo: gestión de insumos agroquímicos con el mismo flujo que el sistema veterinario existente. Aplica a órdenes de campo (lotes/hectáreas) en lugar de hacienda.
+
+### Insumos base definidos
+Glifosato, Abamectina 3,6%, Engeo, Azoxi Pro, Aceite Vegetal — categoría "Agroquímico", stock en litros.
+
+### Labores agrícolas
+Pulverización, Siembra, Fertilización, Cosecha — campo `tipo = 'agricola'` en tabla `productivo.labores`.
+
+### Arquitectura de dosis
+- Ingreso en L/ha ó cc/ha por línea de insumo
+- Total siempre calculado en litros para descuento de stock
+- `cantidad_total_L = dosis × ha` (con conversión cc→L si corresponde)
+
+### Tablas BD nuevas (3 migraciones pendientes)
+
+```
+productivo.ordenes_agricolas              — encabezado orden (lote opcional + ha + estado)
+productivo.lineas_orden_agricola          — insumos por orden (dosis, unidad, total_L, recuento)
+productivo.lineas_orden_agricola_labores  — labores asociadas a cada orden
+```
+
+### Cambio UI (1 archivo)
+`components/vista-sector-productivo.tsx`:
+- Tab "Lotes Agrícolas" pasa a tener sub-tabs: **Lotes** (sin cambios) + **Órdenes Agrícolas** (nuevo)
+- Nuevo componente `SubTabOrdenesAgricolas()` espejado del veterinario
+- Stock/compras de agroquímicos usan tablas existentes — sin cambios de código
+
+### Flujo completo
+```
+Crear orden → (lote opcional o ha manual) + labores + líneas insumos + calcular total L
+→ estado 'planificada' → Export PNG → Ejecutar (recuento) → descontar stock → 'ejecutada'
+```
+
+### 📍 Estado al cierre
+- **Diseño**: completo en `DISEÑO_AGROQUIMICOS.md`
+- **Implementación**: pendiente — sin prerequisitos técnicos bloqueantes
+- **Branch**: `desarrollo`
+
+**📅 Última actualización sección:** 2026-02-27
