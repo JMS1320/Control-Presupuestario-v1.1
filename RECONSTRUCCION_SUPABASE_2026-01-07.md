@@ -8438,3 +8438,41 @@ dfb11dc - Feature: Panel SICORE unificado con tabs Ver Retenciones + Cerrar Quin
 
 **📅 Última actualización sección:** 2026-02-23
 **Documentación generada desde:** Carga masiva templates + correcciones + sistema conversión bidireccional + propuesta UX Excel + implementación Fase 1 + Fix sticky headers + Diagnóstico Enter/Escape + Arquitectura templates bidireccionales FCI + Sistema Anticipos Proveedores/Clientes + Sistema Vista de Pagos Unificada + Sistema Edición Masiva Checkboxes + Enter Filtros + Estado Pago Anticipos + Actualización Optimista + Sector Productivo + Ordenes Aplicación Veterinaria + Ciclos de Cría + Popover CUT
+
+---
+
+## 🔧 SESIÓN 2026-02-25/26: FIXES CASH FLOW
+
+### ✅ Fixes aplicados
+
+**1. Colores estado Cash Flow — columna correcta para cobros**
+- **Problema**: Al marcar un cobro (anticipo/crédito) como `pagado`, se pintaba de verde la columna `débitos` (vacía) en lugar de `créditos` (donde está el monto)
+- **Root cause**: La colorización solo verificaba `columna.key === 'debitos'`, incluyendo `pagado`
+- **Fix**: `pagado` coloriza la columna que tenga `valor > 0` (sea débitos o créditos). El resto de estados (`pagar`, `preparado`, `debito`, `programado`) solo aplican a `débitos`
+- **Archivo**: `components/vista-cash-flow.tsx`
+
+**2. Colores estado no aplican a columna Saldo**
+- **Problema**: La columna `SALDO CTA CTE` también se pintaba de verde/naranja/etc. cuando tenía valor > 0
+- **Root cause**: La condición `montoActual > 0` aplicaba a todas las columnas `currency`, incluyendo `saldo_cta_cte`
+- **Fix**: Agregado `esColumnaColor = columna.key === 'debitos' || columna.key === 'creditos'` como guard
+- **Archivo**: `components/vista-cash-flow.tsx`
+
+**3. Edición monto anticipo no actualizaba visualmente**
+- **Problema**: Ctrl+Click en monto de anticipo abría el input y guardaba en BD, pero la celda no refrescaba el valor nuevo
+- **Root cause**: `onLocalUpdate` mapeaba `monto`/`monto_restante` (campos BD) a sí mismos, pero CashFlowRow usa `debitos`/`creditos` como campos de display
+- **Fix**: `monto` y `monto_restante` ahora se mapean al `campo` que estaba en edición (`debitos` o `creditos`)
+- **Archivo**: `components/vista-cash-flow.tsx`
+
+### 📋 Commits sesión
+```
+bb59a28 - Fix: Colores estado Cash Flow no aplican a columna saldo
+020823c - Fix: Cash Flow pinta columna creditos en verde para cobros con estado pagado
+1a8391b - Fix: Edición monto anticipo en Cash Flow actualiza columna debitos/creditos correctamente
+```
+
+### 📍 Estado al cierre
+- **Branch**: `main` (mergeado)
+- **Cash Flow colores**: funcionando correctamente para egresos, cobros y sin afectar saldo
+- **Anticipos**: edición inline funcionando end-to-end (BD + visual)
+
+**📅 Última actualización sección:** 2026-02-26
