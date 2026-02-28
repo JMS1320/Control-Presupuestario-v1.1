@@ -1500,6 +1500,7 @@ function SubTabStockInsumos() {
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
+  const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
 
   // Recalcular stock de un insumo desde sus movimientos
   const recalcularStockInsumo = async (insumoStockId: string) => {
@@ -1710,6 +1711,19 @@ function SubTabStockInsumos() {
     cargarDatos()
   }
 
+  const stockFiltrado = stock.filter(s => {
+    const esAgroquimico = s.categorias_insumo?.nombre === 'Agroquímico'
+    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+  })
+  const categoriasFiltradas = categorias.filter(c => {
+    const esAgroquimico = c.nombre === 'Agroquímico'
+    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+  })
+  const movimientosFiltrados = movimientos.filter(m => {
+    const esAgroquimico = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
+    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+  })
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1722,7 +1736,25 @@ function SubTabStockInsumos() {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Stock de Insumos</h3>
+        <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold">Stock de Insumos</h3>
+          <div className="flex gap-1">
+            <Button
+              variant={filtroTipo === 'ganadero' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroTipo('ganadero')}
+            >
+              Ganadero
+            </Button>
+            <Button
+              variant={filtroTipo === 'agricola' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroTipo('agricola')}
+            >
+              Agrícola
+            </Button>
+          </div>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
@@ -1757,14 +1789,14 @@ function SubTabStockInsumos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stock.length === 0 ? (
+            {stockFiltrado.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                   Sin registros de stock de insumos.
                 </TableCell>
               </TableRow>
             ) : (
-              stock.map(s => (
+              stockFiltrado.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.producto}</TableCell>
                   <TableCell>{s.categorias_insumo?.nombre || '-'}</TableCell>
@@ -1791,14 +1823,14 @@ function SubTabStockInsumos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {movimientos.length === 0 ? (
+            {movimientosFiltrados.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                   Sin movimientos de insumos registrados.
                 </TableCell>
               </TableRow>
             ) : (
-              movimientos.map(m => {
+              movimientosFiltrados.map(m => {
                 const esEditable = m.tipo === 'compra' || m.tipo === 'ajuste'
                 const enEdicion = (campo: string) =>
                   hookEditor.celdaEnEdicion?.filaId === m.id && hookEditor.celdaEnEdicion?.columna === campo
@@ -1908,7 +1940,7 @@ function SubTabStockInsumos() {
                       <Select value={linea.insumo_stock_id} onValueChange={v => actualizarLineaMov(linea.key, 'insumo_stock_id', v)}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                         <SelectContent position="popper" className="z-[9999]">
-                          {stock.map(s => (
+                          {stockFiltrado.map(s => (
                             <SelectItem key={s.id} value={s.id}>
                               {s.producto} ({s.unidad_medida || 'ml'})
                             </SelectItem>
@@ -1978,7 +2010,7 @@ function SubTabStockInsumos() {
                 <Select value={nuevoInsumo.categoria_id} onValueChange={v => setNuevoInsumo(p => ({ ...p, categoria_id: v }))}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                   <SelectContent position="popper" className="z-[9999]">
-                    {categorias.map(c => (
+                    {categoriasFiltradas.map(c => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
                     ))}
                   </SelectContent>
@@ -2017,6 +2049,8 @@ function SubTabStockInsumos() {
 // ============================================================
 
 function SubTabOrdenesAplicacion() {
+  const [tipoOrden, setTipoOrden] = useState<'ganadero' | 'agricola'>('ganadero')
+
   const [ordenes, setOrdenes] = useState<OrdenAplicacion[]>([])
   const [categoriasHacienda, setCategoriasHacienda] = useState<CategoriaHacienda[]>([])
   const [insumosVet, setInsumosVet] = useState<StockInsumo[]>([])
@@ -2231,7 +2265,7 @@ function SubTabOrdenesAplicacion() {
         supabase.schema('productivo').from('movimientos_hacienda')
           .select('categoria_id, tipo, cantidad'),
         supabase.schema('productivo').from('labores')
-          .select('id, nombre, tipo').eq('activo', true).order('orden_display')
+          .select('id, nombre, tipo').eq('activo', true).or('tipo.is.null,tipo.neq.agricola').order('orden_display')
       ])
 
       if (ordenesRes.data) {
@@ -2759,6 +2793,24 @@ function SubTabOrdenesAplicacion() {
 
   return (
     <div className="space-y-4 pt-4">
+      {/* Selector tipo */}
+      <div className="flex gap-2 border-b pb-3">
+        <Button variant={tipoOrden === 'ganadero' ? 'default' : 'outline'} size="sm"
+          onClick={() => setTipoOrden('ganadero')}>
+          Ganadero
+        </Button>
+        <Button variant={tipoOrden === 'agricola' ? 'default' : 'outline'} size="sm"
+          onClick={() => setTipoOrden('agricola')}>
+          Agrícola
+        </Button>
+      </div>
+
+      {tipoOrden === 'agricola' && (
+        <SubTabOrdenesAgricolas />
+      )}
+
+      {tipoOrden === 'ganadero' && (
+      <>
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Ordenes de Aplicacion Veterinaria</h3>
         <div className="flex gap-2">
@@ -2863,8 +2915,10 @@ function SubTabOrdenesAplicacion() {
           )}
         </TableBody>
       </Table>
+      </>
+      )}
 
-      {/* Modal Nueva/Editar Orden */}
+      {/* Modals ganadero - siempre montados para que el estado open funcione */}
       <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -3470,7 +3524,8 @@ function SubTabNecesidadCompra() {
 // SUB-TAB: ÓRDENES AGRÍCOLAS
 // ============================================================
 
-function SubTabOrdenesAgricolas({ lotesDisponibles }: { lotesDisponibles: LoteAgricola[] }) {
+function SubTabOrdenesAgricolas() {
+  const [lotesDisponibles, setLotesDisponibles] = useState<LoteAgricola[]>([])
   const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
   const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
   const [laboresAgricolas, setLaboresAgricolas] = useState<{ id: number, nombre: string }[]>([])
@@ -3573,6 +3628,11 @@ function SubTabOrdenesAgricolas({ lotesDisponibles }: { lotesDisponibles: LoteAg
       const { data: laboresData } = await supabase.schema('productivo').from('labores')
         .select('id, nombre').eq('tipo', 'agricola').eq('activo', true).order('orden_display')
       setLaboresAgricolas(laboresData || [])
+
+      const { data: lotesData } = await supabase.schema('productivo').from('lotes_agricolas')
+        .select('id, nombre_lote, hectareas, cultivo, campo, campaña, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at')
+        .order('nombre_lote')
+      setLotesDisponibles(lotesData || [])
     } catch (err) {
       console.error('Error cargando órdenes agrícolas:', err)
       toast.error('Error al cargar órdenes agrícolas')
@@ -4034,7 +4094,6 @@ function TabLotesAgricolas() {
   const [lotes, setLotes] = useState<LoteAgricola[]>([])
   const [loading, setLoading] = useState(true)
   const [mostrarModalLote, setMostrarModalLote] = useState(false)
-  const [subTab, setSubTab] = useState<'lotes' | 'ordenes'>('lotes')
 
   const [nuevoLote, setNuevoLote] = useState({
     nombre_lote: '',
@@ -4121,78 +4180,59 @@ function TabLotesAgricolas() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex gap-2 border-b pb-2">
-        <Button variant={subTab === 'lotes' ? 'default' : 'ghost'} size="sm"
-          onClick={() => setSubTab('lotes')}>
-          Lotes
-        </Button>
-        <Button variant={subTab === 'ordenes' ? 'default' : 'ghost'} size="sm"
-          onClick={() => setSubTab('ordenes')}>
-          Órdenes Agrícolas
-        </Button>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Lotes Agricolas</h3>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => setMostrarModalLote(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nuevo Lote
+          </Button>
+          <Button variant="outline" size="sm" onClick={cargarDatos}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      {subTab === 'lotes' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Lotes Agricolas</h3>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => setMostrarModalLote(true)}>
-                <Plus className="mr-1 h-4 w-4" />
-                Nuevo Lote
-              </Button>
-              <Button variant="outline" size="sm" onClick={cargarDatos}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Lote</TableHead>
-                <TableHead>Campo</TableHead>
-                <TableHead className="text-right">Hectareas</TableHead>
-                <TableHead>Cultivo</TableHead>
-                <TableHead>Campaña</TableHead>
-                <TableHead>Siembra</TableHead>
-                <TableHead>Cosecha Est.</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Obs.</TableHead>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Lote</TableHead>
+            <TableHead>Campo</TableHead>
+            <TableHead className="text-right">Hectareas</TableHead>
+            <TableHead>Cultivo</TableHead>
+            <TableHead>Campaña</TableHead>
+            <TableHead>Siembra</TableHead>
+            <TableHead>Cosecha Est.</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Obs.</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {lotes.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                Sin lotes agricolas registrados.
+              </TableCell>
+            </TableRow>
+          ) : (
+            lotes.map(l => (
+              <TableRow key={l.id}>
+                <TableCell className="font-medium">{l.nombre_lote}</TableCell>
+                <TableCell>{l.campo || '-'}</TableCell>
+                <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
+                <TableCell>{l.cultivo}</TableCell>
+                <TableCell>{l.campaña || '-'}</TableCell>
+                <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
+                <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
+                <TableCell>
+                  <Badge className={colorEstado(l.estado)}>{l.estado.replace('_', ' ')}</Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.observaciones || '-'}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lotes.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                    Sin lotes agricolas registrados.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                lotes.map(l => (
-                  <TableRow key={l.id}>
-                    <TableCell className="font-medium">{l.nombre_lote}</TableCell>
-                    <TableCell>{l.campo || '-'}</TableCell>
-                    <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
-                    <TableCell>{l.cultivo}</TableCell>
-                    <TableCell>{l.campaña || '-'}</TableCell>
-                    <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
-                    <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
-                    <TableCell>
-                      <Badge className={colorEstado(l.estado)}>{l.estado.replace('_', ' ')}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.observaciones || '-'}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {subTab === 'ordenes' && (
-        <SubTabOrdenesAgricolas lotesDisponibles={lotes} />
-      )}
+            ))
+          )}
+        </TableBody>
+      </Table>
 
       {/* Modal Nuevo Lote */}
       <Dialog open={mostrarModalLote} onOpenChange={setMostrarModalLote}>
