@@ -158,6 +158,41 @@ interface LoteAgricola {
   created_at: string
 }
 
+interface OrdenAgricola {
+  id: string
+  fecha: string
+  lote_id: string | null
+  lote_nombre: string | null
+  hectareas: number
+  estado: string
+  observaciones: string | null
+  created_at: string
+  lote?: { nombre_lote: string; hectareas: number }
+  lineas?: LineaOrdenAgricola[]
+  labores?: string[]
+}
+
+interface LineaOrdenAgricola {
+  id: string
+  orden_id: string
+  insumo_nombre: string
+  insumo_stock_id: string | null
+  dosis: number
+  unidad_dosis: string
+  cantidad_total_l: number
+  recuento: boolean
+  cantidad_recuento_l: number | null
+  observaciones: string | null
+}
+
+interface LineaFormularioAgricola {
+  key: number
+  insumo_nombre: string
+  insumo_stock_id: string
+  dosis: string
+  unidad_dosis: 'L' | 'cc'
+}
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -228,6 +263,11 @@ const dosisPorCabeza = (
     return { valor: mlPorCabeza, texto: `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(mlPorCabeza)} ml` }
   }
   return { valor: 0, texto: '-' }
+}
+
+const calcularTotalL = (dosis: number, unidad: string, hectareas: number): number => {
+  const dosisL = unidad === 'cc' ? dosis / 1000 : dosis
+  return dosisL * hectareas
 }
 
 // Wraps text on canvas, returns number of lines used
@@ -651,6 +691,182 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
   const nombreArchivo = partes.join('_') + '.png'
 
   // Descargar
+  const link = document.createElement('a')
+  link.download = nombreArchivo
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+}
+
+const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
+  const lineas = orden.lineas || []
+  const padding = 30
+  const tableHeaderH = 32
+  const rowH = 28
+  const canvasW = 720
+  const obsLineH = 17
+
+  const colPrimario = '#2c1810'
+  const colSecundario = '#5a3a28'
+  const colTerciario = '#8b7355'
+  const colFondo = '#faf8f5'
+  const colLinea = '#c4a882'
+  const colTablaHeader = '#3d2b1f'
+  const colTablaAlt = '#f5f0ea'
+
+  // Pre-calcular alto observaciones
+  const tempCanvas = document.createElement('canvas')
+  const tempCtx = tempCanvas.getContext('2d')
+  let obsLines = 0
+  if (tempCtx && orden.observaciones) {
+    tempCtx.font = '12px Georgia'
+    const words = orden.observaciones.split(' ')
+    let line = ''
+    const maxW = canvasW - padding * 2 - 30
+    for (const word of words) {
+      const test = line + word + ' '
+      if (tempCtx.measureText(test).width > maxW && line !== '') { obsLines++; line = word + ' ' }
+      else { line = test }
+    }
+    if (line.trim()) obsLines++
+  }
+
+  const laboresOrden = orden.labores || []
+  const laboresH = laboresOrden.length > 0 ? 28 : 0
+  const brandHeaderH = 85
+  const infoH = 80
+  const obsH = obsLines > 0 ? obsLines * obsLineH + 10 : 0
+  const headerH = brandHeaderH + infoH + obsH + laboresH
+  const tableH = lineas.length > 0 ? tableHeaderH + (lineas.length * rowH) : 0
+  const canvasH = headerH + tableH + padding * 2 + 35
+
+  const canvas = document.createElement('canvas')
+  canvas.width = canvasW
+  canvas.height = canvasH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.fillStyle = colFondo
+  ctx.fillRect(0, 0, canvasW, canvasH)
+  ctx.fillStyle = '#2d5016'
+  ctx.fillRect(0, 0, canvasW, 4)
+
+  // Cabecera
+  dibujarMarcaNZ(ctx, padding + 5, 18, 1.1)
+  ctx.fillStyle = colPrimario
+  ctx.font = 'bold 11px Georgia'
+  ctx.letterSpacing = '3px'
+  ctx.fillText('E S T A N C I A', padding + 75, 30)
+  ctx.letterSpacing = '0px'
+  ctx.font = 'bold 26px Georgia'
+  ctx.fillText('NAZARENAS', padding + 75, 56)
+  ctx.font = 'italic 13px Georgia'
+  ctx.fillStyle = colSecundario
+  ctx.fillText('De Martinez Sobrado', padding + 77, 72)
+
+  ctx.textAlign = 'right'
+  ctx.fillStyle = '#2d5016'
+  ctx.font = 'bold 16px Georgia'
+  ctx.fillText('ORDEN AGRÍCOLA', canvasW - padding, 35)
+  ctx.font = '13px Georgia'
+  ctx.fillStyle = colSecundario
+  ctx.fillText(formatoFecha(orden.fecha), canvasW - padding, 55)
+  ctx.font = '11px Georgia'
+  ctx.fillStyle = colTerciario
+  const estadoTexto = orden.estado === 'ejecutada' ? '● EJECUTADA' : orden.estado === 'eliminada' ? '✕ ELIMINADA' : '○ PLANIFICADA'
+  ctx.fillText(estadoTexto, canvasW - padding, 72)
+  ctx.textAlign = 'left'
+
+  ctx.strokeStyle = colLinea
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(padding, brandHeaderH)
+  ctx.lineTo(canvasW - padding, brandHeaderH)
+  ctx.stroke()
+
+  // Info orden
+  const infoY = brandHeaderH + 8
+  const loteTexto = orden.lote?.nombre_lote || orden.lote_nombre || 'Sin lote específico'
+  ctx.font = 'bold 12px Georgia'
+  ctx.fillStyle = colPrimario
+  ctx.fillText('Lote / Campo:', padding, infoY + 18)
+  ctx.font = '13px Georgia'
+  ctx.fillText(loteTexto, padding + 95, infoY + 18)
+  ctx.font = 'bold 12px Georgia'
+  ctx.fillText('Hectáreas:', padding, infoY + 38)
+  ctx.font = '13px Georgia'
+  ctx.fillText(`${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(orden.hectareas)} ha`, padding + 75, infoY + 38)
+
+  if (orden.observaciones) {
+    ctx.font = 'bold 12px Georgia'
+    ctx.fillStyle = colSecundario
+    ctx.fillText('Obs:', padding, infoY + 55)
+    ctx.font = '12px Georgia'
+    wrapText(ctx, orden.observaciones, padding + 35, infoY + 55, canvasW - padding * 2 - 35, obsLineH)
+  }
+
+  if (laboresOrden.length > 0) {
+    const laboresY = brandHeaderH + infoH + obsH + 5
+    ctx.font = 'bold 12px Georgia'
+    ctx.fillStyle = colPrimario
+    ctx.fillText('Labores:', padding, laboresY)
+    ctx.font = '13px Georgia'
+    ctx.fillStyle = colSecundario
+    ctx.fillText(laboresOrden.join('  ·  '), padding + 60, laboresY)
+  }
+
+  // Tabla insumos
+  if (lineas.length > 0) {
+    const tableY = headerH + padding - 10
+    ctx.fillStyle = colTablaHeader
+    ctx.fillRect(padding, tableY, canvasW - padding * 2, tableHeaderH)
+    ctx.fillStyle = '#f5f0ea'
+    ctx.font = 'bold 11px Georgia'
+    ctx.fillText('PRODUCTO', padding + 10, tableY + 21)
+    ctx.fillText('DOSIS', 360, tableY + 21)
+    ctx.fillText('UNIDAD', 450, tableY + 21)
+    ctx.fillText('TOTAL (L)', 560, tableY + 21)
+
+    lineas.forEach((l, i) => {
+      const y = tableY + tableHeaderH + (i * rowH)
+      ctx.fillStyle = i % 2 === 0 ? colTablaAlt : colFondo
+      ctx.fillRect(padding, y, canvasW - padding * 2, rowH)
+      ctx.fillStyle = colPrimario
+      ctx.font = 'bold 13px Georgia'
+      ctx.fillText(l.insumo_nombre, padding + 10, y + 19)
+      ctx.font = '13px Georgia'
+      ctx.fillStyle = colSecundario
+      ctx.fillText(new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 }).format(l.dosis), 360, y + 19)
+      ctx.fillText(l.unidad_dosis === 'cc' ? 'cc/ha' : 'L/ha', 450, y + 19)
+      ctx.fillText(new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l) + ' L', 560, y + 19)
+    })
+
+    const tableEndY = tableY + tableHeaderH + (lineas.length * rowH)
+    ctx.strokeStyle = colLinea
+    ctx.lineWidth = 0.5
+    ctx.strokeRect(padding, tableY, canvasW - padding * 2, tableEndY - tableY)
+  }
+
+  // Footer
+  ctx.strokeStyle = colLinea
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(padding, canvasH - 25)
+  ctx.lineTo(canvasW - padding, canvasH - 25)
+  ctx.stroke()
+  ctx.fillStyle = colTerciario
+  ctx.font = '10px Georgia'
+  ctx.fillText(`Generado: ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`, padding, canvasH - 10)
+  ctx.textAlign = 'right'
+  ctx.font = 'italic 10px Georgia'
+  ctx.fillText('Ea. Nazarenas — Martinez Sobrado Agro SRL', canvasW - padding, canvasH - 10)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#2d5016'
+  ctx.fillRect(0, canvasH - 4, canvasW, 4)
+
+  const partes: string[] = [orden.fecha]
+  if (laboresOrden.length > 0) partes.push(laboresOrden.join('_').replace(/\s+/g, ''))
+  partes.push('Agricola')
+  const nombreArchivo = partes.join('_') + '.png'
   const link = document.createElement('a')
   link.download = nombreArchivo
   link.href = canvas.toDataURL('image/png')
@@ -3251,6 +3467,566 @@ function SubTabNecesidadCompra() {
 }
 
 // ============================================================
+// SUB-TAB: ÓRDENES AGRÍCOLAS
+// ============================================================
+
+function SubTabOrdenesAgricolas({ lotesDisponibles }: { lotesDisponibles: LoteAgricola[] }) {
+  const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
+  const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
+  const [laboresAgricolas, setLaboresAgricolas] = useState<{ id: number, nombre: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [mostrarModal, setMostrarModal] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  const [mostrarModalEjecutar, setMostrarModalEjecutar] = useState(false)
+  const [ordenEjecutando, setOrdenEjecutando] = useState<OrdenAgricola | null>(null)
+  const [recuentoLineas, setRecuentoLineas] = useState<Record<string, { checked: boolean, cantidad: string }>>({})
+
+  const [nuevaOrden, setNuevaOrden] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    lote_id: '',
+    lote_nombre: '',
+    hectareas: '',
+    observaciones: ''
+  })
+
+  const [laboresSeleccionadas, setLaboresSeleccionadas] = useState<Record<number, boolean>>({})
+  const [nuevaLabor, setNuevaLabor] = useState('')
+  const [mostrarInputLabor, setMostrarInputLabor] = useState(false)
+  const [lineas, setLineas] = useState<LineaFormularioAgricola[]>([])
+
+  const agregarLinea = () => {
+    setLineas(prev => [...prev, { key: Date.now(), insumo_nombre: '', insumo_stock_id: '', dosis: '', unidad_dosis: 'L' }])
+  }
+
+  const actualizarLinea = (key: number, campo: string, valor: any) => {
+    setLineas(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
+  }
+
+  const eliminarLinea = (key: number) => {
+    setLineas(prev => prev.filter(l => l.key !== key))
+  }
+
+  const toggleLabor = (laborId: number) => {
+    setLaboresSeleccionadas(prev => ({ ...prev, [laborId]: !prev[laborId] }))
+  }
+
+  const agregarLaborCustom = async () => {
+    const nombre = nuevaLabor.trim()
+    if (!nombre) return
+    if (laboresAgricolas.some(l => l.nombre.toLowerCase() === nombre.toLowerCase())) {
+      toast.error('Esa labor ya existe'); return
+    }
+    const { data, error } = await supabase.schema('productivo').from('labores')
+      .insert({ nombre, tipo: 'agricola', orden_display: laboresAgricolas.length + 1 })
+      .select('id, nombre').single()
+    if (error) { toast.error('Error al crear labor'); return }
+    setLaboresAgricolas(prev => [...prev, data])
+    setNuevaLabor('')
+    setMostrarInputLabor(false)
+    toast.success(`Labor "${nombre}" creada`)
+  }
+
+  const onLoteChange = (loteId: string) => {
+    if (loteId === '__manual__') {
+      setNuevaOrden(p => ({ ...p, lote_id: '' }))
+      return
+    }
+    const lote = lotesDisponibles.find(l => l.id === loteId)
+    if (lote) {
+      setNuevaOrden(p => ({ ...p, lote_id: loteId, lote_nombre: lote.nombre_lote, hectareas: String(lote.hectareas) }))
+    }
+  }
+
+  const cerrarModal = () => {
+    setMostrarModal(false)
+    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], lote_id: '', lote_nombre: '', hectareas: '', observaciones: '' })
+    setLaboresSeleccionadas({})
+    setLineas([])
+    setNuevaLabor('')
+    setMostrarInputLabor(false)
+  }
+
+  const cargarDatos = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data: ordenesData, error } = await supabase.schema('productivo')
+        .from('ordenes_agricolas')
+        .select('*, lote:lotes_agricolas(nombre_lote, hectareas), lineas:lineas_orden_agricola(*), lineas_labores:lineas_orden_agricola_labores(labor_id, labores(nombre))')
+        .order('fecha', { ascending: false })
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const ordenesConLabores = (ordenesData || []).map((o: any) => ({
+        ...o,
+        labores: (o.lineas_labores || []).map((ll: any) => ll.labores?.nombre).filter(Boolean)
+      }))
+      setOrdenes(ordenesConLabores)
+
+      const { data: catData } = await supabase.schema('productivo').from('categorias_insumo')
+        .select('id').eq('nombre', 'Agroquímico').single()
+      if (catData) {
+        const { data: insumosData } = await supabase.schema('productivo').from('stock_insumos')
+          .select('*').eq('categoria_id', catData.id).order('producto')
+        setInsumosAgro(insumosData || [])
+      }
+
+      const { data: laboresData } = await supabase.schema('productivo').from('labores')
+        .select('id, nombre').eq('tipo', 'agricola').eq('activo', true).order('orden_display')
+      setLaboresAgricolas(laboresData || [])
+    } catch (err) {
+      console.error('Error cargando órdenes agrícolas:', err)
+      toast.error('Error al cargar órdenes agrícolas')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { cargarDatos() }, [cargarDatos])
+
+  const guardarOrden = async () => {
+    if (!nuevaOrden.hectareas || parseFloat(nuevaOrden.hectareas) <= 0) {
+      toast.error('Las hectáreas son obligatorias'); return
+    }
+    const laboresIds = Object.entries(laboresSeleccionadas).filter(([_, sel]) => sel).map(([id]) => parseInt(id))
+    const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
+    if (lineasValidas.length === 0 && laboresIds.length === 0) {
+      toast.error('Agregue al menos un insumo o una labor'); return
+    }
+    for (const l of lineasValidas) {
+      if (!l.dosis || parseFloat(l.dosis) <= 0) { toast.error('Cada insumo debe tener dosis'); return }
+    }
+    setGuardando(true)
+    try {
+      const hectareas = parseFloat(nuevaOrden.hectareas)
+      const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
+        .from('ordenes_agricolas')
+        .insert({
+          fecha: nuevaOrden.fecha,
+          lote_id: nuevaOrden.lote_id || null,
+          lote_nombre: nuevaOrden.lote_nombre || null,
+          hectareas,
+          estado: 'planificada',
+          observaciones: nuevaOrden.observaciones || null
+        })
+        .select('id').single()
+      if (ordenError) throw new Error(ordenError.message)
+      const ordenId = ordenData.id
+
+      if (lineasValidas.length > 0) {
+        const lineasInsert = lineasValidas.map(l => {
+          const dosis = parseFloat(l.dosis)
+          const insumo = insumosAgro.find(i => i.id === l.insumo_stock_id)
+          return {
+            orden_id: ordenId,
+            insumo_nombre: insumo?.producto || l.insumo_nombre,
+            insumo_stock_id: l.insumo_stock_id || null,
+            dosis,
+            unidad_dosis: l.unidad_dosis,
+            cantidad_total_l: calcularTotalL(dosis, l.unidad_dosis, hectareas)
+          }
+        })
+        const { error: lineasError } = await supabase.schema('productivo')
+          .from('lineas_orden_agricola').insert(lineasInsert)
+        if (lineasError) throw new Error(lineasError.message)
+      }
+
+      if (laboresIds.length > 0) {
+        const { error: laboresError } = await supabase.schema('productivo')
+          .from('lineas_orden_agricola_labores')
+          .insert(laboresIds.map(labor_id => ({ orden_id: ordenId, labor_id })))
+        if (laboresError) throw new Error(laboresError.message)
+      }
+
+      toast.success('Orden agrícola guardada')
+      cerrarModal()
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error guardando orden agrícola:', err)
+      toast.error(err.message || 'Error al guardar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const abrirModalEjecutar = (orden: OrdenAgricola) => {
+    setOrdenEjecutando(orden)
+    const init: Record<string, { checked: boolean, cantidad: string }> = {}
+    for (const l of (orden.lineas || [])) {
+      init[l.id] = { checked: false, cantidad: String(l.cantidad_total_l) }
+    }
+    setRecuentoLineas(init)
+    setMostrarModalEjecutar(true)
+  }
+
+  const ejecutarOrden = async () => {
+    if (!ordenEjecutando) return
+    setGuardando(true)
+    try {
+      for (const [lineaId, rec] of Object.entries(recuentoLineas)) {
+        await supabase.schema('productivo').from('lineas_orden_agricola')
+          .update({ recuento: rec.checked, cantidad_recuento_l: rec.checked ? (parseFloat(rec.cantidad) || 0) : null })
+          .eq('id', lineaId)
+      }
+      await supabase.schema('productivo').from('ordenes_agricolas')
+        .update({ estado: 'ejecutada' }).eq('id', ordenEjecutando.id)
+
+      if (ordenEjecutando.lineas) {
+        const descuentos: Record<string, number> = {}
+        for (const l of ordenEjecutando.lineas) {
+          if (l.insumo_stock_id) {
+            const rec = recuentoLineas[l.id]
+            const cantidad = rec?.checked ? (parseFloat(rec.cantidad) || 0) : l.cantidad_total_l
+            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + cantidad
+          }
+        }
+        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
+          .select('id, cantidad').in('id', Object.keys(descuentos))
+        if (stockActual) {
+          for (const s of stockActual) {
+            await supabase.schema('productivo').from('stock_insumos')
+              .update({ cantidad: s.cantidad - (descuentos[s.id] || 0) }).eq('id', s.id)
+          }
+        }
+      }
+
+      toast.success('Orden confirmada como ejecutada')
+      setMostrarModalEjecutar(false)
+      setOrdenEjecutando(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error ejecutando orden agrícola:', err)
+      toast.error(err.message || 'Error al ejecutar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+        <span>Cargando órdenes agrícolas...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4 pt-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">Órdenes Agrícolas</h3>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => setMostrarModal(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nueva Orden
+          </Button>
+          <Button variant="outline" size="sm" onClick={cargarDatos}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Lote / Campo</TableHead>
+            <TableHead className="text-right">Ha</TableHead>
+            <TableHead>Labores</TableHead>
+            <TableHead className="text-right">Insumos</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead className="text-right">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ordenes.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                Sin órdenes agrícolas registradas.
+              </TableCell>
+            </TableRow>
+          ) : (
+            ordenes.map(o => (
+              <TableRow key={o.id}>
+                <TableCell>{formatoFecha(o.fecha)}</TableCell>
+                <TableCell>{o.lote?.nombre_lote || o.lote_nombre || '-'}</TableCell>
+                <TableCell className="text-right">{formatoNumero(o.hectareas)}</TableCell>
+                <TableCell className="text-sm">{(o.labores || []).join(', ') || '-'}</TableCell>
+                <TableCell className="text-right">{(o.lineas || []).length}</TableCell>
+                <TableCell>
+                  <Badge className={
+                    o.estado === 'ejecutada' ? 'bg-green-100 text-green-800' :
+                    o.estado === 'eliminada' ? 'bg-red-100 text-red-800' :
+                    'bg-blue-100 text-blue-800'
+                  }>{o.estado}</Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
+                      onClick={() => exportarOrdenAgricolaImagen(o)}>
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                    {o.estado === 'planificada' && (
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700" title="Ejecutar orden"
+                        onClick={() => abrirModalEjecutar(o)}>
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+
+      {/* Modal Nueva Orden */}
+      <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nueva Orden Agrícola</DialogTitle>
+            <DialogDescription>Registrar aplicación de insumos en lotes / hectáreas.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Fecha *</Label>
+                <Input type="date" value={nuevaOrden.fecha}
+                  onChange={e => setNuevaOrden(p => ({ ...p, fecha: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Lote del sistema (opcional)</Label>
+                <Select value={nuevaOrden.lote_id || '__manual__'} onValueChange={onLoteChange}>
+                  <SelectTrigger><SelectValue placeholder="Sin lote / manual" /></SelectTrigger>
+                  <SelectContent position="popper" className="z-[9999]">
+                    <SelectItem value="__manual__">Sin lote específico</SelectItem>
+                    {lotesDisponibles.map(l => (
+                      <SelectItem key={l.id} value={l.id}>{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Hectáreas *</Label>
+                <Input type="number" step="0.01" placeholder="ej. 100"
+                  value={nuevaOrden.hectareas}
+                  onChange={e => setNuevaOrden(p => ({ ...p, hectareas: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Nombre lote / campo libre</Label>
+                <Input placeholder="ej. Lote Norte"
+                  value={nuevaOrden.lote_nombre}
+                  onChange={e => setNuevaOrden(p => ({ ...p, lote_nombre: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Observaciones</Label>
+              <Input value={nuevaOrden.observaciones}
+                onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
+            </div>
+
+            {/* Labores */}
+            <div className="space-y-2">
+              <Label className="text-base font-semibold">Labores</Label>
+              <div className="flex flex-wrap gap-2">
+                {laboresAgricolas.map(labor => (
+                  <label key={labor.id}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm transition-colors ${
+                      laboresSeleccionadas[labor.id] ? 'bg-green-50 border-green-400 text-green-800' : 'bg-white border-gray-200 hover:border-gray-400'
+                    }`}
+                    onClick={() => toggleLabor(labor.id)}>
+                    <input type="checkbox" checked={!!laboresSeleccionadas[labor.id]} readOnly className="rounded" />
+                    {labor.nombre}
+                  </label>
+                ))}
+                {mostrarInputLabor ? (
+                  <div className="flex gap-1">
+                    <Input className="h-8 text-sm w-36" placeholder="Nueva labor"
+                      value={nuevaLabor} onChange={e => setNuevaLabor(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && agregarLaborCustom()} />
+                    <Button size="sm" variant="outline" className="h-8" onClick={agregarLaborCustom}>OK</Button>
+                    <Button size="sm" variant="ghost" className="h-8" onClick={() => { setMostrarInputLabor(false); setNuevaLabor('') }}>✕</Button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setMostrarInputLabor(true)}>
+                    <Plus className="mr-1 h-3 w-3" /> Agregar labor
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Líneas insumos */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Insumos</Label>
+                <Button variant="outline" size="sm" onClick={agregarLinea}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Agregar Insumo
+                </Button>
+              </div>
+              {lineas.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Sin insumos. Agregue al menos uno o seleccione una labor.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[200px]">Insumo</TableHead>
+                      <TableHead className="w-[80px] text-right">Dosis</TableHead>
+                      <TableHead className="w-[90px]">Unidad</TableHead>
+                      <TableHead className="w-[100px] text-right">Total (L)</TableHead>
+                      <TableHead className="w-[40px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lineas.map(l => {
+                      const dosis = parseFloat(l.dosis) || 0
+                      const hectareas = parseFloat(nuevaOrden.hectareas) || 0
+                      const totalL = calcularTotalL(dosis, l.unidad_dosis, hectareas)
+                      return (
+                        <TableRow key={l.key}>
+                          <TableCell>
+                            <Select value={l.insumo_stock_id || '__libre__'}
+                              onValueChange={v => {
+                                if (v === '__libre__') { actualizarLinea(l.key, 'insumo_stock_id', '') }
+                                else { actualizarLinea(l.key, 'insumo_stock_id', v); actualizarLinea(l.key, 'insumo_nombre', '') }
+                              }}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                              <SelectContent position="popper" className="z-[9999]">
+                                <SelectItem value="__libre__">Nombre libre</SelectItem>
+                                {insumosAgro.map(ins => (
+                                  <SelectItem key={ins.id} value={ins.id}>{ins.producto}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {!l.insumo_stock_id && (
+                              <Input className="h-7 text-xs mt-1" placeholder="Nombre insumo"
+                                value={l.insumo_nombre}
+                                onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Input type="number" step="0.0001" className="h-8 text-xs text-right"
+                              placeholder="0" value={l.dosis}
+                              onChange={e => actualizarLinea(l.key, 'dosis', e.target.value)} />
+                          </TableCell>
+                          <TableCell>
+                            <Select value={l.unidad_dosis} onValueChange={v => actualizarLinea(l.key, 'unidad_dosis', v)}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent position="popper" className="z-[9999]">
+                                <SelectItem value="L">L/ha</SelectItem>
+                                <SelectItem value="cc">cc/ha</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-medium">
+                            {totalL > 0 ? `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(totalL)} L` : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => eliminarLinea(l.key)}>
+                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
+            <Button onClick={guardarOrden} disabled={guardando}>
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar Orden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Ejecutar Orden */}
+      <Dialog open={mostrarModalEjecutar} onOpenChange={(open) => { if (!open) { setMostrarModalEjecutar(false); setOrdenEjecutando(null) } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Confirmar Orden como Ejecutada</DialogTitle>
+            <DialogDescription>Marque las líneas con recuento real y ajuste cantidades si difieren del plan.</DialogDescription>
+          </DialogHeader>
+          {ordenEjecutando && (
+            <div className="space-y-4">
+              <div className="text-sm space-y-1">
+                <p><span className="font-medium">Fecha:</span> {formatoFecha(ordenEjecutando.fecha)}</p>
+                <p><span className="font-medium">Lote:</span> {ordenEjecutando.lote?.nombre_lote || ordenEjecutando.lote_nombre || '-'}</p>
+                <p><span className="font-medium">Hectáreas:</span> {formatoNumero(ordenEjecutando.hectareas)} ha</p>
+                {(ordenEjecutando.labores || []).length > 0 && (
+                  <p><span className="font-medium">Labores:</span> {ordenEjecutando.labores?.join(', ')}</p>
+                )}
+              </div>
+              {(ordenEjecutando.lineas || []).length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold">Insumos aplicados:</Label>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[40px]"></TableHead>
+                        <TableHead>Insumo</TableHead>
+                        <TableHead className="text-right">Planificado</TableHead>
+                        <TableHead className="text-right">Real (L)</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(ordenEjecutando.lineas || []).map(l => {
+                        const rec = recuentoLineas[l.id] || { checked: false, cantidad: String(l.cantidad_total_l) }
+                        return (
+                          <TableRow key={l.id}>
+                            <TableCell>
+                              <Checkbox checked={rec.checked}
+                                onCheckedChange={v => setRecuentoLineas(prev => ({ ...prev, [l.id]: { ...prev[l.id], checked: !!v } }))} />
+                            </TableCell>
+                            <TableCell className="font-medium text-sm">{l.insumo_nombre}</TableCell>
+                            <TableCell className="text-right text-sm">
+                              {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} L
+                            </TableCell>
+                            <TableCell>
+                              {rec.checked ? (
+                                <Input type="number" step="0.001" className="h-7 text-xs text-right w-24 ml-auto"
+                                  value={rec.cantidad}
+                                  onChange={e => setRecuentoLineas(prev => ({ ...prev, [l.id]: { ...prev[l.id], cantidad: e.target.value } }))} />
+                              ) : (
+                                <span className="text-xs text-muted-foreground block text-right">
+                                  {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} L
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                  <p className="text-xs text-muted-foreground">
+                    Marque para recuento real. Si no marca, se descuenta la cantidad planificada.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setMostrarModalEjecutar(false); setOrdenEjecutando(null) }}>Cancelar</Button>
+            <Button onClick={ejecutarOrden} disabled={guardando} className="bg-green-600 hover:bg-green-700">
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Confirmar Ejecutada
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ============================================================
 // TAB LOTES AGRICOLAS
 // ============================================================
 
@@ -3258,6 +4034,7 @@ function TabLotesAgricolas() {
   const [lotes, setLotes] = useState<LoteAgricola[]>([])
   const [loading, setLoading] = useState(true)
   const [mostrarModalLote, setMostrarModalLote] = useState(false)
+  const [subTab, setSubTab] = useState<'lotes' | 'ordenes'>('lotes')
 
   const [nuevoLote, setNuevoLote] = useState({
     nombre_lote: '',
@@ -3344,59 +4121,78 @@ function TabLotesAgricolas() {
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Lotes Agricolas</h3>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => setMostrarModalLote(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            Nuevo Lote
-          </Button>
-          <Button variant="outline" size="sm" onClick={cargarDatos}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+      <div className="flex gap-2 border-b pb-2">
+        <Button variant={subTab === 'lotes' ? 'default' : 'ghost'} size="sm"
+          onClick={() => setSubTab('lotes')}>
+          Lotes
+        </Button>
+        <Button variant={subTab === 'ordenes' ? 'default' : 'ghost'} size="sm"
+          onClick={() => setSubTab('ordenes')}>
+          Órdenes Agrícolas
+        </Button>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Lote</TableHead>
-            <TableHead>Campo</TableHead>
-            <TableHead className="text-right">Hectareas</TableHead>
-            <TableHead>Cultivo</TableHead>
-            <TableHead>Campaña</TableHead>
-            <TableHead>Siembra</TableHead>
-            <TableHead>Cosecha Est.</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Obs.</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {lotes.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                Sin lotes agricolas registrados.
-              </TableCell>
-            </TableRow>
-          ) : (
-            lotes.map(l => (
-              <TableRow key={l.id}>
-                <TableCell className="font-medium">{l.nombre_lote}</TableCell>
-                <TableCell>{l.campo || '-'}</TableCell>
-                <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
-                <TableCell>{l.cultivo}</TableCell>
-                <TableCell>{l.campaña || '-'}</TableCell>
-                <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
-                <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
-                <TableCell>
-                  <Badge className={colorEstado(l.estado)}>{l.estado.replace('_', ' ')}</Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.observaciones || '-'}</TableCell>
+      {subTab === 'lotes' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Lotes Agricolas</h3>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => setMostrarModalLote(true)}>
+                <Plus className="mr-1 h-4 w-4" />
+                Nuevo Lote
+              </Button>
+              <Button variant="outline" size="sm" onClick={cargarDatos}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Lote</TableHead>
+                <TableHead>Campo</TableHead>
+                <TableHead className="text-right">Hectareas</TableHead>
+                <TableHead>Cultivo</TableHead>
+                <TableHead>Campaña</TableHead>
+                <TableHead>Siembra</TableHead>
+                <TableHead>Cosecha Est.</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Obs.</TableHead>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            </TableHeader>
+            <TableBody>
+              {lotes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    Sin lotes agricolas registrados.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                lotes.map(l => (
+                  <TableRow key={l.id}>
+                    <TableCell className="font-medium">{l.nombre_lote}</TableCell>
+                    <TableCell>{l.campo || '-'}</TableCell>
+                    <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
+                    <TableCell>{l.cultivo}</TableCell>
+                    <TableCell>{l.campaña || '-'}</TableCell>
+                    <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
+                    <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
+                    <TableCell>
+                      <Badge className={colorEstado(l.estado)}>{l.estado.replace('_', ' ')}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.observaciones || '-'}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {subTab === 'ordenes' && (
+        <SubTabOrdenesAgricolas lotesDisponibles={lotes} />
+      )}
 
       {/* Modal Nuevo Lote */}
       <Dialog open={mostrarModalLote} onOpenChange={setMostrarModalLote}>
