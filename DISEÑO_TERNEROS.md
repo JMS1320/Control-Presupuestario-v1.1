@@ -174,55 +174,72 @@ GRANT ALL ON productivo.pesadas_terneros TO anon, authenticated;
 
 ## 6. Importación desde Excel
 
-### Flujo A — Importar terneros (datos fijos)
+### Estado actual del formato
 
-**Cuándo se usa**: al cargar una tropilla nueva, al destete, o para cargar histórico.
+El formato de export del lector de caravanas aún no está definido — depende del dispositivo.
+Por lo tanto se diseñan **dos flujos separados** según lo que hoy se puede proveer:
 
-**Columnas esperadas en Excel** (en cualquier orden, mayúsculas/minúsculas indiferente):
+---
+
+### Flujo A — Importar terneros al destete (disponible ahora)
+
+**Cuándo se usa**: una vez al año al momento del destete. El usuario arma esta planilla manualmente.
+
+**Columnas del Excel**:
 
 | Columna Excel | Campo BD | Obligatorio | Notas |
 |---|---|---|---|
-| `Caravana Interna` / `Caravana Int` | `caravana_interna` | No | Si falta, se deja null |
-| `Caravana Oficial` / `Caravana Of` | `caravana_oficial` | Sí | Clave de upsert |
-| `Sexo` | `sexo` | Sí | "Macho", "M", "Hembra", "H" |
-| `Pelo` | `pelo` | Sí | Valores listados arriba |
-| `Fecha Nacimiento` / `Nacimiento` | `fecha_nacimiento` | No | DD/MM/YYYY |
-| `Fecha Destete` / `Destete` | `fecha_destete` | No | DD/MM/YYYY |
-| `Rodeo` | `rodeo_id` (buscar por nombre) | No | — |
+| `Caravana Interna` / `Carav Int` | `caravana_interna` | No | Numérica, puede faltar |
+| `Caravana Oficial` / `Carav Of` | `caravana_oficial` | Sí | Clave de upsert |
+| `Sexo` | `sexo` | Sí | "Macho"/"M" o "Hembra"/"H" |
+| `Pelo` | `pelo` | Sí | Ver valores válidos sección 3 |
+| `Peso Destete` / `Peso` | → primera pesada en `pesadas_terneros` | Sí | kg, es el punto de partida |
+| `Fecha Destete` / `Destete` | `fecha_destete` + fecha de la pesada | No | DD/MM/YYYY. Si falta, usar fecha import |
 | `Observaciones` / `Obs` | `observaciones` | No | — |
 
-**Lógica de upsert**:
-- Si `caravana_oficial` ya existe → actualizar datos fijos (no afecta pesadas)
-- Si no existe → crear nuevo ternero
-- Si solo viene `caravana_interna` (sin oficial) → crear registro sin oficial (no aparece en recría)
+**Lógica de procesamiento**:
+1. Upsert en `terneros` por `caravana_oficial`
+   - Si no existe → crear
+   - Si ya existe → actualizar datos fijos (sexo, pelo, fechas)
+2. Si viene `peso_destete` → insertar en `pesadas_terneros` con `fecha = fecha_destete` (o fecha import)
+   - Si ya existe una pesada en esa fecha para ese ternero → no duplicar (ignorar o sobreescribir)
+3. Si solo viene `caravana_interna` (sin oficial) → crear ternero sin oficial (no aparece en recría hasta que se le asigne)
 
-### Flujo B — Importar pesadas
+> **Importante**: El `peso_destete` se registra como la primera pesada en `pesadas_terneros`.
+> Es el punto de partida de todos los cálculos de ganancia. No es un campo separado en `terneros`.
 
-**Cuándo se usa**: cada vez que se pesa el rodeo (cada 30-60 días).
+---
 
-**Columnas esperadas**:
+### Flujo B — Importar pesadas periódicas (formato a definir)
 
-| Columna Excel | Campo BD | Obligatorio |
-|---|---|---|
-| `Caravana Oficial` / `Caravana` | Lookup en `terneros` | Sí |
-| `Peso` / `Peso Kg` | `peso_kg` | Sí |
-| `Fecha` | `fecha` | Sí (o se usa la fecha del día) |
-| `Observaciones` | `observaciones` | No |
+**Cuándo se usa**: cada vez que se pesa el rodeo (cada 30-60 días). Viene del lector de caravanas.
 
-**Lógica**:
-- Buscar ternero por `caravana_oficial`
-- Si no existe el ternero → reportar en errores (no crear ternero desde pesada)
-- Si ya existe una pesada en la misma fecha para el mismo ternero → sobreescribir
+**Estado**: formato de export del lector pendiente de verificar. Una vez conocido el formato,
+se mapearán las columnas. Las columnas mínimas necesarias son:
+
+| Dato mínimo | Campo BD |
+|---|---|
+| Identificador del animal (caravana oficial o interna) | Lookup en `terneros` |
+| Peso en kg | `peso_kg` |
+| Fecha de la pesada | `fecha` |
+
+**Lógica** (igual independientemente del formato):
+- Identificar ternero por caravana (oficial primero, interna como fallback)
+- Si no se encuentra el ternero → reportar en errores
+- Si ya existe pesada en la misma fecha → sobreescribir
 - Si es fecha nueva → insertar nueva pesada
+
+---
 
 ### API Routes necesarias
 
 ```
-POST /api/import-terneros       → Flujo A (upsert terneros)
-POST /api/import-pesadas        → Flujo B (insert pesadas)
+POST /api/import-terneros       → Flujo A (upsert terneros + primera pesada)
+POST /api/import-pesadas        → Flujo B (pesadas periódicas — a implementar cuando se defina formato)
 ```
 
-Ambas con el mismo patrón de las rutas de import existentes: reciben FormData con archivo Excel, devuelven `{ procesados, importados, errores[], resumen }`.
+Mismo patrón que rutas de import existentes: FormData con archivo Excel,
+devuelven `{ procesados, importados, errores[], resumen }`.
 
 ---
 
@@ -378,9 +395,11 @@ Permite:
 2. **Normalización de pelo**: ¿"Careta Colorado" y "Careta Negro" siempre con ese formato exacto o puede variar en el Excel? → Definir mapeo de normalización en import.
 3. **Sexo en Excel**: ¿Puede venir como "M"/"H" además de "Macho"/"Hembra"? → Confirmar variantes a soportar.
 4. **Eliminación de pesadas**: ¿Solo admin puede eliminar o cualquiera? ¿Con confirmación?
-5. **Fecha de pesada en import**: Si el Excel no tiene columna de fecha, ¿se usa la fecha del día de importación?
+5. **Fecha de pesada en import Flujo A**: Si el Excel no tiene columna de fecha destete, ¿se usa la fecha del día de importación o se deja null?
+6. **Formato lector de caravanas**: ⏳ Pendiente — ver el export del dispositivo para diseñar Flujo B. Columnas mínimas necesarias: identificador del animal + peso + fecha.
+7. **Caravana interna como fallback en Flujo B**: Si el lector solo guarda caravana interna (no oficial), ¿se busca el ternero por caravana_interna? → Confirmar una vez visto el formato del lector.
 
 ---
 
-**📅 Última actualización:** 2026-02-28
-**Estado**: Diseño completo — listo para implementar cuando se decida
+**📅 Última actualización:** 2026-02-28 (rev. 2 — aclaración formato Excel)
+**Estado**: Diseño completo — Flujo A listo para implementar. Flujo B pendiente formato lector de caravanas.
