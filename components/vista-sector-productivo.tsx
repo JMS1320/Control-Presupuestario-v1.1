@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check } from "lucide-react"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -3567,6 +3568,7 @@ function SubTabOrdenesAgricolas() {
   const [nuevaLabor, setNuevaLabor] = useState('')
   const [mostrarInputLabor, setMostrarInputLabor] = useState(false)
   const [lineas, setLineas] = useState<LineaFormularioAgricola[]>([])
+  const [openInsumoKey, setOpenInsumoKey] = useState<number | null>(null)
 
   const agregarLinea = () => {
     setLineas(prev => [...prev, { key: Date.now(), insumo_nombre: '', insumo_stock_id: '', dosis: '', unidad_dosis: 'L' }])
@@ -3608,6 +3610,7 @@ function SubTabOrdenesAgricolas() {
     setLineas([])
     setNuevaLabor('')
     setMostrarInputLabor(false)
+    setOpenInsumoKey(null)
   }
 
   const cargarDatos = useCallback(async () => {
@@ -3987,24 +3990,39 @@ function SubTabOrdenesAgricolas() {
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
-                            <Select value={l.insumo_stock_id || '__libre__'}
-                              onValueChange={v => {
-                                if (v === '__libre__') { actualizarLinea(l.key, 'insumo_stock_id', '') }
-                                else { actualizarLinea(l.key, 'insumo_stock_id', v); actualizarLinea(l.key, 'insumo_nombre', '') }
-                              }}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                              <SelectContent position="popper" className="z-[9999]">
-                                <SelectItem value="__libre__">Nombre libre</SelectItem>
-                                {insumosAgro.map(ins => (
-                                  <SelectItem key={ins.id} value={ins.id}>{ins.producto}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {!l.insumo_stock_id && (
-                              <Input className="h-7 text-xs mt-1" placeholder="Nombre insumo"
-                                value={l.insumo_nombre}
-                                onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
-                            )}
+                            <Popover open={openInsumoKey === l.key} onOpenChange={open => setOpenInsumoKey(open ? l.key : null)}>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox"
+                                  className="h-8 w-full justify-between text-xs font-normal truncate">
+                                  <span className="truncate">{l.insumo_nombre || 'Seleccionar insumo...'}</span>
+                                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-56 p-0 z-[9999]" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Buscar insumo..." className="h-8 text-xs" />
+                                  <CommandList>
+                                    <CommandEmpty className="py-2 text-xs text-center text-muted-foreground">
+                                      No encontrado. Use &quot;Agregar Insumo&quot; para crear uno.
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                      {insumosAgro.map(ins => (
+                                        <CommandItem key={ins.id} value={ins.producto}
+                                          onSelect={() => {
+                                            actualizarLinea(l.key, 'insumo_stock_id', ins.id)
+                                            actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                                            setOpenInsumoKey(null)
+                                          }}
+                                          className="text-xs">
+                                          <Check className={`mr-1 h-3 w-3 ${l.insumo_stock_id === ins.id ? 'opacity-100' : 'opacity-0'}`} />
+                                          {ins.producto}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           </TableCell>
                           <TableCell>
                             <Input type="number" step="0.0001" className="h-8 text-xs text-right"
