@@ -218,6 +218,11 @@ const formatoCantidad = (cantidad: number, unidad: string): string => {
   if (unidad === 'dosis') {
     return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(cantidad)} dosis`
   }
+  if (unidad === 'L') {
+    // Ya está en litros — mostrar directamente
+    return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(cantidad)} L`
+  }
+  // ml: convertir a L si >= 1000
   if (cantidad >= 1000) {
     return `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(cantidad / 1000)} L`
   }
@@ -1950,9 +1955,14 @@ function SubTabStockInsumos() {
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.01" className="h-8 text-xs text-right"
-                        value={linea.cantidad} placeholder="0"
-                        onChange={e => actualizarLineaMov(linea.key, 'cantidad', e.target.value)} />
+                      <div className="flex items-center gap-1">
+                        <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                          value={linea.cantidad} placeholder="0"
+                          onChange={e => actualizarLineaMov(linea.key, 'cantidad', e.target.value)} />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {stockFiltrado.find(s => s.id === linea.insumo_stock_id)?.unidad_medida || ''}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Input type="number" step="0.01" className="h-8 text-xs text-right"
@@ -2008,7 +2018,10 @@ function SubTabStockInsumos() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Categoria *</Label>
-                <Select value={nuevoInsumo.categoria_id} onValueChange={v => setNuevoInsumo(p => ({ ...p, categoria_id: v }))}>
+                <Select value={nuevoInsumo.categoria_id} onValueChange={v => {
+                  const cat = categorias.find(c => String(c.id) === v)
+                  setNuevoInsumo(p => ({ ...p, categoria_id: v, unidad_medida: cat?.unidad_medida || p.unidad_medida }))
+                }}>
                   <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                   <SelectContent position="popper" className="z-[9999]">
                     {categoriasFiltradas.map(c => (
@@ -2023,6 +2036,7 @@ function SubTabStockInsumos() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent position="popper" className="z-[9999]">
                     <SelectItem value="ml">ml (mililitros)</SelectItem>
+                    <SelectItem value="L">L (litros)</SelectItem>
                     <SelectItem value="dosis">dosis</SelectItem>
                     <SelectItem value="kg">kg</SelectItem>
                     <SelectItem value="unidad">unidad</SelectItem>
