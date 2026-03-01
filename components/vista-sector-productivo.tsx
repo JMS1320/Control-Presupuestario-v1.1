@@ -150,7 +150,7 @@ interface LoteAgricola {
   campo: string | null
   hectareas: number
   cultivo: string
-  campaña: string | null
+  campana: string | null
   fecha_siembra: string | null
   fecha_cosecha_estimada: string | null
   estado: string
@@ -3630,7 +3630,7 @@ function SubTabOrdenesAgricolas() {
       setLaboresAgricolas(laboresData || [])
 
       const { data: lotesData } = await supabase.schema('productivo').from('lotes_agricolas')
-        .select('id, nombre_lote, hectareas, cultivo, campo, campaña, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at')
+        .select('id, nombre_lote, hectareas, cultivo, campo, campana, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at')
         .order('nombre_lote')
       setLotesDisponibles(lotesData || [])
     } catch (err) {
@@ -4100,7 +4100,7 @@ function TabLotesAgricolas() {
     campo: '',
     hectareas: '',
     cultivo: '',
-    campaña: '',
+    campana: '',
     fecha_siembra: '',
     fecha_cosecha_estimada: '',
     estado: 'sembrado',
@@ -4112,7 +4112,7 @@ function TabLotesAgricolas() {
     try {
       const { data, error } = await supabase.schema('productivo').from('lotes_agricolas')
         .select('*')
-        .order('campaña', { ascending: false })
+        .order('campana', { ascending: false })
         .order('nombre_lote')
       if (error) throw error
       if (data) setLotes(data)
@@ -4139,7 +4139,7 @@ function TabLotesAgricolas() {
       estado: nuevoLote.estado,
     }
     if (nuevoLote.campo) datos.campo = nuevoLote.campo
-    if (nuevoLote.campaña) datos.campaña = nuevoLote.campaña
+    if (nuevoLote.campana) datos.campana = nuevoLote.campana
     if (nuevoLote.fecha_siembra) datos.fecha_siembra = nuevoLote.fecha_siembra
     if (nuevoLote.fecha_cosecha_estimada) datos.fecha_cosecha_estimada = nuevoLote.fecha_cosecha_estimada
     if (nuevoLote.observaciones) datos.observaciones = nuevoLote.observaciones
@@ -4154,7 +4154,7 @@ function TabLotesAgricolas() {
     toast.success('Lote agricola registrado')
     setMostrarModalLote(false)
     setNuevoLote({
-      nombre_lote: '', campo: '', hectareas: '', cultivo: '', campaña: '',
+      nombre_lote: '', campo: '', hectareas: '', cultivo: '', campana: '',
       fecha_siembra: '', fecha_cosecha_estimada: '', estado: 'sembrado', observaciones: ''
     })
     cargarDatos()
@@ -4221,7 +4221,7 @@ function TabLotesAgricolas() {
                 <TableCell>{l.campo || '-'}</TableCell>
                 <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
                 <TableCell>{l.cultivo}</TableCell>
-                <TableCell>{l.campaña || '-'}</TableCell>
+                <TableCell>{l.campana || '-'}</TableCell>
                 <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
                 <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
                 <TableCell>
@@ -4265,7 +4265,7 @@ function TabLotesAgricolas() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Campaña</Label>
-                <Input value={nuevoLote.campaña} onChange={e => setNuevoLote(p => ({ ...p, campaña: e.target.value }))} placeholder="25/26" />
+                <Input value={nuevoLote.campana} onChange={e => setNuevoLote(p => ({ ...p, campana: e.target.value }))} placeholder="25/26" />
               </div>
               <div>
                 <Label>Estado</Label>
