@@ -8636,3 +8636,205 @@ Crear orden → (lote opcional o ha manual) + labores + líneas insumos + calcul
 - **Branch**: `desarrollo`
 
 **📅 Última actualización sección:** 2026-02-27
+
+
+---
+
+## SESIÓN 2026-02-28 — Implementación completa módulo Agroquímicos + mejoras UI
+
+### Resumen ejecutivo
+Se implementó el módulo agroquímicos completo (diseñado en sesión anterior) y se realizaron
+múltiples fixes relacionados a unidades, permisos y usabilidad. Merge a main al cierre.
+
+---
+
+### 1. Migraciones BD aplicadas (Supabase MCP)
+
+#### 1.1 agregar_categoria_agroquimico
+```sql
+INSERT INTO productivo.categorias_insumo (nombre, unidad_medida, activo)
+VALUES ('Agroquímico', 'L', true);
+
+INSERT INTO productivo.stock_insumos (categoria_id, producto, cantidad, unidad_medida)
+SELECT id,
+  unnest(ARRAY['Glifosato','Abamectina 3,6%','Engeo','Azoxi Pro','Aceite Vegetal']),
+  0, 'L'
+FROM productivo.categorias_insumo WHERE nombre = 'Agroquímico';
+```
+
+#### 1.2 crear_tablas_ordenes_agricolas
+```sql
+CREATE TABLE productivo.ordenes_agricolas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha DATE NOT NULL,
+  lote_id UUID REFERENCES productivo.lotes_agricolas(id),
+  lote_nombre VARCHAR(200),
+  hectareas DECIMAL(10,2) NOT NULL,
+  estado VARCHAR(20) DEFAULT 'planificada',
+  observaciones TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE productivo.lineas_orden_agricola (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  orden_id UUID NOT NULL REFERENCES productivo.ordenes_agricolas(id) ON DELETE CASCADE,
+  insumo_nombre VARCHAR(200) NOT NULL,
+  insumo_stock_id UUID REFERENCES productivo.stock_insumos(id),
+  dosis DECIMAL(10,4) NOT NULL,
+  unidad_dosis VARCHAR(5) NOT NULL,
+  cantidad_total_l DECIMAL(10,4),
+  recuento BOOLEAN DEFAULT FALSE,
+  cantidad_recuento_l DECIMAL(10,4),
+  observaciones TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE productivo.lineas_orden_agricola_labores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  orden_id UUID NOT NULL REFERENCES productivo.ordenes_agricolas(id) ON DELETE CASCADE,
+  labor_id INTEGER NOT NULL REFERENCES productivo.labores(id)
+);
+```
+
+#### 1.3 agregar_labores_agricolas
+```sql
+INSERT INTO productivo.labores (nombre, tipo, orden_display, activo) VALUES
+  ('Pulverización', 'agricola', 100, true),
+  ('Siembra',       'agricola', 101, true),
+  ('Fertilización', 'agricola', 102, true),
+  ('Cosecha',       'agricola', 103, true);
+```
+
+#### 1.4 grant_permisos_tablas_agricolas — CRÍTICO PARA RECONSTRUCCIÓN
+Las tablas creadas con CREATE TABLE no heredan permisos del schema automáticamente.
+Siempre ejecutar después de crear tablas nuevas en schema productivo:
+```sql
+GRANT ALL ON productivo.ordenes_agricolas TO anon, authenticated;
+GRANT ALL ON productivo.lineas_orden_agricola TO anon, authenticated;
+GRANT ALL ON productivo.lineas_orden_agricola_labores TO anon, authenticated;
+```
+Sin este GRANT las queries fallan con "permission denied" sin mensaje claro al usuario.
+
+#### 1.5 lotes_agricolas_cultivo_nullable
+```sql
+ALTER TABLE productivo.lotes_agricolas ALTER COLUMN cultivo DROP NOT NULL;
+ALTER TABLE productivo.lotes_agricolas ALTER COLUMN estado DROP NOT NULL;
+```
+Motivo: cultivo y estado cambian con cada campaña, no son atributos fijos del lote.
+
+---
+
+### 2. Cambios en components/vista-sector-productivo.tsx
+
+#### 2.1 Nuevas interfaces TypeScript
+- OrdenAgricola: encabezado con lote opcional, hectareas, estado, lineas y labores
+- LineaOrdenAgricola: insumo por orden con dosis, unidad_dosis, cantidad_total_l y recuento
+- LineaFormularioAgricola: estado formulario de nueva orden (key, insumo, dosis, unidad)
+
+#### 2.2 Nuevo componente SubTabOrdenesAgricolas()
+- Tab "Lotes Agrícolas" reestructurada con sub-tabs: Lotes (sin cambios) + Órdenes Agrícolas
+- Espejado de SubTabOrdenesAplicacion (veterinario) adaptado a ha/litros
+- Helper calcularTotalL(dosis, unidad, ha): convierte cc→L automáticamente
+
+#### 2.3 Multi-lote en órdenes agrícolas
+Una orden puede abarcar múltiples lotes con una sola dosis aplicada al total de hectáreas.
+Estado lotesOrden[] reemplaza campo único lote/hectareas del formulario.
+- Cada fila: Select del sistema (auto-completa ha) + nombre libre + ha manual
+- totalHectareas = suma de hectareas de todos los lotes
+- Al guardar: lote_nombre = "Lote A / Lote B", lote_id = null, hectareas = totalHectareas
+- Litros por línea de insumo = calcularTotalL(dosis, unidad, totalHectareas)
+
+#### 2.4 Combobox filtrable para insumos (Popover + Command de shadcn)
+- Input de búsqueda que filtra insumos en tiempo real mientras se escribe
+- Solo permite seleccionar items existentes en stock — sin texto libre
+- Si no hay coincidencias: "No encontrado. Use Agregar Insumo para crear uno."
+- Imports nuevos: Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem
+- Iconos nuevos: ChevronsUpDown, Check
+
+#### 2.5 Filtro Ganadero/Agrícola en SubTabStockInsumos
+Toggle que filtra stock, categorías y movimientos:
+- Ganadero: todo excepto categoría Agroquímico
+- Agrícola: solo categoría Agroquímico
+Las labores tipo agricola se excluyen del selector de órdenes veterinarias.
+
+#### 2.6 SubTabNecesidadCompra — vista dual simultánea
+Rediseño completo con dos columnas lado a lado:
+
+Ganadero/Veterinario:
+- Fuente: lineas_orden_aplicacion con ordenes planificadas
+- Campo sumado: cantidad_total_ml
+
+Agrícola:
+- Fuente: lineas_orden_agricola con ordenes planificadas
+- Campo sumado: cantidad_total_l
+
+Ambos datasets se cargan en paralelo con Promise.all.
+Componente auxiliar TablaNecesidad reutilizado por ambas secciones.
+
+#### 2.7 Fix formatoCantidad — respeta la unidad real
+Bug: la función ignoraba el parámetro unidad, trataba todos los valores como ml.
+100 L de stock aparecía como "100 ml".
+
+Fix:
+```typescript
+if (unidad === 'L') {
+  // Ya en litros — mostrar directamente sin conversión
+  return `${formatoES(cantidad, 3)} L`
+}
+// ml: convertir a L si >= 1000 (comportamiento anterior, sin cambios)
+```
+
+#### 2.8 Modal Nuevo Insumo — unidad automática por categoría
+- Agregada opción L (litros) al selector de unidad de medida
+- Al elegir categoría: unidad_medida se auto-setea desde categorias_insumo.unidad_medida
+- Seleccionar "Agroquímico" → pone automáticamente L
+
+#### 2.9 Modal compra/ajuste — muestra unidad al lado del input de cantidad
+Al lado del input de cantidad aparece la unidad del insumo seleccionado (L o ml).
+El usuario ve claramente en qué unidad debe ingresar el valor.
+
+#### 2.10 Simplificación formulario Nuevo Lote
+Solo pide: Nombre (obligatorio), Campo (opcional), Hectáreas (obligatorio).
+Cultivo y estado eliminados — no son atributos fijos del lote, cambian por campaña.
+
+---
+
+### 3. Bugs encontrados y solucionados
+
+| Problema | Causa raíz | Solución |
+|---|---|---|
+| Labores agrícolas no cargaban | permission denied en ordenes_agricolas sin GRANT | GRANT ALL a las 3 tablas |
+| No se podía crear nuevo lote | columna campana en BD vs campaña (con ñ) en código | 8 edits corrigiendo el nombre |
+| Botón guardar lote no funcionaba | cultivo era NOT NULL sin default | ALTER COLUMN DROP NOT NULL |
+| Total (L) siempre mostraba guion | nuevaOrden.hectareas eliminado al pasar a multi-lote | Cambiar a totalHectareas |
+| Stock agroquímico mostraba ml en lugar de L | formatoCantidad ignoraba parámetro unidad | Fix con case unidad === L |
+
+---
+
+### 4. Commits sesión (desarrollo → merge main fast-forward)
+
+```
+0a7deb5  Fix: Filtro Ganadero/Agricola en Stock+Ordenes, excluir labores agricolas de veterinaria
+6f9f1d7  Fix: campana sin enie + permisos tablas agricolas
+a89eaa0  Fix: Nuevo Lote solo pide Nombre, Campo y Hectareas
+775f053  Feature: Multi-lote en ordenes agricolas - agregar N lotes con dosis unica
+14e46db  Fix: Combobox filtrable para insumos agricolas - sin texto libre
+fa7a3fc  Fix: Total L en ordenes agricolas usa totalHectareas (multi-lote)
+ecf5be2  Feature: Necesidad de compra dividida en Ganadero y Agricola simultaneo
+d0c6ea3  Fix: Unidades L/ml - formatoCantidad respeta unidad, nuevo insumo auto-unidad, compra muestra unidad
+```
+
+---
+
+### 5. Estado final módulo agroquímicos
+
+- **BD**: 3 tablas + 5 insumos base (stock 0 L) + 4 labores + permisos correctos
+- **UI**: SubTabOrdenesAgricolas completo (crear, listar, ejecutar, eliminar, export PNG)
+- **Multi-lote**: órdenes abarcan N lotes con dosis única sobre el total de ha
+- **Stock**: filtro ganadero/agrícola + unidades L correctas en toda la interfaz
+- **Necesidad de compra**: vista dual ganadero + agrícola simultánea
+- **Branch**: main (merge fast-forward exitoso)
+
+**Archivo principal modificado**: components/vista-sector-productivo.tsx
+
+**📅 Última actualización sección:** 2026-02-28
