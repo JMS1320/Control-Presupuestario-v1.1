@@ -3985,8 +3985,7 @@ function SubTabOrdenesAgricolas() {
                   <TableBody>
                     {lineas.map(l => {
                       const dosis = parseFloat(l.dosis) || 0
-                      const hectareas = parseFloat(nuevaOrden.hectareas) || 0
-                      const totalL = calcularTotalL(dosis, l.unidad_dosis, hectareas)
+                      const totalL = calcularTotalL(dosis, l.unidad_dosis, totalHectareas)
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
