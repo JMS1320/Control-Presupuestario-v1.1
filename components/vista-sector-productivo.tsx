@@ -4099,11 +4099,6 @@ function TabLotesAgricolas() {
     nombre_lote: '',
     campo: '',
     hectareas: '',
-    cultivo: '',
-    campana: '',
-    fecha_siembra: '',
-    fecha_cosecha_estimada: '',
-    estado: 'sembrado',
     observaciones: ''
   })
 
@@ -4127,21 +4122,16 @@ function TabLotesAgricolas() {
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
   const guardarLote = async () => {
-    if (!nuevoLote.nombre_lote || !nuevoLote.hectareas || !nuevoLote.cultivo) {
-      toast.error('Nombre, hectareas y cultivo son obligatorios')
+    if (!nuevoLote.nombre_lote || !nuevoLote.hectareas) {
+      toast.error('Nombre y hectáreas son obligatorios')
       return
     }
 
     const datos: any = {
       nombre_lote: nuevoLote.nombre_lote,
       hectareas: parseFloat(nuevoLote.hectareas),
-      cultivo: nuevoLote.cultivo,
-      estado: nuevoLote.estado,
     }
     if (nuevoLote.campo) datos.campo = nuevoLote.campo
-    if (nuevoLote.campana) datos.campana = nuevoLote.campana
-    if (nuevoLote.fecha_siembra) datos.fecha_siembra = nuevoLote.fecha_siembra
-    if (nuevoLote.fecha_cosecha_estimada) datos.fecha_cosecha_estimada = nuevoLote.fecha_cosecha_estimada
     if (nuevoLote.observaciones) datos.observaciones = nuevoLote.observaciones
 
     const { error } = await supabase.schema('productivo').from('lotes_agricolas').insert(datos)
@@ -4154,8 +4144,7 @@ function TabLotesAgricolas() {
     toast.success('Lote agricola registrado')
     setMostrarModalLote(false)
     setNuevoLote({
-      nombre_lote: '', campo: '', hectareas: '', cultivo: '', campana: '',
-      fecha_siembra: '', fecha_cosecha_estimada: '', estado: 'sembrado', observaciones: ''
+      nombre_lote: '', campo: '', hectareas: '', observaciones: ''
     })
     cargarDatos()
   }
@@ -4198,20 +4187,15 @@ function TabLotesAgricolas() {
           <TableRow>
             <TableHead>Lote</TableHead>
             <TableHead>Campo</TableHead>
-            <TableHead className="text-right">Hectareas</TableHead>
-            <TableHead>Cultivo</TableHead>
-            <TableHead>Campaña</TableHead>
-            <TableHead>Siembra</TableHead>
-            <TableHead>Cosecha Est.</TableHead>
-            <TableHead>Estado</TableHead>
+            <TableHead className="text-right">Hectáreas</TableHead>
             <TableHead>Obs.</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {lotes.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                Sin lotes agricolas registrados.
+              <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                Sin lotes agrícolas registrados.
               </TableCell>
             </TableRow>
           ) : (
@@ -4220,14 +4204,7 @@ function TabLotesAgricolas() {
                 <TableCell className="font-medium">{l.nombre_lote}</TableCell>
                 <TableCell>{l.campo || '-'}</TableCell>
                 <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
-                <TableCell>{l.cultivo}</TableCell>
-                <TableCell>{l.campana || '-'}</TableCell>
-                <TableCell>{formatoFecha(l.fecha_siembra)}</TableCell>
-                <TableCell>{formatoFecha(l.fecha_cosecha_estimada)}</TableCell>
-                <TableCell>
-                  <Badge className={colorEstado(l.estado)}>{l.estado.replace('_', ' ')}</Badge>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{l.observaciones || '-'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{l.observaciones || '-'}</TableCell>
               </TableRow>
             ))
           )}
@@ -4238,60 +4215,31 @@ function TabLotesAgricolas() {
       <Dialog open={mostrarModalLote} onOpenChange={setMostrarModalLote}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nuevo Lote Agricola</DialogTitle>
-            <DialogDescription>Registrar lote con cultivo, hectareas y campaña.</DialogDescription>
+            <DialogTitle>Nuevo Lote Agrícola</DialogTitle>
+            <DialogDescription>El lote es una entidad física permanente. Los cultivos y campañas se registran en cada orden de aplicación.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
+            <div>
+              <Label>Nombre Lote *</Label>
+              <Input value={nuevoLote.nombre_lote} placeholder="Ej: Lote 1, Potrero Norte..."
+                onChange={e => setNuevoLote(p => ({ ...p, nombre_lote: e.target.value }))} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Nombre Lote *</Label>
-                <Input value={nuevoLote.nombre_lote} onChange={e => setNuevoLote(p => ({ ...p, nombre_lote: e.target.value }))} />
-              </div>
               <div>
                 <Label>Campo</Label>
-                <Input value={nuevoLote.campo} onChange={e => setNuevoLote(p => ({ ...p, campo: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Hectareas *</Label>
-                <Input type="number" value={nuevoLote.hectareas} onChange={e => setNuevoLote(p => ({ ...p, hectareas: e.target.value }))} />
+                <Input value={nuevoLote.campo} placeholder="Ej: La Esperanza"
+                  onChange={e => setNuevoLote(p => ({ ...p, campo: e.target.value }))} />
               </div>
               <div>
-                <Label>Cultivo *</Label>
-                <Input value={nuevoLote.cultivo} onChange={e => setNuevoLote(p => ({ ...p, cultivo: e.target.value }))} placeholder="Soja, Maiz, Trigo..." />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Campaña</Label>
-                <Input value={nuevoLote.campana} onChange={e => setNuevoLote(p => ({ ...p, campana: e.target.value }))} placeholder="25/26" />
-              </div>
-              <div>
-                <Label>Estado</Label>
-                <Select value={nuevoLote.estado} onValueChange={v => setNuevoLote(p => ({ ...p, estado: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent position="popper" className="z-[9999]">
-                    <SelectItem value="sembrado">Sembrado</SelectItem>
-                    <SelectItem value="en_crecimiento">En Crecimiento</SelectItem>
-                    <SelectItem value="cosechado">Cosechado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Fecha Siembra</Label>
-                <Input type="date" value={nuevoLote.fecha_siembra} onChange={e => setNuevoLote(p => ({ ...p, fecha_siembra: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Fecha Cosecha Estimada</Label>
-                <Input type="date" value={nuevoLote.fecha_cosecha_estimada} onChange={e => setNuevoLote(p => ({ ...p, fecha_cosecha_estimada: e.target.value }))} />
+                <Label>Hectáreas *</Label>
+                <Input type="number" step="0.01" value={nuevoLote.hectareas} placeholder="Ej: 150"
+                  onChange={e => setNuevoLote(p => ({ ...p, hectareas: e.target.value }))} />
               </div>
             </div>
             <div>
               <Label>Observaciones</Label>
-              <Input value={nuevoLote.observaciones} onChange={e => setNuevoLote(p => ({ ...p, observaciones: e.target.value }))} />
+              <Input value={nuevoLote.observaciones} placeholder="Descripción, ubicación, etc."
+                onChange={e => setNuevoLote(p => ({ ...p, observaciones: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
