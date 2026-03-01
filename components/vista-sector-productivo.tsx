@@ -3539,11 +3539,29 @@ function SubTabOrdenesAgricolas() {
 
   const [nuevaOrden, setNuevaOrden] = useState({
     fecha: new Date().toISOString().split('T')[0],
-    lote_id: '',
-    lote_nombre: '',
-    hectareas: '',
     observaciones: ''
   })
+
+  // Multi-lote
+  interface LoteOrdenRow { key: number; lote_id: string; lote_nombre: string; hectareas: string }
+  const [lotesOrden, setLotesOrden] = useState<LoteOrdenRow[]>([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
+  const totalHectareas = lotesOrden.reduce((sum, l) => sum + (parseFloat(l.hectareas) || 0), 0)
+
+  const agregarLoteRow = () => setLotesOrden(prev => [...prev, { key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
+  const eliminarLoteRow = (key: number) => setLotesOrden(prev => prev.filter(l => l.key !== key))
+  const actualizarLoteRow = (key: number, campo: string, valor: string) =>
+    setLotesOrden(prev => prev.map(l => l.key === key ? { ...l, [campo]: valor } : l))
+  const onLoteRowChange = (key: number, loteId: string) => {
+    if (loteId === '__manual__') {
+      actualizarLoteRow(key, 'lote_id', '')
+      return
+    }
+    const lote = lotesDisponibles.find(l => l.id === loteId)
+    if (lote) setLotesOrden(prev => prev.map(l => l.key === key
+      ? { ...l, lote_id: loteId, lote_nombre: lote.nombre_lote, hectareas: String(lote.hectareas) }
+      : l
+    ))
+  }
 
   const [laboresSeleccionadas, setLaboresSeleccionadas] = useState<Record<number, boolean>>({})
   const [nuevaLabor, setNuevaLabor] = useState('')
@@ -3582,20 +3600,10 @@ function SubTabOrdenesAgricolas() {
     toast.success(`Labor "${nombre}" creada`)
   }
 
-  const onLoteChange = (loteId: string) => {
-    if (loteId === '__manual__') {
-      setNuevaOrden(p => ({ ...p, lote_id: '' }))
-      return
-    }
-    const lote = lotesDisponibles.find(l => l.id === loteId)
-    if (lote) {
-      setNuevaOrden(p => ({ ...p, lote_id: loteId, lote_nombre: lote.nombre_lote, hectareas: String(lote.hectareas) }))
-    }
-  }
-
   const cerrarModal = () => {
     setMostrarModal(false)
-    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], lote_id: '', lote_nombre: '', hectareas: '', observaciones: '' })
+    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], observaciones: '' })
+    setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
     setLaboresSeleccionadas({})
     setLineas([])
     setNuevaLabor('')
@@ -3644,8 +3652,8 @@ function SubTabOrdenesAgricolas() {
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
   const guardarOrden = async () => {
-    if (!nuevaOrden.hectareas || parseFloat(nuevaOrden.hectareas) <= 0) {
-      toast.error('Las hectáreas son obligatorias'); return
+    if (totalHectareas <= 0) {
+      toast.error('Ingrese al menos un lote con hectáreas'); return
     }
     const laboresIds = Object.entries(laboresSeleccionadas).filter(([_, sel]) => sel).map(([id]) => parseInt(id))
     const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
@@ -3657,13 +3665,17 @@ function SubTabOrdenesAgricolas() {
     }
     setGuardando(true)
     try {
-      const hectareas = parseFloat(nuevaOrden.hectareas)
+      const hectareas = totalHectareas
+      const lotesConNombre = lotesOrden.filter(l => l.lote_nombre.trim())
+      const loteNombreGuardar = lotesConNombre.length > 0
+        ? lotesConNombre.map(l => l.lote_nombre.trim()).join(' / ')
+        : null
       const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
         .from('ordenes_agricolas')
         .insert({
           fecha: nuevaOrden.fecha,
-          lote_id: nuevaOrden.lote_id || null,
-          lote_nombre: nuevaOrden.lote_nombre || null,
+          lote_id: null,
+          lote_nombre: loteNombreGuardar,
           hectareas,
           estado: 'planificada',
           observaciones: nuevaOrden.observaciones || null
@@ -3854,36 +3866,63 @@ function SubTabOrdenesAgricolas() {
                   onChange={e => setNuevaOrden(p => ({ ...p, fecha: e.target.value }))} />
               </div>
               <div>
-                <Label>Lote del sistema (opcional)</Label>
-                <Select value={nuevaOrden.lote_id || '__manual__'} onValueChange={onLoteChange}>
-                  <SelectTrigger><SelectValue placeholder="Sin lote / manual" /></SelectTrigger>
-                  <SelectContent position="popper" className="z-[9999]">
-                    <SelectItem value="__manual__">Sin lote específico</SelectItem>
-                    {lotesDisponibles.map(l => (
-                      <SelectItem key={l.id} value={l.id}>{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Observaciones</Label>
+                <Input value={nuevaOrden.observaciones}
+                  onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Hectáreas *</Label>
-                <Input type="number" step="0.01" placeholder="ej. 100"
-                  value={nuevaOrden.hectareas}
-                  onChange={e => setNuevaOrden(p => ({ ...p, hectareas: e.target.value }))} />
+
+            {/* Lotes multi-fila */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Lotes a aplicar</Label>
+                <span className="text-sm font-medium text-green-700">
+                  Total: {formatoNumero(totalHectareas)} ha
+                </span>
               </div>
-              <div>
-                <Label>Nombre lote / campo libre</Label>
-                <Input placeholder="ej. Lote Norte"
-                  value={nuevaOrden.lote_nombre}
-                  onChange={e => setNuevaOrden(p => ({ ...p, lote_nombre: e.target.value }))} />
+              <div className="space-y-2">
+                {lotesOrden.map((row) => (
+                  <div key={row.key} className="flex gap-2 items-center">
+                    <Select
+                      value={row.lote_id || '__manual__'}
+                      onValueChange={v => onLoteRowChange(row.key, v)}
+                    >
+                      <SelectTrigger className="w-48 h-8 text-xs">
+                        <SelectValue placeholder="Lote del sistema" />
+                      </SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        <SelectItem value="__manual__">Sin lote / manual</SelectItem>
+                        {lotesDisponibles.map(l => (
+                          <SelectItem key={l.id} value={l.id}>{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      className="flex-1 h-8 text-xs"
+                      placeholder="Nombre libre (ej. Lote Norte)"
+                      value={row.lote_nombre}
+                      onChange={e => actualizarLoteRow(row.key, 'lote_nombre', e.target.value)}
+                    />
+                    <Input
+                      type="number" step="0.01"
+                      className="w-24 h-8 text-xs text-right"
+                      placeholder="Ha"
+                      value={row.hectareas}
+                      onChange={e => actualizarLoteRow(row.key, 'hectareas', e.target.value)}
+                    />
+                    <span className="text-xs text-muted-foreground w-4">ha</span>
+                    {lotesOrden.length > 1 && (
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                        onClick={() => eliminarLoteRow(row.key)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
-            </div>
-            <div>
-              <Label>Observaciones</Label>
-              <Input value={nuevaOrden.observaciones}
-                onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={agregarLoteRow}>
+                <Plus className="mr-1 h-3 w-3" /> Agregar lote
+              </Button>
             </div>
 
             {/* Labores */}
