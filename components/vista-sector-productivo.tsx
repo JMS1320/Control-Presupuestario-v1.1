@@ -3401,60 +3401,119 @@ function SubTabOrdenesAplicacion() {
 // SUB-TAB: NECESIDAD DE COMPRA
 // ============================================================
 
+type FilaNecesidad = {
+  insumo_nombre: string
+  stock_actual: number
+  necesario: number
+  a_comprar: number
+  unidad: string
+}
+
+function TablaNecesidad({ datos, loading, titulo, icono }: {
+  datos: FilaNecesidad[]
+  loading: boolean
+  titulo: string
+  icono: React.ReactNode
+}) {
+  return (
+    <div className="flex-1 min-w-0 space-y-3">
+      <div className="flex items-center gap-2">
+        {icono}
+        <h4 className="font-semibold text-base">{titulo}</h4>
+      </div>
+      {loading ? (
+        <div className="flex items-center gap-2 py-6 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" /> Calculando...
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs">Insumo</TableHead>
+              <TableHead className="text-right text-xs">Stock</TableHead>
+              <TableHead className="text-right text-xs">Necesario</TableHead>
+              <TableHead className="text-right text-xs">A Comprar</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {datos.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-6 text-sm">
+                  Sin órdenes planificadas.
+                </TableCell>
+              </TableRow>
+            ) : (
+              datos.map((d, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-medium text-sm">{d.insumo_nombre}</TableCell>
+                  <TableCell className="text-right text-sm">{formatoCantidad(d.stock_actual, d.unidad)}</TableCell>
+                  <TableCell className="text-right text-sm">{formatoCantidad(d.necesario, d.unidad)}</TableCell>
+                  <TableCell className={`text-right font-semibold text-sm ${d.a_comprar > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {d.a_comprar > 0 ? formatoCantidad(d.a_comprar, d.unidad) : '✓ OK'}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  )
+}
+
 function SubTabNecesidadCompra() {
-  const [datos, setDatos] = useState<{
-    insumo_nombre: string
-    stock_actual: number
-    necesario: number
-    a_comprar: number
-    unidad: string
-  }[]>([])
+  const [datosGanadero, setDatosGanadero] = useState<FilaNecesidad[]>([])
+  const [datosAgricola, setDatosAgricola] = useState<FilaNecesidad[]>([])
   const [loading, setLoading] = useState(true)
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
-      const [lineasRes, stockRes] = await Promise.all([
+      const [lineasVetRes, lineasAgroRes, stockRes] = await Promise.all([
         supabase.schema('productivo').from('lineas_orden_aplicacion')
           .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, unidad_medida, ordenes_aplicacion!inner(estado)')
           .eq('ordenes_aplicacion.estado', 'planificada'),
+        supabase.schema('productivo').from('lineas_orden_agricola')
+          .select('insumo_nombre, insumo_stock_id, cantidad_total_l, ordenes_agricolas!inner(estado)')
+          .eq('ordenes_agricolas.estado', 'planificada'),
         supabase.schema('productivo').from('stock_insumos')
           .select('id, producto, cantidad, unidad_medida')
       ])
 
-      const necesidadMap: Record<string, { nombre: string, stockId: string | null, necesario: number, unidad: string }> = {}
-      if (lineasRes.data) {
-        for (const l of lineasRes.data) {
-          const key = l.insumo_stock_id || l.insumo_nombre
-          if (!necesidadMap[key]) {
-            necesidadMap[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0, unidad: l.unidad_medida || 'ml' }
-          }
-          necesidadMap[key].necesario += l.cantidad_total_ml
-        }
-      }
-
       const stockMap: Record<string, { cantidad: number, unidad: string }> = {}
-      if (stockRes.data) {
-        for (const s of stockRes.data) {
-          stockMap[s.id] = { cantidad: s.cantidad, unidad: s.unidad_medida || 'ml' }
-        }
+      for (const s of (stockRes.data || [])) {
+        stockMap[s.id] = { cantidad: s.cantidad, unidad: s.unidad_medida || 'ml' }
       }
 
-      const resultado = Object.values(necesidadMap).map(n => {
-        const stockInfo = n.stockId ? stockMap[n.stockId] : null
-        const stockActual = stockInfo?.cantidad || 0
-        // Preferir la unidad del stock_insumos (fuente de verdad)
-        const unidad = stockInfo?.unidad || n.unidad
-        return {
-          insumo_nombre: n.nombre,
-          stock_actual: stockActual,
-          necesario: n.necesario,
-          a_comprar: Math.max(0, n.necesario - stockActual),
-          unidad
-        }
+      // — Ganadero (ml) —
+      const mapVet: Record<string, { nombre: string, stockId: string | null, necesario: number, unidad: string }> = {}
+      for (const l of (lineasVetRes.data || [])) {
+        const key = l.insumo_stock_id || l.insumo_nombre
+        if (!mapVet[key]) mapVet[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0, unidad: l.unidad_medida || 'ml' }
+        mapVet[key].necesario += l.cantidad_total_ml
+      }
+      const ganadero = Object.values(mapVet).map(n => {
+        const s = n.stockId ? stockMap[n.stockId] : null
+        const stockActual = s?.cantidad || 0
+        const unidad = s?.unidad || n.unidad
+        return { insumo_nombre: n.nombre, stock_actual: stockActual, necesario: n.necesario, a_comprar: Math.max(0, n.necesario - stockActual), unidad }
       }).sort((a, b) => b.a_comprar - a.a_comprar)
 
-      setDatos(resultado)
+      // — Agrícola (L) —
+      const mapAgro: Record<string, { nombre: string, stockId: string | null, necesario: number }> = {}
+      for (const l of (lineasAgroRes.data || [])) {
+        const key = l.insumo_stock_id || l.insumo_nombre
+        if (!mapAgro[key]) mapAgro[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0 }
+        mapAgro[key].necesario += (l.cantidad_total_l || 0)
+      }
+      const agricola = Object.values(mapAgro).map(n => {
+        const s = n.stockId ? stockMap[n.stockId] : null
+        const stockActual = s?.cantidad || 0
+        return { insumo_nombre: n.nombre, stock_actual: stockActual, necesario: n.necesario, a_comprar: Math.max(0, n.necesario - stockActual), unidad: 'L' }
+      }).sort((a, b) => b.a_comprar - a.a_comprar)
+
+      setDatosGanadero(ganadero)
+      setDatosAgricola(agricola)
     } catch (err) {
       console.error('Error cargando necesidad compra:', err)
       toast.error('Error al cargar necesidad de compra')
@@ -3465,15 +3524,6 @@ function SubTabNecesidadCompra() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-        <span>Calculando necesidades...</span>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4 pt-4">
       <div className="flex items-center justify-between">
@@ -3482,41 +3532,25 @@ function SubTabNecesidadCompra() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
-
       <p className="text-sm text-muted-foreground">
-        Consolidado de insumos necesarios para ordenes planificadas vs stock disponible.
+        Insumos necesarios para órdenes planificadas vs stock disponible.
       </p>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Insumo</TableHead>
-            <TableHead className="text-right">Stock Actual</TableHead>
-            <TableHead className="text-right">Necesario (planificadas)</TableHead>
-            <TableHead className="text-right">A Comprar</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {datos.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                Sin ordenes planificadas pendientes.
-              </TableCell>
-            </TableRow>
-          ) : (
-            datos.map((d, i) => (
-              <TableRow key={i}>
-                <TableCell className="font-medium">{d.insumo_nombre}</TableCell>
-                <TableCell className="text-right">{formatoCantidad(d.stock_actual, d.unidad)}</TableCell>
-                <TableCell className="text-right">{formatoCantidad(d.necesario, d.unidad)}</TableCell>
-                <TableCell className={`text-right font-semibold ${d.a_comprar > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  {d.a_comprar > 0 ? formatoCantidad(d.a_comprar, d.unidad) : 'OK'}
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+      <div className="flex gap-6 items-start">
+        <TablaNecesidad
+          datos={datosGanadero}
+          loading={loading}
+          titulo="Ganadero / Veterinario"
+          icono={<Beef className="h-4 w-4 text-amber-600" />}
+        />
+        <div className="w-px bg-border self-stretch" />
+        <TablaNecesidad
+          datos={datosAgricola}
+          loading={loading}
+          titulo="Agrícola"
+          icono={<Wheat className="h-4 w-4 text-green-600" />}
+        />
+      </div>
     </div>
   )
 }
