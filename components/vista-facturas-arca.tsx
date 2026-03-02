@@ -2751,20 +2751,32 @@ export function VistaFacturasArca() {
 
   // Confirmar SICORE para anticipo
   const confirmarSicoreAnt = async () => {
-    if (!anticipoSicoreEnProceso || !tipoSicoreAnt) return
+    console.log('[SICORE ANT] confirmar - anticipoSicoreEnProceso:', anticipoSicoreEnProceso?.id, 'tipoSicoreAnt:', tipoSicoreAnt?.tipo)
+    if (!anticipoSicoreEnProceso || !tipoSicoreAnt) {
+      toast.error('Error: estado interno incompleto (tipoSicoreAnt o anticipo nulo)')
+      return
+    }
     const quincena = generarQuincenaSicore(anticipoSicoreEnProceso.fecha_pago || new Date().toISOString())
-    const saldoFinal = (anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt
+    const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
+    const saldoFinal = Math.round(((anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt) * 100) / 100
+
+    console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id })
 
     const { error } = await supabase.from('anticipos_proveedores').update({
       estado_pago: 'pagar',
       sicore: quincena,
-      monto_sicore: montoSicoreAnt,
+      monto_sicore: Math.round(montoSicoreAnt * 100) / 100,
       tipo_sicore: tipoSicoreAnt.tipo,
       monto_restante: saldoFinal,
+      neto_gravado: neto,
     }).eq('id', anticipoSicoreEnProceso.id)
 
-    if (error) { toast.error('Error: ' + error.message); return }
-    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${montoSicoreAnt.toLocaleString('es-AR')} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    if (error) {
+      console.error('[SICORE ANT] DB error:', error)
+      toast.error('Error BD: ' + error.message + ' | code: ' + error.code)
+      return
+    }
+    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${Math.round(montoSicoreAnt * 100 / 100).toLocaleString('es-AR')} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
     setMostrarModalSicoreAnt(false)
     setAnticipoSicoreEnProceso(null)
     await recargarAnticiposPagos()
