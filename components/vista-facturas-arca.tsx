@@ -5232,6 +5232,17 @@ export function VistaFacturasArca() {
                 return
               }
               const ids = Array.from(anticiposSeleccionadosPagos)
+
+              // "pagar" → delegar a cambiarEstadoAnticipoPago para que active SICORE
+              if (nuevoEstado === 'pagar') {
+                const seleccionados = anticiposPagos.filter(a => ids.includes(a.id))
+                setAnticiposSeleccionadosPagos(new Set())
+                for (const anticipo of seleccionados) {
+                  await cambiarEstadoAnticipoPago(anticipo, 'pagar')
+                }
+                return
+              }
+
               const confirmar = window.confirm(`¿Cambiar ${ids.length} anticipo(s) a estado "${nuevoEstado}"?`)
               if (!confirmar) return
               try {
@@ -5240,13 +5251,11 @@ export function VistaFacturasArca() {
                   .update({ estado_pago: nuevoEstado })
                   .in('id', ids)
                 if (error) throw error
-                setAnticiposPagos(prev => prev.map(a =>
-                  ids.includes(a.id) ? { ...a, estado_pago: nuevoEstado } : a
-                ))
+                await recargarAnticiposPagos()
                 setAnticiposSeleccionadosPagos(new Set())
-              } catch (error) {
-                console.error('Error cambiando estado anticipos:', error)
-                alert('Error al cambiar estado')
+              } catch (err) {
+                console.error('Error cambiando estado anticipos:', err)
+                toast.error('Error al cambiar estado: ' + (err as Error).message)
               }
             }
 
