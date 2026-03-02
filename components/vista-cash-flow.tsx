@@ -892,7 +892,7 @@ export function VistaCashFlow() {
 
       // 2. Actualizar datos SICORE
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion })
+        .update({ monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
         .eq('id', guardadoPendienteCF.filaId)
 
       toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)

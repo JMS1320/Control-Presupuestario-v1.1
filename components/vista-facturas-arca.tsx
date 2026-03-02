@@ -2527,8 +2527,8 @@ export function VistaFacturasArca() {
         .update({
           monto_a_abonar: saldoFinal,
           sicore: quincena,
-          monto_sicore: montoRetencion
-          // Nota: estado ya fue actualizado por ejecutarGuardadoPendiente()
+          monto_sicore: montoRetencion,
+          tipo_sicore: tipoSeleccionado.tipo
         })
         .eq('id', facturaEnProceso.id)
       
@@ -2920,95 +2920,153 @@ export function VistaFacturasArca() {
   const generarPDFCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
     try {
       console.log('📄 Generando PDF cierre quincena SICORE')
-      
-      // Importar jsPDF dinámicamente
+
       const { jsPDF } = await import('jspdf')
-      await import('jspdf-autotable')
-      
-      const doc = new jsPDF()
-      
-      // Header del documento
-      doc.setFontSize(16)
-      doc.text('CIERRE DE QUINCENA SICORE', 20, 20)
-      doc.setFontSize(12)
-      doc.text(`Quincena: ${quincena}`, 20, 30)
-      doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 40)
-      doc.text(`Total facturas: ${facturas.length}`, 20, 50)
-      doc.text(`Total retenciones: $${totalRetenciones.toLocaleString('es-AR')}`, 20, 60)
-      
-      // Tabla de facturas
+      const doc = new jsPDF({ orientation: 'landscape' })
+
+      // Formatear quincena como título
+      const mesesNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      const partes = quincena.match(/(\d+)-(\d+)\s*-\s*(1ra|2da)/)
+      const tituloQuincena = partes
+        ? `SICORE ${mesesNombre[parseInt(partes[2]) - 1]} 20${partes[1]} ${partes[3]} Quincena`
+        : `SICORE ${quincena}`
+
+      const formatFecha = (f: string | null) => {
+        if (!f) return '-'
+        const d = new Date(f + 'T12:00:00')
+        return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+      }
+      const formatNum = (v: any) => {
+        if (v === null || v === undefined || v === '') return ''
+        const n = Number(v)
+        return n === 0 ? '' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      }
+
+      // Header
+      doc.setFontSize(13)
+      doc.text(tituloQuincena, 14, 14)
+      doc.setFontSize(8)
+      doc.text(
+        `Fecha generación: ${new Date().toLocaleDateString('es-AR')}   |   Total facturas: ${facturas.length}   |   Total retenciones: $${totalRetenciones.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
+        14, 21
+      )
+
+      // Cabeceras (con saltos de línea para ajustar al espacio)
       const columnas = [
-        'Fecha de Pago',
-        'CUIT',
-        'Proveedor',
-        'Tipo FC',
-        'Nro Factura',
-        'Retención Aplicada'
+        'Tipo','Fecha\nPago','Fecha FC','Tipo\nComp.','PV',
+        'Nro\nDesde','Nro. Doc.\nEmisor','Denominación Emisor',
+        'Neto\nGravado','Neto No\nGravado','Op.\nExentas',
+        'Otros\nTrib.','IVA','Imp.\nTotal',
+        'Mínimo\nno imp','Base\nimp','%\nRet.','Retención','PAGO'
       ]
-      
-      const filas = facturas.map(factura => [
-        factura.fecha_vencimiento || '',
-        factura.cuit || '',
-        factura.denominacion_emisor || '',
-        factura.tipo_comprobante || '',
-        `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
-        `$${(factura.monto_sicore || 0).toLocaleString('es-AR')}`
-      ])
-      
-      // Agregar fila de total
-      filas.push([
+
+      const filasDatos = facturas.map(f => {
+        const tipoConfig = f._tipoConfig
+        const netoBase = (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
+        const minimo = tipoConfig?.minimo_no_imponible ?? 0
+        const baseImp = Math.max(0, netoBase - minimo)
+        const pct = tipoConfig ? tipoConfig.porcentaje_retencion * 100 : 0
+
+        return [
+          f.tipo_sicore || '',
+          formatFecha(f.fecha_estimada || f.fecha_vencimiento),
+          formatFecha(f.fecha_emision),
+          f.tipo_comprobante ? String(f.tipo_comprobante) : '',
+          f.punto_venta || '',
+          f.numero_desde || '',
+          f.cuit || '',
+          f.denominacion_emisor || '',
+          formatNum(f.imp_neto_gravado),
+          formatNum(f.imp_neto_no_gravado),
+          formatNum(f.imp_op_exentas),
+          formatNum(f.otros_tributos),
+          formatNum(f.iva),
+          formatNum(f.imp_total),
+          formatNum(minimo),
+          formatNum(baseImp),
+          pct ? `${pct}%` : '',
+          formatNum(f.monto_sicore),
+          formatNum(f.monto_a_abonar),
+        ]
+      })
+
+      // Fila de totales
+      const filaTotales = [
+        '', '', '', '', '', '', '',
+        'TOTALES',
+        formatNum(facturas.reduce((s, f) => s + (f.imp_neto_gravado || 0), 0)),
+        formatNum(facturas.reduce((s, f) => s + (f.imp_neto_no_gravado || 0), 0)),
+        formatNum(facturas.reduce((s, f) => s + (f.imp_op_exentas || 0), 0)),
+        formatNum(facturas.reduce((s, f) => s + (f.otros_tributos || 0), 0)),
+        formatNum(facturas.reduce((s, f) => s + (f.iva || 0), 0)),
+        formatNum(facturas.reduce((s, f) => s + (f.imp_total || 0), 0)),
+        '', '',
         '',
-        '',
-        'TOTAL RETENCIONES',
-        '',
-        '',
-        `$${totalRetenciones.toLocaleString('es-AR')}`
-      ])
-      
-      // Generar tabla
+        formatNum(totalRetenciones),
+        formatNum(facturas.reduce((s, f) => s + (f.monto_a_abonar || 0), 0)),
+      ]
+      const filas = [...filasDatos, filaTotales]
+
       autoTable(doc, {
         head: [columnas],
         body: filas,
-        startY: 80,
+        startY: 26,
         styles: {
-          fontSize: 8,
-          cellPadding: 3
+          fontSize: 6.5,
+          cellPadding: 2,
+          halign: 'right',
         },
         headStyles: {
           fillColor: [41, 128, 185],
           textColor: 255,
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          fontSize: 6.5,
+          halign: 'center',
+          valign: 'middle',
+          minCellHeight: 14,
         },
         columnStyles: {
-          2: { halign: 'right' } // Alinear montos a la derecha
+          0:  { cellWidth: 14, halign: 'left'  },  // Tipo
+          1:  { cellWidth: 13 },                    // Fecha Pago
+          2:  { cellWidth: 13 },                    // Fecha FC
+          3:  { cellWidth: 10 },                    // Tipo Comp
+          4:  { cellWidth: 8  },                    // PV
+          5:  { cellWidth: 12 },                    // Nro Desde
+          6:  { cellWidth: 18 },                    // CUIT
+          7:  { cellWidth: 26, halign: 'left'  },   // Denominación
+          8:  { cellWidth: 15 },                    // Neto Grav
+          9:  { cellWidth: 15 },                    // Neto No Grav
+          10: { cellWidth: 13 },                    // Op Exentas
+          11: { cellWidth: 12 },                    // Otros Trib
+          12: { cellWidth: 12 },                    // IVA
+          13: { cellWidth: 13 },                    // Imp Total
+          14: { cellWidth: 13 },                    // Mínimo
+          15: { cellWidth: 13 },                    // Base imp
+          16: { cellWidth: 8  },                    // %
+          17: { cellWidth: 13 },                    // Retención
+          18: { cellWidth: 13 },                    // PAGO
         },
         didParseCell: function(data: any) {
-          // Resaltar fila de totales
           if (data.row.index === filas.length - 1 && data.section === 'body') {
             data.cell.styles.fillColor = [230, 230, 230]
             data.cell.styles.fontStyle = 'bold'
           }
-        }
+        },
       })
-      
-      // Generar archivo
+
       const nombreArchivo = `SICORE_${quincenaACarpeta(quincena)}.pdf`
-      
+
       if (directorio) {
-        // Guardar en directorio seleccionado
         const archivoHandle = await directorio.getFileHandle(nombreArchivo, { create: true })
         const writableStream = await archivoHandle.createWritable()
-        
         const pdfBlob = doc.output('blob')
         await writableStream.write(pdfBlob)
         await writableStream.close()
-        
         console.log('📄 PDF guardado en:', nombreArchivo)
       } else {
-        // Descarga normal
         doc.save(nombreArchivo)
       }
-      
+
     } catch (error) {
       console.error('Error generando PDF cierre quincena:', error)
       throw error
