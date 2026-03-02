@@ -2942,13 +2942,13 @@ export function VistaFacturasArca() {
         return n === 0 ? '' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       }
 
-      // Header
+      // Header (mismo margen 10mm que la tabla)
       doc.setFontSize(13)
-      doc.text(tituloQuincena, 14, 14)
+      doc.text(tituloQuincena, 10, 14)
       doc.setFontSize(8)
       doc.text(
         `Fecha generación: ${new Date().toLocaleDateString('es-AR')}   |   Total facturas: ${facturas.length}   |   Total retenciones: $${totalRetenciones.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
-        14, 21
+        10, 21
       )
 
       // Cabeceras (con saltos de línea para ajustar al espacio)
@@ -3007,45 +3007,50 @@ export function VistaFacturasArca() {
       ]
       const filas = [...filasDatos, filaTotales]
 
+      // Página landscape = 297mm. Con margin 10 c/lado → 277mm usables.
+      // Suma exacta de cellWidths = 277mm para que todo entre en una sola línea.
       autoTable(doc, {
         head: [columnas],
         body: filas,
         startY: 26,
+        margin: { left: 10, right: 10 },
         styles: {
-          fontSize: 6.5,
-          cellPadding: 2,
+          fontSize: 5.5,
+          cellPadding: 1.5,
           halign: 'right',
+          overflow: 'ellipsize',    // corta con "…" en vez de wrapear
+          cellWidth: 'wrap',
         },
         headStyles: {
           fillColor: [41, 128, 185],
           textColor: 255,
           fontStyle: 'bold',
-          fontSize: 6.5,
+          fontSize: 5.5,
           halign: 'center',
           valign: 'middle',
-          minCellHeight: 14,
+          minCellHeight: 12,
         },
         columnStyles: {
-          0:  { cellWidth: 14, halign: 'left'  },  // Tipo
-          1:  { cellWidth: 13 },                    // Fecha Pago
-          2:  { cellWidth: 13 },                    // Fecha FC
-          3:  { cellWidth: 10 },                    // Tipo Comp
-          4:  { cellWidth: 8  },                    // PV
-          5:  { cellWidth: 12 },                    // Nro Desde
-          6:  { cellWidth: 18 },                    // CUIT
-          7:  { cellWidth: 26, halign: 'left'  },   // Denominación
-          8:  { cellWidth: 15 },                    // Neto Grav
-          9:  { cellWidth: 15 },                    // Neto No Grav
-          10: { cellWidth: 13 },                    // Op Exentas
+          0:  { cellWidth: 17, halign: 'left'  },  // Tipo (Arrendamiento=13ch)
+          1:  { cellWidth: 16 },                    // Fecha Pago (dd/mm/aaaa=10ch)
+          2:  { cellWidth: 16 },                    // Fecha FC
+          3:  { cellWidth: 7  },                    // Tipo Comp
+          4:  { cellWidth: 7  },                    // PV
+          5:  { cellWidth: 10 },                    // Nro Desde
+          6:  { cellWidth: 16 },                    // CUIT (11ch)
+          7:  { cellWidth: 28, halign: 'left'  },   // Denominación (ellipsize)
+          8:  { cellWidth: 17 },                    // Neto Grav (12ch)
+          9:  { cellWidth: 16 },                    // Neto No Grav
+          10: { cellWidth: 12 },                    // Op Exentas
           11: { cellWidth: 12 },                    // Otros Trib
-          12: { cellWidth: 12 },                    // IVA
-          13: { cellWidth: 13 },                    // Imp Total
-          14: { cellWidth: 13 },                    // Mínimo
-          15: { cellWidth: 13 },                    // Base imp
-          16: { cellWidth: 8  },                    // %
-          17: { cellWidth: 13 },                    // Retención
-          18: { cellWidth: 13 },                    // PAGO
-        },
+          12: { cellWidth: 16 },                    // IVA
+          13: { cellWidth: 17 },                    // Imp Total (12ch)
+          14: { cellWidth: 14 },                    // Mínimo no imp
+          15: { cellWidth: 17 },                    // Base imp (12ch)
+          16: { cellWidth: 7  },                    // % Ret
+          17: { cellWidth: 14 },                    // Retención
+          18: { cellWidth: 17 },                    // PAGO (12ch)
+        },                                          // Total: 277mm ✓
         didParseCell: function(data: any) {
           if (data.row.index === filas.length - 1 && data.section === 'body') {
             data.cell.styles.fillColor = [230, 230, 230]
