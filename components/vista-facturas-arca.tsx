@@ -188,6 +188,13 @@ export function VistaFacturasArca() {
 
   // Estado para guardado pendiente - permite cancelar SICORE sin guardar estado
   const [guardadoPendiente, setGuardadoPendiente] = useState<{facturaId: string, columna: string, valor: any, estadoAnterior: string} | null>(null)
+
+  // Estado para confirmación actualización quincena SICORE al pagar
+  const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
+    facturaId: string
+    quincenaAnterior: string
+    quincenahNueva: string
+  } | null>(null)
   
   // Estados para cierre de quincena SICORE
   const [mostrarModalCierreQuincena, setMostrarModalCierreQuincena] = useState(false)
@@ -678,6 +685,23 @@ export function VistaFacturasArca() {
           console.log('⏭️ SICORE: Factura ya estaba en estado pagar, no ejecutar')
         }
       }
+
+      // HOOK SICORE - Al pasar a "pagado": verificar si quincena cambió
+      if (datosEdicion.columna === 'estado' && valorFinal === 'pagado') {
+        const facturaActual = nuevasFacturas.find(f => f.id === datosEdicion.facturaId)
+        if (facturaActual?.sicore && facturaActual?.fecha_estimada) {
+          const quincenahNueva = generarQuincenaSicore(facturaActual.fecha_estimada)
+          if (quincenahNueva !== facturaActual.sicore) {
+            setConfirmCambioQuincena({
+              facturaId: datosEdicion.facturaId,
+              quincenaAnterior: facturaActual.sicore,
+              quincenahNueva
+            })
+            return // No mostrar el alert genérico
+          }
+        }
+      }
+
       alert('Cambio guardado exitosamente')
       
     } catch (error) {
@@ -4180,6 +4204,63 @@ export function VistaFacturasArca() {
       </Dialog>
 
       {/* Modal SICORE - Retenciones Ganancias */}
+      {/* Modal confirmación cambio quincena SICORE al pagar */}
+      <Dialog open={!!confirmCambioQuincena} onOpenChange={(open) => { if (!open) setConfirmCambioQuincena(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>🗓️ Quincena SICORE</DialogTitle>
+            <DialogDescription>
+              La fecha de pago corresponde a una quincena distinta a la registrada.
+            </DialogDescription>
+          </DialogHeader>
+          {confirmCambioQuincena && (
+            <div className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Quincena registrada:</span>
+                  <span className="font-medium line-through text-red-500">{confirmCambioQuincena.quincenaAnterior}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Quincena según fecha de pago:</span>
+                  <span className="font-semibold text-green-700">{confirmCambioQuincena.quincenahNueva}</span>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">¿Actualizar la quincena SICORE a <strong>{confirmCambioQuincena.quincenahNueva}</strong>?</p>
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={async () => {
+                    const { error } = await supabase
+                      .schema('msa')
+                      .from('comprobantes_arca')
+                      .update({ sicore: confirmCambioQuincena.quincenahNueva })
+                      .eq('id', confirmCambioQuincena.facturaId)
+                    if (!error) {
+                      setFacturas(prev => prev.map(f =>
+                        f.id === confirmCambioQuincena.facturaId
+                          ? { ...f, sicore: confirmCambioQuincena.quincenahNueva }
+                          : f
+                      ))
+                      setFacturasOriginales(prev => prev.map(f =>
+                        f.id === confirmCambioQuincena.facturaId
+                          ? { ...f, sicore: confirmCambioQuincena.quincenahNueva }
+                          : f
+                      ))
+                    }
+                    setConfirmCambioQuincena(null)
+                  }}
+                >
+                  ✅ Sí, actualizar
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setConfirmCambioQuincena(null)}>
+                  No, mantener {confirmCambioQuincena.quincenaAnterior}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={mostrarModalSicore} onOpenChange={setMostrarModalSicore}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
