@@ -2698,11 +2698,26 @@ export function VistaFacturasArca() {
   const procesarCierreQuincena = async (quincena: string) => {
     try {
       setProcesandoCierre(true)
-      
+
+      // VALIDACIÓN: anticipos con SICORE sin vincular en esta quincena
+      const { data: anticiposSinVincular } = await supabase
+        .from('anticipos_proveedores')
+        .select('id, nombre_proveedor, monto_sicore')
+        .eq('sicore', quincena)
+        .is('factura_id', null)
+
+      if (anticiposSinVincular && anticiposSinVincular.length > 0) {
+        const lista = anticiposSinVincular
+          .map(a => `• ${a.nombre_proveedor} — $${(a.monto_sicore || 0).toLocaleString('es-AR')}`)
+          .join('\n')
+        alert(`⚠️ No se puede cerrar la quincena ${quincena}.\n\nExisten ${anticiposSinVincular.length} anticipo(s) con retención SICORE pendiente de vincular a una factura:\n\n${lista}\n\nVinculá los anticipos desde la Vista Principal antes de cerrar la quincena.`)
+        return
+      }
+
       // 1. Buscar todas las retenciones de la quincena
       console.log('🎯 SICORE: Iniciando cierre quincena', quincena)
       const { facturas, totalRetenciones, cantidad } = await buscarRetencionesQuincena(quincena)
-      
+
       if (cantidad === 0) {
         alert(`No se encontraron retenciones SICORE para la quincena ${quincena}`)
         return

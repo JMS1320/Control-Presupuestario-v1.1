@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +50,15 @@ const ESTADOS_ANTICIPO = [
   { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' }
 ]
+
+// Interface tipos SICORE
+interface TipoSicore {
+  id: number
+  tipo: string
+  emoji: string
+  minimo_no_imponible: number
+  porcentaje_retencion: number
+}
 
 // Interface para celda en edición
 interface CeldaEnEdicion {
@@ -132,6 +141,22 @@ export function VistaCashFlow() {
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
   const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
+
+  // Estados modal SICORE anticipo
+  const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
+  const [mostrarModalSicoreAnticipo, setMostrarModalSicoreAnticipo] = useState(false)
+  const [anticipoSicoreId, setAnticipoSicoreId] = useState<string | null>(null)
+  const [anticipoSicoreCuit, setAnticipoSicoreCuit] = useState('')
+  const [anticipoSicoreFecha, setAnticipoSicoreFecha] = useState('')
+  const [pasoSicoreAnticipo, setPasoSicoreAnticipo] = useState<'pregunta' | 'tipo' | 'campos' | 'calculo'>('pregunta')
+  const [tipoSicoreAnticipo, setTipoSicoreAnticipo] = useState<TipoSicore | null>(null)
+  const [camposSicore, setCamposSicore] = useState({ neto_gravado: '', neto_no_gravado: '', op_exentas: '', iva: '' })
+  const [montoSicoreAnticipo, setMontoSicoreAnticipo] = useState(0)
+  const [descuentoSicoreAnticipo, setDescuentoSicoreAnticipo] = useState(0)
+  const [datosSicoreAnticipo, setDatosSicoreAnticipo] = useState<{
+    netoBase: number, minimoAplicado: number, baseImponible: number,
+    esRetencionAdicional: boolean, impTotal: number
+  } | null>(null)
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
@@ -742,6 +767,97 @@ export function VistaCashFlow() {
     cargarAnticiposExistentes()
   }
 
+  // Cargar tipos SICORE
+  useEffect(() => {
+    supabase.from('tipos_sicore_config').select('*').eq('activo', true).order('minimo_no_imponible')
+      .then(({ data }) => { if (data) setTiposSicore(data) })
+  }, [])
+
+  // Generar quincena SICORE a partir de una fecha
+  const generarQuincenaSicoreLocal = (fecha: string): string => {
+    const d = new Date(fecha)
+    const yy = d.getFullYear().toString().slice(-2)
+    const mm = (d.getMonth() + 1).toString().padStart(2, '0')
+    return `${yy}-${mm} - ${d.getDate() <= 15 ? '1ra' : '2da'}`
+  }
+
+  // Verificar retención previa en AMBAS tablas (facturas + anticipos)
+  const verificarRetencionPreviaAnticipo = async (cuit: string, quincena: string): Promise<boolean> => {
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      supabase.schema('msa').from('comprobantes_arca')
+        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
+      supabase.from('anticipos_proveedores')
+        .select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).limit(1)
+    ])
+    return (d1 && d1.length > 0) || (d2 && d2.length > 0)
+  }
+
+  // Calcular SICORE anticipo una vez seleccionado el tipo y los campos
+  const calcularSicoreAnticipo = async (tipo: TipoSicore) => {
+    const netoGravado = parseFloat(camposSicore.neto_gravado) || 0
+    const netoNoGravado = parseFloat(camposSicore.neto_no_gravado) || 0
+    const opExentas = parseFloat(camposSicore.op_exentas) || 0
+    const iva = parseFloat(camposSicore.iva) || 0
+    const impTotal = netoGravado + netoNoGravado + opExentas + iva
+    const netoBase = netoGravado + netoNoGravado + opExentas
+    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+
+    const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena)
+
+    let baseImponible = netoBase
+    let minimoAplicado = 0
+
+    if (!yaRetuvo) {
+      if (netoBase <= tipo.minimo_no_imponible) {
+        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoBase.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+        return
+      }
+      baseImponible = netoBase - tipo.minimo_no_imponible
+      minimoAplicado = tipo.minimo_no_imponible
+    }
+
+    setTipoSicoreAnticipo(tipo)
+    setDatosSicoreAnticipo({ netoBase, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, impTotal })
+    setMontoSicoreAnticipo(baseImponible * tipo.porcentaje_retencion)
+    setDescuentoSicoreAnticipo(0)
+    setPasoSicoreAnticipo('calculo')
+  }
+
+  // Confirmar y guardar SICORE en el anticipo
+  const confirmarSicoreAnticipo = async () => {
+    if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
+    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const { error } = await supabase.from('anticipos_proveedores').update({
+      sicore: quincena,
+      monto_sicore: montoSicoreAnticipo,
+      tipo_sicore: tipoSicoreAnticipo.tipo,
+      neto_gravado: parseFloat(camposSicore.neto_gravado) || 0,
+      neto_no_gravado: parseFloat(camposSicore.neto_no_gravado) || 0,
+      op_exentas: parseFloat(camposSicore.op_exentas) || 0,
+      iva: parseFloat(camposSicore.iva) || 0,
+      imp_total: datosSicoreAnticipo.impTotal,
+    }).eq('id', anticipoSicoreId)
+
+    if (error) { toast.error('Error guardando SICORE: ' + error.message); return }
+    toast.success(`Retención SICORE aplicada: $${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — Quincena ${quincena}`)
+    cerrarModalSicoreAnticipo()
+    await cargarAnticiposExistentes()
+  }
+
+  // Cerrar y limpiar modal SICORE anticipo
+  const cerrarModalSicoreAnticipo = () => {
+    setMostrarModalSicoreAnticipo(false)
+    setAnticipoSicoreId(null)
+    setAnticipoSicoreCuit('')
+    setAnticipoSicoreFecha('')
+    setPasoSicoreAnticipo('pregunta')
+    setTipoSicoreAnticipo(null)
+    setCamposSicore({ neto_gravado: '', neto_no_gravado: '', op_exentas: '', iva: '' })
+    setDatosSicoreAnticipo(null)
+    setMontoSicoreAnticipo(0)
+    setDescuentoSicoreAnticipo(0)
+  }
+
   const guardarAnticipo = async () => {
     if (!nuevoAnticipo.cuit || !nuevoAnticipo.nombre || !nuevoAnticipo.monto || !nuevoAnticipo.fecha) {
       toast.error('Debe completar CUIT, Nombre, Monto y Fecha')
@@ -752,23 +868,35 @@ export function VistaCashFlow() {
     try {
       const monto = parseFloat(nuevoAnticipo.monto)
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('anticipos_proveedores')
         .insert({
-          tipo: nuevoAnticipo.tipo, // 'pago' o 'cobro'
-          cuit_proveedor: nuevoAnticipo.cuit.replace(/-/g, ''), // Guardar sin guiones
+          tipo: nuevoAnticipo.tipo,
+          cuit_proveedor: nuevoAnticipo.cuit.replace(/-/g, ''),
           nombre_proveedor: nuevoAnticipo.nombre,
           monto: monto,
-          monto_restante: monto, // Inicialmente todo el monto está pendiente
+          monto_restante: monto,
           fecha_pago: nuevoAnticipo.fecha,
           descripcion: nuevoAnticipo.descripcion || null,
           estado: 'pendiente_vincular'
         })
+        .select('id')
 
       if (error) throw error
 
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
       toast.success(`${tipoLabel} registrado exitosamente`)
+
+      // Si es pago, ofrecer retención SICORE
+      if (nuevoAnticipo.tipo === 'pago' && data && data.length > 0) {
+        const cuitLimpio = nuevoAnticipo.cuit.replace(/-/g, '')
+        setAnticipoSicoreId(data[0].id)
+        setAnticipoSicoreCuit(cuitLimpio)
+        setAnticipoSicoreFecha(nuevoAnticipo.fecha)
+        setPasoSicoreAnticipo('pregunta')
+        setMostrarModalSicoreAnticipo(true)
+      }
+
       setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
       await cargarDatos()
       await cargarAnticiposExistentes()
@@ -1983,6 +2111,149 @@ export function VistaCashFlow() {
               </div>
             </TabsContent>
           </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal SICORE - Anticipo de pago */}
+      <Dialog open={mostrarModalSicoreAnticipo} onOpenChange={(open) => { if (!open) cerrarModalSicoreAnticipo() }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>🏛️ Retención SICORE — Anticipo de Pago</DialogTitle>
+            <DialogDescription>
+              Anticipo registrado. ¿Desea aplicar retención de ganancias?
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* PASO: pregunta */}
+          {pasoSicoreAnticipo === 'pregunta' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-blue-800 mb-3">Mínimos por categoría (primera retención en quincena):</p>
+                <div className="space-y-1">
+                  {tiposSicore.map(t => (
+                    <div key={t.id} className="flex justify-between text-sm">
+                      <span>{t.emoji} {t.tipo}</span>
+                      <span className="text-gray-600">${t.minimo_no_imponible.toLocaleString('es-AR')} — {(t.porcentaje_retencion * 100).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => setPasoSicoreAnticipo('tipo')}>
+                  ✅ Sí, aplicar retención
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={cerrarModalSicoreAnticipo}>
+                  No, continuar sin retención
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* PASO: tipo */}
+          {pasoSicoreAnticipo === 'tipo' && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Seleccione el tipo de operación:</p>
+              {tiposSicore.map(tipo => (
+                <Button key={tipo.id} variant="outline"
+                  className="w-full h-auto p-3 flex items-center justify-between"
+                  onClick={() => { setTipoSicoreAnticipo(tipo); setPasoSicoreAnticipo('campos') }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{tipo.emoji}</span>
+                    <div className="text-left">
+                      <div className="font-medium">{tipo.tipo}</div>
+                      <div className="text-xs text-gray-500">Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} · {(tipo.porcentaje_retencion * 100).toFixed(2)}%</div>
+                    </div>
+                  </div>
+                </Button>
+              ))}
+              <Button variant="ghost" className="w-full" onClick={() => setPasoSicoreAnticipo('pregunta')}>← Volver</Button>
+            </div>
+          )}
+
+          {/* PASO: campos */}
+          {pasoSicoreAnticipo === 'campos' && tipoSicoreAnticipo && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Ingrese los importes de la factura:</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'neto_gravado', label: 'Neto Gravado' },
+                  { key: 'neto_no_gravado', label: 'Neto No Gravado' },
+                  { key: 'op_exentas', label: 'Op. Exentas' },
+                  { key: 'iva', label: 'IVA' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={camposSicore[key as keyof typeof camposSicore]}
+                      onChange={e => setCamposSicore(prev => ({ ...prev, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="bg-gray-50 rounded p-3 text-sm flex justify-between">
+                <span className="font-medium">Importe Total (calculado):</span>
+                <span className="font-bold">
+                  ${((parseFloat(camposSicore.neto_gravado) || 0) + (parseFloat(camposSicore.neto_no_gravado) || 0) +
+                    (parseFloat(camposSicore.op_exentas) || 0) + (parseFloat(camposSicore.iva) || 0))
+                    .toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  onClick={() => calcularSicoreAnticipo(tipoSicoreAnticipo)}
+                  disabled={!(parseFloat(camposSicore.neto_gravado) > 0)}
+                >
+                  Calcular SICORE →
+                </Button>
+                <Button variant="ghost" onClick={() => setPasoSicoreAnticipo('tipo')}>← Volver</Button>
+              </div>
+            </div>
+          )}
+
+          {/* PASO: calculo */}
+          {pasoSicoreAnticipo === 'calculo' && tipoSicoreAnticipo && datosSicoreAnticipo && (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <h3 className="font-semibold text-green-800 mb-3">{tipoSicoreAnticipo.emoji} {tipoSicoreAnticipo.tipo}</h3>
+                {datosSicoreAnticipo.esRetencionAdicional && (
+                  <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded mb-3">
+                    ⚠️ Retención adicional en quincena — no se aplica mínimo no imponible
+                  </div>
+                )}
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-600">Neto base:</span><span>${datosSicoreAnticipo.netoBase.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreAnticipo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnticipo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">% Retención:</span><span>{(tipoSicoreAnticipo.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                  <hr className="my-2"/>
+                  <div className="flex justify-between font-semibold"><span>Retención SICORE:</span><span className="text-red-600">${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {descuentoSicoreAnticipo > 0 && (
+                    <div className="flex justify-between"><span className="text-gray-600">Descuento adicional:</span><span className="text-red-600">-${descuentoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-600">Importe total factura:</span><span>${datosSicoreAnticipo.impTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  <hr className="my-2"/>
+                  <div className="flex justify-between text-lg font-bold"><span>Monto a pagar:</span><span className="text-green-600">${(datosSicoreAnticipo.impTotal - montoSicoreAnticipo - descuentoSicoreAnticipo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button className="bg-green-600 hover:bg-green-700" onClick={confirmarSicoreAnticipo}>✅ Confirmar</Button>
+                <Button variant="outline" onClick={() => {
+                  const v = prompt('Nuevo monto descuento adicional:', '0')
+                  if (v !== null) setDescuentoSicoreAnticipo(parseFloat(v) || 0)
+                }}>💰 Descuento adicional</Button>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => {
+                  const v = prompt('Nuevo monto retención:', montoSicoreAnticipo.toString())
+                  if (v !== null) setMontoSicoreAnticipo(parseFloat(v) || 0)
+                }}>📝 Cambiar retención</Button>
+                <Button variant="ghost" onClick={cerrarModalSicoreAnticipo}>❌ Cancelar</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
