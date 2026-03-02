@@ -212,6 +212,7 @@ export function VistaFacturasArca() {
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
   const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
+  const [anticiposPagos, setAnticiposPagos] = useState<any[]>([])
 
   // Estados para edición masiva en tab Facturas principal
   const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
@@ -220,7 +221,7 @@ export function VistaFacturasArca() {
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
-  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true })
+  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true })
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
@@ -3420,36 +3421,28 @@ export function VistaFacturasArca() {
             onClick={async () => {
               setCargandoPagos(true)
               setMostrarModalPagos(true)
-              setFiltroOrigenPagos({ arca: true, template: true })
+              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
               setFacturasSeleccionadasPagos(new Set())
               setTemplatesSeleccionadosPagos(new Set())
 
-              // Cargar facturas ARCA con estados relevantes para pagos
-              const { data: arcaData, error: arcaError } = await supabase
-                .schema('msa')
-                .from('comprobantes_arca')
-                .select('*')
-                .in('estado', ['pendiente', 'pagar', 'preparado'])
-                .order('fecha_vencimiento', { ascending: true })
+              // Cargar en paralelo las 3 fuentes
+              const [arcaResult, templatesResult, anticiposResult] = await Promise.all([
+                supabase.schema('msa').from('comprobantes_arca').select('*')
+                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .order('fecha_vencimiento', { ascending: true }),
+                supabase.from('cuotas_egresos_sin_factura').select(`*, egreso:egresos_sin_factura!inner(*)`)
+                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .eq('egreso.activo', true)
+                  .order('fecha_vencimiento', { ascending: true }),
+                supabase.from('anticipos_proveedores').select('*')
+                  .in('estado_pago', ['pendiente', 'pagar', 'preparado'])
+                  .gt('monto_restante', 0)
+                  .order('fecha_pago', { ascending: true })
+              ])
 
-              if (!arcaError && arcaData) {
-                setFacturasPagos(arcaData)
-              }
-
-              // Cargar templates/cuotas con estados relevantes para pagos
-              const { data: templatesData, error: templatesError } = await supabase
-                .from('cuotas_egresos_sin_factura')
-                .select(`
-                  *,
-                  egreso:egresos_sin_factura!inner(*)
-                `)
-                .in('estado', ['pendiente', 'pagar', 'preparado'])
-                .eq('egreso.activo', true)
-                .order('fecha_vencimiento', { ascending: true })
-
-              if (!templatesError && templatesData) {
-                setTemplatesPagos(templatesData)
-              }
+              if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
+              if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
+              if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
 
               setCargandoPagos(false)
             }}
@@ -4702,6 +4695,16 @@ export function VistaFacturasArca() {
                   ({templatesPagos.length})
                 </span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={filtroOrigenPagos.anticipo}
+                  onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, anticipo: !!checked }))}
+                />
+                <span className="text-sm flex items-center gap-1">
+                  <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">Anticipos</Badge>
+                  ({anticiposPagos.length})
+                </span>
+              </label>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button
@@ -5079,6 +5082,48 @@ export function VistaFacturasArca() {
             const subtotalTemplatesPagar = templatesPagar.reduce((sum, t) => sum + (t.monto || 0), 0)
             const subtotalTemplatesPendiente = templatesPendiente.reduce((sum, t) => sum + (t.monto || 0), 0)
 
+            // Anticipos filtrados por estado
+            const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar')
+            const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado')
+            const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente')
+            const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + (a.monto_restante || 0), 0)
+            const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto_restante || 0), 0)
+            const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto_restante || 0), 0)
+
+            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number) => {
+              if (!lista.length) return null
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm text-gray-700">{titulo}</h3>
+                    <span className="text-sm font-medium">${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Proveedor</TableHead>
+                        <TableHead className="text-xs">CUIT</TableHead>
+                        <TableHead className="text-xs">Fecha Pago</TableHead>
+                        <TableHead className="text-xs text-right">Monto</TableHead>
+                        <TableHead className="text-xs">SICORE</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lista.map(a => (
+                        <TableRow key={a.id} className="bg-purple-50 hover:bg-purple-100">
+                          <TableCell className="text-xs font-medium">{a.nombre_proveedor}</TableCell>
+                          <TableCell className="text-xs text-gray-500">{a.cuit_proveedor}</TableCell>
+                          <TableCell className="text-xs">{a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
+                          <TableCell className="text-xs text-right font-medium">${(a.monto_restante || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="text-xs">{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )
+            }
+
             return (
               <div className="space-y-6">
                 {/* Checkboxes de filtro solo para Admin */}
@@ -5111,8 +5156,16 @@ export function VistaFacturasArca() {
 
                 {/* Vista diferenciada por rol */}
                 {esAdmin ? (
-                  // ADMIN: Preparado > Pagar > Pendiente (con filtros)
+                  // ADMIN: Anticipos > Preparado > Pagar > Pendiente (con filtros)
                   <>
+                    {filtroOrigenPagos.anticipo && anticiposPagos.length > 0 && (
+                      <div className="border border-purple-200 rounded-lg p-3 space-y-3 bg-purple-50/30">
+                        <h3 className="font-semibold text-sm text-purple-800">💜 Anticipos de Pago</h3>
+                        {filtrosPagos.pagar && renderTablaAnticipos(anticiposPagar, '📋 Anticipos Por Pagar', subtotalAnticiposPagar)}
+                        {filtrosPagos.preparado && renderTablaAnticipos(anticiposPreparado, '✅ Anticipos Preparados', subtotalAnticiposPreparado)}
+                        {filtrosPagos.pendiente && renderTablaAnticipos(anticiposPendiente, '⏳ Anticipos Pendientes', subtotalAnticiposPendiente)}
+                      </div>
+                    )}
                     {filtrosPagos.preparado && (
                       <>
                         {filtroOrigenPagos.arca && renderTablaFacturas(
@@ -5170,8 +5223,15 @@ export function VistaFacturasArca() {
                     )}
                   </>
                 ) : (
-                  // ULISES (contable): Pagar > Preparado
+                  // ULISES (contable): Anticipos > Pagar > Preparado
                   <>
+                    {filtroOrigenPagos.anticipo && (anticiposPagar.length > 0 || anticiposPreparado.length > 0) && (
+                      <div className="border border-purple-200 rounded-lg p-3 space-y-3 bg-purple-50/30">
+                        <h3 className="font-semibold text-sm text-purple-800">💜 Anticipos de Pago</h3>
+                        {renderTablaAnticipos(anticiposPagar, '📋 Por Pagar', subtotalAnticiposPagar)}
+                        {renderTablaAnticipos(anticiposPreparado, '✅ Preparados', subtotalAnticiposPreparado)}
+                      </div>
+                    )}
                     {filtroOrigenPagos.arca && renderTablaFacturas(
                       facturasPagar,
                       '📋 ARCA Por Pagar',
@@ -5206,16 +5266,11 @@ export function VistaFacturasArca() {
                 <div className="pt-4 border-t">
                   <div className="flex justify-between items-center">
                     <div className="text-sm text-muted-foreground">
-                      {filtroOrigenPagos.arca && filtroOrigenPagos.template
-                        ? 'ARCA + Templates'
-                        : filtroOrigenPagos.arca
-                        ? 'Solo ARCA'
-                        : filtroOrigenPagos.template
-                        ? 'Solo Templates'
-                        : 'Sin datos'}
+                      {[filtroOrigenPagos.anticipo && 'Anticipos', filtroOrigenPagos.arca && 'ARCA', filtroOrigenPagos.template && 'Templates'].filter(Boolean).join(' + ') || 'Sin datos'}
                     </div>
                     <Badge className="text-xl px-4 py-2 bg-green-600">
                       Total General: ${(
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar + subtotalAnticiposPreparado + (esAdmin ? subtotalAnticiposPendiente : 0) : 0) +
                         (filtroOrigenPagos.arca ? subtotalPreparado + subtotalPagar + (esAdmin ? subtotalPendiente : 0) : 0) +
                         (filtroOrigenPagos.template ? subtotalTemplatesPreparado + subtotalTemplatesPagar + (esAdmin ? subtotalTemplatesPendiente : 0) : 0)
                       ).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
