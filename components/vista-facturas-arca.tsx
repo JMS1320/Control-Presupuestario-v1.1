@@ -2608,18 +2608,31 @@ export function VistaFacturasArca() {
   const generarQuincenasDisponibles = () => {
     const quincenas = []
     const ahora = new Date()
-    
-    for (let i = 0; i < 12; i++) { // 12 quincenas = 6 meses
-      const fecha = new Date(ahora)
-      fecha.setDate(fecha.getDate() - (i * 15)) // Retroceder de a 15 días
-      
-      const quincena = generarQuincenaSicore(fecha.toISOString())
-      if (!quincenas.includes(quincena)) {
-        quincenas.push(quincena)
+
+    // Iterar quincenas reales hacia atrás (evita saltear quincenas en meses cortos)
+    let año = ahora.getFullYear()
+    let mes = ahora.getMonth() // 0-based
+    let mitad = ahora.getDate() <= 15 ? '1ra' : '2da'
+
+    for (let i = 0; i < 12; i++) {
+      const añoStr = año.toString().slice(-2)
+      const mesStr = (mes + 1).toString().padStart(2, '0')
+      quincenas.push(`${añoStr}-${mesStr} - ${mitad}`)
+
+      // Retroceder una quincena
+      if (mitad === '2da') {
+        mitad = '1ra'
+      } else {
+        mitad = '2da'
+        mes--
+        if (mes < 0) {
+          mes = 11
+          año--
+        }
       }
     }
-    
-    return quincenas.sort().reverse() // Más recientes primero
+
+    return quincenas // Ya vienen en orden descendente (más reciente primero)
   }
 
   // Buscar todas las retenciones SICORE de una quincena
