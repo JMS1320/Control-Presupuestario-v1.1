@@ -142,6 +142,23 @@ export function VistaCashFlow() {
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
   const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
 
+  // Estados modal SICORE - facturas ARCA
+  const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
+  const [facturaEnProceso, setFacturaEnProceso] = useState<CashFlowRow | null>(null)
+  const [pasoSicore, setPasoSicore] = useState<'tipo' | 'calculo'>('tipo')
+  const [tipoSeleccionado, setTipoSeleccionado] = useState<TipoSicore | null>(null)
+  const [montoRetencion, setMontoRetencion] = useState(0)
+  const [descuentoAdicional, setDescuentoAdicional] = useState(0)
+  const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
+    netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean
+  } | null>(null)
+  const [guardadoPendienteCF, setGuardadoPendienteCF] = useState<{
+    filaId: string, nuevoEstado: string, estadoAnterior: string
+  } | null>(null)
+  const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
+    filaId: string, quincenaAnterior: string, quincenahNueva: string
+  } | null>(null)
+
   // Estados modal SICORE anticipo
   const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
   const [mostrarModalSicoreAnticipo, setMostrarModalSicoreAnticipo] = useState(false)
@@ -320,24 +337,36 @@ export function VistaCashFlow() {
       
       // HOOK SICORE - Interceptar cambio estado HACIA "pagar" para facturas ARCA
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && filaParaCambioEstado.estado !== 'pagar') {
-        console.log('🎯 SICORE Cash Flow: Cambio detectado hacia "pagar" - evaluando retención')
-        
-        // Crear objeto factura compatible con evaluarRetencionSicore
-        const facturaSimulada = {
-          id: filaParaCambioEstado.id,
-          imp_neto_gravado: filaParaCambioEstado.debitos || 0, // En Cash Flow, débitos = neto gravado
-          denominacion_emisor: filaParaCambioEstado.nombre_proveedor,
-          cuit: filaParaCambioEstado.cuit_proveedor,
-          fecha_vencimiento: filaParaCambioEstado.fecha_vencimiento,
-          fecha_estimada: filaParaCambioEstado.fecha_estimada
-        }
-        
-        // TODO: Implementar evaluación SICORE completa para Cash Flow
-        // Por ahora, continuar con guardado normal y mostrar advertencia
-        console.log('⚠️ SICORE Cash Flow: Evaluación SICORE pendiente de implementar')
-        alert('⚠️ ADVERTENCIA: Cambio a "pagar" desde Cash Flow no evalúa SICORE automáticamente.\nUsa la vista ARCA Facturas para evaluación completa.')
+        // Guardar estado pendiente y evaluar SICORE (NO guardar en BD todavía)
+        setGuardadoPendienteCF({
+          filaId: filaParaCambioEstado.id,
+          nuevoEstado,
+          estadoAnterior: filaParaCambioEstado.estado
+        })
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        await evaluarRetencionSicoreCF(filaParaCambioEstado)
+        return
       }
-      
+
+      // HOOK QUINCENA - Interceptar cambio a "pagado" para facturas ARCA con SICORE
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagado' && filaParaCambioEstado.sicore) {
+        const quincenahNueva = generarQuincenaSicoreLocal(filaParaCambioEstado.fecha_estimada)
+        if (quincenahNueva !== filaParaCambioEstado.sicore) {
+          setConfirmCambioQuincena({
+            filaId: filaParaCambioEstado.id,
+            quincenaAnterior: filaParaCambioEstado.sicore,
+            quincenahNueva
+          })
+          // Guardar estado de todas formas (la quincena es opcional actualizar)
+          await actualizarRegistro(filaParaCambioEstado.id, 'estado', nuevoEstado, 'ARCA')
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
+          cargarDatos()
+          return
+        }
+      }
+
       const exito = await actualizarRegistro(
         filaParaCambioEstado.id,
         'estado',
@@ -779,6 +808,127 @@ export function VistaCashFlow() {
     const yy = d.getFullYear().toString().slice(-2)
     const mm = (d.getMonth() + 1).toString().padStart(2, '0')
     return `${yy}-${mm} - ${d.getDate() <= 15 ? '1ra' : '2da'}`
+  }
+
+  // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
+  const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
+    try {
+      const { data } = await supabase.schema('msa').from('comprobantes_arca')
+        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1)
+      return !!(data && data.length > 0)
+    } catch { return false }
+  }
+
+  // Evaluar si corresponde SICORE para una fila ARCA
+  const evaluarRetencionSicoreCF = async (fila: CashFlowRow) => {
+    const netoGravado = fila.imp_neto_gravado || 0
+    const netoNoGravado = fila.imp_neto_no_gravado || 0
+    const opExentas = fila.imp_op_exentas || 0
+    const netoFactura = netoGravado + netoNoGravado + opExentas
+    const minimoServicios = 67170
+    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+
+    // Caso especial: facturas negativas
+    if (netoFactura < 0) {
+      const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+      if (yaRetuvo) {
+        setFacturaEnProceso(fila)
+        setPasoSicore('tipo')
+        setMostrarModalSicore(true)
+      }
+      return
+    }
+
+    // Caso normal: positivos - aplicar filtro mínimo
+    if (netoFactura <= minimoServicios) return
+
+    setFacturaEnProceso(fila)
+    setPasoSicore('tipo')
+    setMostrarModalSicore(true)
+  }
+
+  // Calcular retención según tipo seleccionado
+  const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore) => {
+    const netoGravado = fila.imp_neto_gravado || 0
+    const netoNoGravado = fila.imp_neto_no_gravado || 0
+    const opExentas = fila.imp_op_exentas || 0
+    const netoFactura = netoGravado + netoNoGravado + opExentas
+    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+
+    const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+
+    let baseImponible = netoFactura
+    let minimoAplicado = 0
+
+    if (!yaRetuvo) {
+      if (netoFactura <= tipo.minimo_no_imponible) {
+        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFactura.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+        setMostrarModalSicore(false)
+        return
+      }
+      baseImponible = netoFactura - tipo.minimo_no_imponible
+      minimoAplicado = tipo.minimo_no_imponible
+    }
+
+    const retencionCalculada = baseImponible * tipo.porcentaje_retencion
+
+    setDatosSicoreCalculo({ netoFactura, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo })
+    setTipoSeleccionado(tipo)
+    setMontoRetencion(retencionCalculada)
+    setDescuentoAdicional(0)
+    setPasoSicore('calculo')
+  }
+
+  // Finalizar SICORE para factura ARCA desde Cash Flow
+  const finalizarProcesoSicoreCF = async () => {
+    if (!facturaEnProceso || !tipoSeleccionado || !guardadoPendienteCF) return
+
+    try {
+      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      const quincena = generarQuincenaSicoreLocal(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
+
+      // 1. Cambiar estado a 'pagar' en BD
+      await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
+
+      // 2. Actualizar datos SICORE
+      await supabase.schema('msa').from('comprobantes_arca')
+        .update({ monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion })
+        .eq('id', guardadoPendienteCF.filaId)
+
+      toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
+
+      // Limpiar y recargar
+      setMostrarModalSicore(false)
+      setFacturaEnProceso(null)
+      setTipoSeleccionado(null)
+      setMontoRetencion(0)
+      setDescuentoAdicional(0)
+      setGuardadoPendienteCF(null)
+      setPasoSicore('tipo')
+      cargarDatos()
+    } catch (error) {
+      toast.error('Error finalizando SICORE: ' + (error as Error).message)
+    }
+  }
+
+  // Cancelar SICORE desde Cash Flow
+  const cancelarSicoreCF = async (continuarSinSicore: boolean = false) => {
+    if (guardadoPendienteCF && !continuarSinSicore) {
+      // Restaurar estado anterior en BD
+      await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.estadoAnterior, 'ARCA')
+    } else if (guardadoPendienteCF && continuarSinSicore) {
+      // Solo guardar el cambio de estado sin SICORE
+      await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
+      toast.success('Estado cambiado sin retención SICORE')
+    }
+    setMostrarModalSicore(false)
+    setFacturaEnProceso(null)
+    setTipoSeleccionado(null)
+    setMontoRetencion(0)
+    setDescuentoAdicional(0)
+    setGuardadoPendienteCF(null)
+    setPasoSicore('tipo')
+    cargarDatos()
   }
 
   // Verificar retención previa en AMBAS tablas (facturas + anticipos)
@@ -2251,6 +2401,152 @@ export function VistaCashFlow() {
                   if (v !== null) setMontoSicoreAnticipo(parseFloat(v) || 0)
                 }}>📝 Cambiar retención</Button>
                 <Button variant="ghost" onClick={cerrarModalSicoreAnticipo}>❌ Cancelar</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal SICORE - Facturas ARCA desde Cash Flow */}
+      <Dialog open={mostrarModalSicore} onOpenChange={(open) => { if (!open) cancelarSicoreCF(false) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>🏛️ Retención SICORE - Ganancias</DialogTitle>
+            <DialogDescription>
+              {facturaEnProceso ? `${facturaEnProceso.nombre_proveedor} · CUIT ${facturaEnProceso.cuit_proveedor}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          {pasoSicore === 'tipo' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-1">
+                <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención quincena):</div>
+                {tiposSicore.map(t => (
+                  <div key={t.id} className="text-blue-700">
+                    {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2)}%
+                  </div>
+                ))}
+              </div>
+              <div className="font-medium text-gray-700">Seleccioná el tipo de operación:</div>
+              <div className="grid grid-cols-2 gap-2">
+                {tiposSicore.map(tipo => (
+                  <button
+                    key={tipo.id}
+                    onClick={() => facturaEnProceso && calcularRetencionSicoreCF(facturaEnProceso, tipo)}
+                    className="flex flex-col items-center p-3 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                  >
+                    <span className="text-2xl">{tipo.emoji}</span>
+                    <span className="text-sm font-medium">{tipo.tipo}</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}%</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => cancelarSicoreCF(true)}>
+                  Continuar sin retención
+                </Button>
+                <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {pasoSicore === 'calculo' && tipoSeleccionado && facturaEnProceso && datosSicoreCalculo && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-gray-600">Neto base:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                {datosSicoreCalculo.minimoAplicado > 0 && (
+                  <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                {datosSicoreCalculo.esRetencionAdicional && (
+                  <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención:</label>
+                <input
+                  type="number"
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  value={montoRetencion}
+                  onChange={e => setMontoRetencion(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional:</label>
+                <input
+                  type="number"
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  value={descuentoAdicional}
+                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+                <div className="flex justify-between font-bold text-base">
+                  <span>Saldo a pagar:</span>
+                  <span className="text-green-700">
+                    ${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={finalizarProcesoSicoreCF}>
+                  ✅ Confirmar y pasar a Pagar
+                </Button>
+                <Button variant="outline" onClick={() => setPasoSicore('tipo')}>
+                  ← Tipo
+                </Button>
+                <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal confirmación cambio quincena al pasar a 'pagado' */}
+      <Dialog open={!!confirmCambioQuincena} onOpenChange={(open) => { if (!open) setConfirmCambioQuincena(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>🗓️ Cambio de Quincena SICORE</DialogTitle>
+            <DialogDescription>
+              La fecha de pago corresponde a una quincena diferente a la registrada.
+            </DialogDescription>
+          </DialogHeader>
+          {confirmCambioQuincena && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600">Quincena registrada:</span>
+                  <span className="font-medium line-through text-red-500">{confirmCambioQuincena.quincenaAnterior}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600">Quincena por fecha:</span>
+                  <span className="font-semibold text-green-700">{confirmCambioQuincena.quincenahNueva}</span>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">¿Actualizar la quincena SICORE a <strong>{confirmCambioQuincena.quincenahNueva}</strong>?</p>
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={async () => {
+                  await supabase.schema('msa').from('comprobantes_arca')
+                    .update({ sicore: confirmCambioQuincena.quincenahNueva })
+                    .eq('id', confirmCambioQuincena.filaId)
+                  toast.success(`Quincena actualizada a ${confirmCambioQuincena.quincenahNueva}`)
+                  setConfirmCambioQuincena(null)
+                  cargarDatos()
+                }}>
+                  Sí, actualizar
+                </Button>
+                <Button variant="outline" onClick={() => setConfirmCambioQuincena(null)}>
+                  No, mantener {confirmCambioQuincena.quincenaAnterior}
+                </Button>
               </div>
             </div>
           )}

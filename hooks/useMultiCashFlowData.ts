@@ -20,6 +20,12 @@ export interface CashFlowRow {
   creditos: number
   saldo_cta_cte: number // Calculado
   estado: string // Para tracking de cambios
+  // Campos SICORE (solo para filas ARCA)
+  sicore?: string | null
+  imp_neto_gravado?: number
+  imp_neto_no_gravado?: number
+  imp_op_exentas?: number
+  imp_total?: number
 }
 
 // Filtros para Cash Flow
@@ -63,7 +69,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       debitos: f.monto_a_abonar || f.imp_total || 0, // Cash Flow muestra monto a abonar (editable)
       creditos: 0, // Las facturas ARCA son siempre débitos
       saldo_cta_cte: 0, // Se calcula después
-      estado: f.estado || 'pendiente'
+      estado: f.estado || 'pendiente',
+      sicore: f.sicore || null,
+      imp_neto_gravado: f.imp_neto_gravado || 0,
+      imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
+      imp_op_exentas: f.imp_op_exentas || 0,
+      imp_total: f.imp_total || 0
     }))
   }
 
