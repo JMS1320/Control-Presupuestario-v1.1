@@ -8838,3 +8838,250 @@ d0c6ea3  Fix: Unidades L/ml - formatoCantidad respeta unidad, nuevo insumo auto-
 **Archivo principal modificado**: components/vista-sector-productivo.tsx
 
 **📅 Última actualización sección:** 2026-02-28
+
+---
+
+---
+
+## 🏛️ SESIÓN 2026-03-02 — MÓDULO SICORE COMPLETO (CONSOLIDACIÓN)
+
+### 1. Contexto
+
+Sesión de consolidación y expansión del sistema SICORE de retenciones de ganancias AFIP, partiendo de la base implementada en sesiones anteriores (módulo ARCA Facturas funcional). Objetivo: extender a anticipos de pago, al Cash Flow, mejorar los exports y corregir bugs.
+
+---
+
+### 2. Cambios en Base de Datos
+
+#### 2.1 Nueva columna `tipo_sicore` en `msa.comprobantes_arca`
+
+```sql
+ALTER TABLE msa.comprobantes_arca
+ADD COLUMN IF NOT EXISTS tipo_sicore VARCHAR(50);
+```
+
+**Propósito**: Registrar el tipo de operación SICORE elegido por el usuario al aplicar la retención (Arrendamiento / Bienes / Servicios / Transporte). Sin este campo, el export no podía mostrar la columna "Tipo" ni calcular "% de Retención".
+
+#### 2.2 Carga retroactiva quincena 26-02 - 2da
+
+Los 4 registros de la quincena 26-02 - 2da tenían `tipo_sicore = NULL` (registrados antes de que existiera el campo). Se actualizaron manualmente:
+
+```sql
+-- Fanelli → Bienes (2%)
+UPDATE msa.comprobantes_arca
+SET tipo_sicore = 'Bienes'
+WHERE id = '4f7e46b8-fc71-4a95-8478-0aa263c4fe72';
+
+-- Cattaneo, La Mercure, Massaglia → Servicios (2%)
+UPDATE msa.comprobantes_arca
+SET tipo_sicore = 'Servicios'
+WHERE id IN (
+  'f0c27d68-d555-4805-8abb-4769e0ff3345',
+  '6a8345e3-afac-4f16-9d7c-67173b399a0a',
+  '6397b96f-68c2-492f-9ffe-e37275378829'
+);
+```
+
+**Resultado verificado**: 4 registros actualizados, todos con `tipo_sicore` correcto.
+
+---
+
+### 3. Features implementadas
+
+#### 3.1 Fix: quincena faltante en dropdown SICORE (`4bb52fa`)
+
+**Problema**: "26-02 - 2da" no aparecía en el selector de quincenas del cierre SICORE.
+
+**Root cause**: `generarQuincenasDisponibles` restaba múltiplos de 15 días para iterar quincenas. En meses cortos esto saltea quincenas: 2 marzo - 15 días = 15 febrero (1ra), 15 feb - 15 días = 31 enero (2da feb saltada).
+
+**Solución**: Reescritura de la función iterando quincenas explícitamente hacia atrás (fin de mes → 15 → mes anterior), garantizando que nunca se salta una quincena.
+
+---
+
+#### 3.2 Feature: SICORE en anticipos de pago (`9c0cfda`)
+
+**Contexto**: Antes de tener la factura del proveedor, se paga un anticipo y se aplica la retención en ese momento. La factura llega después.
+
+**Workflow implementado**:
+1. Al registrar un **anticipo de pago** desde ARCA Facturas, el usuario puede activar el proceso SICORE
+2. Los datos de retención se guardan en `anticipos_proveedores` (campos: `sicore`, `monto_sicore`, `tipo_sicore`)
+3. **Vista Principal** muestra alertas para anticipos con SICORE sin factura vinculada
+4. Cuando llega la factura, el usuario hace clic en "Vincular" → el SICORE del anticipo se copia a la factura (`msa.comprobantes_arca`) y el anticipo queda marcado con `factura_id`
+
+**Bloqueo cierre quincena**: Si hay anticipos sin vincular en la quincena a cerrar, el sistema advierte antes de permitir el cierre.
+
+**Archivos modificados**:
+- `components/vista-facturas-arca.tsx` — modal anticipo con paso SICORE
+- `components/vista-principal.tsx` — alertas de anticipos sin vincular + modal de vinculación
+
+---
+
+#### 3.3 Feature: Confirmación de cambio de quincena al pasar a "pagado" (`fb9d2ac`)
+
+**Problema de diseño**: La quincena SICORE se calcula al marcar la factura como "pagar" (con `fecha_vencimiento`). Pero el pago real puede ocurrir en una quincena diferente (por ejemplo, factura vence el 1/feb pero se paga el 20/feb → 1ra vs 2da).
+
+**Solución**: Al cambiar el estado de una factura a "pagado":
+- El sistema calcula la quincena real según la `fecha_estimada` actual
+- Si difiere de la quincena registrada en `sicore`, abre un **diálogo de confirmación**
+- El usuario elige: actualizar la quincena a la nueva, o mantener la original
+
+**Aplicado en**: ARCA Facturas y Cash Flow.
+
+---
+
+#### 3.4 Feature: Módulo SICORE completo en Cash Flow (`59ed633`)
+
+El módulo SICORE (que ya existía en ARCA Facturas) se replicó íntegramente en `vista-cash-flow.tsx`:
+
+- **Trigger**: Al cambiar estado a "pagar" desde Cash Flow → intercepta y evalúa SICORE
+- **Filtro automático**: Solo activa para facturas con `imp_neto_gravado > $67.170` (mínimo no imponible Servicios)
+- **Modal 2 pasos**: selección tipo operación → confirmación cálculo con opciones avanzadas
+- **Confirmación quincena**: Al pasar a "pagado", mismo chequeo que en ARCA
+- **Guarda** `sicore`, `monto_sicore`, `tipo_sicore`, `monto_a_abonar` en `msa.comprobantes_arca`
+
+**Hook adicional en `useMultiCashFlowData.ts`**: `CashFlowRow` extendida con `sicore`, `imp_neto_gravado`, `imp_neto_no_gravado`, `imp_op_exentas`, `imp_total`.
+
+---
+
+#### 3.5 Feature: Anticipos en Vista de Pagos (`c98f2df`)
+
+La modal "Vista de Pagos" (accesible por Ulises/contable desde Egresos) ahora muestra **anticipos de pago** además de facturas ARCA y templates.
+
+- **Orden de visualización**: Anticipos → ARCA Facturas → Templates
+- **Filtro anticipos**: `estado_pago IN ('pendiente','pagar','preparado')` y `monto_restante > 0`
+- **Estilo visual**: badge morado para diferenciar de facturas y templates
+- **Badge SICORE**: muestra la quincena si el anticipo tiene retención aplicada
+- **Total general**: incluye subtotal de anticipos en el resumen
+
+---
+
+#### 3.6 Feature: Export Excel SICORE con 19 columnas (`49052ba`)
+
+Reescritura completa de `generarExcelCierreQuincena` con las **19 columnas del formato AFIP SICORE**:
+
+| # | Columna | Fuente BD |
+|---|---------|-----------|
+| 1 | Tipo | `tipo_sicore` |
+| 2 | Fecha Pago | `fecha_estimada` / `fecha_vencimiento` |
+| 3 | Fecha FC | `fecha_emision` |
+| 4 | Tipo Comp. | `tipo_comprobante` |
+| 5 | Punto de Venta | `punto_venta` |
+| 6 | Número Desde | `numero_desde` |
+| 7 | Nro. Doc. Emisor | `cuit` |
+| 8 | Denominación Emisor | `denominacion_emisor` |
+| 9 | Imp. Neto Gravado | `imp_neto_gravado` |
+| 10 | Imp. Neto No Gravado | `imp_neto_no_gravado` |
+| 11 | Imp. Op. Exentas | `imp_op_exentas` |
+| 12 | Otros Tributos | `otros_tributos` |
+| 13 | IVA | `iva` |
+| 14 | Imp. Total | `imp_total` |
+| 15 | Mínimo no imp | `tipos_sicore_config.minimo_no_imponible` |
+| 16 | Base imp | `max(0, netoBase - minimo)` |
+| 17 | % de Retención | `tipos_sicore_config.porcentaje_retencion * 100` |
+| 18 | Retención | `monto_sicore` |
+| 19 | PAGO | `monto_a_abonar` |
+
+**Fila TOTALES** al final con sumas de todas las columnas numéricas.
+**Título en A1**: formato `"SICORE Febrero 2026 2da Quincena"`.
+
+**Para que `tipo_sicore` y `% de Retención` tengan datos**, `buscarRetencionesQuincena` ahora hace `select('*')` y join con `tipos_sicore_config` enriqueciendo cada factura con `_tipoConfig`.
+
+---
+
+#### 3.7 Fix: Guardar `tipo_sicore` en BD + PDF 19 columnas (`e8c6018`)
+
+**Problema**: Aunque el usuario elegía el tipo de operación (Servicios, Bienes, etc.) en el modal SICORE, ese dato no se guardaba en BD. Por eso el Excel mostraba "Tipo" y "% de Retención" vacíos.
+
+**Fix código**:
+- `finalizarProcesoSicore()` (ARCA): agrega `tipo_sicore: tipoSeleccionado.tipo` al `.update()`
+- `finalizarProcesoSicoreCF()` (Cash Flow): ídem
+
+**PDF reescrito** con las mismas 19 columnas que el Excel:
+- Orientación landscape
+- Título dinámico "SICORE Febrero 2026 2da Quincena"
+- Fila TOTALES con fondo gris
+
+---
+
+#### 3.8 Fix: PDF celda en una sola línea (`eb77c84`)
+
+**Problema**: Celdas con texto y números rompían en múltiples líneas (fechas, nombres de proveedores, importes).
+
+**Solución**:
+- `overflow: 'ellipsize'` — texto que no entra se corta con "…" (no wrappea)
+- Font reducida a 5.5pt (de 6.5pt)
+- `cellPadding: 1.5` (de 2)
+- Márgenes 10mm c/lado (de 14mm) → 277mm usables
+- Columnas rediseñadas para sumar exactamente 277mm:
+
+| Columna | Ancho |
+|---------|-------|
+| Tipo | 17mm |
+| Fecha Pago | 16mm |
+| Fecha FC | 16mm |
+| Tipo Comp. | 7mm |
+| PV | 7mm |
+| Nro Desde | 10mm |
+| CUIT | 16mm |
+| Denominación | 28mm (ellipsize) |
+| Neto Gravado | 17mm |
+| Neto No Gravado | 16mm |
+| Op. Exentas | 12mm |
+| Otros Trib. | 12mm |
+| IVA | 16mm |
+| Imp. Total | 17mm |
+| Mínimo no imp | 14mm |
+| Base imp | 17mm |
+| % Ret. | 7mm |
+| Retención | 14mm |
+| PAGO | 17mm |
+| **Total** | **277mm ✓** |
+
+---
+
+### 4. Commits sesión (branch `desarrollo`)
+
+```
+4bb52fa  Fix: generarQuincenasDisponibles saltea quincenas en meses cortos
+9c0cfda  Feature: SICORE en anticipos de pago + alertas vinculación + bloqueo cierre
+fb9d2ac  Feature: Confirmar cambio quincena SICORE al pasar a 'pagado'
+59ed633  Feature: Módulo SICORE completo en Cash Flow (idéntico a ARCA Facturas)
+c98f2df  Feature: Anticipos en Vista de Pagos - aparecen antes que ARCA y Templates
+49052ba  Feature: Export Excel SICORE con columnas completas + totales por columna
+e8c6018  Fix: Guardar tipo_sicore en BD + PDF export con 19 columnas igual que Excel
+eb77c84  Fix: PDF SICORE - una sola línea por celda (overflow ellipsize + anchos corregidos)
+```
+
+---
+
+### 5. Archivos modificados sesión
+
+| Archivo | Tipo de cambio |
+|---------|---------------|
+| `components/vista-facturas-arca.tsx` | SICORE anticipos, quincena confirm, Excel/PDF 19 cols, fix tipo_sicore |
+| `components/vista-cash-flow.tsx` | Módulo SICORE completo + quincena confirm + fix tipo_sicore |
+| `components/vista-principal.tsx` | Alertas anticipos sin vincular + modal vinculación |
+| `hooks/useMultiCashFlowData.ts` | CashFlowRow extendida con campos SICORE |
+| `msa.comprobantes_arca` (BD) | Nueva columna `tipo_sicore VARCHAR(50)` |
+
+---
+
+### 6. Estado final módulo SICORE
+
+- ✅ ARCA Facturas: modal 2 pasos, cálculo automático, guarda sicore/monto/tipo en BD
+- ✅ Cash Flow: módulo idéntico a ARCA Facturas
+- ✅ Anticipos: SICORE en anticipos + vinculación a factura posterior + alertas Vista Principal
+- ✅ Quincena mismatch: confirmación al pasar a "pagado" si la quincena cambió
+- ✅ Excel cierre: 19 columnas formato AFIP + totales + título
+- ✅ PDF cierre: 19 columnas landscape + overflow ellipsize (una línea por celda)
+- ✅ tipo_sicore: se guarda en BD desde ambas vistas (ARCA y Cash Flow)
+- ✅ Datos retroactivos: quincena 26-02-2da actualizada manualmente con tipos correctos
+
+**⚠️ Advertencia post-reconstrucción**: La columna `tipo_sicore` en `msa.comprobantes_arca` NO está en el backup original. Al reconstruir la BD, ejecutar:
+
+```sql
+ALTER TABLE msa.comprobantes_arca
+ADD COLUMN IF NOT EXISTS tipo_sicore VARCHAR(50);
+```
+
+**📅 Última actualización sección:** 2026-03-02
