@@ -231,6 +231,7 @@ export function VistaFacturasArca() {
   const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
+  const [anticiposSeleccionadosPagos, setAnticiposSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true })
   const [cargandoPagos, setCargandoPagos] = useState(false)
@@ -5224,6 +5225,31 @@ export function VistaFacturasArca() {
               }
             }
 
+            // Función para cambiar estado de anticipos seleccionados
+            const cambiarEstadoAnticiposSeleccionados = async (nuevoEstado: string) => {
+              if (anticiposSeleccionadosPagos.size === 0) {
+                alert('Selecciona al menos un anticipo')
+                return
+              }
+              const ids = Array.from(anticiposSeleccionadosPagos)
+              const confirmar = window.confirm(`¿Cambiar ${ids.length} anticipo(s) a estado "${nuevoEstado}"?`)
+              if (!confirmar) return
+              try {
+                const { error } = await supabase
+                  .from('anticipos_proveedores')
+                  .update({ estado_pago: nuevoEstado })
+                  .in('id', ids)
+                if (error) throw error
+                setAnticiposPagos(prev => prev.map(a =>
+                  ids.includes(a.id) ? { ...a, estado_pago: nuevoEstado } : a
+                ))
+                setAnticiposSeleccionadosPagos(new Set())
+              } catch (error) {
+                console.error('Error cambiando estado anticipos:', error)
+                alert('Error al cambiar estado')
+              }
+            }
+
             // Función para renderizar tabla de templates
             const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
               <div className="space-y-2">
@@ -5315,66 +5341,79 @@ export function VistaFacturasArca() {
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto_restante || 0), 0)
             const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto_restante || 0), 0)
 
-            const ESTADOS_ANTICIPO = ['pendiente', 'pagar', 'preparado', 'programado', 'pagado']
-            const colorEstadoAnt = (e: string) => {
-              if (e === 'pagar') return 'bg-orange-100 text-orange-800'
-              if (e === 'preparado') return 'bg-green-100 text-green-800'
-              if (e === 'programado') return 'bg-blue-100 text-blue-800'
-              if (e === 'pagado') return 'bg-gray-100 text-gray-500'
-              return 'bg-yellow-50 text-yellow-800'
-            }
-
-            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number) => {
-              if (!lista.length) return null
-              return (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-semibold text-sm text-gray-700">{titulo}</h3>
-                    <span className="text-sm font-medium">${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700">Anticipo</Badge>
+                    {titulo} ({lista.length})
+                  </h3>
+                  <div className="flex items-center gap-4">
+                    {accionBoton && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
+                      <Button
+                        size="sm"
+                        onClick={() => cambiarEstadoAnticiposSeleccionados(accionBoton.estado)}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {accionBoton.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
                   </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Estado</TableHead>
-                        <TableHead className="text-xs">Proveedor</TableHead>
-                        <TableHead className="text-xs">CUIT</TableHead>
-                        <TableHead className="text-xs">Fecha</TableHead>
-                        <TableHead className="text-xs text-right">Monto Total</TableHead>
-                        <TableHead className="text-xs text-right">A Pagar</TableHead>
-                        <TableHead className="text-xs">SICORE</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lista.map(a => (
-                        <TableRow key={a.id} className="bg-purple-50 hover:bg-purple-100">
-                          <TableCell className="text-xs">
-                            <Select
-                              value={a.estado_pago || 'pendiente'}
-                              onValueChange={(val) => cambiarEstadoAnticipoPago(a, val)}
-                            >
-                              <SelectTrigger className={`h-6 text-xs px-2 border-0 ${colorEstadoAnt(a.estado_pago || 'pendiente')}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ESTADOS_ANTICIPO.map(e => (
-                                  <SelectItem key={e} value={e} className="text-xs">{e}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell className="text-xs font-medium">{a.nombre_proveedor}</TableCell>
-                          <TableCell className="text-xs text-gray-500">{a.cuit_proveedor}</TableCell>
-                          <TableCell className="text-xs">{a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
-                          <TableCell className="text-xs text-right text-gray-500">${(a.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="text-xs text-right font-medium">${(a.monto_restante || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</TableCell>
-                          <TableCell className="text-xs">{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
                 </div>
-              )
-            }
+
+                {lista.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-2">No hay anticipos en este estado</p>
+                ) : (
+                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-white border-b">
+                        <TableRow>
+                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                          <TableHead>Fecha Pago</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead>Proveedor</TableHead>
+                          <TableHead>CUIT</TableHead>
+                          <TableHead className="text-right">A Pagar</TableHead>
+                          <TableHead>SICORE</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lista.map(a => (
+                          <TableRow key={a.id} className="hover:bg-muted/50">
+                            {mostrarCheckbox && (
+                              <TableCell>
+                                <Checkbox
+                                  checked={anticiposSeleccionadosPagos.has(a.id)}
+                                  onCheckedChange={(checked) => {
+                                    setAnticiposSeleccionadosPagos(prev => {
+                                      const next = new Set(prev)
+                                      if (checked) next.add(a.id)
+                                      else next.delete(a.id)
+                                      return next
+                                    })
+                                  }}
+                                />
+                              </TableCell>
+                            )}
+                            <TableCell>{a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
+                            <TableCell className="max-w-[150px] truncate">{a.descripcion || '-'}</TableCell>
+                            <TableCell className="max-w-[150px] truncate">{a.nombre_proveedor}</TableCell>
+                            <TableCell>{a.cuit_proveedor}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${(a.monto_restante || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )
 
             return (
               <div className="space-y-6">
@@ -5408,18 +5447,17 @@ export function VistaFacturasArca() {
 
                 {/* Vista diferenciada por rol */}
                 {esAdmin ? (
-                  // ADMIN: Anticipos > Preparado > Pagar > Pendiente (con filtros)
+                  // ADMIN: Preparado > Pagar > Pendiente, cada estado muestra Anticipo + ARCA + Template
                   <>
-                    {filtroOrigenPagos.anticipo && anticiposPagos.length > 0 && (
-                      <div className="border border-purple-200 rounded-lg p-3 space-y-3 bg-purple-50/30">
-                        <h3 className="font-semibold text-sm text-purple-800">💜 Anticipos de Pago</h3>
-                        {filtrosPagos.pagar && renderTablaAnticipos(anticiposPagar, '📋 Anticipos Por Pagar', subtotalAnticiposPagar)}
-                        {filtrosPagos.preparado && renderTablaAnticipos(anticiposPreparado, '✅ Anticipos Preparados', subtotalAnticiposPreparado)}
-                        {filtrosPagos.pendiente && renderTablaAnticipos(anticiposPendiente, '⏳ Anticipos Pendientes', subtotalAnticiposPendiente)}
-                      </div>
-                    )}
                     {filtrosPagos.preparado && (
                       <>
+                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
+                          anticiposPreparado,
+                          '✅ Preparado',
+                          subtotalAnticiposPreparado,
+                          true,
+                          { label: 'Marcar como Programado', estado: 'programado' }
+                        )}
                         {filtroOrigenPagos.arca && renderTablaFacturas(
                           facturasPreparado,
                           '✅ ARCA Preparado',
@@ -5439,6 +5477,13 @@ export function VistaFacturasArca() {
                     )}
                     {filtrosPagos.pagar && (
                       <>
+                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
+                          anticiposPagar,
+                          '📋 Pagar',
+                          subtotalAnticiposPagar,
+                          true,
+                          { label: 'Marcar como Preparado', estado: 'preparado' }
+                        )}
                         {filtroOrigenPagos.arca && renderTablaFacturas(
                           facturasPagar,
                           '📋 ARCA Pagar',
@@ -5457,6 +5502,13 @@ export function VistaFacturasArca() {
                     )}
                     {filtrosPagos.pendiente && (
                       <>
+                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
+                          anticiposPendiente,
+                          '⏳ Pendiente',
+                          subtotalAnticiposPendiente,
+                          true,
+                          { label: 'Marcar como Pagar', estado: 'pagar' }
+                        )}
                         {filtroOrigenPagos.arca && renderTablaFacturas(
                           facturasPendiente,
                           '⏳ ARCA Pendiente',
@@ -5475,14 +5527,13 @@ export function VistaFacturasArca() {
                     )}
                   </>
                 ) : (
-                  // ULISES (contable): Anticipos > Pagar > Preparado
+                  // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template
                   <>
-                    {filtroOrigenPagos.anticipo && (anticiposPagar.length > 0 || anticiposPreparado.length > 0) && (
-                      <div className="border border-purple-200 rounded-lg p-3 space-y-3 bg-purple-50/30">
-                        <h3 className="font-semibold text-sm text-purple-800">💜 Anticipos de Pago</h3>
-                        {renderTablaAnticipos(anticiposPagar, '📋 Por Pagar', subtotalAnticiposPagar)}
-                        {renderTablaAnticipos(anticiposPreparado, '✅ Preparados', subtotalAnticiposPreparado)}
-                      </div>
+                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
+                      anticiposPagar,
+                      '📋 Pagar',
+                      subtotalAnticiposPagar,
+                      false
                     )}
                     {filtroOrigenPagos.arca && renderTablaFacturas(
                       facturasPagar,
@@ -5498,12 +5549,18 @@ export function VistaFacturasArca() {
                       subtotalTemplatesPagar,
                       true
                     )}
+                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
+                      anticiposPreparado,
+                      '✅ Preparado',
+                      subtotalAnticiposPreparado,
+                      false
+                    )}
                     {filtroOrigenPagos.arca && renderTablaFacturas(
                       facturasPreparado,
                       '✅ ARCA Preparado',
                       subtotalPreparado,
                       'preparado',
-                      false // Ulises no puede cambiar estado de preparado
+                      false
                     )}
                     {filtroOrigenPagos.template && renderTablaTemplates(
                       templatesPreparado,
