@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2 } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -2647,6 +2647,28 @@ export function VistaFacturasArca() {
       .gt('monto_restante', 0)
       .order('fecha_pago', { ascending: true })
     if (data) setAnticiposPagos(data)
+  }
+
+  // Eliminar un anticipo (y limpiar SICORE en factura vinculada si corresponde)
+  const eliminarAnticipo = async (anticipo: any) => {
+    const confirmar = window.confirm(
+      `¿Eliminar anticipo de ${anticipo.nombre_proveedor} por $${(anticipo.monto || 0).toLocaleString('es-AR')}?\n\nSi tiene SICORE aplicado, también se limpiará de la factura vinculada.`
+    )
+    if (!confirmar) return
+    try {
+      // Si tiene factura vinculada, limpiar SICORE de esa factura
+      if (anticipo.factura_id) {
+        await supabase.schema('msa').from('comprobantes_arca')
+          .update({ sicore: null, monto_sicore: null, tipo_sicore: null })
+          .eq('id', anticipo.factura_id)
+      }
+      const { error } = await supabase.from('anticipos_proveedores').delete().eq('id', anticipo.id)
+      if (error) throw error
+      toast.success('Anticipo eliminado')
+      await recargarAnticiposPagos()
+    } catch (err) {
+      toast.error('Error al eliminar: ' + (err as Error).message)
+    }
   }
 
   // Cambiar estado de un anticipo en Vista de Pagos
@@ -5387,6 +5409,7 @@ export function VistaFacturasArca() {
                           <TableHead>CUIT</TableHead>
                           <TableHead className="text-right">A Pagar</TableHead>
                           <TableHead>SICORE</TableHead>
+                          <TableHead className="w-8"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -5415,6 +5438,15 @@ export function VistaFacturasArca() {
                               ${(a.monto_restante || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                             </TableCell>
                             <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
+                            <TableCell>
+                              <button
+                                onClick={() => eliminarAnticipo(a)}
+                                className="text-gray-300 hover:text-red-500 transition-colors"
+                                title="Eliminar anticipo"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
