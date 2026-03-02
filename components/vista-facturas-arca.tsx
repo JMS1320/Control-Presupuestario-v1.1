@@ -211,13 +211,18 @@ export function VistaFacturasArca() {
   // Estados SICORE para anticipos (desde Vista de Pagos)
   const [anticipoSicoreEnProceso, setAnticipoSicoreEnProceso] = useState<any | null>(null)
   const [mostrarModalSicoreAnt, setMostrarModalSicoreAnt] = useState(false)
-  const [pasoSicoreAnt, setPasoSicoreAnt] = useState<'tipo' | 'calculo'>('tipo')
+  const [pasoSicoreAnt, setPasoSicoreAnt] = useState<'montos' | 'tipo' | 'calculo'>('montos')
   const [tipoSicoreAnt, setTipoSicoreAnt] = useState<TipoSicore | null>(null)
   const [montoSicoreAnt, setMontoSicoreAnt] = useState(0)
   const [descuentoAnt, setDescuentoAnt] = useState(0)
   const [datosSicoreAnt, setDatosSicoreAnt] = useState<{
     baseImponible: number, minimoAplicado: number, esAdicional: boolean
   } | null>(null)
+  // Desglose de montos ingresado manualmente para el anticipo
+  const [netoGravadoAnt, setNetoGravadoAnt] = useState('')
+  const [netoNoGravadoAnt, setNetoNoGravadoAnt] = useState('')
+  const [exentoAnt, setExentoAnt] = useState('')
+  const [ivaAnt, setIvaAnt] = useState('')
 
   // Estados para Vista de Pagos
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
@@ -2687,9 +2692,13 @@ export function VistaFacturasArca() {
         toast.success('Anticipo pasado a "Pagar". Retención SICORE ya aplicada.')
         await recargarAnticiposPagos()
       } else {
-        // Sin SICORE aún: abrir modal
+        // Sin SICORE aún: abrir modal (primer paso: ingresar montos)
         setAnticipoSicoreEnProceso(anticipo)
-        setPasoSicoreAnt('tipo')
+        setPasoSicoreAnt('montos')
+        setNetoGravadoAnt('')
+        setNetoNoGravadoAnt('')
+        setExentoAnt('')
+        setIvaAnt('')
         setTipoSicoreAnt(null)
         setMontoSicoreAnt(0)
         setDescuentoAnt(0)
@@ -2706,10 +2715,10 @@ export function VistaFacturasArca() {
     }
   }
 
-  // Calcular retención al seleccionar tipo SICORE para un anticipo
+  // Calcular retención al seleccionar tipo SICORE para un anticipo (usa neto gravado ingresado)
   const calcularSicoreAnt = async (tipo: TipoSicore) => {
     if (!anticipoSicoreEnProceso) return
-    const monto = anticipoSicoreEnProceso.monto || 0
+    const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
     const fecha = anticipoSicoreEnProceso.fecha_pago || new Date().toISOString()
     const quincena = generarQuincenaSicore(fecha)
     const cuit = anticipoSicoreEnProceso.cuit_proveedor
@@ -2721,15 +2730,15 @@ export function VistaFacturasArca() {
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
 
-    let baseImponible = monto
+    let baseImponible = neto
     let minimoAplicado = 0
 
     if (!yaRetuvo) {
-      if (monto <= tipo.minimo_no_imponible) {
-        alert(`El monto $${monto.toLocaleString('es-AR')} no supera el mínimo no imponible ($${tipo.minimo_no_imponible.toLocaleString('es-AR')}).`)
+      if (neto <= tipo.minimo_no_imponible) {
+        alert(`El neto gravado $${neto.toLocaleString('es-AR')} no supera el mínimo no imponible ($${tipo.minimo_no_imponible.toLocaleString('es-AR')}).`)
         return
       }
-      baseImponible = monto - tipo.minimo_no_imponible
+      baseImponible = neto - tipo.minimo_no_imponible
       minimoAplicado = tipo.minimo_no_imponible
     }
 
@@ -5654,8 +5663,76 @@ export function VistaFacturasArca() {
             </DialogDescription>
           </DialogHeader>
 
+          {pasoSicoreAnt === 'montos' && anticipoSicoreEnProceso && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Ingresá el desglose de la factura correspondiente:</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Neto Gravado *</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0,00"
+                    value={netoGravadoAnt}
+                    onChange={e => setNetoGravadoAnt(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Neto No Gravado</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0,00"
+                    value={netoNoGravadoAnt}
+                    onChange={e => setNetoNoGravadoAnt(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 block mb-1">Exento</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0,00"
+                    value={exentoAnt}
+                    onChange={e => setExentoAnt(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-gray-700 block mb-1">IVA</label>
+                  <input
+                    type="text"
+                    className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0,00"
+                    value={ivaAnt}
+                    onChange={e => setIvaAnt(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded p-2 text-xs text-gray-500">
+                El SICORE se calcula sobre el <strong>Neto Gravado</strong>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  disabled={!netoGravadoAnt.trim()}
+                  onClick={() => setPasoSicoreAnt('tipo')}
+                >
+                  Siguiente → Tipo de operación
+                </Button>
+                <Button variant="outline" onClick={() => { setMostrarModalSicoreAnt(false); setAnticipoSicoreEnProceso(null) }}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+
           {pasoSicoreAnt === 'tipo' && (
             <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs flex justify-between">
+                <span className="text-gray-600">Neto gravado:</span>
+                <span className="font-semibold">${(parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              </div>
               <p className="text-sm text-gray-600">Seleccioná el tipo de operación:</p>
               <div className="grid grid-cols-2 gap-2">
                 {tiposSicore.map(tipo => (
@@ -5671,6 +5748,7 @@ export function VistaFacturasArca() {
                 ))}
               </div>
               <div className="flex gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setPasoSicoreAnt('montos')}>← Montos</Button>
                 <Button variant="outline" className="flex-1" onClick={() => {
                   // Continuar sin SICORE: solo cambiar estado
                   if (anticipoSicoreEnProceso) {
@@ -5692,6 +5770,7 @@ export function VistaFacturasArca() {
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm space-y-1">
                 <div className="flex justify-between"><span className="text-gray-600">Monto anticipo:</span><span className="font-medium">${(anticipoSicoreEnProceso.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Neto gravado:</span><span>${(parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 {!datosSicoreAnt.esAdicional && <div className="flex justify-between"><span className="text-gray-600">Mínimo no imponible:</span><span>-${datosSicoreAnt.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}
                 <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnt.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between font-semibold text-red-700 border-t pt-1 mt-1">
