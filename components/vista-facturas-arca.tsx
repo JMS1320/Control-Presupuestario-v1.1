@@ -2776,10 +2776,13 @@ export function VistaFacturasArca() {
       toast.error('Error BD: ' + error.message + ' | code: ' + error.code)
       return
     }
-    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${Math.round(montoSicoreAnt * 100 / 100).toLocaleString('es-AR')} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    // Cerrar modal primero, luego recargar lista
     setMostrarModalSicoreAnt(false)
     setAnticipoSicoreEnProceso(null)
-    await recargarAnticiposPagos()
+    setTipoSicoreAnt(null)
+    setDatosSicoreAnt(null)
+    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${Math.round(montoSicoreAnt * 100) / 100} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    recargarAnticiposPagos()
   }
 
   // ============= FUNCIONES CIERRE QUINCENA SICORE =============
