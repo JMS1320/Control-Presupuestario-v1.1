@@ -2664,34 +2664,34 @@ export function VistaFacturasArca() {
   const buscarRetencionesQuincena = async (quincena: string) => {
     try {
       console.log('🔍 SICORE: Buscando retenciones para quincena', quincena)
-      
-      const { data, error } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('id, denominacion_emisor, cuit, monto_sicore, fecha_vencimiento, fecha_estimada, estado')
-        .eq('sicore', quincena)
-        .not('monto_sicore', 'is', null)
-        .gt('monto_sicore', 0)
-      
-      if (error) {
-        throw new Error(error.message)
-      }
-      
-      const totalRetenciones = data?.reduce((sum, f) => sum + (f.monto_sicore || 0), 0) || 0
-      
-      console.log('📊 SICORE: Retenciones encontradas', {
-        quincena,
-        cantidad: data?.length || 0,
-        totalRetenciones,
-        facturas: data
-      })
-      
+
+      // Traer todos los campos necesarios para el export completo
+      const [{ data, error }, { data: tiposData }] = await Promise.all([
+        supabase.schema('msa').from('comprobantes_arca').select('*')
+          .eq('sicore', quincena)
+          .not('monto_sicore', 'is', null)
+          .gt('monto_sicore', 0)
+          .order('fecha_estimada', { ascending: true }),
+        supabase.from('tipos_sicore_config').select('tipo, minimo_no_imponible, porcentaje_retencion')
+      ])
+
+      if (error) throw new Error(error.message)
+
+      // Enriquecer facturas con datos del tipo SICORE
+      const tiposMap = Object.fromEntries((tiposData || []).map(t => [t.tipo, t]))
+      const facturasEnriquecidas = (data || []).map(f => ({
+        ...f,
+        _tipoConfig: tiposMap[f.tipo_sicore] || null
+      }))
+
+      const totalRetenciones = facturasEnriquecidas.reduce((sum, f) => sum + (f.monto_sicore || 0), 0)
+
       return {
-        facturas: data || [],
+        facturas: facturasEnriquecidas,
         totalRetenciones,
-        cantidad: data?.length || 0
+        cantidad: facturasEnriquecidas.length
       }
-      
+
     } catch (error) {
       console.error('Error buscando retenciones quincena:', error)
       throw error
@@ -2799,66 +2799,117 @@ export function VistaFacturasArca() {
   const generarExcelCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
     try {
       console.log('📊 Generando Excel cierre quincena SICORE')
-      
-      // Importar XLSX dinámicamente
       const XLSX = await import('xlsx')
-      
-      // Preparar datos para Excel
-      const datosExcel = facturas.map(factura => ({
-        'Fecha de Pago': factura.fecha_vencimiento || '',
-        'CUIT': factura.cuit || '',
-        'Proveedor': factura.denominacion_emisor || '',
-        'Tipo FC': factura.tipo_comprobante || '',
-        'Nro Factura': `${factura.punto_venta || ''}${factura.punto_venta && factura.nro_desde ? '-' : ''}${factura.nro_desde || ''}`,
-        'Retención Aplicada': factura.monto_sicore || 0
-      }))
-      
-      // Agregar fila de totales
-      datosExcel.push({
-        'Fecha de Pago': '',
-        'CUIT': '',
-        'Proveedor': 'TOTAL RETENCIONES',
-        'Tipo FC': '',
-        'Nro Factura': '',
-        'Retención Aplicada': totalRetenciones
-      })
-      
-      // Crear workbook
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(datosExcel)
-      
-      // Ajustar anchos de columnas
-      const colWidths = [
-        { wch: 15 }, // Quincena SICORE
-        { wch: 15 }, // CUIT
-        { wch: 40 }, // Proveedor
-        { wch: 15 }, // Retención SICORE
-        { wch: 10 }, // Estado
-        { wch: 15 }, // Fecha Vencimiento
-        { wch: 15 }  // Fecha Estimada
+
+      // Formatear quincena como título: "26-01 - 2da" → "Enero 2026 2da Quincena"
+      const mesesNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      const partes = quincena.match(/(\d+)-(\d+)\s*-\s*(1ra|2da)/)
+      const tituloQuincena = partes
+        ? `SICORE ${mesesNombre[parseInt(partes[2]) - 1]} 20${partes[1]} ${partes[3]} Quincena`
+        : `SICORE ${quincena}`
+
+      const formatFecha = (f: string | null) => {
+        if (!f) return '-'
+        const d = new Date(f + 'T12:00:00')
+        return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+      }
+      const num = (v: any) => (v === null || v === undefined || v === '') ? '' : Number(v)
+
+      // Columnas del Excel según screenshot
+      const COLS = [
+        'Tipo','Fecha Pago','Fecha FC','Tipo Comp.','Punto de Venta',
+        'Número Desde','Nro. Doc. Emisor','Denominación Emisor',
+        'Imp. Neto Gravado','Imp. Neto No Gravado','Imp. Op. Exentas',
+        'Otros Tributos','IVA','Imp. Total',
+        'Mínimo no imp','Base imp','% de Retención','Retención','PAGO'
       ]
-      ws['!cols'] = colWidths
-      
-      XLSX.utils.book_append_sheet(wb, ws, `SICORE ${quincena}`)
-      
-      // Generar archivo
+
+      const filas = facturas.map(f => {
+        const tipoConfig = f._tipoConfig
+        const netoBase = (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
+        const minimo = tipoConfig?.minimo_no_imponible ?? 0
+        const baseImp = Math.max(0, netoBase - minimo)
+        const pct = tipoConfig ? tipoConfig.porcentaje_retencion * 100 : 0
+
+        return {
+          'Tipo': f.tipo_sicore || '',
+          'Fecha Pago': formatFecha(f.fecha_estimada || f.fecha_vencimiento),
+          'Fecha FC': formatFecha(f.fecha_emision),
+          'Tipo Comp.': f.tipo_comprobante ? `${f.tipo_comprobante} - Factura` : '',
+          'Punto de Venta': num(f.punto_venta),
+          'Número Desde': num(f.numero_desde),
+          'Nro. Doc. Emisor': f.cuit || '',
+          'Denominación Emisor': f.denominacion_emisor || '',
+          'Imp. Neto Gravado': num(f.imp_neto_gravado),
+          'Imp. Neto No Gravado': num(f.imp_neto_no_gravado),
+          'Imp. Op. Exentas': num(f.imp_op_exentas),
+          'Otros Tributos': num(f.otros_tributos),
+          'IVA': num(f.iva),
+          'Imp. Total': num(f.imp_total),
+          'Mínimo no imp': num(minimo),
+          'Base imp': num(baseImp),
+          '% de Retención': pct ? pct / 100 : '',  // como decimal para formato %
+          'Retención': num(f.monto_sicore),
+          'PAGO': num(f.monto_a_abonar)
+        }
+      })
+
+      // Fila de totales
+      const totales: any = {}
+      COLS.forEach(c => { totales[c] = '' })
+      totales['Denominación Emisor'] = 'TOTALES'
+      totales['Imp. Neto Gravado'] = facturas.reduce((s, f) => s + (f.imp_neto_gravado || 0), 0)
+      totales['Imp. Neto No Gravado'] = facturas.reduce((s, f) => s + (f.imp_neto_no_gravado || 0), 0)
+      totales['Imp. Op. Exentas'] = facturas.reduce((s, f) => s + (f.imp_op_exentas || 0), 0)
+      totales['Otros Tributos'] = facturas.reduce((s, f) => s + (f.otros_tributos || 0), 0)
+      totales['IVA'] = facturas.reduce((s, f) => s + (f.iva || 0), 0)
+      totales['Imp. Total'] = facturas.reduce((s, f) => s + (f.imp_total || 0), 0)
+      totales['Retención'] = totalRetenciones
+      totales['PAGO'] = facturas.reduce((s, f) => s + (f.monto_a_abonar || 0), 0)
+      filas.push(totales)
+
+      const wb = XLSX.utils.book_new()
+
+      // Hoja con título en A1, fila vacía, luego headers y datos
+      const ws = XLSX.utils.aoa_to_sheet([[tituloQuincena], []])
+      XLSX.utils.sheet_add_json(ws, filas, { origin: 'A3', header: COLS })
+
+      // Anchos de columna
+      ws['!cols'] = [
+        { wch: 12 }, // Tipo
+        { wch: 12 }, // Fecha Pago
+        { wch: 12 }, // Fecha FC
+        { wch: 14 }, // Tipo Comp
+        { wch: 8  }, // PV
+        { wch: 10 }, // Nro
+        { wch: 16 }, // CUIT
+        { wch: 28 }, // Denominación
+        { wch: 16 }, // Neto Grav
+        { wch: 16 }, // Neto No Grav
+        { wch: 16 }, // Op Exentas
+        { wch: 14 }, // Otros Trib
+        { wch: 14 }, // IVA
+        { wch: 14 }, // Imp Total
+        { wch: 12 }, // Mínimo
+        { wch: 14 }, // Base imp
+        { wch: 8  }, // %
+        { wch: 14 }, // Retención
+        { wch: 14 }, // PAGO
+      ]
+
+      XLSX.utils.book_append_sheet(wb, ws, 'SICORE')
       const nombreArchivo = `SICORE_${quincenaACarpeta(quincena)}.xlsx`
-      
+
       if (directorio) {
-        // Guardar en directorio seleccionado
         const archivoHandle = await directorio.getFileHandle(nombreArchivo, { create: true })
         const writableStream = await archivoHandle.createWritable()
-        
         const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
         await writableStream.write(buffer)
         await writableStream.close()
-        
-        console.log('📊 Excel guardado en:', nombreArchivo)
       } else {
-        // Descarga normal
         XLSX.writeFile(wb, nombreArchivo)
       }
-      
+
     } catch (error) {
       console.error('Error generando Excel cierre quincena:', error)
       throw error
