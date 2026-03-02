@@ -208,6 +208,17 @@ export function VistaFacturasArca() {
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
   const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
 
+  // Estados SICORE para anticipos (desde Vista de Pagos)
+  const [anticipoSicoreEnProceso, setAnticipoSicoreEnProceso] = useState<any | null>(null)
+  const [mostrarModalSicoreAnt, setMostrarModalSicoreAnt] = useState(false)
+  const [pasoSicoreAnt, setPasoSicoreAnt] = useState<'tipo' | 'calculo'>('tipo')
+  const [tipoSicoreAnt, setTipoSicoreAnt] = useState<TipoSicore | null>(null)
+  const [montoSicoreAnt, setMontoSicoreAnt] = useState(0)
+  const [descuentoAnt, setDescuentoAnt] = useState(0)
+  const [datosSicoreAnt, setDatosSicoreAnt] = useState<{
+    baseImponible: number, minimoAplicado: number, esAdicional: boolean
+  } | null>(null)
+
   // Estados para Vista de Pagos
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
@@ -2625,6 +2636,106 @@ export function VistaFacturasArca() {
 
     // Evaluar SICORE para esta factura
     await evaluarRetencionSicore({ ...siguiente, estado: 'pagar' })
+  }
+
+  // ============= SICORE ANTICIPOS (Vista de Pagos) =============
+
+  const recargarAnticiposPagos = async () => {
+    const { data } = await supabase.from('anticipos_proveedores').select('*')
+      .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'programado'])
+      .gt('monto_restante', 0)
+      .order('fecha_pago', { ascending: true })
+    if (data) setAnticiposPagos(data)
+  }
+
+  // Cambiar estado de un anticipo en Vista de Pagos
+  // — Si pasa a 'pagar' y YA tiene sicore: aplica retención automáticamente
+  // — Si pasa a 'pagar' y NO tiene sicore: abre modal SICORE
+  // — Cualquier otro estado: cambio directo
+  const cambiarEstadoAnticipoPago = async (anticipo: any, nuevoEstado: string) => {
+    if (nuevoEstado === 'pagar') {
+      if (anticipo.sicore && anticipo.monto_sicore) {
+        // SICORE ya fue procesado: solo actualizar estado + monto_restante
+        const saldo = (anticipo.monto || 0) - (anticipo.monto_sicore || 0)
+        const { error } = await supabase.from('anticipos_proveedores')
+          .update({ estado_pago: 'pagar', monto_restante: saldo })
+          .eq('id', anticipo.id)
+        if (error) { toast.error('Error: ' + error.message); return }
+        toast.success('Anticipo pasado a "Pagar". Retención SICORE ya aplicada.')
+        await recargarAnticiposPagos()
+      } else {
+        // Sin SICORE aún: abrir modal
+        setAnticipoSicoreEnProceso(anticipo)
+        setPasoSicoreAnt('tipo')
+        setTipoSicoreAnt(null)
+        setMontoSicoreAnt(0)
+        setDescuentoAnt(0)
+        setDatosSicoreAnt(null)
+        setMostrarModalSicoreAnt(true)
+      }
+    } else {
+      const { error } = await supabase.from('anticipos_proveedores')
+        .update({ estado_pago: nuevoEstado })
+        .eq('id', anticipo.id)
+      if (error) { toast.error('Error: ' + error.message); return }
+      toast.success(`Anticipo → ${nuevoEstado}`)
+      await recargarAnticiposPagos()
+    }
+  }
+
+  // Calcular retención al seleccionar tipo SICORE para un anticipo
+  const calcularSicoreAnt = async (tipo: TipoSicore) => {
+    if (!anticipoSicoreEnProceso) return
+    const monto = anticipoSicoreEnProceso.monto || 0
+    const fecha = anticipoSicoreEnProceso.fecha_pago || new Date().toISOString()
+    const quincena = generarQuincenaSicore(fecha)
+    const cuit = anticipoSicoreEnProceso.cuit_proveedor
+
+    // Verificar retención previa en ambas tablas
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      supabase.schema('msa').from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
+      supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).neq('id', anticipoSicoreEnProceso.id).limit(1)
+    ])
+    const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
+
+    let baseImponible = monto
+    let minimoAplicado = 0
+
+    if (!yaRetuvo) {
+      if (monto <= tipo.minimo_no_imponible) {
+        alert(`El monto $${monto.toLocaleString('es-AR')} no supera el mínimo no imponible ($${tipo.minimo_no_imponible.toLocaleString('es-AR')}).`)
+        return
+      }
+      baseImponible = monto - tipo.minimo_no_imponible
+      minimoAplicado = tipo.minimo_no_imponible
+    }
+
+    setTipoSicoreAnt(tipo)
+    setDatosSicoreAnt({ baseImponible, minimoAplicado, esAdicional: yaRetuvo })
+    setMontoSicoreAnt(baseImponible * tipo.porcentaje_retencion)
+    setDescuentoAnt(0)
+    setPasoSicoreAnt('calculo')
+  }
+
+  // Confirmar SICORE para anticipo
+  const confirmarSicoreAnt = async () => {
+    if (!anticipoSicoreEnProceso || !tipoSicoreAnt) return
+    const quincena = generarQuincenaSicore(anticipoSicoreEnProceso.fecha_pago || new Date().toISOString())
+    const saldoFinal = (anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt
+
+    const { error } = await supabase.from('anticipos_proveedores').update({
+      estado_pago: 'pagar',
+      sicore: quincena,
+      monto_sicore: montoSicoreAnt,
+      tipo_sicore: tipoSicoreAnt.tipo,
+      monto_restante: saldoFinal,
+    }).eq('id', anticipoSicoreEnProceso.id)
+
+    if (error) { toast.error('Error: ' + error.message); return }
+    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${montoSicoreAnt.toLocaleString('es-AR')} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    setMostrarModalSicoreAnt(false)
+    setAnticipoSicoreEnProceso(null)
+    await recargarAnticiposPagos()
   }
 
   // ============= FUNCIONES CIERRE QUINCENA SICORE =============
@@ -5204,6 +5315,15 @@ export function VistaFacturasArca() {
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto_restante || 0), 0)
             const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto_restante || 0), 0)
 
+            const ESTADOS_ANTICIPO = ['pendiente', 'pagar', 'preparado', 'programado', 'pagado']
+            const colorEstadoAnt = (e: string) => {
+              if (e === 'pagar') return 'bg-orange-100 text-orange-800'
+              if (e === 'preparado') return 'bg-green-100 text-green-800'
+              if (e === 'programado') return 'bg-blue-100 text-blue-800'
+              if (e === 'pagado') return 'bg-gray-100 text-gray-500'
+              return 'bg-yellow-50 text-yellow-800'
+            }
+
             const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number) => {
               if (!lista.length) return null
               return (
@@ -5215,19 +5335,37 @@ export function VistaFacturasArca() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="text-xs">Estado</TableHead>
                         <TableHead className="text-xs">Proveedor</TableHead>
                         <TableHead className="text-xs">CUIT</TableHead>
-                        <TableHead className="text-xs">Fecha Pago</TableHead>
-                        <TableHead className="text-xs text-right">Monto</TableHead>
+                        <TableHead className="text-xs">Fecha</TableHead>
+                        <TableHead className="text-xs text-right">Monto Total</TableHead>
+                        <TableHead className="text-xs text-right">A Pagar</TableHead>
                         <TableHead className="text-xs">SICORE</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {lista.map(a => (
                         <TableRow key={a.id} className="bg-purple-50 hover:bg-purple-100">
+                          <TableCell className="text-xs">
+                            <Select
+                              value={a.estado_pago || 'pendiente'}
+                              onValueChange={(val) => cambiarEstadoAnticipoPago(a, val)}
+                            >
+                              <SelectTrigger className={`h-6 text-xs px-2 border-0 ${colorEstadoAnt(a.estado_pago || 'pendiente')}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ESTADOS_ANTICIPO.map(e => (
+                                  <SelectItem key={e} value={e} className="text-xs">{e}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
                           <TableCell className="text-xs font-medium">{a.nombre_proveedor}</TableCell>
                           <TableCell className="text-xs text-gray-500">{a.cuit_proveedor}</TableCell>
                           <TableCell className="text-xs">{a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
+                          <TableCell className="text-xs text-right text-gray-500">${(a.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell className="text-xs text-right font-medium">${(a.monto_restante || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</TableCell>
                           <TableCell className="text-xs">{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
                         </TableRow>
@@ -5403,6 +5541,83 @@ export function VistaFacturasArca() {
               Cerrar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal SICORE para anticipos (desde Vista de Pagos) */}
+      <Dialog open={mostrarModalSicoreAnt} onOpenChange={(open) => { if (!open) { setMostrarModalSicoreAnt(false); setAnticipoSicoreEnProceso(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>🏛️ Retención SICORE — Anticipo</DialogTitle>
+            <DialogDescription>
+              {anticipoSicoreEnProceso && (
+                <span>{anticipoSicoreEnProceso.nombre_proveedor} · Monto: ${(anticipoSicoreEnProceso.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {pasoSicoreAnt === 'tipo' && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">Seleccioná el tipo de operación:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {tiposSicore.map(tipo => (
+                  <Button
+                    key={tipo.tipo}
+                    variant="outline"
+                    className="h-auto py-3 flex flex-col items-start text-left"
+                    onClick={() => calcularSicoreAnt(tipo)}
+                  >
+                    <span className="font-semibold text-sm">{tipo.tipo}</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}% · mín ${tipo.minimo_no_imponible.toLocaleString('es-AR')}</span>
+                  </Button>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => {
+                  // Continuar sin SICORE: solo cambiar estado
+                  if (anticipoSicoreEnProceso) {
+                    supabase.from('anticipos_proveedores').update({ estado_pago: 'pagar' }).eq('id', anticipoSicoreEnProceso.id)
+                      .then(({ error }) => {
+                        if (!error) { toast.success('Anticipo → pagar (sin SICORE)'); recargarAnticiposPagos() }
+                      })
+                  }
+                  setMostrarModalSicoreAnt(false)
+                  setAnticipoSicoreEnProceso(null)
+                }}>
+                  Continuar sin SICORE
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {pasoSicoreAnt === 'calculo' && tipoSicoreAnt && datosSicoreAnt && anticipoSicoreEnProceso && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm space-y-1">
+                <div className="flex justify-between"><span className="text-gray-600">Monto anticipo:</span><span className="font-medium">${(anticipoSicoreEnProceso.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                {!datosSicoreAnt.esAdicional && <div className="flex justify-between"><span className="text-gray-600">Mínimo no imponible:</span><span>-${datosSicoreAnt.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}
+                <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnt.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between font-semibold text-red-700 border-t pt-1 mt-1">
+                  <span>{tipoSicoreAnt.tipo} {(tipoSicoreAnt.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span>-${montoSicoreAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+                {descuentoAnt > 0 && <div className="flex justify-between text-orange-700"><span>Descuento adicional:</span><span>-${descuentoAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}
+                <div className="flex justify-between font-bold text-green-700 border-t pt-1 mt-1">
+                  <span>Saldo a pagar:</span>
+                  <span>${((anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={confirmarSicoreAnt}
+                >
+                  ✅ Confirmar SICORE
+                </Button>
+                <Button variant="outline" onClick={() => setPasoSicoreAnt('tipo')}>← Tipo</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

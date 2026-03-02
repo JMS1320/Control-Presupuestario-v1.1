@@ -977,15 +977,14 @@ export function VistaCashFlow() {
   const confirmarSicoreAnticipo = async () => {
     if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
     const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
+    const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     const { error } = await supabase.from('anticipos_proveedores').update({
+      estado_pago: 'pagar',
       sicore: quincena,
       monto_sicore: montoSicoreAnticipo,
       tipo_sicore: tipoSicoreAnticipo.tipo,
-      neto_gravado: parseFloat(camposSicore.neto_gravado) || 0,
-      neto_no_gravado: parseFloat(camposSicore.neto_no_gravado) || 0,
-      op_exentas: parseFloat(camposSicore.op_exentas) || 0,
-      iva: parseFloat(camposSicore.iva) || 0,
-      imp_total: datosSicoreAnticipo.impTotal,
+      monto_restante: saldoFinal,
     }).eq('id', anticipoSicoreId)
 
     if (error) { toast.error('Error guardando SICORE: ' + error.message); return }
@@ -1035,17 +1034,7 @@ export function VistaCashFlow() {
       if (error) throw error
 
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
-      toast.success(`${tipoLabel} registrado exitosamente`)
-
-      // Si es pago, ofrecer retención SICORE
-      if (nuevoAnticipo.tipo === 'pago' && data && data.length > 0) {
-        const cuitLimpio = nuevoAnticipo.cuit.replace(/-/g, '')
-        setAnticipoSicoreId(data[0].id)
-        setAnticipoSicoreCuit(cuitLimpio)
-        setAnticipoSicoreFecha(nuevoAnticipo.fecha)
-        setPasoSicoreAnticipo('pregunta')
-        setMostrarModalSicoreAnticipo(true)
-      }
+      toast.success(`${tipoLabel} registrado. Cambiá el estado a "pagar" para aplicar SICORE.`)
 
       setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
       await cargarDatos()
@@ -1077,20 +1066,34 @@ export function VistaCashFlow() {
   }
 
   const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string) => {
-    try {
-      const { error } = await supabase
-        .from('anticipos_proveedores')
-        .update({ estado_pago: nuevoEstado })
-        .eq('id', anticipoId)
+    // Obtener el anticipo completo para saber si tiene SICORE
+    const anticipo = anticiposExistentes.find(a => a.id === anticipoId)
 
-      if (error) throw error
-      toast.success(`Estado actualizado a ${nuevoEstado}`)
-      await cargarAnticiposExistentes()
-      await cargarDatos()
-    } catch (error) {
-      console.error('Error actualizando estado anticipo:', error)
-      toast.error('Error al actualizar estado')
+    if (nuevoEstado === 'pagar') {
+      if (anticipo?.sicore && anticipo?.monto_sicore) {
+        // Ya tiene SICORE: actualizar estado + recalcular saldo
+        const saldo = (anticipo.monto || 0) - (anticipo.monto_sicore || 0)
+        const { error } = await supabase.from('anticipos_proveedores')
+          .update({ estado_pago: 'pagar', monto_restante: saldo }).eq('id', anticipoId)
+        if (error) { toast.error('Error: ' + error.message); return }
+        toast.success('Anticipo → pagar (SICORE ya aplicado)')
+      } else if (anticipo) {
+        // Sin SICORE: abrir modal
+        setAnticipoSicoreId(anticipo.id)
+        setAnticipoSicoreCuit(anticipo.cuit_proveedor)
+        setAnticipoSicoreFecha(anticipo.fecha_pago)
+        setPasoSicoreAnticipo('tipo')
+        setMostrarModalSicoreAnticipo(true)
+        return  // no recargar todavía
+      }
+    } else {
+      const { error } = await supabase.from('anticipos_proveedores')
+        .update({ estado_pago: nuevoEstado }).eq('id', anticipoId)
+      if (error) { toast.error('Error: ' + error.message); return }
+      toast.success(`Anticipo → ${nuevoEstado}`)
     }
+    await cargarAnticiposExistentes()
+    await cargarDatos()
   }
 
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
