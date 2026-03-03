@@ -9085,3 +9085,174 @@ ADD COLUMN IF NOT EXISTS tipo_sicore VARCHAR(50);
 ```
 
 **📅 Última actualización sección:** 2026-03-02
+
+---
+
+## SESIÓN 2026-03-03: Vista de Pagos Anticipos + SICORE Mejorado
+
+### 1. Contexto
+
+Continuación del trabajo sobre módulo SICORE y anticipos de pago. Objetivo: mejorar la Vista de Pagos para que los anticipos tengan el mismo formato visual que ARCA/Templates, y corregir el flujo SICORE de anticipos para que use neto gravado como base (no el monto total).
+
+---
+
+### 2. Cambios en Base de Datos
+
+#### 2a. CHECK constraint `estado_pago` en `anticipos_proveedores`
+
+**Problema**: El constraint solo permitía `'pendiente'` y `'pagado'`. El código intentaba asignar `'pagar'`, `'preparado'`, `'programado'` y fallaba silenciosamente.
+
+**Solución aplicada** (migration `expand_anticipos_estados_pago`):
+
+```sql
+ALTER TABLE anticipos_proveedores
+DROP CONSTRAINT IF EXISTS anticipos_proveedores_estado_pago_check;
+
+ALTER TABLE anticipos_proveedores
+ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+CHECK (estado_pago IN ('pendiente', 'pagar', 'preparado', 'programado', 'pagado'));
+```
+
+**⚠️ Advertencia post-reconstrucción**: Este constraint NO está en el backup. Al reconstruir, ejecutar el SQL anterior.
+
+---
+
+### 3. Cambios en Código
+
+#### 3a. Vista de Pagos — Anticipos con formato idéntico a ARCA/Templates
+
+**Antes**: Tabla simple con Select dropdown por fila, wrapper morado separado.
+
+**Después**: Mismo formato que `renderTablaTemplates`:
+- Badge `"Anticipo"` (morado) + título + `(count)` + `"Subtotal: $X"` badge a la derecha
+- Checkboxes por fila + botón bulk action contextual (`anticiposSeleccionadosPagos` Set<string>)
+- Columnas: Fecha Pago · Descripción · Proveedor · CUIT · A Pagar · SICORE · 🗑️
+- Contenedor `border rounded-md max-h-60 overflow-y-auto` con header sticky
+- Anticipos integrados por estado junto a ARCA y Templates (no en wrapper separado)
+- Ulises: `mostrarCheckbox = false` (solo lectura)
+
+**Bulk action por estado**:
+- `'pagar'` → delega a `cambiarEstadoAnticipoPago()` por anticipo (activa SICORE)
+- Otros estados → bulk update directo en BD + `recargarAnticiposPagos()`
+
+**Nuevos states**:
+```typescript
+const [anticiposSeleccionadosPagos, setAnticiposSeleccionadosPagos] = useState<Set<string>>(new Set())
+```
+
+**Nueva función**:
+```typescript
+const cambiarEstadoAnticiposSeleccionados = async (nuevoEstado: string) => {
+  // Para 'pagar': llama cambiarEstadoAnticipoPago por anticipo (SICORE)
+  // Para otros: bulk update + recargarAnticiposPagos()
+}
+```
+
+#### 3b. Eliminar anticipo con limpieza SICORE
+
+**Nueva función** `eliminarAnticipo`:
+```typescript
+const eliminarAnticipo = async (anticipo: any) => {
+  // 1. Si anticipo.factura_id → limpiar sicore/monto_sicore/tipo_sicore en msa.comprobantes_arca
+  // 2. DELETE anticipos_proveedores WHERE id = anticipo.id
+}
+```
+
+- Botón 🗑️ (Trash2) discreto en cada fila → rojo al hover
+- Confirm dialog antes de eliminar
+- Limpia SICORE en factura vinculada si `factura_id` está seteado
+
+#### 3c. Modal SICORE Anticipo — nuevo paso "montos"
+
+**Flujo anterior** (2 pasos): `tipo` → `calculo`
+
+**Flujo nuevo** (3 pasos): `montos` → `tipo` → `calculo`
+
+**Paso 1 — Montos** (nuevo, primer paso):
+- Neto Gravado * (obligatorio para avanzar)
+- Neto No Gravado
+- Exento
+- IVA
+- Nota: "El SICORE se calcula sobre el Neto Gravado"
+
+**Paso 2 — Tipo**: igual que antes + muestra neto gravado como referencia + botón ← Montos
+
+**Paso 3 — Cálculo**: muestra monto anticipo + neto gravado + base + retención + saldo
+
+**Cambio clave en `calcularSicoreAnt`**:
+```typescript
+// ANTES: usaba anticipo.monto como base
+const monto = anticipoSicoreEnProceso.monto || 0
+
+// DESPUÉS: usa neto gravado ingresado manualmente
+const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
+```
+
+**Nuevos states**:
+```typescript
+const [pasoSicoreAnt, setPasoSicoreAnt] = useState<'montos' | 'tipo' | 'calculo'>('montos')
+const [netoGravadoAnt, setNetoGravadoAnt] = useState('')
+const [netoNoGravadoAnt, setNetoNoGravadoAnt] = useState('')
+const [exentoAnt, setExentoAnt] = useState('')
+const [ivaAnt, setIvaAnt] = useState('')
+```
+
+**`confirmarSicoreAnt` también guarda** `neto_gravado` en BD (campo ya existía en tabla).
+
+#### 3d. Fix: Modal SICORE anticipo no cerraba
+
+**Problema**: Tras guardar exitosamente en BD, el modal permanecía abierto.
+
+**Causa**: Uso de `await recargarAnticiposPagos()` bloqueaba el cierre del modal.
+
+**Solución**: Cerrar el modal sincrónicamente antes de lanzar la recarga:
+```typescript
+// ANTES
+setMostrarModalSicoreAnt(false)
+await recargarAnticiposPagos()
+
+// DESPUÉS
+setMostrarModalSicoreAnt(false)
+setAnticipoSicoreEnProceso(null)
+setTipoSicoreAnt(null)
+setDatosSicoreAnt(null)
+recargarAnticiposPagos()  // sin await
+```
+
+---
+
+### 4. Commits sesión (branch `desarrollo`)
+
+```
+8602557  Feature: Anticipos en Vista de Pagos con formato visual igual a ARCA/Templates
+9e3ab1c  Fix: Cambio estado anticipo a 'pagar' activa modal SICORE + error message real
+fa455c9  Feature: Eliminar anticipo con limpieza SICORE + fix constraint estados BD
+dda983f  Feature: Modal SICORE anticipo pide desglose (neto gravado, no gravado, exento, IVA)
+a90b27c  Fix: confirmarSicoreAnt muestra error real BD + guarda neto_gravado + redondeo 2 decimales
+1aab3fe  Fix: Modal SICORE anticipo cierra correctamente
+```
+
+---
+
+### 5. Archivos modificados sesión
+
+| Archivo | Tipo de cambio |
+|---------|---------------|
+| `components/vista-facturas-arca.tsx` | Format anticipos, eliminar, modal SICORE montos, fix cierre |
+| `anticipos_proveedores` (BD) | CHECK constraint `estado_pago` ampliado a 5 estados |
+
+---
+
+### 6. Estado final anticipos + SICORE
+
+- ✅ Vista de Pagos: anticipos con mismo formato Badge/tabla/checkboxes que ARCA/Templates
+- ✅ Bulk action: cambio estado masivo (para 'pagar' activa SICORE por anticipo)
+- ✅ Eliminar anticipo: limpia SICORE en factura vinculada si corresponde
+- ✅ Modal SICORE: paso inicial pide neto gravado (base correcta para cálculo)
+- ✅ Cálculo SICORE: usa neto gravado (no monto total que incluye IVA)
+- ✅ Modal cierre: se cierra correctamente después de confirmar
+- ✅ BD: guarda `neto_gravado` + `tipo_sicore` + `sicore` + `monto_sicore` + `monto_restante`
+
+**⚠️ Advertencia post-reconstrucción**: Ejecutar migration `expand_anticipos_estados_pago` (ver sección 2a).
+
+**📅 Última actualización sección:** 2026-03-03
