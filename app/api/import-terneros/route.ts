@@ -14,7 +14,6 @@ const PELO_MAP: Record<string, string> = {
   'N': 'Negro',
   'CC': 'Careta Colorado',
   'CN': 'Careta Negro',
-  // También aceptar nombres completos por si viene de otra fuente
   'Colorado': 'Colorado',
   'Negro': 'Negro',
   'Careta Colorado': 'Careta Colorado',
@@ -33,14 +32,12 @@ const SEXO_MAP: Record<string, string> = {
 
 function normalizarPelo(val: any): string | null {
   if (!val) return null
-  const s = String(val).trim()
-  return PELO_MAP[s] ?? null
+  return PELO_MAP[String(val).trim()] ?? null
 }
 
 function normalizarSexo(val: any): string | null {
   if (!val) return null
-  const s = String(val).trim()
-  return SEXO_MAP[s] ?? null
+  return SEXO_MAP[String(val).trim()] ?? null
 }
 
 function normalizarCaravana(val: any): string | null {
@@ -74,88 +71,112 @@ export async function POST(request: Request) {
     const resultados = {
       procesados: 0,
       insertados: 0,
-      actualizados: 0,
       omitidos: 0,
+      duplicados_en_archivo: [] as string[],   // duplicados dentro del Excel importado
+      duplicados_en_bd: [] as string[],         // caravanas que ya existían en BD
       errores: [] as string[],
     }
 
+    // ── Pre-scan: detectar duplicados dentro del propio archivo ──────────────
+    const internasArchivo = new Map<string, number[]>()
+    const oficialesArchivo = new Map<string, number[]>()
+
+    rows.forEach((row, idx) => {
+      const nroFila = idx + 1
+      const interna = normalizarCaravana(row['Carav_Nacim'] ?? row['Caravana Interna'] ?? row['Carav Int'] ?? row['caravana_interna'])
+      const oficial = normalizarCaravana(row['Carav_Oficial'] ?? row['Caravana Oficial'] ?? row['Carav Of'] ?? row['caravana_oficial'])
+      if (interna) {
+        const lista = internasArchivo.get(interna) ?? []
+        lista.push(nroFila)
+        internasArchivo.set(interna, lista)
+      }
+      if (oficial) {
+        const lista = oficialesArchivo.get(oficial) ?? []
+        lista.push(nroFila)
+        oficialesArchivo.set(oficial, lista)
+      }
+    })
+
+    for (const [val, filas] of internasArchivo) {
+      if (filas.length > 1) {
+        resultados.duplicados_en_archivo.push(`Carav. interna ${val} aparece ${filas.length} veces (filas: ${filas.join(', ')})`)
+      }
+    }
+    for (const [val, filas] of oficialesArchivo) {
+      if (filas.length > 1) {
+        resultados.duplicados_en_archivo.push(`Carav. oficial ${val} aparece ${filas.length} veces (filas: ${filas.join(', ')})`)
+      }
+    }
+
+    // ── Pre-scan: detectar caravanas que ya existen en BD ────────────────────
+    const todasInternas = [...internasArchivo.keys()]
+    const todasOficiales = [...oficialesArchivo.keys()]
+
+    if (todasInternas.length > 0) {
+      const { data: existentesInt } = await supabase
+        .schema('productivo')
+        .from('terneros')
+        .select('caravana_interna')
+        .in('caravana_interna', todasInternas)
+      if (existentesInt && existentesInt.length > 0) {
+        existentesInt.forEach(r => {
+          resultados.duplicados_en_bd.push(`Carav. interna ${r.caravana_interna} ya existe en BD`)
+        })
+      }
+    }
+
+    if (todasOficiales.length > 0) {
+      const { data: existentesOf } = await supabase
+        .schema('productivo')
+        .from('terneros')
+        .select('caravana_oficial')
+        .in('caravana_oficial', todasOficiales)
+      if (existentesOf && existentesOf.length > 0) {
+        existentesOf.forEach(r => {
+          resultados.duplicados_en_bd.push(`Carav. oficial ${r.caravana_oficial} ya existe en BD`)
+        })
+      }
+    }
+
+    // ── Insertar todas las filas (sin upsert, sin bloquear por duplicados) ───
     for (const row of rows) {
       resultados.procesados++
 
-      // ── Leer campos del Excel (acepta variantes de nombre de columna) ───────
       const caravanaOficial = normalizarCaravana(
         row['Carav_Oficial'] ?? row['Caravana Oficial'] ?? row['Carav Of'] ?? row['caravana_oficial']
       )
       const caravanaInterna = normalizarCaravana(
         row['Carav_Nacim'] ?? row['Caravana Interna'] ?? row['Carav Int'] ?? row['caravana_interna']
       )
+
+      if (!caravanaOficial && !caravanaInterna) {
+        resultados.omitidos++
+        continue
+      }
+
       const sexo = normalizarSexo(row['Sexo'] ?? row['sexo'])
       const pelo = normalizarPelo(row['Pelo'] ?? row['pelo'])
       const esTorito = normalizarBool(row['Torito'] ?? row['torito'])
       const obs = row['Obs'] ?? row['Observaciones'] ?? row['observaciones'] ?? null
       const observaciones = obs ? String(obs).trim() : null
 
-      // ── Validación: al menos una caravana ───────────────────────────────────
-      if (!caravanaOficial && !caravanaInterna) {
-        resultados.omitidos++
-        resultados.errores.push(`Fila ${resultados.procesados}: sin caravana interna ni oficial — omitida`)
-        continue
-      }
+      const payload: Record<string, any> = {}
+      if (caravanaOficial !== null) payload.caravana_oficial = caravanaOficial
+      if (caravanaInterna !== null) payload.caravana_interna = caravanaInterna
+      if (sexo !== null) payload.sexo = sexo
+      if (pelo !== null) payload.pelo = pelo
+      if (esTorito) payload.es_torito = true
+      if (observaciones) payload.observaciones = observaciones
 
       try {
-        // ── Buscar registro existente (oficial → interna como fallback) ────────
-        let existenteId: string | null = null
-
-        if (caravanaOficial) {
-          const { data } = await supabase
-            .schema('productivo')
-            .from('terneros')
-            .select('id')
-            .eq('caravana_oficial', caravanaOficial)
-            .maybeSingle()
-          if (data) existenteId = data.id
-        }
-
-        if (!existenteId && caravanaInterna) {
-          const { data } = await supabase
-            .schema('productivo')
-            .from('terneros')
-            .select('id')
-            .eq('caravana_interna', caravanaInterna)
-            .maybeSingle()
-          if (data) existenteId = data.id
-        }
-
-        // ── Armar payload — solo campos con valor ─────────────────────────────
-        const payload: Record<string, any> = {}
-        if (caravanaOficial !== null) payload.caravana_oficial = caravanaOficial
-        if (caravanaInterna !== null) payload.caravana_interna = caravanaInterna
-        if (sexo !== null) payload.sexo = sexo
-        if (pelo !== null) payload.pelo = pelo
-        if (esTorito) payload.es_torito = true   // solo sobreescribir si viene en true
-        if (observaciones) payload.observaciones = observaciones
-
-        // ── Upsert ────────────────────────────────────────────────────────────
-        if (existenteId) {
-          const { error } = await supabase
-            .schema('productivo')
-            .from('terneros')
-            .update(payload)
-            .eq('id', existenteId)
-          if (error) throw error
-          resultados.actualizados++
-        } else {
-          const { error } = await supabase
-            .schema('productivo')
-            .from('terneros')
-            .insert(payload)
-          if (error) throw error
-          resultados.insertados++
-        }
+        const { error } = await supabase
+          .schema('productivo')
+          .from('terneros')
+          .insert(payload)
+        if (error) throw error
+        resultados.insertados++
       } catch (err: any) {
-        resultados.errores.push(
-          `Fila ${resultados.procesados} (int:${caravanaInterna ?? '-'} / of:${caravanaOficial ?? '-'}): ${err.message}`
-        )
+        resultados.errores.push(`Fila ${resultados.procesados}: ${err.message}`)
       }
     }
 

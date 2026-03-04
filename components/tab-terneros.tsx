@@ -26,8 +26,9 @@ interface Ternero {
 interface ResultadoImport {
   procesados: number
   insertados: number
-  actualizados: number
   omitidos: number
+  duplicados_en_archivo: string[]
+  duplicados_en_bd: string[]
   errores: string[]
 }
 
@@ -207,34 +208,66 @@ export function TabTerneros() {
           </DialogHeader>
           {resultado && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              {/* Contadores principales */}
+              <div className="grid grid-cols-3 gap-3">
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
                   <div className="text-2xl font-bold text-gray-700">{resultado.procesados}</div>
                   <div className="text-xs text-gray-500">Procesados</div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-3 text-center">
                   <div className="text-2xl font-bold text-green-700">{resultado.insertados}</div>
-                  <div className="text-xs text-green-600">Insertados nuevos</div>
-                </div>
-                <div className="bg-blue-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-blue-700">{resultado.actualizados}</div>
-                  <div className="text-xs text-blue-600">Actualizados</div>
+                  <div className="text-xs text-green-600">Insertados</div>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-3 text-center">
                   <div className="text-2xl font-bold text-amber-700">{resultado.omitidos}</div>
-                  <div className="text-xs text-amber-600">Omitidos (sin caravana)</div>
+                  <div className="text-xs text-amber-600">Sin caravana</div>
                 </div>
               </div>
 
+              {/* Duplicados en el archivo */}
+              {resultado.duplicados_en_archivo.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    <span className="text-sm font-medium text-amber-700">
+                      {resultado.duplicados_en_archivo.length} caravana{resultado.duplicados_en_archivo.length > 1 ? 's' : ''} duplicada{resultado.duplicados_en_archivo.length > 1 ? 's' : ''} en el archivo — se insertaron igual
+                    </span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
+                    {resultado.duplicados_en_archivo.map((e, i) => (
+                      <p key={i} className="text-xs text-amber-800">{e}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicados contra BD existente */}
+              {resultado.duplicados_en_bd.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-orange-500" />
+                    <span className="text-sm font-medium text-orange-700">
+                      {resultado.duplicados_en_bd.length} caravana{resultado.duplicados_en_bd.length > 1 ? 's' : ''} ya existían en BD — se insertaron igual
+                    </span>
+                  </div>
+                  <div className="bg-orange-50 border border-orange-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
+                    {resultado.duplicados_en_bd.map((e, i) => (
+                      <p key={i} className="text-xs text-orange-800">{e}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Errores técnicos */}
               {resultado.errores.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <AlertCircle className="h-4 w-4 text-red-500" />
                     <span className="text-sm font-medium text-red-700">
-                      {resultado.errores.length} error{resultado.errores.length > 1 ? 'es' : ''}
+                      {resultado.errores.length} error{resultado.errores.length > 1 ? 'es' : ''} técnicos
                     </span>
                   </div>
-                  <div className="bg-red-50 border border-red-200 rounded p-2 max-h-40 overflow-y-auto space-y-1">
+                  <div className="bg-red-50 border border-red-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
                     {resultado.errores.map((e, i) => (
                       <p key={i} className="text-xs text-red-700">{e}</p>
                     ))}
@@ -242,10 +275,10 @@ export function TabTerneros() {
                 </div>
               )}
 
-              {resultado.errores.length === 0 && (
+              {resultado.errores.length === 0 && resultado.duplicados_en_archivo.length === 0 && resultado.duplicados_en_bd.length === 0 && (
                 <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded p-3">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span className="text-sm">Importación completada sin errores</span>
+                  <span className="text-sm">Importación completada sin observaciones</span>
                 </div>
               )}
 
