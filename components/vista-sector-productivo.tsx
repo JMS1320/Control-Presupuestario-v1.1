@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
+import { TabTerneros } from "@/components/tab-terneros"
 import CiclosCriaPanel from "./ciclos-cria-panel"
 
 // ============================================================
@@ -896,7 +897,7 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
@@ -909,6 +910,10 @@ export function VistaSectorProductivo() {
                 <Wheat className="h-4 w-4" />
                 Lotes Agricolas
               </TabsTrigger>
+              <TabsTrigger value="terneros" className="flex items-center gap-2">
+                🐄
+                Terneros
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="hacienda">
@@ -919,6 +924,9 @@ export function VistaSectorProductivo() {
             </TabsContent>
             <TabsContent value="lotes">
               <TabLotesAgricolas />
+            </TabsContent>
+            <TabsContent value="terneros">
+              <TabTerneros />
             </TabsContent>
           </Tabs>
         </CardContent>
