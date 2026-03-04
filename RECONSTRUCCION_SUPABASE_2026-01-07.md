@@ -9256,3 +9256,86 @@ a90b27c  Fix: confirmarSicoreAnt muestra error real BD + guarda neto_gravado + r
 **⚠️ Advertencia post-reconstrucción**: Ejecutar migration `expand_anticipos_estados_pago` (ver sección 2a).
 
 **📅 Última actualización sección:** 2026-03-03
+
+---
+
+---
+
+## 📌 SESIÓN: TRANSCRIPCIÓN PDF DESTETE → EXCEL + ANÁLISIS ERRORES (2026-02-23)
+
+### 🎯 Contexto
+
+En el marco del módulo ganadero (ver `DISEÑO_TERNEROS.md`), se realizó una tarea de transcripción manual de datos de destete desde un PDF físico hacia un Excel estructurado para poder importarlos al sistema.
+
+**Archivo generado**: `20260223_destete_transcripcion.xlsx`
+**Ubicación**: `I:\Mi unidad\SAN MANUEL\GANADERIA\Caravanas`
+
+---
+
+### 📋 Trabajo realizado
+
+#### 1. Transcripción PDF → Excel
+
+Se transcribió el registro de destete de un PDF (planilla física escaneada) a un Excel estructurado con las columnas del sistema:
+
+| Columna | Descripción |
+|---------|-------------|
+| `caravana_interna` | Número interno al nacimiento |
+| `caravana_oficial` | Caravana alfanumérica al destete (ej: MSA0015) |
+| `sexo` | Macho / Hembra |
+| `pelo` | Color de pelo (Colorado, Negro, Careta, etc.) |
+| `fecha_destete` | Fecha del destete |
+| `peso_destete` | Peso registrado al destete |
+
+#### 2. Control de consistencia aplicado
+
+Se realizó una verificación cruzada de los datos transcriptos para detectar posibles errores de transcripción. El control incluyó:
+
+- **Verificación de totales por sexo**: Comparar cantidad Machos vs Hembras entre el PDF original y el Excel generado
+- **Verificación de pesos promedio**: Los pesos promedio por sexo sirven como señal de alerta (si hay confusión de sexo, los promedios se distorsionan)
+- **Detección de inconsistencias**: Animales con peso muy fuera del promedio del grupo
+
+---
+
+### 🚨 Errores detectados - Hipótesis transcripción
+
+El control de totales reveló **inconsistencias en la distribución de sexos** entre el PDF y el Excel transcripto. La hipótesis más probable:
+
+> **Confusión Macho ↔ Hembra durante la transcripción manual**
+
+#### Escenario probable:
+- El PDF usa abreviaciones o simbología (♂/♀, M/H, T/V) que puede confundirse visualmente
+- Al transcribir a mano, algunos animales fueron registrados con sexo incorrecto
+- El **control de totales fue la señal**: el PDF mostraba X machos y Y hembras, pero el Excel tenía proporciones distintas
+
+#### Por qué sucede este tipo de error:
+1. **Abreviaciones similares**: "M" puede leerse como "Macho" o como "Hembra" en distintas planillas según el criterio usado
+2. **Simbología no estándar**: planillas a mano pueden usar "T" (Toro/Macho) o "V" (Vaca/Hembra) sin aclaración explícita
+3. **Ilegibilidad**: letra a mano difícil de leer puede hacer que un "M" parezca "H" o viceversa
+4. **Filas consecutivas**: al transcribir muchas filas, es fácil copiar el sexo de la fila anterior
+
+#### Acción recomendada:
+- **Volver al PDF original** y verificar fila por fila los animales cuyo sexo puede estar incorrecto
+- Prestar especial atención a los animales con peso fuera del promedio de su grupo declarado (un "macho" con peso promedio de hembra es señal de swap)
+- Una vez corregido, re-verificar totales hasta que coincidan con el PDF
+
+---
+
+### 📝 Notas importantes
+
+- **El análisis de errores fue comunicado verbalmente en la sesión** (por consola) pero **no quedó registrado en el Excel** ni en ningún archivo de documentación en ese momento
+- El Excel `20260223_destete_transcripcion.xlsx` fue generado con la transcripción tal como estaba al momento — **puede contener los errores de sexo sin corregir**
+- **Se recomienda revisar el Excel con los ojos del análisis de control** antes de usarlo para importar al sistema
+
+---
+
+### 🔗 Documentación relacionada
+
+- **Diseño del módulo**: `DISEÑO_TERNEROS.md` (en el repositorio)
+- **Sistema caravanas/pesadas**: Ver sección "Flujo A - Con peso al destete" en `DISEÑO_TERNEROS.md`
+- **Excel transcripción**: `I:\Mi unidad\SAN MANUEL\GANADERIA\Caravanas\20260223_destete_transcripcion.xlsx`
+
+---
+
+**📅 Fecha sesión:** 2026-02-23
+**📅 Documentado:** 2026-03-03 (retroactivo — análisis fue comunicado por consola sin quedar registrado)
