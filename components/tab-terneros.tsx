@@ -142,6 +142,28 @@ function calcSummary(lista: Ternero[], gananciaDiaria: number): SummaryStats {
   return { total: lista.length, conPesada: conPesada.length, totalKg, promedioKg, totalEstimadoKg, promedioEstimadoKg }
 }
 
+// kg/día entre las últimas 2 pesadas (requiere ≥ 2)
+function getGananciaUlt2(pesadas: Pesada[]): number | null {
+  if (pesadas.length < 2) return null
+  const sorted = [...pesadas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const last = sorted[sorted.length - 1]
+  const prev = sorted[sorted.length - 2]
+  const dias = Math.round((new Date(last.fecha).getTime() - new Date(prev.fecha).getTime()) / 86400000)
+  if (dias <= 0) return null
+  return (last.peso_kg - prev.peso_kg) / dias
+}
+
+// kg/día de punta a punta: primera → última pesada (requiere ≥ 2)
+function getGananciaPuntaAPunta(pesadas: Pesada[]): number | null {
+  if (pesadas.length < 2) return null
+  const sorted = [...pesadas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const dias = Math.round((new Date(last.fecha).getTime() - new Date(first.fecha).getTime()) / 86400000)
+  if (dias <= 0) return null
+  return (last.peso_kg - first.peso_kg) / dias
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function TabTerneros() {
@@ -336,6 +358,23 @@ export function TabTerneros() {
     terneros.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
   )].sort()
 
+  // Pares de fechas consecutivas para la tabla de ganancias del historial
+  const pares = todasFechas.slice(1).map((f, i) => ({
+    fechaAnterior: todasFechas[i],
+    fechaActual: f,
+    dias: Math.round((new Date(f).getTime() - new Date(todasFechas[i]).getTime()) / 86400000),
+  }))
+
+  // Terneros ordenados por ganancia últ. 2 pesadas desc (nulls al final)
+  const ternerosOrdenados = [...terneros].sort((a, b) => {
+    const ga = getGananciaUlt2(a.pesadas_terneros)
+    const gb = getGananciaUlt2(b.pesadas_terneros)
+    if (ga === null && gb === null) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
+    if (ga === null) return 1
+    if (gb === null) return -1
+    return gb - ga
+  })
+
   // ─── Paso actual del modal pesadas ──────────────────────────────────────
 
   const hayConflictos = analisis && (analisis.no_encontradas.length > 0 || analisis.duplicadas.length > 0)
@@ -514,14 +553,20 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Torito</TableHead>
                     <TableHead className="text-xs">Últ. Pesada</TableHead>
                     <TableHead className="text-xs">Peso hoy est.</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. p→p</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {terneros.map(t => {
+                  {ternerosOrdenados.map(t => {
                     const esDup = idsConDuplicado.has(t.id)
                     const ultima = getUltimaPesada(t.pesadas_terneros)
                     const pesoHoy = getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
+                    const ganUlt2 = getGananciaUlt2(t.pesadas_terneros)
+                    const ganPaP = getGananciaPuntaAPunta(t.pesadas_terneros)
+                    const acelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 > ganPaP
+                    const desacelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 < ganPaP
                     return (
                       <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
                         <TableCell className="w-6 pr-0">
@@ -555,6 +600,18 @@ export function TabTerneros() {
                           {pesoHoy !== null
                             ? <span className="text-blue-700 font-medium">{formatPeso(pesoHoy)}</span>
                             : <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs text-center">
+                          {ganUlt2 !== null
+                            ? <span className={`font-medium ${acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
+                                {acelerando ? '▲ ' : desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2)}
+                              </span>
+                            : <span className="text-gray-300">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs text-center">
+                          {ganPaP !== null
+                            ? <span className="text-gray-500">{ganPaP.toFixed(2)}</span>
+                            : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-xs text-gray-500 max-w-[160px] truncate">
                           {t.observaciones ?? ''}
@@ -1075,6 +1132,111 @@ export function TabTerneros() {
               <p className="text-xs text-gray-400 text-right mt-2 pr-2">
                 Pesos en kg · {terneros.filter(t => t.pesadas_terneros.length > 0).length} terneros con pesadas
               </p>
+
+              {/* ── Tabla ganancias: Δkg/día entre fechas consecutivas ── */}
+              {pares.length > 0 && (
+                <div className="mt-6">
+                  <p className="text-xs font-semibold text-gray-600 mb-2 pl-1">Ganancia diaria entre pesadas (kg/día)</p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead className="text-xs whitespace-nowrap">Carav. Oficial</TableHead>
+                        <TableHead className="text-xs whitespace-nowrap">Carav. Int.</TableHead>
+                        <TableHead className="text-xs">Sexo</TableHead>
+                        {pares.map((par, i) => (
+                          <TableHead key={i} className="text-xs text-center whitespace-nowrap text-blue-700">
+                            {formatFecha(par.fechaAnterior)}→{formatFecha(par.fechaActual)}
+                            <span className="block text-gray-400 font-normal">{par.dias}d</span>
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {terneros
+                        .filter(t => t.pesadas_terneros.length >= 2)
+                        .map(t => {
+                          // Calcular ganancia por cada par de fechas
+                          const ganancias: (number | null)[] = pares.map(par => {
+                            const p1 = t.pesadas_terneros.find(p => p.fecha === par.fechaAnterior)
+                            const p2 = t.pesadas_terneros.find(p => p.fecha === par.fechaActual)
+                            if (!p1 || !p2 || par.dias <= 0) return null
+                            return (p2.peso_kg - p1.peso_kg) / par.dias
+                          })
+                          return (
+                            <TableRow key={t.id} className="text-sm">
+                              <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
+                              <TableCell className="font-mono text-xs">{t.caravana_interna ?? '—'}</TableCell>
+                              <TableCell className="text-xs">
+                                {t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : '—'}
+                              </TableCell>
+                              {ganancias.map((g, i) => {
+                                const prev = i > 0 ? ganancias[i - 1] : null
+                                const mejora = g !== null && prev !== null && g > prev
+                                const baja = g !== null && prev !== null && g < prev
+                                return (
+                                  <TableCell key={i} className="text-center text-xs">
+                                    {g !== null
+                                      ? <span className={`font-medium ${mejora ? 'text-green-600' : baja ? 'text-red-600' : 'text-gray-600'}`}>
+                                          {mejora ? '▲ ' : baja ? '▼ ' : ''}{g.toFixed(2)}
+                                        </span>
+                                      : <span className="text-gray-300">—</span>}
+                                  </TableCell>
+                                )
+                              })}
+                            </TableRow>
+                          )
+                        })
+                      }
+
+                      {/* Filas de promedio por grupo */}
+                      {(() => {
+                        const gruposGan = [
+                          { label: '♂ Prom.', lista: machos,   cls: 'text-sky-600'   },
+                          { label: '♀ Prom.', lista: hembras,  cls: 'text-pink-600'  },
+                          { label: '🐄 Prom.', lista: terneros, cls: 'text-green-600' },
+                        ]
+                        return (
+                          <>
+                            <TableRow>
+                              <TableCell colSpan={3 + pares.length} className="p-0 h-0">
+                                <div className="border-t-2 border-gray-300" />
+                              </TableCell>
+                            </TableRow>
+                            {gruposGan.map(({ label, lista, cls }) => (
+                              <TableRow key={label} className="bg-gray-50">
+                                <TableCell colSpan={3} className={`text-xs font-semibold py-1 ${cls}`}>{label}</TableCell>
+                                {pares.map((par, i) => {
+                                  const vals = lista
+                                    .filter(t => t.pesadas_terneros.length >= 2)
+                                    .map(t => {
+                                      const p1 = t.pesadas_terneros.find(p => p.fecha === par.fechaAnterior)
+                                      const p2 = t.pesadas_terneros.find(p => p.fecha === par.fechaActual)
+                                      if (!p1 || !p2 || par.dias <= 0) return null
+                                      return (p2.peso_kg - p1.peso_kg) / par.dias
+                                    })
+                                    .filter((v): v is number => v !== null)
+                                  if (vals.length === 0) {
+                                    return <TableCell key={i} className="text-center text-xs text-gray-300 py-1">—</TableCell>
+                                  }
+                                  const prom = vals.reduce((s, v) => s + v, 0) / vals.length
+                                  return (
+                                    <TableCell key={i} className={`text-center text-xs font-medium py-1 ${cls}`}>
+                                      {prom.toFixed(2)}
+                                    </TableCell>
+                                  )
+                                })}
+                              </TableRow>
+                            ))}
+                          </>
+                        )
+                      })()}
+                    </TableBody>
+                  </Table>
+                  <p className="text-xs text-gray-400 text-right mt-1 pr-2">
+                    ▲ mejora vs período anterior · ▼ baja vs período anterior
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
