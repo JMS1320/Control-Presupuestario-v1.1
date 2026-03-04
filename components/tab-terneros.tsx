@@ -125,14 +125,19 @@ function calcSummary(lista: Ternero[], gananciaDiaria: number): SummaryStats {
   const ultimas = conPesada
     .map(t => getUltimaPesada(t.pesadas_terneros))
     .filter((p): p is Pesada => p !== null)
-  const totalKg = ultimas.reduce((sum, p) => sum + p.peso_kg, 0)
-  const promedioKg = ultimas.length > 0 ? totalKg / ultimas.length : 0
+
+  // Promedio: solo sobre animales CON pesada
+  const sumaKg = ultimas.reduce((sum, p) => sum + p.peso_kg, 0)
+  const promedioKg = ultimas.length > 0 ? sumaKg / ultimas.length : 0
+  // Total rodeo: extrapolado — los sin pesada asumen peso promedio
+  const totalKg = promedioKg * lista.length
 
   const estimados = conPesada
     .map(t => getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria))
     .filter((p): p is number => p !== null)
-  const totalEstimadoKg = estimados.reduce((sum, p) => sum + p, 0)
-  const promedioEstimadoKg = estimados.length > 0 ? totalEstimadoKg / estimados.length : 0
+  const promedioEstimadoKg = estimados.length > 0 ? estimados.reduce((sum, p) => sum + p, 0) / estimados.length : 0
+  // Mismo criterio: extrapolado sobre total cabezas
+  const totalEstimadoKg = promedioEstimadoKg * lista.length
 
   return { total: lista.length, conPesada: conPesada.length, totalKg, promedioKg, totalEstimadoKg, promedioEstimadoKg }
 }
@@ -1048,7 +1053,10 @@ export function TabTerneros() {
                                 const p = t.pesadas_terneros.find(pp => pp.fecha === f)
                                 return s + (p?.peso_kg ?? 0)
                               }, 0)
-                              const valor = bold ? suma : suma / conFecha.length
+                              // Promedio: sobre animales con pesada en esa fecha
+                              const prom = suma / conFecha.length
+                              // Total: extrapolado al grupo completo (sin pesada asumen promedio)
+                              const valor = bold ? prom * lista.length : prom
                               return (
                                 <TableCell key={f} className={`text-center text-xs py-1 ${bold ? 'font-bold' : 'font-medium'} ${cls}`}>
                                   {bold
