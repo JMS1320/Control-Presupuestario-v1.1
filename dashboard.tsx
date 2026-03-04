@@ -16,11 +16,12 @@ import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
 import { VistaPrincipal } from "./components/vista-principal"
 import { VistaSectorProductivo } from "./components/vista-sector-productivo"
+import { TabSueldos } from "./components/tab-sueldos"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -59,7 +60,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
       <div className="mx-auto max-w-7xl space-y-6">
         {/* pestañas principales */}
         <Tabs defaultValue={getDefaultTab()} className="w-full">
-          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-9'}`}>
+          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-10'}`}>
             {shouldShowTab('principal') && (
               <TabsTrigger value="principal" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
@@ -106,6 +107,12 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <TabsTrigger value="productivo" className="flex items-center gap-2">
                 <Tractor className="h-4 w-4" />
                 Productivo
+              </TabsTrigger>
+            )}
+            {shouldShowTab('sueldos') && (
+              <TabsTrigger value="sueldos" className="flex items-center gap-2">
+                <Landmark className="h-4 w-4" />
+                Sueldos
               </TabsTrigger>
             )}
             {shouldShowTab('importar') && (
@@ -223,6 +230,11 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           {/* SECTOR PRODUCTIVO */}
           <TabsContent value="productivo" className="space-y-6">
             <VistaSectorProductivo />
+          </TabsContent>
+
+          {/* SUELDOS */}
+          <TabsContent value="sueldos" className="space-y-6">
+            <TabSueldos />
           </TabsContent>
 
           {/* IMPORTAR */}

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase"
 // Interface unificada para Cash Flow (10 columnas finales)
 export interface CashFlowRow {
   id: string
-  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO'
+  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO'
   origen_tabla: string // Para identificar tabla específica al editar
   egreso_id?: string // Para templates: ID del egreso padre
   fecha_estimada: string
@@ -34,7 +34,7 @@ export interface CashFlowFilters {
   fechaHasta?: string
   responsables?: string[]
   estados?: string[]
-  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO')[]
+  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO')[]
   empresas?: ('MSA' | 'PAM')[]
   busquedaDetalle?: string
   busquedaCateg?: string
@@ -102,6 +102,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         estado: c.estado || 'pendiente'
       }
     })
+  }
+
+  // Mapear períodos de sueldos a formato Cash Flow
+  const MESES_CASH = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  const mapearSueldos = (periodosS: any[]): CashFlowRow[] => {
+    return periodosS.map(p => ({
+      id: p.id,
+      origen: 'SUELDO' as const,
+      origen_tabla: 'sueldos.periodos',
+      fecha_estimada: p.fecha_fin_periodo,
+      fecha_vencimiento: null,
+      categ: 'SUELD',
+      centro_costo: 'ESTRUCTURA',
+      cuit_proveedor: p.empleado?.cuit_empleado ?? '',
+      nombre_proveedor: p.empleado?.nombre ?? '',
+      detalle: `Sueldo ${MESES_CASH[(p.mes ?? 1) - 1]} ${p.anio} - ${p.empleado?.nombre ?? ''}`,
+      debitos: p.saldo_pendiente ?? p.bruto_calculado ?? 0,
+      creditos: 0,
+      saldo_cta_cte: 0,
+      estado: p.estado ?? 'proyectado',
+    }))
   }
 
   // Mapear anticipos a formato Cash Flow
@@ -241,24 +262,39 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin anticipos
       }
 
-      // 4. Mapear todas las fuentes a formato unificado
+      // 4. Cargar períodos de sueldos (desde Feb 2026, no históricos)
+      const { data: periodosSueldos, error: errorSueldos } = await supabase
+        .schema('sueldos')
+        .from('periodos')
+        .select('*, empleado:empleados(id, nombre, cuit_empleado)')
+        .gte('fecha_inicio_periodo', '2026-02-01')
+        .neq('estado', 'historico')
+        .order('fecha_fin_periodo', { ascending: true })
+
+      if (errorSueldos) {
+        console.error('Error cargando sueldos:', errorSueldos)
+        // No es crítico, continuamos sin sueldos
+      }
+
+      // 5. Mapear todas las fuentes a formato unificado
       const filasArca = mapearFacturasArca(facturasArca || [])
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
       const filasAnticipos = mapearAnticipos(anticipos || [])
+      const filasSueldos = mapearSueldos(periodosSueldos || [])
 
-      // 5. Combinar y ordenar por fecha_estimada
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos]
+      // 6. Combinar y ordenar por fecha_estimada
+      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
-      // 6. Aplicar filtros
+      // 7. Aplicar filtros
       const filasFiltradas = aplicarFiltros(todasLasFilas, filtros)
 
-      // 7. Calcular saldos acumulativos
+      // 8. Calcular saldos acumulativos
       const filasConSaldo = calcularSaldosAcumulativos(filasFiltradas)
 
       setData(filasConSaldo)
 
-      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos = ${filasConSaldo.length} total`)
+      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos + ${filasSueldos.length} Sueldos = ${filasConSaldo.length} total`)
 
     } catch (error) {
       console.error('Error en useMultiCashFlowData:', error)
@@ -280,9 +316,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     id: string,
     campo: string,
     valor: any,
-    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO',
+    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO',
     egresoId?: string
   ): Promise<boolean> => {
+    // Sueldos son de solo lectura en Cash Flow (se gestionan en Tab Sueldos)
+    if (origen === 'SUELDO') return false
     try {
       // Preparar objeto de actualización
       let updateData: any = { [campo]: valor }
