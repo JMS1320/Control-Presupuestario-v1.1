@@ -9440,3 +9440,96 @@ Archivos de referencia en el repo: `20260223_destete_transcripcionJMS.csv`
 
 **📅 Fecha implementación:** 2026-03-04
 **📍 Documentación completa:** Ver `DISEÑO_TERNEROS.md` en el repositorio
+
+---
+
+---
+
+## 🐄 SESIÓN 2026-03-04 (continuación) — Ganancias terneros + Fix destete
+
+### 📋 Resumen sesión
+
+Esta sesión completó el módulo terneros (ganancias) y corrigió el flujo de cierre de destete en el módulo ganadero.
+
+---
+
+### ✅ 1. Columnas de ganancia en Tab Terneros
+
+**Archivo:** `components/tab-terneros.tsx`
+**Commit:** `9b5a5c2`
+
+Nuevas columnas en la tabla principal:
+
+| Columna | Descripción |
+|---------|-------------|
+| **Gan. últ. 2** | kg/día entre las últimas 2 pesadas. ▲ verde si acelera vs p→p, ▼ rojo si desacelera |
+| **Gan. p→p** | kg/día de primera a última pesada (punta a punta) |
+
+Tabla ordenada por `Gan. últ. 2` descendente (nulos al final).
+
+**Tabla pivot de ganancias** en modal historial: aparece solo con ≥2 fechas distintas. Columnas: un par de fechas consecutivas con días entre ellas. Indicadores ▲▼ por período vs período anterior. Filas de promedio por sexo al pie.
+
+**Requisito:** Estas columnas muestran "—" si el ternero tiene solo 1 pesada. Se necesitan ≥2 pesadas para ver las ganancias.
+
+---
+
+### ✅ 2. Archivos Excel de pesadas ficticias para testing
+
+Creados con Python (openpyxl) desde plantilla con caravanas reales:
+
+| Archivo | Fecha | Días desde anterior | Ganancia prom. |
+|---------|-------|---------------------|----------------|
+| `Pesadas_ficticias_25-03-2026.xlsx` | 25/03/2026 | +30 días | 0.488 kg/día (6 animales con baja) |
+| `Pesadas_ficticias_25-04-2026.xlsx` | 25/04/2026 | +31 días | 0.491 kg/día (5 animales distintos con baja) |
+
+Estos archivos están en el root del repo y sirven para probar el flujo completo de pesadas, la tabla pivot de ganancias y los indicadores ▲▼.
+
+**Commit:** `7e2e19a` (junto con actualización de DISEÑO_TERNEROS.md)
+
+---
+
+### ✅ 3. Fix flujo cierre de destete — `vista-sector-productivo.tsx`
+
+**Commit:** `87b6b3c`
+
+#### Problema encontrado
+
+La orden planificada del 23/02/2026 (Sanidad al Destete, labores: Señal + Caravana Oficial + Pesada + Destete Fin) fue creada **sin seleccionar ciclo de cría**. Por eso `ciclos_cria.fecha_destete` quedó NULL.
+
+**Punto crítico:** El cierre del ciclo (`fecha_destete`, `terneros_destetados`, `orden_destete_id`) ocurre al **GUARDAR** la orden (crear/editar), NO al ejecutarla. El botón "Ejecutar" solo marca la orden como ejecutada y consume insumos del stock.
+
+#### Problemas del UI previo (sección Destete)
+
+1. **Select de ciclo único** → no se podía cerrar Vaca + Vaquillona en la misma orden
+2. **Campo "Terneros Destetados" manual** → sin referencia al total de cabezas de la orden
+3. **Checkbox "carga retrospectiva"** → solo afectaba movimiento de vacías en tacto; para insumos no hacía nada
+
+#### Cambios implementados
+
+**Multi-ciclo:** Select reemplazado por checkboxes múltiples. Ahora se pueden seleccionar Vaca 2024 + Vaquillona Preñada 2024 simultáneamente. Al guardar, ambos ciclos reciben `fecha_destete` + `terneros_destetados` + `orden_destete_id`.
+
+**Auto-calcular terneros destetados:** Botón "usar total cabezas (N)" que copia la suma de cabezas de la orden al campo.
+
+**Carga retrospectiva realmente funcional:** El flag `cargaRetrospectiva` ahora también previene la creación de movimientos de insumos al guardar. Útil cuando la orden se carga tiempo después de que ocurrió (insumos ya consumidos, no reducir stock).
+
+#### Estado de ciclos_cria al finalizar la sesión
+
+Los 4 ciclos abiertos siguen con `fecha_destete = NULL`. El usuario debe:
+1. Editar la orden del 23/02/2026 en la UI
+2. Marcar checkboxes Vaca 2024 + Vaquillona Preñada 2024
+3. Click "usar total cabezas (189)"
+4. Guardar → ambos ciclos quedan cerrados
+5. Click Ejecutar para marcar la orden como ejecutada
+
+---
+
+### ⚠️ Pendiente para próxima sesión de ganadero
+
+- **Confirmar el destete en la UI** siguiendo los pasos del punto anterior
+- **Cargar las pesadas ficticias** (`25-03-2026` y `25-04-2026`) para ver las columnas de ganancia funcionando
+- **Confirmar si fecha_destete debe propagarse a `productivo.terneros`** (actualmente el cierre de ciclo solo actualiza `ciclos_cria`, no los registros individuales de terneros)
+
+---
+
+**📅 Fecha:** 2026-03-04
+**🔀 Branch:** `desarrollo` — push realizado, pendiente merge a main
