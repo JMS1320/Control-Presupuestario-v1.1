@@ -2121,6 +2121,7 @@ function SubTabOrdenesAplicacion() {
   const [ternerosNacidos, setTernerosNacidos] = useState('')
   // Destete
   const [ternerosDestetados, setTernerosDestetados] = useState('')
+  const [ciclosDestetadosSeleccionados, setCiclosDestetadosSeleccionados] = useState<string[]>([])
   // Retrospectiva
   const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
 
@@ -2223,6 +2224,7 @@ function SubTabOrdenesAplicacion() {
     setCaravanasVacias('')
     setTernerosNacidos('')
     setTernerosDestetados('')
+    setCiclosDestetadosSeleccionados([])
     setCargaRetrospectiva(false)
   }
 
@@ -2373,23 +2375,34 @@ function SubTabOrdenesAplicacion() {
           : laborEspecialDetectada === 'paricion' ? 'orden_paricion_id'
           : laborEspecialDetectada === 'destete' ? 'orden_destete_id' : null
         if (campo) {
-          supabase.schema('productivo').from('ciclos_cria')
-            .select('id, cabezas_prenadas, cabezas_vacias, terneros_nacidos, terneros_destetados')
-            .eq(campo, orden.id)
-            .single()
-            .then(({ data: ciclo }) => {
-              if (ciclo) {
-                setCicloSeleccionado(ciclo.id)
-                if (laborEspecialDetectada === 'tacto') {
-                  setCabezasPrenadas(ciclo.cabezas_prenadas != null ? String(ciclo.cabezas_prenadas) : '')
-                  setCabezasVacias(ciclo.cabezas_vacias != null ? String(ciclo.cabezas_vacias) : '')
-                } else if (laborEspecialDetectada === 'paricion') {
-                  setTernerosNacidos(ciclo.terneros_nacidos != null ? String(ciclo.terneros_nacidos) : '')
-                } else if (laborEspecialDetectada === 'destete') {
-                  setTernerosDestetados(ciclo.terneros_destetados != null ? String(ciclo.terneros_destetados) : '')
+          if (laborEspecialDetectada === 'destete') {
+            // Destete puede tener múltiples ciclos vinculados a la misma orden
+            supabase.schema('productivo').from('ciclos_cria')
+              .select('id, terneros_destetados')
+              .eq('orden_destete_id', orden.id)
+              .then(({ data: ciclos }) => {
+                if (ciclos && ciclos.length > 0) {
+                  setCiclosDestetadosSeleccionados(ciclos.map(c => c.id))
+                  setTernerosDestetados(ciclos[0].terneros_destetados != null ? String(ciclos[0].terneros_destetados) : '')
                 }
-              }
-            })
+              })
+          } else {
+            supabase.schema('productivo').from('ciclos_cria')
+              .select('id, cabezas_prenadas, cabezas_vacias, terneros_nacidos, terneros_destetados')
+              .eq(campo, orden.id)
+              .single()
+              .then(({ data: ciclo }) => {
+                if (ciclo) {
+                  setCicloSeleccionado(ciclo.id)
+                  if (laborEspecialDetectada === 'tacto') {
+                    setCabezasPrenadas(ciclo.cabezas_prenadas != null ? String(ciclo.cabezas_prenadas) : '')
+                    setCabezasVacias(ciclo.cabezas_vacias != null ? String(ciclo.cabezas_vacias) : '')
+                  } else if (laborEspecialDetectada === 'paricion') {
+                    setTernerosNacidos(ciclo.terneros_nacidos != null ? String(ciclo.terneros_nacidos) : '')
+                  }
+                }
+              })
+          }
         }
       })
     }
@@ -2673,7 +2686,8 @@ function SubTabOrdenesAplicacion() {
       }
 
       // Crear movimientos de uso (solo en creacion, en edicion los movimientos previos quedan)
-      if (!ordenEditandoId && lineasData.length > 0) {
+      // Si es carga retrospectiva, no generar movimientos de insumos
+      if (!ordenEditandoId && lineasData.length > 0 && !cargaRetrospectiva) {
         const movimientosUso = lineasData
           .filter(l => l.insumo_stock_id)
           .map(l => ({
@@ -2774,15 +2788,17 @@ function SubTabOrdenesAplicacion() {
           toast.success(`Paricion registrada: ${ternerosNacidos} terneros nacidos`)
         }
 
-        if (laborEspecial === 'destete' && cicloSeleccionado) {
-          await supabase.schema('productivo').from('ciclos_cria')
-            .update({
-              fecha_destete: fecha,
-              terneros_destetados: parseInt(ternerosDestetados) || 0,
-              orden_destete_id: ordenId
-            })
-            .eq('id', cicloSeleccionado)
-          toast.success(`Destete registrado: ${ternerosDestetados} terneros destetados`)
+        if (laborEspecial === 'destete' && ciclosDestetadosSeleccionados.length > 0) {
+          for (const cicloId of ciclosDestetadosSeleccionados) {
+            await supabase.schema('productivo').from('ciclos_cria')
+              .update({
+                fecha_destete: fecha,
+                terneros_destetados: parseInt(ternerosDestetados) || 0,
+                orden_destete_id: ordenId
+              })
+              .eq('id', cicloId)
+          }
+          toast.success(`Destete registrado: ${ternerosDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
         }
       }
 
@@ -3150,20 +3166,47 @@ function SubTabOrdenesAplicacion() {
               {laborEspecial === 'destete' && (
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-sm">Campaña / Ciclo</Label>
-                    <Select value={cicloSeleccionado} onValueChange={setCicloSeleccionado}>
-                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seleccione ciclo..." /></SelectTrigger>
-                      <SelectContent>
+                    <Label className="text-sm">
+                      Campaña / Ciclo{' '}
+                      <span className="text-xs font-normal text-muted-foreground">(puede seleccionar varios)</span>
+                    </Label>
+                    {ciclosAbiertos.length === 0 ? (
+                      <p className="text-xs text-amber-600 mt-1">No hay ciclos disponibles (requieren tacto registrado sin destete)</p>
+                    ) : (
+                      <div className="space-y-1 mt-1 border rounded p-2 bg-white">
                         {ciclosAbiertos.map(c => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.anio_servicio} - {c.rodeo}
-                          </SelectItem>
+                          <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5">
+                            <input
+                              type="checkbox"
+                              className="rounded"
+                              checked={ciclosDestetadosSeleccionados.includes(c.id)}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setCiclosDestetadosSeleccionados(prev => [...prev, c.id])
+                                } else {
+                                  setCiclosDestetadosSeleccionados(prev => prev.filter(id => id !== c.id))
+                                }
+                              }}
+                            />
+                            <span>{c.anio_servicio} — {c.rodeo}</span>
+                          </label>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
                   </div>
                   <div>
-                    <Label className="text-sm">Terneros Destetados</Label>
+                    <Label className="text-sm flex items-center gap-2">
+                      Terneros Destetados (total)
+                      {totalCabezas > 0 && String(totalCabezas) !== ternerosDestetados && (
+                        <button
+                          type="button"
+                          onClick={() => setTernerosDestetados(String(totalCabezas))}
+                          className="text-xs text-blue-500 underline font-normal"
+                        >
+                          usar total cabezas ({totalCabezas})
+                        </button>
+                      )}
+                    </Label>
                     <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
                       onChange={e => setTernerosDestetados(e.target.value)} />
                   </div>
