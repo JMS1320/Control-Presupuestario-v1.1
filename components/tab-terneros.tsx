@@ -107,6 +107,36 @@ function formatPeso(kg: number): string {
   return `${kg.toFixed(1)} kg`
 }
 
+function formatKg(kg: number): string {
+  return kg.toLocaleString('es-AR', { maximumFractionDigits: 0 }) + ' kg'
+}
+
+interface SummaryStats {
+  total: number
+  conPesada: number
+  totalKg: number
+  promedioKg: number
+  totalEstimadoKg: number
+  promedioEstimadoKg: number
+}
+
+function calcSummary(lista: Ternero[], gananciaDiaria: number): SummaryStats {
+  const conPesada = lista.filter(t => t.pesadas_terneros.length > 0)
+  const ultimas = conPesada
+    .map(t => getUltimaPesada(t.pesadas_terneros))
+    .filter((p): p is Pesada => p !== null)
+  const totalKg = ultimas.reduce((sum, p) => sum + p.peso_kg, 0)
+  const promedioKg = ultimas.length > 0 ? totalKg / ultimas.length : 0
+
+  const estimados = conPesada
+    .map(t => getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria))
+    .filter((p): p is number => p !== null)
+  const totalEstimadoKg = estimados.reduce((sum, p) => sum + p, 0)
+  const promedioEstimadoKg = estimados.length > 0 ? totalEstimadoKg / estimados.length : 0
+
+  return { total: lista.length, conPesada: conPesada.length, totalKg, promedioKg, totalEstimadoKg, promedioEstimadoKg }
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export function TabTerneros() {
@@ -400,6 +430,54 @@ export function TabTerneros() {
           <span className="text-xs text-green-600">— usado para estimar peso actual de cada ternero</span>
         </div>
       )}
+
+      {/* ── Tarjetas de resumen por sexo ── */}
+      {conPesadas.length > 0 && (() => {
+        const statsMachos = calcSummary(machos, gananciaDiaria)
+        const statsHembras = calcSummary(hembras, gananciaDiaria)
+        const statsTotal = calcSummary(terneros, gananciaDiaria)
+        const grupos = [
+          { key: 'M', label: '♂ Machos',     stats: statsMachos,  bg: 'bg-sky-50',   border: 'border-sky-200',   title: 'text-sky-800',   est: 'text-sky-700'  },
+          { key: 'H', label: '♀ Hembras',    stats: statsHembras, bg: 'bg-pink-50',  border: 'border-pink-200',  title: 'text-pink-800',  est: 'text-pink-700' },
+          { key: 'T', label: 'Total Rodeo',  stats: statsTotal,   bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', est: 'text-green-700'},
+        ]
+        return (
+          <div className="grid grid-cols-3 gap-3">
+            {grupos.map(({ key, label, stats, bg, border, title, est }) => (
+              <div key={key} className={`rounded-lg border ${border} ${bg} px-4 py-3`}>
+                <div className={`text-sm font-semibold ${title} mb-2`}>{label}</div>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between text-gray-500">
+                    <span>Con pesada</span>
+                    <span className="font-medium text-gray-700">{stats.conPesada} / {stats.total}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Total kg</span>
+                    <span className="font-bold text-gray-800">{formatKg(stats.totalKg)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Promedio</span>
+                    <span className="font-medium text-gray-700">{stats.promedioKg.toFixed(1)} kg</span>
+                  </div>
+                  {gananciaDiaria > 0 && (
+                    <>
+                      <div className="border-t border-gray-200 my-1" />
+                      <div className={`flex justify-between ${est}`}>
+                        <span>Est. hoy total</span>
+                        <span className="font-bold">{formatKg(stats.totalEstimadoKg)}</span>
+                      </div>
+                      <div className={`flex justify-between ${est}`}>
+                        <span>Est. hoy prom.</span>
+                        <span className="font-medium">{stats.promedioEstimadoKg.toFixed(1)} kg</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── Tabla de terneros ── */}
       <Card>
@@ -937,6 +1015,53 @@ export function TabTerneros() {
                       </TableRow>
                     ))
                   }
+
+                  {/* ── Filas de totales por grupo ── */}
+                  {todasFechas.length > 0 && (() => {
+                    const grupos = [
+                      { label: '♂ Total',    lista: machos,   cls: 'text-sky-700',   bold: true },
+                      { label: '♂ Promedio', lista: machos,   cls: 'text-sky-600',   bold: false },
+                      { label: '♀ Total',    lista: hembras,  cls: 'text-pink-700',  bold: true },
+                      { label: '♀ Promedio', lista: hembras,  cls: 'text-pink-600',  bold: false },
+                      { label: '🐄 Total',   lista: terneros, cls: 'text-green-700', bold: true },
+                      { label: '🐄 Prom.',   lista: terneros, cls: 'text-green-600', bold: false },
+                    ]
+                    return (
+                      <>
+                        {/* Separador */}
+                        <TableRow>
+                          <TableCell colSpan={3 + todasFechas.length} className="p-0 h-0">
+                            <div className="border-t-2 border-gray-300" />
+                          </TableCell>
+                        </TableRow>
+                        {grupos.map(({ label, lista, cls, bold }) => (
+                          <TableRow key={label} className="bg-gray-50">
+                            <TableCell colSpan={3} className={`text-xs font-semibold py-1 ${cls}`}>
+                              {label}
+                            </TableCell>
+                            {todasFechas.map(f => {
+                              const conFecha = lista.filter(t => t.pesadas_terneros.some(p => p.fecha === f))
+                              if (conFecha.length === 0) {
+                                return <TableCell key={f} className="text-center text-xs text-gray-300 py-1">—</TableCell>
+                              }
+                              const suma = conFecha.reduce((s, t) => {
+                                const p = t.pesadas_terneros.find(pp => pp.fecha === f)
+                                return s + (p?.peso_kg ?? 0)
+                              }, 0)
+                              const valor = bold ? suma : suma / conFecha.length
+                              return (
+                                <TableCell key={f} className={`text-center text-xs py-1 ${bold ? 'font-bold' : 'font-medium'} ${cls}`}>
+                                  {bold
+                                    ? valor.toLocaleString('es-AR', { maximumFractionDigits: 0 })
+                                    : valor.toFixed(1)}
+                                </TableCell>
+                              )
+                            })}
+                          </TableRow>
+                        ))}
+                      </>
+                    )
+                  })()}
                 </TableBody>
               </Table>
               <p className="text-xs text-gray-400 text-right mt-2 pr-2">
