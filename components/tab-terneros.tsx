@@ -6,9 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Upload, CheckCircle2, AlertCircle, Baby } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+
+interface Pesada {
+  id: string
+  fecha: string
+  peso_kg: number
+}
 
 interface Ternero {
   id: string
@@ -21,9 +31,17 @@ interface Ternero {
   observaciones: string | null
   activo: boolean
   created_at: string
+  pesadas_terneros: Pesada[]
 }
 
-interface ResultadoImport {
+interface PesadaSinVincular {
+  id: string
+  caravana_idv: string | null
+  fecha: string
+  peso_kg: number
+}
+
+interface ResultadoImportTerneros {
   procesados: number
   insertados: number
   omitidos: number
@@ -31,6 +49,30 @@ interface ResultadoImport {
   duplicados_en_bd: string[]
   errores: string[]
 }
+
+interface AnalisisPesadas {
+  fecha: string
+  sin_idv: number
+  total_con_idv: number
+  ok: Array<{ idv: string; caravana_oficial: string; ternero_id: string; peso: number }>
+  no_encontradas: Array<{ idv: string; caravana_oficial: string; peso: number }>
+  duplicadas: Array<{ idv: string; caravana_oficial: string; peso: number; terneros: Pick<Ternero, 'id' | 'caravana_oficial' | 'caravana_interna' | 'sexo' | 'pelo'>[] }>
+}
+
+interface DecisionNoEncontrada {
+  caravana_idv: string
+  caravana_oficial: string
+  peso: number
+  accion: 'sin_vincular' | 'crear_nuevo' | 'ignorar'
+}
+
+interface DecisionDuplicada {
+  caravana_idv: string
+  peso: number
+  ternero_id_elegido: string
+}
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const PELO_LABEL: Record<string, string> = {
   'Colorado': '🟠 Colorado',
@@ -40,25 +82,84 @@ const PELO_LABEL: Record<string, string> = {
   'Otros': 'Otros',
 }
 
+const DEFAULT_GANANCIA_KG_DIA = 0.8
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getUltimaPesada(pesadas: Pesada[]): Pesada | null {
+  if (!pesadas.length) return null
+  return [...pesadas].sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+}
+
+function getPesoEstimadoHoy(pesadas: Pesada[], gananciaDiaria: number): number | null {
+  const ultima = getUltimaPesada(pesadas)
+  if (!ultima) return null
+  const diasDesde = Math.floor((Date.now() - new Date(ultima.fecha).getTime()) / 86400000)
+  return ultima.peso_kg + gananciaDiaria * diasDesde
+}
+
+function formatFecha(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y.slice(2)}`
+}
+
+function formatPeso(kg: number): string {
+  return `${kg.toFixed(1)} kg`
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
 export function TabTerneros() {
+  // Datos
   const [terneros, setTerneros] = useState<Ternero[]>([])
+  const [pesadasSinVincular, setPesadasSinVincular] = useState<PesadaSinVincular[]>([])
   const [cargando, setCargando] = useState(true)
-  const [importando, setImportando] = useState(false)
-  const [modalResultado, setModalResultado] = useState(false)
-  const [resultado, setResultado] = useState<ResultadoImport | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Estimación
+  const [gananciaDiaria, setGananciaDiaria] = useState(DEFAULT_GANANCIA_KG_DIA)
+
+  // Import terneros
+  const [importandoTerneros, setImportandoTerneros] = useState(false)
+  const [modalResultadoT, setModalResultadoT] = useState(false)
+  const [resultadoT, setResultadoT] = useState<ResultadoImportTerneros | null>(null)
+  const inputTernerosRef = useRef<HTMLInputElement>(null)
+
+  // Import pesadas
+  const [importandoPesadas, setImportandoPesadas] = useState(false)
+  const [modalPesadas, setModalPesadas] = useState(false)
+  const [pasoPesadas, setPasoPesadas] = useState<1 | 2 | 3>(1)
+  const [analisis, setAnalisis] = useState<AnalisisPesadas | null>(null)
+  const [tipoNoEncontradas, setTipoNoEncontradas] = useState<'sin_vincular' | 'crear_nuevo'>('sin_vincular')
+  const [creacionesSeleccionadas, setCreacionesSeleccionadas] = useState<Set<string>>(new Set())
+  const [decisionesDuplicadas, setDecisionesDuplicadas] = useState<Record<string, string>>({})
+  const inputPesadasRef = useRef<HTMLInputElement>(null)
+
+  // Historial
+  const [modalHistorial, setModalHistorial] = useState(false)
+
+  // ─── Carga de datos ──────────────────────────────────────────────────────
 
   const cargar = async () => {
     setCargando(true)
     try {
-      const { data, error } = await supabase
-        .schema('productivo')
-        .from('terneros')
-        .select('*')
-        .eq('activo', true)
-        .order('caravana_oficial', { ascending: true })
-      if (error) throw error
-      setTerneros(data ?? [])
+      const [resTerneros, resSinVincular] = await Promise.all([
+        supabase
+          .schema('productivo')
+          .from('terneros')
+          .select('*, pesadas_terneros(id, fecha, peso_kg)')
+          .eq('activo', true)
+          .order('caravana_oficial', { ascending: true }),
+        supabase
+          .schema('productivo')
+          .from('pesadas_terneros')
+          .select('id, caravana_idv, fecha, peso_kg')
+          .is('ternero_id', null)
+          .order('fecha', { ascending: false }),
+      ])
+
+      if (resTerneros.error) throw resTerneros.error
+      setTerneros(resTerneros.data ?? [])
+      setPesadasSinVincular(resSinVincular.data ?? [])
     } catch (err: any) {
       toast.error('Error cargando terneros: ' + err.message)
     } finally {
@@ -68,33 +169,115 @@ export function TabTerneros() {
 
   useEffect(() => { cargar() }, [])
 
-  const handleArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── Import terneros ─────────────────────────────────────────────────────
+
+  const handleArchivoTerneros = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-
-    setImportando(true)
+    setImportandoTerneros(true)
     try {
       const fd = new FormData()
       fd.append('file', file)
       const res = await fetch('/api/import-terneros', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error en importación')
-      setResultado(data)
-      setModalResultado(true)
+      setResultadoT(data)
+      setModalResultadoT(true)
       await cargar()
     } catch (err: any) {
       toast.error('Error importando: ' + err.message)
     } finally {
-      setImportando(false)
+      setImportandoTerneros(false)
     }
   }
+
+  // ─── Import pesadas ──────────────────────────────────────────────────────
+
+  const handleArchivoPesadas = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImportandoPesadas(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/import-pesadas?accion=analizar', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Error al analizar archivo')
+
+      setAnalisis(data)
+      setPasoPesadas(1)
+      setTipoNoEncontradas('sin_vincular')
+      setCreacionesSeleccionadas(new Set(data.no_encontradas.map((r: any) => r.idv)))
+      setDecisionesDuplicadas(
+        Object.fromEntries(data.duplicadas.map((d: any) => [d.idv, '']))
+      )
+      setModalPesadas(true)
+    } catch (err: any) {
+      toast.error('Error analizando pesadas: ' + err.message)
+    } finally {
+      setImportandoPesadas(false)
+    }
+  }
+
+  const confirmarPesadas = async () => {
+    if (!analisis) return
+    setImportandoPesadas(true)
+    try {
+      // Construir decisiones no encontradas
+      const noEncontradasDecisiones: DecisionNoEncontrada[] = analisis.no_encontradas.map(r => ({
+        caravana_idv: r.idv,
+        caravana_oficial: r.caravana_oficial,
+        peso: r.peso,
+        accion: tipoNoEncontradas === 'crear_nuevo' && creacionesSeleccionadas.has(r.idv)
+          ? 'crear_nuevo'
+          : 'sin_vincular',
+      }))
+
+      // Construir decisiones duplicadas
+      const duplicadasDecisiones: DecisionDuplicada[] = analisis.duplicadas
+        .filter(d => decisionesDuplicadas[d.idv])
+        .map(d => ({
+          caravana_idv: d.idv,
+          peso: d.peso,
+          ternero_id_elegido: decisionesDuplicadas[d.idv],
+        }))
+
+      const body = {
+        fecha: analisis.fecha,
+        rows_ok: analisis.ok,
+        no_encontradas_decisiones: noEncontradasDecisiones,
+        duplicadas_decisiones: duplicadasDecisiones,
+      }
+
+      const res = await fetch('/api/import-pesadas?accion=confirmar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Error al confirmar')
+
+      toast.success(`✅ ${data.insertadas} pesadas importadas`)
+      if (data.errores?.length) toast.error(`${data.errores.length} errores técnicos`)
+      setModalPesadas(false)
+      await cargar()
+    } catch (err: any) {
+      toast.error('Error confirmando pesadas: ' + err.message)
+    } finally {
+      setImportandoPesadas(false)
+    }
+  }
+
+  // ─── Computados ──────────────────────────────────────────────────────────
 
   const machos = terneros.filter(t => t.sexo === 'Macho')
   const hembras = terneros.filter(t => t.sexo === 'Hembra')
   const toritos = terneros.filter(t => t.es_torito)
+  const conPesadas = terneros.filter(t => t.pesadas_terneros.length > 0)
 
-  // Detectar IDs con caravana duplicada (interna u oficial)
+  // Detección de caravanas duplicadas en BD
   const idsConDuplicado = new Set<string>()
   const conteoInternas = new Map<string, string[]>()
   const conteoOficiales = new Map<string, string[]>()
@@ -113,11 +296,24 @@ export function TabTerneros() {
   conteoInternas.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
   conteoOficiales.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
 
+  // Pivot table para historial: fechas únicas ordenadas
+  const todasFechas = [...new Set(
+    terneros.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
+  )].sort()
+
+  // ─── Paso actual del modal pesadas ──────────────────────────────────────
+
+  const hayConflictos = analisis && (analisis.no_encontradas.length > 0 || analisis.duplicadas.length > 0)
+  const duplicadasSinResolver = analisis?.duplicadas.filter(d => !decisionesDuplicadas[d.idv]) ?? []
+
+  // ─── Render ──────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-4 mt-4">
-      {/* Header con contadores y botón importar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+
+      {/* ── Header: badges + botones ── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">
             <Baby className="h-3 w-3 mr-1" />
             {terneros.length} terneros
@@ -133,37 +329,82 @@ export function TabTerneros() {
               🐂 {toritos.length} toritos
             </Badge>
           )}
+          {conPesadas.length > 0 && (
+            <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
+              <Scale className="h-3 w-3 mr-1" />
+              {conPesadas.length} con pesada
+            </Badge>
+          )}
           {idsConDuplicado.size > 0 && (
             <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
-              ⚠️ {idsConDuplicado.size} con caravana duplicada
+              ⚠️ {idsConDuplicado.size} caravana dup.
             </Badge>
           )}
         </div>
-        <div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={handleArchivo}
-          />
+
+        <div className="flex items-center gap-2">
+          {/* Botón historial global (solo si hay fechas de pesada) */}
+          {todasFechas.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModalHistorial(true)}
+              className="flex items-center gap-1 border-blue-300 text-blue-700"
+            >
+              <History className="h-4 w-4" />
+              Historial pesadas
+            </Button>
+          )}
+
+          {/* Import pesadas */}
+          <input ref={inputPesadasRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleArchivoPesadas} />
           <Button
-            onClick={() => inputRef.current?.click()}
-            disabled={importando}
-            className="bg-green-700 hover:bg-green-800 flex items-center gap-2"
+            variant="outline"
+            onClick={() => inputPesadasRef.current?.click()}
+            disabled={importandoPesadas}
+            className="flex items-center gap-1 border-green-600 text-green-700 hover:bg-green-50"
+          >
+            <Scale className="h-4 w-4" />
+            {importandoPesadas ? 'Analizando...' : 'Importar Pesadas'}
+          </Button>
+
+          {/* Import terneros */}
+          <input ref={inputTernerosRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleArchivoTerneros} />
+          <Button
+            onClick={() => inputTernerosRef.current?.click()}
+            disabled={importandoTerneros}
+            className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
           >
             <Upload className="h-4 w-4" />
-            {importando ? 'Importando...' : 'Importar Terneros (Excel)'}
+            {importandoTerneros ? 'Importando...' : 'Importar Terneros'}
           </Button>
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* ── Input ganancia estimada ── */}
+      {conPesadas.length > 0 && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+          <Label className="text-sm text-green-800 whitespace-nowrap">Ganancia diaria estimada:</Label>
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              max="5"
+              value={gananciaDiaria}
+              onChange={e => setGananciaDiaria(parseFloat(e.target.value) || 0)}
+              className="w-20 h-7 text-sm text-center"
+            />
+            <span className="text-sm text-green-700">kg/día</span>
+          </div>
+          <span className="text-xs text-green-600">— usado para estimar peso actual de cada ternero</span>
+        </div>
+      )}
+
+      {/* ── Tabla de terneros ── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-gray-600">
-            Registro de Terneros
-          </CardTitle>
+          <CardTitle className="text-sm font-medium text-gray-600">Registro de Terneros</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {cargando ? (
@@ -188,41 +429,56 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Sexo</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Torito</TableHead>
+                    <TableHead className="text-xs">Últ. Pesada</TableHead>
+                    <TableHead className="text-xs">Peso hoy est.</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {terneros.map(t => {
                     const esDup = idsConDuplicado.has(t.id)
+                    const ultima = getUltimaPesada(t.pesadas_terneros)
+                    const pesoHoy = getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
                     return (
-                    <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
-                      <TableCell className="w-6 pr-0">
-                        {esDup && <span title="Caravana duplicada">⚠️</span>}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {t.caravana_interna ?? <span className="text-gray-400">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        {t.sexo === 'Macho'
-                          ? <span className="text-sky-700 font-medium">♂ M</span>
-                          : t.sexo === 'Hembra'
-                          ? <span className="text-pink-700 font-medium">♀ H</span>
-                          : <span className="text-gray-400">—</span>}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂 Torito</Badge>}
-                      </TableCell>
-                      <TableCell className="text-xs text-gray-500 max-w-[200px] truncate">
-                        {t.observaciones ?? ''}
-                      </TableCell>
-                    </TableRow>
-                  )})}
+                      <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
+                        <TableCell className="w-6 pr-0">
+                          {esDup && <span title="Caravana duplicada">⚠️</span>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {t.caravana_interna ?? <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {t.sexo === 'Macho'
+                            ? <span className="text-sky-700 font-medium">♂ M</span>
+                            : t.sexo === 'Hembra'
+                            ? <span className="text-pink-700 font-medium">♀ H</span>
+                            : <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {ultima
+                            ? <span className="text-green-700">{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
+                            : <span className="text-gray-400">sin pesada</span>}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {pesoHoy !== null
+                            ? <span className="text-blue-700 font-medium">{formatPeso(pesoHoy)}</span>
+                            : <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        <TableCell className="text-xs text-gray-500 max-w-[160px] truncate">
+                          {t.observaciones ?? ''}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -230,95 +486,467 @@ export function TabTerneros() {
         </CardContent>
       </Card>
 
-      {/* Modal resultado importación */}
-      <Dialog open={modalResultado} onOpenChange={setModalResultado}>
+      {/* ── Sección caravanas no coincidentes (pesadas sin vincular) ── */}
+      {pesadasSinVincular.length > 0 && (
+        <Card className="border-amber-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-amber-700 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Caravanas no coincidentes ({pesadasSinVincular.length} pesadas sin ternero vinculado)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-amber-50">
+                    <TableHead className="text-xs">IDV / Caravana</TableHead>
+                    <TableHead className="text-xs">Fecha pesada</TableHead>
+                    <TableHead className="text-xs">Peso</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pesadasSinVincular.map(p => (
+                    <TableRow key={p.id} className="text-sm bg-amber-50/40">
+                      <TableCell className="font-mono text-xs">
+                        {p.caravana_idv ?? <span className="text-gray-400">—</span>}
+                      </TableCell>
+                      <TableCell className="text-xs">{formatFecha(p.fecha)}</TableCell>
+                      <TableCell className="text-xs font-medium">{formatPeso(p.peso_kg)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          Modal: Resultado import terneros
+      ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={modalResultadoT} onOpenChange={setModalResultadoT}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Resultado de importación</DialogTitle>
+            <DialogTitle>Resultado de importación de terneros</DialogTitle>
           </DialogHeader>
-          {resultado && (
+          {resultadoT && (
             <div className="space-y-4">
-              {/* Contadores principales */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-gray-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-gray-700">{resultado.procesados}</div>
+                  <div className="text-2xl font-bold text-gray-700">{resultadoT.procesados}</div>
                   <div className="text-xs text-gray-500">Procesados</div>
                 </div>
                 <div className="bg-green-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-green-700">{resultado.insertados}</div>
+                  <div className="text-2xl font-bold text-green-700">{resultadoT.insertados}</div>
                   <div className="text-xs text-green-600">Insertados</div>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-3 text-center">
-                  <div className="text-2xl font-bold text-amber-700">{resultado.omitidos}</div>
+                  <div className="text-2xl font-bold text-amber-700">{resultadoT.omitidos}</div>
                   <div className="text-xs text-amber-600">Sin caravana</div>
                 </div>
               </div>
 
-              {/* Duplicados en el archivo */}
-              {resultado.duplicados_en_archivo.length > 0 && (
+              {resultadoT.duplicados_en_archivo.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <AlertCircle className="h-4 w-4 text-amber-500" />
                     <span className="text-sm font-medium text-amber-700">
-                      {resultado.duplicados_en_archivo.length} caravana{resultado.duplicados_en_archivo.length > 1 ? 's' : ''} duplicada{resultado.duplicados_en_archivo.length > 1 ? 's' : ''} en el archivo — se insertaron igual
+                      {resultadoT.duplicados_en_archivo.length} duplicados en el archivo — insertados igual
                     </span>
                   </div>
-                  <div className="bg-amber-50 border border-amber-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
-                    {resultado.duplicados_en_archivo.map((e, i) => (
-                      <p key={i} className="text-xs text-amber-800">{e}</p>
-                    ))}
+                  <div className="bg-amber-50 border border-amber-200 rounded p-2 max-h-28 overflow-y-auto space-y-1">
+                    {resultadoT.duplicados_en_archivo.map((e, i) => <p key={i} className="text-xs text-amber-800">{e}</p>)}
                   </div>
                 </div>
               )}
 
-              {/* Duplicados contra BD existente */}
-              {resultado.duplicados_en_bd.length > 0 && (
+              {resultadoT.duplicados_en_bd.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <AlertCircle className="h-4 w-4 text-orange-500" />
                     <span className="text-sm font-medium text-orange-700">
-                      {resultado.duplicados_en_bd.length} caravana{resultado.duplicados_en_bd.length > 1 ? 's' : ''} ya existían en BD — se insertaron igual
+                      {resultadoT.duplicados_en_bd.length} ya existían en BD — insertados igual
                     </span>
                   </div>
-                  <div className="bg-orange-50 border border-orange-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
-                    {resultado.duplicados_en_bd.map((e, i) => (
-                      <p key={i} className="text-xs text-orange-800">{e}</p>
-                    ))}
+                  <div className="bg-orange-50 border border-orange-200 rounded p-2 max-h-28 overflow-y-auto space-y-1">
+                    {resultadoT.duplicados_en_bd.map((e, i) => <p key={i} className="text-xs text-orange-800">{e}</p>)}
                   </div>
                 </div>
               )}
 
-              {/* Errores técnicos */}
-              {resultado.errores.length > 0 && (
+              {resultadoT.errores.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1">
                     <AlertCircle className="h-4 w-4 text-red-500" />
-                    <span className="text-sm font-medium text-red-700">
-                      {resultado.errores.length} error{resultado.errores.length > 1 ? 'es' : ''} técnicos
-                    </span>
+                    <span className="text-sm font-medium text-red-700">{resultadoT.errores.length} errores técnicos</span>
                   </div>
-                  <div className="bg-red-50 border border-red-200 rounded p-2 max-h-32 overflow-y-auto space-y-1">
-                    {resultado.errores.map((e, i) => (
-                      <p key={i} className="text-xs text-red-700">{e}</p>
-                    ))}
+                  <div className="bg-red-50 border border-red-200 rounded p-2 max-h-28 overflow-y-auto space-y-1">
+                    {resultadoT.errores.map((e, i) => <p key={i} className="text-xs text-red-700">{e}</p>)}
                   </div>
                 </div>
               )}
 
-              {resultado.errores.length === 0 && resultado.duplicados_en_archivo.length === 0 && resultado.duplicados_en_bd.length === 0 && (
+              {resultadoT.errores.length === 0 && resultadoT.duplicados_en_archivo.length === 0 && resultadoT.duplicados_en_bd.length === 0 && (
                 <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded p-3">
                   <CheckCircle2 className="h-4 w-4" />
                   <span className="text-sm">Importación completada sin observaciones</span>
                 </div>
               )}
 
-              <Button className="w-full" onClick={() => setModalResultado(false)}>
-                Cerrar
-              </Button>
+              <Button className="w-full" onClick={() => setModalResultadoT(false)}>Cerrar</Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          Modal: Import pesadas (3 pasos)
+      ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={modalPesadas} onOpenChange={v => { if (!importandoPesadas) setModalPesadas(v) }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Scale className="h-4 w-4" />
+              Importar pesadas — Paso {pasoPesadas} de {hayConflictos ? 3 : 2}
+            </DialogTitle>
+          </DialogHeader>
+
+          {analisis && (
+            <div className="space-y-4">
+
+              {/* ── PASO 1: Resumen análisis ── */}
+              {pasoPesadas === 1 && (
+                <>
+                  {/* Fecha detectada */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm font-medium text-blue-800">
+                      Fecha de pesada detectada: <span className="font-bold">{formatFecha(analisis.fecha)}</span>
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Todos los registros de este archivo se importarán con esta fecha como encabezado de columna.
+                    </p>
+                  </div>
+
+                  {/* Contadores */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-green-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-green-700">{analisis.ok.length}</div>
+                      <div className="text-xs text-green-600">Coinciden ✅</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-amber-700">{analisis.no_encontradas.length}</div>
+                      <div className="text-xs text-amber-600">No encontradas</div>
+                    </div>
+                    <div className="bg-orange-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-orange-700">{analisis.duplicadas.length}</div>
+                      <div className="text-xs text-orange-600">Duplicadas en BD</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-gray-500">{analisis.sin_idv}</div>
+                      <div className="text-xs text-gray-400">Sin IDV (ignorar)</div>
+                    </div>
+                  </div>
+
+                  {analisis.ok.length > 0 && analisis.no_encontradas.length === 0 && analisis.duplicadas.length === 0 && (
+                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded p-3 text-green-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="text-sm">Todas las caravanas coinciden. Podés importar directamente.</span>
+                    </div>
+                  )}
+
+                  {(analisis.no_encontradas.length > 0 || analisis.duplicadas.length > 0) && (
+                    <div className="text-sm text-gray-600 bg-yellow-50 border border-yellow-200 rounded p-3">
+                      Hay conflictos que resolver. En el próximo paso elegís qué hacer con cada uno.
+                    </div>
+                  )}
+
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setModalPesadas(false)}>Cancelar</Button>
+                    <Button
+                      onClick={() => setPasoPesadas(hayConflictos ? 2 : 3)}
+                      className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
+                    >
+                      {hayConflictos ? 'Resolver conflictos' : 'Continuar'}
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {/* ── PASO 2: Resolver conflictos ── */}
+              {pasoPesadas === 2 && hayConflictos && (
+                <>
+                  {/* Sección: no encontradas */}
+                  {analisis.no_encontradas.length > 0 && (
+                    <div className="space-y-3">
+                      <h3 className="font-medium text-amber-800 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        {analisis.no_encontradas.length} caravana{analisis.no_encontradas.length > 1 ? 's' : ''} no encontrada{analisis.no_encontradas.length > 1 ? 's' : ''} en el sistema
+                      </h3>
+
+                      <p className="text-sm text-gray-600">¿Qué hacer con estas caravanas?</p>
+
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tipoNoEnc"
+                            checked={tipoNoEncontradas === 'sin_vincular'}
+                            onChange={() => setTipoNoEncontradas('sin_vincular')}
+                          />
+                          <span className="text-sm">Misma cantidad de terneros — almacenar sin vincular</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tipoNoEnc"
+                            checked={tipoNoEncontradas === 'crear_nuevo'}
+                            onChange={() => setTipoNoEncontradas('crear_nuevo')}
+                          />
+                          <span className="text-sm">Hay terneros nuevos — seleccionar cuáles crear</span>
+                        </label>
+                      </div>
+
+                      <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                        {analisis.no_encontradas.map(r => (
+                          <div key={r.idv} className="flex items-center justify-between px-3 py-2 text-sm">
+                            <div className="flex items-center gap-3">
+                              {tipoNoEncontradas === 'crear_nuevo' && (
+                                <input
+                                  type="checkbox"
+                                  checked={creacionesSeleccionadas.has(r.idv)}
+                                  onChange={e => {
+                                    const s = new Set(creacionesSeleccionadas)
+                                    if (e.target.checked) s.add(r.idv)
+                                    else s.delete(r.idv)
+                                    setCreacionesSeleccionadas(s)
+                                  }}
+                                />
+                              )}
+                              <span className="font-mono text-xs">{r.caravana_oficial}</span>
+                            </div>
+                            <span className="text-green-700 font-medium">{formatPeso(r.peso)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {tipoNoEncontradas === 'sin_vincular' && (
+                        <p className="text-xs text-gray-500">
+                          Estas pesadas quedarán en la sección "Caravanas no coincidentes" debajo de la tabla principal.
+                        </p>
+                      )}
+                      {tipoNoEncontradas === 'crear_nuevo' && (
+                        <p className="text-xs text-gray-500">
+                          Los tildados crearán un ternero nuevo (solo caravana oficial). Los destildados se almacenarán sin vincular.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Sección: duplicadas */}
+                  {analisis.duplicadas.length > 0 && (
+                    <div className="space-y-3 mt-4 pt-4 border-t">
+                      <h3 className="font-medium text-orange-800 flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4" />
+                        {analisis.duplicadas.length} caravana{analisis.duplicadas.length > 1 ? 's' : ''} que coincide{analisis.duplicadas.length > 1 ? 'n' : ''} con más de un ternero
+                      </h3>
+                      <div className="space-y-3">
+                        {analisis.duplicadas.map(d => (
+                          <div key={d.idv} className="border border-orange-200 rounded-lg p-3 bg-orange-50 space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="font-mono text-xs font-medium">{d.caravana_oficial}</span>
+                              <span className="text-green-700 font-medium text-sm">{formatPeso(d.peso)}</span>
+                            </div>
+                            <p className="text-xs text-gray-600">¿A cuál ternero asignar la pesada?</p>
+                            <div className="space-y-1">
+                              {d.terneros.map(ter => (
+                                <label key={ter.id} className="flex items-center gap-2 cursor-pointer text-xs">
+                                  <input
+                                    type="radio"
+                                    name={`dup-${d.idv}`}
+                                    value={ter.id}
+                                    checked={decisionesDuplicadas[d.idv] === ter.id}
+                                    onChange={() => setDecisionesDuplicadas(prev => ({ ...prev, [d.idv]: ter.id }))}
+                                  />
+                                  <span>
+                                    Carav. int: <strong>{ter.caravana_interna ?? '—'}</strong>
+                                    {ter.sexo && ` · ${ter.sexo === 'Macho' ? '♂' : '♀'}`}
+                                    {ter.pelo && ` · ${ter.pelo}`}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setPasoPesadas(1)} className="flex items-center gap-1">
+                      <ChevronLeft className="h-4 w-4" /> Atrás
+                    </Button>
+                    <Button
+                      onClick={() => setPasoPesadas(3)}
+                      disabled={duplicadasSinResolver.length > 0}
+                      className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
+                    >
+                      Confirmar →
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {duplicadasSinResolver.length > 0 && (
+                    <p className="text-xs text-red-600 text-center">
+                      Faltan resolver {duplicadasSinResolver.length} caravana{duplicadasSinResolver.length > 1 ? 's' : ''} duplicada{duplicadasSinResolver.length > 1 ? 's' : ''}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* ── PASO 3: Resumen final + confirmar ── */}
+              {pasoPesadas === 3 && (
+                <>
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+                    <h3 className="font-medium text-gray-800 mb-3">Resumen de lo que se va a importar:</h3>
+
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Pesadas directas (coincidencia exacta):</span>
+                      <span className="font-medium text-green-700">{analisis.ok.length}</span>
+                    </div>
+
+                    {analisis.no_encontradas.length > 0 && tipoNoEncontradas === 'sin_vincular' && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Almacenadas sin vincular:</span>
+                        <span className="font-medium text-amber-700">{analisis.no_encontradas.length}</span>
+                      </div>
+                    )}
+
+                    {analisis.no_encontradas.length > 0 && tipoNoEncontradas === 'crear_nuevo' && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Terneros nuevos a crear:</span>
+                          <span className="font-medium text-blue-700">{creacionesSeleccionadas.size}</span>
+                        </div>
+                        {analisis.no_encontradas.length - creacionesSeleccionadas.size > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Sin vincular (destildados):</span>
+                            <span className="font-medium text-amber-700">
+                              {analisis.no_encontradas.length - creacionesSeleccionadas.size}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {analisis.duplicadas.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Duplicadas resueltas:</span>
+                        <span className="font-medium text-orange-700">
+                          {Object.values(decisionesDuplicadas).filter(Boolean).length}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between border-t pt-2 mt-2">
+                      <span className="font-medium text-gray-700">Total a insertar:</span>
+                      <span className="font-bold text-gray-900">
+                        {analisis.ok.length + analisis.no_encontradas.length + Object.values(decisionesDuplicadas).filter(Boolean).length}
+                      </span>
+                    </div>
+
+                    {analisis.sin_idv > 0 && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        {analisis.sin_idv} fila{analisis.sin_idv > 1 ? 's' : ''} sin IDV ignorada{analisis.sin_idv > 1 ? 's' : ''} (error del dispositivo lector).
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setPasoPesadas(hayConflictos ? 2 : 1)} className="flex items-center gap-1">
+                      <ChevronLeft className="h-4 w-4" /> Atrás
+                    </Button>
+                    <Button
+                      onClick={confirmarPesadas}
+                      disabled={importandoPesadas}
+                      className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
+                    >
+                      {importandoPesadas
+                        ? <><div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-1" /> Importando...</>
+                        : <><CheckCircle2 className="h-4 w-4" /> Importar pesadas</>
+                      }
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          Modal: Historial pesadas (pivot table)
+      ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={modalHistorial} onOpenChange={setModalHistorial}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Historial de pesadas — {todasFechas.length} fecha{todasFechas.length !== 1 ? 's' : ''}
+            </DialogTitle>
+          </DialogHeader>
+
+          {todasFechas.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead className="text-xs whitespace-nowrap">Carav. Oficial</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Carav. Int.</TableHead>
+                    <TableHead className="text-xs">Sexo</TableHead>
+                    {todasFechas.map(f => (
+                      <TableHead key={f} className="text-xs text-center whitespace-nowrap text-green-700">
+                        {formatFecha(f)}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {terneros
+                    .filter(t => t.pesadas_terneros.length > 0)
+                    .map(t => (
+                      <TableRow key={t.id} className="text-sm">
+                        <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">{t.caravana_interna ?? '—'}</TableCell>
+                        <TableCell className="text-xs">
+                          {t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : '—'}
+                        </TableCell>
+                        {todasFechas.map(f => {
+                          const pesada = t.pesadas_terneros.find(p => p.fecha === f)
+                          return (
+                            <TableCell key={f} className="text-center text-xs">
+                              {pesada
+                                ? <span className="font-medium text-green-700">{pesada.peso_kg.toFixed(1)}</span>
+                                : <span className="text-gray-300">—</span>
+                              }
+                            </TableCell>
+                          )
+                        })}
+                      </TableRow>
+                    ))
+                  }
+                </TableBody>
+              </Table>
+              <p className="text-xs text-gray-400 text-right mt-2 pr-2">
+                Pesos en kg · {terneros.filter(t => t.pesadas_terneros.length > 0).length} terneros con pesadas
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }
