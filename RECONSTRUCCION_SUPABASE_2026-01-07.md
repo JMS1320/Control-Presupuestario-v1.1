@@ -9339,3 +9339,104 @@ El control de totales reveló **inconsistencias en la distribución de sexos** e
 
 **📅 Fecha sesión:** 2026-02-23
 **📅 Documentado:** 2026-03-03 (retroactivo — análisis fue comunicado por consola sin quedar registrado)
+
+
+---
+
+## 🐄 MÓDULO TERNEROS — Tablas y datos (implementado 2026-03-04)
+
+### ⚠️ CRÍTICO: Estas tablas NO están en el backup original
+
+Si se reconstruye la BD desde cero, ejecutar los siguientes scripts DESPUÉS de todos los scripts base.
+
+---
+
+### Script 1: Crear tabla `productivo.terneros`
+
+```sql
+CREATE TABLE IF NOT EXISTS productivo.terneros (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  caravana_interna VARCHAR(50),
+  caravana_oficial VARCHAR(50) UNIQUE,
+  sexo VARCHAR(10) CHECK (sexo IN ('Macho', 'Hembra')),
+  pelo VARCHAR(50),
+  fecha_nacimiento DATE,
+  fecha_destete DATE,
+  es_torito BOOLEAN DEFAULT FALSE,
+  observaciones TEXT,
+  activo BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+GRANT ALL ON productivo.terneros TO anon, authenticated, service_role;
+```
+
+---
+
+### Script 2: Crear tabla `productivo.pesadas_terneros`
+
+```sql
+CREATE TABLE IF NOT EXISTS productivo.pesadas_terneros (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ternero_id UUID REFERENCES productivo.terneros(id) ON DELETE CASCADE,
+  caravana_idv VARCHAR(50),
+  fecha DATE NOT NULL,
+  peso_kg DECIMAL(8,2) NOT NULL CHECK (peso_kg > 0),
+  observaciones TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pesadas_ternero_fecha
+  ON productivo.pesadas_terneros(ternero_id, fecha DESC);
+
+GRANT ALL ON productivo.pesadas_terneros TO anon, authenticated, service_role;
+```
+
+> **Nota**: `ternero_id` es NULLABLE a propósito para soportar pesadas de animales
+> no encontrados en BD ("sin vincular"). El campo `caravana_idv` guarda el IDV original
+> en esos casos para poder identificarlos.
+
+---
+
+### Formato IDV → caravana_oficial (dato crítico para el import)
+
+El lector de caravanas exporta IDV como entero de 14 dígitos. La BD guarda caravana_oficial
+en formato `032 010012326425` (pad a 15, espacio después del dígito 3).
+
+```
+IDV numérico:    32010012326425
+Pad a 15:       032010012326425
+Con espacio:    032 010012326425  ← caravana_oficial en BD
+```
+
+Esta conversión se hace automáticamente en `app/api/import-pesadas/route.ts`.
+El Excel puede tener el IDV como número puro o con el espacio — ambos funcionan.
+
+---
+
+### Estado de datos al 2026-03-04
+
+| Tabla | Registros |
+|-------|-----------|
+| `productivo.terneros` | 189 animales (destete Feb 2026) |
+| `productivo.pesadas_terneros` (vinculadas) | 185 pesadas (fecha: 2026-02-23) |
+| `productivo.pesadas_terneros` (sin vincular) | 4 pesadas con ternero_id NULL |
+
+Los datos de producción son los terneros del destete de febrero 2026 con su primera pesada.
+Archivos de referencia en el repo: `20260223_destete_transcripcionJMS.csv`
+
+---
+
+### Archivos Excel disponibles para reimportar si se pierde la BD
+
+| Archivo | Contenido |
+|---------|-----------|
+| `20260223_destete_transcripcionJMS.csv` | Caravanas internas del destete (Carav_Nacim) |
+| `Pesada.xlsx` | Primera pesada real 2026-02-23 (185 animales con IDV) |
+| `Pesadas_ficticias_25-03-2026.xlsx` | Pesada ficticia test +30 días |
+| `Pesadas_ficticias_25-04-2026.xlsx` | Pesada ficticia test +61 días |
+
+---
+
+**📅 Fecha implementación:** 2026-03-04
+**📍 Documentación completa:** Ver `DISEÑO_TERNEROS.md` en el repositorio
