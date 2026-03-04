@@ -94,6 +94,25 @@ export function TabTerneros() {
   const hembras = terneros.filter(t => t.sexo === 'Hembra')
   const toritos = terneros.filter(t => t.es_torito)
 
+  // Detectar IDs con caravana duplicada (interna u oficial)
+  const idsConDuplicado = new Set<string>()
+  const conteoInternas = new Map<string, string[]>()
+  const conteoOficiales = new Map<string, string[]>()
+  terneros.forEach(t => {
+    if (t.caravana_interna) {
+      const lista = conteoInternas.get(t.caravana_interna) ?? []
+      lista.push(t.id)
+      conteoInternas.set(t.caravana_interna, lista)
+    }
+    if (t.caravana_oficial) {
+      const lista = conteoOficiales.get(t.caravana_oficial) ?? []
+      lista.push(t.id)
+      conteoOficiales.set(t.caravana_oficial, lista)
+    }
+  })
+  conteoInternas.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
+  conteoOficiales.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
+
   return (
     <div className="space-y-4 mt-4">
       {/* Header con contadores y botón importar */}
@@ -112,6 +131,11 @@ export function TabTerneros() {
           {toritos.length > 0 && (
             <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
               🐂 {toritos.length} toritos
+            </Badge>
+          )}
+          {idsConDuplicado.size > 0 && (
+            <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
+              ⚠️ {idsConDuplicado.size} con caravana duplicada
             </Badge>
           )}
         </div>
@@ -158,6 +182,7 @@ export function TabTerneros() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
+                    <TableHead className="text-xs w-6"></TableHead>
                     <TableHead className="text-xs">Carav. Oficial</TableHead>
                     <TableHead className="text-xs">Carav. Interna</TableHead>
                     <TableHead className="text-xs">Sexo</TableHead>
@@ -167,8 +192,13 @@ export function TabTerneros() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {terneros.map(t => (
-                    <TableRow key={t.id} className="text-sm">
+                  {terneros.map(t => {
+                    const esDup = idsConDuplicado.has(t.id)
+                    return (
+                    <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
+                      <TableCell className="w-6 pr-0">
+                        {esDup && <span title="Caravana duplicada">⚠️</span>}
+                      </TableCell>
                       <TableCell className="font-mono text-xs">
                         {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
                       </TableCell>
@@ -192,7 +222,7 @@ export function TabTerneros() {
                         {t.observaciones ?? ''}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
             </div>
