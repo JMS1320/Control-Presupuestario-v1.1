@@ -2303,6 +2303,13 @@ export function VistaFacturasArca() {
   // FÓRMULA BASE: netoFactura = gravado + no_gravado + exento
   const evaluarRetencionSicore = async (factura: FacturaArca) => {
     try {
+      // Facturas C (tipo 11 = monotributista): no corresponde retención ganancias
+      if (factura.tipo_comprobante === 11) {
+        console.log('✅ SICORE: Factura C (tipo 11) - no corresponde retención')
+        await ejecutarGuardadoPendiente()
+        return
+      }
+
       const netoGravado = factura.imp_neto_gravado || 0
       const netoNoGravado = factura.imp_neto_no_gravado || 0
       const opExentas = factura.imp_op_exentas || 0
@@ -5734,6 +5741,18 @@ export function VistaFacturasArca() {
                   onClick={() => setPasoSicoreAnt('tipo')}
                 >
                   Siguiente → Tipo de operación
+                </Button>
+                <Button variant="outline" onClick={() => {
+                  if (anticipoSicoreEnProceso) {
+                    supabase.from('anticipos_proveedores').update({ estado_pago: 'pagar' }).eq('id', anticipoSicoreEnProceso.id)
+                      .then(({ error }) => {
+                        if (!error) { toast.success('Anticipo → pagar (sin SICORE)'); recargarAnticiposPagos() }
+                      })
+                  }
+                  setMostrarModalSicoreAnt(false)
+                  setAnticipoSicoreEnProceso(null)
+                }}>
+                  Sin SICORE
                 </Button>
                 <Button variant="outline" onClick={() => { setMostrarModalSicoreAnt(false); setAnticipoSicoreEnProceso(null) }}>
                   Cancelar
