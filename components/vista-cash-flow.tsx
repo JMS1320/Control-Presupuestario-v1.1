@@ -76,7 +76,7 @@ export function VistaCashFlow() {
   const [fechaHasta, setFechaHasta] = useState('')
   const [busquedaProveedor, setBusquedaProveedor] = useState('')
   const [estadosSeleccionados, setEstadosSeleccionados] = useState<string[]>([])
-  const [origenesSeleccionados, setOrigenesSeleccionados] = useState<('ARCA' | 'TEMPLATE')[]>([])
+  const [origenesSeleccionados, setOrigenesSeleccionados] = useState<('ARCA' | 'TEMPLATE' | 'ANTICIPO')[]>([])
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
@@ -1300,7 +1300,7 @@ export function VistaCashFlow() {
               <DollarSign className="h-8 w-8 text-gray-400" />
             </div>
             <div className="mt-2 text-xs text-gray-500">
-              {estadisticas.registros_arca} ARCA + {estadisticas.registros_templates} Templates
+              {estadisticas.registros_arca} ARCA + {estadisticas.registros_templates} Templates + {estadisticas.registros_anticipos} Anticipos
             </div>
           </CardContent>
         </Card>
@@ -1542,6 +1542,20 @@ export function VistaCashFlow() {
                         }}
                       />
                       <Label htmlFor="origen-template" className="text-sm cursor-pointer">Templates</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="origen-anticipo"
+                        checked={origenesSeleccionados.includes('ANTICIPO')}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setOrigenesSeleccionados([...origenesSeleccionados, 'ANTICIPO'])
+                          } else {
+                            setOrigenesSeleccionados(origenesSeleccionados.filter(o => o !== 'ANTICIPO'))
+                          }
+                        }}
+                      />
+                      <Label htmlFor="origen-anticipo" className="text-sm cursor-pointer">Anticipos</Label>
                     </div>
                   </div>
                 </div>
