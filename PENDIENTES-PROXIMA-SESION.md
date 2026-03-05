@@ -1,67 +1,72 @@
-# 🎯 PENDIENTES PRÓXIMA SESIÓN - SISTEMA DDJJ IVA
+# 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-## ✅ **LOGROS CONFIRMADOS 2025-09-11:**
-- **Excel**: Total IVA ✅ + Otros Tributos ✅ funcionando correctamente
-- **PDF**: Total IVA ✅ + Otros Tributos ✅ funcionando correctamente  
-- **Sistema DDJJ**: Generación archivos profesionales funcionando
+> **Última actualización**: 2026-03-05
+> **Sesión anterior**: Módulo Sueldos + Anticipo fixes + SICORE mejoras
 
 ---
 
-## 🚨 **PENDIENTES INMEDIATOS:**
+## ✅ COMPLETADO EN SESIÓN 2026-03-05
 
-### 1. **FIX INTERFAZ - Total IVA sigue en cero**
-- **Estado**: Excel/PDF ✅ corregidos, Interfaz ❌ aún muestra 0
-- **Problema**: Mapeo diferente en consulta interfaz vs generación archivos
-- **Acción**: Buscar consulta específica interfaz y corregir mismo mapeo
-
-### 2. **AGREGAR COLUMNA IVA 21% - Excel + PDF**
-- **Ubicación**: Después de columnas Neto, antes de IVA Diferencial
-- **Orden objetivo**:
-  ```
-  Fecha | Tipo | Razón Social | CUIT | Neto Gravado | Neto No Gravado | 
-  Op. Exentas | Otros Tributos | IVA 21% | IVA Diferencial | Total IVA | Imp. Total
-  ```
-- **Cambio**: Mover "IVA Diferencial" de posición final → después de "IVA 21%"
-- **Campo BD**: `iva_21` (ya existe en interface FacturaArca)
-
-### 3. **MEJORAS DESGLOSE (después de fixes anteriores)**
-- **Monotributo**: Mover a tabla desglose alícuotas
-- **Totales**: Agregar fila TOTALES resaltada
-- **Totalización**: Vertical + horizontal
+| Feature | Commits |
+|---------|---------|
+| Módulo Sueldos — BD + UI + Cash Flow 4ta fuente | múltiples |
+| Anticipo: estado 'conciliado', semántica monto correcto | — |
+| SICORE: botón "Sin SICORE" en anticipos | — |
+| SICORE: skip Factura C (tipo_comprobante 11) | — |
+| SICORE: descuento proporcional (% o monto fijo) | — |
+| Vista Pagos: Preparado → Pagado directo | — |
+| Anticipo "A Pagar" = monto - monto_sicore | — |
+| Fix quincena: usar fecha_vencimiento (no fecha_estimada) | `560e56c` |
+| Fix quincena en Vista Pagos (cambiarEstadoSeleccionadas) | `560e56c` |
+| Ver Retenciones: muestra anticipos + facturas | `9bc5c1b` |
+| Fix columna fecha_pago en query anticipos | `a6ce543` |
+| BD: Rigo quincena corregida 26-03-2da → 26-03-1ra | SQL directo |
 
 ---
 
-## 🎯 **PRIORIDADES PRÓXIMA SESIÓN:**
+## 🚨 PENDIENTES INMEDIATOS (próxima sesión)
 
-### **PRIORIDAD 1 - Fix interfaz IVA Total (2 min)**
-- Encontrar consulta interfaz facturas
-- Aplicar mismo fix: `f.imp_total_iva` → `f.iva`
+### 1. Verificar testing módulo Sueldos
+- Registrar anticipo y verificar que `saldo_pendiente` baje
+- Confirmar que los 35 períodos aparecen en Cash Flow como origen `SUELDO`
+- Confirmar que vista Sueldos muestra correctamente todos los empleados
 
-### **PRIORIDAD 2 - Agregar IVA 21% + reordenar (5 min)**
-- Excel: Agregar columna `f.iva_21` en posición correcta
-- PDF: Agregar columna `f.iva_21` en posición correcta  
-- Mover "IVA Diferencial" después de "IVA 21%"
-
-### **PRIORIDAD 3 - Mejoras desglose (10 min)**
-- Reestructurar tabla alícuotas con monotributo + totales
-- Resaltado visual fila TOTALES
+### 2. Ver Retenciones — mejora visual
+- Actualmente anticipo Energy Store debería aparecer en quincena `26-03 - 1ra`
+- Verificar que el badge "Anticipo" se muestra correctamente
+- El neto gravado de anticipos aparece como `-` (no aplica) — confirmar si está bien
 
 ---
 
-## 📊 **ESTADO ACTUAL:**
-- **Excel + PDF**: ✅ Funcionando correctamente
-- **Interfaz**: ⚠️ Total IVA aún en cero  
-- **Estructura columnas**: ⚠️ Falta IVA 21% + reordenar
-- **Desglose**: ⚠️ Pendiente reestructuración
+## 🗺️ OPCIONES PARA NUEVO MÓDULO
+
+### Opción A — Templates masivos (11-61)
+- Templates inmobiliarios 11-13 (ARBA MSA/PAM)
+- Carga masiva hasta template 61 según Excel original
+- Sistema alertas Vista Principal integrado
+
+### Opción B — FCI / Templates bidireccionales
+- Implementar arquitectura diseñada (CLAUDE.md sección FCI)
+- Campos `tipo_movimiento` + `es_bidireccional` en BD
+- Modal pago manual con Suscripción/Rescate
+
+### Opción C — Módulo Terneros Flujo B
+- Flujo B: lectura lector orejas (pendiente en DISEÑO_TERNEROS.md)
+- Completar proceso destete UI (confirmar ciclos en BD)
+
+### Opción D — Cierre Quincena SICORE mejorado
+- Generación PDF comprobante retención formato AFIP oficial
+- Templates SICORE 60-61 llenado automático al cerrar quincena
+- Email automático proveedores
 
 ---
 
-## 🔧 **METODOLOGÍA EFICIENTE:**
-1. **Quick fix interfaz** → mismo patrón Excel/PDF aplicado
-2. **Agregar IVA 21%** → usar campo `iva_21` existente  
-3. **Reordenar columnas** → mover IVA Diferencial
-4. **Testing rápido** → generar archivos verificar orden
+## 📋 DEUDA TÉCNICA CONOCIDA
 
-**Tiempo estimado total**: 15-20 minutos máximo
-
-**Branch**: `desarrollo` listo para continuar
+| Issue | Prioridad | Notas |
+|-------|-----------|-------|
+| IPC real módulo Sueldos | Media | `public.indices_ipc` vacía, `sueldo_x_ipc = bruto_calculado` |
+| Cerrar períodos Sueldos | Media | Cambiar proyectado → cerrado al pagar |
+| Wilson Barreto monto_a = $0 | Baja | Confirmar si corresponde |
+| Aguinaldo lógica | Baja | Jun/Dic no implementado |
+| Sistema backup Supabase | Alta | Upload nunca funcionó |

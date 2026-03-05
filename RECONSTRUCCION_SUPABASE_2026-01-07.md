@@ -9533,3 +9533,91 @@ Los 4 ciclos abiertos siguen con `fecha_destete = NULL`. El usuario debe:
 
 **📅 Fecha:** 2026-03-04
 **🔀 Branch:** `desarrollo` — push realizado, pendiente merge a main
+
+---
+
+## 📅 Sesión 2026-03-05 — Módulo Sueldos + Anticipo fixes + SICORE mejoras
+
+### 🆕 1. Módulo Sueldos implementado
+
+Schema `sueldos` con 6 tablas creado en Supabase. Vistas públicas en `public` como workaround PostgREST (Supabase solo expone `public` por defecto).
+
+**Vistas creadas:**
+```sql
+public.sueldos_campanas            → sueldos.campanas
+public.sueldos_empleados           → sueldos.empleados
+public.sueldos_cuentas_empleado    → sueldos.cuentas_empleado
+public.sueldos_componentes_salario → sueldos.componentes_salario
+public.sueldos_periodos            → sueldos.periodos
+public.sueldos_pagos               → sueldos.pagos
+```
+
+**⚠️ CRÍTICO para reconstrucción**: todo el código usa las vistas `sueldos_*` en schema `public`. Nunca `.schema('sueldos')` desde el cliente JS. Si se reconstruye la BD, ejecutar también el script de vistas.
+
+Datos sembrados: campaña 25/26, 7 empleados, 3 cuentas Sigot, 9 componentes salariales, 35 períodos (Feb–Jun 2026).
+
+**Documentación completa**: `DISEÑO_SUELDOS.md`
+
+---
+
+### 🔧 2. Anticipo — fixes sistema
+
+**Problema**: anticipos desaparecían de Cash Flow cuando se vinculaban a una factura (`estado = 'vinculado'`). El sistema correcto es que desaparezcan solo al conciliar con el extracto bancario.
+
+**Fix BD** — agregar 'conciliado' al constraint de `anticipos_proveedores.estado`:
+```sql
+ALTER TABLE anticipos_proveedores
+  DROP CONSTRAINT IF EXISTS anticipos_proveedores_estado_check;
+ALTER TABLE anticipos_proveedores
+  ADD CONSTRAINT anticipos_proveedores_estado_check
+  CHECK (estado IN ('pendiente_vincular', 'vinculado', 'conciliado'));
+```
+
+**Fix código** (`hooks/useMultiCashFlowData.ts`):
+- Query filtra `.neq('estado', 'conciliado')` (antes era `.neq('estado', 'vinculado')`)
+- Eliminar filtro `.gt('monto_restante', 0)` — anticipos muestran `monto` original, nunca `monto_restante`
+
+**Semántica confirmada**: `monto` = monto original del anticipo, nunca cambia. `monto_restante` = campo contable de vinculación a factura, no afecta visualización.
+
+---
+
+### 🔧 3. SICORE — mejoras y bugs corregidos
+
+#### Bugs corregidos
+
+**Bug quincena** (`vista-facturas-arca.tsx`):
+- Función `ejecutarGuardadoReal` usaba `fecha_estimada` para calcular quincena. Corregido a `fecha_vencimiento || fecha_estimada`.
+- Función `cambiarEstadoSeleccionadas` (Vista Pagos) no tenía lógica de corrección de quincena. Agregado loop que recalcula al marcar `pagado`.
+
+**Bug Ver Retenciones**: query de anticipos usaba `.select('...fecha...')` y `.order('fecha')` pero la columna real es `fecha_pago`. Error silencioso hacía que anticipos no aparecieran.
+
+**Fix datos manual**: factura Rigo tenía `sicore = '26-03 - 2da'` siendo que `fecha_vencimiento = 2026-03-05` (días 1-15 = 1ra quincena).
+```sql
+UPDATE msa.comprobantes_arca
+SET sicore = '26-03 - 1ra'
+WHERE id = 'd921d8a2-033a-42ca-b2c8-bafdade156c1';
+```
+
+#### Nuevas features
+
+- **Botón "Sin SICORE"**: en el modal de anticipos para saltear retención
+- **Skip Factura C**: tipo_comprobante = 11 no activa el modal SICORE
+- **Descuento proporcional**: campo % o monto fijo; descompone por componente (gravado/IVA/noGravado/exento) y recalcula base SICORE sobre neto ajustado
+- **Vista Pagos → Pagado**: botón secundario para ir de Preparado directo a Pagado (sin pasar por Programado)
+- **Ver Retenciones**: ahora muestra anticipos + facturas mergeados por fecha. Badge "Anticipo" en filas de `anticipos_proveedores`.
+
+**Documentación completa**: `DISEÑO_SICORE_RETENCIONES.md` (nuevo archivo creado esta sesión)
+
+---
+
+### 📋 Commits sesión 2026-03-05
+
+| Commit | Descripción |
+|--------|-------------|
+| `560e56c` | Fix: Corregir quincena SICORE al marcar pagado |
+| `9bc5c1b` | Fix: Ver Retenciones muestra anticipos + facturas SICORE |
+| `a6ce543` | Fix: columna fecha_pago en query anticipos Ver Retenciones |
+| + anteriores | Módulo Sueldos, descuento SICORE, Vista Pagos, etc. |
+
+**📅 Fecha:** 2026-03-05
+**🔀 Branch:** `desarrollo` — push realizado
