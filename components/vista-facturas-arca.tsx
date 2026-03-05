@@ -5287,11 +5287,11 @@ export function VistaFacturasArca() {
             }
 
             // Función para renderizar tabla de facturas
-            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg">{titulo} ({facturas.length})</h3>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
                       <Button
                         size="sm"
@@ -5299,6 +5299,16 @@ export function VistaFacturasArca() {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         {accionBoton.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
+                      </Button>
+                    )}
+                    {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => cambiarEstadoSeleccionadas(accionSecundaria.estado)}
+                        className="border-green-500 text-green-700 hover:bg-green-50"
+                      >
+                        {accionSecundaria.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
                       </Button>
                     )}
                     <Badge variant="outline" className="text-lg px-3 py-1">
@@ -5416,14 +5426,14 @@ export function VistaFacturasArca() {
             }
 
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Badge variant="outline" className="bg-green-50 text-green-700">Template</Badge>
                     {titulo} ({templates.length})
                   </h3>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     {accionBoton && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
                       <Button
                         size="sm"
@@ -5431,6 +5441,16 @@ export function VistaFacturasArca() {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         {accionBoton.label} ({Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length})
+                      </Button>
+                    )}
+                    {accionSecundaria && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => cambiarEstadoTemplatesSeleccionados(accionSecundaria.estado)}
+                        className="border-green-500 text-green-700 hover:bg-green-50"
+                      >
+                        {accionSecundaria.label} ({Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length})
                       </Button>
                     )}
                     <Badge variant="outline" className="text-lg px-3 py-1">
@@ -5506,14 +5526,14 @@ export function VistaFacturasArca() {
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto || 0), 0)
             const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto || 0), 0)
 
-            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Badge variant="outline" className="bg-purple-50 text-purple-700">Anticipo</Badge>
                     {titulo} ({lista.length})
                   </h3>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     {accionBoton && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
                       <Button
                         size="sm"
@@ -5521,6 +5541,16 @@ export function VistaFacturasArca() {
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         {accionBoton.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
+                      </Button>
+                    )}
+                    {accionSecundaria && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => cambiarEstadoAnticiposSeleccionados(accionSecundaria.estado)}
+                        className="border-green-500 text-green-700 hover:bg-green-50"
+                      >
+                        {accionSecundaria.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
                       </Button>
                     )}
                     <Badge variant="outline" className="text-lg px-3 py-1">
@@ -5631,7 +5661,8 @@ export function VistaFacturasArca() {
                           '✅ Preparado',
                           subtotalAnticiposPreparado,
                           true,
-                          { label: 'Marcar como Programado', estado: 'programado' }
+                          { label: 'Marcar como Programado', estado: 'programado' },
+                          { label: 'Marcar como Pagado', estado: 'pagado' }
                         )}
                         {filtroOrigenPagos.arca && renderTablaFacturas(
                           facturasPreparado,
@@ -5639,14 +5670,16 @@ export function VistaFacturasArca() {
                           subtotalPreparado,
                           'preparado',
                           true,
-                          { label: 'Marcar como Programado', estado: 'programado' }
+                          { label: 'Marcar como Programado', estado: 'programado' },
+                          { label: 'Marcar como Pagado', estado: 'pagado' }
                         )}
                         {filtroOrigenPagos.template && renderTablaTemplates(
                           templatesPreparado,
                           '✅ Preparado',
                           subtotalTemplatesPreparado,
                           true,
-                          { label: 'Marcar como Programado', estado: 'programado' }
+                          { label: 'Marcar como Programado', estado: 'programado' },
+                          { label: 'Marcar como Pagado', estado: 'pagado' }
                         )}
                       </>
                     )}
