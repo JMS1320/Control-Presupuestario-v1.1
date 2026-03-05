@@ -185,6 +185,12 @@ export function VistaFacturasArca() {
     baseImponible: number
     esRetencionAdicional: boolean
   } | null>(null)
+  // Descuento en SICORE
+  const [descuentoTipoInput, setDescuentoTipoInput] = useState<'pct' | 'monto'>('pct')
+  const [descuentoInputValor, setDescuentoInputValor] = useState('')
+  const [descuentoDesglose, setDescuentoDesglose] = useState<{
+    gravado: number, iva: number, noGravado: number, exento: number, total: number
+  } | null>(null)
 
   // Estado para guardado pendiente - permite cancelar SICORE sin guardar estado
   const [guardadoPendiente, setGuardadoPendiente] = useState<{facturaId: string, columna: string, valor: any, estadoAnterior: string} | null>(null)
@@ -2433,6 +2439,8 @@ export function VistaFacturasArca() {
       setTipoSeleccionado(tipo)
       setMontoRetencion(retencionCalculada)
       setDescuentoAdicional(0)
+      setDescuentoDesglose(null)
+      setDescuentoInputValor('')
       setPasoSicore('calculo')
 
     } catch (error) {
@@ -2440,7 +2448,50 @@ export function VistaFacturasArca() {
       alert('Error calculando retención: ' + (error as Error).message)
     }
   }
-  
+
+  // Aplicar descuento al cálculo SICORE, desglosa gravado/IVA con la alícuota de la factura
+  const aplicarDescuentoSicore = () => {
+    if (!facturaEnProceso || !tipoSeleccionado || !datosSicoreCalculo) return
+
+    const impTotal = facturaEnProceso.imp_total || 0
+    const impGravado = facturaEnProceso.imp_neto_gravado || 0
+    const impNoGravado = facturaEnProceso.imp_neto_no_gravado || 0
+    const impExento = facturaEnProceso.imp_op_exentas || 0
+    const impIva = facturaEnProceso.iva || 0
+
+    const inputNum = parseFloat(descuentoInputValor.replace(',', '.')) || 0
+    const pct = descuentoTipoInput === 'pct'
+      ? inputNum / 100
+      : (impTotal > 0 ? inputNum / impTotal : 0)
+
+    const descGravado = impGravado * pct
+    const descIva = impIva * pct
+    const descNoGravado = impNoGravado * pct
+    const descExento = impExento * pct
+    const descTotal = descGravado + descIva + descNoGravado + descExento
+
+    setDescuentoDesglose({ gravado: descGravado, iva: descIva, noGravado: descNoGravado, exento: descExento, total: descTotal })
+    setDescuentoAdicional(descTotal)
+
+    // Recalcular base SICORE sobre neto ajustado
+    const netoAjustado = (impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento)
+    const minimoAplicado = datosSicoreCalculo.minimoAplicado
+    const baseAjustada = Math.max(0, netoAjustado - minimoAplicado)
+    const nuevaRetencion = baseAjustada * tipoSeleccionado.porcentaje_retencion
+
+    setMontoRetencion(nuevaRetencion)
+    setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+  }
+
+  // Limpiar descuento y restaurar cálculo SICORE original
+  const limpiarDescuentoSicore = () => {
+    if (!facturaEnProceso || !tipoSeleccionado) return
+    setDescuentoAdicional(0)
+    setDescuentoDesglose(null)
+    setDescuentoInputValor('')
+    calcularRetencionSicore(facturaEnProceso, tipoSeleccionado)
+  }
+
   // Ejecutar cambio de estado pendiente (después de confirmar SICORE)
   const ejecutarGuardadoPendiente = async () => {
     if (!guardadoPendiente) return
@@ -2504,6 +2555,8 @@ export function VistaFacturasArca() {
     setTipoSeleccionado(null)
     setMontoRetencion(0)
     setDescuentoAdicional(0)
+    setDescuentoDesglose(null)
+    setDescuentoInputValor('')
     setPasoSicore('tipo')
 
     // Procesar siguiente factura de la cola si hay
@@ -2581,9 +2634,12 @@ export function VistaFacturasArca() {
       setTipoSeleccionado(null)
       setMontoRetencion(0)
       setDescuentoAdicional(0)
+      setDescuentoDesglose(null)
+      setDescuentoInputValor('')
       setPasoSicore('tipo')
-      
-      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
+
+      const descMsg = descuentoDesglose ? `\nDescuento: $${descuentoDesglose.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : ''
+      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}${descMsg}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
 
       // Procesar siguiente factura de la cola si hay
       procesarSiguienteSicore()
@@ -4598,99 +4654,146 @@ export function VistaFacturasArca() {
           )}
 
           {/* PASO 2: Mostrar cálculo + opciones */}
-          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && (
-            <div className="space-y-4">
-              <div className="bg-green-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-green-800 mb-3">Cálculo de retención: <span className="text-blue-600">{tipoSeleccionado.emoji} {tipoSeleccionado.tipo}</span></h3>
-                {datosSicoreCalculo.esRetencionAdicional && (
-                  <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded mb-3">
-                    ⚠️ Retención adicional en quincena - No se aplica mínimo no imponible
-                  </div>
-                )}
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Neto de la Factura:</span>
-                    <span className="font-medium">${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">No Imponible:</span>
-                    <span className="font-medium">${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Base Imponible:</span>
-                    <span className="font-medium">${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">% Retención:</span>
-                    <span className="font-medium">{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%</span>
-                  </div>
-                  <hr className="my-2 border-gray-300" />
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Monto Total Retención:</span>
-                    <span className="font-bold text-red-600">${montoRetencion.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  {descuentoAdicional > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Descuento adicional:</span>
-                      <span className="font-medium text-red-600">-${descuentoAdicional.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Monto Total Factura:</span>
-                    <span className="font-medium">${(facturaEnProceso.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <hr className="my-2 border-gray-300" />
-                  <div className="flex justify-between text-lg">
-                    <span className="font-bold">Saldo a Pagar:</span>
-                    <span className="font-bold text-green-600">${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
+          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && (() => {
+            const impTotal = facturaEnProceso.imp_total || 0
+            const impGravado = facturaEnProceso.imp_neto_gravado || 0
+            const impIva = facturaEnProceso.iva || 0
+            const impNoGravado = facturaEnProceso.imp_neto_no_gravado || 0
+            const impExento = facturaEnProceso.imp_op_exentas || 0
+            const saldoGravado = impGravado - (descuentoDesglose?.gravado || 0)
+            const saldoIva = impIva - (descuentoDesglose?.iva || 0)
+            const transferencia = impTotal - (descuentoDesglose?.total || 0) - montoRetencion
+            const fmt = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            return (
+            <div className="space-y-3">
+              {datosSicoreCalculo.esRetencionAdicional && (
+                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">
+                  ⚠️ Retención adicional en quincena - No se aplica mínimo no imponible
+                </div>
+              )}
+
+              {/* Tabla desglose gravado / IVA */}
+              <div className="bg-green-50 p-3 rounded-lg">
+                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado.emoji} {tipoSeleccionado.tipo} — Desglose</p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b">
+                      <th className="text-left pb-1">Concepto</th>
+                      <th className="text-right pb-1">Gravado</th>
+                      <th className="text-right pb-1">IVA</th>
+                      <th className="text-right pb-1">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="space-y-1">
+                    <tr>
+                      <td className="py-0.5 text-gray-600">Factura</td>
+                      <td className="text-right">${fmt(impGravado)}</td>
+                      <td className="text-right">${fmt(impIva)}</td>
+                      <td className="text-right font-medium">${fmt(impTotal)}</td>
+                    </tr>
+                    {descuentoDesglose && descuentoDesglose.total > 0 && (
+                      <tr className="text-orange-700">
+                        <td className="py-0.5">Descuento</td>
+                        <td className="text-right">-${fmt(descuentoDesglose.gravado)}</td>
+                        <td className="text-right">-${fmt(descuentoDesglose.iva)}</td>
+                        <td className="text-right font-medium">-${fmt(descuentoDesglose.total)}</td>
+                      </tr>
+                    )}
+                    <tr className="border-t font-semibold">
+                      <td className="py-0.5">Saldo pagar</td>
+                      <td className="text-right">${fmt(saldoGravado)}</td>
+                      <td className="text-right">${fmt(saldoIva)}</td>
+                      <td className="text-right">${fmt(impTotal - (descuentoDesglose?.total || 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Cálculo SICORE */}
+              <div className="bg-gray-50 p-3 rounded-lg text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Monto no imponible:</span>
+                  <span>${fmt(datosSicoreCalculo.minimoAplicado)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Base imponible:</span>
+                  <span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span className="font-bold text-red-600">${fmt(montoRetencion)}</span>
+                </div>
+                <hr className="border-gray-300" />
+                <div className="flex justify-between text-sm">
+                  <span className="font-bold">Transferencia:</span>
+                  <span className="font-bold text-green-700">${fmt(transferencia)}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <Button 
-                  onClick={finalizarProcesoSicore}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  ✅ Confirmar
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    const monto = prompt('Ingrese monto descuento adicional:', '0')
-                    if (monto !== null) {
-                      const descuento = parseFloat(monto) || 0
-                      setDescuentoAdicional(descuento)
-                    }
-                  }}
-                >
-                  💰 Descuento Adicional
-                </Button>
+              {/* Sección descuento */}
+              <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg space-y-2">
+                <p className="text-xs font-semibold text-orange-800">Descuento (genera NC posterior)</p>
+                <div className="flex gap-2 items-center">
+                  <select
+                    value={descuentoTipoInput}
+                    onChange={(e) => setDescuentoTipoInput(e.target.value as 'pct' | 'monto')}
+                    className="border rounded px-2 py-1 text-xs w-16 bg-white"
+                  >
+                    <option value="pct">%</option>
+                    <option value="monto">$</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    step={descuentoTipoInput === 'pct' ? '0.5' : '100'}
+                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21438'}
+                    value={descuentoInputValor}
+                    onChange={(e) => setDescuentoInputValor(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') aplicarDescuentoSicore() }}
+                    className="border rounded px-2 py-1 text-xs flex-1 bg-white"
+                  />
+                  <button
+                    onClick={aplicarDescuentoSicore}
+                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded"
+                  >
+                    Aplicar
+                  </button>
+                  {descuentoDesglose && descuentoDesglose.total > 0 && (
+                    <button
+                      onClick={limpiarDescuentoSicore}
+                      className="text-gray-400 hover:text-red-500 text-xs px-2 py-1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {descuentoDesglose && descuentoDesglose.total > 0 && (
+                  <p className="text-xs text-orange-700">
+                    Desc: Grav ${fmt(descuentoDesglose.gravado)} + IVA ${fmt(descuentoDesglose.iva)} = ${fmt(descuentoDesglose.total)}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  className="flex-1"
+                <Button onClick={finalizarProcesoSicore} className="flex-1 bg-green-600 hover:bg-green-700">
+                  ✅ Confirmar
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => {
-                    const monto = prompt('Ingrese nuevo monto retención:', montoRetencion.toString())
-                    if (monto !== null) {
-                      const nuevaRetencion = parseFloat(monto) || 0
-                      setMontoRetencion(nuevaRetencion)
-                    }
+                    const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2))
+                    if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(',', '.')) || 0)
                   }}
                 >
-                  📝 Cambiar Monto Retención
+                  📝
                 </Button>
-                <Button 
-                  variant="outline"
-                  onClick={cancelarGuardadoPendiente}
-                >
-                  ❌ Cancelar
+                <Button variant="outline" onClick={cancelarGuardadoPendiente}>
+                  ❌
                 </Button>
               </div>
             </div>
-          )}
+            )
+          })()}
         </DialogContent>
       </Dialog>
 
