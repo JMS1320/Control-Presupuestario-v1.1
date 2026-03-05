@@ -2649,7 +2649,7 @@ export function VistaFacturasArca() {
   const recargarAnticiposPagos = async () => {
     const { data } = await supabase.from('anticipos_proveedores').select('*')
       .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'programado'])
-      .gt('monto_restante', 0)
+      .neq('estado', 'conciliado')
       .order('fecha_pago', { ascending: true })
     if (data) setAnticiposPagos(data)
   }
@@ -3708,7 +3708,7 @@ export function VistaFacturasArca() {
                   .order('fecha_vencimiento', { ascending: true }),
                 supabase.from('anticipos_proveedores').select('*')
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado'])
-                  .gt('monto_restante', 0)
+                  .neq('estado', 'conciliado')
                   .order('fecha_pago', { ascending: true })
               ])
 
@@ -5392,9 +5392,9 @@ export function VistaFacturasArca() {
             const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar')
             const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado')
             const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente')
-            const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + (a.monto_restante || 0), 0)
-            const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto_restante || 0), 0)
-            const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto_restante || 0), 0)
+            const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + (a.monto || 0), 0)
+            const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto || 0), 0)
+            const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto || 0), 0)
 
             const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
               <div className="space-y-2">
