@@ -158,23 +158,20 @@ export function TabSueldos() {
 
     const [{ data: pdata }, { data: cdata }, { data: pagoData }] = await Promise.all([
       supabase
-        .schema('sueldos')
-        .from('periodos')
-        .select('*, empleado:empleados(*)')
+        .from('sueldos_periodos')
+        .select('*, empleado:sueldos_empleados(*)')
         .eq('anio', mesActual.anio)
         .eq('mes', mesActual.mes)
         .order('empleado(nombre)'),
 
       supabase
-        .schema('sueldos')
-        .from('cuentas_empleado')
+        .from('sueldos_cuentas_empleado')
         .select('*')
         .eq('activo', true),
 
       supabase
-        .schema('sueldos')
-        .from('pagos')
-        .select('*, empleado:empleados(nombre)')
+        .from('sueldos_pagos')
+        .select('*, empleado:sueldos_empleados(nombre)')
         .gte('fecha', primerDia)
         .lte('fecha', ultimoDia)
         .order('fecha', { ascending: false }),
@@ -224,8 +221,7 @@ export function TabSueldos() {
     const periodo = periodos.find(p => p.empleado_id === antEmpId)
 
     const { error: errPago } = await supabase
-      .schema('sueldos')
-      .from('pagos')
+      .from('sueldos_pagos')
       .insert({
         periodo_id:       periodo?.id ?? null,
         empleado_id:      antEmpId,
@@ -240,8 +236,7 @@ export function TabSueldos() {
       const nuevosAnticipos = (periodo.anticipos_descontados ?? 0) + monto
       const nuevoSaldo      = (periodo.saldo_pendiente ?? 0) - monto
       await supabase
-        .schema('sueldos')
-        .from('periodos')
+        .from('sueldos_periodos')
         .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
         .eq('id', periodo.id)
     }
@@ -257,11 +252,9 @@ export function TabSueldos() {
     setCargandoHistorial(true)
     setModalHistorial(true)
     const { data } = await supabase
-      .schema('sueldos')
-      .from('periodos')
-      .select('*, empleado:empleados(id, nombre, tipo_empleado, empresa)')
+      .from('sueldos_periodos')
+      .select('*, empleado:sueldos_empleados(id, nombre, tipo_empleado, empresa)')
       .gte('fecha_inicio_periodo', '2026-02-01')
-      .order('empleado(nombre)')
       .order('mes')
     setHistorial((data ?? []) as Periodo[])
     setCargandoHistorial(false)

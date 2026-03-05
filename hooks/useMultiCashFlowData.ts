@@ -264,9 +264,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       // 4. Cargar períodos de sueldos (desde Feb 2026, no históricos)
       const { data: periodosSueldos, error: errorSueldos } = await supabase
-        .schema('sueldos')
-        .from('periodos')
-        .select('*, empleado:empleados(id, nombre, cuit_empleado)')
+        .from('sueldos_periodos')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
         .gte('fecha_inicio_periodo', '2026-02-01')
         .neq('estado', 'historico')
         .order('fecha_fin_periodo', { ascending: true })
