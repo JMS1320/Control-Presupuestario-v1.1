@@ -5522,9 +5522,10 @@ export function VistaFacturasArca() {
             const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar')
             const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado')
             const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente')
-            const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + (a.monto || 0), 0)
-            const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + (a.monto || 0), 0)
-            const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + (a.monto || 0), 0)
+            const montoNetoAnticipo = (a: any) => (a.monto || 0) - (a.monto_sicore || 0)
+            const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + montoNetoAnticipo(a), 0)
+            const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + montoNetoAnticipo(a), 0)
+            const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + montoNetoAnticipo(a), 0)
 
             const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
               <div className="space-y-2">
@@ -5599,7 +5600,10 @@ export function VistaFacturasArca() {
                             <TableCell className="max-w-[150px] truncate">{a.nombre_proveedor}</TableCell>
                             <TableCell>{a.cuit_proveedor}</TableCell>
                             <TableCell className="text-right font-medium">
-                              ${(a.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              ${montoNetoAnticipo(a).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              {a.monto_sicore > 0 && (
+                                <div className="text-xs text-gray-400 font-normal">orig ${(a.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                              )}
                             </TableCell>
                             <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
                             <TableCell>

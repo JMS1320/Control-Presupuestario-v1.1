@@ -129,7 +129,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   const mapearAnticipos = (anticipos: any[]): CashFlowRow[] => {
     return anticipos.map(a => {
       const esCobro = a.tipo === 'cobro'
-      const monto = a.monto || 0
+      // monto neto = monto original - retención SICORE (si aplica)
+      const monto = (a.monto || 0) - (a.monto_sicore || 0)
       const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
       const esVinculado = a.estado === 'vinculado'
 
