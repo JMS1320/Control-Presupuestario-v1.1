@@ -2924,15 +2924,39 @@ export function VistaFacturasArca() {
     if (!quincena) { setRetencionesVer([]); return }
     setCargandoRetencionesVer(true)
     try {
-      const { data, error } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('id, denominacion_emisor, cuit, monto_sicore, imp_total, imp_neto_gravado, fecha_vencimiento, estado')
-        .eq('sicore', quincena)
-        .not('monto_sicore', 'is', null)
-        .gt('monto_sicore', 0)
-        .order('fecha_vencimiento', { ascending: true })
-      if (!error && data) setRetencionesVer(data)
+      const [{ data: facturas }, { data: anticipos }] = await Promise.all([
+        supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .select('id, denominacion_emisor, cuit, monto_sicore, imp_total, imp_neto_gravado, fecha_vencimiento, estado')
+          .eq('sicore', quincena)
+          .not('monto_sicore', 'is', null)
+          .gt('monto_sicore', 0)
+          .order('fecha_vencimiento', { ascending: true }),
+        supabase
+          .from('anticipos_proveedores')
+          .select('id, nombre_proveedor, cuit_proveedor, monto_sicore, monto, fecha, estado')
+          .eq('sicore', quincena)
+          .not('monto_sicore', 'is', null)
+          .gt('monto_sicore', 0)
+          .order('fecha', { ascending: true })
+      ])
+      const merged = [
+        ...(facturas || []).map(f => ({ ...f, _tipo: 'factura' as const })),
+        ...(anticipos || []).map(a => ({
+          id: a.id,
+          denominacion_emisor: a.nombre_proveedor,
+          cuit: a.cuit_proveedor,
+          monto_sicore: a.monto_sicore,
+          imp_total: a.monto,
+          imp_neto_gravado: null,
+          fecha_vencimiento: a.fecha,
+          estado: a.estado,
+          _tipo: 'anticipo' as const
+        }))
+      ]
+      merged.sort((a, b) => (a.fecha_vencimiento || '').localeCompare(b.fecha_vencimiento || ''))
+      setRetencionesVer(merged)
     } catch (e) {
       console.error('Error cargando retenciones SICORE:', e)
     } finally {
@@ -4869,7 +4893,14 @@ export function VistaFacturasArca() {
                     <TableBody>
                       {retencionesVer.map((f) => (
                         <TableRow key={f.id}>
-                          <TableCell className="text-sm font-medium">{f.denominacion_emisor}</TableCell>
+                          <TableCell className="text-sm font-medium">
+                            <div className="flex items-center gap-1">
+                              {f.denominacion_emisor}
+                              {f._tipo === 'anticipo' && (
+                                <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-300">Anticipo</Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-xs text-gray-500">{f.cuit}</TableCell>
                           <TableCell className="text-right text-xs">
                             {f.fecha_vencimiento ? new Date(f.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-AR') : '-'}
@@ -4888,7 +4919,7 @@ export function VistaFacturasArca() {
                     </TableBody>
                     <tfoot>
                       <tr className="border-t-2 border-gray-300 font-bold">
-                        <td colSpan={5} className="pt-2 pr-2 text-right text-sm">Total retenciones ({retencionesVer.length} facturas):</td>
+                        <td colSpan={5} className="pt-2 pr-2 text-right text-sm">Total retenciones ({retencionesVer.length} registros):</td>
                         <td className="pt-2 text-right text-sm text-orange-700">
                           ${retencionesVer.reduce((s, f) => s + (Number(f.monto_sicore) || 0), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                         </td>
