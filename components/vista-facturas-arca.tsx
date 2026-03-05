@@ -2935,11 +2935,11 @@ export function VistaFacturasArca() {
           .order('fecha_vencimiento', { ascending: true }),
         supabase
           .from('anticipos_proveedores')
-          .select('id, nombre_proveedor, cuit_proveedor, monto_sicore, monto, fecha, estado')
+          .select('id, nombre_proveedor, cuit_proveedor, monto_sicore, monto, fecha_pago, estado')
           .eq('sicore', quincena)
           .not('monto_sicore', 'is', null)
           .gt('monto_sicore', 0)
-          .order('fecha', { ascending: true })
+          .order('fecha_pago', { ascending: true })
       ])
       const merged = [
         ...(facturas || []).map(f => ({ ...f, _tipo: 'factura' as const })),
@@ -2950,7 +2950,7 @@ export function VistaFacturasArca() {
           monto_sicore: a.monto_sicore,
           imp_total: a.monto,
           imp_neto_gravado: null,
-          fecha_vencimiento: a.fecha,
+          fecha_vencimiento: a.fecha_pago,
           estado: a.estado,
           _tipo: 'anticipo' as const
         }))
