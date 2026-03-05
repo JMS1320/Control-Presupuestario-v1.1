@@ -129,8 +129,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   const mapearAnticipos = (anticipos: any[]): CashFlowRow[] => {
     return anticipos.map(a => {
       const esCobro = a.tipo === 'cobro'
-      const montoRestante = a.monto_restante || 0
+      const monto = a.monto || 0
       const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
+      const esVinculado = a.estado === 'vinculado'
 
       return {
         id: a.id,
@@ -142,9 +143,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         centro_costo: '',
         cuit_proveedor: a.cuit_proveedor || '',
         nombre_proveedor: a.nombre_proveedor || '',
-        detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${a.monto_restante < a.monto ? ` (Restante: $${a.monto_restante.toLocaleString('es-AR')})` : ''}`,
-        debitos: esCobro ? 0 : montoRestante,   // Pago = débito (dinero sale)
-        creditos: esCobro ? montoRestante : 0,  // Cobro = crédito (dinero entra)
+        detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${esVinculado ? ' (vinculado - pend. conciliar)' : ''}`,
+        debitos: esCobro ? 0 : monto,   // Pago = débito (dinero sale)
+        creditos: esCobro ? monto : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
         estado: a.estado_pago || 'pendiente'
       }
@@ -249,12 +250,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         throw new Error(`Error templates: ${errorTemplates.message}`)
       }
 
-      // 3. Cargar anticipos pendientes (no vinculados completamente)
+      // 3. Cargar anticipos pendientes de conciliar (excluir solo conciliados)
       const { data: anticipos, error: errorAnticipos } = await supabase
         .from('anticipos_proveedores')
         .select('*')
-        .neq('estado', 'vinculado') // Solo mostrar pendientes y parciales
-        .gt('monto_restante', 0) // Solo si queda saldo
+        .neq('estado', 'conciliado') // Desaparece solo al conciliar con banco
         .order('fecha_pago', { ascending: true })
 
       if (errorAnticipos) {
