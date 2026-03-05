@@ -714,7 +714,7 @@ export function VistaFacturasArca() {
       if (datosEdicion.columna === 'estado' && valorFinal === 'pagado') {
         const facturaActual = nuevasFacturas.find(f => f.id === datosEdicion.facturaId)
         if (facturaActual?.sicore && facturaActual?.fecha_estimada) {
-          const quincenahNueva = generarQuincenaSicore(facturaActual.fecha_estimada)
+          const quincenahNueva = generarQuincenaSicore(facturaActual.fecha_vencimiento || facturaActual.fecha_estimada)
           if (quincenahNueva !== facturaActual.sicore) {
             setConfirmCambioQuincena({
               facturaId: datosEdicion.facturaId,
@@ -5269,6 +5269,24 @@ export function VistaFacturasArca() {
                   .in('id', ids)
 
                 if (error) throw error
+
+                // Si se marcó como pagado: corregir quincena SICORE para facturas cuya fecha cambió
+                if (nuevoEstado === 'pagado') {
+                  for (const f of facturasACambiar) {
+                    if (!f.sicore) continue
+                    const fechaFinal = fechaPagoSeleccionada || f.fecha_vencimiento || f.fecha_estimada
+                    if (!fechaFinal) continue
+                    const quincenahNueva = generarQuincenaSicore(fechaFinal)
+                    if (quincenahNueva !== f.sicore) {
+                      await supabase
+                        .schema('msa')
+                        .from('comprobantes_arca')
+                        .update({ sicore: quincenahNueva })
+                        .eq('id', f.id)
+                      console.log(`🔄 SICORE quincena corregida: ${f.sicore} → ${quincenahNueva} (${f.denominacion_emisor})`)
+                    }
+                  }
+                }
 
                 // Actualizar estado local (incluye fecha si aplica)
                 setFacturasPagos(prev => prev.map(f =>
