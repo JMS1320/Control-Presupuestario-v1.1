@@ -47,8 +47,12 @@ const ESTADOS_DISPONIBLES = [
 
 // Estados disponibles para anticipos (estado de pago)
 const ESTADOS_ANTICIPO = [
-  { value: 'pendiente', label: 'Pendiente', color: 'bg-yellow-100 text-yellow-800' },
-  { value: 'pagado', label: 'Pagado', color: 'bg-green-100 text-green-800' }
+  { value: 'pendiente',  label: 'Pendiente',  color: 'bg-gray-100 text-gray-600' },
+  { value: 'pagar',      label: 'Pagar',       color: 'bg-yellow-100 text-yellow-800' },
+  { value: 'preparado',  label: 'Preparado',   color: 'bg-orange-100 text-orange-800' },
+  { value: 'programado', label: 'Programado',  color: 'bg-violet-100 text-violet-800' },
+  { value: 'pagado',     label: 'Pagado',      color: 'bg-green-100 text-green-800' },
+  { value: 'conciliado', label: 'Conciliado',  color: 'bg-gray-100 text-gray-800' },
 ]
 
 // Interface tipos SICORE
