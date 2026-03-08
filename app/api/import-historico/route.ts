@@ -117,12 +117,19 @@ export async function POST(request: Request) {
     const iPercIIBB = col("percepcion iibb")
     const iPercIVA = col("percepcion iva")
     const iOtrosTrib = col("otros tributos")
-    const iIVA = col("iva")
-    const iTotal = col("imp. total")
+    // Buscar IVA exacto: evitar que "Percepcion IVA" sea detectado primero
+    const iIVA = headers.findIndex((h) => /^iva$/i.test(h.trim()))
+    // Buscar Imp. Total con variantes (con/sin punto, con/sin "imp.")
+    const iTotal = headers.findIndex((h) =>
+      /^imp\.?\s*total$/i.test(h.trim()) || /^total\s*(comprobante)?$/i.test(h.trim())
+    )
     const iFC = col("fc")
     const iCuenta = col("cuenta contable")
     const iAnio = col("año contable")
     const iMes = col("mes contable")
+
+    // Diagnóstico de columnas (incluido en respuesta para debugging)
+    const colDiag = { iFecha, iTipo, iNetoGrav, iIVA, iTotal, iFC, iCuenta }
 
     const registros: any[] = []
     const errores: string[] = []
@@ -157,21 +164,6 @@ export async function POST(request: Request) {
         continue
       }
 
-      const imp_neto_gravado = convertirNumero(row[iNetoGrav])
-      const imp_neto_no_gravado = convertirNumero(row[iNetoNoGrav])
-      const imp_op_exentas = convertirNumero(row[iOpExentas])
-      const percepcion_iibb = convertirNumero(row[iPercIIBB])
-      const percepcion_iva = convertirNumero(row[iPercIVA])
-      const otros_tributos = convertirNumero(row[iOtrosTrib])
-      const iva = convertirNumero(row[iIVA])
-
-      // Si imp_total viene 0 (fórmula no evaluada por XLSX), recalcular desde componentes
-      const imp_total_raw = convertirNumero(row[iTotal])
-      const imp_total = imp_total_raw !== 0
-        ? imp_total_raw
-        : imp_neto_gravado + imp_neto_no_gravado + imp_op_exentas +
-          percepcion_iibb + percepcion_iva + otros_tributos + iva
-
       registros.push({
         fecha,
         tipo: tipo || null,
@@ -179,14 +171,14 @@ export async function POST(request: Request) {
         numero_desde: parseIntSafe(row[iNumero]),
         nro_doc_emisor: cuit || null,
         denominacion_emisor: denominacion,
-        imp_neto_gravado,
-        imp_neto_no_gravado,
-        imp_op_exentas,
-        percepcion_iibb,
-        percepcion_iva,
-        otros_tributos,
-        iva,
-        imp_total,
+        imp_neto_gravado: convertirNumero(row[iNetoGrav]),
+        imp_neto_no_gravado: convertirNumero(row[iNetoNoGrav]),
+        imp_op_exentas: convertirNumero(row[iOpExentas]),
+        percepcion_iibb: convertirNumero(row[iPercIIBB]),
+        percepcion_iva: convertirNumero(row[iPercIVA]),
+        otros_tributos: convertirNumero(row[iOtrosTrib]),
+        iva: convertirNumero(row[iIVA]),
+        imp_total: convertirNumero(row[iTotal]),
         fc: fc || null,
         cuenta_contable: String(row[iCuenta] ?? "").trim() || null,
         anio_contable: parseIntSafe(row[iAnio]),
@@ -229,6 +221,7 @@ export async function POST(request: Request) {
       erroresInsert,
       totalFilas: rows.length - 1,
       message: `Importados ${insertados} de ${registros.length} registros válidos`,
+      diagnostico: { columnas: colDiag, headers },
     })
   } catch (err: any) {
     console.error("Error import-historico:", err)
