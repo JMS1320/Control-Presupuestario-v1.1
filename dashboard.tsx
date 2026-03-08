@@ -4,6 +4,7 @@ import { useState } from "react"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
+import { ImportadorHistorico } from "./components/importador-historico"
 import { CorrectorCategorias } from "./components/corrector-categorias"
 import { CorrectorInterno } from "./components/corrector-interno"
 import { ReporteDetallado } from "./components/reporte-detallado"
@@ -282,6 +283,11 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
                   </div>
                 </CardContent>
               </Card>
+            </div>
+
+            {/* Importador comprobantes históricos */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <ImportadorHistorico />
             </div>
           </TabsContent>
         </Tabs>
