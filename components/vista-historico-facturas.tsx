@@ -113,6 +113,7 @@ export function VistaHistoricoFacturas() {
   // Filtros
   const [filtroEstado, setFiltroEstado] = useState<EstadoMatch | "todos">("todos")
   const [filtroPeriodo, setFiltroPeriodo] = useState("todos")
+  const [filtroCuenta, setFiltroCuenta] = useState("todas")
   const [busqueda, setBusqueda] = useState("")
 
   // Selección para edición masiva
@@ -191,6 +192,21 @@ export function VistaHistoricoFacturas() {
       .map(c => `${c.anio_contable}-${String(c.mes_contable).padStart(2, "0")}`)
   )).sort(), [comprobantes])
 
+  // ── Cuentas asignadas disponibles (para el selector) ─────────────────────
+
+  const cuentasAsignadas = useMemo(() => {
+    const map = new Map<string, { categ: string; nro_cuenta: string; count: number; total: number }>()
+    for (const c of comprobantes) {
+      const key = c.cuenta_asignada ?? c.cuenta_contable ?? "(sin cuenta)"
+      const nro = c.nro_cuenta ?? "—"
+      if (!map.has(key)) map.set(key, { categ: key, nro_cuenta: nro, count: 0, total: 0 })
+      const entry = map.get(key)!
+      entry.count++
+      entry.total += c.imp_total ?? 0
+    }
+    return Array.from(map.values()).sort((a, b) => a.categ.localeCompare(b.categ))
+  }, [comprobantes])
+
   // ── Filtrado ──────────────────────────────────────────────────────────────
 
   const filtrados = useMemo(() => {
@@ -201,13 +217,17 @@ export function VistaHistoricoFacturas() {
         const p = `${c.anio_contable}-${String(c.mes_contable).padStart(2, "0")}`
         if (p !== filtroPeriodo) return false
       }
+      if (filtroCuenta !== "todas") {
+        const cuentaEfectiva = c.cuenta_asignada ?? c.cuenta_contable ?? "(sin cuenta)"
+        if (cuentaEfectiva !== filtroCuenta) return false
+      }
       if (q && !c.denominacion_emisor?.toLowerCase().includes(q) &&
                !c.nro_doc_emisor?.includes(q) &&
                !(c.cuenta_contable ?? "").toLowerCase().includes(q) &&
                !(c.cuenta_asignada ?? "").toLowerCase().includes(q)) return false
       return true
     })
-  }, [conEstado, filtroEstado, filtroPeriodo, busqueda])
+  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda])
 
   // ── Selección ─────────────────────────────────────────────────────────────
 
@@ -443,15 +463,33 @@ export function VistaHistoricoFacturas() {
             <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todos">Todos</SelectItem>
+            <SelectItem value="todos">Todos los períodos</SelectItem>
             {periodos.map(p => {
               const [a,m] = p.split("-")
               return <SelectItem key={p} value={p}>{MESES[parseInt(m)-1]} {a}</SelectItem>
             })}
           </SelectContent>
         </Select>
-        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos") && (
-          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos") }}>
+
+        <Select value={filtroCuenta} onValueChange={setFiltroCuenta}>
+          <SelectTrigger className="w-[230px] h-8 text-sm">
+            <SelectValue placeholder="Cuenta contable" />
+          </SelectTrigger>
+          <SelectContent className="max-h-80">
+            <SelectItem value="todas">Todas las cuentas</SelectItem>
+            {cuentasAsignadas.map(c => (
+              <SelectItem key={c.categ} value={c.categ}>
+                <span className="flex items-center gap-2 w-full">
+                  <span className="flex-1 truncate">{c.categ}</span>
+                  <span className="shrink-0 text-xs text-gray-400">{c.count}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas") && (
+          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas") }}>
             <X className="h-3.5 w-3.5 mr-1" />Limpiar
           </Button>
         )}
