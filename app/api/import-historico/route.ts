@@ -157,6 +157,21 @@ export async function POST(request: Request) {
         continue
       }
 
+      const imp_neto_gravado = convertirNumero(row[iNetoGrav])
+      const imp_neto_no_gravado = convertirNumero(row[iNetoNoGrav])
+      const imp_op_exentas = convertirNumero(row[iOpExentas])
+      const percepcion_iibb = convertirNumero(row[iPercIIBB])
+      const percepcion_iva = convertirNumero(row[iPercIVA])
+      const otros_tributos = convertirNumero(row[iOtrosTrib])
+      const iva = convertirNumero(row[iIVA])
+
+      // Si imp_total viene 0 (fórmula no evaluada por XLSX), recalcular desde componentes
+      const imp_total_raw = convertirNumero(row[iTotal])
+      const imp_total = imp_total_raw !== 0
+        ? imp_total_raw
+        : imp_neto_gravado + imp_neto_no_gravado + imp_op_exentas +
+          percepcion_iibb + percepcion_iva + otros_tributos + iva
+
       registros.push({
         fecha,
         tipo: tipo || null,
@@ -164,14 +179,14 @@ export async function POST(request: Request) {
         numero_desde: parseIntSafe(row[iNumero]),
         nro_doc_emisor: cuit || null,
         denominacion_emisor: denominacion,
-        imp_neto_gravado: convertirNumero(row[iNetoGrav]),
-        imp_neto_no_gravado: convertirNumero(row[iNetoNoGrav]),
-        imp_op_exentas: convertirNumero(row[iOpExentas]),
-        percepcion_iibb: convertirNumero(row[iPercIIBB]),
-        percepcion_iva: convertirNumero(row[iPercIVA]),
-        otros_tributos: convertirNumero(row[iOtrosTrib]),
-        iva: convertirNumero(row[iIVA]),
-        imp_total: convertirNumero(row[iTotal]),
+        imp_neto_gravado,
+        imp_neto_no_gravado,
+        imp_op_exentas,
+        percepcion_iibb,
+        percepcion_iva,
+        otros_tributos,
+        iva,
+        imp_total,
         fc: fc || null,
         cuenta_contable: String(row[iCuenta] ?? "").trim() || null,
         anio_contable: parseIntSafe(row[iAnio]),
