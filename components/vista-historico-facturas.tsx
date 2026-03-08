@@ -65,6 +65,10 @@ function normalize(s: string) {
     .trim()
 }
 
+function normalizarCuit(s: string | null | undefined): string {
+  return (s ?? "").replace(/[-\s]/g, "").trim()
+}
+
 function fuzzyScore(query: string, target: string): number {
   const nq = normalize(query)
   const nt = normalize(target)
@@ -119,6 +123,7 @@ export function VistaHistoricoFacturas() {
   const [modalIds, setModalIds] = useState<string[]>([])     // IDs que se van a asignar
   const [modalCuentaOriginal, setModalCuentaOriginal] = useState("")
   const [modalCuit, setModalCuit] = useState<string | null>(null)
+  const [modalEmisor, setModalEmisor] = useState<string | null>(null)
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   const [loadingSugerencias, setLoadingSugerencias] = useState(false)
   const [busquedaModal, setBusquedaModal] = useState("")
@@ -234,30 +239,58 @@ export function VistaHistoricoFacturas() {
 
   // ── Abrir modal ───────────────────────────────────────────────────────────
 
-  async function abrirModal(ids: string[], cuentaOriginal: string, cuit: string | null) {
+  async function abrirModal(ids: string[], cuentaOriginal: string, cuit: string | null, emisor?: string | null) {
     setModalIds(ids)
     setModalCuentaOriginal(cuentaOriginal)
     setModalCuit(cuit)
+    setModalEmisor(emisor ?? null)
     setCuentaElegida(null)
     setBusquedaModal("")
     setModalAbierto(true)
-    await cargarSugerencias(cuentaOriginal, cuit, ids)
+    await cargarSugerencias(cuentaOriginal, cuit, emisor ?? null, ids)
   }
 
-  async function cargarSugerencias(cuentaOriginal: string, cuit: string | null, ids: string[]) {
+  async function cargarSugerencias(cuentaOriginal: string, cuit: string | null, emisor: string | null, ids: string[]) {
     setLoadingSugerencias(true)
     setSugerencias([])
     try {
       const sugs: Sugerencia[] = []
       const vistas = new Set<string>()
+      const cuitNorm = normalizarCuit(cuit)
 
-      // 1. Historial CUIT en comprobantes_arca operacionales
-      if (cuit) {
+      // ── PRIORIDAD 1: Historial propio en tabla histórico (mismo CUIT o mismo emisor) ──
+      // Busca TODAS las facturas ya asignadas del mismo proveedor (excluyendo las que se editan)
+      const mismoProveedor = comprobantes.filter(c => {
+        if (ids.includes(c.id)) return false
+        if (!c.nro_cuenta) return false
+        // Match por CUIT normalizado
+        if (cuitNorm && normalizarCuit(c.nro_doc_emisor) === cuitNorm) return true
+        // Fallback: match por nombre emisor normalizado (por si el CUIT varía)
+        if (emisor && c.denominacion_emisor &&
+            normalize(c.denominacion_emisor).includes(normalize(emisor).slice(0, 8))) return true
+        return false
+      })
+
+      const freqPropio: Record<string, number> = {}
+      mismoProveedor.forEach(c => {
+        if (c.cuenta_asignada) freqPropio[c.cuenta_asignada] = (freqPropio[c.cuenta_asignada] ?? 0) + 1
+      })
+
+      for (const [categ, usos] of Object.entries(freqPropio).sort((a, b) => b[1] - a[1])) {
+        const cuenta = cuentasSistema.find(c => c.categ === categ)
+        if (cuenta && !vistas.has(categ)) {
+          vistas.add(categ)
+          sugs.push({ ...cuenta, score: 100, fuente: "historial_propio", usos })
+        }
+      }
+
+      // ── PRIORIDAD 2: Historial CUIT en comprobantes_arca operacionales ──
+      if (cuitNorm) {
         const { data: arcaRows } = await supabase
           .schema("msa")
           .from("comprobantes_arca")
           .select("cuenta_contable")
-          .eq("cuit", cuit)
+          .eq("cuit", cuit!)
           .not("cuenta_contable", "is", null)
           .limit(200)
 
@@ -266,55 +299,28 @@ export function VistaHistoricoFacturas() {
           if (r.cuenta_contable) freq[r.cuenta_contable] = (freq[r.cuenta_contable] ?? 0) + 1
         })
 
-        for (const [categ, usos] of Object.entries(freq).sort((a,b) => b[1]-a[1])) {
+        for (const [categ, usos] of Object.entries(freq).sort((a, b) => b[1] - a[1])) {
           const cuenta = cuentasSistema.find(c => c.categ === categ)
           if (cuenta && !vistas.has(categ)) {
             vistas.add(categ)
-            sugs.push({ ...cuenta, score: 100, fuente: "historial_cuit", usos })
+            sugs.push({ ...cuenta, score: 90, fuente: "historial_cuit", usos })
           }
         }
       }
 
-      // 2. Historial propio (otras facturas del histórico ya asignadas con este CUIT)
-      if (cuit) {
-        const asignadasPropio = comprobantes.filter(
-          c => c.nro_doc_emisor === cuit && c.nro_cuenta && !ids.includes(c.id)
-        )
-        const freqPropio: Record<string, number> = {}
-        asignadasPropio.forEach(c => {
-          if (c.cuenta_asignada) freqPropio[c.cuenta_asignada] = (freqPropio[c.cuenta_asignada] ?? 0) + 1
-        })
-        for (const [categ, usos] of Object.entries(freqPropio).sort((a,b) => b[1]-a[1])) {
-          if (!vistas.has(categ)) {
-            const cuenta = cuentasSistema.find(c => c.categ === categ)
-            if (cuenta) {
-              vistas.add(categ)
-              sugs.push({ ...cuenta, score: 95, fuente: "historial_propio", usos })
-            }
-          }
-        }
-      }
-
-      // 3. Match exacto por normalización (sin importar mayúsculas/acentos)
+      // ── PRIORIDAD 3: Match exacto por nombre (normalizado) ──
       const kOrig = normalize(cuentaOriginal)
       const exactas = matchMap.get(kOrig) ?? []
       for (const c of exactas) {
         if (!vistas.has(c.categ)) {
           vistas.add(c.categ)
-          sugs.push({ ...c, score: 90, fuente: "exacto" })
+          sugs.push({ ...c, score: 80, fuente: "exacto" })
         }
       }
 
-      // 4. Sugerencias por nombre similar
-      for (const c of cuentasSistema) {
-        if (vistas.has(c.categ)) continue
-        const score = fuzzyScore(cuentaOriginal, c.categ)
-        if (score >= 35) sugs.push({ ...c, score, fuente: "nombre_similar" })
-      }
-
-      // Ordenar: por score desc, luego por nombre
-      sugs.sort((a, b) => b.score - a.score || a.categ.localeCompare(b.categ))
-      setSugerencias(sugs.slice(0, 40))
+      // Ordenar por score desc, luego por usos desc, luego por nombre
+      sugs.sort((a, b) => b.score - a.score || (b.usos ?? 0) - (a.usos ?? 0) || a.categ.localeCompare(b.categ))
+      setSugerencias(sugs)
     } finally {
       setLoadingSugerencias(false)
     }
@@ -456,7 +462,9 @@ export function VistaHistoricoFacturas() {
             <span className="text-sm text-gray-500">{seleccionados.size} selec.</span>
             <Button size="sm" onClick={() => {
               const uniq = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.cuenta_contable ?? ""))]
-              abrirModal(seleccionadosArray, uniq.length === 1 ? uniq[0] : "(múltiples cuentas)", null)
+              const cuits = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.nro_doc_emisor ?? null).filter(Boolean))]
+              const emisores = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.denominacion_emisor ?? null).filter(Boolean))]
+              abrirModal(seleccionadosArray, uniq.length === 1 ? uniq[0] : "(múltiples cuentas)", cuits.length === 1 ? cuits[0] : null, emisores.length === 1 ? emisores[0] : null)
             }}>
               Asignar cuenta a seleccionadas
             </Button>
@@ -534,7 +542,7 @@ export function VistaHistoricoFacturas() {
                     </td>
                     <td className="px-3 py-1.5">
                       <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
-                        onClick={() => abrirModal([c.id], c.cuenta_contable ?? "", c.nro_doc_emisor)}>
+                        onClick={() => abrirModal([c.id], c.cuenta_contable ?? "", c.nro_doc_emisor, c.denominacion_emisor)}>
                         {c._estado === "asignado" ? "Cambiar" : "Asignar"}
                       </Button>
                     </td>
@@ -554,6 +562,12 @@ export function VistaHistoricoFacturas() {
               Asignar cuenta contable
               {modalIds.length > 1 && <span className="ml-2 text-sm font-normal text-gray-500">({modalIds.length} comprobantes)</span>}
             </DialogTitle>
+            {modalEmisor && (
+              <p className="text-xs text-gray-500">
+                Proveedor: <span className="font-semibold text-gray-700">{modalEmisor}</span>
+                {modalCuit && <span className="ml-1 text-gray-400">({modalCuit})</span>}
+              </p>
+            )}
             <p className="text-xs text-gray-500">
               Cuenta original en Excel: <span className="font-semibold text-gray-700">"{modalCuentaOriginal}"</span>
             </p>
