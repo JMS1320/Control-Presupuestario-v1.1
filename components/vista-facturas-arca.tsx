@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { supabase } from "@/lib/supabase"
+import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -149,7 +150,7 @@ export function VistaFacturasArca() {
   const [busquedaCateg, setBusquedaCateg] = useState('')
   
   // Estados para tabs de navegación
-  const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios'>('facturas')
+  const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico'>('facturas')
   
   // Estados para Subdiarios
   const [periodoConsulta, setPeriodoConsulta] = useState('')
@@ -3693,10 +3694,11 @@ export function VistaFacturasArca() {
       </div>
 
       {/* Tabs principales */}
-      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios')}>
+      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios' | 'historico')}>
         <TabsList>
           <TabsTrigger value="facturas">Facturas</TabsTrigger>
           <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>
+          <TabsTrigger value="historico">Histórico</TabsTrigger>
         </TabsList>
 
         {/* Tab Content: Facturas */}
@@ -4370,6 +4372,11 @@ export function VistaFacturasArca() {
         {/* Tab Content: Subdiarios */}
         <TabsContent value="subdiarios" className="space-y-6">
           <SubdiariosContent />
+        </TabsContent>
+
+        {/* Tab Content: Histórico */}
+        <TabsContent value="historico" className="space-y-6">
+          <VistaHistoricoFacturas />
         </TabsContent>
       </Tabs>
 
