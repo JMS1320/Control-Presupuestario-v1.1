@@ -24,6 +24,7 @@ import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { supabase } from "@/lib/supabase"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
+import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -150,7 +151,7 @@ export function VistaFacturasArca() {
   const [busquedaCateg, setBusquedaCateg] = useState('')
   
   // Estados para tabs de navegación
-  const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico'>('facturas')
+  const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
   
   // Estados para Subdiarios
   const [periodoConsulta, setPeriodoConsulta] = useState('')
@@ -3694,11 +3695,12 @@ export function VistaFacturasArca() {
       </div>
 
       {/* Tabs principales */}
-      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios' | 'historico')}>
+      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios' | 'historico' | 'asignacion')}>
         <TabsList>
           <TabsTrigger value="facturas">Facturas</TabsTrigger>
           <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
+          <TabsTrigger value="asignacion">Asignación Cuentas</TabsTrigger>
         </TabsList>
 
         {/* Tab Content: Facturas */}
@@ -4377,6 +4379,11 @@ export function VistaFacturasArca() {
         {/* Tab Content: Histórico */}
         <TabsContent value="historico" className="space-y-6">
           <VistaHistoricoFacturas />
+        </TabsContent>
+
+        {/* Tab Content: Asignación Cuentas */}
+        <TabsContent value="asignacion" className="space-y-6">
+          <VistaAsignacionArca />
         </TabsContent>
       </Tabs>
 
