@@ -9621,3 +9621,71 @@ WHERE id = 'd921d8a2-033a-42ca-b2c8-bafdade156c1';
 
 **📅 Fecha:** 2026-03-05
 **🔀 Branch:** `desarrollo` — push realizado
+
+---
+
+## 📋 Sesión 2026-03-09 — Asignación cuentas + verificación diciembre
+
+### ✅ Features implementadas
+
+#### Asignación cuentas contables — facturas ARCA actuales
+
+Replicación exacta del sistema de histórico para `comprobantes_arca`.
+
+**Migración BD:**
+```sql
+ALTER TABLE msa.comprobantes_arca ADD COLUMN IF NOT EXISTS nro_cuenta TEXT;
+```
+
+**Archivos creados/modificados:**
+- `app/api/arca-asignar/route.ts` — PATCH endpoint, actualiza `nro_cuenta` + `cuenta_contable`
+- `components/vista-asignacion-arca.tsx` — componente completo con sugerencias, auto-asignar, bulk
+- `components/vista-facturas-arca.tsx` — nuevo tab "Asignación Cuentas"
+
+**Lógica sugerencias (orden prioridad):**
+1. `historial_historico`: mismo CUIT en `comprobantes_historico` con `nro_cuenta` asignado
+2. `historial_arca`: mismo CUIT en `comprobantes_arca` con `nro_cuenta` ya asignado
+3. `exacto`: match `cuenta_contable` vs `cuentas_contables.categ`
+
+**Diferencia con histórico:**
+- No hay campo `cuenta_asignada` separado; `cuenta_contable` es la categoría asignada
+- Estado "Asignado" cuando `nro_cuenta` no es null
+- Estado "Match" cuando `cuenta_contable` matchea exactamente con una cuenta del sistema
+
+**Commit:** `559698d`
+
+---
+
+### 🔍 Verificación diciembre — comparativa entre tablas
+
+**Resultado:**
+- `comprobantes_historico` dic 2025: 44 facturas / $16,480,809
+- `comprobantes_arca` dic 2025: 40 facturas / $16,394,196
+- Las 40 de ARCA están todas en histórico (0 diferencias en esa dirección)
+- Histórico tiene 4 extras: PARADOR SAN PEDRO, 2× PAN AMERICAN ENERGY, FEDERACION PATRONAL (NC negativa)
+
+**Pendiente revisar:** si estas 4 deben agregarse a ARCA o quedarse solo en histórico.
+
+---
+
+### ⚠️ Tema presupuesto — duplicado dic en dos tablas
+
+Las facturas que existen en ambas tablas con `nro_cuenta` asignado podrían contarse doble en reportes de presupuesto. Solución acordada: pendiente de resolver. Opciones:
+- Opción A: histórico solo tiene cuentas en períodos exclusivos suyos (antes de dic 2025)
+- Opción B: reportes usan ARCA como fuente principal y toman de histórico solo lo que no existe en ARCA
+
+---
+
+### 🎯 PRÓXIMO A IMPLEMENTAR — Importador facturas ARCA con cuenta contable
+
+**Objetivo:** Al importar facturas ARCA desde Excel AFIP, si la factura ya existe en BD con `nro_cuenta` y `cuenta_contable` asignados, preservar esos valores. Si el nombre de la cuenta cambió (nueva nomenclatura), actualizarlo.
+
+**Lógica:**
+1. Al importar en "modo corregir": además de actualizar montos, también actualizar `cuenta_contable` si la cuenta fue renombrada en `cuentas_contables`
+2. Al importar en "modo insertar": si el CUIT ya tiene facturas con cuenta asignada, pre-poblar `cuenta_contable` con la cuenta más frecuente del proveedor (igual que sugerencias prioridad 2)
+3. Al re-importar una factura existente: NO pisar `nro_cuenta` ni `cuenta_contable` si ya están asignados
+
+**Archivo a modificar:** `app/api/import-facturas-arca/route.ts`
+
+**📅 Fecha:** 2026-03-09
+**🔀 Branch:** `desarrollo` — push realizado
