@@ -62,17 +62,18 @@ function convertirNumero(valor: string | number | null | undefined): number {
 
 /**
  * POST /api/import-historico
- * Importa comprobantes históricos desde Excel personalizado "Facturas 25-26"
- * Columnas: Fecha | Tipo | Punto de Venta | Número Desde | Nro. Doc. Emisor |
- *           Denominación Emisor | Imp. Neto Gravado | Imp. Neto No Gravado |
- *           Imp. Op. Exentas | Percepcion IIBB | Percepcion IVA | Otros Tributos |
- *           IVA | Imp. Total | FC | Cuenta Contable | Año contable | Mes contable
+ * Modos:
+ *   - "insertar" (default): inserta registros nuevos
+ *   - "corregir": actualiza SOLO columnas de dinero en registros existentes,
+ *                 matcheando por fecha + nro_doc_emisor + punto_de_venta + numero_desde.
+ *                 NO toca cuenta_contable, nro_cuenta, cuenta_asignada ni otros campos.
  */
 export async function POST(request: Request) {
   try {
     const formData = await request.formData()
     const file = formData.get("file") as File | null
     const empresa = (formData.get("empresa") as string) || "MSA"
+    const modo = (formData.get("modo") as string) || "insertar"
 
     if (!file) {
       return NextResponse.json({ success: false, message: "No se recibió archivo" }, { status: 400 })
@@ -98,39 +99,33 @@ export async function POST(request: Request) {
     const headers = (rows[0] as any[]).map((h) => String(h ?? "").trim())
 
     // Mapear índices de columnas
-    const col = (nombre: string): number => {
-      const i = headers.findIndex((h) =>
-        h.toLowerCase().includes(nombre.toLowerCase())
-      )
-      return i
-    }
+    const col = (nombre: string): number =>
+      headers.findIndex((h) => h.toLowerCase().includes(nombre.toLowerCase()))
 
-    const iFecha = col("fecha")
-    const iTipo = col("tipo")
-    const iPtoVenta = col("punto de venta")
-    const iNumero = col("número desde")
-    const iCuit = col("nro. doc. emisor")
-    const iDenominacion = col("denominación emisor")
-    const iNetoGrav = col("neto gravado")
-    const iNetoNoGrav = col("neto no gravado")
-    const iOpExentas = col("op. exentas")
-    const iPercIIBB = col("percepcion iibb")
-    const iPercIVA = col("percepcion iva")
-    const iOtrosTrib = col("otros tributos")
-    // Buscar IVA exacto: evitar que "Percepcion IVA" sea detectado primero
-    const iIVA = headers.findIndex((h) => /^iva$/i.test(h.trim()))
-    // Buscar Imp. Total con variantes (con/sin punto, con/sin "imp.")
+    const iFecha       = col("fecha")
+    const iTipo        = col("tipo")
+    const iPtoVenta    = col("punto de venta")
+    const iNumero      = col("número desde")
+    const iCuit        = col("nro. doc. emisor")
+    const iDenominacion= col("denominación emisor")
+    const iNetoGrav    = col("neto gravado")
+    const iNetoNoGrav  = col("neto no gravado")
+    const iOpExentas   = col("op. exentas")
+    const iPercIIBB    = col("percepcion iibb")
+    const iPercIVA     = col("percepcion iva")
+    const iOtrosTrib   = col("otros tributos")
+    // IVA exacto: evitar que "Percepcion IVA" sea detectado antes que "IVA"
+    const iIVA   = headers.findIndex((h) => /^iva$/i.test(h.trim()))
+    // Imp. Total con variantes (con/sin punto, con/sin "imp.")
     const iTotal = headers.findIndex((h) =>
       /^imp\.?\s*total$/i.test(h.trim()) || /^total\s*(comprobante)?$/i.test(h.trim())
     )
-    const iFC = col("fc")
+    const iFC     = col("fc")
     const iCuenta = col("cuenta contable")
-    const iAnio = col("año contable")
-    const iMes = col("mes contable")
+    const iAnio   = col("año contable")
+    const iMes    = col("mes contable")
 
-    // Diagnóstico de columnas (incluido en respuesta para debugging)
-    const colDiag = { iFecha, iTipo, iNetoGrav, iIVA, iTotal, iFC, iCuenta }
-
+    // Parsear filas
     const registros: any[] = []
     const errores: string[] = []
     let filasSaltadas = 0
@@ -142,9 +137,8 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Saltar filas con Tipo = "x" o FC = "x"
       const tipo = isTipo(row[iTipo])
-      const fc = String(row[iFC] ?? "").trim()
+      const fc   = String(row[iFC] ?? "").trim()
       if (tipo === "x" || fc === "x") {
         filasSaltadas++
         continue
@@ -156,7 +150,7 @@ export async function POST(request: Request) {
         continue
       }
 
-      const cuit = limpiarCuit(row[iCuit])
+      const cuit        = limpiarCuit(row[iCuit])
       const denominacion = String(row[iDenominacion] ?? "").trim()
 
       if (!denominacion) {
@@ -166,23 +160,23 @@ export async function POST(request: Request) {
 
       registros.push({
         fecha,
-        tipo: tipo || null,
-        punto_de_venta: parseIntSafe(row[iPtoVenta]),
-        numero_desde: parseIntSafe(row[iNumero]),
-        nro_doc_emisor: cuit || null,
+        tipo:               tipo || null,
+        punto_de_venta:     parseIntSafe(row[iPtoVenta]),
+        numero_desde:       parseIntSafe(row[iNumero]),
+        nro_doc_emisor:     cuit || null,
         denominacion_emisor: denominacion,
-        imp_neto_gravado: convertirNumero(row[iNetoGrav]),
+        imp_neto_gravado:   convertirNumero(row[iNetoGrav]),
         imp_neto_no_gravado: convertirNumero(row[iNetoNoGrav]),
-        imp_op_exentas: convertirNumero(row[iOpExentas]),
-        percepcion_iibb: convertirNumero(row[iPercIIBB]),
-        percepcion_iva: convertirNumero(row[iPercIVA]),
-        otros_tributos: convertirNumero(row[iOtrosTrib]),
-        iva: convertirNumero(row[iIVA]),
-        imp_total: convertirNumero(row[iTotal]),
-        fc: fc || null,
-        cuenta_contable: String(row[iCuenta] ?? "").trim() || null,
-        anio_contable: parseIntSafe(row[iAnio]),
-        mes_contable: parseIntSafe(row[iMes]),
+        imp_op_exentas:     convertirNumero(row[iOpExentas]),
+        percepcion_iibb:    convertirNumero(row[iPercIIBB]),
+        percepcion_iva:     convertirNumero(row[iPercIVA]),
+        otros_tributos:     convertirNumero(row[iOtrosTrib]),
+        iva:                convertirNumero(row[iIVA]),
+        imp_total:          convertirNumero(row[iTotal]),
+        fc:                 fc || null,
+        cuenta_contable:    String(row[iCuenta] ?? "").trim() || null,
+        anio_contable:      parseIntSafe(row[iAnio]),
+        mes_contable:       parseIntSafe(row[iMes]),
         empresa,
       })
     }
@@ -195,7 +189,83 @@ export async function POST(request: Request) {
       })
     }
 
-    // Insertar en lotes de 50
+    // ── MODO CORRECCIÓN ──────────────────────────────────────────────────────
+    if (modo === "corregir") {
+      // Traer todos los registros existentes de la empresa para hacer el match
+      const { data: existentes, error: fetchError } = await supabase
+        .schema("msa")
+        .from("comprobantes_historico")
+        .select("id, fecha, nro_doc_emisor, punto_de_venta, numero_desde")
+        .eq("empresa", empresa)
+
+      if (fetchError) throw new Error(fetchError.message)
+
+      // Mapa clave → id
+      const mapaIds = new Map<string, string>()
+      for (const rec of existentes ?? []) {
+        const k = claveFactura(rec.fecha, rec.nro_doc_emisor, rec.punto_de_venta, rec.numero_desde)
+        mapaIds.set(k, rec.id)
+      }
+
+      // Separar matcheados vs no encontrados
+      const actualizaciones: { id: string; montos: Record<string, number> }[] = []
+      const noEncontrados: string[] = []
+
+      for (const reg of registros) {
+        const k = claveFactura(reg.fecha, reg.nro_doc_emisor, reg.punto_de_venta, reg.numero_desde)
+        const id = mapaIds.get(k)
+        if (!id) {
+          noEncontrados.push(`${reg.denominacion_emisor} (${reg.fecha})`)
+          continue
+        }
+        actualizaciones.push({
+          id,
+          montos: {
+            imp_neto_gravado:    reg.imp_neto_gravado,
+            imp_neto_no_gravado: reg.imp_neto_no_gravado,
+            imp_op_exentas:      reg.imp_op_exentas,
+            percepcion_iibb:     reg.percepcion_iibb,
+            percepcion_iva:      reg.percepcion_iva,
+            otros_tributos:      reg.otros_tributos,
+            iva:                 reg.iva,
+            imp_total:           reg.imp_total,
+          },
+        })
+      }
+
+      // Actualizar en lotes paralelos de 20
+      let actualizados = 0
+      const erroresUpdate: string[] = []
+      const CHUNK = 20
+
+      for (let i = 0; i < actualizaciones.length; i += CHUNK) {
+        const lote = actualizaciones.slice(i, i + CHUNK)
+        const resultados = await Promise.all(
+          lote.map(({ id, montos }) =>
+            supabase.schema("msa").from("comprobantes_historico").update(montos).eq("id", id)
+          )
+        )
+        for (const { error } of resultados) {
+          if (error) erroresUpdate.push(error.message)
+          else actualizados++
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        modo: "corregir",
+        actualizados,
+        noEncontrados: noEncontrados.length,
+        listadoNoEncontrados: noEncontrados,
+        saltadas: filasSaltadas,
+        erroresParseo: errores,
+        erroresUpdate,
+        totalFilas: rows.length - 1,
+        message: `Corregidos ${actualizados} de ${actualizaciones.length} registros encontrados${noEncontrados.length ? ` · ${noEncontrados.length} no encontrados` : ""}`,
+      })
+    }
+
+    // ── MODO INSERTAR (default) ───────────────────────────────────────────────
     let insertados = 0
     const erroresInsert: string[] = []
 
@@ -215,13 +285,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      modo: "insertar",
       insertados,
       saltadas: filasSaltadas,
       erroresParseo: errores,
       erroresInsert,
       totalFilas: rows.length - 1,
       message: `Importados ${insertados} de ${registros.length} registros válidos`,
-      diagnostico: { columnas: colDiag, headers },
     })
   } catch (err: any) {
     console.error("Error import-historico:", err)
@@ -230,6 +300,17 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function claveFactura(
+  fecha: string | null,
+  cuit: string | null,
+  ptoVenta: number | null,
+  numero: number | null
+): string {
+  return `${fecha ?? ""}|${cuit ?? ""}|${ptoVenta ?? ""}|${numero ?? ""}`
 }
 
 function isTipo(v: any): string {

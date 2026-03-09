@@ -6,27 +6,35 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Upload, CheckCircle, AlertTriangle, Loader2, Archive } from "lucide-react"
+import { Upload, CheckCircle, AlertTriangle, Loader2, Archive, RefreshCw } from "lucide-react"
 
 interface ImportResult {
   success: boolean
   message: string
+  modo?: "insertar" | "corregir"
+  // modo insertar
   insertados?: number
+  erroresInsert?: string[]
+  // modo corregir
+  actualizados?: number
+  noEncontrados?: number
+  listadoNoEncontrados?: string[]
+  erroresUpdate?: string[]
+  // comunes
   saltadas?: number
   totalFilas?: number
   erroresParseo?: string[]
-  erroresInsert?: string[]
 }
 
 export function ImportadorHistorico() {
-  const [file, setFile] = useState<File | null>(null)
+  const [file, setFile]       = useState<File | null>(null)
   const [empresa, setEmpresa] = useState<"MSA" | "PAM">("MSA")
+  const [modo, setModo]       = useState<"insertar" | "corregir">("insertar")
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<ImportResult | null>(null)
+  const [result, setResult]   = useState<ImportResult | null>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null
-    setFile(f)
+    setFile(e.target.files?.[0] ?? null)
     setResult(null)
   }
 
@@ -34,13 +42,12 @@ export function ImportadorHistorico() {
     if (!file) return
     setLoading(true)
     setResult(null)
-
     try {
       const fd = new FormData()
       fd.append("file", file)
       fd.append("empresa", empresa)
-
-      const res = await fetch("/api/import-historico", { method: "POST", body: fd })
+      fd.append("modo", modo)
+      const res  = await fetch("/api/import-historico", { method: "POST", body: fd })
       const data: ImportResult = await res.json()
       setResult(data)
     } catch (err: any) {
@@ -50,7 +57,10 @@ export function ImportadorHistorico() {
     }
   }
 
-  const totalErrores = (result?.erroresParseo?.length ?? 0) + (result?.erroresInsert?.length ?? 0)
+  const totalErrores =
+    (result?.erroresParseo?.length ?? 0) +
+    (result?.erroresInsert?.length ?? 0) +
+    (result?.erroresUpdate?.length ?? 0)
 
   return (
     <div className="space-y-6">
@@ -69,6 +79,30 @@ export function ImportadorHistorico() {
               Templates ni Extracto Bancario.
             </AlertDescription>
           </Alert>
+
+          {/* Modo */}
+          <div className="space-y-2">
+            <Label>Modo de importación</Label>
+            <RadioGroup
+              value={modo}
+              onValueChange={(v) => { setModo(v as "insertar" | "corregir"); setResult(null) }}
+              className="flex gap-6"
+            >
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="insertar" id="modo-insertar" />
+                <Label htmlFor="modo-insertar">Importar nuevo</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="corregir" id="modo-corregir" />
+                <Label htmlFor="modo-corregir">Corregir montos</Label>
+              </div>
+            </RadioGroup>
+            <p className="text-xs text-gray-500">
+              {modo === "insertar"
+                ? "Inserta registros nuevos en la tabla histórico."
+                : "Actualiza solo las columnas de dinero en registros existentes. No modifica cuenta asignada ni imputaciones."}
+            </p>
+          </div>
 
           {/* Empresa */}
           <div className="space-y-2">
@@ -114,17 +148,30 @@ export function ImportadorHistorico() {
               IVA · Imp. Total · <strong>FC</strong> · <strong>Cuenta Contable</strong> ·
               Año contable · Mes contable</p>
             <p className="mt-1">Se saltan filas vacías y filas con Tipo o FC = "x".</p>
+            {modo === "corregir" && (
+              <p className="mt-1 text-amber-700 font-medium">
+                Modo corrección: se actualizan Imp. Neto Gravado, Neto No Gravado, Op. Exentas,
+                Percepcion IIBB, Percepcion IVA, Otros Tributos, IVA e Imp. Total.
+                El match es por Fecha + CUIT + Punto de Venta + Número.
+              </p>
+            )}
           </div>
 
           <Button
             onClick={handleImportar}
             disabled={!file || loading}
             className="w-full"
+            variant={modo === "corregir" ? "secondary" : "default"}
           >
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Importando...
+                {modo === "corregir" ? "Corrigiendo..." : "Importando..."}
+              </>
+            ) : modo === "corregir" ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Corregir montos
               </>
             ) : (
               <>
@@ -141,15 +188,11 @@ export function ImportadorHistorico() {
         <Card>
           <CardContent className="pt-4 space-y-3">
             <Alert variant={result.success ? "default" : "destructive"}>
-              {result.success ? (
-                <CheckCircle className="h-4 w-4" />
-              ) : (
-                <AlertTriangle className="h-4 w-4" />
-              )}
+              {result.success ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
               <AlertDescription className="font-semibold">{result.message}</AlertDescription>
             </Alert>
 
-            {result.success && (
+            {result.success && result.modo === "insertar" && (
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded bg-green-50 p-3">
                   <p className="text-2xl font-bold text-green-700">{result.insertados ?? 0}</p>
@@ -166,6 +209,34 @@ export function ImportadorHistorico() {
               </div>
             )}
 
+            {result.success && result.modo === "corregir" && (
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="rounded bg-blue-50 p-3">
+                  <p className="text-2xl font-bold text-blue-700">{result.actualizados ?? 0}</p>
+                  <p className="text-xs text-blue-600">Actualizados</p>
+                </div>
+                <div className="rounded bg-amber-50 p-3">
+                  <p className="text-2xl font-bold text-amber-700">{result.noEncontrados ?? 0}</p>
+                  <p className="text-xs text-amber-600">No encontrados</p>
+                </div>
+                <div className="rounded bg-orange-50 p-3">
+                  <p className="text-2xl font-bold text-orange-700">{totalErrores}</p>
+                  <p className="text-xs text-orange-600">Errores</p>
+                </div>
+              </div>
+            )}
+
+            {(result.listadoNoEncontrados?.length ?? 0) > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">No encontrados en BD (clave sin match):</p>
+                <ul className="max-h-32 overflow-y-auto text-xs text-amber-700 space-y-0.5">
+                  {result.listadoNoEncontrados!.map((e, i) => (
+                    <li key={i}>• {e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {(result.erroresParseo?.length ?? 0) > 0 && (
               <div className="space-y-1">
                 <p className="text-sm font-semibold">Errores de parseo:</p>
@@ -177,11 +248,11 @@ export function ImportadorHistorico() {
               </div>
             )}
 
-            {(result.erroresInsert?.length ?? 0) > 0 && (
+            {((result.erroresInsert?.length ?? 0) > 0 || (result.erroresUpdate?.length ?? 0) > 0) && (
               <div className="space-y-1">
-                <p className="text-sm font-semibold">Errores de inserción:</p>
+                <p className="text-sm font-semibold">Errores de base de datos:</p>
                 <ul className="max-h-32 overflow-y-auto text-xs text-red-700 space-y-0.5">
-                  {result.erroresInsert!.map((e, i) => (
+                  {[...(result.erroresInsert ?? []), ...(result.erroresUpdate ?? [])].map((e, i) => (
                     <li key={i}>• {e}</li>
                   ))}
                 </ul>
