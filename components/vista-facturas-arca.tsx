@@ -5850,6 +5850,23 @@ export function VistaFacturasArca() {
                                   <TableCell className="text-right font-medium">
                                     ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      size="sm" variant="ghost"
+                                      title="Generar PDF detalle de pago"
+                                      onClick={() => generarPDFDetallePago(
+                                        'arca', f.denominacion_emisor, f.cuit,
+                                        [{
+                                          comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                          fecha: f.fecha_emision || '',
+                                          imp_total: f.imp_total || 0,
+                                          monto_sicore: f.monto_sicore,
+                                          descuento_aplicado: f.descuento_aplicado,
+                                          monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
+                                        }]
+                                      )}
+                                    >📄</Button>
+                                  </TableCell>
                                 </TableRow>
                               )
                             }
@@ -6089,6 +6106,23 @@ export function VistaFacturasArca() {
                                   <TableCell className="max-w-[100px] truncate">{t.egreso?.categ || '-'}</TableCell>
                                   <TableCell className="text-right font-medium">
                                     ${(t.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      size="sm" variant="ghost"
+                                      title="Generar PDF detalle de pago"
+                                      onClick={() => generarPDFDetallePago(
+                                        'template',
+                                        t.egreso?.nombre_quien_cobra || '-',
+                                        t.egreso?.cuit_quien_cobra || '',
+                                        [{
+                                          comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
+                                          fecha: t.fecha_vencimiento || t.fecha_estimada || '',
+                                          imp_total: t.monto || 0,
+                                          monto_a_abonar: t.monto || 0,
+                                        }]
+                                      )}
+                                    >📄</Button>
                                   </TableCell>
                                 </TableRow>
                               )
