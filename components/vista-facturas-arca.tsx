@@ -5466,111 +5466,199 @@ export function VistaFacturasArca() {
             }
 
             // Función para renderizar tabla de facturas
-            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-lg">{titulo} ({facturas.length})</h3>
-                  <div className="flex items-center gap-2">
-                    {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
-                      <Button
-                        size="sm"
-                        onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        {accionBoton.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
-                      </Button>
-                    )}
-                    {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => cambiarEstadoSeleccionadas(accionSecundaria.estado)}
-                        className="border-green-500 text-green-700 hover:bg-green-50"
-                      >
-                        {accionSecundaria.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
-                      </Button>
-                    )}
-                    {puedeAgrupar && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={agruparPagos}
-                        className="border-purple-500 text-purple-700 hover:bg-purple-50"
-                        title="Agrupar en un solo pago"
-                      >
-                        🔗 Agrupar ({seleccionadasEnPagar.length})
-                      </Button>
-                    )}
-                    {puedeDesagrupar && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={desagruparPago}
-                        className="border-orange-500 text-orange-700 hover:bg-orange-50"
-                        title="Desagrupar pagos"
-                      >
-                        🔓 Desagrupar
-                      </Button>
-                    )}
-                    <Badge variant="outline" className="text-lg px-3 py-1">
-                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </Badge>
-                  </div>
-                </div>
+            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
+              // Colapsar facturas agrupadas: una sola fila por grupo
+              type GrupoRow = {
+                esGrupo: true
+                grupoPagoId: string
+                ids: string[]
+                proveedor: string
+                cuit: string
+                montoTotal: number
+                fecha: string
+                cuentaContable: string
+                cantFacturas: number
+              }
+              type IndividualRow = { esGrupo: false; factura: FacturaArca }
+              type DisplayRow = IndividualRow | GrupoRow
 
-                {facturas.length === 0 ? (
-                  <p className="text-muted-foreground text-sm py-2">No hay facturas en este estado</p>
-                ) : (
-                  <div className="border rounded-md max-h-60 overflow-y-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-white border-b">
-                        <TableRow>
-                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
-                          <TableHead>Fecha Vto.</TableHead>
-                          <TableHead>Proveedor</TableHead>
-                          <TableHead>CUIT</TableHead>
-                          <TableHead>Cuenta</TableHead>
-                          <TableHead className="text-right">Monto</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {facturas.map(f => (
-                          <TableRow key={f.id} className={`hover:bg-muted/50 ${f.grupo_pago_id ? 'bg-purple-50' : ''}`}>
-                            {mostrarCheckbox && (
-                              <TableCell>
-                                <Checkbox
-                                  checked={facturasSeleccionadasPagos.has(f.id)}
-                                  onCheckedChange={(checked) => {
-                                    setFacturasSeleccionadasPagos(prev => {
-                                      const next = new Set(prev)
-                                      if (checked) next.add(f.id)
-                                      else next.delete(f.id)
-                                      return next
-                                    })
-                                  }}
-                                />
-                              </TableCell>
-                            )}
-                            <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
-                            <TableCell className="max-w-[200px] truncate">
-                              {f.denominacion_emisor}
-                              {f.grupo_pago_id && (
-                                <span className="ml-1 text-xs text-purple-600 font-medium">🔗</span>
-                              )}
-                            </TableCell>
-                            <TableCell>{f.cuit}</TableCell>
-                            <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+              const grupoMap = new Map<string, FacturaArca[]>()
+              const individuales: FacturaArca[] = []
+              for (const f of facturas) {
+                if (f.grupo_pago_id) {
+                  if (!grupoMap.has(f.grupo_pago_id)) grupoMap.set(f.grupo_pago_id, [])
+                  grupoMap.get(f.grupo_pago_id)!.push(f)
+                } else {
+                  individuales.push(f)
+                }
+              }
+
+              const rows: DisplayRow[] = [
+                ...individuales.map(f => ({ esGrupo: false as const, factura: f })),
+                ...Array.from(grupoMap.entries()).map(([grupoId, facs]) => ({
+                  esGrupo: true as const,
+                  grupoPagoId: grupoId,
+                  ids: facs.map(f => f.id),
+                  proveedor: facs[0].denominacion_emisor,
+                  cuit: facs[0].cuit,
+                  montoTotal: facs.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0),
+                  fecha: [...facs.map(f => f.fecha_vencimiento || f.fecha_estimada || '')].sort().reverse()[0] || '',
+                  cuentaContable: facs[0].cuenta_contable || '-',
+                  cantFacturas: facs.length
+                }))
+              ]
+              rows.sort((a, b) => {
+                const fa = a.esGrupo ? a.fecha : (a.factura.fecha_vencimiento || a.factura.fecha_estimada || '')
+                const fb = b.esGrupo ? b.fecha : (b.factura.fecha_vencimiento || b.factura.fecha_estimada || '')
+                return fa.localeCompare(fb)
+              })
+
+              const toggleGroup = (ids: string[], checked: boolean) => {
+                setFacturasSeleccionadasPagos(prev => {
+                  const next = new Set(prev)
+                  for (const id of ids) {
+                    if (checked) next.add(id)
+                    else next.delete(id)
+                  }
+                  return next
+                })
+              }
+              const isGroupChecked = (ids: string[]) => ids.length > 0 && ids.every(id => facturasSeleccionadasPagos.has(id))
+
+              const seleccionadasEnEsteBloque = Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-lg">{titulo} ({rows.length})</h3>
+                    <div className="flex items-center gap-2">
+                      {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
+                        <Button
+                          size="sm"
+                          onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {accionBoton.label} ({seleccionadasEnEsteBloque})
+                        </Button>
+                      )}
+                      {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => cambiarEstadoSeleccionadas(accionSecundaria.estado)}
+                          className="border-green-500 text-green-700 hover:bg-green-50"
+                        >
+                          {accionSecundaria.label} ({seleccionadasEnEsteBloque})
+                        </Button>
+                      )}
+                      {puedeAgrupar && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={agruparPagos}
+                          className="border-purple-500 text-purple-700 hover:bg-purple-50"
+                          title="Agrupar en un solo pago"
+                        >
+                          🔗 Agrupar ({seleccionadasEnPagar.length})
+                        </Button>
+                      )}
+                      {puedeDesagrupar && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={desagruparPago}
+                          className="border-orange-500 text-orange-700 hover:bg-orange-50"
+                          title="Desagrupar pagos"
+                        >
+                          🔓 Desagrupar
+                        </Button>
+                      )}
+                      <Badge variant="outline" className="text-lg px-3 py-1">
+                        Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </Badge>
+                    </div>
                   </div>
-                )}
-              </div>
-            )
+
+                  {rows.length === 0 ? (
+                    <p className="text-muted-foreground text-sm py-2">No hay facturas en este estado</p>
+                  ) : (
+                    <div className="border rounded-md max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-white border-b">
+                          <TableRow>
+                            {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                            <TableHead>Fecha Vto.</TableHead>
+                            <TableHead>Proveedor</TableHead>
+                            <TableHead>CUIT</TableHead>
+                            <TableHead>Cuenta</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rows.map(row => {
+                            if (row.esGrupo) {
+                              const checked = isGroupChecked(row.ids)
+                              return (
+                                <TableRow key={row.grupoPagoId} className="bg-purple-50 hover:bg-purple-100">
+                                  {mostrarCheckbox && (
+                                    <TableCell>
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(c) => toggleGroup(row.ids, !!c)}
+                                      />
+                                    </TableCell>
+                                  )}
+                                  <TableCell>{row.fecha || '-'}</TableCell>
+                                  <TableCell className="max-w-[200px] truncate">
+                                    <span className="font-medium">{row.proveedor}</span>
+                                    <span className="ml-2 text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full font-semibold">
+                                      🔗 {row.cantFacturas} FC
+                                    </span>
+                                  </TableCell>
+                                  <TableCell>{row.cuit}</TableCell>
+                                  <TableCell className="max-w-[150px] truncate">{row.cuentaContable}</TableCell>
+                                  <TableCell className="text-right font-bold text-purple-700">
+                                    ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            } else {
+                              const f = row.factura
+                              return (
+                                <TableRow key={f.id} className="hover:bg-muted/50">
+                                  {mostrarCheckbox && (
+                                    <TableCell>
+                                      <Checkbox
+                                        checked={facturasSeleccionadasPagos.has(f.id)}
+                                        onCheckedChange={(checked) => {
+                                          setFacturasSeleccionadasPagos(prev => {
+                                            const next = new Set(prev)
+                                            if (checked) next.add(f.id)
+                                            else next.delete(f.id)
+                                            return next
+                                          })
+                                        }}
+                                      />
+                                    </TableCell>
+                                  )}
+                                  <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
+                                  <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
+                                  <TableCell>{f.cuit}</TableCell>
+                                  <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            }
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )
+            }
 
             // Función para cambiar estado de templates seleccionados
             const cambiarEstadoTemplatesSeleccionados = async (nuevoEstado: string) => {
