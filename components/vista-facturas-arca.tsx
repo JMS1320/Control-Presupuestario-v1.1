@@ -3331,6 +3331,122 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Generar PDF detalle de pago (grupos ARCA o Templates)
+  const generarPDFDetallePago = async (
+    tipo: 'arca' | 'template',
+    proveedor: string,
+    cuit: string,
+    items: Array<{
+      comprobante: string
+      fecha: string
+      imp_total: number
+      monto_sicore?: number | null
+      descuento_aplicado?: number | null
+      monto_a_abonar: number
+    }>
+  ) => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+      const hoy = new Date().toLocaleDateString('es-AR')
+
+      // ── Header ────────────────────────────────────────────────────────────
+      doc.setFontSize(16)
+      doc.setFont('helvetica', 'bold')
+      doc.text('DETALLE DE PAGO', pageW / 2, 18, { align: 'center' })
+
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text('MARTINEZ SOBRADO AGRO SRL', pageW / 2, 25, { align: 'center' })
+      doc.text(`Fecha: ${hoy}`, pageW / 2, 30, { align: 'center' })
+
+      // ── Datos proveedor ────────────────────────────────────────────────────
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Destinatario:', 15, 42)
+      doc.setFont('helvetica', 'normal')
+      doc.text(proveedor, 45, 42)
+      doc.setFont('helvetica', 'bold')
+      doc.text('CUIT:', 15, 48)
+      doc.setFont('helvetica', 'normal')
+      doc.text(cuit, 30, 48)
+
+      // ── Tabla ──────────────────────────────────────────────────────────────
+      const haySicore   = items.some(i => (i.monto_sicore || 0) > 0)
+      const hayDescuento = items.some(i => (i.descuento_aplicado || 0) > 0)
+
+      const head: string[][] = [[
+        'Comprobante',
+        'Fecha',
+        'Importe Total',
+        ...(haySicore    ? ['Ret. SICORE'] : []),
+        ...(hayDescuento ? ['Descuento']   : []),
+        'Neto a Pagar'
+      ]]
+
+      const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+
+      const body: string[][] = items.map(i => [
+        i.comprobante,
+        i.fecha,
+        fmt(i.imp_total),
+        ...(haySicore    ? [i.monto_sicore    ? fmt(i.monto_sicore)    : '-'] : []),
+        ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
+        fmt(i.monto_a_abonar)
+      ])
+
+      // Fila totales
+      const totalBruto    = items.reduce((s, i) => s + i.imp_total, 0)
+      const totalSicore   = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
+      const totalDescuento = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
+      const totalNeto     = items.reduce((s, i) => s + i.monto_a_abonar, 0)
+
+      body.push([
+        'TOTAL',
+        '',
+        fmt(totalBruto),
+        ...(haySicore    ? [fmt(totalSicore)]    : []),
+        ...(hayDescuento ? [fmt(totalDescuento)] : []),
+        fmt(totalNeto)
+      ])
+
+      autoTable(doc, {
+        startY: 56,
+        head,
+        body,
+        theme: 'striped',
+        headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: {
+          0: { cellWidth: 'auto' },
+          [head[0].length - 1]: { halign: 'right', fontStyle: 'bold' },
+          [head[0].length - 2]: { halign: 'right' },
+          [head[0].length - 3]: { halign: 'right' },
+        },
+        didParseCell: (data: any) => {
+          // Fila TOTAL en negrita con fondo gris
+          if (data.row.index === body.length - 1 && data.section === 'body') {
+            data.cell.styles.fillColor = [220, 220, 220]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      })
+
+      // ── Footer ─────────────────────────────────────────────────────────────
+      const finalY = (doc as any).lastAutoTable?.finalY ?? 120
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'italic')
+      doc.text('Documento generado automáticamente por Control Presupuestario MSA', pageW / 2, finalY + 10, { align: 'center' })
+
+      const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${hoy.replace(/\//g, '-')}.pdf`
+      doc.save(nombreArchivo)
+
+    } catch (error) {
+      console.error('Error generando PDF detalle de pago:', error)
+      alert('Error al generar PDF: ' + (error as Error).message)
+    }
+  }
+
   // Componente SubdiariosContent
   const SubdiariosContent = () => (
     <div className="space-y-6">
@@ -5666,6 +5782,7 @@ export function VistaFacturasArca() {
                           {rows.map(row => {
                             if (row.esGrupo) {
                               const checked = isGroupChecked(row.ids)
+                              const facsGrupo = grupoMap.get(row.grupoPagoId) || []
                               return (
                                 <TableRow key={row.grupoPagoId} className="bg-purple-50 hover:bg-purple-100">
                                   {mostrarCheckbox && (
@@ -5687,6 +5804,23 @@ export function VistaFacturasArca() {
                                   <TableCell className="max-w-[150px] truncate">{row.cuentaContable}</TableCell>
                                   <TableCell className="text-right font-bold text-purple-700">
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      size="sm" variant="ghost"
+                                      title="Generar PDF detalle de pago"
+                                      onClick={() => generarPDFDetallePago(
+                                        'arca', row.proveedor, row.cuit,
+                                        facsGrupo.map(f => ({
+                                          comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                          fecha: f.fecha_emision || '',
+                                          imp_total: f.imp_total || 0,
+                                          monto_sicore: f.monto_sicore,
+                                          descuento_aplicado: f.descuento_aplicado,
+                                          monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
+                                        }))
+                                      )}
+                                    >📄</Button>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -5892,6 +6026,7 @@ export function VistaFacturasArca() {
                           {tRows.map(row => {
                             if (row.esGrupo) {
                               const checked = isTGroupChecked(row.ids)
+                              const tsGrupo = grupoTMap.get(row.grupoPagoId) || []
                               return (
                                 <TableRow key={row.grupoPagoId} className="bg-purple-50 hover:bg-purple-100">
                                   {mostrarCheckbox && (
@@ -5910,6 +6045,22 @@ export function VistaFacturasArca() {
                                   <TableCell className="max-w-[100px] truncate">{row.categ}</TableCell>
                                   <TableCell className="text-right font-bold text-purple-700">
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      size="sm" variant="ghost"
+                                      title="Generar PDF detalle de pago"
+                                      onClick={() => generarPDFDetallePago(
+                                        'template', row.proveedor,
+                                        tsGrupo[0]?.egreso?.cuit_quien_cobra || '',
+                                        tsGrupo.map(t => ({
+                                          comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
+                                          fecha: t.fecha_vencimiento || t.fecha_estimada || '',
+                                          imp_total: t.monto || 0,
+                                          monto_a_abonar: t.monto || 0,
+                                        }))
+                                      )}
+                                    >📄</Button>
                                   </TableCell>
                                 </TableRow>
                               )
