@@ -80,6 +80,7 @@ interface FacturaArca {
   sicore: string | null
   monto_sicore: number | null
   tipo_sicore: string | null
+  descuento_aplicado: number | null
   // Agrupación de pagos
   grupo_pago_id: string | null
 }
@@ -2611,25 +2612,26 @@ export function VistaFacturasArca() {
           monto_a_abonar: saldoFinal,
           sicore: quincena,
           monto_sicore: montoRetencion,
-          tipo_sicore: tipoSeleccionado.tipo
+          tipo_sicore: tipoSeleccionado.tipo,
+          descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null
         })
         .eq('id', facturaEnProceso.id)
-      
+
       if (error) {
         throw new Error(error.message)
       }
-      
+
       // Actualizar estado local con datos SICORE
-      const nuevasFacturas = facturas.map(f => 
-        f.id === facturaEnProceso.id 
-          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
+      const nuevasFacturas = facturas.map(f =>
+        f.id === facturaEnProceso.id
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null }
           : f
       )
       setFacturas(nuevasFacturas)
-      
-      const nuevasFacturasOriginales = facturasOriginales.map(f => 
-        f.id === facturaEnProceso.id 
-          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion }
+
+      const nuevasFacturasOriginales = facturasOriginales.map(f =>
+        f.id === facturaEnProceso.id
+          ? { ...f, monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null }
           : f
       )
       setFacturasOriginales(nuevasFacturasOriginales)
