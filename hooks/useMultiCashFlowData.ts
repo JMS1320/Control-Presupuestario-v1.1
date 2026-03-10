@@ -138,17 +138,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     return [...filasIndividuales, ...filasGrupo]
   }
 
-  // Mapear templates egresos a formato Cash Flow
+  // Mapear templates egresos a formato Cash Flow (con agrupación)
   const mapearTemplatesEgresos = (cuotas: any[]): CashFlowRow[] => {
-    return cuotas.map(c => {
+    // Separar cuotas agrupadas de las individuales
+    const individuales = cuotas.filter(c => !c.grupo_pago_id)
+    const agrupadas    = cuotas.filter(c =>  c.grupo_pago_id)
+
+    // Filas individuales
+    const filasIndividuales: CashFlowRow[] = individuales.map(c => {
       const esIngreso = c.tipo_movimiento === 'ingreso'
       const monto = c.monto || 0
-
       return {
         id: c.id,
         origen: 'TEMPLATE' as const,
         origen_tabla: 'cuotas_egresos_sin_factura',
-        egreso_id: c.egreso_id, // ID del egreso padre para editar categ/centro_costo
+        egreso_id: c.egreso_id,
         fecha_estimada: c.fecha_estimada,
         fecha_vencimiento: c.fecha_vencimiento,
         categ: c.egreso?.categ || 'SIN_CATEG',
@@ -156,12 +160,53 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
         detalle: c.descripcion || c.egreso?.nombre_referencia || '',
-        debitos: esIngreso ? 0 : monto,   // Egreso = débito (sale dinero)
-        creditos: esIngreso ? monto : 0,  // Ingreso = crédito (entra dinero)
-        saldo_cta_cte: 0, // Se calcula después
-        estado: c.estado || 'pendiente'
+        debitos: esIngreso ? 0 : monto,
+        creditos: esIngreso ? monto : 0,
+        saldo_cta_cte: 0,
+        estado: c.estado || 'pendiente',
+        grupo_pago_id: null,
       }
     })
+
+    // Filas agrupadas — una fila por grupo
+    const porGrupo = new Map<string, any[]>()
+    agrupadas.forEach(c => {
+      const g = c.grupo_pago_id as string
+      if (!porGrupo.has(g)) porGrupo.set(g, [])
+      porGrupo.get(g)!.push(c)
+    })
+
+    const filasGrupo: CashFlowRow[] = Array.from(porGrupo.entries()).map(([grupoId, cs]) => {
+      // Fecha más tardía del grupo
+      const fechaMax = cs.map(c => c.fecha_estimada).filter(Boolean).sort().at(-1) ?? ''
+      const fechaVencMax = cs.map(c => c.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
+      const totalDebitos = cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0)
+      const detallesCombinados = cs.map(c => c.descripcion || c.egreso?.nombre_referencia || '').join(' · ')
+      const primera = cs[0]
+
+      return {
+        id: grupoId,
+        origen: 'TEMPLATE' as const,
+        origen_tabla: 'msa.grupos_pago',
+        egreso_id: primera.egreso_id,
+        fecha_estimada: fechaMax,
+        fecha_vencimiento: fechaVencMax,
+        categ: primera.egreso?.categ || 'SIN_CATEG',
+        centro_costo: primera.egreso?.centro_costo || 'SIN_CC',
+        cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
+        nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
+        detalle: detallesCombinados,
+        debitos: totalDebitos,
+        creditos: 0,
+        saldo_cta_cte: 0,
+        estado: primera.estado || 'pendiente',
+        grupo_pago_id: grupoId,
+        facturas_agrupadas: cs.length,
+        ids_grupo: cs.map(c => c.id),
+      }
+    })
+
+    return [...filasIndividuales, ...filasGrupo]
   }
 
   // Mapear períodos de sueldos a formato Cash Flow
@@ -440,13 +485,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
           if (error) throw error
         } else {
-          // Otros campos van a la tabla de cuotas
-          const { error } = await supabase
-            .from('cuotas_egresos_sin_factura')
-            .update(updateData)
-            .eq('id', id)
+          // Comprobar si es una fila de grupo → propagar a todos los miembros
+          const filaActual = data.find(f => f.id === id)
+          const idsGrupo = filaActual?.ids_grupo
 
-          if (error) throw error
+          if (idsGrupo && idsGrupo.length > 0) {
+            // Fila colapsada de grupo: actualizar todos los templates del grupo
+            const { error } = await supabase
+              .from('cuotas_egresos_sin_factura')
+              .update(updateData)
+              .in('id', idsGrupo)
+
+            if (error) throw error
+          } else {
+            // Cuota individual
+            const { error } = await supabase
+              .from('cuotas_egresos_sin_factura')
+              .update(updateData)
+              .eq('id', id)
+
+            if (error) throw error
+          }
         }
       }
 

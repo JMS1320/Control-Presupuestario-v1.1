@@ -5309,24 +5309,24 @@ export function VistaFacturasArca() {
               setFacturasSeleccionadasPagos(new Set())
             }
 
-            // ── Agrupar / Desagrupar templates ────────────────────────────────
-            const seleccionadasTemplatesEnPagar = templatesPagos.filter(
-              t => templatesSeleccionadosPagos.has(t.id) && t.estado === 'pagar'
+            // ── Agrupar / Desagrupar templates (cualquier estado) ─────────────
+            const seleccionadasTemplatesActivas = templatesPagos.filter(
+              t => templatesSeleccionadosPagos.has(t.id)
             )
-            const puedeAgruparTemplates = seleccionadasTemplatesEnPagar.length >= 2
-              && new Set(seleccionadasTemplatesEnPagar.map(t => t.egreso?.cuit_quien_cobra)).size === 1
-              && new Set(seleccionadasTemplatesEnPagar.map(t => t.egreso?.responsable)).size === 1
-              && seleccionadasTemplatesEnPagar.every(t => !t.grupo_pago_id)
+            const puedeAgruparTemplates = seleccionadasTemplatesActivas.length >= 2
+              && new Set(seleccionadasTemplatesActivas.map(t => t.egreso?.cuit_quien_cobra)).size === 1
+              && new Set(seleccionadasTemplatesActivas.map(t => t.egreso?.responsable)).size === 1
+              && seleccionadasTemplatesActivas.every(t => !t.grupo_pago_id)
 
             const gruposTemplatesSeleccionados = new Set(
-              seleccionadasTemplatesEnPagar.filter(t => t.grupo_pago_id).map(t => t.grupo_pago_id)
+              seleccionadasTemplatesActivas.filter(t => t.grupo_pago_id).map(t => t.grupo_pago_id)
             )
             const puedeDesagruparTemplates = gruposTemplatesSeleccionados.size === 1
 
             const agruparTemplates = async () => {
               if (!puedeAgruparTemplates) return
-              const primero = seleccionadasTemplatesEnPagar[0]
-              const monto_total = seleccionadasTemplatesEnPagar.reduce((s, t) => s + (t.monto || 0), 0)
+              const primero = seleccionadasTemplatesActivas[0]
+              const monto_total = seleccionadasTemplatesActivas.reduce((s, t) => s + (t.monto || 0), 0)
               const { data: grupo, error: errGrupo } = await supabase
                 .schema('msa')
                 .from('grupos_pago')
@@ -5334,12 +5334,12 @@ export function VistaFacturasArca() {
                   cuit: primero.egreso?.cuit_quien_cobra,
                   proveedor: primero.egreso?.nombre_quien_cobra || primero.egreso?.proveedor,
                   monto_total,
-                  estado: 'pagar',
+                  estado: primero.estado || 'pendiente',
                 })
                 .select('id')
                 .single()
               if (errGrupo || !grupo) { alert('Error al crear grupo'); return }
-              const ids = seleccionadasTemplatesEnPagar.map(t => t.id)
+              const ids = seleccionadasTemplatesActivas.map(t => t.id)
               const { error: errUpd } = await supabase
                 .from('cuotas_egresos_sin_factura')
                 .update({ grupo_pago_id: grupo.id })
@@ -5355,7 +5355,7 @@ export function VistaFacturasArca() {
             const desagruparTemplates = async () => {
               if (!puedeDesagruparTemplates) return
               const grupoId = Array.from(gruposTemplatesSeleccionados)[0] as string
-              const ids = seleccionadasTemplatesEnPagar.filter(t => t.grupo_pago_id === grupoId).map(t => t.id)
+              const ids = seleccionadasTemplatesActivas.filter(t => t.grupo_pago_id === grupoId).map(t => t.id)
               const todasDelGrupo = templatesPagos.filter(t => t.grupo_pago_id === grupoId)
               const quedan = todasDelGrupo.filter(t => !ids.includes(t.id))
               await supabase
@@ -5855,12 +5855,12 @@ export function VistaFacturasArca() {
                           {accionSecundaria.label} ({seleccionadasEnEsteBloque})
                         </Button>
                       )}
-                      {puedeAgruparTemplates && templates === templatesPagar && (
+                      {puedeAgruparTemplates && (
                         <Button size="sm" variant="outline" onClick={agruparTemplates} className="border-purple-500 text-purple-700 hover:bg-purple-50" title="Agrupar en un solo pago">
-                          🔗 Agrupar ({seleccionadasTemplatesEnPagar.length})
+                          🔗 Agrupar ({seleccionadasTemplatesActivas.length})
                         </Button>
                       )}
-                      {puedeDesagruparTemplates && templates === templatesPagar && (
+                      {puedeDesagruparTemplates && (
                         <Button size="sm" variant="outline" onClick={desagruparTemplates} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
                           🔓 Desagrupar
                         </Button>
