@@ -250,6 +250,7 @@ export function VistaFacturasArca() {
   const [anticiposSeleccionadosPagos, setAnticiposSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true })
+  const [filtroBusquedaPagos, setFiltroBusquedaPagos] = useState('')
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
@@ -5166,6 +5167,21 @@ export function VistaFacturasArca() {
             </div>
           </div>
 
+          {/* Barra de búsqueda */}
+          <div className="flex items-center gap-2 mb-2">
+            <Input
+              placeholder="Buscar por proveedor, CUIT, cuenta, monto..."
+              value={filtroBusquedaPagos}
+              onChange={e => setFiltroBusquedaPagos(e.target.value)}
+              className="text-sm"
+            />
+            {filtroBusquedaPagos && (
+              <Button size="sm" variant="ghost" onClick={() => setFiltroBusquedaPagos('')} className="h-9 px-2 text-gray-400">
+                ✕
+              </Button>
+            )}
+          </div>
+
           {cargandoPagos ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin" />
@@ -5186,10 +5202,27 @@ export function VistaFacturasArca() {
               })
             }
 
-            // Filtrar facturas por estado y ordenar por fecha
-            const facturasPreparado = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'preparado'))
-            const facturasPagar = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pagar'))
-            const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente'))
+            // Función de búsqueda full-text sobre los campos relevantes
+            const matchBusqueda = (f: FacturaArca) => {
+              if (!filtroBusquedaPagos.trim()) return true
+              const q = filtroBusquedaPagos.toLowerCase()
+              return [
+                f.denominacion_emisor,
+                f.cuit,
+                f.cuenta_contable,
+                f.centro_costo,
+                f.detalle,
+                f.observaciones_pago,
+                String(f.monto_a_abonar ?? f.imp_total ?? ''),
+                f.fecha_vencimiento,
+                f.fecha_estimada,
+              ].some(v => v && String(v).toLowerCase().includes(q))
+            }
+
+            // Filtrar facturas por estado, búsqueda y ordenar por fecha
+            const facturasPreparado = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'preparado' && matchBusqueda(f)))
+            const facturasPagar = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pagar' && matchBusqueda(f)))
+            const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente' && matchBusqueda(f)))
 
             // Calcular subtotales
             const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
