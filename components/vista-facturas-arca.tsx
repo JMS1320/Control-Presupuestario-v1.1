@@ -5802,20 +5802,56 @@ export function VistaFacturasArca() {
               </div>
             )
 
-            // Filtrar templates por estado
-            const templatesPreparado = templatesPagos.filter(t => t.estado === 'preparado')
-            const templatesPagar = templatesPagos.filter(t => t.estado === 'pagar')
-            const templatesPendiente = templatesPagos.filter(t => t.estado === 'pendiente')
+            // Búsqueda para templates
+            const matchTemplate = (t: any) => {
+              if (!filtroBusquedaPagos.trim()) return true
+              const q = filtroBusquedaPagos.toLowerCase()
+              return [
+                t.egreso?.nombre_referencia,
+                t.descripcion,
+                t.egreso?.nombre_quien_cobra,
+                t.egreso?.categ,
+                t.egreso?.centro_costo,
+                String(t.monto ?? ''),
+                t.fecha_vencimiento,
+                t.fecha_estimada,
+              ].some(v => v && String(v).toLowerCase().includes(q))
+            }
+
+            // Búsqueda para anticipos
+            const matchAnticipo = (a: any) => {
+              if (!filtroBusquedaPagos.trim()) return true
+              const q = filtroBusquedaPagos.toLowerCase()
+              return [
+                a.descripcion,
+                a.nombre_proveedor,
+                a.cuit_proveedor,
+                String(a.monto ?? ''),
+                a.fecha_pago,
+              ].some(v => v && String(v).toLowerCase().includes(q))
+            }
+
+            const ordenarTemplatesPorFecha = (lista: any[]) =>
+              [...lista].sort((a, b) => {
+                const fa = a.fecha_vencimiento || a.fecha_estimada || '9999-12-31'
+                const fb = b.fecha_vencimiento || b.fecha_estimada || '9999-12-31'
+                return fa.localeCompare(fb)
+              })
+
+            // Filtrar templates por estado + búsqueda + ordenar por fecha
+            const templatesPreparado = ordenarTemplatesPorFecha(templatesPagos.filter(t => t.estado === 'preparado' && matchTemplate(t)))
+            const templatesPagar = ordenarTemplatesPorFecha(templatesPagos.filter(t => t.estado === 'pagar' && matchTemplate(t)))
+            const templatesPendiente = ordenarTemplatesPorFecha(templatesPagos.filter(t => t.estado === 'pendiente' && matchTemplate(t)))
 
             // Calcular subtotales templates
             const subtotalTemplatesPreparado = templatesPreparado.reduce((sum, t) => sum + (t.monto || 0), 0)
             const subtotalTemplatesPagar = templatesPagar.reduce((sum, t) => sum + (t.monto || 0), 0)
             const subtotalTemplatesPendiente = templatesPendiente.reduce((sum, t) => sum + (t.monto || 0), 0)
 
-            // Anticipos filtrados por estado
-            const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar')
-            const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado')
-            const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente')
+            // Anticipos filtrados por estado + búsqueda
+            const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar' && matchAnticipo(a))
+            const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado' && matchAnticipo(a))
+            const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente' && matchAnticipo(a))
             const montoNetoAnticipo = (a: any) => (a.monto || 0) - (a.monto_sicore || 0)
             const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + montoNetoAnticipo(a), 0)
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + montoNetoAnticipo(a), 0)
@@ -6002,7 +6038,8 @@ export function VistaFacturasArca() {
                           templatesPagar,
                           '📋 Pagar',
                           subtotalTemplatesPagar,
-                          true
+                          true,
+                          { label: 'Marcar como Preparado', estado: 'preparado' }
                         )}
                       </>
                     )}
@@ -6027,7 +6064,8 @@ export function VistaFacturasArca() {
                           templatesPendiente,
                           '⏳ Pendiente',
                           subtotalTemplatesPendiente,
-                          true
+                          true,
+                          { label: 'Marcar como Pagar', estado: 'pagar' }
                         )}
                       </>
                     )}
@@ -6053,7 +6091,8 @@ export function VistaFacturasArca() {
                       templatesPagar,
                       '📋 Por Pagar',
                       subtotalTemplatesPagar,
-                      true
+                      true,
+                      { label: 'Marcar como Preparado', estado: 'preparado' }
                     )}
                     {filtroOrigenPagos.anticipo && renderTablaAnticipos(
                       anticiposPreparado,
