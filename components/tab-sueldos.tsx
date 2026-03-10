@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select"
 import {
   Users, DollarSign, ArrowDownCircle, Clock,
-  ChevronLeft, ChevronRight, Plus, History, Loader2,
+  ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -48,6 +48,15 @@ interface Periodo {
   saldo_pendiente: number
   estado: string
   empleado: Empleado
+  // Parámetros del período
+  monto_a: number | null
+  monto_b: number | null
+  francos_cantidad: number | null
+  valor_por_dia: number | null
+  dias_trabajados: number | null
+  valor_por_hora: number | null
+  horas_mes: number | null
+  varios: number | null
 }
 
 interface Pago {
@@ -147,6 +156,19 @@ export function TabSueldos() {
   const [historial, setHistorial] = useState<Periodo[]>([])
   const [cargandoHistorial, setCargandoHistorial] = useState(false)
 
+  // Modal edición parámetros
+  const [modalEdicion, setModalEdicion] = useState(false)
+  const [edPeriodo, setEdPeriodo] = useState<Periodo | null>(null)
+  const [edMontoA, setEdMontoA] = useState('')
+  const [edMontoB, setEdMontoB] = useState('')
+  const [edFrancos, setEdFrancos] = useState('')
+  const [edValorDia, setEdValorDia] = useState('')
+  const [edDias, setEdDias] = useState('')
+  const [edValorHora, setEdValorHora] = useState('')
+  const [edHoras, setEdHoras] = useState('')
+  const [edVarios, setEdVarios] = useState('')
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+
   // ── Cargar datos del mes seleccionado ──────────────────────────────────────
 
   const cargar = async () => {
@@ -245,6 +267,82 @@ export function TabSueldos() {
     setModalAnticipo(false)
     await cargar()
   }
+
+  // ── Edición parámetros del período ────────────────────────────────────────
+
+  const num = (v: string) => parseFloat(v.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
+
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, vdia: number, dias: number, vhora: number, horas: number, varios: number) => {
+    switch (tipo) {
+      case 'ab_francos':   return (a + b) - ((a + b) / 25 * francos) + varios
+      case 'por_dia':      return vdia * dias + varios
+      case 'por_hora_ipc': return vhora * horas + varios
+      default:             return (edPeriodo?.bruto_calculado ?? 0) + varios
+    }
+  }
+
+  const abrirEdicion = (p: Periodo) => {
+    setEdPeriodo(p)
+    setEdMontoA(p.monto_a !== null ? String(p.monto_a) : '')
+    setEdMontoB(p.monto_b !== null ? String(p.monto_b) : '')
+    setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad) : '')
+    setEdValorDia(p.valor_por_dia !== null ? String(p.valor_por_dia) : '')
+    setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
+    setEdValorHora(p.valor_por_hora !== null ? String(p.valor_por_hora) : '')
+    setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
+    setEdVarios(p.varios !== null && p.varios !== 0 ? String(p.varios) : '')
+    setModalEdicion(true)
+  }
+
+  const guardarEdicion = async () => {
+    if (!edPeriodo) return
+    setGuardandoEdicion(true)
+    const tipo = edPeriodo.empleado?.tipo_empleado
+    const a       = num(edMontoA)
+    const b       = num(edMontoB)
+    const francos = parseInt(edFrancos) || 0
+    const vdia    = num(edValorDia)
+    const dias    = parseInt(edDias) || 0
+    const vhora   = num(edValorHora)
+    const horas   = parseInt(edHoras) || 0
+    const varios  = num(edVarios)
+
+    const nuevoBruto = calcularBruto(tipo, a, b, francos, vdia, dias, vhora, horas, varios)
+    const nuevoSaldo = nuevoBruto - (edPeriodo.anticipos_descontados ?? 0)
+
+    const updateData: Record<string, number | null> = {
+      varios,
+      bruto_calculado: nuevoBruto,
+      saldo_pendiente: nuevoSaldo,
+    }
+    if (tipo === 'ab_francos') {
+      updateData.monto_a = a
+      updateData.monto_b = b
+      updateData.francos_cantidad = francos
+    } else if (tipo === 'por_dia') {
+      updateData.valor_por_dia = vdia
+      updateData.dias_trabajados = dias
+    } else if (tipo === 'por_hora_ipc') {
+      updateData.valor_por_hora = vhora
+      updateData.horas_mes = horas
+    }
+
+    await supabase.from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
+    setGuardandoEdicion(false)
+    setModalEdicion(false)
+    await cargar()
+  }
+
+  // Bruto preview en tiempo real
+  const brutoPreview = edPeriodo
+    ? calcularBruto(
+        edPeriodo.empleado?.tipo_empleado,
+        num(edMontoA), num(edMontoB), parseInt(edFrancos) || 0,
+        num(edValorDia), parseInt(edDias) || 0,
+        num(edValorHora), parseInt(edHoras) || 0,
+        num(edVarios),
+      )
+    : 0
 
   // ── Historial ─────────────────────────────────────────────────────────────
 
@@ -413,14 +511,25 @@ export function TabSueldos() {
                     </TableCell>
                     <TableCell>{estadoBadge(p.estado)}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs h-7 px-2"
-                        onClick={() => abrirAnticipo(p.empleado_id)}
-                      >
-                        + Anticipo
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={() => abrirEdicion(p)}
+                          title="Editar parámetros del mes"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={() => abrirAnticipo(p.empleado_id)}
+                        >
+                          + Anticipo
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -472,6 +581,143 @@ export function TabSueldos() {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Modal Edición Parámetros ── */}
+      <Dialog open={modalEdicion} onOpenChange={setModalEdicion}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {edPeriodo?.empleado?.nombre} — {MESES_LONG[(edPeriodo?.mes ?? 1) - 1]} {edPeriodo?.anio}
+            </DialogTitle>
+          </DialogHeader>
+
+          {edPeriodo && (
+            <div className="space-y-4 py-2">
+
+              {/* ab_francos */}
+              {edPeriodo.empleado?.tipo_empleado === 'ab_francos' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Categoría A</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={edMontoA}
+                        onChange={e => setEdMontoA(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>Categoría B</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={edMontoB}
+                        onChange={e => setEdMontoB(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                      <Label>Cant. francos trabajados</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={edFrancos}
+                        onChange={e => setEdFrancos(e.target.value)}
+                      />
+                    </div>
+                    <div className="text-sm text-gray-500 pb-2">
+                      Valor franco:{' '}
+                      <span className="font-mono font-semibold text-gray-700">
+                        {formatoMoneda((num(edMontoA) + num(edMontoB)) / 25)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* por_dia */}
+              {edPeriodo.empleado?.tipo_empleado === 'por_dia' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Valor día</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={edValorDia}
+                      onChange={e => setEdValorDia(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Días trabajados</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={edDias}
+                      onChange={e => setEdDias(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* por_hora_ipc */}
+              {edPeriodo.empleado?.tipo_empleado === 'por_hora_ipc' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Valor hora</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={edValorHora}
+                      onChange={e => setEdValorHora(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Horas del mes</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={edHoras}
+                      onChange={e => setEdHoras(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Varios — todos los tipos */}
+              <div>
+                <Label>Varios (combustible, reintegros, etc.)</Label>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  value={edVarios}
+                  onChange={e => setEdVarios(e.target.value)}
+                />
+              </div>
+
+              {/* Preview bruto */}
+              <div className="rounded-md bg-gray-50 px-4 py-3 flex justify-between items-center border">
+                <span className="text-sm text-gray-500">Bruto calculado</span>
+                <span className="text-lg font-bold text-blue-700 font-mono">
+                  {formatoMoneda(brutoPreview)}
+                </span>
+              </div>
+
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalEdicion(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarEdicion} disabled={guardandoEdicion}>
+              {guardandoEdicion ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Modal Anticipo ── */}
       <Dialog open={modalAnticipo} onOpenChange={setModalAnticipo}>
