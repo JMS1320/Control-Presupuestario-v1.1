@@ -165,6 +165,9 @@ export function VistaTemplatesEgresos() {
   const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
   const [cuotasSeleccionadasMasiva, setCuotasSeleccionadasMasiva] = useState<Set<string>>(new Set())
   const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
+  const [modalConversionMasiva, setModalConversionMasiva] = useState(false)
+  const [procesandoConversion, setProcesandoConversion] = useState(false)
+  const [resultadosConversion, setResultadosConversion] = useState<Array<{nombre: string, ok: boolean, msg: string}>>([])
 
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
@@ -295,6 +298,45 @@ export function VistaTemplatesEgresos() {
     } catch (error) {
       console.error('Error en edición masiva cuotas:', error)
       alert('Error en edición masiva: ' + (error as Error).message)
+    }
+  }
+
+  // Conversión masiva Anual → Cuotas
+  const cuotasSeleccionadasArray = cuotas.filter(c => cuotasSeleccionadasMasiva.has(c.id))
+  const todasSonAnuales = cuotasSeleccionadasArray.length > 0 &&
+    cuotasSeleccionadasArray.every(c => c.egreso?.nombre_referencia?.toLowerCase().includes('anual'))
+  const tienenGrupoImpuesto = cuotasSeleccionadasArray.every(c => !!c.egreso?.grupo_impuesto_id)
+  const puedeConvertirMasivo = todasSonAnuales && tienenGrupoImpuesto
+
+  const ejecutarConversionMasiva = async () => {
+    setProcesandoConversion(true)
+    setResultadosConversion([])
+    // Deduplicar por grupo_impuesto_id (puede haber varias cuotas del mismo template anual)
+    const gruposMap = new Map<string, CuotaEgresoSinFactura>()
+    for (const c of cuotasSeleccionadasArray) {
+      const gid = c.egreso?.grupo_impuesto_id
+      if (gid && !gruposMap.has(gid)) gruposMap.set(gid, c)
+    }
+    const resultados: Array<{nombre: string, ok: boolean, msg: string}> = []
+    for (const [gid, cuota] of gruposMap) {
+      const res = await ejecutarPagoCuotas({
+        templateId: cuota.egreso_id,
+        cuotaId: cuota.id,
+        grupoImpuestoId: gid
+      })
+      resultados.push({
+        nombre: cuota.egreso?.nombre_referencia || gid,
+        ok: res.success,
+        msg: res.success
+          ? `✅ Cuotas activadas: ${res.cuotasActivadas}`
+          : `❌ ${res.error}`
+      })
+    }
+    setResultadosConversion(resultados)
+    setProcesandoConversion(false)
+    if (resultados.every(r => r.ok)) {
+      setCuotasSeleccionadasMasiva(new Set())
+      await cargarCuotas()
     }
   }
 
@@ -1667,6 +1709,27 @@ export function VistaTemplatesEgresos() {
                     </Button>
                   </div>
                 </div>
+
+                {/* Conversión masiva Anual → Cuotas */}
+                {puedeConvertirMasivo && (
+                  <div className="mt-4 pt-4 border-t border-purple-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-purple-900">🔄 Conversión masiva Anual → Cuotas</p>
+                        <p className="text-xs text-purple-600 mt-0.5">
+                          {new Set(cuotasSeleccionadasArray.map(c => c.egreso?.grupo_impuesto_id).filter(Boolean)).size} templates seleccionados
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => { setResultadosConversion([]); setModalConversionMasiva(true) }}
+                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                        size="sm"
+                      >
+                        🔄 Convertir a Cuotas
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -1692,6 +1755,49 @@ export function VistaTemplatesEgresos() {
           </div>
         </div>
       )}
+
+      {/* Modal Conversión Masiva Anual → Cuotas */}
+      <Dialog open={modalConversionMasiva} onOpenChange={v => { if (!procesandoConversion) setModalConversionMasiva(v) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>🔄 Convertir a Cuotas</DialogTitle>
+            <DialogDescription>
+              Se convertirán los siguientes templates de Anual a Cuotas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2 max-h-64 overflow-y-auto">
+            {Array.from(new Map(
+              cuotasSeleccionadasArray
+                .filter(c => c.egreso?.grupo_impuesto_id)
+                .map(c => [c.egreso!.grupo_impuesto_id!, c])
+            ).values()).map(c => (
+              <div key={c.egreso?.grupo_impuesto_id} className="flex items-center justify-between text-sm border rounded px-3 py-2">
+                <span className="font-medium">{c.egreso?.nombre_referencia}</span>
+                {resultadosConversion.length > 0 && (() => {
+                  const r = resultadosConversion.find(r => r.nombre === c.egreso?.nombre_referencia)
+                  return r ? <span className={r.ok ? 'text-green-600' : 'text-red-600'}>{r.msg}</span> : null
+                })()}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            {resultadosConversion.length === 0 ? (
+              <>
+                <Button variant="outline" onClick={() => setModalConversionMasiva(false)} disabled={procesandoConversion}>
+                  Cancelar
+                </Button>
+                <Button onClick={ejecutarConversionMasiva} disabled={procesandoConversion} className="bg-orange-500 hover:bg-orange-600">
+                  {procesandoConversion ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Convirtiendo...</> : '🔄 Confirmar Conversión'}
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setModalConversionMasiva(false)} className="bg-green-600 hover:bg-green-700">
+                Cerrar
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Propagación de Cuotas - 3 opciones */}
       <Dialog open={modalPropagacion.isOpen} onOpenChange={() => {}}>
