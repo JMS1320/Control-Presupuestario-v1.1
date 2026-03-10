@@ -79,6 +79,9 @@ interface FacturaArca {
   // Campos SICORE - Retenciones Ganancias
   sicore: string | null
   monto_sicore: number | null
+  tipo_sicore: string | null
+  // Agrupación de pagos
+  grupo_pago_id: string | null
 }
 
 // Interface para configuración tipos SICORE
@@ -5193,6 +5196,86 @@ export function VistaFacturasArca() {
             const subtotalPagar = facturasPagar.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
             const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
 
+            // ── Agrupar / Desagrupar pagos ────────────────────────────────
+
+            // Facturas seleccionadas que están en estado 'pagar' y pertenecen a este grupo de facturas
+            const seleccionadasEnPagar = facturas.filter(
+              f => facturasSeleccionadasPagos.has(f.id) && f.estado === 'pagar'
+            )
+            // Hay agrupación posible si hay 2+ del mismo proveedor sin grupo asignado
+            const puedeAgrupar = seleccionadasEnPagar.length >= 2
+              && new Set(seleccionadasEnPagar.map(f => f.cuit)).size === 1
+              && seleccionadasEnPagar.every(f => !f.grupo_pago_id)
+
+            // Hay desagrupación posible si todas las seleccionadas tienen el mismo grupo
+            const gruposSeleccionados = new Set(
+              seleccionadasEnPagar.filter(f => f.grupo_pago_id).map(f => f.grupo_pago_id)
+            )
+            const puedeDesagrupar = gruposSeleccionados.size === 1
+
+            const agruparPagos = async () => {
+              if (!puedeAgrupar) return
+              const primeraF = seleccionadasEnPagar[0]
+              const monto_total = seleccionadasEnPagar.reduce(
+                (s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0
+              )
+              // 1. Crear grupo
+              const { data: grupo, error: errGrupo } = await supabase
+                .schema('msa')
+                .from('grupos_pago')
+                .insert({
+                  cuit: primeraF.cuit,
+                  proveedor: primeraF.denominacion_emisor,
+                  monto_total,
+                  estado: 'pagar',
+                })
+                .select('id')
+                .single()
+              if (errGrupo || !grupo) { alert('Error al crear grupo'); return }
+              // 2. Asignar grupo a las facturas
+              const ids = seleccionadasEnPagar.map(f => f.id)
+              const { error: errUpd } = await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .update({ grupo_pago_id: grupo.id })
+                .in('id', ids)
+              if (errUpd) { alert('Error al asignar grupo'); return }
+              // 3. Actualizar estado local
+              setFacturasPagos(prev => prev.map(f =>
+                ids.includes(f.id) ? { ...f, grupo_pago_id: grupo.id } : f
+              ))
+              setFacturasSeleccionadasPagos(new Set())
+              alert(`✅ ${ids.length} facturas agrupadas en un pago`)
+            }
+
+            const desagruparPago = async () => {
+              if (!puedeDesagrupar) return
+              const grupoId = Array.from(gruposSeleccionados)[0] as string
+              const ids = seleccionadasEnPagar.filter(f => f.grupo_pago_id === grupoId).map(f => f.id)
+              // Verificar si quedarán facturas en el grupo
+              const todasDelGrupo = facturas.filter(f => f.grupo_pago_id === grupoId)
+              const quedan = todasDelGrupo.filter(f => !ids.includes(f.id))
+              // Quitar grupo de las seleccionadas
+              await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .update({ grupo_pago_id: null })
+                .in('id', ids)
+              // Si el grupo queda con 0 o 1 factura, eliminar el grupo
+              if (quedan.length <= 1) {
+                if (quedan.length === 1) {
+                  await supabase.schema('msa').from('comprobantes_arca')
+                    .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
+                }
+                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+              }
+              // Actualizar estado local
+              setFacturasPagos(prev => prev.map(f =>
+                ids.includes(f.id) ? { ...f, grupo_pago_id: null } : f
+              ))
+              setFacturasSeleccionadasPagos(new Set())
+            }
+
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
@@ -5374,6 +5457,28 @@ export function VistaFacturasArca() {
                         {accionSecundaria.label} ({Array.from(facturasSeleccionadasPagos).filter(id => facturas.some(f => f.id === id)).length})
                       </Button>
                     )}
+                    {puedeAgrupar && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={agruparPagos}
+                        className="border-purple-500 text-purple-700 hover:bg-purple-50"
+                        title="Agrupar en un solo pago"
+                      >
+                        🔗 Agrupar ({seleccionadasEnPagar.length})
+                      </Button>
+                    )}
+                    {puedeDesagrupar && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={desagruparPago}
+                        className="border-orange-500 text-orange-700 hover:bg-orange-50"
+                        title="Desagrupar pagos"
+                      >
+                        🔓 Desagrupar
+                      </Button>
+                    )}
                     <Badge variant="outline" className="text-lg px-3 py-1">
                       Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                     </Badge>
@@ -5397,7 +5502,7 @@ export function VistaFacturasArca() {
                       </TableHeader>
                       <TableBody>
                         {facturas.map(f => (
-                          <TableRow key={f.id} className="hover:bg-muted/50">
+                          <TableRow key={f.id} className={`hover:bg-muted/50 ${f.grupo_pago_id ? 'bg-purple-50' : ''}`}>
                             {mostrarCheckbox && (
                               <TableCell>
                                 <Checkbox
@@ -5414,7 +5519,12 @@ export function VistaFacturasArca() {
                               </TableCell>
                             )}
                             <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">
+                              {f.denominacion_emisor}
+                              {f.grupo_pago_id && (
+                                <span className="ml-1 text-xs text-purple-600 font-medium">🔗</span>
+                              )}
+                            </TableCell>
                             <TableCell>{f.cuit}</TableCell>
                             <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
                             <TableCell className="text-right font-medium">

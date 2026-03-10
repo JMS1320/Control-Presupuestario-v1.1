@@ -26,6 +26,10 @@ export interface CashFlowRow {
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
   imp_total?: number
+  // Agrupación de pagos
+  grupo_pago_id?: string | null
+  facturas_agrupadas?: number   // > 1 indica fila de grupo
+  ids_grupo?: string[]          // IDs de las facturas individuales del grupo
 }
 
 // Filtros para Cash Flow
@@ -53,9 +57,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     return fecha.toISOString().split('T')[0]
   }
 
-  // Mapear facturas ARCA a formato Cash Flow
+  // Mapear facturas ARCA a formato Cash Flow (con agrupación)
   const mapearFacturasArca = (facturas: any[]): CashFlowRow[] => {
-    return facturas.map(f => ({
+    // Separar facturas agrupadas de las individuales
+    const individuales = facturas.filter(f => !f.grupo_pago_id)
+    const agrupadas    = facturas.filter(f =>  f.grupo_pago_id)
+
+    // Filas individuales — igual que siempre
+    const filasIndividuales: CashFlowRow[] = individuales.map(f => ({
       id: f.id,
       origen: 'ARCA' as const,
       origen_tabla: 'msa.comprobantes_arca',
@@ -66,16 +75,67 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       cuit_proveedor: f.cuit || '',
       nombre_proveedor: f.denominacion_emisor || '',
       detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
-      debitos: f.monto_a_abonar || f.imp_total || 0, // Cash Flow muestra monto a abonar (editable)
-      creditos: 0, // Las facturas ARCA son siempre débitos
-      saldo_cta_cte: 0, // Se calcula después
+      debitos: f.monto_a_abonar || f.imp_total || 0,
+      creditos: 0,
+      saldo_cta_cte: 0,
       estado: f.estado || 'pendiente',
       sicore: f.sicore || null,
       imp_neto_gravado: f.imp_neto_gravado || 0,
       imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
       imp_op_exentas: f.imp_op_exentas || 0,
-      imp_total: f.imp_total || 0
+      imp_total: f.imp_total || 0,
+      grupo_pago_id: null,
     }))
+
+    // Filas agrupadas — una fila por grupo
+    const porGrupo = new Map<string, any[]>()
+    agrupadas.forEach(f => {
+      const g = f.grupo_pago_id as string
+      if (!porGrupo.has(g)) porGrupo.set(g, [])
+      porGrupo.get(g)!.push(f)
+    })
+
+    const filasGrupo: CashFlowRow[] = Array.from(porGrupo.entries()).map(([grupoId, fs]) => {
+      // Fecha más tardía del grupo
+      const fechaMax = fs
+        .map(f => f.fecha_estimada || calcularFechaEstimada(f.fecha_emision))
+        .sort()
+        .at(-1) ?? ''
+      const fechaVencMax = fs.map(f => f.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
+      const totalDebitos = fs.reduce((s, f) => s + (f.monto_a_abonar || f.imp_total || 0), 0)
+      // Detalle: lista de los detalles individuales separados por " · "
+      const detallesCombinados = fs
+        .map(f => f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`)
+        .join(' · ')
+      const primera = fs[0]
+
+      return {
+        id: grupoId,                         // ID del grupo (para conciliación)
+        origen: 'ARCA' as const,
+        origen_tabla: 'msa.grupos_pago',
+        fecha_estimada: fechaMax,
+        fecha_vencimiento: fechaVencMax,
+        categ: primera.cuenta_contable || 'SIN_CATEG',
+        centro_costo: primera.centro_costo || 'SIN_CC',
+        cuit_proveedor: primera.cuit || '',
+        nombre_proveedor: primera.denominacion_emisor || '',
+        detalle: detallesCombinados,
+        debitos: totalDebitos,
+        creditos: 0,
+        saldo_cta_cte: 0,
+        estado: 'pagar',
+        sicore: null,
+        imp_neto_gravado: 0,
+        imp_neto_no_gravado: 0,
+        imp_op_exentas: 0,
+        imp_total: fs.reduce((s, f) => s + (f.imp_total || 0), 0),
+        grupo_pago_id: grupoId,
+        facturas_agrupadas: fs.length,
+        ids_grupo: fs.map(f => f.id),
+      }
+    })
+
+    return [...filasIndividuales, ...filasGrupo]
   }
 
   // Mapear templates egresos a formato Cash Flow
@@ -221,7 +281,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('*')
+        .select('*, grupo_pago_id')
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')
