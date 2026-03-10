@@ -3797,7 +3797,7 @@ export function VistaFacturasArca() {
                 supabase.schema('msa').from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado'])
                   .order('fecha_vencimiento', { ascending: true }),
-                supabase.from('cuotas_egresos_sin_factura').select(`*, egreso:egresos_sin_factura!inner(*)`)
+                supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
                   .in('estado', ['pendiente', 'pagar', 'preparado'])
                   .eq('egreso.activo', true)
                   .order('fecha_vencimiento', { ascending: true }),
@@ -5309,6 +5309,72 @@ export function VistaFacturasArca() {
               setFacturasSeleccionadasPagos(new Set())
             }
 
+            // ── Agrupar / Desagrupar templates ────────────────────────────────
+            const seleccionadasTemplatesEnPagar = templatesPagos.filter(
+              t => templatesSeleccionadosPagos.has(t.id) && t.estado === 'pagar'
+            )
+            const puedeAgruparTemplates = seleccionadasTemplatesEnPagar.length >= 2
+              && new Set(seleccionadasTemplatesEnPagar.map(t => t.egreso?.cuit_quien_cobra)).size === 1
+              && new Set(seleccionadasTemplatesEnPagar.map(t => t.egreso?.responsable)).size === 1
+              && seleccionadasTemplatesEnPagar.every(t => !t.grupo_pago_id)
+
+            const gruposTemplatesSeleccionados = new Set(
+              seleccionadasTemplatesEnPagar.filter(t => t.grupo_pago_id).map(t => t.grupo_pago_id)
+            )
+            const puedeDesagruparTemplates = gruposTemplatesSeleccionados.size === 1
+
+            const agruparTemplates = async () => {
+              if (!puedeAgruparTemplates) return
+              const primero = seleccionadasTemplatesEnPagar[0]
+              const monto_total = seleccionadasTemplatesEnPagar.reduce((s, t) => s + (t.monto || 0), 0)
+              const { data: grupo, error: errGrupo } = await supabase
+                .schema('msa')
+                .from('grupos_pago')
+                .insert({
+                  cuit: primero.egreso?.cuit_quien_cobra,
+                  proveedor: primero.egreso?.nombre_quien_cobra || primero.egreso?.proveedor,
+                  monto_total,
+                  estado: 'pagar',
+                })
+                .select('id')
+                .single()
+              if (errGrupo || !grupo) { alert('Error al crear grupo'); return }
+              const ids = seleccionadasTemplatesEnPagar.map(t => t.id)
+              const { error: errUpd } = await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ grupo_pago_id: grupo.id })
+                .in('id', ids)
+              if (errUpd) { alert('Error al asignar grupo'); return }
+              setTemplatesPagos(prev => prev.map(t =>
+                ids.includes(t.id) ? { ...t, grupo_pago_id: grupo.id } : t
+              ))
+              setTemplatesSeleccionadosPagos(new Set())
+              alert(`✅ ${ids.length} templates agrupados en un pago`)
+            }
+
+            const desagruparTemplates = async () => {
+              if (!puedeDesagruparTemplates) return
+              const grupoId = Array.from(gruposTemplatesSeleccionados)[0] as string
+              const ids = seleccionadasTemplatesEnPagar.filter(t => t.grupo_pago_id === grupoId).map(t => t.id)
+              const todasDelGrupo = templatesPagos.filter(t => t.grupo_pago_id === grupoId)
+              const quedan = todasDelGrupo.filter(t => !ids.includes(t.id))
+              await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ grupo_pago_id: null })
+                .in('id', ids)
+              if (quedan.length <= 1) {
+                if (quedan.length === 1) {
+                  await supabase.from('cuotas_egresos_sin_factura')
+                    .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
+                }
+                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+              }
+              setTemplatesPagos(prev => prev.map(t =>
+                ids.includes(t.id) ? { ...t, grupo_pago_id: null } : t
+              ))
+              setTemplatesSeleccionadosPagos(new Set())
+            }
+
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
@@ -5720,87 +5786,168 @@ export function VistaFacturasArca() {
             }
 
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-lg flex items-center gap-2">
-                    <Badge variant="outline" className="bg-green-50 text-green-700">Template</Badge>
-                    {titulo} ({templates.length})
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    {accionBoton && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
-                      <Button
-                        size="sm"
-                        onClick={() => cambiarEstadoTemplatesSeleccionados(accionBoton.estado)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        {accionBoton.label} ({Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length})
-                      </Button>
-                    )}
-                    {accionSecundaria && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => cambiarEstadoTemplatesSeleccionados(accionSecundaria.estado)}
-                        className="border-green-500 text-green-700 hover:bg-green-50"
-                      >
-                        {accionSecundaria.label} ({Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length})
-                      </Button>
-                    )}
-                    <Badge variant="outline" className="text-lg px-3 py-1">
-                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </Badge>
-                  </div>
-                </div>
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
+              // Colapsar templates agrupados: una sola fila por grupo
+              type GrupoTRow = {
+                esGrupo: true; grupoPagoId: string; ids: string[]
+                proveedor: string; referencia: string; categ: string
+                montoTotal: number; fecha: string; cantTemplates: number
+              }
+              type IndivTRow = { esGrupo: false; t: any }
+              type DisplayTRow = IndivTRow | GrupoTRow
 
-                {templates.length === 0 ? (
-                  <p className="text-muted-foreground text-sm py-2">No hay templates en este estado</p>
-                ) : (
-                  <div className="border rounded-md max-h-60 overflow-y-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-white border-b">
-                        <TableRow>
-                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
-                          <TableHead>Fecha Vto.</TableHead>
-                          <TableHead>Referencia</TableHead>
-                          <TableHead>Proveedor</TableHead>
-                          <TableHead>Cuenta</TableHead>
-                          <TableHead className="text-right">Monto</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {templates.map(t => (
-                          <TableRow key={t.id} className="hover:bg-muted/50">
-                            {mostrarCheckbox && (
-                              <TableCell>
-                                <Checkbox
-                                  checked={templatesSeleccionadosPagos.has(t.id)}
-                                  onCheckedChange={(checked) => {
-                                    setTemplatesSeleccionadosPagos(prev => {
-                                      const next = new Set(prev)
-                                      if (checked) next.add(t.id)
-                                      else next.delete(t.id)
-                                      return next
-                                    })
-                                  }}
-                                />
-                              </TableCell>
-                            )}
-                            <TableCell>{t.fecha_vencimiento || t.fecha_estimada || '-'}</TableCell>
-                            <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_referencia || t.descripcion || '-'}</TableCell>
-                            <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_quien_cobra || '-'}</TableCell>
-                            <TableCell className="max-w-[100px] truncate">{t.egreso?.categ || '-'}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              ${(t.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+              const grupoTMap = new Map<string, any[]>()
+              const individualesT: any[] = []
+              for (const t of templates) {
+                if (t.grupo_pago_id) {
+                  if (!grupoTMap.has(t.grupo_pago_id)) grupoTMap.set(t.grupo_pago_id, [])
+                  grupoTMap.get(t.grupo_pago_id)!.push(t)
+                } else {
+                  individualesT.push(t)
+                }
+              }
+
+              const tRows: DisplayTRow[] = [
+                ...individualesT.map(t => ({ esGrupo: false as const, t })),
+                ...Array.from(grupoTMap.entries()).map(([grupoId, ts]) => ({
+                  esGrupo: true as const,
+                  grupoPagoId: grupoId,
+                  ids: ts.map(t => t.id),
+                  proveedor: ts[0].egreso?.nombre_quien_cobra || ts[0].egreso?.proveedor || '-',
+                  referencia: ts[0].egreso?.categ || '-',
+                  categ: ts[0].egreso?.categ || '-',
+                  montoTotal: ts.reduce((s: number, t: any) => s + (t.monto || 0), 0),
+                  fecha: [...ts.map((t: any) => t.fecha_vencimiento || t.fecha_estimada || '')].sort().reverse()[0] || '',
+                  cantTemplates: ts.length,
+                }))
+              ]
+              tRows.sort((a, b) => {
+                const fa = a.esGrupo ? a.fecha : (a.t.fecha_vencimiento || a.t.fecha_estimada || '9999-12-31')
+                const fb = b.esGrupo ? b.fecha : (b.t.fecha_vencimiento || b.t.fecha_estimada || '9999-12-31')
+                return fa.localeCompare(fb)
+              })
+
+              const toggleTGroup = (ids: string[], checked: boolean) => {
+                setTemplatesSeleccionadosPagos(prev => {
+                  const next = new Set(prev)
+                  for (const id of ids) { if (checked) next.add(id); else next.delete(id) }
+                  return next
+                })
+              }
+              const isTGroupChecked = (ids: string[]) => ids.length > 0 && ids.every(id => templatesSeleccionadosPagos.has(id))
+              const seleccionadasEnEsteBloque = Array.from(templatesSeleccionadosPagos).filter(id => templates.some(t => t.id === id)).length
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      <Badge variant="outline" className="bg-green-50 text-green-700">Template</Badge>
+                      {titulo} ({tRows.length})
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {accionBoton && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
+                        <Button size="sm" onClick={() => cambiarEstadoTemplatesSeleccionados(accionBoton.estado)} className="bg-blue-600 hover:bg-blue-700">
+                          {accionBoton.label} ({seleccionadasEnEsteBloque})
+                        </Button>
+                      )}
+                      {accionSecundaria && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
+                        <Button size="sm" variant="outline" onClick={() => cambiarEstadoTemplatesSeleccionados(accionSecundaria.estado)} className="border-green-500 text-green-700 hover:bg-green-50">
+                          {accionSecundaria.label} ({seleccionadasEnEsteBloque})
+                        </Button>
+                      )}
+                      {puedeAgruparTemplates && templates === templatesPagar && (
+                        <Button size="sm" variant="outline" onClick={agruparTemplates} className="border-purple-500 text-purple-700 hover:bg-purple-50" title="Agrupar en un solo pago">
+                          🔗 Agrupar ({seleccionadasTemplatesEnPagar.length})
+                        </Button>
+                      )}
+                      {puedeDesagruparTemplates && templates === templatesPagar && (
+                        <Button size="sm" variant="outline" onClick={desagruparTemplates} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
+                          🔓 Desagrupar
+                        </Button>
+                      )}
+                      <Badge variant="outline" className="text-lg px-3 py-1">
+                        Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </Badge>
+                    </div>
                   </div>
-                )}
-              </div>
-            )
+
+                  {tRows.length === 0 ? (
+                    <p className="text-muted-foreground text-sm py-2">No hay templates en este estado</p>
+                  ) : (
+                    <div className="border rounded-md max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 z-10 bg-white border-b">
+                          <TableRow>
+                            {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                            <TableHead>Fecha Vto.</TableHead>
+                            <TableHead>Referencia</TableHead>
+                            <TableHead>Proveedor</TableHead>
+                            <TableHead>Cuenta</TableHead>
+                            <TableHead className="text-right">Monto</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {tRows.map(row => {
+                            if (row.esGrupo) {
+                              const checked = isTGroupChecked(row.ids)
+                              return (
+                                <TableRow key={row.grupoPagoId} className="bg-purple-50 hover:bg-purple-100">
+                                  {mostrarCheckbox && (
+                                    <TableCell>
+                                      <Checkbox checked={checked} onCheckedChange={(c) => toggleTGroup(row.ids, !!c)} />
+                                    </TableCell>
+                                  )}
+                                  <TableCell>{row.fecha || '-'}</TableCell>
+                                  <TableCell className="max-w-[150px] truncate">
+                                    <span className="font-medium">{row.proveedor}</span>
+                                    <span className="ml-2 text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full font-semibold">
+                                      🔗 {row.cantTemplates} items
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="max-w-[150px] truncate">{row.proveedor}</TableCell>
+                                  <TableCell className="max-w-[100px] truncate">{row.categ}</TableCell>
+                                  <TableCell className="text-right font-bold text-purple-700">
+                                    ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            } else {
+                              const t = row.t
+                              return (
+                                <TableRow key={t.id} className="hover:bg-muted/50">
+                                  {mostrarCheckbox && (
+                                    <TableCell>
+                                      <Checkbox
+                                        checked={templatesSeleccionadosPagos.has(t.id)}
+                                        onCheckedChange={(checked) => {
+                                          setTemplatesSeleccionadosPagos(prev => {
+                                            const next = new Set(prev)
+                                            if (checked) next.add(t.id)
+                                            else next.delete(t.id)
+                                            return next
+                                          })
+                                        }}
+                                      />
+                                    </TableCell>
+                                  )}
+                                  <TableCell>{t.fecha_vencimiento || t.fecha_estimada || '-'}</TableCell>
+                                  <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_referencia || t.descripcion || '-'}</TableCell>
+                                  <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_quien_cobra || '-'}</TableCell>
+                                  <TableCell className="max-w-[100px] truncate">{t.egreso?.categ || '-'}</TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    ${(t.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            }
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )
+            }
 
             // Búsqueda para templates
             const matchTemplate = (t: any) => {
