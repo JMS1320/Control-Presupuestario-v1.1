@@ -9689,3 +9689,266 @@ Las facturas que existen en ambas tablas con `nro_cuenta` asignado podrían cont
 
 **📅 Fecha:** 2026-03-09
 **🔀 Branch:** `desarrollo` — push realizado
+
+---
+
+## 🗓️ SESIÓN 2026-03-10
+
+---
+
+### ✅ Módulo Sueldos — Parámetros editables por período
+
+**Contexto:** El sistema de sueldos tenía `bruto_calculado` hardcodeado al momento de la siembra. No había forma de actualizar los valores mes a mes (Categ A/B del convenio, francos, días, horas, varios).
+
+#### Migración aplicada: `sueldos_periodos_parametros_mes`
+
+```sql
+ALTER TABLE sueldos.periodos
+  ADD COLUMN monto_a         NUMERIC,
+  ADD COLUMN monto_b         NUMERIC,
+  ADD COLUMN francos_cantidad INTEGER,
+  ADD COLUMN valor_por_dia   NUMERIC,
+  ADD COLUMN dias_trabajados  INTEGER,
+  ADD COLUMN valor_por_hora  NUMERIC,
+  ADD COLUMN horas_mes       INTEGER,
+  ADD COLUMN varios          NUMERIC DEFAULT 0;
+```
+
+Los 35 períodos existentes fueron pre-poblados desde `sueldos.componentes_salario` y `sueldos.empleados`. La vista pública `public.sueldos_periodos` fue recreada con `CREATE OR REPLACE VIEW` para incluir las nuevas columnas.
+
+**Nota:** Cada vez que se agregan columnas a `sueldos.periodos` hay que recrear la vista pública.
+
+#### Fórmulas de cálculo por tipo
+
+| Tipo | Fórmula |
+|------|---------|
+| `ab_francos` | `(A + B) - ((A + B) / 25 × francos_cantidad) + varios` |
+| `por_dia` | `valor_por_dia × dias_trabajados + varios` |
+| `por_hora_ipc` | `valor_por_hora × horas_mes + varios` |
+| `plano_ipc` | `bruto_actual + varios` (IPC pendiente) |
+
+#### UI implementada
+
+- Botón ✏️ por fila en la tabla del mes → abre modal con campos según tipo de empleado
+- Preview del bruto calculado en tiempo real antes de guardar
+- Al guardar: recalcula `bruto_calculado` y `saldo_pendiente` en BD
+
+**Archivo:** `components/tab-sueldos.tsx`
+**Commits:** `3078270`
+**Documentación completa:** `DISEÑO_SUELDOS.md`
+
+---
+
+### ✅ Agrupación de Pagos ARCA
+
+**Contexto:** Al tener múltiples facturas del mismo proveedor en estado `pagar`, el usuario necesitaba poder agruparlas en un solo pago para el Cash Flow y la conciliación bancaria.
+
+#### BD: nueva tabla `msa.grupos_pago`
+
+```sql
+CREATE TABLE msa.grupos_pago (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuit          VARCHAR(20) NOT NULL,
+  proveedor     VARCHAR(200),
+  monto_total   NUMERIC(15,2),
+  estado        VARCHAR(20) DEFAULT 'pagar'
+                CHECK (estado IN ('pagar', 'pagado')),
+  observaciones TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE msa.comprobantes_arca
+  ADD COLUMN grupo_pago_id UUID REFERENCES msa.grupos_pago(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_comprobantes_grupo_pago ON msa.comprobantes_arca(grupo_pago_id)
+  WHERE grupo_pago_id IS NOT NULL;
+```
+
+**Migración:** `grupos_pago_arca`
+
+#### Comportamiento
+
+- Cada factura conserva su individualidad: `sicore`, `monto_sicore`, `monto_a_abonar`, descuentos intactos
+- El grupo es un "sobre" que las agrupa para Cash Flow y conciliación
+- Solo se pueden agrupar facturas del **mismo proveedor** (mismo CUIT), estado `pagar`, sin grupo previo
+- Se puede desagrupar; si el grupo queda con ≤1 factura, se elimina automáticamente
+
+#### Cash Flow (`hooks/useMultiCashFlowData.ts`)
+
+- Facturas sin `grupo_pago_id` → se muestran individualmente (igual que antes)
+- Facturas con `grupo_pago_id` → colapsan en **una fila por grupo**:
+  - `debitos` = suma de `monto_a_abonar` de todas las facturas del grupo
+  - `detalle` = detalles de cada factura concatenados con ` · `
+  - `fecha_estimada` = la más tardía del grupo
+  - `id` = `grupo_pago_id` (para conciliación)
+  - `origen_tabla` = `'msa.grupos_pago'`
+- Nuevos campos en `CashFlowRow`: `grupo_pago_id`, `facturas_agrupadas`, `ids_grupo`
+
+#### Vista Pagos (`components/vista-facturas-arca.tsx`)
+
+- Botón **🔗 Agrupar** → visible cuando hay 2+ facturas del mismo proveedor en `pagar` seleccionadas sin grupo
+- Botón **🔓 Desagrupar** → visible cuando las seleccionadas pertenecen al mismo grupo
+- Filas agrupadas: fondo violeta + ícono 🔗 junto al nombre del proveedor
+
+**Commits:** `7c3fab0`
+
+---
+
+### ✅ Barra de búsqueda en Vista Pagos
+
+Input de búsqueda full-text que filtra simultáneamente por: proveedor, CUIT, cuenta contable, centro de costo, detalle, observaciones, monto y fechas.
+
+- Aparece entre los filtros de origen y las tablas de facturas
+- Botón ✕ para limpiar
+- Aplica a las tres secciones: Preparado, Pagar, Pendiente
+
+**Archivo:** `components/vista-facturas-arca.tsx`
+**Commit:** `66375b1`
+
+---
+
+### 🔍 Diagnóstico SICORE — lógica mínimo no imponible
+
+Revisión de la lógica de retenciones al procesar múltiples facturas simultáneamente:
+
+**Conclusión:** El sistema usa una **cola secuencial** (`colaSicore[]`). Cada factura espera que la anterior sea confirmada y guardada en BD antes de evaluar. `verificarRetencionPrevia` siempre consulta el estado real de la BD → el chequeo del mínimo es correcto para facturas que superan el mínimo individualmente.
+
+**Gap identificado (sin implementar):** Consumo parcial del mínimo — si una factura queda por debajo del mínimo no imponible, no deja rastro en BD (`sicore = NULL`). La siguiente factura del mismo CUIT/quincena no puede saber cuánto del mínimo fue consumido. Este escenario es poco frecuente en la operatoria actual y se decidió no modificar.
+
+---
+
+## 📆 2026-03-10 - Sesión: Agrupación Templates + PDF Detalle de Pago + descuento_aplicado
+
+### 🗄️ Cambios en Base de Datos
+
+#### 1. Nueva columna `descuento_aplicado` en `msa.comprobantes_arca`
+
+```sql
+ALTER TABLE msa.comprobantes_arca
+ADD COLUMN IF NOT EXISTS descuento_aplicado NUMERIC(15,2) DEFAULT 0;
+
+COMMENT ON COLUMN msa.comprobantes_arca.descuento_aplicado
+IS 'Descuento comercial aplicado al momento del pago. Se registra explícitamente, no por diferencia.';
+```
+
+**Lógica:** `imp_total - monto_sicore - descuento_aplicado = monto_a_abonar`
+Se llena durante el proceso SICORE cuando el usuario ingresa un descuento adicional. No se calcula por diferencia.
+
+#### 2. Expansión CHECK constraint `msa.grupos_pago.estado`
+
+El constraint original solo permitía `'pagar','pagado'`. Se expandió en dos pasos para incluir todos los estados posibles:
+
+```sql
+ALTER TABLE msa.grupos_pago DROP CONSTRAINT grupos_pago_estado_check;
+ALTER TABLE msa.grupos_pago ADD CONSTRAINT grupos_pago_estado_check
+  CHECK (estado = ANY (ARRAY[
+    'pendiente'::varchar, 'pagar'::varchar, 'preparado'::varchar,
+    'programado'::varchar, 'pagado'::varchar, 'conciliado'::varchar
+  ]));
+```
+
+**Motivo:** Al habilitar agrupación desde estado `pendiente` y `preparado`, el INSERT fallaba con violación de constraint.
+
+#### 3. UPDATE manual descuentos Alcorta (CUIT 20103619115)
+
+Descuentos cargados retroactivamente (la columna fue creada después de estos pagos):
+
+```sql
+UPDATE msa.comprobantes_arca SET descuento_aplicado = CASE numero_desde
+  WHEN 5926 THEN 9595.28
+  WHEN 5930 THEN 5461.23
+  WHEN 5940 THEN 10502.61
+  WHEN 5941 THEN 24774.10
+  WHEN 5964 THEN 5217.79
+END
+WHERE cuit = '20103619115'
+  AND punto_venta = 10
+  AND numero_desde IN (5926, 5930, 5940, 5941, 5964);
+```
+
+---
+
+### ⚠️ Script POST-RECONSTRUCCIÓN (ejecutar después de scripts base)
+
+Si se reconstruye la BD, ejecutar estos cambios que NO están en el backup original:
+
+```sql
+-- 1. Columna descuento_aplicado
+ALTER TABLE msa.comprobantes_arca
+ADD COLUMN IF NOT EXISTS descuento_aplicado NUMERIC(15,2) DEFAULT 0;
+
+-- 2. Constraint grupos_pago completo
+ALTER TABLE msa.grupos_pago DROP CONSTRAINT IF EXISTS grupos_pago_estado_check;
+ALTER TABLE msa.grupos_pago ADD CONSTRAINT grupos_pago_estado_check
+  CHECK (estado = ANY (ARRAY[
+    'pendiente'::varchar, 'pagar'::varchar, 'preparado'::varchar,
+    'programado'::varchar, 'pagado'::varchar, 'conciliado'::varchar
+  ]));
+
+-- 3. Descuentos Alcorta (datos específicos de negocio)
+UPDATE msa.comprobantes_arca SET descuento_aplicado = CASE numero_desde
+  WHEN 5926 THEN 9595.28
+  WHEN 5930 THEN 5461.23
+  WHEN 5940 THEN 10502.61
+  WHEN 5941 THEN 24774.10
+  WHEN 5964 THEN 5217.79
+END
+WHERE cuit = '20103619115' AND punto_venta = 10
+  AND numero_desde IN (5926, 5930, 5940, 5941, 5964);
+```
+
+---
+
+### 🚀 Features Implementadas
+
+#### Agrupación de templates desde cualquier estado
+
+- Antes: solo se podía agrupar templates en estado `pagar`
+- Ahora: se puede agrupar desde `pendiente`, `preparado`, `pagar`
+- **Motivo:** Permite pre-agrupar impuestos (ej: Red Vial Quinta Roselló 1+2) antes de procesar el pago, para que el Cash Flow ya muestre 1 línea en lugar de N
+
+#### Cash Flow colapsa grupos de templates (1 línea por grupo)
+
+- `mapearTemplatesEgresos()` en `useMultiCashFlowData.ts` ahora separa cuotas individuales de agrupadas
+- Mismo patrón que `mapearFacturasArca()` — 1 fila por grupo con monto total, fecha máxima, detalle combinado
+- `ids_grupo` disponible para propagar cambios
+
+#### Edición de fecha en grupo propaga a todos los miembros
+
+- En `actualizarRegistro()`: si la fila tiene `ids_grupo` → UPDATE con `.in('id', idsGrupo)`
+- Aplica a fecha_estimada y fecha_vencimiento desde el Cash Flow
+
+#### PDF Detalle de Pago
+
+Nuevo documento PDF generado desde:
+
+1. **Vista Pagos** → botón 📄 en cada fila (grupos e individuales)
+   - Solo visible en estado `preparado` o `pagar` (oculto en `pendiente`)
+2. **Vista ARCA principal** → menú ⋯ en cada fila
+   - Opción "📄 Detalle de pago" solo aparece si estado es `pagado` o `conciliado`
+   - Al clickear: si `grupo_pago_id` existe → query lazy al grupo → PDF conjunto
+   - Si es individual → PDF directo sin query adicional
+
+**Contenido del PDF:**
+- Header: MARTINEZ SOBRADO AGRO SRL + fecha
+- Destinatario: razón social + CUIT
+- Tabla con columnas dinámicas (Ret. SICORE y Descuento solo aparecen si alguna FC los tiene)
+- Fila TOTAL en negrita al pie
+
+#### descuento_aplicado guardado en proceso SICORE
+
+- Al confirmar SICORE con descuento adicional → se guarda en `descuento_aplicado` (no solo en `monto_a_abonar`)
+- Campo `null` si no hubo descuento, valor positivo si se aplicó
+
+---
+
+### 📝 Commits aplicados
+
+```
+2da9428 - Feature: Agrupación templates desde cualquier estado + colapso en Cash Flow
+b2c73a8 - Feature: Guardar descuento_aplicado en BD al confirmar proceso SICORE
+e60da49 - Feature: PDF detalle de pago para grupos ARCA y Templates
+ae78fcd - Feature: Botón PDF detalle de pago en facturas y templates individuales
+3708c4c - Feature: PDF detalle pago - reglas visibilidad por estado + menú ⋯ en Vista ARCA
+160547e - Fix: Eliminar leyenda footer PDF detalle de pago
+```
