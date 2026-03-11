@@ -17,7 +17,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2 } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -4236,6 +4237,7 @@ export function VistaFacturasArca() {
                           {COLUMNAS_CONFIG[columna].label}
                         </TableHead>
                       ))}
+                      <TableHead style={{ width: '40px', minWidth: '40px' }}></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4278,6 +4280,60 @@ export function VistaFacturasArca() {
                               {renderizarCelda(factura, columna)}
                             </TableCell>
                           ))}
+                          <TableCell style={{ width: '40px', padding: '0 4px' }}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {(factura.estado === 'pagado' || factura.estado === 'conciliado') && (
+                                  <DropdownMenuItem
+                                    onClick={async () => {
+                                      // Si pertenece a un grupo, buscar todas las facturas del grupo
+                                      if (factura.grupo_pago_id) {
+                                        const { data: grupoFacs } = await supabase
+                                          .schema('msa').from('comprobantes_arca')
+                                          .select('*')
+                                          .eq('grupo_pago_id', factura.grupo_pago_id)
+                                        if (grupoFacs && grupoFacs.length > 0) {
+                                          await generarPDFDetallePago(
+                                            'arca',
+                                            grupoFacs[0].denominacion_emisor,
+                                            grupoFacs[0].cuit,
+                                            grupoFacs.map((f: any) => ({
+                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                              fecha: f.fecha_emision || '',
+                                              imp_total: f.imp_total || 0,
+                                              monto_sicore: f.monto_sicore,
+                                              descuento_aplicado: f.descuento_aplicado,
+                                              monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
+                                            }))
+                                          )
+                                          return
+                                        }
+                                      }
+                                      // Factura individual
+                                      await generarPDFDetallePago(
+                                        'arca', factura.denominacion_emisor, factura.cuit,
+                                        [{
+                                          comprobante: `FC ${factura.tipo_comprobante}-${String(factura.punto_venta || 0).padStart(5,'0')}-${String(factura.numero_desde || 0).padStart(8,'0')}`,
+                                          fecha: factura.fecha_emision || '',
+                                          imp_total: factura.imp_total || 0,
+                                          monto_sicore: factura.monto_sicore,
+                                          descuento_aplicado: factura.descuento_aplicado,
+                                          monto_a_abonar: factura.monto_a_abonar ?? factura.imp_total ?? 0,
+                                        }]
+                                      )
+                                    }}
+                                  >
+                                    📄 Detalle de pago
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -5850,23 +5906,25 @@ export function VistaFacturasArca() {
                                   <TableCell className="text-right font-medium">
                                     ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'arca', f.denominacion_emisor, f.cuit,
-                                        [{
-                                          comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                          fecha: f.fecha_emision || '',
-                                          imp_total: f.imp_total || 0,
-                                          monto_sicore: f.monto_sicore,
-                                          descuento_aplicado: f.descuento_aplicado,
-                                          monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
-                                        }]
-                                      )}
-                                    >📄</Button>
-                                  </TableCell>
+                                  {estadoActual !== 'pendiente' && (
+                                    <TableCell>
+                                      <Button
+                                        size="sm" variant="ghost"
+                                        title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago(
+                                          'arca', f.denominacion_emisor, f.cuit,
+                                          [{
+                                            comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                            fecha: f.fecha_emision || '',
+                                            imp_total: f.imp_total || 0,
+                                            monto_sicore: f.monto_sicore,
+                                            descuento_aplicado: f.descuento_aplicado,
+                                            monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
+                                          }]
+                                        )}
+                                      >📄</Button>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               )
                             }
@@ -5939,7 +5997,7 @@ export function VistaFacturasArca() {
             }
 
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente') => {
               // Colapsar templates agrupados: una sola fila por grupo
               type GrupoTRow = {
                 esGrupo: true; grupoPagoId: string; ids: string[]
@@ -6107,23 +6165,25 @@ export function VistaFacturasArca() {
                                   <TableCell className="text-right font-medium">
                                     ${(t.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'template',
-                                        t.egreso?.nombre_quien_cobra || '-',
-                                        t.egreso?.cuit_quien_cobra || '',
-                                        [{
-                                          comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                          fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                          imp_total: t.monto || 0,
-                                          monto_a_abonar: t.monto || 0,
-                                        }]
-                                      )}
-                                    >📄</Button>
-                                  </TableCell>
+                                  {estadoActual !== 'pendiente' && (
+                                    <TableCell>
+                                      <Button
+                                        size="sm" variant="ghost"
+                                        title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago(
+                                          'template',
+                                          t.egreso?.nombre_quien_cobra || '-',
+                                          t.egreso?.cuit_quien_cobra || '',
+                                          [{
+                                            comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
+                                            fecha: t.fecha_vencimiento || t.fecha_estimada || '',
+                                            imp_total: t.monto || 0,
+                                            monto_a_abonar: t.monto || 0,
+                                          }]
+                                        )}
+                                      >📄</Button>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               )
                             }
@@ -6347,7 +6407,8 @@ export function VistaFacturasArca() {
                           subtotalTemplatesPreparado,
                           true,
                           { label: 'Marcar como Programado', estado: 'programado' },
-                          { label: 'Marcar como Pagado', estado: 'pagado' }
+                          { label: 'Marcar como Pagado', estado: 'pagado' },
+                          'preparado'
                         )}
                       </>
                     )}
@@ -6373,7 +6434,9 @@ export function VistaFacturasArca() {
                           '📋 Pagar',
                           subtotalTemplatesPagar,
                           true,
-                          { label: 'Marcar como Preparado', estado: 'preparado' }
+                          { label: 'Marcar como Preparado', estado: 'preparado' },
+                          undefined,
+                          'pagar'
                         )}
                       </>
                     )}
@@ -6399,7 +6462,9 @@ export function VistaFacturasArca() {
                           '⏳ Pendiente',
                           subtotalTemplatesPendiente,
                           true,
-                          { label: 'Marcar como Pagar', estado: 'pagar' }
+                          { label: 'Marcar como Pagar', estado: 'pagar' },
+                          undefined,
+                          'pendiente'
                         )}
                       </>
                     )}
@@ -6426,7 +6491,9 @@ export function VistaFacturasArca() {
                       '📋 Por Pagar',
                       subtotalTemplatesPagar,
                       true,
-                      { label: 'Marcar como Preparado', estado: 'preparado' }
+                      { label: 'Marcar como Preparado', estado: 'preparado' },
+                      undefined,
+                      'pagar'
                     )}
                     {filtroOrigenPagos.anticipo && renderTablaAnticipos(
                       anticiposPreparado,
@@ -6445,7 +6512,10 @@ export function VistaFacturasArca() {
                       templatesPreparado,
                       '✅ Preparado',
                       subtotalTemplatesPreparado,
-                      false
+                      false,
+                      undefined,
+                      undefined,
+                      'preparado'
                     )}
                   </>
                 )}
