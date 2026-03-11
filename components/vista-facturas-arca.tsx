@@ -3433,11 +3433,7 @@ export function VistaFacturasArca() {
         }
       })
 
-      // ── Footer ─────────────────────────────────────────────────────────────
       const finalY = (doc as any).lastAutoTable?.finalY ?? 120
-      doc.setFontSize(8)
-      doc.setFont('helvetica', 'italic')
-      doc.text('Documento generado automáticamente por Control Presupuestario MSA', pageW / 2, finalY + 10, { align: 'center' })
 
       const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${hoy.replace(/\//g, '-')}.pdf`
       doc.save(nombreArchivo)
