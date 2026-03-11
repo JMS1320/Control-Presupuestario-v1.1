@@ -9952,3 +9952,104 @@ ae78fcd - Feature: Botón PDF detalle de pago en facturas y templates individual
 3708c4c - Feature: PDF detalle pago - reglas visibilidad por estado + menú ⋯ en Vista ARCA
 160547e - Fix: Eliminar leyenda footer PDF detalle de pago
 ```
+
+---
+
+## 📅 Sesión 2026-03-10 (parte II) — Migraciones pendientes de documentar
+
+### 1. Columna `grupo_pago_id` en `cuotas_egresos_sin_factura`
+
+Esta columna vincula una cuota de template con un grupo de pago creado en `msa.grupos_pago`, permitiendo que múltiples cuotas se colapsen en una sola fila en el Cash Flow y la Vista Pagos.
+
+**⚠️ Este ALTER no está en el backup original. Ejecutar en reconstrucción:**
+
+```sql
+ALTER TABLE cuotas_egresos_sin_factura
+ADD COLUMN grupo_pago_id UUID REFERENCES msa.grupos_pago(id) ON DELETE SET NULL;
+```
+
+- Si la cuota no pertenece a ningún grupo → `NULL` (default)
+- Al eliminar un grupo (`msa.grupos_pago`) → las cuotas quedan con `grupo_pago_id = NULL` automáticamente (ON DELETE SET NULL)
+
+---
+
+### 2. Campo `grupo_impuesto_id` en `egresos_sin_factura` — pares Anual/Cuota
+
+El campo `grupo_impuesto_id` (tipo TEXT) identifica el par de templates "Anual" y "Cuota" de un mismo impuesto/inmueble. Lo usa el hook `usePagoCuotas` y `usePagoAnual` para encontrar el par opuesto al ejecutar una conversión bidireccional.
+
+**Convención**: el valor es el nombre del impuesto sin la palabra "Anual" o "Cuota".
+
+Ejemplos:
+- `"Inmobiliario Anual Casco"` + `"Inmobiliario Cuota Casco"` → ambos tienen `grupo_impuesto_id = 'Inmobiliario Casco'`
+- `"Red Vial Lima Anual"` + `"Red Vial Lima Cuota"` → `grupo_impuesto_id = 'Red Vial Lima'`
+
+**⚠️ Este campo no está en el backup original. Script reproducible para reconstrucción:**
+
+```sql
+-- Poblar grupo_impuesto_id para todos los templates con "Anual" o "Cuota" en el nombre
+-- Elimina la palabra "Anual" o "Cuota" y normaliza espacios
+UPDATE egresos_sin_factura
+SET grupo_impuesto_id = TRIM(
+  REGEXP_REPLACE(
+    REGEXP_REPLACE(nombre_referencia, '\bAnual\b|\bCuota\b', '', 'gi'),
+    '\s+', ' '
+  )
+)
+WHERE nombre_referencia ~* '\bAnual\b|\bCuota\b'
+  AND grupo_impuesto_id IS NULL;
+```
+
+**Estado verificado al 2026-03-10**: 88 templates con `grupo_impuesto_id` poblado.
+
+Grupos completos (Anual + Cuota):
+
+| grupo_impuesto_id | Templates |
+|---|---|
+| ABL Cochera Posadas | Anual + Cuota |
+| ABL Libertad | Anual + Cuota |
+| Imp Automotores Gol 2012 | Anual + Cuota |
+| Imp Automotores Tiguan 2012 | Anual + Cuota |
+| Imp Automotores Toyota 2015 | Anual + Cuota |
+| Imp Automotores Voyage | Anual + Cuota |
+| Inmobiliario Anexo | Anual + Cuota |
+| Inmobiliario Casco | Anual + Cuota |
+| Inmobiliario Cholo 1 | solo Anual |
+| Inmobiliario Cholo 2 | solo Anual |
+| Inmobiliario Complementario MSA | Anual + Cuota |
+| Inmobiliario Complementario PAM | Anual + Cuota |
+| Inmobiliario Entre Rios | Anual + Cuota |
+| Inmobiliario Lima | Anual + Cuota |
+| Inmobiliario Lote Puerto | Anual + Cuota |
+| Inmobiliario Ombu | Anual + Cuota |
+| Inmobiliario Porteria Nuevo | solo Anual |
+| Inmobiliario Porteria Viejo | solo Anual |
+| Inmobiliario Quinta Rosello 1 | Anual + Cuota |
+| Inmobiliario Quinta Rosello 2 | Anual + Cuota |
+| Inmobiliario Rojas | Anual + Cuota |
+| Inmobiliario Sanchez | solo Anual |
+| Inmobiliario Tango Parra 1 | Anual + Cuota |
+| Inmobiliario Tango Parra 2 | Anual + Cuota |
+| Inmobiliario Tango Prim Leboso | solo Anual |
+| Inmobiliario Tapera 1 | Anual + Cuota |
+| Inmobiliario Tapera 2 | Anual + Cuota |
+| Inmobiliario Tapera 3 | Anual + Cuota |
+| Red Vial Anexo | Anual + Cuota |
+| Red Vial Casco | Anual + Cuota |
+| Red Vial Cholo 1 | Anual + Cuota |
+| Red Vial Cholo 2 | Anual + Cuota |
+| Red Vial Entre Rios | Anual + Cuota |
+| Red Vial Lima | Anual + Cuota |
+| Red Vial Lote Puerto | Anual + Cuota |
+| Red Vial Ombu | Anual + Cuota |
+| Red Vial Porteria Nuevo | Anual + Cuota |
+| Red Vial Porteria Viejo | Anual + Cuota |
+| Red Vial Quinta Rosello 1 | Anual + Cuota |
+| Red Vial Quinta Rosello 2 | Anual + Cuota |
+| Red Vial Rojas | Anual + Cuota |
+| Red Vial Sanchez | Anual + Cuota |
+| Red Vial Tango Parra 1 | Anual + Cuota |
+| Red Vial Tango Parra 2 | Anual + Cuota |
+| Red Vial Tango Prim Leboso | Anual + Cuota |
+| Red Vial Tapera 1 | Anual + Cuota |
+| Red Vial Tapera 2 | Anual + Cuota |
+| Red Vial Tapera 3 | Anual + Cuota |
