@@ -149,6 +149,7 @@ export function TabSueldos() {
   const [antFecha, setAntFecha] = useState(new Date().toISOString().split('T')[0])
   const [antCuenta, setAntCuenta] = useState('')
   const [antDesc, setAntDesc] = useState('')
+  const [antEstado, setAntEstado] = useState('pagar')
   const [guardando, setGuardando] = useState(false)
 
   // Modal historial
@@ -252,6 +253,7 @@ export function TabSueldos() {
         monto,
         cuenta_destino_id: antCuenta || null,
         descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
+        estado:            antEstado,
       })
 
     if (!errPago && periodo) {
@@ -265,6 +267,12 @@ export function TabSueldos() {
 
     setGuardando(false)
     setModalAnticipo(false)
+    setAntEmpId('')
+    setAntMonto('')
+    setAntFecha(new Date().toISOString().split('T')[0])
+    setAntCuenta('')
+    setAntDesc('')
+    setAntEstado('pagar')
     await cargar()
   }
 
@@ -792,6 +800,21 @@ export function TabSueldos() {
                 value={antDesc}
                 onChange={e => setAntDesc(e.target.value)}
               />
+            </div>
+
+            <div>
+              <Label>Estado en Cash Flow</Label>
+              <Select value={antEstado} onValueChange={setAntEstado}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pagar">pagar</SelectItem>
+                  <SelectItem value="programado">programado</SelectItem>
+                  <SelectItem value="pendiente">pendiente</SelectItem>
+                  <SelectItem value="pagado">pagado</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

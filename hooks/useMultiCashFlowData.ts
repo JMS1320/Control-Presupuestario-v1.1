@@ -381,20 +381,49 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin sueldos
       }
 
-      // 5. Mapear todas las fuentes a formato unificado
+      // 5. Cargar anticipos de sueldos (pagos tipo 'anticipo', no conciliados)
+      const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
+        .from('sueldos_pagos')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+        .eq('tipo', 'anticipo')
+        .neq('estado', 'conciliado')
+        .gte('fecha', '2026-02-01')
+        .order('fecha', { ascending: true })
+
+      if (errorAntSueldos) {
+        console.error('Error cargando anticipos sueldos:', errorAntSueldos)
+      }
+
+      // 6. Mapear todas las fuentes a formato unificado
       const filasArca = mapearFacturasArca(facturasArca || [])
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
       const filasAnticipos = mapearAnticipos(anticipos || [])
       const filasSueldos = mapearSueldos(periodosSueldos || [])
+      const filasAnticiposSueldos = (anticiposSueldos || []).map(a => ({
+        id: a.id,
+        origen: 'SUELDO' as const,
+        origen_tabla: 'sueldos.pagos',
+        fecha_estimada: a.fecha,
+        fecha_vencimiento: null,
+        categ: 'SUELD ANT',
+        centro_costo: 'ESTRUCTURA',
+        cuit_proveedor: a.empleado?.cuit_empleado ?? '',
+        nombre_proveedor: a.empleado?.nombre ?? '',
+        detalle: `Anticipo ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
+        debitos: a.monto ?? 0,
+        creditos: 0,
+        saldo_cta_cte: 0,
+        estado: a.estado ?? 'pagar',
+      }))
 
-      // 6. Combinar y ordenar por fecha_estimada
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos]
+      // 7. Combinar y ordenar por fecha_estimada
+      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
-      // 7. Aplicar filtros
+      // 8. Aplicar filtros
       const filasFiltradas = aplicarFiltros(todasLasFilas, filtros)
 
-      // 8. Calcular saldos acumulativos
+      // 9. Calcular saldos acumulativos
       const filasConSaldo = calcularSaldosAcumulativos(filasFiltradas)
 
       setData(filasConSaldo)
