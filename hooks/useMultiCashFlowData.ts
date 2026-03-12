@@ -453,8 +453,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO',
     egresoId?: string
   ): Promise<boolean> => {
-    // Sueldos son de solo lectura en Cash Flow (se gestionan en Tab Sueldos)
-    if (origen === 'SUELDO') return false
+    // Períodos de sueldo son de solo lectura (se gestionan en Tab Sueldos)
+    // Anticipos de sueldo (sueldos.pagos) sí son editables
+    const filaOrigen = data.find(f => f.id === id)
+    if (origen === 'SUELDO' && filaOrigen?.origen_tabla !== 'sueldos.pagos') return false
     try {
       // Preparar objeto de actualización
       let updateData: any = { [campo]: valor }
@@ -465,7 +467,26 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         console.log(`🔄 Auto-actualización: fecha_vencimiento = ${valor} → fecha_estimada = ${valor}`)
       }
 
-      if (origen === 'ARCA') {
+      if (origen === 'SUELDO' && filaOrigen?.origen_tabla === 'sueldos.pagos') {
+        // Anticipo de sueldo: mapear campos a sueldos_pagos
+        let pagosUpdateData: any = {}
+        if (campo === 'estado') {
+          pagosUpdateData.estado = valor
+        } else if (campo === 'fecha_estimada') {
+          pagosUpdateData.fecha = valor
+        } else if (campo === 'debitos') {
+          pagosUpdateData.monto = valor
+        } else if (campo === 'detalle') {
+          pagosUpdateData.descripcion = valor
+        } else {
+          pagosUpdateData[campo] = valor
+        }
+        const { error } = await supabase
+          .from('sueldos_pagos')
+          .update(pagosUpdateData)
+          .eq('id', id)
+        if (error) throw error
+      } else if (origen === 'ARCA') {
         const { error } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
