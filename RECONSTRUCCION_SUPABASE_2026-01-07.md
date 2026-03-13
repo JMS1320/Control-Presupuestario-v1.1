@@ -10053,3 +10053,68 @@ Grupos completos (Anual + Cuota):
 | Red Vial Tapera 1 | Anual + Cuota |
 | Red Vial Tapera 2 | Anual + Cuota |
 | Red Vial Tapera 3 | Anual + Cuota |
+
+---
+
+## 📅 Sesión 2026-03-12/13 — Sueldos + Facturas ARCA
+
+### 1. Columna `estado` en `sueldos.pagos`
+
+Los anticipos de sueldos ahora tienen estado propio para el Cash Flow.
+
+**⚠️ No está en backup original. Ejecutar en reconstrucción:**
+
+```sql
+ALTER TABLE sueldos.pagos
+ADD COLUMN estado VARCHAR(20) DEFAULT 'pagar';
+
+CREATE OR REPLACE VIEW public.sueldos_pagos AS
+SELECT * FROM sueldos.pagos;
+```
+
+**Valores válidos**: `pendiente`, `pagar`, `programado`, `pagado`, `conciliado`
+
+---
+
+### 2. Anticipos de sueldos en Cash Flow
+
+Los registros de `sueldos.pagos` con `tipo = 'anticipo'` ahora aparecen como filas propias en el Cash Flow con `categ = 'SUELD ANT'`. Esto permite conciliarlos con el extracto bancario.
+
+- **Excluidos**: estado `conciliado` + anteriores a 2026-02-01
+- **Editables**: estado, fecha, monto, detalle (directo sobre `sueldos_pagos`)
+- **Solo lectura**: `sueldos_periodos` (períodos) siguen sin edición desde Cash Flow
+- **No aparecen en otras vistas** (la query de Cash Flow apunta a `comprobantes_arca`, tabla diferente)
+
+**Modal Sueldos**: selector de estado al registrar anticipo (default `pagar`). Resetea todos los campos al cerrar.
+
+---
+
+### 3. Facturas históricas en tab Facturas ARCA
+
+`comprobantes_historico` (273 registros) ahora se carga junto con `comprobantes_arca` en la tab principal Facturas.
+
+- Se muestran con `estado = 'historico'` (badge gris-azulado `slate`)
+- Son **solo lectura** — no responden a modo edición
+- **No aparecen en Cash Flow** — el hook consulta `comprobantes_arca` directamente y además tiene `.neq('estado', 'historico')` como protección adicional
+- Se pueden filtrar seleccionando "historico" en el dropdown de estado
+
+---
+
+### 4. Buscador rápido en tab Facturas ARCA
+
+Input de búsqueda en tiempo real en el header de la tab Facturas.
+
+- Busca en: `denominacion_emisor`, `cuit`, `cuenta_contable`
+- Funciona en conjunto con los filtros del panel
+- No requiere botón — filtra mientras se escribe
+
+---
+
+### 📝 Commits aplicados
+
+```
+8c27b51 - Feature: Anticipos sueldos en Cash Flow (SUELD ANT) + selector estado al registrar
+51711c9 - Fix: Anticipos sueldos editables en Cash Flow (estado, fecha, monto)
+4c5d265 - Feature: Mostrar comprobantes_historico en tab Facturas ARCA (estado=historico, solo lectura)
+d0fc3b8 - Feature: Buscador rápido en tab Facturas ARCA (emisor, CUIT, cuenta)
+```

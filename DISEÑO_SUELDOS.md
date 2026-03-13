@@ -1,6 +1,7 @@
 # DISEÑO E IMPLEMENTACIÓN: Módulo Sueldos
 
 > **Estado**: ✅ IMPLEMENTADO — Operativo, pendiente IPC real
+> **Última actualización**: 2026-03-13
 > **Fecha diseño**: 2026-03-05
 > **Fecha implementación**: 2026-03-05
 > **Prioridad**: Alta — reemplaza templates 47-54 del sistema de egresos
@@ -26,6 +27,12 @@
 | Modal registrar anticipo | ✅ |
 | Modal historial pivot (meses como columnas) | ✅ |
 | Cash Flow 4ta fuente (origen `SUELDO`) | ✅ |
+| Columnas parámetros por período en BD | ✅ |
+| Modal edición parámetros por fila (botón ✏️) | ✅ |
+| Preview bruto en tiempo real en modal | ✅ |
+| Anticipos en Cash Flow como filas propias (`SUELD ANT`) | ✅ 2026-03-12 |
+| Selector estado al registrar anticipo (default `pagar`) | ✅ 2026-03-12 |
+| Anticipos editables desde Cash Flow (estado, fecha, monto) | ✅ 2026-03-12 |
 
 ---
 
@@ -40,6 +47,7 @@ cuentas_empleado  → cuentas bancarias por empleado
 componentes_salario → montos por empleado + campaña
 periodos          → 1 fila por empleado×mes (proyección + tracking)
 pagos             → anticipos + sueldos finales + aguinaldo
+                    columna `estado` (DEFAULT 'pagar'): pendiente/pagar/programado/pagado/conciliado
 ```
 
 ### Vistas públicas (workaround PostgREST)
@@ -58,6 +66,67 @@ public.sueldos_pagos               → sueldos.pagos
 
 **Importante**: Todos los queries en el código usan las vistas (`sueldos_periodos`, etc.)
 y NO usan `.schema('sueldos')`.
+
+---
+
+## 📋 Parámetros Editables por Período (2026-03-10)
+
+Cada período en `sueldos_periodos` tiene sus propios parámetros editables mes a mes.
+El usuario los actualiza manualmente desde el botón ✏️ en la tabla del mes.
+
+### Columnas agregadas a `sueldos.periodos`
+
+| Columna | Tipo | Aplica a |
+|---------|------|----------|
+| `monto_a` | NUMERIC | `ab_francos` |
+| `monto_b` | NUMERIC | `ab_francos` |
+| `francos_cantidad` | INTEGER | `ab_francos` |
+| `valor_por_dia` | NUMERIC | `por_dia` |
+| `dias_trabajados` | INTEGER | `por_dia` |
+| `valor_por_hora` | NUMERIC | `por_hora_ipc` |
+| `horas_mes` | INTEGER | `por_hora_ipc` |
+| `varios` | NUMERIC | todos |
+
+### Fórmulas de cálculo (en `guardarEdicion`)
+
+```
+ab_francos:    (A + B) - ((A + B) / 25 × francos_cantidad) + varios
+por_dia:       valor_por_dia × dias_trabajados + varios
+por_hora_ipc:  valor_por_hora × horas_mes + varios
+plano_ipc:     bruto_actual + varios  (IPC pendiente)
+```
+
+### Workflow del usuario
+
+1. Llega la escala del convenio → abre ✏️ en cada empleado `ab_francos` → carga nuevo A y B
+2. El valor del franco se muestra calculado automáticamente en el modal: `(A+B)/25`
+3. Carga la cantidad de francos trabajados ese mes
+4. Si hubo reintegro combustible u otro concepto esporádico → campo **Varios**
+5. El bruto se muestra en tiempo real antes de guardar
+6. Al guardar: UPDATE en BD + recálculo de `saldo_pendiente`
+
+### Valores iniciales pre-poblados (migración `sueldos_periodos_parametros_mes`)
+
+Los 35 períodos existentes fueron pre-poblados desde `sueldos.componentes_salario`
+y `sueldos.empleados` al momento de aplicar la migración:
+
+| Empleado | Valores iniciales cargados |
+|----------|---------------------------|
+| Sigot | A=1.408.347,10 · B=191.652,90 · francos=5 |
+| Barreto | A=0 · B=1.100.000 · francos=4 |
+| Alondra | A=0 · B=500.000 · francos=0 |
+| Elvio | valor_dia=60.000 · dias=16 |
+| Vulcano | valor_dia=80.000 · dias=22 |
+| AMS | valor_hora=24.862 · horas=45 |
+| JMS | solo varios disponible (plano_ipc pendiente) |
+
+### Vista pública recreada
+
+```sql
+CREATE OR REPLACE VIEW public.sueldos_periodos AS
+SELECT * FROM sueldos.periodos;
+-- Necesario cada vez que se agregan columnas a sueldos.periodos
+```
 
 ---
 
@@ -120,16 +189,22 @@ por_hora_ipc:  valor_por_hora × horas_promedio
 
 **Archivo**: `hooks/useMultiCashFlowData.ts`
 
-- Origen: `'SUELDO'` (4to en el union type de `CashFlowRow.origen`)
+### Fuente 1 — Períodos (`sueldos_periodos`)
+
+- Origen: `'SUELDO'`, `categ: 'SUELD'`
 - Query: `sueldos_periodos` con join a `sueldos_empleados`, desde 2026-02-01
-- Estado `'historico'` excluido del Cash Flow
+- Estado `'historico'` excluido
 - `debitos` = `saldo_pendiente ?? bruto_calculado`
 - `fecha_estimada` = último día del mes del período
+- **Solo lectura** desde Cash Flow (`actualizarRegistro` bloquea si `origen_tabla = 'sueldos.periodos'`)
 
-```typescript
-// Edición de registros SUELDO está bloqueada en Cash Flow
-// (actualizarRegistro devuelve false inmediatamente para origen 'SUELDO')
-```
+### Fuente 2 — Anticipos (`sueldos_pagos`)  _(agregado 2026-03-12)_
+
+- Origen: `'SUELDO'`, `categ: 'SUELD ANT'`
+- Query: `sueldos_pagos` con `tipo = 'anticipo'`, excluye `estado = 'conciliado'`, desde 2026-02-01
+- Cada anticipo = 1 fila propia (conciliable con extracto bancario)
+- **Editable** desde Cash Flow: estado, fecha, monto, detalle → UPDATE directo en `sueldos_pagos`
+- Distinción en `actualizarRegistro`: si `origen_tabla = 'sueldos.pagos'` → editable
 
 ---
 
@@ -147,8 +222,10 @@ por_hora_ipc:  valor_por_hora × horas_promedio
 
 - **IPC real**: Cargar datos en `public.indices_ipc` para calcular `sueldo_x_ipc` real
   - Por ahora `sueldo_x_ipc = bruto_calculado`
+- **Planilla de asistencia**: Reemplazar ingreso manual de francos/días por importación de planilla
 - **Cerrar períodos**: Cambiar estado `proyectado → cerrado` al pagar sueldo mensual
 - **Aguinaldo**: Agregar lógica semestral (Jun/Dic)
 - **Recibos**: Generar PDF recibo de sueldo por empleado
 - **Modo histórico**: Períodos anteriores a la campaña activa
 - **Wilson Barreto monto_a**: Actualmente $0 — confirmar si corresponde dejar así
+- **plano_ipc (JMS)**: Implementar lógica IPC completa (pendiente, solo varios disponible)
