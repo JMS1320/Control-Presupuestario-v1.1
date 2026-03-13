@@ -807,15 +807,9 @@ export function VistaFacturasArca() {
       programado: 'bg-violet-100 text-violet-800 border-violet-200',
       credito:    'bg-gray-100 text-gray-600 border-gray-200',
       conciliado: 'bg-gray-100 text-gray-600 border-gray-200',
-      anterior:   'bg-slate-200 text-slate-600 border-slate-300',
+      anterior:   'bg-gray-100 text-gray-600 border-gray-200',
     }
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
-  }
-
-  // Label display para badges de estado
-  const labelEstado = (estado: string): string => {
-    if (estado === 'anterior') return 'histórico'
-    return estado
   }
 
   // Renderizar valor de celda según el tipo de columna
@@ -1050,7 +1044,7 @@ export function VistaFacturasArca() {
       case 'estado':
         const contenidoEstado = (
           <Badge className={colorEstado(valor as string)}>
-            {labelEstado(valor as string)}
+            {valor as string}
           </Badge>
         )
         return esEditable && modoEdicion ? (
@@ -5100,7 +5094,7 @@ export function VistaFacturasArca() {
                             {f.fecha_vencimiento ? new Date(f.fecha_vencimiento + 'T00:00:00').toLocaleDateString('es-AR') : '-'}
                           </TableCell>
                           <TableCell>
-                            <Badge className={`text-xs ${colorEstado(f.estado)}`}>{labelEstado(f.estado)}</Badge>
+                            <Badge className={`text-xs ${colorEstado(f.estado)}`}>{f.estado}</Badge>
                           </TableCell>
                           <TableCell className="text-right text-sm">
                             {f.imp_neto_gravado != null ? `$${Number(f.imp_neto_gravado).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '-'}
