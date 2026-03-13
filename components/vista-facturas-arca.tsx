@@ -415,20 +415,65 @@ export function VistaFacturasArca() {
     try {
       setLoading(true)
       setError(null)
-      
-      const { data, error: supabaseError } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('*')
-        .order('fecha_emision', { ascending: false })
 
-      if (supabaseError) {
-        console.error('Error al cargar facturas:', supabaseError)
-        setError(`Error al cargar facturas: ${supabaseError.message}`)
+      const [arcaResult, historicoResult] = await Promise.all([
+        supabase.schema('msa').from('comprobantes_arca').select('*').order('fecha_emision', { ascending: false }),
+        supabase.schema('msa').from('comprobantes_historico').select('*').order('fecha', { ascending: false }),
+      ])
+
+      if (arcaResult.error) {
+        console.error('Error al cargar facturas:', arcaResult.error)
+        setError(`Error al cargar facturas: ${arcaResult.error.message}`)
         return
       }
 
-      const facturasCargadas = data || []
+      // Mapear registros históricos al formato FacturaArca
+      const historicas: FacturaArca[] = (historicoResult.data || []).map(h => ({
+        id: h.id,
+        fecha_emision: h.fecha,
+        tipo_comprobante: 0,
+        punto_venta: h.punto_de_venta ?? null,
+        numero_desde: h.numero_desde ?? null,
+        numero_hasta: null,
+        codigo_autorizacion: null,
+        tipo_doc_emisor: null,
+        cuit: h.nro_doc_emisor ?? '',
+        denominacion_emisor: h.denominacion_emisor ?? '',
+        tipo_cambio: 1,
+        moneda: 'PES',
+        imp_neto_gravado: h.imp_neto_gravado ?? 0,
+        imp_neto_no_gravado: h.imp_neto_no_gravado ?? 0,
+        imp_op_exentas: h.imp_op_exentas ?? 0,
+        otros_tributos: h.otros_tributos ?? 0,
+        iva: h.iva ?? 0,
+        imp_total: h.imp_total ?? 0,
+        campana: null,
+        año_contable: h.anio_contable ?? null,
+        mes_contable: h.mes_contable ?? null,
+        fc: h.fc ?? null,
+        cuenta_contable: h.cuenta_contable ?? null,
+        centro_costo: null,
+        estado: 'historico',
+        observaciones_pago: null,
+        detalle: null,
+        archivo_origen: null,
+        fecha_importacion: null,
+        fecha_modificacion: null,
+        fecha_estimada: null,
+        fecha_vencimiento: null,
+        monto_a_abonar: null,
+        ddjj_iva: 'No',
+        created_at: h.created_at ?? '',
+        iva_2_5: null, iva_5: null, iva_10_5: null, iva_21: null, iva_27: null,
+        neto_grav_iva_0: null, neto_grav_iva_2_5: null, neto_grav_iva_5: null,
+        neto_grav_iva_10_5: null, neto_grav_iva_21: null, neto_grav_iva_27: null,
+        sicore: null, monto_sicore: null, tipo_sicore: null, descuento_aplicado: null,
+        grupo_pago_id: null,
+      }))
+
+      const facturasCargadas = [...(arcaResult.data || []), ...historicas]
+        .sort((a, b) => (b.fecha_emision ?? '').localeCompare(a.fecha_emision ?? ''))
+
       setFacturas(facturasCargadas)
       setFacturasOriginales(facturasCargadas)
     } catch (error) {
@@ -808,6 +853,7 @@ export function VistaFacturasArca() {
       credito:    'bg-gray-100 text-gray-600 border-gray-200',
       conciliado: 'bg-gray-100 text-gray-600 border-gray-200',
       anterior:   'bg-gray-100 text-gray-600 border-gray-200',
+      historico:  'bg-slate-200 text-slate-600 border-slate-300',
     }
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }
@@ -815,7 +861,7 @@ export function VistaFacturasArca() {
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
-    const esEditable = camposEditables.includes(columna as string)
+    const esEditable = camposEditables.includes(columna as string) && factura.estado !== 'historico'
     const esCeldaEnEdicion = celdaEnEdicion?.facturaId === factura.id && celdaEnEdicion?.columna === columna
     
     if (columna === 'cuenta_contable') {
