@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -145,6 +145,7 @@ export function VistaFacturasArca() {
   
   // Estados para filtros
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [busquedaRapida, setBusquedaRapida] = useState('')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
   const [busquedaProveedor, setBusquedaProveedor] = useState('')
@@ -542,7 +543,7 @@ export function VistaFacturasArca() {
   // Funciones para filtros
   const aplicarFiltros = () => {
     let facturasFiltradas = [...facturasOriginales]
-    
+
     // Filtro por fecha de emisión
     if (fechaDesde) {
       facturasFiltradas = facturasFiltradas.filter(f => f.fecha_emision >= fechaDesde)
@@ -3870,9 +3871,18 @@ export function VistaFacturasArca() {
 
         {/* Tab Content: Facturas */}
         <TabsContent value="facturas" className="space-y-6">
-          <div className="flex items-center justify-end">
-        
-        <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            {/* Búsqueda rápida */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Buscar emisor, CUIT, cuenta..."
+                value={busquedaRapida}
+                onChange={e => setBusquedaRapida(e.target.value)}
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
+            <div className="flex gap-2 ml-auto">
           {/* Botón importar Excel */}
           <Button 
             variant="outline"
@@ -4057,7 +4067,7 @@ export function VistaFacturasArca() {
           </PopoverContent>
         </Popover>
         </div>
-      </div>
+          </div>
 
       {/* Panel de filtros */}
       {mostrarFiltros && (
@@ -4283,7 +4293,16 @@ export function VistaFacturasArca() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {facturas.length === 0 ? (
+                    {(() => {
+                      const q = busquedaRapida.trim().toLowerCase()
+                      const facturasDisplay = q
+                        ? facturas.filter(f =>
+                            f.denominacion_emisor?.toLowerCase().includes(q) ||
+                            f.cuit?.includes(q) ||
+                            (f.cuenta_contable ?? '').toLowerCase().includes(q)
+                          )
+                        : facturas
+                      return facturasDisplay.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={columnasVisiblesArray.length + (modoEdicionMasiva ? 1 : 0)}
@@ -4293,7 +4312,7 @@ export function VistaFacturasArca() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      facturas.map(factura => (
+                      facturasDisplay.map(factura => (
                         <TableRow key={factura.id} className={facturasSeleccionadasMasiva.has(factura.id) ? 'bg-purple-50' : ''}>
                           {modoEdicionMasiva && (
                             <TableCell style={{ width: '50px', minWidth: '50px' }}>
@@ -4378,7 +4397,7 @@ export function VistaFacturasArca() {
                           </TableCell>
                         </TableRow>
                       ))
-                    )}
+                    )})()}
                   </TableBody>
                 </Table>
             </div>
