@@ -487,13 +487,25 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           .eq('id', id)
         if (error) throw error
       } else if (origen === 'ARCA') {
-        const { error } = await supabase
-          .schema('msa')
-          .from('comprobantes_arca')
-          .update(updateData)
-          .eq('id', id)
+        // Comprobar si es una fila de grupo → propagar a todos los miembros
+        const filaActualArca = data.find(f => f.id === id)
+        const idsGrupoArca = filaActualArca?.ids_grupo
 
-        if (error) throw error
+        if (idsGrupoArca && idsGrupoArca.length > 0) {
+          const { error } = await supabase
+            .schema('msa')
+            .from('comprobantes_arca')
+            .update(updateData)
+            .in('id', idsGrupoArca)
+          if (error) throw error
+        } else {
+          const { error } = await supabase
+            .schema('msa')
+            .from('comprobantes_arca')
+            .update(updateData)
+            .eq('id', id)
+          if (error) throw error
+        }
       } else if (origen === 'ANTICIPO') {
         // Para anticipos: mapear campos según la BD
         let anticipoUpdateData: any = {}

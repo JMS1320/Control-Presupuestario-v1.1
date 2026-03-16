@@ -181,6 +181,9 @@ export function VistaCashFlow() {
   
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
+  // Ref para poder cerrar el editor del hook desde dentro de customValidations
+  const hookEditorRef = useRef<{ setCeldaEnEdicion: (v: any) => void } | null>(null)
+
   // Hook unificado para edición inline (DESPUÉS de cargarDatos para evitar error inicialización)
   const hookEditor = useInlineEditor({
     onLocalUpdate: (filaId, campo, valor, updateData) => {
@@ -195,6 +198,31 @@ export function VistaCashFlow() {
     },
     onError: (error) => console.error('Hook error Cash Flow:', error),
     customValidations: async (celda) => {
+      // Filas de grupo: redirigir a actualizarRegistro (propaga a todos los miembros)
+      const filaActual = data.find(f => f.id === celda.filaId)
+      if (filaActual?.ids_grupo && filaActual.ids_grupo.length > 0) {
+        let valorFinal: any = celda.valor
+        // Procesar fechas: convertir DD/MM/AAAA → YYYY-MM-DD si corresponde
+        if (['fecha_estimada', 'fecha_vencimiento'].includes(celda.columna)) {
+          const fechaStr = String(valorFinal).trim()
+          if (fechaStr.includes('/')) {
+            const [d, m, y] = fechaStr.split('/')
+            valorFinal = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+          }
+        } else if (['debitos', 'creditos'].includes(celda.columna)) {
+          valorFinal = parseFloat(String(valorFinal)) || 0
+        }
+        const exito = await actualizarRegistro(
+          celda.filaId,
+          celda.campoReal || celda.columna,
+          valorFinal,
+          filaActual.origen,
+          filaActual.egreso_id
+        )
+        if (exito) hookEditorRef.current?.setCeldaEnEdicion(null)
+        return false // Prevenir guardado propio del hook
+      }
+
       // Validación especial para categorías en Cash Flow
       if (celda.columna === 'categ') {
         const categIngresado = String(celda.valor).toUpperCase()
@@ -216,6 +244,9 @@ export function VistaCashFlow() {
       return true // Proceder con guardado
     }
   })
+
+  // Guardar referencia al hook para usarla desde customValidations
+  hookEditorRef.current = hookEditor
 
   // Formatear moneda argentina
   const formatearMoneda = (valor: number): string => {
