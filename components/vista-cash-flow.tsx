@@ -178,7 +178,17 @@ export function VistaCashFlow() {
     netoBase: number, minimoAplicado: number, baseImponible: number,
     esRetencionAdicional: boolean, impTotal: number
   } | null>(null)
-  
+
+  // Estado modal TC de pago (facturas USD)
+  const [modalTcPago, setModalTcPago] = useState<{
+    open: boolean
+    filaId: string
+    tcOriginal: number
+    tcPagoActual: number | null
+    inputVal: string
+    guardando: boolean
+  }>({ open: false, filaId: '', tcOriginal: 1, tcPagoActual: null, inputVal: '', guardando: false })
+
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
   // Ref para poder cerrar el editor del hook desde dentro de customValidations
@@ -247,6 +257,43 @@ export function VistaCashFlow() {
 
   // Guardar referencia al hook para usarla desde customValidations
   hookEditorRef.current = hookEditor
+
+  // Abrir modal para editar TC de pago en facturas USD
+  const abrirModalTcPago = (fila: CashFlowRow) => {
+    setModalTcPago({
+      open: true,
+      filaId: fila.id,
+      tcOriginal: fila.tipo_cambio ?? 1,
+      tcPagoActual: fila.tc_pago ?? null,
+      inputVal: String(fila.tc_pago ?? fila.tipo_cambio ?? ''),
+      guardando: false
+    })
+  }
+
+  const guardarTcPago = async () => {
+    const tc = parseFloat(modalTcPago.inputVal)
+    if (!tc || tc <= 0) { toast.error('Ingresá un TC de pago válido'); return }
+    setModalTcPago(prev => ({ ...prev, guardando: true }))
+    try {
+      const { error } = await supabase.schema('msa').from('comprobantes_arca')
+        .update({ tc_pago: tc })
+        .eq('id', modalTcPago.filaId)
+      if (error) throw error
+      actualizarLocal(modalTcPago.filaId, 'tc_pago', tc)
+      // También actualizar débitos local
+      const fila = data.find(f => f.id === modalTcPago.filaId)
+      if (fila) {
+        const montoBase = (fila.debitos) / (fila.tc_pago ?? fila.tipo_cambio ?? 1)
+        actualizarLocal(modalTcPago.filaId, 'debitos', montoBase * tc)
+      }
+      toast.success(`TC de pago actualizado: $${tc.toLocaleString('es-AR')}`)
+      setModalTcPago(prev => ({ ...prev, open: false }))
+    } catch (e) {
+      toast.error('Error al guardar TC de pago')
+    } finally {
+      setModalTcPago(prev => ({ ...prev, guardando: false }))
+    }
+  }
 
   // Formatear moneda argentina
   const formatearMoneda = (valor: number): string => {
@@ -370,6 +417,20 @@ export function VistaCashFlow() {
     try {
       setGuardandoCambio(true)
       
+      // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
+      if (
+        filaParaCambioEstado.origen === 'ARCA' &&
+        nuevoEstado === 'pagar' &&
+        (filaParaCambioEstado.moneda === 'USD' || (filaParaCambioEstado.tipo_cambio ?? 1) > 1.01) &&
+        !filaParaCambioEstado.tc_pago
+      ) {
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        // Abrir modal de TC de pago; al guardar, volver a ejecutar el cambio de estado
+        abrirModalTcPago(filaParaCambioEstado)
+        return
+      }
+
       // HOOK SICORE - Interceptar cambio estado HACIA "pagar" para facturas ARCA
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && filaParaCambioEstado.estado !== 'pagar') {
         // Guardar estado pendiente y evaluar SICORE (NO guardar en BD todavía)
@@ -1270,6 +1331,24 @@ export function VistaCashFlow() {
         
         case 'text':
         default:
+          // Badge USD clickable en columna nombre_proveedor para facturas USD
+          if (columna.key === 'nombre_proveedor' && fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)) {
+            const tcLabel = fila.tc_pago
+              ? `TC Pago: $${fila.tc_pago.toLocaleString('es-AR')}`
+              : `TC ARCA: $${(fila.tipo_cambio ?? 1).toLocaleString('es-AR')}`
+            return (
+              <div className="flex items-center gap-1">
+                <span
+                  className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-200 text-amber-800 border border-amber-400 cursor-pointer hover:bg-amber-300 transition-colors shrink-0"
+                  title={`${tcLabel} — Click para editar TC de pago`}
+                  onClick={(e) => { e.stopPropagation(); abrirModalTcPago(fila) }}
+                >
+                  💵 USD
+                </span>
+                <span className="truncate">{(valor as string) || '-'}</span>
+              </div>
+            )
+          }
           return valor || '-'
       }
     })()
@@ -1804,10 +1883,16 @@ export function VistaCashFlow() {
                       </td>
                     </tr>
                   ) : (
-                    (modoPagos ? datosFiltradosPagos : data).map((fila, index) => (
-                      <tr 
-                        key={fila.id} 
-                        className={`group hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'} ${filasSeleccionadas.has(fila.id) ? 'bg-blue-50' : ''}`}
+                    (modoPagos ? datosFiltradosPagos : data).map((fila, index) => {
+                      const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
+                      return (
+                      <tr
+                        key={fila.id}
+                        className={`group hover:bg-gray-50 ${
+                          filasSeleccionadas.has(fila.id) ? 'bg-blue-50' :
+                          esUSD ? 'bg-amber-50' :
+                          index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
+                        }`}
                       >
                         {/* Checkbox solo en modo PAGOS */}
                         {modoPagos && (
@@ -1826,7 +1911,8 @@ export function VistaCashFlow() {
                           </td>
                         ))}
                       </tr>
-                    ))
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -1901,6 +1987,62 @@ export function VistaCashFlow() {
         onConfirm={confirmarCateg}
         onCancel={cancelarValidacionCateg}
       />
+
+      {/* Modal TC de pago - Facturas USD */}
+      {modalTcPago.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+              💵 TC de Pago — Factura USD
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              TC original ARCA: <strong>${modalTcPago.tcOriginal.toLocaleString('es-AR')}</strong>
+              {modalTcPago.tcPagoActual && (
+                <span className="ml-2 text-amber-700">(actual: ${modalTcPago.tcPagoActual.toLocaleString('es-AR')})</span>
+              )}
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">
+                  Tipo de cambio al momento del pago
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={modalTcPago.inputVal}
+                  onChange={e => setModalTcPago(prev => ({ ...prev, inputVal: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') guardarTcPago(); if (e.key === 'Escape') setModalTcPago(prev => ({ ...prev, open: false })) }}
+                  placeholder={String(modalTcPago.tcOriginal)}
+                  autoFocus
+                  className="text-right"
+                />
+              </div>
+              <p className="text-xs text-gray-400">
+                El débito en Cash Flow se recalculará con el nuevo TC.
+              </p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setModalTcPago(prev => ({ ...prev, open: false }))}
+                disabled={modalTcPago.guardando}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={guardarTcPago}
+                disabled={modalTcPago.guardando}
+                className="flex-1"
+              >
+                {modalTcPago.guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Guardar TC'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Pago Manual - Templates Abiertos */}
       <Dialog open={modalPagoManual} onOpenChange={setModalPagoManual}>

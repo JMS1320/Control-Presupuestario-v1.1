@@ -42,6 +42,10 @@ export interface CashFlowRow {
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
   imp_total?: number
+  // Moneda (solo para filas ARCA)
+  moneda?: string | null        // 'ARS' o 'USD' (null = ARS)
+  tipo_cambio?: number          // TC original ARCA (1.0 para ARS)
+  tc_pago?: number | null       // TC al momento del pago (editable, nullable)
   // Agrupación de pagos
   grupo_pago_id?: string | null
   facturas_agrupadas?: number   // > 1 indica fila de grupo
@@ -80,28 +84,35 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const agrupadas    = facturas.filter(f =>  f.grupo_pago_id)
 
     // Filas individuales — igual que siempre
-    const filasIndividuales: CashFlowRow[] = individuales.map(f => ({
-      id: f.id,
-      origen: 'ARCA' as const,
-      origen_tabla: 'msa.comprobantes_arca',
-      fecha_estimada: f.fecha_estimada || calcularFechaEstimada(f.fecha_emision),
-      fecha_vencimiento: f.fecha_vencimiento,
-      categ: f.cuenta_contable || 'SIN_CATEG',
-      centro_costo: f.centro_costo || 'SIN_CC',
-      cuit_proveedor: f.cuit || '',
-      nombre_proveedor: f.denominacion_emisor || '',
-      detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
-      debitos: f.monto_a_abonar || f.imp_total || 0,
-      creditos: 0,
-      saldo_cta_cte: 0,
-      estado: f.estado || 'pendiente',
-      sicore: f.sicore || null,
-      imp_neto_gravado: f.imp_neto_gravado || 0,
-      imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
-      imp_op_exentas: f.imp_op_exentas || 0,
-      imp_total: f.imp_total || 0,
-      grupo_pago_id: null,
-    }))
+    const filasIndividuales: CashFlowRow[] = individuales.map(f => {
+      const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+      const montoBase = f.monto_a_abonar ?? f.imp_total ?? 0
+      return {
+        id: f.id,
+        origen: 'ARCA' as const,
+        origen_tabla: 'msa.comprobantes_arca',
+        fecha_estimada: f.fecha_estimada || calcularFechaEstimada(f.fecha_emision),
+        fecha_vencimiento: f.fecha_vencimiento,
+        categ: f.cuenta_contable || 'SIN_CATEG',
+        centro_costo: f.centro_costo || 'SIN_CC',
+        cuit_proveedor: f.cuit || '',
+        nombre_proveedor: f.denominacion_emisor || '',
+        detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
+        debitos: montoBase * tc,
+        creditos: 0,
+        saldo_cta_cte: 0,
+        estado: f.estado || 'pendiente',
+        sicore: f.sicore || null,
+        imp_neto_gravado: f.imp_neto_gravado || 0,
+        imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
+        imp_op_exentas: f.imp_op_exentas || 0,
+        imp_total: f.imp_total || 0,
+        moneda: f.moneda || null,
+        tipo_cambio: f.tipo_cambio ?? 1,
+        tc_pago: f.tc_pago ?? null,
+        grupo_pago_id: null,
+      }
+    })
 
     // Filas agrupadas — una fila por grupo
     const porGrupo = new Map<string, any[]>()
@@ -118,7 +129,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .sort()
         .at(-1) ?? ''
       const fechaVencMax = fs.map(f => f.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
-      const totalDebitos = fs.reduce((s, f) => s + (f.monto_a_abonar || f.imp_total || 0), 0)
+      const totalDebitos = fs.reduce((s, f) => {
+        const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+        return s + (f.monto_a_abonar ?? f.imp_total ?? 0) * tc
+      }, 0)
       // Detalle: lista de los detalles individuales separados por " · "
       const detallesCombinados = fs
         .map(f => f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`)
@@ -363,7 +377,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('*, grupo_pago_id')
+        .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago')
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')

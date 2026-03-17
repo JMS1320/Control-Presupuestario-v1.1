@@ -84,6 +84,8 @@ interface FacturaArca {
   descuento_aplicado: number | null
   // Agrupación de pagos
   grupo_pago_id: string | null
+  // TC de pago (editable, solo USD)
+  tc_pago: number | null
 }
 
 // Interface para configuración tipos SICORE
@@ -1071,6 +1073,17 @@ export function VistaFacturasArca() {
           </div>
         ) : contenidoNumero
       
+      case 'moneda':
+        const esUSDCol = (valor as string) === 'USD' || (Number(factura.tipo_cambio) > 1.01)
+        return (
+          <Badge className={esUSDCol
+            ? 'bg-amber-100 text-amber-800 border-amber-300 font-semibold'
+            : 'bg-gray-100 text-gray-600 border-gray-200 font-normal'
+          }>
+            {esUSDCol ? '💵 USD' : 'ARS'}
+          </Badge>
+        )
+
       case 'denominacion_emisor':
         const contenidoDenominacion = (
           <div className="max-w-xs truncate" title={valor as string}>
@@ -1185,23 +1198,27 @@ export function VistaFacturasArca() {
       const facturas = data || []
       setFacturasPeriodo(facturas)
       
-      // Calcular subtotales
+      // Calcular subtotales (todos los importes en pesos via tipo_cambio)
       const totales = facturas.reduce((acc, f) => {
-        acc.imp_total += Number(f.imp_total) || 0
-        acc.iva += Number(f.iva) || 0
-        acc.imp_neto_gravado += Number(f.imp_neto_gravado) || 0
-        acc.imp_neto_no_gravado += Number(f.imp_neto_no_gravado) || 0
-        acc.imp_op_exentas += Number(f.imp_op_exentas) || 0
-        acc.otros_tributos += Number(f.otros_tributos) || 0
+        const tc = Number(f.tipo_cambio) || 1
+        acc.imp_total += (Number(f.imp_total) || 0) * tc
+        acc.iva += (Number(f.iva) || 0) * tc
+        acc.imp_neto_gravado += (Number(f.imp_neto_gravado) || 0) * tc
+        acc.imp_neto_no_gravado += (Number(f.imp_neto_no_gravado) || 0) * tc
+        acc.imp_op_exentas += (Number(f.imp_op_exentas) || 0) * tc
+        acc.otros_tributos += (Number(f.otros_tributos) || 0) * tc
         return acc
       }, {
-        imp_total: 0, iva: 0, imp_neto_gravado: 0, 
+        imp_total: 0, iva: 0, imp_neto_gravado: 0,
         imp_neto_no_gravado: 0, imp_op_exentas: 0, otros_tributos: 0
       })
 
       // Facturas C (tipo 11) por separado
       const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
-      const totalFacturasC = facturasC.reduce((sum, f) => sum + (Number(f.imp_total) || 0), 0)
+      const totalFacturasC = facturasC.reduce((sum, f) => {
+        const tc = Number(f.tipo_cambio) || 1
+        return sum + (Number(f.imp_total) || 0) * tc
+      }, 0)
 
       setSubtotales({ ...totales, facturas_c: totalFacturasC, cantidad_facturas_c: facturasC.length })
     } catch (error) {
@@ -1568,48 +1585,55 @@ export function VistaFacturasArca() {
           cuit: f.cuit,
           tipo_comprobante: f.tipo_comprobante
         })
-        
+
+        const tc = Number(f.tipo_cambio) || 1
+        const esUSD = f.moneda === 'USD' || (tc > 1.01)
+
         // Calcular IVA Diferencial (todo lo que NO es 21%)
-        const ivaDiferencial = (f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)
-        
+        const ivaDiferencial = ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)) * tc
+
         return {
           'Fecha': f.fecha_emision || '',
           'Tipo-N° Comp.': f.tipo_comprobante || '',
           'Razón Social': f.denominacion_emisor || '',
           'C.U.I.T.': f.cuit || '',
-          'Neto Gravado': formatearNumeroExcel(f.imp_neto_gravado),
-          'Neto No Gravado': formatearNumeroExcel(f.imp_neto_no_gravado),
-          'Op. Exentas': formatearNumeroExcel(f.imp_op_exentas),
-          'Otros Tributos': formatearNumeroExcel(f.otros_tributos),
-          'IVA 21%': formatearNumeroExcel(f.iva_21),
+          ...(esUSD ? { 'TC': formatearNumeroExcel(tc) } : {}),
+          'Neto Gravado': formatearNumeroExcel((f.imp_neto_gravado || 0) * tc),
+          'Neto No Gravado': formatearNumeroExcel((f.imp_neto_no_gravado || 0) * tc),
+          'Op. Exentas': formatearNumeroExcel((f.imp_op_exentas || 0) * tc),
+          'Otros Tributos': formatearNumeroExcel((f.otros_tributos || 0) * tc),
+          'IVA 21%': formatearNumeroExcel((f.iva_21 || 0) * tc),
           'IVA Diferencial': formatearNumeroExcel(ivaDiferencial),
-          'Total IVA': formatearNumeroExcel(f.iva),
-          'Imp. Total': formatearNumeroExcel(f.imp_total)
+          'Total IVA': formatearNumeroExcel((f.iva || 0) * tc),
+          'Imp. Total': formatearNumeroExcel((f.imp_total || 0) * tc)
         }
       })
 
-      // Calcular totales para Excel
-      const totales = facturas.reduce((acc, f) => ({
-        neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
-        neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
-        op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
-        otros_tributos: acc.otros_tributos + (f.otros_tributos || 0),
-        iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
-        total_iva: acc.total_iva + (f.iva || 0),
-        importe_total: acc.importe_total + (f.imp_total || 0),
-        // Alícuotas separadas
-        iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0),
-        iva_5: acc.iva_5 + (f.iva_5 || 0),
-        iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0),
-        iva_21: acc.iva_21 + (f.iva_21 || 0),
-        iva_27: acc.iva_27 + (f.iva_27 || 0),
-        neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0),
-        neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0),
-        neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0),
-        neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0),
-        neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0),
-        neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0)
-      }), {
+      // Calcular totales para Excel (en pesos)
+      const totales = facturas.reduce((acc, f) => {
+        const tc = Number(f.tipo_cambio) || 1
+        return {
+          neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0) * tc,
+          neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0) * tc,
+          op_exentas: acc.op_exentas + (f.imp_op_exentas || 0) * tc,
+          otros_tributos: acc.otros_tributos + (f.otros_tributos || 0) * tc,
+          iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)) * tc,
+          total_iva: acc.total_iva + (f.iva || 0) * tc,
+          importe_total: acc.importe_total + (f.imp_total || 0) * tc,
+          // Alícuotas separadas
+          iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0) * tc,
+          iva_5: acc.iva_5 + (f.iva_5 || 0) * tc,
+          iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0) * tc,
+          iva_21: acc.iva_21 + (f.iva_21 || 0) * tc,
+          iva_27: acc.iva_27 + (f.iva_27 || 0) * tc,
+          neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0) * tc,
+          neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0) * tc,
+          neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0) * tc,
+          neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0) * tc,
+          neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0) * tc,
+          neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0) * tc
+        }
+      }, {
         neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, otros_tributos: 0,
         iva_diferencial: 0, total_iva: 0, importe_total: 0,
         iva_2_5: 0, iva_5: 0, iva_10_5: 0, iva_21: 0, iva_27: 0,
@@ -1619,7 +1643,10 @@ export function VistaFacturasArca() {
       // Calcular Monotributista (facturas tipo C)
       const monotributista = facturas
         .filter(f => f.tipo_comprobante === 11) // Tipo 11 = Factura C (MONOTRIBUTISTA)
-        .reduce((acc, f) => acc + (f.imp_total || 0), 0)
+        .reduce((acc, f) => {
+          const tc = Number(f.tipo_cambio) || 1
+          return acc + (f.imp_total || 0) * tc
+        }, 0)
 
       // Calcular total general + monotributo
       const totalGeneral = totales.neto_gravado + totales.neto_no_gravado + totales.op_exentas + totales.otros_tributos + totales.total_iva + totales.importe_total
@@ -1743,29 +1770,31 @@ export function VistaFacturasArca() {
       doc.text(`Fecha generación: ${new Date().toLocaleDateString('es-AR')}`, 20, 35)
       doc.text(`Total facturas: ${facturas.length}`, 150, 35)
       
-      // Calcular totales igual que Excel
+      // Calcular totales igual que Excel (todos en pesos via tipo_cambio)
       console.log('🔍 DEBUG PDF: Calculando totales...')
-      const totales = facturas.reduce((acc, f) => ({
-        neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0),
-        neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0),
-        op_exentas: acc.op_exentas + (f.imp_op_exentas || 0),
-        otros_tributos: acc.otros_tributos + (f.otros_tributos || 0),
-        iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)),
-        total_iva: acc.total_iva + (f.iva || 0),
-        importe_total: acc.importe_total + (f.imp_total || 0),
-        // Alícuotas separadas
-        iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0),
-        iva_5: acc.iva_5 + (f.iva_5 || 0),
-        iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0),
-        iva_21: acc.iva_21 + (f.iva_21 || 0),
-        iva_27: acc.iva_27 + (f.iva_27 || 0),
-        neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0),
-        neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0),
-        neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0),
-        neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0),
-        neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0),
-        neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0)
-      }), {
+      const totales = facturas.reduce((acc, f) => {
+        const tc = Number(f.tipo_cambio) || 1
+        return {
+          neto_gravado: acc.neto_gravado + (f.imp_neto_gravado || 0) * tc,
+          neto_no_gravado: acc.neto_no_gravado + (f.imp_neto_no_gravado || 0) * tc,
+          op_exentas: acc.op_exentas + (f.imp_op_exentas || 0) * tc,
+          otros_tributos: acc.otros_tributos + (f.otros_tributos || 0) * tc,
+          iva_diferencial: acc.iva_diferencial + ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)) * tc,
+          total_iva: acc.total_iva + (f.iva || 0) * tc,
+          importe_total: acc.importe_total + (f.imp_total || 0) * tc,
+          iva_2_5: acc.iva_2_5 + (f.iva_2_5 || 0) * tc,
+          iva_5: acc.iva_5 + (f.iva_5 || 0) * tc,
+          iva_10_5: acc.iva_10_5 + (f.iva_10_5 || 0) * tc,
+          iva_21: acc.iva_21 + (f.iva_21 || 0) * tc,
+          iva_27: acc.iva_27 + (f.iva_27 || 0) * tc,
+          neto_0: acc.neto_0 + (f.neto_grav_iva_0 || 0) * tc,
+          neto_2_5: acc.neto_2_5 + (f.neto_grav_iva_2_5 || 0) * tc,
+          neto_5: acc.neto_5 + (f.neto_grav_iva_5 || 0) * tc,
+          neto_10_5: acc.neto_10_5 + (f.neto_grav_iva_10_5 || 0) * tc,
+          neto_21: acc.neto_21 + (f.neto_grav_iva_21 || 0) * tc,
+          neto_27: acc.neto_27 + (f.neto_grav_iva_27 || 0) * tc
+        }
+      }, {
         neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, otros_tributos: 0,
         iva_diferencial: 0, total_iva: 0, importe_total: 0,
         iva_2_5: 0, iva_5: 0, iva_10_5: 0, iva_21: 0, iva_27: 0,
@@ -1774,8 +1803,11 @@ export function VistaFacturasArca() {
 
       // Calcular Monotributista (facturas tipo C)
       const monotributista = facturas
-        .filter(f => f.tipo_comprobante === 11) // Tipo 11 = Factura C (MONOTRIBUTISTA)
-        .reduce((acc, f) => acc + (f.imp_total || 0), 0)
+        .filter(f => f.tipo_comprobante === 11)
+        .reduce((acc, f) => {
+          const tc = Number(f.tipo_cambio) || 1
+          return acc + (f.imp_total || 0) * tc
+        }, 0)
 
       console.log('🔍 DEBUG PDF: Totales calculados:', totales)
       
@@ -1792,7 +1824,7 @@ export function VistaFacturasArca() {
       // Tabla horizontal con formato LIBRO IVA COMPRAS (mostrar todas las facturas)
       console.log('🔍 DEBUG PDF: Preparando datos tabla con', facturas.length, 'facturas')
       const datosTabla = facturas.map((f, index) => {
-        if (index < 3) { // Solo log de las primeras 3 para no saturar
+        if (index < 3) {
           console.log(`🔍 DEBUG PDF: Procesando factura ${index + 1}:`, {
             fecha: f.fecha_emision,
             proveedor: f.denominacion_emisor,
@@ -1800,23 +1832,24 @@ export function VistaFacturasArca() {
             total: f.imp_total
           })
         }
-        
-        // Calcular IVA Diferencial para cada factura
-        const ivaDiferencial = (f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)
-        
+
+        const tc = Number(f.tipo_cambio) || 1
+        const esUSD = f.moneda === 'USD' || tc > 1.01
+        const ivaDiferencial = ((f.iva_2_5 || 0) + (f.iva_5 || 0) + (f.iva_10_5 || 0) + (f.iva_27 || 0)) * tc
+
         return [
           f.fecha_emision || '',
-          f.tipo_comprobante || '',
+          `${esUSD ? '💵 ' : ''}${f.tipo_comprobante || ''}`,
           (f.denominacion_emisor || '').substring(0, 18),
           f.cuit || '',
-          formatearNumeroPDF(f.imp_neto_gravado).trim(),
-          formatearNumeroPDF(f.imp_neto_no_gravado).trim(),
-          formatearNumeroPDF(f.imp_op_exentas).trim(),
-          formatearNumeroPDF(f.otros_tributos).trim(),
-          formatearNumeroPDF(f.iva_21).trim(),
+          formatearNumeroPDF((f.imp_neto_gravado || 0) * tc).trim(),
+          formatearNumeroPDF((f.imp_neto_no_gravado || 0) * tc).trim(),
+          formatearNumeroPDF((f.imp_op_exentas || 0) * tc).trim(),
+          formatearNumeroPDF((f.otros_tributos || 0) * tc).trim(),
+          formatearNumeroPDF((f.iva_21 || 0) * tc).trim(),
           formatearNumeroPDF(ivaDiferencial).trim(),
-          formatearNumeroPDF(f.iva).trim(),
-          formatearNumeroPDF(f.imp_total).trim()
+          formatearNumeroPDF((f.iva || 0) * tc).trim(),
+          formatearNumeroPDF((f.imp_total || 0) * tc).trim()
         ]
       })
 
@@ -4312,8 +4345,14 @@ export function VistaFacturasArca() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      facturasDisplay.map(factura => (
-                        <TableRow key={factura.id} className={facturasSeleccionadasMasiva.has(factura.id) ? 'bg-purple-50' : ''}>
+                      facturasDisplay.map(factura => {
+                        const esUSD = factura.moneda === 'USD' || (Number(factura.tipo_cambio) > 1.01)
+                        return (
+                        <TableRow key={factura.id} className={
+                          facturasSeleccionadasMasiva.has(factura.id)
+                            ? 'bg-purple-50'
+                            : esUSD ? 'bg-amber-50' : ''
+                        }>
                           {modoEdicionMasiva && (
                             <TableCell style={{ width: '50px', minWidth: '50px' }}>
                               <Checkbox
@@ -4396,7 +4435,8 @@ export function VistaFacturasArca() {
                             </DropdownMenu>
                           </TableCell>
                         </TableRow>
-                      ))
+                        )
+                      })
                     )})()}
                   </TableBody>
                 </Table>
