@@ -3,6 +3,22 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 
+// Extrae el prefijo común (a nivel de palabras) de un array de strings
+const extraerPrefijoComun = (nombres: string[]): string => {
+  if (nombres.length === 0) return ''
+  const palabras = nombres.map(n => n.split(' '))
+  const prefijo: string[] = []
+  for (let i = 0; i < palabras[0].length; i++) {
+    const palabra = palabras[0][i]
+    if (palabras.every(p => p[i] === palabra)) {
+      prefijo.push(palabra)
+    } else {
+      break
+    }
+  }
+  return prefijo.join(' ')
+}
+
 // Interface unificada para Cash Flow (10 columnas finales)
 export interface CashFlowRow {
   id: string
@@ -181,8 +197,29 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const fechaMax = cs.map(c => c.fecha_estimada).filter(Boolean).sort().at(-1) ?? ''
       const fechaVencMax = cs.map(c => c.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
       const totalDebitos = cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0)
-      const detallesCombinados = cs.map(c => c.descripcion || c.egreso?.nombre_referencia || '').join(' · ')
       const primera = cs[0]
+
+      // Detalle inteligente para grupos
+      const nombres = cs.map(c => c.egreso?.nombre_referencia || '')
+      const prefijoComun = extraerPrefijoComun(nombres)
+      const prefijoLimpio = prefijoComun.replace(/\b(Cuota|Anual)\b/gi, '').trim()
+      const responsable = primera.egreso?.responsable || ''
+      const sufijos = cs
+        .map(c => {
+          const nombre = c.egreso?.nombre_referencia || ''
+          return nombre.startsWith(prefijoComun) ? nombre.slice(prefijoComun.length).trim() : nombre
+        })
+        .filter(Boolean)
+      // Número de cuota: mostrar solo si todos los miembros tienen el mismo numero_cuota
+      const numeroCuota = primera.numero_cuota
+      const totalCuotas = primera.egreso?.cuotas
+      const todasIguales = cs.every(c => c.numero_cuota === numeroCuota)
+      const infoCuota = (todasIguales && numeroCuota && totalCuotas)
+        ? ` Cuota ${numeroCuota}/${totalCuotas}`
+        : ''
+      const detallesCombinados = prefijoLimpio
+        ? `${prefijoLimpio} ${responsable}${infoCuota} · ${sufijos.join(' · ')}`
+        : cs.map(c => c.descripcion || c.egreso?.nombre_referencia || '').join(' · ')
 
       return {
         id: grupoId,
