@@ -1063,12 +1063,11 @@ export function VistaFacturasArca() {
       case 'imp_op_exentas':
       case 'otros_tributos':
       case 'iva':
-      case 'imp_total':
       case 'tipo_cambio':
       case 'monto_a_abonar':
         const contenidoNumero = formatearNumero(valor as number)
         return esEditable && modoEdicion ? (
-          <div 
+          <div
             className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
             onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
             title="Ctrl+Click para editar"
@@ -1077,6 +1076,31 @@ export function VistaFacturasArca() {
             {contenidoNumero}
           </div>
         ) : contenidoNumero
+
+      case 'imp_total': {
+        const tcImpTotal = Number(factura.tipo_cambio) || 1
+        const esUSDImpTotal = factura.moneda === 'USD' || tcImpTotal > 1.01
+        const contenidoImpTotal = formatearNumero(valor as number)
+        const celda = esEditable && modoEdicion ? (
+          <div
+            className="cursor-pointer hover:bg-blue-50 p-1 rounded transition-colors relative group"
+            onClick={(e) => iniciarEdicion(factura.id, columna, valor, e)}
+            title="Ctrl+Click para editar"
+          >
+            <Edit3 className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100 absolute top-0 right-0" />
+            {contenidoImpTotal}
+          </div>
+        ) : contenidoImpTotal
+        if (!esUSDImpTotal) return celda
+        return (
+          <div>
+            {celda}
+            <div className="text-xs text-amber-600 font-normal whitespace-nowrap">
+              USD {(Number(valor) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} · TC {tcImpTotal.toLocaleString('es-AR')}
+            </div>
+          </div>
+        )
+      }
       
       case 'moneda':
         const esUSDCol = (valor as string) === 'USD' || (Number(factura.tipo_cambio) > 1.01)
