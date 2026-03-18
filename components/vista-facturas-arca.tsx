@@ -5839,33 +5839,29 @@ export function VistaFacturasArca() {
             <TabsContent value="v2" className="space-y-4 mt-4">
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
                 <p className="font-semibold mb-1">🆕 Retenciones desde tabla sicore_retenciones</p>
-                <p className="text-green-700">Seleccioná una quincena y hacé clic en Buscar para ver las retenciones registradas.</p>
+                <p className="text-green-700">Valores autocontenidos: retención + pago = total pagado. Refleja descuentos, anticipos y agrupaciones.</p>
               </div>
 
-              {/* Selector + botón Buscar */}
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Label className="mb-2 block">Quincena:</Label>
-                  <Select value={quincenaSeleccionadaV2} onValueChange={(q) => { setQuincenaSeleccionadaV2(q); setRegistrosV2([]); setConteoV2(null) }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar quincena..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {generarQuincenasDisponibles().map(q => (
-                        <SelectItem key={q} value={q}>{q}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  onClick={() => quincenaSeleccionadaV2 && previsualizarV2(quincenaSeleccionadaV2)}
-                  disabled={!quincenaSeleccionadaV2 || cargandoV2}
-                  variant="outline"
-                  className="shrink-0"
-                >
-                  {cargandoV2 ? <Loader2 className="h-4 w-4 animate-spin" /> : '🔍 Buscar'}
-                </Button>
+              <div>
+                <Label className="mb-2 block">Quincena:</Label>
+                <Select value={quincenaSeleccionadaV2} onValueChange={previsualizarV2}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar quincena..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generarQuincenasDisponibles().map(q => (
+                      <SelectItem key={q} value={q}>{q}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              {cargandoV2 && (
+                <div className="flex items-center gap-2 py-4 justify-center text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Cargando...</span>
+                </div>
+              )}
 
               {/* Tabla de registros */}
               {registrosV2.length > 0 && (
