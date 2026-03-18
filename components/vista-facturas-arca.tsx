@@ -2517,6 +2517,46 @@ export function VistaFacturasArca() {
     }
   }
   
+  // ─── HELPER: insertar en msa.sicore_retenciones (tabla nueva, paralela) ───
+  // No toca el flujo viejo. Si falla el insert, solo loguea — no interrumpe el proceso.
+  const registrarEnSicoreRetenciones = async (params: {
+    origen: 'directo' | 'anticipo' | 'agrupacion'
+    quincena: string
+    fecha_pago: string
+    factura_id?: string | null
+    anticipo_id?: string | null
+    // Datos de la FC (opcionales para anticipo sin FC vinculada aún)
+    fecha_emision?: string | null
+    tipo_comprobante?: number | null
+    punto_venta?: number | null
+    numero_desde?: number | null
+    cuit_emisor?: string | null
+    denominacion_emisor?: string | null
+    // SICORE
+    tipo_sicore: string
+    alicuota: number
+    // Valores ajustados por descuento
+    neto_gravado_pagado: number
+    total_pagado: number
+    descuento_aplicado: number
+    // Cálculo
+    minimo_no_imponible: number
+    base_imponible: number
+    retencion: number
+    pago: number
+  }) => {
+    try {
+      const { error } = await supabase
+        .schema('msa')
+        .from('sicore_retenciones')
+        .insert(params)
+      if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
+      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, params.origen)
+    } catch (err) {
+      console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
+    }
+  }
+
   // Calcular retención según tipo seleccionado
   // FÓRMULA: (gravado + no_gravado + exento) - minimo_no_imponible = base_imponible * porcentaje
   const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
@@ -2759,6 +2799,36 @@ export function VistaFacturasArca() {
         throw new Error(error.message)
       }
 
+      // ── Registrar en tabla nueva sicore_retenciones (paralelo, no interrumpe) ──
+      const minimoAplicado = datosSicoreCalculo?.minimoAplicado ?? tipoSeleccionado.minimo_no_imponible
+      const descPct = (facturaEnProceso.imp_total || 0) > 0
+        ? descuentoAdicional / (facturaEnProceso.imp_total || 1)
+        : 0
+      const netoGravadoPagado = Math.round(((facturaEnProceso.imp_neto_gravado || 0) * (1 - descPct)) * 100) / 100
+      const totalPagado = Math.round(((facturaEnProceso.imp_total || 0) - descuentoAdicional) * 100) / 100
+      const baseImpNueva = Math.max(0, netoGravadoPagado - minimoAplicado)
+      await registrarEnSicoreRetenciones({
+        origen: procesandoColaSicore ? 'agrupacion' : 'directo',
+        quincena,
+        fecha_pago: facturaEnProceso.fecha_estimada || facturaEnProceso.fecha_vencimiento || new Date().toISOString().split('T')[0],
+        factura_id: facturaEnProceso.id,
+        fecha_emision: facturaEnProceso.fecha_emision,
+        tipo_comprobante: facturaEnProceso.tipo_comprobante,
+        punto_venta: facturaEnProceso.punto_venta,
+        numero_desde: facturaEnProceso.numero_desde,
+        cuit_emisor: facturaEnProceso.cuit,
+        denominacion_emisor: facturaEnProceso.denominacion_emisor,
+        tipo_sicore: tipoSeleccionado.tipo,
+        alicuota: tipoSeleccionado.porcentaje_retencion,
+        neto_gravado_pagado: netoGravadoPagado,
+        total_pagado: totalPagado,
+        descuento_aplicado: descuentoAdicional,
+        minimo_no_imponible: minimoAplicado,
+        base_imponible: baseImpNueva,
+        retencion: montoRetencion,
+        pago: saldoFinal,
+      })
+
       // Actualizar estado local con datos SICORE
       const nuevasFacturas = facturas.map(f =>
         f.id === facturaEnProceso.id
@@ -2985,6 +3055,29 @@ export function VistaFacturasArca() {
       toast.error('Error BD: ' + error.message + ' | code: ' + error.code)
       return
     }
+
+    // ── Registrar en tabla nueva sicore_retenciones (paralelo, no interrumpe) ──
+    const totalPagadoAnt = Math.round(((anticipoSicoreEnProceso.monto || 0) - descuentoAnt) * 100) / 100
+    const baseImpAnt = Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
+    await registrarEnSicoreRetenciones({
+      origen: 'anticipo',
+      quincena,
+      fecha_pago: anticipoSicoreEnProceso.fecha_pago || new Date().toISOString().split('T')[0],
+      anticipo_id: anticipoSicoreEnProceso.id,
+      factura_id: anticipoSicoreEnProceso.factura_id || null,
+      cuit_emisor: anticipoSicoreEnProceso.cuit_proveedor,
+      denominacion_emisor: anticipoSicoreEnProceso.nombre_proveedor,
+      tipo_sicore: tipoSicoreAnt.tipo,
+      alicuota: tipoSicoreAnt.porcentaje_retencion,
+      neto_gravado_pagado: neto,
+      total_pagado: totalPagadoAnt,
+      descuento_aplicado: descuentoAnt,
+      minimo_no_imponible: tipoSicoreAnt.minimo_no_imponible,
+      base_imponible: baseImpAnt,
+      retencion: Math.round(montoSicoreAnt * 100) / 100,
+      pago: saldoFinal,
+    })
+
     // Cerrar modal primero, luego recargar lista
     setMostrarModalSicoreAnt(false)
     setAnticipoSicoreEnProceso(null)
