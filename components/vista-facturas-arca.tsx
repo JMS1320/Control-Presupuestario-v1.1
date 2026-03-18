@@ -1198,8 +1198,8 @@ export function VistaFacturasArca() {
       const facturas = data || []
       setFacturasPeriodo(facturas)
       
-      // Calcular subtotales (todos los importes en pesos: tc_pago tiene prioridad sobre tipo_cambio)
-      const tcFactura = (f: any) => Number(f.tc_pago) || Number(f.tipo_cambio) || 1
+      // Calcular subtotales (todos los importes en pesos: siempre TC de la factura, nunca tc_pago)
+      const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
       const totales = facturas.reduce((acc, f) => {
         const tc = tcFactura(f)
         acc.imp_total += (Number(f.imp_total) || 0) * tc
@@ -3746,7 +3746,7 @@ export function VistaFacturasArca() {
                 </TableHeader>
                 <TableBody>
                   {facturasPeriodo.map(factura => {
-                    const tc = Number(factura.tc_pago) || Number(factura.tipo_cambio) || 1
+                    const tc = Number(factura.tipo_cambio) || 1
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
                     return (
