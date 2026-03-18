@@ -223,6 +223,8 @@ export function VistaFacturasArca() {
   const [procesandoCierreV2, setProcesandoCierreV2] = useState(false)
   const [quincenaSeleccionadaV2, setQuincenaSeleccionadaV2] = useState('')
   const [conteoV2, setConteoV2] = useState<{ cantidad: number; totalRetencion: number; totalPago: number } | null>(null)
+  const [registrosV2, setRegistrosV2] = useState<any[]>([])
+  const [cargandoV2, setCargandoV2] = useState(false)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
   const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
@@ -3516,13 +3518,25 @@ export function VistaFacturasArca() {
   const previsualizarV2 = async (quincena: string) => {
     setQuincenaSeleccionadaV2(quincena)
     setConteoV2(null)
+    setRegistrosV2([])
     if (!quincena) return
-    const { data } = await supabase.schema('msa').from('sicore_retenciones').select('retencion, pago').eq('quincena', quincena)
-    if (data) setConteoV2({
-      cantidad: data.length,
-      totalRetencion: data.reduce((s, r) => s + (Number(r.retencion) || 0), 0),
-      totalPago: data.reduce((s, r) => s + (Number(r.pago) || 0), 0),
-    })
+    setCargandoV2(true)
+    try {
+      const { data } = await supabase.schema('msa').from('sicore_retenciones')
+        .select('*')
+        .eq('quincena', quincena)
+        .order('fecha_pago', { ascending: true })
+      if (data) {
+        setRegistrosV2(data)
+        setConteoV2({
+          cantidad: data.length,
+          totalRetencion: data.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0),
+          totalPago: data.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0),
+        })
+      }
+    } finally {
+      setCargandoV2(false)
+    }
   }
 
   // Generar Excel para cierre de quincena
@@ -5758,19 +5772,87 @@ export function VistaFacturasArca() {
                 </Select>
               </div>
 
-              {conteoV2 !== null && (
-                <div className={`rounded-lg p-3 text-sm space-y-1 ${conteoV2.cantidad > 0 ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
-                  {conteoV2.cantidad > 0 ? (
-                    <>
-                      <p className="font-medium text-green-800">✓ {conteoV2.cantidad} registro{conteoV2.cantidad > 1 ? 's' : ''} encontrados</p>
-                      <p className="text-green-700">Total retenciones: <strong>${conteoV2.totalRetencion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></p>
-                      <p className="text-green-700">Total pagos netos: <strong>${conteoV2.totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></p>
-                    </>
-                  ) : (
-                    <p className="text-yellow-800">⚠️ Sin registros para esta quincena en sicore_retenciones</p>
-                  )}
+              {cargandoV2 && (
+                <div className="flex items-center gap-2 py-4 justify-center text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Cargando registros...</span>
                 </div>
               )}
+
+              {!cargandoV2 && conteoV2 !== null && conteoV2.cantidad === 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                  ⚠️ Sin registros para esta quincena en sicore_retenciones
+                </div>
+              )}
+
+              {!cargandoV2 && registrosV2.length > 0 && (() => {
+                const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                const fmtFecha = (f: string | null) => {
+                  if (!f) return '-'
+                  const d = new Date(f + 'T12:00:00')
+                  return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+                }
+                const totRet = registrosV2.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+                const totPago = registrosV2.reduce((s, r) => s + (Number(r.pago) || 0), 0)
+                const totTotal = registrosV2.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+                const totBase = registrosV2.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
+                const totNeto = registrosV2.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
+                const origenBadge = (o: string) => {
+                  const map: Record<string, string> = { directo: 'bg-blue-100 text-blue-700', anticipo: 'bg-purple-100 text-purple-700', agrupacion: 'bg-orange-100 text-orange-700' }
+                  return <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${map[o] || 'bg-gray-100 text-gray-700'}`}>{o}</span>
+                }
+                return (
+                  <div className="overflow-x-auto rounded border border-green-200">
+                    <table className="w-full text-xs border-collapse min-w-[900px]">
+                      <thead className="bg-green-50">
+                        <tr>
+                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Origen</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Tipo</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Fecha Pago</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">CUIT</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Denominación</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Neto Grav. Pag.</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Total Pagado</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Base Imp.</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Alíc.%</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Retención</th>
+                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Pago</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {registrosV2.map((r, i) => (
+                          <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-green-50/40'}>
+                            <td className="border border-green-100 px-2 py-1">{origenBadge(r.origen)}</td>
+                            <td className="border border-green-100 px-2 py-1">{r.tipo_sicore || '-'}</td>
+                            <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{fmtFecha(r.fecha_pago)}</td>
+                            <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{r.cuit_emisor || '-'}</td>
+                            <td className="border border-green-100 px-2 py-1 max-w-[160px] truncate" title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.neto_gravado_pagado)}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right">{r.alicuota != null ? `${(Number(r.alicuota)*100).toFixed(2)}%` : '-'}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
+                            <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-green-100 font-semibold">
+                        <tr>
+                          <td colSpan={5} className="border border-green-200 px-2 py-1.5 text-right">
+                            TOTALES ({registrosV2.length} registros)
+                          </td>
+                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totNeto)}</td>
+                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totTotal)}</td>
+                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totBase)}</td>
+                          <td className="border border-green-200 px-2 py-1.5"></td>
+                          <td className="border border-green-200 px-2 py-1.5 text-right text-red-700">{fmt(totRet)}</td>
+                          <td className="border border-green-200 px-2 py-1.5 text-right text-green-700">{fmt(totPago)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+              })()}
 
               <div className="flex gap-2">
                 <Button
@@ -5790,7 +5872,7 @@ export function VistaFacturasArca() {
                     </>
                   )}
                 </Button>
-                <Button variant="outline" onClick={() => { setQuincenaSeleccionadaV2(''); setConteoV2(null) }} disabled={procesandoCierreV2}>
+                <Button variant="outline" onClick={() => { setQuincenaSeleccionadaV2(''); setConteoV2(null); setRegistrosV2([]) }} disabled={procesandoCierreV2}>
                   Limpiar
                 </Button>
               </div>
