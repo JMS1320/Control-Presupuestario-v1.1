@@ -136,6 +136,83 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
+function TablaRegistrosV2({ registros }: { registros: any[] }) {
+  const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+  const fmtFecha = (f: string | null) => {
+    if (!f) return '-'
+    const d = new Date(f + 'T12:00:00')
+    return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+  }
+  const origenColor: Record<string, string> = {
+    directo: 'bg-blue-100 text-blue-700',
+    anticipo: 'bg-purple-100 text-purple-700',
+    agrupacion: 'bg-orange-100 text-orange-700',
+  }
+  const totRet   = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+  const totPago  = registros.reduce((s, r) => s + (Number(r.pago) || 0), 0)
+  const totTotal = registros.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+  const totBase  = registros.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
+  const totNeto  = registros.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
+
+  return (
+    <div className="overflow-x-auto rounded border border-green-200 max-h-[350px] overflow-y-auto">
+      <table className="w-full text-xs border-collapse min-w-[900px]">
+        <thead className="bg-green-100 sticky top-0">
+          <tr>
+            <th className="border border-green-200 px-2 py-1.5 text-left">Origen</th>
+            <th className="border border-green-200 px-2 py-1.5 text-left">Tipo</th>
+            <th className="border border-green-200 px-2 py-1.5 text-left">Fecha Pago</th>
+            <th className="border border-green-200 px-2 py-1.5 text-left">CUIT</th>
+            <th className="border border-green-200 px-2 py-1.5 text-left">Denominación</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Neto Grav.Pag.</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Total Pagado</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Base Imp.</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Alíc.%</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Retención</th>
+            <th className="border border-green-200 px-2 py-1.5 text-right">Pago</th>
+          </tr>
+        </thead>
+        <tbody>
+          {registros.map((r, i) => (
+            <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-green-50/30'}>
+              <td className="border border-green-100 px-2 py-1">
+                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${origenColor[r.origen] || 'bg-gray-100 text-gray-700'}`}>
+                  {r.origen || '-'}
+                </span>
+              </td>
+              <td className="border border-green-100 px-2 py-1">{r.tipo_sicore || '-'}</td>
+              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{fmtFecha(r.fecha_pago)}</td>
+              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{r.cuit_emisor || '-'}</td>
+              <td className="border border-green-100 px-2 py-1 max-w-[150px] truncate" title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
+              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.neto_gravado_pagado)}</td>
+              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
+              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
+              <td className="border border-green-100 px-2 py-1 text-right">
+                {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2)}%` : '-'}
+              </td>
+              <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
+              <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="bg-green-100 font-semibold sticky bottom-0">
+          <tr>
+            <td colSpan={5} className="border border-green-200 px-2 py-1.5 text-right text-xs">
+              TOTALES — {registros.length} registro{registros.length !== 1 ? 's' : ''}
+            </td>
+            <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totNeto)}</td>
+            <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totTotal)}</td>
+            <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totBase)}</td>
+            <td className="border border-green-200 px-2 py-1.5"></td>
+            <td className="border border-green-200 px-2 py-1.5 text-right text-red-700">{fmt(totRet)}</td>
+            <td className="border border-green-200 px-2 py-1.5 text-right text-green-700">{fmt(totPago)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
 export function VistaFacturasArca() {
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
@@ -5761,122 +5838,57 @@ export function VistaFacturasArca() {
             {/* TAB: Cierre v2 — lee de msa.sicore_retenciones */}
             <TabsContent value="v2" className="space-y-4 mt-4">
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-                <p className="font-semibold mb-1">🆕 Export desde tabla sicore_retenciones</p>
-                <p className="text-green-700">Valores autocontenidos: retención + pago = total pagado siempre. Refleja descuentos, anticipos y agrupaciones correctamente.</p>
+                <p className="font-semibold mb-1">🆕 Retenciones desde tabla sicore_retenciones</p>
+                <p className="text-green-700">Seleccioná una quincena y hacé clic en Buscar para ver las retenciones registradas.</p>
               </div>
 
-              <div>
-                <Label className="mb-2 block">Quincena:</Label>
-                <Select value={quincenaSeleccionadaV2} onValueChange={previsualizarV2}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar quincena..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {generarQuincenasDisponibles().map(q => (
-                      <SelectItem key={q} value={q}>{q}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {cargandoV2 && (
-                <div className="flex items-center gap-2 py-4 justify-center text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Cargando registros...</span>
+              {/* Selector + botón Buscar */}
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <Label className="mb-2 block">Quincena:</Label>
+                  <Select value={quincenaSeleccionadaV2} onValueChange={(q) => { setQuincenaSeleccionadaV2(q); setRegistrosV2([]); setConteoV2(null) }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar quincena..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {generarQuincenasDisponibles().map(q => (
+                        <SelectItem key={q} value={q}>{q}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                <Button
+                  onClick={() => quincenaSeleccionadaV2 && previsualizarV2(quincenaSeleccionadaV2)}
+                  disabled={!quincenaSeleccionadaV2 || cargandoV2}
+                  variant="outline"
+                  className="shrink-0"
+                >
+                  {cargandoV2 ? <Loader2 className="h-4 w-4 animate-spin" /> : '🔍 Buscar'}
+                </Button>
+              </div>
+
+              {/* Tabla de registros */}
+              {registrosV2.length > 0 && (
+                <TablaRegistrosV2 registros={registrosV2} />
               )}
 
-              {!cargandoV2 && conteoV2 !== null && conteoV2.cantidad === 0 && (
+              {conteoV2 !== null && conteoV2.cantidad === 0 && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
                   ⚠️ Sin registros para esta quincena en sicore_retenciones
                 </div>
               )}
 
-              {!cargandoV2 && registrosV2.length > 0 && (() => {
-                const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                const fmtFecha = (f: string | null) => {
-                  if (!f) return '-'
-                  const d = new Date(f + 'T12:00:00')
-                  return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
-                }
-                const totRet = registrosV2.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
-                const totPago = registrosV2.reduce((s, r) => s + (Number(r.pago) || 0), 0)
-                const totTotal = registrosV2.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
-                const totBase = registrosV2.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
-                const totNeto = registrosV2.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
-                const origenBadge = (o: string) => {
-                  const map: Record<string, string> = { directo: 'bg-blue-100 text-blue-700', anticipo: 'bg-purple-100 text-purple-700', agrupacion: 'bg-orange-100 text-orange-700' }
-                  return <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${map[o] || 'bg-gray-100 text-gray-700'}`}>{o}</span>
-                }
-                return (
-                  <div className="overflow-x-auto rounded border border-green-200">
-                    <table className="w-full text-xs border-collapse min-w-[900px]">
-                      <thead className="bg-green-50">
-                        <tr>
-                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Origen</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Tipo</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Fecha Pago</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">CUIT</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-left font-semibold">Denominación</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Neto Grav. Pag.</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Total Pagado</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Base Imp.</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Alíc.%</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Retención</th>
-                          <th className="border border-green-200 px-2 py-1.5 text-right font-semibold">Pago</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {registrosV2.map((r, i) => (
-                          <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-green-50/40'}>
-                            <td className="border border-green-100 px-2 py-1">{origenBadge(r.origen)}</td>
-                            <td className="border border-green-100 px-2 py-1">{r.tipo_sicore || '-'}</td>
-                            <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{fmtFecha(r.fecha_pago)}</td>
-                            <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{r.cuit_emisor || '-'}</td>
-                            <td className="border border-green-100 px-2 py-1 max-w-[160px] truncate" title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.neto_gravado_pagado)}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right">{r.alicuota != null ? `${(Number(r.alicuota)*100).toFixed(2)}%` : '-'}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
-                            <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="bg-green-100 font-semibold">
-                        <tr>
-                          <td colSpan={5} className="border border-green-200 px-2 py-1.5 text-right">
-                            TOTALES ({registrosV2.length} registros)
-                          </td>
-                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totNeto)}</td>
-                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totTotal)}</td>
-                          <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totBase)}</td>
-                          <td className="border border-green-200 px-2 py-1.5"></td>
-                          <td className="border border-green-200 px-2 py-1.5 text-right text-red-700">{fmt(totRet)}</td>
-                          <td className="border border-green-200 px-2 py-1.5 text-right text-green-700">{fmt(totPago)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )
-              })()}
-
+              {/* Botones acción */}
               <div className="flex gap-2">
                 <Button
                   onClick={() => quincenaSeleccionadaV2 && procesarCierreV2(quincenaSeleccionadaV2)}
-                  disabled={!quincenaSeleccionadaV2 || procesandoCierreV2 || (conteoV2 !== null && conteoV2.cantidad === 0)}
+                  disabled={!quincenaSeleccionadaV2 || procesandoCierreV2 || registrosV2.length === 0}
                   className="bg-green-600 hover:bg-green-700 flex-1"
                 >
                   {procesandoCierreV2 ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generando...
-                    </>
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generando...</>
                   ) : (
-                    <>
-                      <Calendar className="mr-2 h-4 w-4" />
-                      Generar Export v2
-                    </>
+                    <><Calendar className="mr-2 h-4 w-4" />Generar Export v2</>
                   )}
                 </Button>
                 <Button variant="outline" onClick={() => { setQuincenaSeleccionadaV2(''); setConteoV2(null); setRegistrosV2([]) }} disabled={procesandoCierreV2}>
