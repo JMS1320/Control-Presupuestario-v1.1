@@ -3539,6 +3539,13 @@ export function VistaFacturasArca() {
     }
   }
 
+  // Auto-cargar cuando el tab v2 está activo y ya hay quincena seleccionada pero sin datos
+  useEffect(() => {
+    if (tabPanelSicore === 'v2' && quincenaSeleccionadaV2 && registrosV2.length === 0 && !cargandoV2) {
+      previsualizarV2(quincenaSeleccionadaV2)
+    }
+  }, [tabPanelSicore]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Generar Excel para cierre de quincena
   const generarExcelCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
     try {
