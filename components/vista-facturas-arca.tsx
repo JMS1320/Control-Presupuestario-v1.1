@@ -3837,7 +3837,14 @@ export function VistaFacturasArca() {
                         </>
                       )}
                       <TableCell className="text-right">${p(factura.iva).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${p(factura.imp_total).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">
+                        <span>${p(factura.imp_total).toLocaleString('es-AR')}</span>
+                        {esUSD && (
+                          <div className="text-xs text-amber-600 font-normal">
+                            USD {(Number(factura.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} · TC {tc.toLocaleString('es-AR')}
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={
                           factura.ddjj_iva === 'DDJJ OK' ? 'default' :
