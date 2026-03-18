@@ -140,13 +140,22 @@ export function VistaPrincipal() {
     if (!anticipoParaVincular || !facturaElegida) return
     setVinculando(true)
     try {
-      // 1. Copiar SICORE del anticipo a la factura
+      // Resolver factura seleccionada para obtener imp_total
+      const candidatos = facturasCandidatos[anticipoParaVincular.id] || []
+      const facturaSeleccionada = candidatos.find(f => f.id === facturaElegida)
+      const montoAbonar = facturaSeleccionada
+        ? facturaSeleccionada.imp_total - anticipoParaVincular.monto_sicore
+        : null
+
+      // 1. Copiar SICORE del anticipo a la factura (sicore, monto_sicore, tipo_sicore, monto_a_abonar)
       const { error: errFac } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
         .update({
           sicore: anticipoParaVincular.sicore,
           monto_sicore: anticipoParaVincular.monto_sicore,
+          tipo_sicore: anticipoParaVincular.tipo_sicore,
+          ...(montoAbonar !== null ? { monto_a_abonar: montoAbonar } : {}),
         })
         .eq('id', facturaElegida)
 

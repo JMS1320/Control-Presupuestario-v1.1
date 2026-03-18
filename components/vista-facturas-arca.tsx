@@ -3130,6 +3130,22 @@ export function VistaFacturasArca() {
         return
       }
 
+      // VALIDACIÓN: facturas con SICORE asignado pero aún en estado 'pendiente'
+      const { data: facturasPendientes } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, denominacion_emisor, imp_total')
+        .eq('sicore', quincena)
+        .eq('estado', 'pendiente')
+
+      if (facturasPendientes && facturasPendientes.length > 0) {
+        const lista = facturasPendientes
+          .map(f => `• ${f.denominacion_emisor} — $${(f.imp_total || 0).toLocaleString('es-AR')}`)
+          .join('\n')
+        alert(`⚠️ No se puede cerrar la quincena ${quincena}.\n\nExisten ${facturasPendientes.length} factura(s) con SICORE asignado pero en estado "pendiente" (sin pagar):\n\n${lista}\n\nCambiá el estado de estas facturas a "pagar" o "pagado" antes de cerrar la quincena.`)
+        return
+      }
+
       // 1. Buscar todas las retenciones de la quincena
       console.log('🎯 SICORE: Iniciando cierre quincena', quincena)
       const { facturas, totalRetenciones, cantidad } = await buscarRetencionesQuincena(quincena)
@@ -3212,14 +3228,17 @@ export function VistaFacturasArca() {
         'Número Desde','Nro. Doc. Emisor','Denominación Emisor',
         'Imp. Neto Gravado','Imp. Neto No Gravado','Imp. Op. Exentas',
         'Otros Tributos','IVA','Imp. Total',
-        'Mínimo no imp','Base imp','% de Retención','Retención','PAGO'
+        'Mínimo no imp','Base imp','% de Retención','Retención','Descuento','PAGO'
       ]
 
       const filas = facturas.map(f => {
         const tipoConfig = f._tipoConfig
-        const netoBase = (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
         const minimo = tipoConfig?.minimo_no_imponible ?? 0
-        const baseImp = Math.max(0, netoBase - minimo)
+        // Derivar base imponible a partir del resultado almacenado (correcto para retenciones
+        // adicionales y con descuento, ya que el código de cálculo ya conocía el contexto real)
+        const baseImp = tipoConfig && tipoConfig.porcentaje_retencion > 0
+          ? (f.monto_sicore || 0) / tipoConfig.porcentaje_retencion
+          : 0
         const pct = tipoConfig ? tipoConfig.porcentaje_retencion * 100 : 0
 
         return {
@@ -3241,6 +3260,7 @@ export function VistaFacturasArca() {
           'Base imp': num(baseImp),
           '% de Retención': pct ? pct / 100 : '',  // como decimal para formato %
           'Retención': num(f.monto_sicore),
+          'Descuento': num(f.descuento_aplicado),
           'PAGO': num(f.monto_a_abonar)
         }
       })
@@ -3256,6 +3276,7 @@ export function VistaFacturasArca() {
       totales['IVA'] = facturas.reduce((s, f) => s + (f.iva || 0), 0)
       totales['Imp. Total'] = facturas.reduce((s, f) => s + (f.imp_total || 0), 0)
       totales['Retención'] = totalRetenciones
+      totales['Descuento'] = facturas.reduce((s, f) => s + (f.descuento_aplicado || 0), 0)
       totales['PAGO'] = facturas.reduce((s, f) => s + (f.monto_a_abonar || 0), 0)
       filas.push(totales)
 
@@ -3285,6 +3306,7 @@ export function VistaFacturasArca() {
         { wch: 14 }, // Base imp
         { wch: 8  }, // %
         { wch: 14 }, // Retención
+        { wch: 14 }, // Descuento
         { wch: 14 }, // PAGO
       ]
 
@@ -3348,14 +3370,16 @@ export function VistaFacturasArca() {
         'Nro\nDesde','Nro. Doc.\nEmisor','Denominación Emisor',
         'Neto\nGravado','Neto No\nGravado','Op.\nExentas',
         'Otros\nTrib.','IVA','Imp.\nTotal',
-        'Mínimo\nno imp','Base\nimp','%\nRet.','Retención','PAGO'
+        'Mínimo\nno imp','Base\nimp','%\nRet.','Retención','Descuento','PAGO'
       ]
 
       const filasDatos = facturas.map(f => {
         const tipoConfig = f._tipoConfig
-        const netoBase = (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
         const minimo = tipoConfig?.minimo_no_imponible ?? 0
-        const baseImp = Math.max(0, netoBase - minimo)
+        // Derivar base imponible a partir del resultado almacenado
+        const baseImp = tipoConfig && tipoConfig.porcentaje_retencion > 0
+          ? (f.monto_sicore || 0) / tipoConfig.porcentaje_retencion
+          : 0
         const pct = tipoConfig ? tipoConfig.porcentaje_retencion * 100 : 0
 
         return [
@@ -3377,6 +3401,7 @@ export function VistaFacturasArca() {
           formatNum(baseImp),
           pct ? `${pct}%` : '',
           formatNum(f.monto_sicore),
+          formatNum(f.descuento_aplicado),
           formatNum(f.monto_a_abonar),
         ]
       })
@@ -3394,6 +3419,7 @@ export function VistaFacturasArca() {
         '', '',
         '',
         formatNum(totalRetenciones),
+        formatNum(facturas.reduce((s, f) => s + (f.descuento_aplicado || 0), 0)),
         formatNum(facturas.reduce((s, f) => s + (f.monto_a_abonar || 0), 0)),
       ]
       const filas = [...filasDatos, filaTotales]
@@ -3429,19 +3455,20 @@ export function VistaFacturasArca() {
           4:  { cellWidth: 7  },                    // PV
           5:  { cellWidth: 10 },                    // Nro Desde
           6:  { cellWidth: 16 },                    // CUIT (11ch)
-          7:  { cellWidth: 28, halign: 'left'  },   // Denominación (ellipsize)
+          7:  { cellWidth: 22, halign: 'left'  },   // Denominación (ellipsize)
           8:  { cellWidth: 17 },                    // Neto Grav (12ch)
-          9:  { cellWidth: 16 },                    // Neto No Grav
-          10: { cellWidth: 12 },                    // Op Exentas
-          11: { cellWidth: 12 },                    // Otros Trib
+          9:  { cellWidth: 14 },                    // Neto No Grav
+          10: { cellWidth: 10 },                    // Op Exentas
+          11: { cellWidth: 10 },                    // Otros Trib
           12: { cellWidth: 16 },                    // IVA
           13: { cellWidth: 17 },                    // Imp Total (12ch)
           14: { cellWidth: 14 },                    // Mínimo no imp
           15: { cellWidth: 17 },                    // Base imp (12ch)
           16: { cellWidth: 7  },                    // % Ret
           17: { cellWidth: 14 },                    // Retención
-          18: { cellWidth: 17 },                    // PAGO (12ch)
-        },                                          // Total: 277mm ✓
+          18: { cellWidth: 12 },                    // Descuento
+          19: { cellWidth: 17 },                    // PAGO (12ch)
+        },                                          // Total: 276mm ✓
         didParseCell: function(data: any) {
           if (data.row.index === filas.length - 1 && data.section === 'body') {
             data.cell.styles.fillColor = [230, 230, 230]
