@@ -262,6 +262,11 @@ export function VistaFacturasArca() {
   // Cola de facturas pendientes de procesar SICORE (para múltiples selecciones)
   const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
   const [procesandoColaSicore, setProcesandoColaSicore] = useState(false)
+
+  // TC de pago modal - Vista Pagos
+  const [modalTcPagoPagos, setModalTcPagoPagos] = useState<{ factura: FacturaArca } | null>(null)
+  const [tcPagoInputPagos, setTcPagoInputPagos] = useState('')
+  const [colaUSDSinTC, setColaUSDSinTC] = useState<FacturaArca[]>([])
   
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
@@ -2369,6 +2374,34 @@ export function VistaFacturasArca() {
 
   // Nombre de carpeta: mismo formato de quincena '26-02 - 1ra' / '26-02 - 2da'
   const quincenaACarpeta = (quincena: string): string => quincena
+
+  // Guardar TC de pago en Vista Pagos (individual o cola USD)
+  const guardarTcPagoPagos = async () => {
+    if (!modalTcPagoPagos) return
+    const tc = parseFloat(tcPagoInputPagos.replace(/\./g, '').replace(',', '.'))
+    if (!tc || tc <= 1) { toast.error('TC inválido (debe ser mayor a 1)'); return }
+
+    const { error } = await supabase.schema('msa').from('comprobantes_arca')
+      .update({ tc_pago: tc }).eq('id', modalTcPagoPagos.factura.id)
+    if (error) { toast.error('Error guardando TC de pago'); return }
+
+    setFacturasPagos(prev => prev.map(f =>
+      f.id === modalTcPagoPagos.factura.id ? { ...f, tc_pago: tc } : f
+    ))
+    setModalTcPagoPagos(null)
+    setTcPagoInputPagos('')
+
+    if (colaUSDSinTC.length > 0) {
+      const [siguiente, ...resto] = colaUSDSinTC
+      setColaUSDSinTC(resto)
+      setTimeout(() => {
+        setModalTcPagoPagos({ factura: siguiente })
+        setTcPagoInputPagos('')
+      }, 100)
+    } else {
+      toast.success('TCs guardados. Puede proceder con el cambio de estado.')
+    }
+  }
 
   // Verificar si ya se retuvo a este proveedor en esta quincena
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
@@ -5681,6 +5714,21 @@ export function VistaFacturasArca() {
                 console.log(`🔄 Vista Pagos: fecha_vencimiento + fecha_estimada = ${fechaPagoSeleccionada}`)
               }
 
+              // Interceptar USD sin TC de pago al cambiar a 'pagar'
+              if (nuevoEstado === 'pagar') {
+                const usdSinTC = facturasACambiar.filter(f => {
+                  const tc = Number(f.tipo_cambio) || 1
+                  return (f.moneda === 'USD' || tc > 1.01) && !f.tc_pago
+                })
+                if (usdSinTC.length > 0) {
+                  const [primera, ...resto] = usdSinTC
+                  setColaUSDSinTC(resto)
+                  setModalTcPagoPagos({ factura: primera })
+                  setTcPagoInputPagos('')
+                  return
+                }
+              }
+
               // SICORE: Detectar cambio pendiente → pagar
               // Usar suma de gravado + no_gravado + exento para evaluar
               const minimoSicore = 67170
@@ -6030,7 +6078,17 @@ export function VistaFacturasArca() {
                                       const montoPesos = (f.monto_a_abonar || f.imp_total || 0) * tc
                                       return (
                                         <span className={esUSD ? 'text-amber-700' : ''}>
-                                          {esUSD && <span className="text-xs mr-1">💵</span>}
+                                          {esUSD && (
+                                            <span
+                                              className="text-xs mr-1 cursor-pointer hover:opacity-70"
+                                              title={f.tc_pago ? `TC pago: $${Number(f.tc_pago).toLocaleString('es-AR')} — click para editar` : 'Click para asignar TC de pago'}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setModalTcPagoPagos({ factura: f })
+                                                setTcPagoInputPagos(f.tc_pago ? String(f.tc_pago).replace('.', ',') : '')
+                                              }}
+                                            >💵</span>
+                                          )}
                                           ${montoPesos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                         </span>
                                       )
@@ -6841,6 +6899,50 @@ export function VistaFacturasArca() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal TC de pago — Vista Pagos */}
+      {modalTcPagoPagos && (
+        <Dialog open={true} onOpenChange={() => { setModalTcPagoPagos(null); setColaUSDSinTC([]); setTcPagoInputPagos('') }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>💵 TC de pago</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700 font-medium">
+                {modalTcPagoPagos.factura.denominacion_emisor}
+                {colaUSDSinTC.length > 0 && (
+                  <span className="ml-2 text-xs text-blue-600 font-normal">+{colaUSDSinTC.length} factura(s) más</span>
+                )}
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2 text-xs flex justify-between">
+                <span className="text-gray-600">Total USD:</span>
+                <span className="font-semibold">${(modalTcPagoPagos.factura.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">TC de pago (pesos por dólar)</label>
+                <Input
+                  autoFocus
+                  value={tcPagoInputPagos}
+                  onChange={(e) => setTcPagoInputPagos(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') guardarTcPagoPagos()
+                    if (e.key === 'Escape') { setModalTcPagoPagos(null); setColaUSDSinTC([]); setTcPagoInputPagos('') }
+                  }}
+                  placeholder="Ej: 1250"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={guardarTcPagoPagos}>
+                  {colaUSDSinTC.length > 0 ? 'Guardar y siguiente' : 'Guardar TC'}
+                </Button>
+                <Button variant="outline" onClick={() => { setModalTcPagoPagos(null); setColaUSDSinTC([]); setTcPagoInputPagos('') }}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
