@@ -5499,10 +5499,14 @@ export function VistaFacturasArca() {
             const facturasPagar = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pagar' && matchBusqueda(f)))
             const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente' && matchBusqueda(f)))
 
-            // Calcular subtotales
-            const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
-            const subtotalPagar = facturasPagar.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
-            const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0)
+            // Calcular subtotales (convertir a pesos con TC de pago)
+            const montoEnPesos = (f: FacturaArca) => {
+              const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+              return (f.monto_a_abonar || f.imp_total || 0) * tc
+            }
+            const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + montoEnPesos(f), 0)
+            const subtotalPagar = facturasPagar.reduce((sum, f) => sum + montoEnPesos(f), 0)
+            const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + montoEnPesos(f), 0)
 
             // ── Agrupar / Desagrupar pagos ────────────────────────────────
 
@@ -5525,7 +5529,7 @@ export function VistaFacturasArca() {
               if (!puedeAgrupar) return
               const primeraF = seleccionadasEnPagar[0]
               const monto_total = seleccionadasEnPagar.reduce(
-                (s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0
+                (s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0) * (f.tc_pago ?? f.tipo_cambio ?? 1), 0
               )
               // 1. Crear grupo
               const { data: grupo, error: errGrupo } = await supabase
@@ -5672,7 +5676,11 @@ export function VistaFacturasArca() {
               // SICORE: Detectar cambio pendiente → pagar
               // Usar suma de gravado + no_gravado + exento para evaluar
               const minimoSicore = 67170
-              const calcularNetoFactura = (f: FacturaArca) => (f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)
+              // SICORE se calcula sobre lo pagado → convertir a pesos con TC de pago
+              const calcularNetoFactura = (f: FacturaArca) => {
+                const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                return ((f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)) * tc
+              }
 
               if (nuevoEstado === 'pagar') {
                 const facturasDesdePendiente = facturasACambiar.filter(f => f.estado === 'pendiente')
@@ -5842,7 +5850,7 @@ export function VistaFacturasArca() {
                   ids: facs.map(f => f.id),
                   proveedor: facs[0].denominacion_emisor,
                   cuit: facs[0].cuit,
-                  montoTotal: facs.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0), 0),
+                  montoTotal: facs.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0) * (f.tc_pago ?? f.tipo_cambio ?? 1), 0),
                   fecha: [...facs.map(f => f.fecha_vencimiento || f.fecha_estimada || '')].sort().reverse()[0] || '',
                   cuentaContable: facs[0].cuenta_contable || '-',
                   cantFacturas: facs.length
@@ -5968,14 +5976,17 @@ export function VistaFacturasArca() {
                                       title="Generar PDF detalle de pago"
                                       onClick={() => generarPDFDetallePago(
                                         'arca', row.proveedor, row.cuit,
-                                        facsGrupo.map(f => ({
-                                          comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                          fecha: f.fecha_emision || '',
-                                          imp_total: f.imp_total || 0,
-                                          monto_sicore: f.monto_sicore,
-                                          descuento_aplicado: f.descuento_aplicado,
-                                          monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
-                                        }))
+                                        facsGrupo.map(f => {
+                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                          return {
+                                            comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                            fecha: f.fecha_emision || '',
+                                            imp_total: (f.imp_total || 0) * tc,
+                                            monto_sicore: f.monto_sicore,
+                                            descuento_aplicado: f.descuento_aplicado,
+                                            monto_a_abonar: (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                          }
+                                        })
                                       )}
                                     >📄</Button>
                                   </TableCell>
@@ -6005,24 +6016,37 @@ export function VistaFacturasArca() {
                                   <TableCell>{f.cuit}</TableCell>
                                   <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
                                   <TableCell className="text-right font-medium">
-                                    ${(f.monto_a_abonar || f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                    {(() => {
+                                      const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                      const esUSD = f.moneda === 'USD' || tc > 1.01
+                                      const montoPesos = (f.monto_a_abonar || f.imp_total || 0) * tc
+                                      return (
+                                        <span className={esUSD ? 'text-amber-700' : ''}>
+                                          {esUSD && <span className="text-xs mr-1">💵</span>}
+                                          ${montoPesos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      )
+                                    })()}
                                   </TableCell>
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
                                       <Button
                                         size="sm" variant="ghost"
                                         title="Generar PDF detalle de pago"
-                                        onClick={() => generarPDFDetallePago(
-                                          'arca', f.denominacion_emisor, f.cuit,
-                                          [{
-                                            comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                            fecha: f.fecha_emision || '',
-                                            imp_total: f.imp_total || 0,
-                                            monto_sicore: f.monto_sicore,
-                                            descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
-                                          }]
-                                        )}
+                                        onClick={() => {
+                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                          generarPDFDetallePago(
+                                            'arca', f.denominacion_emisor, f.cuit,
+                                            [{
+                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                              fecha: f.fecha_emision || '',
+                                              imp_total: (f.imp_total || 0) * tc,
+                                              monto_sicore: f.monto_sicore,
+                                              descuento_aplicado: f.descuento_aplicado,
+                                              monto_a_abonar: (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            }]
+                                          )
+                                        }}
                                       >📄</Button>
                                     </TableCell>
                                   )}
