@@ -1198,9 +1198,10 @@ export function VistaFacturasArca() {
       const facturas = data || []
       setFacturasPeriodo(facturas)
       
-      // Calcular subtotales (todos los importes en pesos via tipo_cambio)
+      // Calcular subtotales (todos los importes en pesos: tc_pago tiene prioridad sobre tipo_cambio)
+      const tcFactura = (f: any) => Number(f.tc_pago) || Number(f.tipo_cambio) || 1
       const totales = facturas.reduce((acc, f) => {
-        const tc = Number(f.tipo_cambio) || 1
+        const tc = tcFactura(f)
         acc.imp_total += (Number(f.imp_total) || 0) * tc
         acc.iva += (Number(f.iva) || 0) * tc
         acc.imp_neto_gravado += (Number(f.imp_neto_gravado) || 0) * tc
@@ -1216,8 +1217,7 @@ export function VistaFacturasArca() {
       // Facturas C (tipo 11) por separado
       const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
       const totalFacturasC = facturasC.reduce((sum, f) => {
-        const tc = Number(f.tipo_cambio) || 1
-        return sum + (Number(f.imp_total) || 0) * tc
+        return sum + (Number(f.imp_total) || 0) * tcFactura(f)
       }, 0)
 
       setSubtotales({ ...totales, facturas_c: totalFacturasC, cantidad_facturas_c: facturasC.length })
@@ -3745,8 +3745,12 @@ export function VistaFacturasArca() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {facturasPeriodo.map(factura => (
-                    <TableRow key={factura.id}>
+                  {facturasPeriodo.map(factura => {
+                    const tc = Number(factura.tc_pago) || Number(factura.tipo_cambio) || 1
+                    const esUSD = factura.moneda === 'USD' || tc > 1.01
+                    const p = (v: any) => (Number(v) || 0) * tc // pesos
+                    return (
+                    <TableRow key={factura.id} className={esUSD ? 'bg-amber-50' : ''}>
                       {mostrarGestionMasiva && (
                         <TableCell>
                           <Checkbox
@@ -3764,40 +3768,43 @@ export function VistaFacturasArca() {
                         </TableCell>
                       )}
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
-                      <TableCell className="max-w-48 truncate">{factura.denominacion_emisor}</TableCell>
+                      <TableCell className="max-w-48 truncate">
+                        {esUSD && <span className="text-xs mr-1 text-amber-600">💵</span>}
+                        {factura.denominacion_emisor}
+                      </TableCell>
                       <TableCell>{factura.cuit}</TableCell>
                       <TableCell>{factura.tipo_comprobante}</TableCell>
                       {mostrarColumnasDetalladas ? (
                         <>
                           {/* Columnas detalladas de Netos por Alícuota */}
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_0 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_2_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_10_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_21 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.neto_grav_iva_27 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_2_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_10_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_21).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.neto_grav_iva_27).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.imp_neto_no_gravado).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.imp_op_exentas).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.otros_tributos).toLocaleString('es-AR')}</TableCell>
                           {/* Columnas detalladas de IVAs por Alícuota */}
-                          <TableCell className="text-right text-xs">${Number(0).toLocaleString('es-AR')}</TableCell> {/* IVA 0% siempre es 0 */}
-                          <TableCell className="text-right text-xs">${Number(factura.iva_2_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.iva_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.iva_10_5 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.iva_21 || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right text-xs">${Number(factura.iva_27 || 0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${Number(0).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.iva_2_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.iva_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.iva_10_5).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.iva_21).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right text-xs">${p(factura.iva_27).toLocaleString('es-AR')}</TableCell>
                         </>
                       ) : (
                         <>
-                          {/* Columnas básicas (actuales) */}
-                          <TableCell className="text-right">${Number(factura.imp_neto_gravado || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right">${Number(factura.imp_neto_no_gravado || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right">${Number(factura.imp_op_exentas || 0).toLocaleString('es-AR')}</TableCell>
-                          <TableCell className="text-right">${Number(factura.otros_tributos || 0).toLocaleString('es-AR')}</TableCell>
+                          {/* Columnas básicas */}
+                          <TableCell className="text-right">${p(factura.imp_neto_gravado).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${p(factura.imp_neto_no_gravado).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${p(factura.imp_op_exentas).toLocaleString('es-AR')}</TableCell>
+                          <TableCell className="text-right">${p(factura.otros_tributos).toLocaleString('es-AR')}</TableCell>
                         </>
                       )}
-                      <TableCell className="text-right">${Number(factura.iva || 0).toLocaleString('es-AR')}</TableCell>
-                      <TableCell className="text-right">${Number(factura.imp_total || 0).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${p(factura.iva).toLocaleString('es-AR')}</TableCell>
+                      <TableCell className="text-right">${p(factura.imp_total).toLocaleString('es-AR')}</TableCell>
                       <TableCell>
                         <Badge variant={
                           factura.ddjj_iva === 'DDJJ OK' ? 'default' :
@@ -3807,7 +3814,8 @@ export function VistaFacturasArca() {
                         </Badge>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )
+                  })}
                 </TableBody>
               </Table>
             </div>
