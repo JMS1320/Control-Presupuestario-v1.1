@@ -188,6 +188,8 @@ export function VistaCashFlow() {
     inputVal: string
     guardando: boolean
   }>({ open: false, filaId: '', tcOriginal: 1, tcPagoActual: null, inputVal: '', guardando: false })
+  // Flag: si el modal TC de pago fue abierto desde cambio estado → 'pagar', continuar con SICORE al guardar
+  const [tcPagoOrigenPagar, setTcPagoOrigenPagar] = useState(false)
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
@@ -273,6 +275,9 @@ export function VistaCashFlow() {
   const guardarTcPago = async () => {
     const tc = parseFloat(modalTcPago.inputVal)
     if (!tc || tc <= 0) { toast.error('Ingresá un TC de pago válido'); return }
+    // Capturar fila ANTES de las actualizaciones de estado (que son async)
+    const filaCapturada = data.find(f => f.id === modalTcPago.filaId)
+    const esParaContinuarPagar = tcPagoOrigenPagar
     setModalTcPago(prev => ({ ...prev, guardando: true }))
     try {
       const { error } = await supabase.schema('msa').from('comprobantes_arca')
@@ -280,14 +285,25 @@ export function VistaCashFlow() {
         .eq('id', modalTcPago.filaId)
       if (error) throw error
       actualizarLocal(modalTcPago.filaId, 'tc_pago', tc)
-      // También actualizar débitos local
-      const fila = data.find(f => f.id === modalTcPago.filaId)
-      if (fila) {
-        const montoBase = (fila.debitos) / (fila.tc_pago ?? fila.tipo_cambio ?? 1)
+      // También actualizar débitos local con nuevo TC
+      if (filaCapturada) {
+        const tcAnterior = filaCapturada.tc_pago ?? filaCapturada.tipo_cambio ?? 1
+        const montoBase = filaCapturada.debitos / tcAnterior
         actualizarLocal(modalTcPago.filaId, 'debitos', montoBase * tc)
       }
       toast.success(`TC de pago actualizado: $${tc.toLocaleString('es-AR')}`)
       setModalTcPago(prev => ({ ...prev, open: false }))
+      setTcPagoOrigenPagar(false)
+      // Si el TC fue pedido para continuar con cambio a 'pagar', seguir automáticamente con SICORE
+      if (esParaContinuarPagar && filaCapturada) {
+        const filaConTc: CashFlowRow = { ...filaCapturada, tc_pago: tc }
+        setGuardadoPendienteCF({
+          filaId: filaCapturada.id,
+          nuevoEstado: 'pagar',
+          estadoAnterior: filaCapturada.estado
+        })
+        await evaluarRetencionSicoreCF(filaConTc)
+      }
     } catch (e) {
       toast.error('Error al guardar TC de pago')
     } finally {
@@ -426,7 +442,8 @@ export function VistaCashFlow() {
       ) {
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
-        // Abrir modal de TC de pago; al guardar, volver a ejecutar el cambio de estado
+        // Abrir modal de TC de pago; al guardar, continuar automáticamente con SICORE
+        setTcPagoOrigenPagar(true)
         abrirModalTcPago(filaParaCambioEstado)
         return
       }
@@ -917,15 +934,18 @@ export function VistaCashFlow() {
 
   // Evaluar si corresponde SICORE para una fila ARCA
   const evaluarRetencionSicoreCF = async (fila: CashFlowRow) => {
+    const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const netoGravado = fila.imp_neto_gravado || 0
     const netoNoGravado = fila.imp_neto_no_gravado || 0
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
+    // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
+    const netoFacturaPesos = netoFactura * tc
     const minimoServicios = 67170
     const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     // Caso especial: facturas negativas
-    if (netoFactura < 0) {
+    if (netoFacturaPesos < 0) {
       const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
       if (yaRetuvo) {
         setFacturaEnProceso(fila)
@@ -935,8 +955,8 @@ export function VistaCashFlow() {
       return
     }
 
-    // Caso normal: positivos - aplicar filtro mínimo
-    if (netoFactura <= minimoServicios) return
+    // Caso normal: positivos - aplicar filtro mínimo en pesos
+    if (netoFacturaPesos <= minimoServicios) return
 
     setFacturaEnProceso(fila)
     setPasoSicore('tipo')
@@ -945,30 +965,34 @@ export function VistaCashFlow() {
 
   // Calcular retención según tipo seleccionado
   const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore) => {
+    // SICORE se calcula sobre lo pagado: usar TC de pago para convertir a pesos
+    const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const netoGravado = fila.imp_neto_gravado || 0
     const netoNoGravado = fila.imp_neto_no_gravado || 0
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
+    const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
     const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
-    let baseImponible = netoFactura
+    let baseImponible = netoFacturaPesos
     let minimoAplicado = 0
 
     if (!yaRetuvo) {
-      if (netoFactura <= tipo.minimo_no_imponible) {
-        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFactura.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+      if (netoFacturaPesos <= tipo.minimo_no_imponible) {
+        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFacturaPesos.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
         setMostrarModalSicore(false)
         return
       }
-      baseImponible = netoFactura - tipo.minimo_no_imponible
+      baseImponible = netoFacturaPesos - tipo.minimo_no_imponible
       minimoAplicado = tipo.minimo_no_imponible
     }
 
     const retencionCalculada = baseImponible * tipo.porcentaje_retencion
 
-    setDatosSicoreCalculo({ netoFactura, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo })
+    // Guardar netoFacturaPesos (ya en pesos) para mostrar en modal
+    setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo })
     setTipoSeleccionado(tipo)
     setMontoRetencion(retencionCalculada)
     setDescuentoAdicional(0)
@@ -980,15 +1004,22 @@ export function VistaCashFlow() {
     if (!facturaEnProceso || !tipoSeleccionado || !guardadoPendienteCF) return
 
     try {
-      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      // SICORE se calcula sobre lo pagado: usar TC de pago
+      const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
+      const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
+      const saldoPesos = impTotalPesos - montoRetencion - descuentoAdicional
+      // monto_a_abonar se guarda en la moneda de la factura:
+      // - ARS (tc=1): saldoPesos / 1 = saldoPesos ✓
+      // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
+      const montoAAbona = saldoPesos / tc
       const quincena = generarQuincenaSicoreLocal(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
 
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
-      // 2. Actualizar datos SICORE
+      // 2. Actualizar datos SICORE (monto_sicore siempre en pesos)
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ monto_a_abonar: saldoFinal, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
+        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
         .eq('id', guardadoPendienteCF.filaId)
 
       toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
@@ -2646,10 +2677,20 @@ export function VistaCashFlow() {
             </div>
           )}
 
-          {pasoSicore === 'calculo' && tipoSeleccionado && facturaEnProceso && datosSicoreCalculo && (
+          {pasoSicore === 'calculo' && tipoSeleccionado && facturaEnProceso && datosSicoreCalculo && (() => {
+            const esUSD = facturaEnProceso.moneda === 'USD' || (facturaEnProceso.tipo_cambio ?? 1) > 1.01
+            const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
+            const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
+            const saldoPesos = impTotalPesos - montoRetencion - descuentoAdicional
+            return (
             <div className="space-y-4">
+              {esUSD && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 flex items-center gap-1">
+                  💵 Factura USD · TC de pago: <strong>${tc.toLocaleString('es-AR')}</strong> · Montos en ARS
+                </div>
+              )}
               <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-gray-600">Neto base:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Neto base{esUSD ? ' (ARS)' : ''}:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 {datosSicoreCalculo.minimoAplicado > 0 && (
                   <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 )}
@@ -2661,7 +2702,7 @@ export function VistaCashFlow() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención:</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
                 <input
                   type="number"
                   className="w-full border rounded px-3 py-2 text-sm"
@@ -2671,7 +2712,7 @@ export function VistaCashFlow() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional:</label>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional{esUSD ? ' (ARS)' : ''}:</label>
                 <input
                   type="number"
                   className="w-full border rounded px-3 py-2 text-sm"
@@ -2682,11 +2723,16 @@ export function VistaCashFlow() {
 
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
                 <div className="flex justify-between font-bold text-base">
-                  <span>Saldo a pagar:</span>
+                  <span>Saldo a pagar{esUSD ? ' (ARS)' : ''}:</span>
                   <span className="text-green-700">
-                    ${((facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    ${saldoPesos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
+                {esUSD && (
+                  <div className="text-xs text-gray-500 text-right mt-0.5">
+                    ≈ USD {(saldoPesos / tc).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -2701,7 +2747,8 @@ export function VistaCashFlow() {
                 </Button>
               </div>
             </div>
-          )}
+          )
+          })()}
         </DialogContent>
       </Dialog>
 
