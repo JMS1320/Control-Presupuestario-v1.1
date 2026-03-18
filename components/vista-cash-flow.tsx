@@ -159,6 +159,8 @@ export function VistaCashFlow() {
   const [guardadoPendienteCF, setGuardadoPendienteCF] = useState<{
     filaId: string, nuevoEstado: string, estadoAnterior: string
   } | null>(null)
+  // Cola SICORE para lote (y para below-minimum auto-advance)
+  const [colaLoteSicore, setColaLoteSicore] = useState<CashFlowRow[]>([])
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -297,12 +299,14 @@ export function VistaCashFlow() {
       // Si el TC fue pedido para continuar con cambio a 'pagar', seguir automáticamente con SICORE
       if (esParaContinuarPagar && filaCapturada) {
         const filaConTc: CashFlowRow = { ...filaCapturada, tc_pago: tc }
-        setGuardadoPendienteCF({
+        const pending: PendingSicore = {
           filaId: filaCapturada.id,
           nuevoEstado: 'pagar',
           estadoAnterior: filaCapturada.estado
-        })
-        await evaluarRetencionSicoreCF(filaConTc)
+        }
+        setGuardadoPendienteCF(pending)
+        // Pasar pending fresco para evitar stale closure
+        await evaluarRetencionSicoreCF(filaConTc, pending, [])
       }
     } catch (e) {
       toast.error('Error al guardar TC de pago')
@@ -451,14 +455,16 @@ export function VistaCashFlow() {
       // HOOK SICORE - Interceptar cambio estado HACIA "pagar" para facturas ARCA
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && filaParaCambioEstado.estado !== 'pagar') {
         // Guardar estado pendiente y evaluar SICORE (NO guardar en BD todavía)
-        setGuardadoPendienteCF({
+        const pending: PendingSicore = {
           filaId: filaParaCambioEstado.id,
           nuevoEstado,
           estadoAnterior: filaParaCambioEstado.estado
-        })
+        }
+        setGuardadoPendienteCF(pending)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
-        await evaluarRetencionSicoreCF(filaParaCambioEstado)
+        // Pasar pending explícitamente para evitar stale closure
+        await evaluarRetencionSicoreCF(filaParaCambioEstado, pending, [])
         return
       }
 
@@ -758,64 +764,85 @@ export function VistaCashFlow() {
     setProcesandoLote(true)
 
     try {
-      // HOOK SICORE - Verificar si hay facturas ARCA cambiando a "pagar"
-      if (cambiarEstadoLote && valorEstadoLote === 'pagar') {
-        const facturasArcaAPagar = Array.from(filasSeleccionadas)
-          .map(filaId => data.find(f => f.id === filaId)!)
-          .filter(fila => fila.origen === 'ARCA' && fila.estado !== 'pagar')
-        
-        if (facturasArcaAPagar.length > 0) {
-          console.log('🎯 SICORE Cash Flow LOTE: Facturas ARCA detectadas cambiando a "pagar"', facturasArcaAPagar.length)
-          alert(`⚠️ ADVERTENCIA: ${facturasArcaAPagar.length} facturas ARCA cambiarán a "pagar" desde Cash Flow sin evaluación SICORE automática.\n\nPara evaluación completa de retenciones, usa la vista ARCA Facturas.`)
-        }
+      const minimoSicore = 67170
+      const calcularNetoLote = (f: CashFlowRow) => {
+        const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+        return ((f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)) * tc
       }
-      
-      // Preparar actualizaciones para todas las filas seleccionadas
+
+      // Separar filas: las ARCA→'pagar' necesitan evaluación SICORE; el resto va directo
+      const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(Boolean)
+
+      let facturasParaSicore: CashFlowRow[] = []
       const actualizaciones: Array<{id: string, origen: 'ARCA' | 'TEMPLATE', campo: string, valor: any}> = []
-      
-      Array.from(filasSeleccionadas).forEach(filaId => {
-        const fila = data.find(f => f.id === filaId)!
-        
-        // Si cambiar fecha vencimiento
+
+      todasFilas.forEach(fila => {
+        // Cambio de fecha siempre va al batch directo
         if (cambiarFechaVenc && valorFechaLote) {
-          actualizaciones.push({
-            id: filaId,
-            origen: fila.origen,
-            campo: 'fecha_vencimiento',
-            valor: valorFechaLote
-          })
-          
-          // Auto-sync: también actualizar fecha_estimada
-          actualizaciones.push({
-            id: filaId,
-            origen: fila.origen,
-            campo: 'fecha_estimada',
-            valor: valorFechaLote
-          })
+          actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_vencimiento', valor: valorFechaLote })
+          actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_estimada', valor: valorFechaLote })
         }
-        
-        // Si cambiar estado
+
         if (cambiarEstadoLote) {
-          actualizaciones.push({
-            id: filaId,
-            origen: fila.origen,
-            campo: 'estado',
-            valor: valorEstadoLote
-          })
+          const esArcaAPagar = valorEstadoLote === 'pagar' && fila.origen === 'ARCA' && fila.estado !== 'pagar'
+          const netoEnPesos = calcularNetoLote(fila)
+          const calificaSicore = netoEnPesos > minimoSicore || netoEnPesos < 0
+
+          if (esArcaAPagar && calificaSicore) {
+            facturasParaSicore.push(fila)
+          } else {
+            actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'estado', valor: valorEstadoLote })
+          }
         }
       })
 
-      const exito = await actualizarBatch(actualizaciones)
+      // Guardar las que no necesitan SICORE primero
+      if (actualizaciones.length > 0) {
+        await actualizarBatch(actualizaciones)
+      }
 
-      if (exito) {
+      // Procesar SICORE para las que califican
+      if (facturasParaSicore.length > 0) {
+        const mensajeFecha = cambiarFechaVenc && valorFechaLote
+          ? `\n📅 Fecha de pago: ${valorFechaLote.split('-').reverse().join('/')}`
+          : ''
+        const confirmar = window.confirm(
+          `${facturasParaSicore.length} factura(s) ARCA califican para retención SICORE:\n\n` +
+          facturasParaSicore.map(f => `• ${f.nombre_proveedor || f.cuit_proveedor}`).join('\n') +
+          mensajeFecha +
+          `\n\n¿Procesar SICORE una por una?`
+        )
+
+        if (!confirmar) {
+          // Guardar todas sin SICORE
+          await actualizarBatch(facturasParaSicore.map(f => ({ id: f.id, origen: 'ARCA' as const, campo: 'estado', valor: 'pagar' })))
+          toast.success(`${facturasParaSicore.length} facturas marcadas 'pagar' sin SICORE`)
+          desactivarModoPagos()
+        } else {
+          // Con fecha actualizada si corresponde
+          const facturasConFecha = facturasParaSicore.map(f => ({
+            ...f,
+            ...(cambiarFechaVenc && valorFechaLote ? { fecha_vencimiento: valorFechaLote, fecha_estimada: valorFechaLote } : {})
+          }))
+          const [primera, ...resto] = facturasConFecha
+          setColaLoteSicore(resto)
+          const firstPending: PendingSicore = { filaId: primera.id, nuevoEstado: 'pagar', estadoAnterior: primera.estado }
+          setGuardadoPendienteCF(firstPending)
+          // Actualizar fecha en BD para la primera si aplica
+          if (cambiarFechaVenc && valorFechaLote) {
+            await supabase.schema('msa').from('comprobantes_arca')
+              .update({ fecha_vencimiento: valorFechaLote, fecha_estimada: valorFechaLote })
+              .eq('id', primera.id)
+          }
+          // Pasar pending y cola frescos para evitar stale closure
+          await evaluarRetencionSicoreCF(primera, firstPending, resto)
+        }
+      } else {
         const cambiosTexto = []
         if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
         if (cambiarEstadoLote) cambiosTexto.push('estado')
-        
         toast.success(`${filasSeleccionadas.size} registros actualizados: ${cambiosTexto.join(' y ')}`)
         desactivarModoPagos()
-      } else {
-        toast.error('Error al aplicar cambios por lote')
       }
     } catch (error) {
       console.error('Error en aplicarCambiosLote:', error)
@@ -932,8 +959,16 @@ export function VistaCashFlow() {
     } catch { return false }
   }
 
+  // Tipo para datos pendientes de guardado
+  type PendingSicore = { filaId: string, nuevoEstado: string, estadoAnterior: string }
+
   // Evaluar si corresponde SICORE para una fila ARCA
-  const evaluarRetencionSicoreCF = async (fila: CashFlowRow) => {
+  // freshPending y freshCola se pasan explícitamente para evitar stale closures
+  const evaluarRetencionSicoreCF = async (
+    fila: CashFlowRow,
+    freshPending?: PendingSicore | null,
+    freshCola?: CashFlowRow[]
+  ) => {
     const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const netoGravado = fila.imp_neto_gravado || 0
     const netoNoGravado = fila.imp_neto_no_gravado || 0
@@ -944,20 +979,44 @@ export function VistaCashFlow() {
     const minimoServicios = 67170
     const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
+    console.log('🔍 SICORE CF: Evaluando fila', {
+      id: fila.id,
+      proveedor: fila.nombre_proveedor,
+      netoGravado,
+      netoNoGravado,
+      opExentas,
+      netoFactura,
+      tc,
+      netoFacturaPesos,
+      minimoServicios,
+      califica: netoFacturaPesos > minimoServicios,
+      esNegativa: netoFacturaPesos < 0
+    })
+
     // Caso especial: facturas negativas
     if (netoFacturaPesos < 0) {
       const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+      console.log('💰 SICORE CF: Factura negativa - retención previa:', yaRetuvo)
       if (yaRetuvo) {
         setFacturaEnProceso(fila)
         setPasoSicore('tipo')
         setMostrarModalSicore(true)
+      } else {
+        // Negativa sin retención previa → guardar sin SICORE
+        await cancelarSicoreCF(true, freshPending, freshCola)
       }
       return
     }
 
     // Caso normal: positivos - aplicar filtro mínimo en pesos
-    if (netoFacturaPesos <= minimoServicios) return
+    if (netoFacturaPesos <= minimoServicios) {
+      console.log('✅ SICORE CF: No corresponde (menor a mínimo) - guardando estado sin SICORE')
+      // Por debajo del mínimo → guardar estado sin SICORE
+      await cancelarSicoreCF(true, freshPending, freshCola)
+      return
+    }
 
+    console.log('⚡ SICORE CF: Corresponde evaluación - abriendo modal')
     setFacturaEnProceso(fila)
     setPasoSicore('tipo')
     setMostrarModalSicore(true)
@@ -1024,7 +1083,7 @@ export function VistaCashFlow() {
 
       toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
 
-      // Limpiar y recargar
+      // Limpiar modal
       setMostrarModalSicore(false)
       setFacturaEnProceso(null)
       setTipoSeleccionado(null)
@@ -1032,21 +1091,43 @@ export function VistaCashFlow() {
       setDescuentoAdicional(0)
       setGuardadoPendienteCF(null)
       setPasoSicore('tipo')
-      cargarDatos()
+
+      // Procesar siguiente en cola (lote) o recargar
+      const siguiente = colaLoteSicore[0]
+      if (siguiente) {
+        const resto = colaLoteSicore.slice(1)
+        setColaLoteSicore(resto)
+        const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: 'pagar', estadoAnterior: siguiente.estado }
+        setGuardadoPendienteCF(nextPending)
+        await evaluarRetencionSicoreCF(siguiente, nextPending, resto)
+      } else {
+        cargarDatos()
+      }
     } catch (error) {
       toast.error('Error finalizando SICORE: ' + (error as Error).message)
     }
   }
 
   // Cancelar SICORE desde Cash Flow
-  const cancelarSicoreCF = async (continuarSinSicore: boolean = false) => {
-    if (guardadoPendienteCF && !continuarSinSicore) {
-      // Restaurar estado anterior en BD
-      await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.estadoAnterior, 'ARCA')
-    } else if (guardadoPendienteCF && continuarSinSicore) {
-      // Solo guardar el cambio de estado sin SICORE
-      await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
-      toast.success('Estado cambiado sin retención SICORE')
+  // freshPending/freshCola: valores frescos para evitar stale closure cuando se llama
+  // sincrónicamente después de setState (ej: desde evaluarRetencionSicoreCF)
+  const cancelarSicoreCF = async (
+    continuarSinSicore: boolean = false,
+    freshPending?: PendingSicore | null,
+    freshCola?: CashFlowRow[]
+  ) => {
+    // Usar datos frescos si se proporcionan, sino usar estado React (para llamadas desde UI)
+    const pending = freshPending !== undefined ? freshPending : guardadoPendienteCF
+    const cola = freshCola !== undefined ? freshCola : colaLoteSicore
+
+    if (pending && !continuarSinSicore) {
+      // Restaurar estado anterior en BD y limpiar cola entera
+      await actualizarRegistro(pending.filaId, 'estado', pending.estadoAnterior, 'ARCA')
+      setColaLoteSicore([])
+    } else if (pending && continuarSinSicore) {
+      // Guardar el cambio de estado sin SICORE
+      await actualizarRegistro(pending.filaId, 'estado', pending.nuevoEstado, 'ARCA')
+      if (cola.length === 0) toast.success('Estado cambiado sin retención SICORE')
     }
     setMostrarModalSicore(false)
     setFacturaEnProceso(null)
@@ -1055,7 +1136,17 @@ export function VistaCashFlow() {
     setDescuentoAdicional(0)
     setGuardadoPendienteCF(null)
     setPasoSicore('tipo')
-    cargarDatos()
+
+    // Si hay más en cola (lote) y continuamos sin SICORE, avanzar
+    if (continuarSinSicore && cola.length > 0) {
+      const [siguiente, ...resto] = cola
+      setColaLoteSicore(resto)
+      const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: 'pagar', estadoAnterior: siguiente.estado }
+      setGuardadoPendienteCF(nextPending)
+      await evaluarRetencionSicoreCF(siguiente, nextPending, resto)
+    } else {
+      cargarDatos()
+    }
   }
 
   // Verificar retención previa en AMBAS tablas (facturas + anticipos)
