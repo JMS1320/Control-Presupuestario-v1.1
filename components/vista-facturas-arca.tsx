@@ -219,7 +219,10 @@ export function VistaFacturasArca() {
 
   // Estados para panel SICORE (botón unificado)
   const [mostrarModalPanelSicore, setMostrarModalPanelSicore] = useState(false)
-  const [tabPanelSicore, setTabPanelSicore] = useState<'ver' | 'cerrar'>('ver')
+  const [tabPanelSicore, setTabPanelSicore] = useState<'ver' | 'cerrar' | 'v2'>('ver')
+  const [procesandoCierreV2, setProcesandoCierreV2] = useState(false)
+  const [quincenaSeleccionadaV2, setQuincenaSeleccionadaV2] = useState('')
+  const [conteoV2, setConteoV2] = useState<{ cantidad: number; totalRetencion: number; totalPago: number } | null>(null)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
   const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
@@ -3295,6 +3298,233 @@ export function VistaFacturasArca() {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  //  CIERRE QUINCENA V2 — lee de msa.sicore_retenciones
+  // ══════════════════════════════════════════════════════════════
+
+  const buscarRetencionesV2 = async (quincena: string) => {
+    const { data, error } = await supabase
+      .schema('msa')
+      .from('sicore_retenciones')
+      .select('*')
+      .eq('quincena', quincena)
+      .order('denominacion_emisor', { ascending: true })
+    if (error) throw error
+    return data || []
+  }
+
+  const generarExcelCierreV2 = async (registros: any[], quincena: string, directorio: any = null) => {
+    const XLSX = await import('xlsx')
+    const mesesNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    const partes = quincena.match(/(\d+)-(\d+)\s*-\s*(1ra|2da)/)
+    const tituloQ = partes ? `SICORE ${mesesNombre[parseInt(partes[2])-1]} 20${partes[1]} ${partes[3]} Quincena — v2` : `SICORE ${quincena} v2`
+
+    const fmt = (f: string | null) => {
+      if (!f) return '-'
+      const d = new Date(f + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+    }
+    const num = (v: any) => (v === null || v === undefined || v === '') ? '' : Number(v)
+
+    const COLS = [
+      'Origen','Tipo','Fecha Pago','Fecha FC','Tipo Comp.','PV','Número','CUIT Emisor','Denominación Emisor',
+      'Neto Grav. Pagado','Total Pagado','Descuento','Mínimo no imp','Base imp','Alícuota','Retención','Pago'
+    ]
+
+    const filas = registros.map(r => ({
+      'Origen':              r.origen || '',
+      'Tipo':                r.tipo_sicore || '',
+      'Fecha Pago':          fmt(r.fecha_pago),
+      'Fecha FC':            fmt(r.fecha_emision),
+      'Tipo Comp.':          r.tipo_comprobante ?? '',
+      'PV':                  num(r.punto_venta),
+      'Número':              num(r.numero_desde),
+      'CUIT Emisor':         r.cuit_emisor || '',
+      'Denominación Emisor': r.denominacion_emisor || '',
+      'Neto Grav. Pagado':   num(r.neto_gravado_pagado),
+      'Total Pagado':        num(r.total_pagado),
+      'Descuento':           num(r.descuento_aplicado),
+      'Mínimo no imp':       num(r.minimo_no_imponible),
+      'Base imp':            num(r.base_imponible),
+      'Alícuota':            r.alicuota ? Number(r.alicuota) : '',
+      'Retención':           num(r.retencion),
+      'Pago':                num(r.pago),
+    }))
+
+    // Totales
+    const tot: any = {}; COLS.forEach(c => { tot[c] = '' })
+    tot['Denominación Emisor'] = 'TOTALES'
+    tot['Neto Grav. Pagado']   = registros.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
+    tot['Total Pagado']        = registros.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+    tot['Descuento']           = registros.reduce((s, r) => s + (Number(r.descuento_aplicado) || 0), 0)
+    tot['Retención']           = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+    tot['Pago']                = registros.reduce((s, r) => s + (Number(r.pago) || 0), 0)
+    filas.push(tot)
+
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([[tituloQ], []])
+    XLSX.utils.sheet_add_json(ws, filas, { origin: 'A3', header: COLS })
+    ws['!cols'] = [
+      {wch:10},{wch:14},{wch:12},{wch:12},{wch:8},{wch:6},{wch:10},{wch:16},{wch:28},
+      {wch:16},{wch:16},{wch:12},{wch:14},{wch:14},{wch:8},{wch:14},{wch:14}
+    ]
+    XLSX.utils.book_append_sheet(wb, ws, 'SICORE v2')
+    const nombre = `SICORE_v2_${quincenaACarpeta(quincena)}.xlsx`
+    if (directorio) {
+      const h = await directorio.getFileHandle(nombre, { create: true })
+      const w = await h.createWritable()
+      await w.write(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
+      await w.close()
+    } else {
+      XLSX.writeFile(wb, nombre)
+    }
+  }
+
+  const generarPDFCierreV2 = async (registros: any[], quincena: string, directorio: any = null) => {
+    const { jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ orientation: 'landscape' })
+    const mesesNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    const partes = quincena.match(/(\d+)-(\d+)\s*-\s*(1ra|2da)/)
+    const tituloQ = partes ? `SICORE ${mesesNombre[parseInt(partes[2])-1]} 20${partes[1]} ${partes[3]} Quincena — v2` : `SICORE ${quincena} v2`
+
+    const fmt = (f: string | null) => {
+      if (!f) return '-'
+      const d = new Date(f + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+    }
+    const fNum = (v: any) => {
+      if (v === null || v === undefined || v === '') return ''
+      const n = Number(v)
+      return n === 0 ? '' : n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    const totalRetencion = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+    doc.setFontSize(13); doc.text(tituloQ, 10, 14)
+    doc.setFontSize(8); doc.text(
+      `Fecha: ${new Date().toLocaleDateString('es-AR')}   |   Registros: ${registros.length}   |   Total retenciones: $${totalRetencion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`,
+      10, 21
+    )
+
+    const cabeceras = ['Origen','Tipo','F.Pago','F.FC','Comp','PV','Nro','CUIT','Denominación','Neto Grav\nPagado','Total\nPagado','Desc.','Mínimo','Base imp','%','Retención','Pago']
+
+    const body = registros.map(r => [
+      r.origen || '',
+      r.tipo_sicore || '',
+      fmt(r.fecha_pago),
+      fmt(r.fecha_emision),
+      r.tipo_comprobante ?? '',
+      r.punto_venta || '',
+      r.numero_desde || '',
+      r.cuit_emisor || '',
+      r.denominacion_emisor || '',
+      fNum(r.neto_gravado_pagado),
+      fNum(r.total_pagado),
+      fNum(r.descuento_aplicado),
+      fNum(r.minimo_no_imponible),
+      fNum(r.base_imponible),
+      r.alicuota ? `${(Number(r.alicuota)*100).toFixed(2)}%` : '',
+      fNum(r.retencion),
+      fNum(r.pago),
+    ])
+
+    body.push([
+      '','','','','','','','TOTALES','',
+      fNum(registros.reduce((s,r)=>s+(Number(r.neto_gravado_pagado)||0),0)),
+      fNum(registros.reduce((s,r)=>s+(Number(r.total_pagado)||0),0)),
+      fNum(registros.reduce((s,r)=>s+(Number(r.descuento_aplicado)||0),0)),
+      '','','',
+      fNum(totalRetencion),
+      fNum(registros.reduce((s,r)=>s+(Number(r.pago)||0),0)),
+    ])
+
+    // 17 columnas. Landscape = 277mm usables
+    autoTable(doc, {
+      head: [cabeceras], body,
+      startY: 26,
+      margin: { left: 10, right: 10 },
+      styles: { fontSize: 5.5, cellPadding: 1.5, halign: 'right', overflow: 'ellipsize' },
+      headStyles: { fillColor: [39, 174, 96], textColor: 255, fontStyle: 'bold', fontSize: 5.5, halign: 'center', valign: 'middle', minCellHeight: 12 },
+      columnStyles: {
+        0:  { cellWidth: 13, halign: 'left'  },  // Origen
+        1:  { cellWidth: 16, halign: 'left'  },  // Tipo
+        2:  { cellWidth: 16 },                    // F.Pago
+        3:  { cellWidth: 16 },                    // F.FC
+        4:  { cellWidth:  7 },                    // Comp
+        5:  { cellWidth:  6 },                    // PV
+        6:  { cellWidth: 10 },                    // Nro
+        7:  { cellWidth: 16 },                    // CUIT
+        8:  { cellWidth: 24, halign: 'left'  },   // Denominación
+        9:  { cellWidth: 17 },                    // Neto Grav Pagado
+        10: { cellWidth: 17 },                    // Total Pagado
+        11: { cellWidth: 12 },                    // Descuento
+        12: { cellWidth: 14 },                    // Mínimo
+        13: { cellWidth: 17 },                    // Base imp
+        14: { cellWidth:  7 },                    // %
+        15: { cellWidth: 14 },                    // Retención
+        16: { cellWidth: 17 },                    // Pago (12ch)
+      },                                          // Total: 13+16+16+16+7+6+10+16+24+17+17+12+14+17+7+14+17 = 237... need to recheck
+      didParseCell: (data: any) => {
+        if (data.row.index === body.length - 1 && data.section === 'body') {
+          data.cell.styles.fillColor = [230, 230, 230]
+          data.cell.styles.fontStyle = 'bold'
+        }
+      },
+    })
+
+    const nombre = `SICORE_v2_${quincenaACarpeta(quincena)}.pdf`
+    if (directorio) {
+      const h = await directorio.getFileHandle(nombre, { create: true })
+      const w = await h.createWritable()
+      await w.write(doc.output('blob'))
+      await w.close()
+    } else {
+      doc.save(nombre)
+    }
+  }
+
+  const procesarCierreV2 = async (quincena: string) => {
+    try {
+      setProcesandoCierreV2(true)
+      const registros = await buscarRetencionesV2(quincena)
+      if (registros.length === 0) {
+        alert(`No hay registros en sicore_retenciones para la quincena ${quincena}`)
+        return
+      }
+      // Usar carpeta configurada (misma lógica que v1)
+      const carpetaGuardada = localStorage.getItem('sicore_carpeta_default')
+      let subcarpeta = null
+      if (carpetaGuardada) {
+        try {
+          const dirHandle = await (window as any).showDirectoryPicker({ id: 'sicore', mode: 'readwrite', startIn: 'documents' }).catch(() => null)
+          if (dirHandle) subcarpeta = dirHandle
+        } catch { /* sin carpeta, descarga directa */ }
+      }
+      await generarExcelCierreV2(registros, quincena, subcarpeta)
+      await generarPDFCierreV2(registros, quincena, subcarpeta)
+      const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
+      const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
+      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+    } catch (error) {
+      console.error('Error cierre v2:', error)
+      alert('Error: ' + (error as Error).message)
+    } finally {
+      setProcesandoCierreV2(false)
+    }
+  }
+
+  // Previsualizar conteo v2 al seleccionar quincena
+  const previsualizarV2 = async (quincena: string) => {
+    setQuincenaSeleccionadaV2(quincena)
+    setConteoV2(null)
+    if (!quincena) return
+    const { data } = await supabase.schema('msa').from('sicore_retenciones').select('retencion, pago').eq('quincena', quincena)
+    if (data) setConteoV2({
+      cantidad: data.length,
+      totalRetencion: data.reduce((s, r) => s + (Number(r.retencion) || 0), 0),
+      totalPago: data.reduce((s, r) => s + (Number(r.pago) || 0), 0),
+    })
+  }
+
   // Generar Excel para cierre de quincena
   const generarExcelCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
     try {
@@ -5316,10 +5546,11 @@ export function VistaFacturasArca() {
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs value={tabPanelSicore} onValueChange={(v) => setTabPanelSicore(v as 'ver' | 'cerrar')}>
+          <Tabs value={tabPanelSicore} onValueChange={(v) => setTabPanelSicore(v as 'ver' | 'cerrar' | 'v2')}>
             <TabsList className="w-full">
               <TabsTrigger value="ver" className="flex-1">🔍 Ver Retenciones</TabsTrigger>
               <TabsTrigger value="cerrar" className="flex-1">📅 Cerrar Quincena</TabsTrigger>
+              <TabsTrigger value="v2" className="flex-1">🆕 Cierre v2</TabsTrigger>
             </TabsList>
 
             {/* TAB: Ver Retenciones */}
@@ -5501,6 +5732,65 @@ export function VistaFacturasArca() {
                   onClick={() => setQuincenaSeleccionada('')}
                   disabled={procesandoCierre}
                 >
+                  Limpiar
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* TAB: Cierre v2 — lee de msa.sicore_retenciones */}
+            <TabsContent value="v2" className="space-y-4 mt-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                <p className="font-semibold mb-1">🆕 Export desde tabla sicore_retenciones</p>
+                <p className="text-green-700">Valores autocontenidos: retención + pago = total pagado siempre. Refleja descuentos, anticipos y agrupaciones correctamente.</p>
+              </div>
+
+              <div>
+                <Label className="mb-2 block">Quincena:</Label>
+                <Select value={quincenaSeleccionadaV2} onValueChange={previsualizarV2}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar quincena..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {generarQuincenasDisponibles().map(q => (
+                      <SelectItem key={q} value={q}>{q}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {conteoV2 !== null && (
+                <div className={`rounded-lg p-3 text-sm space-y-1 ${conteoV2.cantidad > 0 ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                  {conteoV2.cantidad > 0 ? (
+                    <>
+                      <p className="font-medium text-green-800">✓ {conteoV2.cantidad} registro{conteoV2.cantidad > 1 ? 's' : ''} encontrados</p>
+                      <p className="text-green-700">Total retenciones: <strong>${conteoV2.totalRetencion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></p>
+                      <p className="text-green-700">Total pagos netos: <strong>${conteoV2.totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></p>
+                    </>
+                  ) : (
+                    <p className="text-yellow-800">⚠️ Sin registros para esta quincena en sicore_retenciones</p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => quincenaSeleccionadaV2 && procesarCierreV2(quincenaSeleccionadaV2)}
+                  disabled={!quincenaSeleccionadaV2 || procesandoCierreV2 || (conteoV2 !== null && conteoV2.cantidad === 0)}
+                  className="bg-green-600 hover:bg-green-700 flex-1"
+                >
+                  {procesandoCierreV2 ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Generar Export v2
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={() => { setQuincenaSeleccionadaV2(''); setConteoV2(null) }} disabled={procesandoCierreV2}>
                   Limpiar
                 </Button>
               </div>
