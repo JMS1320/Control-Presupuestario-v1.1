@@ -4106,7 +4106,7 @@ export function VistaFacturasArca() {
     total_pagado: number
     retencion: number
     tipo_sicore: string
-  }) => {
+  }, returnBytes = false): Promise<ArrayBuffer | null> => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
@@ -4295,11 +4295,51 @@ export function VistaFacturasArca() {
 
       const cuitClean = (registro.cuit_emisor || '').replace(/\D/g, '')
       const nombreArchivo = `CertRet_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}_${fmtFecha(registro.fecha_pago).replace(/\//g, '-')}.pdf`
+
+      if (returnBytes) {
+        return doc.output('arraybuffer')
+      }
       doc.save(nombreArchivo)
+      return null
 
     } catch (error) {
       console.error('Error generando certificado de retención:', error)
       alert('Error al generar certificado: ' + (error as Error).message)
+      return null
+    }
+  }
+
+  // ── Descargar todos los certificados de una quincena ──────────────────────
+  const [descargandoCerts, setDescargandoCerts] = useState(false)
+
+  const descargarTodosLosCertificados = async () => {
+    if (registrosV2.length === 0) return
+    try {
+      const dirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
+      setDescargandoCerts(true)
+      let count = 0
+      const fmtNombre = (f: string) => {
+        const d = new Date(f + 'T12:00:00')
+        return `${d.getDate().toString().padStart(2,'0')}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getFullYear()}`
+      }
+      for (const registro of registrosV2) {
+        const bytes = await generarCertificadoRetencion(registro, true)
+        if (!bytes) continue
+        const cuitClean = (registro.cuit_emisor || '').replace(/\D/g, '')
+        const nombre = `CertRet_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}_${fmtNombre(registro.fecha_pago)}.pdf`
+        const fileHandle = await dirHandle.getFileHandle(nombre, { create: true })
+        const writable = await fileHandle.createWritable()
+        await writable.write(bytes)
+        await writable.close()
+        count++
+      }
+      alert(`✅ ${count} certificado${count !== 1 ? 's' : ''} guardado${count !== 1 ? 's' : ''} correctamente.`)
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        alert('Error: ' + (err?.message || 'Error desconocido'))
+      }
+    } finally {
+      setDescargandoCerts(false)
     }
   }
 
@@ -6169,6 +6209,18 @@ export function VistaFacturasArca() {
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generando...</>
                   ) : (
                     <><Calendar className="mr-2 h-4 w-4" />Generar Export v2</>
+                  )}
+                </Button>
+                <Button
+                  onClick={descargarTodosLosCertificados}
+                  disabled={registrosV2.length === 0 || descargandoCerts}
+                  variant="outline"
+                  className="flex-1 border-blue-400 text-blue-700 hover:bg-blue-50"
+                >
+                  {descargandoCerts ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generando...</>
+                  ) : (
+                    <><FileText className="mr-2 h-4 w-4" />Certificados de Retención ({registrosV2.length})</>
                   )}
                 </Button>
               </div>
