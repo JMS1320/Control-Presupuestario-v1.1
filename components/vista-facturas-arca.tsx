@@ -3935,7 +3935,15 @@ export function VistaFacturasArca() {
       monto_sicore?: number | null
       descuento_aplicado?: number | null
       monto_a_abonar: number
-    }>
+    }>,
+    anticipo?: {
+      monto: number
+      monto_sicore: number | null
+      descuento_aplicado: number | null
+      tipo_sicore: string | null
+      sicore: string | null
+      fecha_pago: string
+    } | null
   ) => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -3963,9 +3971,37 @@ export function VistaFacturasArca() {
       doc.setFont('helvetica', 'normal')
       doc.text(cuit, 30, 48)
 
+      // ── Anticipo (si existe) ───────────────────────────────────────────────
+      let startY = 56
+      if (anticipo) {
+        const fmtA = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+        const fmtFechaA = (f: string) => {
+          const d = new Date(f + 'T12:00:00')
+          return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+        }
+        const netoPagado = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Pago via Anticipo:', 15, 56)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(9)
+        doc.text(`Fecha pago: ${fmtFechaA(anticipo.fecha_pago)}`, 15, 62)
+        doc.text(`Monto anticipo: ${fmtA(anticipo.monto)}`, 15, 67)
+        if ((anticipo.monto_sicore || 0) > 0) {
+          doc.text(`Ret. SICORE (${anticipo.tipo_sicore || ''} — ${anticipo.sicore || ''}): − ${fmtA(anticipo.monto_sicore || 0)}`, 15, 72)
+        }
+        if ((anticipo.descuento_aplicado || 0) > 0) {
+          doc.text(`Descuento: − ${fmtA(anticipo.descuento_aplicado || 0)}`, 15, 77)
+        }
+        doc.setFont('helvetica', 'bold')
+        doc.text(`Neto transferido: ${fmtA(netoPagado)}`, 15, (anticipo.descuento_aplicado || 0) > 0 ? 82 : 77)
+        doc.setFont('helvetica', 'normal')
+        startY = (anticipo.descuento_aplicado || 0) > 0 ? 90 : 85
+      }
+
       // ── Tabla ──────────────────────────────────────────────────────────────
-      const haySicore   = items.some(i => (i.monto_sicore || 0) > 0)
-      const hayDescuento = items.some(i => (i.descuento_aplicado || 0) > 0)
+      const haySicore   = items.some(i => (i.monto_sicore || 0) > 0) && !anticipo
+      const hayDescuento = items.some(i => (i.descuento_aplicado || 0) > 0) && !anticipo
 
       const head: string[][] = [[
         'Comprobante',
@@ -4003,7 +4039,7 @@ export function VistaFacturasArca() {
       ])
 
       autoTable(doc, {
-        startY: 56,
+        startY,
         head,
         body,
         theme: 'striped',
@@ -4940,6 +4976,15 @@ export function VistaFacturasArca() {
                                           return
                                         }
                                       }
+                                      // Buscar anticipo vinculado a esta factura
+                                      const { data: anticipoVinc } = await supabase
+                                        .from('anticipos_proveedores')
+                                        .select('monto, monto_sicore, descuento_aplicado, tipo_sicore, sicore, fecha_pago')
+                                        .eq('factura_id', factura.id)
+                                        .eq('tipo', 'pago')
+                                        .limit(1)
+                                      const anticipo = anticipoVinc && anticipoVinc.length > 0 ? anticipoVinc[0] : null
+
                                       // Factura individual
                                       await generarPDFDetallePago(
                                         'arca', factura.denominacion_emisor, factura.cuit,
@@ -4947,10 +4992,11 @@ export function VistaFacturasArca() {
                                           comprobante: `FC ${factura.tipo_comprobante}-${String(factura.punto_venta || 0).padStart(5,'0')}-${String(factura.numero_desde || 0).padStart(8,'0')}`,
                                           fecha: factura.fecha_emision || '',
                                           imp_total: factura.imp_total || 0,
-                                          monto_sicore: factura.monto_sicore,
-                                          descuento_aplicado: factura.descuento_aplicado,
+                                          monto_sicore: anticipo ? null : factura.monto_sicore,
+                                          descuento_aplicado: anticipo ? null : factura.descuento_aplicado,
                                           monto_a_abonar: factura.monto_a_abonar ?? factura.imp_total ?? 0,
-                                        }]
+                                        }],
+                                        anticipo
                                       )
                                     }}
                                   >
