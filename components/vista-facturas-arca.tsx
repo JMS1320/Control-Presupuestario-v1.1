@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -136,7 +136,7 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
-function TablaRegistrosV2({ registros }: { registros: any[] }) {
+function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCertificado?: (registro: any) => void }) {
   const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
   const fmtFecha = (f: string | null) => {
     if (!f) return '-'
@@ -170,6 +170,7 @@ function TablaRegistrosV2({ registros }: { registros: any[] }) {
             <th className="border border-green-200 px-2 py-1.5 text-right">Alíc.%</th>
             <th className="border border-green-200 px-2 py-1.5 text-right">Retención</th>
             <th className="border border-green-200 px-2 py-1.5 text-right">Pago</th>
+            {onCertificado && <th className="border border-green-200 px-2 py-1.5 text-center">Cert.</th>}
           </tr>
         </thead>
         <tbody>
@@ -192,6 +193,17 @@ function TablaRegistrosV2({ registros }: { registros: any[] }) {
               </td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
+              {onCertificado && (
+                <td className="border border-green-100 px-2 py-1 text-center">
+                  <button
+                    onClick={() => onCertificado(r)}
+                    title="Descargar Certificado de Retención"
+                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -206,6 +218,7 @@ function TablaRegistrosV2({ registros }: { registros: any[] }) {
             <td className="border border-green-200 px-2 py-1.5"></td>
             <td className="border border-green-200 px-2 py-1.5 text-right text-red-700">{fmt(totRet)}</td>
             <td className="border border-green-200 px-2 py-1.5 text-right text-green-700">{fmt(totPago)}</td>
+            {onCertificado && <td className="border border-green-200 px-2 py-1.5"></td>}
           </tr>
         </tfoot>
       </table>
@@ -3948,22 +3961,30 @@ export function VistaFacturasArca() {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
-      const hoy = new Date().toLocaleDateString('es-AR')
+      const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      const fmtFechaStr = (f: string) => {
+        const d = new Date(f + 'T12:00:00')
+        return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+      }
+
+      // Fecha de pago: del anticipo si existe, si no fecha actual
+      const fechaPago = anticipo ? fmtFechaStr(anticipo.fecha_pago) : new Date().toLocaleDateString('es-AR')
 
       // ── Header ────────────────────────────────────────────────────────────
       doc.setFontSize(16)
       doc.setFont('helvetica', 'bold')
-      doc.text('DETALLE DE PAGO', pageW / 2, 18, { align: 'center' })
+      doc.text('COMPROBANTE DE PAGO', pageW / 2, 18, { align: 'center' })
 
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      doc.text('MARTINEZ SOBRADO AGRO SRL', pageW / 2, 25, { align: 'center' })
-      doc.text(`Fecha: ${hoy}`, pageW / 2, 30, { align: 'center' })
+      doc.text('MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6', pageW / 2, 25, { align: 'center' })
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Fecha de Pago: ${fechaPago}`, pageW / 2, 31, { align: 'center' })
 
       // ── Datos proveedor ────────────────────────────────────────────────────
-      doc.setFontSize(11)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
-      doc.text('Destinatario:', 15, 42)
+      doc.text('Beneficiario:', 15, 42)
       doc.setFont('helvetica', 'normal')
       doc.text(proveedor, 45, 42)
       doc.setFont('helvetica', 'bold')
@@ -3971,88 +3992,91 @@ export function VistaFacturasArca() {
       doc.setFont('helvetica', 'normal')
       doc.text(cuit, 30, 48)
 
-      // ── Anticipo (si existe) ───────────────────────────────────────────────
-      let startY = 56
-      if (anticipo) {
-        const fmtA = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-        const fmtFechaA = (f: string) => {
-          const d = new Date(f + 'T12:00:00')
-          return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
-        }
-        const netoPagado = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'bold')
-        doc.text('Pago via Anticipo:', 15, 56)
-        doc.setFont('helvetica', 'normal')
-        doc.setFontSize(9)
-        doc.text(`Fecha pago: ${fmtFechaA(anticipo.fecha_pago)}`, 15, 62)
-        doc.text(`Monto anticipo: ${fmtA(anticipo.monto)}`, 15, 67)
-        if ((anticipo.monto_sicore || 0) > 0) {
-          doc.text(`Ret. SICORE (${anticipo.tipo_sicore || ''} — ${anticipo.sicore || ''}): − ${fmtA(anticipo.monto_sicore || 0)}`, 15, 72)
-        }
-        if ((anticipo.descuento_aplicado || 0) > 0) {
-          doc.text(`Descuento: − ${fmtA(anticipo.descuento_aplicado || 0)}`, 15, 77)
-        }
-        doc.setFont('helvetica', 'bold')
-        doc.text(`Neto transferido: ${fmtA(netoPagado)}`, 15, (anticipo.descuento_aplicado || 0) > 0 ? 82 : 77)
-        doc.setFont('helvetica', 'normal')
-        startY = (anticipo.descuento_aplicado || 0) > 0 ? 90 : 85
-      }
-
-      // ── Tabla ──────────────────────────────────────────────────────────────
-      const haySicore   = items.some(i => (i.monto_sicore || 0) > 0) && !anticipo
-      const hayDescuento = items.some(i => (i.descuento_aplicado || 0) > 0) && !anticipo
+      // ── Construir columnas y filas ─────────────────────────────────────────
+      // Si hay anticipo, las columnas de retención/descuento vienen del anticipo
+      const hayRetencion = anticipo
+        ? (anticipo.monto_sicore || 0) > 0
+        : items.some(i => (i.monto_sicore || 0) > 0)
+      const hayDescuento = anticipo
+        ? (anticipo.descuento_aplicado || 0) > 0
+        : items.some(i => (i.descuento_aplicado || 0) > 0)
 
       const head: string[][] = [[
         'Comprobante',
         'Fecha',
-        'Importe Total',
-        ...(haySicore    ? ['Ret. SICORE'] : []),
-        ...(hayDescuento ? ['Descuento']   : []),
-        'Neto a Pagar'
+        'Total Factura',
+        ...(hayRetencion ? ['Retención Ganancias'] : []),
+        ...(hayDescuento ? ['Descuento'] : []),
+        'Monto Transferido',
+        'Total Cancelado',
       ]]
 
-      const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      let body: string[][]
+      if (anticipo) {
+        const montoTransferido = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
+        const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0)
+        body = items.map(i => [
+          i.comprobante,
+          i.fecha,
+          fmt(i.imp_total),
+          ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
+          ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
+          fmt(montoTransferido),
+          fmt(totalCancelado),
+        ])
+        const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
+        body.push([
+          'TOTAL', '',
+          fmt(totalBruto),
+          ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
+          ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
+          fmt(montoTransferido),
+          fmt(totalCancelado),
+        ])
+      } else {
+        body = items.map(i => {
+          const montoTransferido = i.monto_a_abonar
+          const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0)
+          return [
+            i.comprobante,
+            i.fecha,
+            fmt(i.imp_total),
+            ...(hayRetencion ? [i.monto_sicore ? fmt(i.monto_sicore) : '-'] : []),
+            ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
+            fmt(montoTransferido),
+            fmt(totalCancelado),
+          ]
+        })
+        const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
+        const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
+        const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
+        const totalTransferido = items.reduce((s, i) => s + i.monto_a_abonar, 0)
+        const totalCancelado = totalTransferido + totalRet
+        body.push([
+          'TOTAL', '',
+          fmt(totalBruto),
+          ...(hayRetencion ? [fmt(totalRet)] : []),
+          ...(hayDescuento ? [fmt(totalDesc)] : []),
+          fmt(totalTransferido),
+          fmt(totalCancelado),
+        ])
+      }
 
-      const body: string[][] = items.map(i => [
-        i.comprobante,
-        i.fecha,
-        fmt(i.imp_total),
-        ...(haySicore    ? [i.monto_sicore    ? fmt(i.monto_sicore)    : '-'] : []),
-        ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
-        fmt(i.monto_a_abonar)
-      ])
-
-      // Fila totales
-      const totalBruto    = items.reduce((s, i) => s + i.imp_total, 0)
-      const totalSicore   = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
-      const totalDescuento = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
-      const totalNeto     = items.reduce((s, i) => s + i.monto_a_abonar, 0)
-
-      body.push([
-        'TOTAL',
-        '',
-        fmt(totalBruto),
-        ...(haySicore    ? [fmt(totalSicore)]    : []),
-        ...(hayDescuento ? [fmt(totalDescuento)] : []),
-        fmt(totalNeto)
-      ])
-
+      const ncols = head[0].length
       autoTable(doc, {
-        startY,
+        startY: 56,
         head,
         body,
         theme: 'striped',
         headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
         bodyStyles: { fontSize: 9 },
         columnStyles: {
-          0: { cellWidth: 'auto' },
-          [head[0].length - 1]: { halign: 'right', fontStyle: 'bold' },
-          [head[0].length - 2]: { halign: 'right' },
-          [head[0].length - 3]: { halign: 'right' },
+          2: { halign: 'right' },
+          [ncols - 3]: { halign: 'right' },
+          [ncols - 2]: { halign: 'right' },
+          [ncols - 1]: { halign: 'right', fontStyle: 'bold' },
         },
         didParseCell: (data: any) => {
-          // Fila TOTAL en negrita con fondo gris
           if (data.row.index === body.length - 1 && data.section === 'body') {
             data.cell.styles.fillColor = [220, 220, 220]
             data.cell.styles.fontStyle = 'bold'
@@ -4060,14 +4084,195 @@ export function VistaFacturasArca() {
         }
       })
 
-      const finalY = (doc as any).lastAutoTable?.finalY ?? 120
-
-      const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${hoy.replace(/\//g, '-')}.pdf`
+      const nombreArchivo = `ComprobantePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
       doc.save(nombreArchivo)
 
     } catch (error) {
-      console.error('Error generando PDF detalle de pago:', error)
+      console.error('Error generando PDF comprobante de pago:', error)
       alert('Error al generar PDF: ' + (error as Error).message)
+    }
+  }
+
+  // ── Certificado de Retención Ganancias ────────────────────────────────────
+  const generarCertificadoRetencion = async (registro: {
+    id?: string | number
+    cuit_emisor: string
+    denominacion_emisor: string
+    fecha_pago: string
+    total_pagado: number
+    retencion: number
+    tipo_sicore: string
+  }) => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+      const pageH = doc.internal.pageSize.getHeight()
+      const mL = 15
+
+      const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      const fmtFecha = (f: string | null) => {
+        if (!f) return ''
+        const d = new Date(f + 'T12:00:00')
+        return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
+      }
+      const cuitFmt = (c: string) => {
+        const clean = c.replace(/\D/g, '')
+        if (clean.length === 11) return `${clean.slice(0,2)}-${clean.slice(2,10)}-${clean.slice(10)}`
+        return c
+      }
+      const regimen = (() => {
+        const t = (registro.tipo_sicore || '').toLowerCase()
+        if (t.includes('arrendamiento')) return 'ARRENDAMIENTO'
+        if (t.includes('bien')) return 'COMPRA DE BS. DE CAMBIO'
+        if (t.includes('servicio')) return 'LOCACIÓN DE SERVICIOS'
+        if (t.includes('transporte')) return 'TRANSPORTE'
+        return (registro.tipo_sicore || '').toUpperCase()
+      })()
+
+      // ── Borde exterior ────────────────────────────────────────────────────
+      doc.setDrawColor(0)
+      doc.setLineWidth(0.5)
+      doc.rect(8, 8, pageW - 16, pageH - 16)
+
+      // ── Título ────────────────────────────────────────────────────────────
+      doc.setFontSize(13)
+      doc.setFont('helvetica', 'bold')
+      doc.text('CERTIFICADO DE RETENCIÓN Ganancias', pageW / 2, 20, { align: 'center' })
+      doc.setLineWidth(0.3)
+      doc.line(8, 25, pageW - 8, 25)
+
+      // ── N° comprobante y Fecha ────────────────────────────────────────────
+      const año = new Date(registro.fecha_pago + 'T12:00:00').getFullYear()
+      const nroComp = `${año}-${String(registro.id || '').replace(/-/g,'').substring(0, 8).toUpperCase()}`
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Comprobante N°', mL, 33)
+      doc.setFont('helvetica', 'italic')
+      doc.text(nroComp, mL + 38, 33)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Fecha:', pageW - mL - 35, 33)
+      doc.setFont('helvetica', 'normal')
+      doc.text(fmtFecha(registro.fecha_pago), pageW - mL, 33, { align: 'right' })
+      doc.line(8, 38, pageW - 8, 38)
+
+      // ── Agente de Retención ───────────────────────────────────────────────
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bolditalic')
+      doc.text('Agente de Retención', mL, 46)
+      doc.line(8, 49, pageW - 8, 49)
+
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bolditalic')
+      doc.text('MARTINEZ SOBRADO AGRO SRL', mL + 8, 58)
+
+      const agente: [string, string][] = [
+        ['Domicilio Fiscal :', 'LIBERTAD 1366 - 9 PISO'],
+        ['Localidad:', 'Capital Federal'],
+        ['Provincia:', 'Capital Federal'],
+        ['C.U.I.T. Nro :', '30-61778601-6'],
+        ['Ingresos Brutos:', '30617786016'],
+      ]
+      let y = 67
+      agente.forEach(([k, v]) => {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.text(k, mL + 8, y)
+        doc.setFont('helvetica', 'normal')
+        doc.text(v, mL + 52, y)
+        y += 7
+      })
+
+      doc.line(8, y + 1, pageW - 8, y + 1)
+
+      // ── Sujeto Pasible de Retención ───────────────────────────────────────
+      y += 8
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bolditalic')
+      doc.text('Sujeto Pasible de Retención', mL, y)
+      doc.line(8, y + 3, pageW - 8, y + 3)
+      y += 11
+
+      const sujeto: [string, string][] = [
+        ['Apellido y Nombre o Razón Social:', registro.denominacion_emisor || ''],
+        ['C.U.I.T. Nro :', cuitFmt(registro.cuit_emisor || '')],
+      ]
+      sujeto.forEach(([k, v]) => {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.text(k, mL + 8, y)
+        doc.setFont('helvetica', 'normal')
+        doc.text(v, mL + 78, y)
+        y += 8
+      })
+
+      doc.line(8, y + 1, pageW - 8, y + 1)
+
+      // ── Datos de la Retención ─────────────────────────────────────────────
+      y += 8
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bolditalic')
+      doc.text('Datos de la Retención', mL, y)
+      doc.line(8, y + 3, pageW - 8, y + 3)
+      y += 8
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Comprob. que origina la retención', 'Monto del comprobante', 'Monto Ret. Practicada', 'Régimen']],
+        body: [[
+          `Factura — ${fmtFecha(registro.fecha_pago)}`,
+          fmt(registro.total_pagado),
+          fmt(registro.retencion),
+          regimen,
+        ]],
+        theme: 'plain',
+        styles: { fontSize: 9, lineColor: [180, 180, 180], lineWidth: 0.1 },
+        headStyles: { fontStyle: 'normal', textColor: 0, fillColor: false as any, fontSize: 9 },
+        margin: { left: mL, right: mL },
+      })
+
+      const afterTable = (doc as any).lastAutoTable?.finalY ?? y + 20
+
+      // ── Total ─────────────────────────────────────────────────────────────
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Total de la Retención en $', pageW - mL - 65, afterTable + 15)
+      doc.text(fmt(registro.retencion), pageW - mL, afterTable + 15, { align: 'right' })
+
+      // ── Secciones firma ───────────────────────────────────────────────────
+      const footerY = pageH - 48
+      doc.setLineWidth(0.3)
+      doc.line(8, footerY, pageW - 8, footerY)
+
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Firma Autorizada Gcia.', mL, footerY + 8)
+
+      doc.rect(pageW / 2 + 5, footerY + 2, pageW / 2 - 16, 16)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.text('Recibí el original del presente comprobante', pageW / 2 + 7, footerY + 10)
+
+      doc.setLineWidth(0.3)
+      doc.line(mL, footerY + 24, mL + 55, footerY + 24)
+      doc.line(mL + 65, footerY + 24, mL + 100, footerY + 24)
+      doc.setFontSize(8)
+      doc.text('Firma y Aclaración', mL, footerY + 29)
+      doc.text('Fecha', mL + 65, footerY + 29)
+
+      // ── Disclaimer ────────────────────────────────────────────────────────
+      const disc = 'Declaro que los datos consignados en este formulario son correctos y completos y que he confeccionado la presente utilizando sistema informático propio sin omitir ni falsear dato alguno que deba contener, siendo fiel expresión de la verdad.'
+      doc.setFontSize(6.5)
+      doc.setFont('helvetica', 'normal')
+      const lines = doc.splitTextToSize(disc, pageW - 20)
+      doc.text(lines, 10, pageH - 13)
+
+      const cuitClean = (registro.cuit_emisor || '').replace(/\D/g, '')
+      const nombreArchivo = `CertRet_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}_${fmtFecha(registro.fecha_pago).replace(/\//g, '-')}.pdf`
+      doc.save(nombreArchivo)
+
+    } catch (error) {
+      console.error('Error generando certificado de retención:', error)
+      alert('Error al generar certificado: ' + (error as Error).message)
     }
   }
 
@@ -5917,7 +6122,7 @@ export function VistaFacturasArca() {
 
               {/* Tabla de registros */}
               {registrosV2.length > 0 && (
-                <TablaRegistrosV2 registros={registrosV2} />
+                <TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} />
               )}
 
               {conteoV2 !== null && conteoV2.cantidad === 0 && (
