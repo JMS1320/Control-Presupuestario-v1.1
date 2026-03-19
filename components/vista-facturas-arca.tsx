@@ -298,7 +298,13 @@ export function VistaFacturasArca() {
   const [mostrarModalPanelSicore, setMostrarModalPanelSicore] = useState(false)
   const [tabPanelSicore, setTabPanelSicore] = useState<'ver' | 'cerrar' | 'v2'>('ver')
   const [procesandoCierreV2, setProcesandoCierreV2] = useState(false)
-  const [quincenaSeleccionadaV2, setQuincenaSeleccionadaV2] = useState('')
+  const [quincenaSeleccionadaV2, setQuincenaSeleccionadaV2] = useState(() => {
+    const hoy = new Date()
+    const yy = hoy.getFullYear().toString().slice(-2)
+    const mm = (hoy.getMonth() + 1).toString().padStart(2, '0')
+    const mitad = hoy.getDate() <= 15 ? '1ra' : '2da'
+    return `${yy}-${mm} - ${mitad}`
+  })
   const [conteoV2, setConteoV2] = useState<{ cantidad: number; totalRetencion: number; totalPago: number } | null>(null)
   const [registrosV2, setRegistrosV2] = useState<any[]>([])
   const [cargandoV2, setCargandoV2] = useState(false)
@@ -3616,12 +3622,12 @@ export function VistaFacturasArca() {
     }
   }
 
-  // Auto-cargar cuando el tab v2 está activo y ya hay quincena seleccionada pero sin datos
+  // Auto-cargar al abrir tab v2 o al abrir el modal con tab v2 activo
   useEffect(() => {
     if (tabPanelSicore === 'v2' && quincenaSeleccionadaV2 && registrosV2.length === 0 && !cargandoV2) {
       previsualizarV2(quincenaSeleccionadaV2)
     }
-  }, [tabPanelSicore]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabPanelSicore, mostrarModalPanelSicore]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Generar Excel para cierre de quincena
   const generarExcelCierreQuincena = async (facturas: any[], quincena: string, totalRetenciones: number, directorio: any = null) => {
@@ -5886,9 +5892,6 @@ export function VistaFacturasArca() {
                   ) : (
                     <><Calendar className="mr-2 h-4 w-4" />Generar Export v2</>
                   )}
-                </Button>
-                <Button variant="outline" onClick={() => { setQuincenaSeleccionadaV2(''); setConteoV2(null); setRegistrosV2([]) }} disabled={procesandoCierreV2}>
-                  Limpiar
                 </Button>
               </div>
             </TabsContent>
