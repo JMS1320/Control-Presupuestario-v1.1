@@ -3,7 +3,7 @@
 > Documentación técnica completa del módulo SICORE implementado en Control Presupuestario v1.1.
 >
 > **Última actualización**: 2026-03-19
-> **Commit base**: `5e7533a` (Cierre v2 carga automática)
+> **Commits sesión**: `c6abd32`, `44c8d62`, `6fd54ad`, `1768f31`
 
 ---
 
@@ -725,7 +725,28 @@ Componente separado que muestra todos los registros de `msa.sicore_retenciones` 
 
 Fila de totales en footer con sumas de todas las columnas numéricas.
 
-### 21.4. Generación Export v2
+### 21.4. Descarga de certificados individuales
+
+`TablaRegistrosV2` acepta la prop `onCertificado?: (registro: any) => void`. Cuando se pasa, cada fila muestra un ícono `⬇` que llama a `generarCertificadoRetencion(registro)` para descargar el certificado de esa retención específica.
+
+En el tab Cierre v2, se pasa: `<TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} />`.
+
+### 21.5. Descarga masiva de certificados (Certificados de Retención)
+
+Botón **"Certificados de Retención (N)"** — donde N = cantidad de registros cargados.
+
+**Flujo:**
+1. Llama a `descargarTodosLosCertificados()`.
+2. Abre selector de carpeta con `window.showDirectoryPicker({ mode: 'readwrite' })`.
+3. Itera cada registro de `registrosV2`, llama a `generarCertificadoRetencion(registro, true)` que retorna un `ArrayBuffer` en lugar de disparar descarga directa.
+4. Crea cada archivo en la carpeta elegida con `dirHandle.getFileHandle(nombre, { create: true })`.
+5. Al finalizar, muestra alert con cantidad de certificados guardados.
+
+**Nombre por archivo:** `CertRet_[CUIT]_[Proveedor]_[Fecha].pdf`
+
+**Manejo de cancelación:** Si el usuario cierra el selector de carpeta, `err.name === 'AbortError'` → no muestra error.
+
+### 21.6. Generación Export v2
 
 Botón **Generar Export v2** habilitado solo cuando hay registros cargados. Genera Excel y PDF leyendo exclusivamente de `msa.sicore_retenciones` — valores autocontenidos, sin recalcular desde `comprobantes_arca`.
 
@@ -740,26 +761,280 @@ Botón **Generar Export v2** habilitado solo cuando hay registros cargados. Gene
 
 ---
 
-## 22. Fix `confirmarVinculacion` (vista-principal.tsx)
+## 22. Wizard de Vinculación Anticipo → Factura (vista-principal.tsx)
 
-Al vincular un anticipo SICORE a una factura desde la Vista Principal (panel Alertas de Pagos), la función ahora:
+### 22.1. Contexto
 
-1. Copia `sicore`, `monto_sicore` **y `tipo_sicore`** del anticipo a la factura.
-2. Calcula `monto_a_abonar = imp_total - monto_sicore` usando el `imp_total` real de la factura seleccionada.
+Desde el panel de Alertas de Pagos en Vista Principal, los anticipos SICORE que ya tienen `monto_sicore > 0` pueden vincularse a una factura del proveedor. La vinculación aplica la retención sobre la factura y cancela (parcial o totalmente) el importe.
 
-**Antes**: `tipo_sicore` no se copiaba y `monto_a_abonar` podía quedar incorrecto.
+### 22.2. Casos de vinculación
+
+**Caso A — La factura queda totalmente cancelada:**
+```
+anticipo.monto >= factura.imp_total
+→ estado = 'pagado'
+→ fecha_vencimiento = anticipo.fecha_pago
+→ fecha_estimada   = anticipo.fecha_pago
+→ monto_a_abonar   = neto_pagado  (anticipo.monto - monto_sicore - descuento)
+```
+
+**Caso B — La factura queda parcialmente cubierta:**
+```
+anticipo.monto < factura.imp_total
+→ estado = 'pendiente'  (sigue en flujo)
+→ monto_a_abonar = factura.imp_total - anticipo.monto  (saldo restante)
+```
+
+En ambos casos se copian a `comprobantes_arca`:
+```sql
+sicore            = anticipo.sicore
+monto_sicore      = anticipo.monto_sicore
+tipo_sicore       = anticipo.tipo_sicore
+factura_id        -- en anticipos_proveedores
+```
+
+### 22.3. Wizard 2 pasos (UI)
+
+**Paso 1 — Selección de factura:**
+- Lista de facturas del proveedor con `estado = 'pendiente'`.
+- Al seleccionar una, se calcula y muestra un card inline:
+  - Caso A/B, saldo, neto pagado.
+  - Badges con `anticipo.monto`, `monto_sicore`, `descuento_aplicado`.
+
+**Paso 2 — Confirmación:**
+- Lista "Lo que va a pasar":
+  - Factura X queda `pagada` / queda con saldo $Y.
+  - SICORE aplicado: $Z.
+  - Transferencia neta: $W.
+- Botón Confirmar ejecuta `confirmarVinculacion()`.
+
+### 22.4. `neto_pagado`
+
+```typescript
+neto_pagado = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
+```
+
+Es el importe real que salió de la cuenta bancaria hacia el proveedor.
+
+### 22.5. Interface `CalcVinculacion`
+
+```typescript
+interface CalcVinculacion {
+  caso: 'A' | 'B'
+  saldo: number        // Caso A: 0 (o monto - imp_total). Caso B: imp_total - anticipo.monto
+  neto_pagado: number  // monto - sicore - descuento
+  descuento: number
+  sicore: number
+}
+```
 
 ---
 
 ## 23. Pendientes / TODO
 
-- **Generación PDF comprobante retención individual** por proveedor (para envío).
-- **Envío automático por email** del comprobante de retención al proveedor.
+- **Envío automático por email** del certificado de retención al proveedor.
 - **Llenado automático templates SICORE** (templates 60-61) al cerrar quincena.
 - **Gestión masiva con SICORE en Cash Flow**: actualmente el botón PAGOS en CF procesa una por una; podría implementarse similar al Modal Pagos de Egresos.
 - **Descuento adicional en Cash Flow**: la función existe en Egresos/Pagos pero no está implementada en CF.
 - **Vista dedicada quincenas**: listar, ver estado (abierta/cerrada), historial.
-- **SJC — fix BD manual pendiente**: `estado` ('pendiente' → 'pagado') y `monto_a_abonar` ($87,916.03 → $6,492,083.97). El `tipo_sicore` ya fue corregido manualmente.
+
+---
+
+## 24. Comprobante de Pago PDF (`generarPDFDetallePago`)
+
+### 24.1. Cambios respecto a versión anterior
+
+El documento se renombró de "Detalle de Pago" a **"COMPROBANTE DE PAGO"**. Se eliminó toda referencia a términos internos ("anticipo", "SICORE") y se reformuló con terminología contable formal.
+
+### 24.2. Estructura del documento
+
+```
+COMPROBANTE DE PAGO
+MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6
+Fecha de Pago: DD/MM/AAAA
+
+Beneficiario: [proveedor]
+CUIT: [cuit]
+
+[Tabla]
+```
+
+**Columnas de la tabla:**
+
+| Columna | Descripción |
+|---------|-------------|
+| Comprobante | Número/tipo de la factura |
+| Fecha | Fecha de emisión |
+| Total Factura | `imp_total` |
+| Retención Ganancias | `monto_sicore` (solo si > 0) |
+| Descuento | `descuento_aplicado` (solo si > 0) |
+| Monto Transferido | Lo que efectivamente salió de la cuenta |
+| Total Cancelado | Monto Transferido + Retención Ganancias |
+
+**Fila de totales**: fondo gris, negrita.
+
+### 24.3. Fecha de Pago
+
+- Si el pago fue mediante anticipo: `anticipo.fecha_pago` formateada DD/MM/AAAA.
+- Si fue pago directo: fecha del día de generación del documento.
+
+### 24.4. Caso anticipo
+
+Cuando se pasa el parámetro `anticipo`, los valores de retención y descuento vienen del anticipo (no de los items). La fórmula:
+
+```
+Monto Transferido = anticipo.monto - anticipo.monto_sicore - anticipo.descuento_aplicado
+Total Cancelado   = Monto Transferido + anticipo.monto_sicore
+```
+
+### 24.5. Nombre del archivo generado
+
+```
+ComprobantePago_[Proveedor]_[Fecha].pdf
+```
+
+---
+
+## 25. Certificado de Retención Ganancias PDF (`generarCertificadoRetencion`)
+
+### 25.1. Descripción
+
+Documento formal para entregar al proveedor, replicando el formato del sistema anterior (SAN MANUEL SRL). Se genera desde el tab **Cierre v2** del modal SICORE.
+
+### 25.2. Estructura del documento
+
+```
+┌─────────────────────────────────────────────────────────┐
+│         CERTIFICADO DE RETENCIÓN Ganancias              │
+├──────────────────────────────────────────────────────────┤
+│ Comprobante N°  2026-XXXXXXXX        Fecha: DD/MM/AAAA  │
+├──────────────────────────────────────────────────────────┤
+│ Agente de Retención                                      │
+│   MARTINEZ SOBRADO AGRO SRL                              │
+│   Domicilio Fiscal: LIBERTAD 1366 - 9 PISO              │
+│   Localidad: Capital Federal                             │
+│   Provincia: Capital Federal                             │
+│   C.U.I.T. Nro: 30-61778601-6                           │
+│   Ingresos Brutos: 30617786016                           │
+├──────────────────────────────────────────────────────────┤
+│ Sujeto Pasible de Retención                              │
+│   Apellido y Nombre o Razón Social: [proveedor]         │
+│   C.U.I.T. Nro: XX-XXXXXXXX-X                           │
+├──────────────────────────────────────────────────────────┤
+│ Datos de la Retención                                    │
+│ ┌──────────────────┬──────────┬──────────┬───────────┐  │
+│ │Comprob. origen   │Monto comp│Ret. Prac.│Régimen    │  │
+│ │Factura A 0010-.. │$X.XXX    │$X.XXX    │SERVICIOS  │  │
+│ └──────────────────┴──────────┴──────────┴───────────┘  │
+│                   Total de la Retención en $  $X.XXX    │
+├──────────────────────────────────────────────────────────┤
+│ Firma Autorizada Gcia.    [Recibí el original...]       │
+│ ________________   ________                              │
+│ Firma y Aclaración   Fecha                               │
+│ [Disclaimer legal]                                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 25.3. Comprobante N°
+
+Generado como: `AAAA-XXXXXXXX` donde `XXXXXXXX` son los primeros 8 caracteres del UUID del registro en `msa.sicore_retenciones` (sin guiones, en mayúsculas).
+
+Ejemplo: `2026-E8ECABCD` para el registro `e8ecabcd-6fdd-...`.
+
+> No existe un contador secuencial. El UUID garantiza unicidad del certificado. Si se requiere numeración correlativa en el futuro, agregar campo `numero_certificado SERIAL` a `sicore_retenciones`.
+
+### 25.4. Comprob. que origina la retención
+
+Se construye desde los campos de `sicore_retenciones`:
+
+```typescript
+const letraComprobante = (tipo: number) => ({
+  1:'A', 2:'A', 3:'A',
+  6:'B', 7:'B', 8:'B',
+  11:'C', 12:'C', 13:'C',
+  51:'M', 52:'M', 53:'M',
+  201:'A', 206:'B', 211:'C', ...
+}[tipo] || String(tipo))
+
+const texto = `Factura ${letra}  ${pv.padStart(4,'0')}-${nro.padStart(8,'0')}   (${fechaEmision})`
+// Ej: "Factura A  0010-00005926   (20/02/2026)"
+```
+
+### 25.5. Régimen (mapeo desde tipo_sicore)
+
+| tipo_sicore contiene | Régimen en certificado |
+|----------------------|------------------------|
+| `arrendamiento` | ARRENDAMIENTO |
+| `bien` | COMPRA DE BS. DE CAMBIO |
+| `servicio` | LOCACIÓN DE SERVICIOS |
+| `transporte` | TRANSPORTE |
+
+### 25.6. Modos de generación
+
+La función acepta un segundo parámetro `returnBytes: boolean`:
+
+```typescript
+// Descarga directa (desde botón por fila)
+await generarCertificadoRetencion(registro)           // → doc.save()
+
+// Retorna bytes (para descarga masiva)
+const bytes = await generarCertificadoRetencion(registro, true)  // → ArrayBuffer
+```
+
+### 25.7. Nombre del archivo
+
+```
+CertRet_[CUIT_sin_guiones]_[Proveedor_20chars]_[DD-MM-AAAA].pdf
+// Ej: CertRet_20103619115_ALCORTA_EDMUNDO_ERNESTO_05-03-2026.pdf
+```
+
+---
+
+## 26. Fix SJC — Aplicación Manual BD (2026-03-19)
+
+### 26.1. Situación
+
+La factura de SJC fue pagada mediante anticipo (Caso A: `anticipo.monto = $6,580,000 = factura.imp_total`). La retención de `$87,916.03` estaba correctamente registrada en `msa.sicore_retenciones` con `origen='anticipo'`. Sin embargo, la factura tenía:
+
+| Campo | Valor incorrecto | Valor correcto |
+|-------|-----------------|----------------|
+| `estado` | `'pendiente'` | `'pagado'` |
+| `monto_a_abonar` | `$87,916.03` | `$6,492,083.97` |
+| `fecha_vencimiento` | `2026-03-20` | `2026-03-05` |
+
+### 26.2. SQL aplicado
+
+```sql
+UPDATE msa.comprobantes_arca SET
+  estado           = 'pagado',
+  monto_a_abonar   = 6492083.97,
+  fecha_vencimiento = '2026-03-05',
+  fecha_estimada   = '2026-03-05'
+WHERE id = '229d7c3e-50c3-485a-ae5a-9c8268c7a838';
+-- Resultado: 1 fila actualizada ✅
+```
+
+### 26.3. Cálculo `monto_a_abonar`
+
+```
+neto_pagado = anticipo.monto - monto_sicore - descuento_aplicado
+            = 6,580,000 - 87,916.03 - 0
+            = 6,492,083.97
+```
+
+### 26.4. Estado post-fix
+
+- ✅ Retención registrada en `sicore_retenciones` con `origen='anticipo'`
+- ✅ Factura en estado `'pagado'`
+- ✅ Botón "Detalle de pago" disponible → detecta el anticipo por `factura_id` → genera PDF con formato anticipo
+
+---
+
+---
+
+## 27. Sección 18 — No Documentada (reservada)
+
+*El número 18 quedó sin uso al reorganizar secciones. No hay funcionalidad correspondiente.*
 
 ---
 
