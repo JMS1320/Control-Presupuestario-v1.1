@@ -4099,6 +4099,10 @@ export function VistaFacturasArca() {
     cuit_emisor: string
     denominacion_emisor: string
     fecha_pago: string
+    fecha_emision?: string | null
+    tipo_comprobante?: number | null
+    punto_venta?: number | null
+    numero_desde?: number | null
     total_pagado: number
     retencion: number
     tipo_sicore: string
@@ -4128,6 +4132,29 @@ export function VistaFacturasArca() {
         if (t.includes('transporte')) return 'TRANSPORTE'
         return (registro.tipo_sicore || '').toUpperCase()
       })()
+
+      // Letra según tipo AFIP
+      const letraComprobante = (tipo: number | null | undefined) => {
+        const mapa: Record<number, string> = {
+          1: 'A', 2: 'A', 3: 'A',
+          6: 'B', 7: 'B', 8: 'B',
+          11: 'C', 12: 'C', 13: 'C',
+          51: 'M', 52: 'M', 53: 'M',
+          201: 'A', 202: 'A', 203: 'A',
+          206: 'B', 207: 'B', 208: 'B',
+          211: 'C', 212: 'C', 213: 'C',
+        }
+        return tipo != null ? (mapa[tipo] || String(tipo)) : ''
+      }
+
+      // Comprobante que origina la retención
+      const letra = letraComprobante(registro.tipo_comprobante)
+      const pv = String(registro.punto_venta || 0).padStart(4, '0')
+      const nro = String(registro.numero_desde || 0).padStart(8, '0')
+      const fechaEmision = fmtFecha(registro.fecha_emision || null)
+      const comprobanteOrigen = letra
+        ? `Factura ${letra}  ${pv}-${nro}   (${fechaEmision})`
+        : `Factura — ${fechaEmision}`
 
       // ── Borde exterior ────────────────────────────────────────────────────
       doc.setDrawColor(0)
@@ -4219,7 +4246,7 @@ export function VistaFacturasArca() {
         startY: y,
         head: [['Comprob. que origina la retención', 'Monto del comprobante', 'Monto Ret. Practicada', 'Régimen']],
         body: [[
-          `Factura — ${fmtFecha(registro.fecha_pago)}`,
+          comprobanteOrigen,
           fmt(registro.total_pagado),
           fmt(registro.retencion),
           regimen,
