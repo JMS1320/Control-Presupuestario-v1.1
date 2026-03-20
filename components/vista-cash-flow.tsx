@@ -2014,6 +2014,7 @@ export function VistaCashFlow() {
                         key={fila.id}
                         className={`group hover:bg-gray-50 ${
                           filasSeleccionadas.has(fila.id) ? 'bg-blue-50' :
+                          fila.estado === 'echeq' ? 'bg-emerald-50' :
                           esUSD ? 'bg-amber-50' :
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                         }`}
