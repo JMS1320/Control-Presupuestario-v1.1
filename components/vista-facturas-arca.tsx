@@ -360,6 +360,16 @@ export function VistaFacturasArca() {
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
+  // ECHEQ — estado del modal y datos del cheque pendiente
+  const [mostrarModalEcheq, setMostrarModalEcheq] = useState(false)
+  const [echeqForm, setEcheqForm] = useState({ banco: '', numero: '', fechaEmision: '', fechaCobro: '' })
+  // Ref para acceso síncrono desde funciones (evita stale closure)
+  const echeqPendienteRef = useRef<{ banco: string; numero: string; fechaEmision: string; fechaCobro: string } | null>(null)
+  const [echeqPendiente, setEcheqPendiente] = useState<{ banco: string; numero: string; fechaEmision: string; fechaCobro: string } | null>(null)
+  // Ref para exponer cambiarEstadoSeleccionadas (definida en IIFE) al modal ECHEQ
+  const cambiarEstadoSeleccionadasRef = useRef<((estado: string, echeqFecha?: string) => void) | null>(null)
+  const [echeqEstadoDestino, setEcheqEstadoDestino] = useState<string>('pagar')
+
   // Cola de facturas pendientes de procesar SICORE (para múltiples selecciones)
   const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
   const [procesandoColaSicore, setProcesandoColaSicore] = useState(false)
@@ -2865,6 +2875,37 @@ export function VistaFacturasArca() {
   }
 
   // Finalizar proceso SICORE y actualizar BD
+  // ── Guardar registros de cheque en msa.cheques ───────────────────────────
+  const guardarCheques = async (
+    facturasACambiar: FacturaArca[],
+    datos: { banco: string; numero: string; fechaEmision: string; fechaCobro: string },
+    sicore?: { monto: number; tipo: string; quincena: string } | null
+  ) => {
+    try {
+      const registros = facturasACambiar.map(f => ({
+        numero:              datos.numero || null,
+        banco:               datos.banco,
+        monto:               sicore
+                               ? (f.imp_total || 0) - sicore.monto
+                               : (f.monto_a_abonar ?? f.imp_total ?? 0),
+        moneda:              'ARS',
+        fecha_emision:       datos.fechaEmision,
+        fecha_cobro:         datos.fechaCobro,
+        beneficiario_nombre: f.denominacion_emisor || null,
+        beneficiario_cuit:   f.cuit || null,
+        factura_id:          f.id,
+        sicore:              sicore?.quincena  ?? null,
+        monto_sicore:        sicore?.monto     ?? null,
+        tipo_sicore:         sicore?.tipo      ?? null,
+        concepto:            `Pago ${f.denominacion_emisor}`,
+      }))
+      const { error } = await supabase.schema('msa').from('cheques').insert(registros)
+      if (error) console.error('Error guardando cheque(s):', error)
+    } catch (e) {
+      console.error('Error guardarCheques:', e)
+    }
+  }
+
   const finalizarProcesoSicore = async () => {
     if (!facturaEnProceso || !tipoSeleccionado) return
     
@@ -2945,6 +2986,17 @@ export function VistaFacturasArca() {
       )
       setFacturasOriginales(nuevasFacturasOriginales)
       
+      // Si el pago fue por ECHEQ, registrar el cheque en msa.cheques
+      if (echeqPendienteRef.current && facturaEnProceso) {
+        await guardarCheques(
+          [facturaEnProceso],
+          echeqPendienteRef.current,
+          { monto: montoRetencion, tipo: tipoSeleccionado.tipo, quincena }
+        )
+        echeqPendienteRef.current = null
+        setEcheqPendiente(null)
+      }
+
       // Cerrar modal y limpiar estados
       setMostrarModalSicore(false)
       setFacturaEnProceso(null)
@@ -6567,7 +6619,7 @@ export function VistaFacturasArca() {
             }
 
             // Función para cambiar estado de facturas seleccionadas
-            const cambiarEstadoSeleccionadas = async (nuevoEstado: string) => {
+            const cambiarEstadoSeleccionadas = async (nuevoEstado: string, echeqFecha?: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
                 alert('Selecciona al menos una factura')
                 return
@@ -6576,13 +6628,16 @@ export function VistaFacturasArca() {
               const ids = Array.from(facturasSeleccionadasPagos)
               const facturasACambiar = facturasPagos.filter(f => ids.includes(f.id))
 
+              // Para ECHEQ: echeqFecha sobreescribe fechaPagoSeleccionada (evita stale closure)
+              const fechaEfectiva = echeqFecha || fechaPagoSeleccionada
+
               // Preparar datos de actualización (incluye fecha si está seleccionada)
               const datosUpdate: { estado: string; fecha_vencimiento?: string; fecha_estimada?: string } = { estado: nuevoEstado }
-              if (fechaPagoSeleccionada) {
+              if (fechaEfectiva) {
                 // Actualizar ambas fechas (misma lógica que en templates)
-                datosUpdate.fecha_vencimiento = fechaPagoSeleccionada
-                datosUpdate.fecha_estimada = fechaPagoSeleccionada
-                console.log(`🔄 Vista Pagos: fecha_vencimiento + fecha_estimada = ${fechaPagoSeleccionada}`)
+                datosUpdate.fecha_vencimiento = fechaEfectiva
+                datosUpdate.fecha_estimada = fechaEfectiva
+                console.log(`🔄 Vista Pagos: fecha_vencimiento + fecha_estimada = ${fechaEfectiva}`)
               }
 
               // Interceptar USD sin TC de pago al cambiar a 'pagar'
@@ -6619,8 +6674,8 @@ export function VistaFacturasArca() {
                 if (facturasCalificanSicore.length > 0) {
                   // Confirmar proceso SICORE (mostrar fecha de pago si está seleccionada)
                   // Usar split/reverse para evitar problema timezone con new Date()
-                  const mensajeFecha = fechaPagoSeleccionada
-                    ? `\n📅 Fecha de pago: ${fechaPagoSeleccionada.split('-').reverse().join('/')}`
+                  const mensajeFecha = fechaEfectiva
+                    ? `\n📅 Fecha de pago: ${fechaEfectiva.split('-').reverse().join('/')}`
                     : ''
                   const confirmar = window.confirm(
                     `${facturasCalificanSicore.length} factura(s) califican para retención SICORE:\n\n` +
@@ -6641,7 +6696,7 @@ export function VistaFacturasArca() {
 
                     setFacturasPagos(prev => prev.map(f =>
                       idsNoSicore.includes(f.id)
-                        ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
+                        ? { ...f, estado: 'pagar', ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
                         : f
                     ))
                   }
@@ -6653,7 +6708,7 @@ export function VistaFacturasArca() {
                   // Tomar la primera y poner el resto en cola (con fecha actualizada)
                   const facturasConFecha = facturasCalificanSicore.map(f => ({
                     ...f,
-                    ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada })
+                    ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva })
                   }))
                   const [primera, ...resto] = facturasConFecha
                   setColaSicore(resto)
@@ -6672,7 +6727,7 @@ export function VistaFacturasArca() {
 
                   setFacturasPagos(prev => prev.map(f =>
                     f.id === primera.id
-                      ? { ...f, estado: 'pagar', ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
+                      ? { ...f, estado: 'pagar', ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
                       : f
                   ))
 
@@ -6690,8 +6745,8 @@ export function VistaFacturasArca() {
               }
 
               // Cambio normal (sin SICORE) - incluye fecha si está seleccionada
-              const mensajeFecha = fechaPagoSeleccionada
-                ? `\n📅 Fecha de pago: ${fechaPagoSeleccionada.split('-').reverse().join('/')}`
+              const mensajeFecha = fechaEfectiva
+                ? `\n📅 Fecha de pago: ${fechaEfectiva.split('-').reverse().join('/')}`
                 : ''
               const confirmar = window.confirm(
                 `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?${mensajeFecha}`
@@ -6711,7 +6766,7 @@ export function VistaFacturasArca() {
                 if (nuevoEstado === 'pagado') {
                   for (const f of facturasACambiar) {
                     if (!f.sicore) continue
-                    const fechaFinal = fechaPagoSeleccionada || f.fecha_vencimiento || f.fecha_estimada
+                    const fechaFinal = fechaEfectiva || f.fecha_vencimiento || f.fecha_estimada
                     if (!fechaFinal) continue
                     const quincenahNueva = generarQuincenaSicore(fechaFinal)
                     if (quincenahNueva !== f.sicore) {
@@ -6728,10 +6783,17 @@ export function VistaFacturasArca() {
                 // Actualizar estado local (incluye fecha si aplica)
                 setFacturasPagos(prev => prev.map(f =>
                   ids.includes(f.id)
-                    ? { ...f, estado: nuevoEstado, ...(fechaPagoSeleccionada && { fecha_vencimiento: fechaPagoSeleccionada, fecha_estimada: fechaPagoSeleccionada }) }
+                    ? { ...f, estado: nuevoEstado, ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
                     : f
                 ))
                 setFacturasSeleccionadasPagos(new Set())
+
+                // Guardar cheque ECHEQ si aplica (path sin SICORE)
+                if (echeqPendienteRef.current && (nuevoEstado === 'pagar' || nuevoEstado === 'pagado')) {
+                  await guardarCheques(facturasACambiar, echeqPendienteRef.current, null)
+                  echeqPendienteRef.current = null
+                  setEcheqPendiente(null)
+                }
 
                 // También actualizar facturas principales
                 cargarFacturas()
@@ -6740,6 +6802,8 @@ export function VistaFacturasArca() {
                 alert('Error al cambiar estado')
               }
             }
+            // Exponer al modal ECHEQ que vive fuera de este IIFE
+            cambiarEstadoSeleccionadasRef.current = cambiarEstadoSeleccionadas
 
             // Función para renderizar tabla de facturas
             const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
@@ -6809,13 +6873,28 @@ export function VistaFacturasArca() {
                     <h3 className="font-semibold text-lg">{titulo} ({rows.length})</h3>
                     <div className="flex items-center gap-2">
                       {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
-                        <Button
-                          size="sm"
-                          onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {accionBoton.label} ({seleccionadasEnEsteBloque})
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            {accionBoton.label} ({seleccionadasEnEsteBloque})
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEcheqForm({ banco: '', numero: '', fechaEmision: new Date().toISOString().split('T')[0], fechaCobro: '' })
+                              setEcheqEstadoDestino(accionBoton.estado)
+                              setMostrarModalEcheq(true)
+                            }}
+                            className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                            title="Pagar con ECHEQ"
+                          >
+                            📝 ECHEQ ({seleccionadasEnEsteBloque})
+                          </Button>
+                        </>
                       )}
                       {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
                         <Button
@@ -7607,6 +7686,91 @@ export function VistaFacturasArca() {
               setFacturasSeleccionadasPagos(new Set())
             }}>
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal ECHEQ */}
+      <Dialog open={mostrarModalEcheq} onOpenChange={setMostrarModalEcheq}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>📝 Pago con ECHEQ</DialogTitle>
+            <DialogDescription>Completar datos del cheque electrónico</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-sm font-medium block mb-1">Banco emisor *</label>
+              <select
+                className="w-full border rounded px-2 py-1.5 text-sm"
+                value={echeqForm.banco}
+                onChange={e => setEcheqForm(prev => ({ ...prev, banco: e.target.value }))}
+              >
+                <option value="">Seleccionar banco...</option>
+                {['Banco Galicia', 'Banco Santander', 'Banco Nación', 'Banco Provincia', 'BBVA', 'Banco HSBC',
+                  'Banco Macro', 'Banco ICBC', 'Banco Ciudad', 'Banco Comafi', 'Banco Supervielle',
+                  'Banco Patagonia', 'Banco Credicoop', 'Banco Industrial', 'Otro'].map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Número de ECHEQ</label>
+              <input
+                type="text"
+                className="w-full border rounded px-2 py-1.5 text-sm"
+                placeholder="Ej: 000012345"
+                value={echeqForm.numero}
+                onChange={e => setEcheqForm(prev => ({ ...prev, numero: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Fecha de emisión *</label>
+              <input
+                type="date"
+                className="w-full border rounded px-2 py-1.5 text-sm"
+                value={echeqForm.fechaEmision}
+                onChange={e => setEcheqForm(prev => ({ ...prev, fechaEmision: e.target.value }))}
+              />
+              {echeqForm.fechaEmision && (
+                <p className="text-xs text-blue-600 mt-1">
+                  → Quincena SICORE: {(() => {
+                    const [a, m, d] = echeqForm.fechaEmision.split('-')
+                    return `${a.slice(-2)}-${m} - ${parseInt(d) <= 15 ? '1ra' : '2da'}`
+                  })()}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Fecha de cobro *</label>
+              <input
+                type="date"
+                className="w-full border rounded px-2 py-1.5 text-sm"
+                value={echeqForm.fechaCobro}
+                onChange={e => setEcheqForm(prev => ({ ...prev, fechaCobro: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setMostrarModalEcheq(false)
+              echeqPendienteRef.current = null
+              setEcheqPendiente(null)
+            }}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!echeqForm.banco || !echeqForm.fechaEmision || !echeqForm.fechaCobro}
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={() => {
+                const datos = { ...echeqForm }
+                echeqPendienteRef.current = datos
+                setEcheqPendiente(datos)
+                setMostrarModalEcheq(false)
+                cambiarEstadoSeleccionadasRef.current?.(echeqEstadoDestino, datos.fechaEmision)
+              }}
+            >
+              Confirmar ECHEQ
             </Button>
           </DialogFooter>
         </DialogContent>
