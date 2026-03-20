@@ -6798,7 +6798,7 @@ export function VistaFacturasArca() {
 
                     setFacturasPagos(prev => prev.map(f =>
                       idsNoSicore.includes(f.id)
-                        ? { ...f, estado: 'pagar', ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
+                        ? { ...f, estado: estadoEfectivo, ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
                         : f
                     ))
                   }
@@ -6851,7 +6851,7 @@ export function VistaFacturasArca() {
                 ? `\n📅 Fecha de pago: ${fechaEfectiva.split('-').reverse().join('/')}`
                 : ''
               const confirmar = window.confirm(
-                `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${nuevoEstado}"?${mensajeFecha}`
+                `¿Cambiar ${facturasSeleccionadasPagos.size} factura(s) a estado "${estadoEfectivo}"?${mensajeFecha}`
               )
               if (!confirmar) return
 
@@ -6983,12 +6983,14 @@ export function VistaFacturasArca() {
                           >
                             {accionBoton.label} ({seleccionadasEnEsteBloque})
                           </Button>
+                          {accionBoton.estado !== 'pagado' && (
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => {
                               setEcheqForm({ banco: '', numero: '', fechaEmision: new Date().toISOString().split('T')[0], fechaCobro: '' })
-                              setEcheqEstadoDestino(accionBoton.estado)
+                              setEcheqEstadoDestino('pagar')
+                              setEcheqOrigen('facturas')
                               setMostrarModalEcheq(true)
                             }}
                             className="border-amber-500 text-amber-700 hover:bg-amber-50"
@@ -6996,6 +6998,7 @@ export function VistaFacturasArca() {
                           >
                             📝 ECHEQ ({seleccionadasEnEsteBloque})
                           </Button>
+                          )}
                         </>
                       )}
                       {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
