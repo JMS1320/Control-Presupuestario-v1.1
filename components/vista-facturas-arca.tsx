@@ -968,6 +968,7 @@ export function VistaFacturasArca() {
       pendiente:  'bg-gray-100 text-gray-600 border-gray-200',
       debito:     'bg-violet-100 text-violet-800 border-violet-200',
       pagar:      'bg-yellow-100 text-yellow-800 border-yellow-200',
+      echeq:      'bg-amber-100 text-amber-800 border-amber-300',
       preparado:  'bg-orange-100 text-orange-800 border-orange-200',
       pagado:     'bg-green-100 text-green-800 border-green-200',
       programado: 'bg-violet-100 text-violet-800 border-violet-200',
@@ -2868,7 +2869,7 @@ export function VistaFacturasArca() {
           .schema('msa')
           .from('comprobantes_arca')
           .select('*')
-          .in('estado', ['pendiente', 'pagar', 'preparado'])
+          .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
           .order('fecha_vencimiento', { ascending: true })
         if (data) setFacturasPagos(data)
       }
@@ -2956,16 +2957,23 @@ export function VistaFacturasArca() {
       })
       
       // SEGUNDO: Actualizar factura con datos SICORE
+      const esEcheqFactura = !!echeqPendienteRef.current
+      const updateFactura: any = {
+        monto_a_abonar: saldoFinal,
+        sicore: quincena,
+        monto_sicore: montoRetencion,
+        tipo_sicore: tipoSeleccionado.tipo,
+        descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
+      }
+      if (esEcheqFactura) {
+        updateFactura.estado = 'echeq'
+        updateFactura.metodo_pago = 'echeq'
+        updateFactura.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
+      }
       const { error } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .update({
-          monto_a_abonar: saldoFinal,
-          sicore: quincena,
-          monto_sicore: montoRetencion,
-          tipo_sicore: tipoSeleccionado.tipo,
-          descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null
-        })
+        .update(updateFactura)
         .eq('id', facturaEnProceso.id)
 
       if (error) {
@@ -3060,7 +3068,7 @@ export function VistaFacturasArca() {
           .schema('msa')
           .from('comprobantes_arca')
           .select('*')
-          .in('estado', ['pendiente', 'pagar', 'preparado'])
+          .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
           .order('fecha_vencimiento', { ascending: true })
         if (data) setFacturasPagos(data)
       }
@@ -3111,7 +3119,7 @@ export function VistaFacturasArca() {
 
   const recargarAnticiposPagos = async () => {
     const { data } = await supabase.from('anticipos_proveedores').select('*')
-      .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'programado'])
+      .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'programado', 'echeq'])
       .neq('estado', 'conciliado')
       .order('fecha_pago', { ascending: true })
     if (data) setAnticiposPagos(data)
@@ -3230,17 +3238,20 @@ export function VistaFacturasArca() {
 
     console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id, echeq: !!echeqPendienteRef.current })
 
-    // Si viene de ECHEQ: también actualizar fecha_pago con fechaEmision
+    // Si viene de ECHEQ: estado 'echeq', guardar fechas y metodo_pago
+    const esEcheq = !!echeqPendienteRef.current
     const updateData: any = {
-      estado_pago: 'pagar',
+      estado_pago: esEcheq ? 'echeq' : 'pagar',
       sicore: quincena,
       monto_sicore: Math.round(montoSicoreAnt * 100) / 100,
       tipo_sicore: tipoSicoreAnt.tipo,
       monto_restante: saldoFinal,
       neto_gravado: neto,
     }
-    if (echeqPendienteRef.current?.fechaEmision) {
-      updateData.fecha_pago = echeqPendienteRef.current.fechaEmision
+    if (esEcheq) {
+      updateData.fecha_pago = echeqPendienteRef.current!.fechaEmision
+      updateData.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
+      updateData.metodo_pago = 'echeq'
     }
 
     const { error } = await supabase.from('anticipos_proveedores')
@@ -4941,14 +4952,14 @@ export function VistaFacturasArca() {
               // Cargar en paralelo las 3 fuentes
               const [arcaResult, templatesResult, anticiposResult] = await Promise.all([
                 supabase.schema('msa').from('comprobantes_arca').select('*')
-                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
                 supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
-                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .eq('egreso.activo', true)
                   .order('fecha_vencimiento', { ascending: true }),
                 supabase.from('anticipos_proveedores').select('*')
-                  .in('estado_pago', ['pendiente', 'pagar', 'preparado'])
+                  .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .neq('estado', 'conciliado')
                   .order('fecha_pago', { ascending: true })
               ])
@@ -6518,6 +6529,7 @@ export function VistaFacturasArca() {
             const facturasPreparado = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'preparado' && matchBusqueda(f)))
             const facturasPagar = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pagar' && matchBusqueda(f)))
             const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente' && matchBusqueda(f)))
+            const facturasEcheq = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'echeq' && matchBusqueda(f)))
 
             // Calcular subtotales (convertir a pesos con TC de pago)
             const montoEnPesos = (f: FacturaArca) => {
@@ -6687,8 +6699,17 @@ export function VistaFacturasArca() {
               // Para ECHEQ: echeqFecha sobreescribe fechaPagoSeleccionada (evita stale closure)
               const fechaEfectiva = echeqFecha || fechaPagoSeleccionada
 
+              // Si viene de ECHEQ y el destino es 'pagar', usar estado 'echeq'
+              const estadoEfectivo = (echeqFecha || echeqPendienteRef.current) && nuevoEstado === 'pagar'
+                ? 'echeq'
+                : nuevoEstado
+
               // Preparar datos de actualización (incluye fecha si está seleccionada)
-              const datosUpdate: { estado: string; fecha_vencimiento?: string; fecha_estimada?: string } = { estado: nuevoEstado }
+              const datosUpdate: any = { estado: estadoEfectivo }
+              if (echeqPendienteRef.current && estadoEfectivo === 'echeq') {
+                datosUpdate.metodo_pago = 'echeq'
+                datosUpdate.fecha_cobro_echeq = echeqPendienteRef.current.fechaCobro
+              }
               if (fechaEfectiva) {
                 // Actualizar ambas fechas (misma lógica que en templates)
                 datosUpdate.fecha_vencimiento = fechaEfectiva
@@ -6839,7 +6860,7 @@ export function VistaFacturasArca() {
                 // Actualizar estado local (incluye fecha si aplica)
                 setFacturasPagos(prev => prev.map(f =>
                   ids.includes(f.id)
-                    ? { ...f, estado: nuevoEstado, ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
+                    ? { ...f, estado: estadoEfectivo, ...(fechaEfectiva && { fecha_vencimiento: fechaEfectiva, fecha_estimada: fechaEfectiva }) }
                     : f
                 ))
                 setFacturasSeleccionadasPagos(new Set())
@@ -7449,6 +7470,7 @@ export function VistaFacturasArca() {
             const anticiposPagar = anticiposPagos.filter(a => a.estado_pago === 'pagar' && matchAnticipo(a))
             const anticiposPreparado = anticiposPagos.filter(a => a.estado_pago === 'preparado' && matchAnticipo(a))
             const anticiposPendiente = anticiposPagos.filter(a => a.estado_pago === 'pendiente' && matchAnticipo(a))
+            const anticiposEcheq = anticiposPagos.filter(a => a.estado_pago === 'echeq' && matchAnticipo(a))
             const montoNetoAnticipo = (a: any) => (a.monto || 0) - (a.monto_sicore || 0)
             const subtotalAnticiposPagar = anticiposPagar.reduce((s, a) => s + montoNetoAnticipo(a), 0)
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + montoNetoAnticipo(a), 0)
@@ -7659,6 +7681,27 @@ export function VistaFacturasArca() {
                         )}
                       </>
                     )}
+                    {/* ECHEQs emitidos — siempre visibles si existen */}
+                    {(anticiposEcheq.length > 0 || facturasEcheq.length > 0) && (
+                      <>
+                        {filtroOrigenPagos.anticipo && anticiposEcheq.length > 0 && renderTablaAnticipos(
+                          anticiposEcheq,
+                          '📝 ECHEQ Emitidos',
+                          anticiposEcheq.reduce((s, a) => s + montoNetoAnticipo(a), 0),
+                          true,
+                          { label: '✅ Marcar Pagado', estado: 'pagado' }
+                        )}
+                        {filtroOrigenPagos.arca && facturasEcheq.length > 0 && renderTablaFacturas(
+                          facturasEcheq,
+                          '📝 ARCA ECHEQ Emitidos',
+                          facturasEcheq.reduce((s, f) => s + ((f.monto_a_abonar || f.imp_total || 0) * (f.tc_pago ?? f.tipo_cambio ?? 1)), 0),
+                          'echeq',
+                          true,
+                          { label: '✅ Marcar Pagado', estado: 'pagado' }
+                        )}
+                      </>
+                    )}
+
                     {filtrosPagos.pendiente && (
                       <>
                         {filtroOrigenPagos.anticipo && renderTablaAnticipos(

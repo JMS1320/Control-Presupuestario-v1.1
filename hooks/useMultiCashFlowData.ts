@@ -87,11 +87,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const filasIndividuales: CashFlowRow[] = individuales.map(f => {
       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
       const montoBase = f.monto_a_abonar ?? f.imp_total ?? 0
+      // ECHEQ: usar fecha_cobro_echeq para Cash Flow (cuando el cheque se deposita)
+      const fechaCF = (f.metodo_pago === 'echeq' && f.fecha_cobro_echeq)
+        ? f.fecha_cobro_echeq
+        : (f.fecha_estimada || calcularFechaEstimada(f.fecha_emision))
       return {
         id: f.id,
         origen: 'ARCA' as const,
         origen_tabla: 'msa.comprobantes_arca',
-        fecha_estimada: f.fecha_estimada || calcularFechaEstimada(f.fecha_emision),
+        fecha_estimada: fechaCF,
         fecha_vencimiento: f.fecha_vencimiento,
         categ: f.cuenta_contable || 'SIN_CATEG',
         centro_costo: f.centro_costo || 'SIN_CC',
@@ -290,11 +294,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
       const esVinculado = a.estado === 'vinculado'
 
+      // ECHEQ: usar fecha_cobro_echeq para Cash Flow (cuando el cheque se deposita)
+      const fechaAnticipo = (a.metodo_pago === 'echeq' && a.fecha_cobro_echeq)
+        ? a.fecha_cobro_echeq
+        : a.fecha_pago
       return {
         id: a.id,
         origen: 'ANTICIPO' as const,
         origen_tabla: 'anticipos_proveedores',
-        fecha_estimada: a.fecha_pago,
+        fecha_estimada: fechaAnticipo,
         fecha_vencimiento: null,
         categ: tipoLabel,
         centro_costo: '',
@@ -377,7 +385,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago')
+        .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago, metodo_pago, fecha_cobro_echeq')
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')
