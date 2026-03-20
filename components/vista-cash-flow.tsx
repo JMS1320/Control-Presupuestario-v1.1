@@ -109,6 +109,34 @@ export function VistaCashFlow() {
     celdaEnEdicion: null
   })
   
+  // Estado panel ECHEQs
+  const [mostrarPanelEcheqs, setMostrarPanelEcheqs] = useState(false)
+  const [cheques, setCheques] = useState<any[]>([])
+  const [cargandoCheques, setCargandoCheques] = useState(false)
+
+  const cargarCheques = async () => {
+    setCargandoCheques(true)
+    const { data } = await supabase.schema('msa').from('cheques')
+      .select('*')
+      .order('fecha_emision', { ascending: false })
+    if (data) setCheques(data)
+    setCargandoCheques(false)
+  }
+
+  const cambiarEstadoCheque = async (id: string, nuevoEstado: string) => {
+    await supabase.schema('msa').from('cheques')
+      .update({ estado: nuevoEstado, fecha_estado: new Date().toISOString().split('T')[0] })
+      .eq('id', id)
+    await cargarCheques()
+  }
+
+  const ESTADOS_CHEQUE = [
+    { value: 'vigente',    label: 'Vigente',    color: 'bg-amber-100 text-amber-800' },
+    { value: 'depositado', label: 'Depositado', color: 'bg-blue-100 text-blue-800' },
+    { value: 'cobrado',    label: 'Cobrado',    color: 'bg-green-100 text-green-800' },
+    { value: 'rechazado',  label: 'Rechazado',  color: 'bg-red-100 text-red-800' },
+  ]
+
   // Estado para modo PAGOS (Ctrl+Click botón PAGOS)
   const [modoPagos, setModoPagos] = useState(false)
   const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
@@ -1626,6 +1654,15 @@ export function VistaCashFlow() {
                 <Plus className="h-4 w-4 mr-2" />
                 Pago Manual
               </Button>
+              {/* Botón ECHEQs */}
+              <Button
+                variant={mostrarPanelEcheqs ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setMostrarPanelEcheqs(!mostrarPanelEcheqs); if (!mostrarPanelEcheqs) cargarCheques() }}
+                className={mostrarPanelEcheqs ? "bg-amber-600 hover:bg-amber-700" : "border-amber-500 text-amber-700 hover:bg-amber-50"}
+              >
+                📝 ECHEQs
+              </Button>
               {/* Botón Nuevo Anticipo */}
               <Button
                 variant="outline"
@@ -2054,6 +2091,81 @@ export function VistaCashFlow() {
           )}
         </CardContent>
       </Card>
+
+      {/* Panel ECHEQs */}
+      {mostrarPanelEcheqs && (
+        <Card className="mt-4 border-amber-200">
+          <CardHeader className="pb-3 bg-amber-50">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">📝 Gestión de ECHEQs</CardTitle>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={cargarCheques} disabled={cargandoCheques}>
+                  {cargandoCheques ? <Loader2 className="h-4 w-4 animate-spin" /> : '↺ Actualizar'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setMostrarPanelEcheqs(false)}>✕</Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {cheques.length === 0 ? (
+              <p className="p-6 text-center text-gray-500">No hay ECHEQs registrados</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="p-3 text-left font-medium">Nro ECHEQ</th>
+                      <th className="p-3 text-left font-medium">Banco</th>
+                      <th className="p-3 text-left font-medium">Beneficiario</th>
+                      <th className="p-3 text-left font-medium">CUIT</th>
+                      <th className="p-3 text-right font-medium">Monto</th>
+                      <th className="p-3 text-center font-medium">F. Emisión</th>
+                      <th className="p-3 text-center font-medium">F. Cobro</th>
+                      <th className="p-3 text-left font-medium">SICORE</th>
+                      <th className="p-3 text-left font-medium">Concepto</th>
+                      <th className="p-3 text-center font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cheques.map(ch => {
+                      const estadoInfo = ESTADOS_CHEQUE.find(e => e.value === ch.estado) || ESTADOS_CHEQUE[0]
+                      const hoy = new Date().toISOString().split('T')[0]
+                      const vencido = ch.fecha_cobro && ch.fecha_cobro < hoy && ch.estado === 'vigente'
+                      return (
+                        <tr key={ch.id} className={`border-b hover:bg-gray-50 ${vencido ? 'bg-red-50' : ''}`}>
+                          <td className="p-3 font-mono text-xs">{ch.numero || <span className="text-gray-400 italic">sin nro</span>}</td>
+                          <td className="p-3">{ch.banco}</td>
+                          <td className="p-3">{ch.beneficiario_nombre || '-'}</td>
+                          <td className="p-3 text-xs text-gray-500">{ch.beneficiario_cuit || '-'}</td>
+                          <td className="p-3 text-right font-medium">${(ch.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-center text-xs">{ch.fecha_emision ? new Date(ch.fecha_emision + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</td>
+                          <td className={`p-3 text-center text-xs ${vencido ? 'text-red-600 font-semibold' : ''}`}>
+                            {ch.fecha_cobro ? new Date(ch.fecha_cobro + 'T12:00:00').toLocaleDateString('es-AR') : '-'}
+                            {vencido && ' ⚠️'}
+                          </td>
+                          <td className="p-3 text-xs">{ch.sicore ? <span className="bg-blue-100 text-blue-700 px-1 rounded">{ch.sicore}</span> : '-'}</td>
+                          <td className="p-3 text-xs text-gray-600 max-w-[160px] truncate">{ch.concepto || '-'}</td>
+                          <td className="p-3">
+                            <select
+                              value={ch.estado || 'vigente'}
+                              onChange={e => cambiarEstadoCheque(ch.id, e.target.value)}
+                              className={`text-xs px-2 py-1 rounded border ${estadoInfo.color} cursor-pointer`}
+                            >
+                              {ESTADOS_CHEQUE.map(e => (
+                                <option key={e.value} value={e.value}>{e.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal cambio de estado (Shift+Click débitos/créditos) */}
       {filaParaCambioEstado && (
