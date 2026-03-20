@@ -2890,6 +2890,11 @@ export function VistaFacturasArca() {
       let registros: any[]
 
       if (anticipoId) {
+        // Evitar duplicados: verificar si ya existe cheque para este anticipo
+        const { data: existente } = await supabase.schema('msa').from('cheques')
+          .select('id').eq('anticipo_id', anticipoId).limit(1)
+        if (existente && existente.length > 0) return
+
         // Pago de anticipo via ECHEQ
         const ant = anticipoObj || anticipoSicoreEnProceso
         registros = [{
@@ -2911,8 +2916,15 @@ export function VistaFacturasArca() {
           concepto:            `Anticipo ${ant?.nombre_proveedor || ''}`,
         }]
       } else {
-        // Pago de facturas via ECHEQ
-        registros = facturasACambiar.map(f => ({
+        // Pago de facturas via ECHEQ — filtrar las que ya tienen cheque registrado
+        const idsFacturas = facturasACambiar.map(f => f.id)
+        const { data: existentes } = await supabase.schema('msa').from('cheques')
+          .select('factura_id').in('factura_id', idsFacturas)
+        const yaExisten = new Set((existentes || []).map((e: any) => e.factura_id))
+        const facturasNuevas = facturasACambiar.filter(f => !yaExisten.has(f.id))
+        if (facturasNuevas.length === 0) return
+
+        registros = facturasNuevas.map(f => ({
           numero:              datos.numero || null,
           banco:               datos.banco,
           monto:               sicore
