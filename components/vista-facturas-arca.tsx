@@ -366,9 +366,11 @@ export function VistaFacturasArca() {
   // Ref para acceso síncrono desde funciones (evita stale closure)
   const echeqPendienteRef = useRef<{ banco: string; numero: string; fechaEmision: string; fechaCobro: string } | null>(null)
   const [echeqPendiente, setEcheqPendiente] = useState<{ banco: string; numero: string; fechaEmision: string; fechaCobro: string } | null>(null)
-  // Ref para exponer cambiarEstadoSeleccionadas (definida en IIFE) al modal ECHEQ
+  // Ref para exponer funciones definidas en IIFE al modal ECHEQ
   const cambiarEstadoSeleccionadasRef = useRef<((estado: string, echeqFecha?: string) => void) | null>(null)
+  const cambiarEstadoAnticiposRef = useRef<((estado: string, echeqFecha?: string) => void) | null>(null)
   const [echeqEstadoDestino, setEcheqEstadoDestino] = useState<string>('pagar')
+  const [echeqOrigen, setEcheqOrigen] = useState<'facturas' | 'anticipos'>('facturas')
 
   // Cola de facturas pendientes de procesar SICORE (para múltiples selecciones)
   const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
@@ -2879,26 +2881,55 @@ export function VistaFacturasArca() {
   const guardarCheques = async (
     facturasACambiar: FacturaArca[],
     datos: { banco: string; numero: string; fechaEmision: string; fechaCobro: string },
-    sicore?: { monto: number; tipo: string; quincena: string } | null
+    sicore?: { monto: number; tipo: string; quincena: string } | null,
+    anticipoId?: string   // cuando el pago es de un anticipo (no factura)
   ) => {
     try {
-      const registros = facturasACambiar.map(f => ({
-        numero:              datos.numero || null,
-        banco:               datos.banco,
-        monto:               sicore
-                               ? (f.imp_total || 0) - sicore.monto
-                               : (f.monto_a_abonar ?? f.imp_total ?? 0),
-        moneda:              'ARS',
-        fecha_emision:       datos.fechaEmision,
-        fecha_cobro:         datos.fechaCobro,
-        beneficiario_nombre: f.denominacion_emisor || null,
-        beneficiario_cuit:   f.cuit || null,
-        factura_id:          f.id,
-        sicore:              sicore?.quincena  ?? null,
-        monto_sicore:        sicore?.monto     ?? null,
-        tipo_sicore:         sicore?.tipo      ?? null,
-        concepto:            `Pago ${f.denominacion_emisor}`,
-      }))
+      let registros: any[]
+
+      if (anticipoId) {
+        // Pago de anticipo via ECHEQ
+        const anticipo = anticipoId
+        registros = [{
+          numero:              datos.numero || null,
+          banco:               datos.banco,
+          monto:               sicore
+                                 ? (anticipoSicoreEnProceso?.monto || 0) - sicore.monto
+                                 : (anticipoSicoreEnProceso?.monto || 0),
+          moneda:              'ARS',
+          fecha_emision:       datos.fechaEmision,
+          fecha_cobro:         datos.fechaCobro,
+          beneficiario_nombre: anticipoSicoreEnProceso?.nombre_proveedor || null,
+          beneficiario_cuit:   anticipoSicoreEnProceso?.cuit_proveedor || null,
+          anticipo_id:         anticipo,
+          factura_id:          null,
+          sicore:              sicore?.quincena  ?? null,
+          monto_sicore:        sicore?.monto     ?? null,
+          tipo_sicore:         sicore?.tipo      ?? null,
+          concepto:            `Anticipo ${anticipoSicoreEnProceso?.nombre_proveedor || ''}`,
+        }]
+      } else {
+        // Pago de facturas via ECHEQ
+        registros = facturasACambiar.map(f => ({
+          numero:              datos.numero || null,
+          banco:               datos.banco,
+          monto:               sicore
+                                 ? (f.imp_total || 0) - sicore.monto
+                                 : (f.monto_a_abonar ?? f.imp_total ?? 0),
+          moneda:              'ARS',
+          fecha_emision:       datos.fechaEmision,
+          fecha_cobro:         datos.fechaCobro,
+          beneficiario_nombre: f.denominacion_emisor || null,
+          beneficiario_cuit:   f.cuit || null,
+          factura_id:          f.id,
+          anticipo_id:         null,
+          sicore:              sicore?.quincena  ?? null,
+          monto_sicore:        sicore?.monto     ?? null,
+          tipo_sicore:         sicore?.tipo      ?? null,
+          concepto:            `Pago ${f.denominacion_emisor}`,
+        }))
+      }
+
       const { error } = await supabase.schema('msa').from('cheques').insert(registros)
       if (error) console.error('Error guardando cheque(s):', error)
     } catch (e) {
@@ -3188,20 +3219,33 @@ export function VistaFacturasArca() {
       toast.error('Error: estado interno incompleto (tipoSicoreAnt o anticipo nulo)')
       return
     }
-    const quincena = generarQuincenaSicore(anticipoSicoreEnProceso.fecha_pago || new Date().toISOString())
+
+    // Si viene de ECHEQ: usar fechaEmision del cheque para la quincena
+    const fechaParaQuincena = echeqPendienteRef.current?.fechaEmision
+      || anticipoSicoreEnProceso.fecha_pago
+      || new Date().toISOString()
+    const quincena = generarQuincenaSicore(fechaParaQuincena)
     const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
     const saldoFinal = Math.round(((anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt) * 100) / 100
 
-    console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id })
+    console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id, echeq: !!echeqPendienteRef.current })
 
-    const { error } = await supabase.from('anticipos_proveedores').update({
+    // Si viene de ECHEQ: también actualizar fecha_pago con fechaEmision
+    const updateData: any = {
       estado_pago: 'pagar',
       sicore: quincena,
       monto_sicore: Math.round(montoSicoreAnt * 100) / 100,
       tipo_sicore: tipoSicoreAnt.tipo,
       monto_restante: saldoFinal,
       neto_gravado: neto,
-    }).eq('id', anticipoSicoreEnProceso.id)
+    }
+    if (echeqPendienteRef.current?.fechaEmision) {
+      updateData.fecha_pago = echeqPendienteRef.current.fechaEmision
+    }
+
+    const { error } = await supabase.from('anticipos_proveedores')
+      .update(updateData)
+      .eq('id', anticipoSicoreEnProceso.id)
 
     if (error) {
       console.error('[SICORE ANT] DB error:', error)
@@ -3209,13 +3253,13 @@ export function VistaFacturasArca() {
       return
     }
 
-    // ── Registrar en tabla nueva sicore_retenciones (paralelo, no interrumpe) ──
+    // ── Registrar en sicore_retenciones ──
     const totalPagadoAnt = Math.round(((anticipoSicoreEnProceso.monto || 0) - descuentoAnt) * 100) / 100
     const baseImpAnt = Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
     await registrarEnSicoreRetenciones({
       origen: 'anticipo',
       quincena,
-      fecha_pago: anticipoSicoreEnProceso.fecha_pago || new Date().toISOString().split('T')[0],
+      fecha_pago: fechaParaQuincena.split('T')[0],
       anticipo_id: anticipoSicoreEnProceso.id,
       factura_id: anticipoSicoreEnProceso.factura_id || null,
       cuit_emisor: anticipoSicoreEnProceso.cuit_proveedor,
@@ -3230,6 +3274,18 @@ export function VistaFacturasArca() {
       retencion: Math.round(montoSicoreAnt * 100) / 100,
       pago: saldoFinal,
     })
+
+    // ── Guardar ECHEQ si aplica ──
+    if (echeqPendienteRef.current) {
+      await guardarCheques(
+        [],  // no hay facturas, pasamos anticipo_id manualmente
+        echeqPendienteRef.current,
+        { monto: Math.round(montoSicoreAnt * 100) / 100, tipo: tipoSicoreAnt.tipo, quincena },
+        anticipoSicoreEnProceso.id  // anticipo_id
+      )
+      echeqPendienteRef.current = null
+      setEcheqPendiente(null)
+    }
 
     // Cerrar modal primero, luego recargar lista
     setMostrarModalSicoreAnt(false)
@@ -7104,7 +7160,7 @@ export function VistaFacturasArca() {
             }
 
             // Función para cambiar estado de anticipos seleccionados
-            const cambiarEstadoAnticiposSeleccionados = async (nuevoEstado: string) => {
+            const cambiarEstadoAnticiposSeleccionados = async (nuevoEstado: string, echeqFecha?: string) => {
               if (anticiposSeleccionadosPagos.size === 0) {
                 alert('Selecciona al menos un anticipo')
                 return
@@ -7116,7 +7172,11 @@ export function VistaFacturasArca() {
                 const seleccionados = anticiposPagos.filter(a => ids.includes(a.id))
                 setAnticiposSeleccionadosPagos(new Set())
                 for (const anticipo of seleccionados) {
-                  await cambiarEstadoAnticipoPago(anticipo, 'pagar')
+                  // Si viene de ECHEQ: sobrescribir fecha_pago con fechaEmision del ECHEQ
+                  const anticipoConFecha = echeqFecha
+                    ? { ...anticipo, fecha_pago: echeqFecha }
+                    : anticipo
+                  await cambiarEstadoAnticipoPago(anticipoConFecha, 'pagar')
                 }
                 return
               }
@@ -7136,6 +7196,8 @@ export function VistaFacturasArca() {
                 toast.error('Error al cambiar estado: ' + (err as Error).message)
               }
             }
+            // Exponer al modal ECHEQ
+            cambiarEstadoAnticiposRef.current = cambiarEstadoAnticiposSeleccionados
 
             // Función para renderizar tabla de templates
             const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente') => {
@@ -7401,13 +7463,29 @@ export function VistaFacturasArca() {
                   </h3>
                   <div className="flex items-center gap-2">
                     {accionBoton && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
-                      <Button
-                        size="sm"
-                        onClick={() => cambiarEstadoAnticiposSeleccionados(accionBoton.estado)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        {accionBoton.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => cambiarEstadoAnticiposSeleccionados(accionBoton.estado)}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {accionBoton.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEcheqForm({ banco: '', numero: '', fechaEmision: new Date().toISOString().split('T')[0], fechaCobro: '' })
+                            setEcheqEstadoDestino(accionBoton.estado)
+                            setEcheqOrigen('anticipos')
+                            setMostrarModalEcheq(true)
+                          }}
+                          className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                          title="Pagar con ECHEQ"
+                        >
+                          📝 ECHEQ ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
+                        </Button>
+                      </>
                     )}
                     {accionSecundaria && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
                       <Button
@@ -7767,7 +7845,11 @@ export function VistaFacturasArca() {
                 echeqPendienteRef.current = datos
                 setEcheqPendiente(datos)
                 setMostrarModalEcheq(false)
-                cambiarEstadoSeleccionadasRef.current?.(echeqEstadoDestino, datos.fechaEmision)
+                if (echeqOrigen === 'anticipos') {
+                  cambiarEstadoAnticiposRef.current?.(echeqEstadoDestino, datos.fechaEmision)
+                } else {
+                  cambiarEstadoSeleccionadasRef.current?.(echeqEstadoDestino, datos.fechaEmision)
+                }
               }}
             >
               Confirmar ECHEQ
