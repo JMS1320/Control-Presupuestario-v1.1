@@ -1,7 +1,30 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-03-05
-> **Sesión anterior**: Módulo Sueldos + Anticipo fixes + SICORE mejoras
+> **Última actualización**: 2026-03-20
+> **Sesión anterior**: ECHEQ — integración facturas + anticipos
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-03-20
+
+| Feature | Commits |
+|---------|---------|
+| ECHEQ facturas: fix `setEcheqEstadoDestino` siempre `'pagar'` | `25b9ae1` |
+| ECHEQ facturas: `setEcheqOrigen('facturas')` explícito | `25b9ae1` |
+| ECHEQ facturas: ocultar botón en sección "Pagados" | `25b9ae1` |
+| ECHEQ facturas: confirm dialog muestra `estadoEfectivo` ('echeq') | `25b9ae1` |
+| ECHEQ: local state update no-SICORE usa `estadoEfectivo` correcto | `25b9ae1` |
+| Documentación: `ECHEQ.md` creado completo | — |
+| Documentación: `SICORE.md` sección 28 integración ECHEQ | — |
+
+### Estado del módulo ECHEQ post-sesión
+
+✅ Anticipos: flujo completo funcionando (SICORE + sin SICORE, con y sin retención previa)
+✅ Facturas: flujo corregido — `echeqEstadoDestino` siempre `'pagar'`
+✅ Cash Flow: filas ECHEQ en verde claro + posición por `fecha_cobro_echeq`
+✅ Panel Gestión ECHEQs en Cash Flow
+✅ Anti-duplicados en `guardarCheques`
+✅ DB constraints incluyen `'echeq'` en ambas tablas
 
 ---
 
@@ -25,6 +48,12 @@
 ---
 
 ## 🚨 PENDIENTES INMEDIATOS (próxima sesión)
+
+### 0. Testing ECHEQ facturas (nuevo)
+- Probar botón ECHEQ en factura en estado 'pendiente' con SICORE → verificar queda en 'echeq'
+- Probar botón ECHEQ en factura ya en 'pagar'/'preparado' → verificar queda en 'echeq' sin abrir SICORE de nuevo
+- Verificar que aparece en Cash Flow en `fecha_cobro_echeq` con fila verde
+- Verificar registro en Panel ECHEQs de Cash Flow
 
 ### 1. Verificar testing módulo Sueldos
 - Registrar anticipo y verificar que `saldo_pendiente` baje

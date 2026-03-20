@@ -1038,4 +1038,65 @@ neto_pagado = anticipo.monto - monto_sicore - descuento_aplicado
 
 ---
 
+## 28. Integración SICORE + ECHEQ (2026-03-20)
+
+Cuando el pago se realiza con un cheque electrónico, el flujo SICORE se combina con el flujo ECHEQ. Ver documentación completa en **ECHEQ.md**. Puntos clave:
+
+### 28.1. La quincena se calcula por `fecha_emision` del ECHEQ
+
+Para los anticipos:
+```typescript
+const fechaParaQuincena = echeqPendienteRef.current?.fechaEmision || anticipo.fecha_vencimiento
+const quincena = generarQuincenaSicore(fechaParaQuincena)
+```
+
+La `fecha_emision` del ECHEQ es la fecha en que se emite el cheque, que es la fecha real del pago. Esto es correcto porque la obligación tributaria nace cuando se realiza el pago.
+
+### 28.2. Estado final es 'echeq' en lugar de 'pagar'
+
+Cuando `echeqPendienteRef.current` está cargado al momento de confirmar SICORE:
+
+```typescript
+// En finalizarProcesoSicore (facturas):
+const esEcheqFactura = !!echeqPendienteRef.current
+if (esEcheqFactura) {
+  updateFactura.estado         = 'echeq'
+  updateFactura.metodo_pago    = 'echeq'
+  updateFactura.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
+}
+
+// En confirmarSicoreAnt (anticipos):
+if (esEcheq) {
+  updateData.estado_pago       = 'echeq'
+  updateData.fecha_pago        = echeqPendienteRef.current!.fechaEmision
+  updateData.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
+}
+```
+
+### 28.3. El cheque se registra en msa.cheques con el SICORE
+
+```typescript
+await guardarCheques(
+  [facturaEnProceso],
+  echeqPendienteRef.current,
+  { monto: montoRetencion, tipo: tipoSeleccionado.tipo, quincena }
+)
+// → msa.cheques.sicore, msa.cheques.monto_sicore, msa.cheques.tipo_sicore
+```
+
+El monto guardado en el cheque es `imp_total - monto_sicore` (lo que realmente se paga al proveedor).
+
+### 28.4. Tabla de estados con SICORE + ECHEQ
+
+| Campo | Sin ECHEQ | Con ECHEQ |
+|-------|-----------|-----------|
+| `estado` | `'pagar'` | `'echeq'` |
+| `sicore` | `'26-03 - 2da'` | `'26-03 - 2da'` |
+| `monto_sicore` | `55742.85` | `55742.85` |
+| `metodo_pago` | `NULL` | `'echeq'` |
+| `fecha_cobro_echeq` | `NULL` | `'2026-04-15'` |
+| Registro en `msa.cheques` | No | Sí |
+
+---
+
 *Archivo mantenido manualmente. Actualizar al implementar nuevas funcionalidades SICORE.*
