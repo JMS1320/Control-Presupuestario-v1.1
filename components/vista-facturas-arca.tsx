@@ -189,7 +189,7 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
               <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
               <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
               <td className="border border-green-100 px-2 py-1 text-right">
-                {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2)}%` : '-'}
+                {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2).replace(".", ",")}%` : '-'}
               </td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
@@ -3664,7 +3664,7 @@ export function VistaFacturasArca() {
       fNum(r.descuento_aplicado),
       fNum(r.minimo_no_imponible),
       fNum(r.base_imponible),
-      r.alicuota ? `${(Number(r.alicuota)*100).toFixed(2)}%` : '',
+      r.alicuota ? `${(Number(r.alicuota)*100).toFixed(2).replace(".", ",")}%` : '',
       fNum(r.retencion),
       fNum(r.pago),
     ])
@@ -5929,7 +5929,7 @@ export function VistaFacturasArca() {
                       <div className="text-left">
                         <div className="font-medium">{tipo.tipo}</div>
                         <div className="text-sm text-gray-500">
-                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2)}%)
+                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%)
                         </div>
                       </div>
                     </div>
@@ -6025,7 +6025,7 @@ export function VistaFacturasArca() {
                   <span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span>
                   <span className="font-bold text-red-600">${fmt(montoRetencion)}</span>
                 </div>
                 <hr className="border-gray-300" />
@@ -6086,8 +6086,8 @@ export function VistaFacturasArca() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2))
-                    if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(',', '.')) || 0)
+                    const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2).replace('.', ','))
+                    if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(/\./g, '').replace(',', '.')) || 0)
                   }}
                 >
                   📝
@@ -8044,7 +8044,7 @@ export function VistaFacturasArca() {
                     onClick={() => calcularSicoreAnt(tipo)}
                   >
                     <span className="font-semibold text-sm">{tipo.tipo}</span>
-                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}% · mín ${tipo.minimo_no_imponible.toLocaleString('es-AR')}</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}% · mín ${tipo.minimo_no_imponible.toLocaleString('es-AR')}</span>
                   </Button>
                 ))}
               </div>
@@ -8075,7 +8075,7 @@ export function VistaFacturasArca() {
                 {!datosSicoreAnt.esAdicional && <div className="flex justify-between"><span className="text-gray-600">Mínimo no imponible:</span><span>-${datosSicoreAnt.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}
                 <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnt.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between font-semibold text-red-700 border-t pt-1 mt-1">
-                  <span>{tipoSicoreAnt.tipo} {(tipoSicoreAnt.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span>{tipoSicoreAnt.tipo} {(tipoSicoreAnt.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span>
                   <span>-${montoSicoreAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                 </div>
                 {descuentoAnt > 0 && <div className="flex justify-between text-orange-700"><span>Descuento adicional:</span><span>-${descuentoAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}

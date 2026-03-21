@@ -207,9 +207,9 @@ export function VistaExtractoBancario() {
                   if (diferenciaPorcentaje > 10) {
                     const confirmar = window.confirm(
                       `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
-                      `Factura original: $${montoOriginal.toLocaleString()}\n` +
-                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
-                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `Factura original: $${montoOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1).replace('.', ',')}%\n\n` +
                       `¿Confirmas actualizar la factura con el monto del extracto?`
                     )
                     
@@ -270,9 +270,9 @@ export function VistaExtractoBancario() {
                   if (diferenciaPorcentaje > 10) {
                     const confirmar = window.confirm(
                       `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
-                      `Template original: $${montoOriginal.toLocaleString()}\n` +
-                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
-                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `Template original: $${montoOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1).replace('.', ',')}%\n\n` +
                       `¿Confirmas actualizar el template con el monto del extracto?`
                     )
                     

@@ -264,7 +264,7 @@ export function ConfiguradorIPC() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-blue-600">
-              {indices.length > 0 ? indices[0].valor_ipc.toFixed(2) + '%' : '-'}
+              {indices.length > 0 ? indices[0].valor_ipc.toFixed(2).replace(".", ",") + "%" : '-'}
             </div>
             <p className="text-xs text-gray-600">Último IPC</p>
           </CardContent>
@@ -295,7 +295,7 @@ export function ConfiguradorIPC() {
 
                   {/* Valor IPC */}
                   <div className="text-2xl font-bold text-orange-600">
-                    {indice.valor_ipc.toFixed(2)}%
+                    {indice.valor_ipc.toFixed(2).replace(".", ",")}%
                   </div>
 
                   {/* Fuente */}

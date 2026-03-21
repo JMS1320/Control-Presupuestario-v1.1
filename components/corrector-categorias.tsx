@@ -429,9 +429,9 @@ export function CorrectorCategorias() {
                         </Button>
                       )}
                     </TableCell>
-                    <TableCell>{mov.debitos.toLocaleString()}</TableCell>
-                    <TableCell>{mov.creditos.toLocaleString()}</TableCell>
-                    <TableCell>{mov.saldo.toLocaleString()}</TableCell>
+                    <TableCell>{mov.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    <TableCell>{mov.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    <TableCell>{mov.saldo.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
                     <TableCell>
                       {cambiosPendientes.has(mov.id) ? (
                         <span className="text-orange-600 text-sm">● Pendiente</span>

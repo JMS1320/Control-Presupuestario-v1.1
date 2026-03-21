@@ -2714,7 +2714,7 @@ export function VistaCashFlow() {
                   {tiposSicore.map(t => (
                     <div key={t.id} className="flex justify-between text-sm">
                       <span>{t.emoji} {t.tipo}</span>
-                      <span className="text-gray-600">${t.minimo_no_imponible.toLocaleString('es-AR')} — {(t.porcentaje_retencion * 100).toFixed(2)}%</span>
+                      <span className="text-gray-600">${t.minimo_no_imponible.toLocaleString('es-AR')} — {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span>
                     </div>
                   ))}
                 </div>
@@ -2743,7 +2743,7 @@ export function VistaCashFlow() {
                     <span className="text-xl">{tipo.emoji}</span>
                     <div className="text-left">
                       <div className="font-medium">{tipo.tipo}</div>
-                      <div className="text-xs text-gray-500">Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} · {(tipo.porcentaje_retencion * 100).toFixed(2)}%</div>
+                      <div className="text-xs text-gray-500">Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} · {(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</div>
                     </div>
                   </div>
                 </Button>
@@ -2808,7 +2808,7 @@ export function VistaCashFlow() {
                   <div className="flex justify-between"><span className="text-gray-600">Neto base:</span><span>${datosSicoreAnticipo.netoBase.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreAnticipo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnticipo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-600">% Retención:</span><span>{(tipoSicoreAnticipo.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">% Retención:</span><span>{(tipoSicoreAnticipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
                   <hr className="my-2"/>
                   <div className="flex justify-between font-semibold"><span>Retención SICORE:</span><span className="text-red-600">${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   {descuentoSicoreAnticipo > 0 && (
@@ -2854,7 +2854,7 @@ export function VistaCashFlow() {
                 <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención quincena):</div>
                 {tiposSicore.map(t => (
                   <div key={t.id} className="text-blue-700">
-                    {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2)}%
+                    {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%
                   </div>
                 ))}
               </div>
@@ -2868,7 +2868,7 @@ export function VistaCashFlow() {
                   >
                     <span className="text-2xl">{tipo.emoji}</span>
                     <span className="text-sm font-medium">{tipo.tipo}</span>
-                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}%</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span>
                   </button>
                 ))}
               </div>
@@ -2901,7 +2901,7 @@ export function VistaCashFlow() {
                   <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 )}
                 <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
                 {datosSicoreCalculo.esRetencionAdicional && (
                   <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
                 )}

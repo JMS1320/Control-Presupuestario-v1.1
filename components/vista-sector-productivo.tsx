@@ -604,7 +604,7 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
       ctx.fillText('RESULTADO TACTO', padding, cicloY + 20)
       ctx.font = '13px Georgia'
       ctx.fillStyle = colSecundario
-      const pctPrenez = c.cabezas_servicio > 0 ? ((c.cabezas_prenadas || 0) / c.cabezas_servicio * 100).toFixed(1) : '-'
+      const pctPrenez = c.cabezas_servicio > 0 ? ((c.cabezas_prenadas || 0) / c.cabezas_servicio * 100).toFixed(1).replace(".", ",") : "-"
       ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Entoradas: ${c.cabezas_servicio || '-'}`, padding, cicloY + 40)
 
       ctx.fillStyle = colPrimario
@@ -638,7 +638,7 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
       ctx.fillText('RESULTADO PARICIÓN', padding, cicloY + 20)
       ctx.font = '13px Georgia'
       ctx.fillStyle = colSecundario
-      const pctParicion = (c.cabezas_prenadas || 0) > 0 ? ((c.terneros_nacidos || 0) / c.cabezas_prenadas * 100).toFixed(1) : '-'
+      const pctParicion = (c.cabezas_prenadas || 0) > 0 ? ((c.terneros_nacidos || 0) / c.cabezas_prenadas * 100).toFixed(1).replace(".", ",") : "-"
       ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Preñadas: ${c.cabezas_prenadas || '-'}`, padding, cicloY + 40)
       ctx.fillStyle = colPrimario
       ctx.font = 'bold 13px Georgia'
@@ -654,8 +654,8 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
       ctx.font = '13px Georgia'
       ctx.fillStyle = colSecundario
       ctx.fillText(`Campaña ${c.anio_servicio}  ·  Rodeo: ${c.rodeo}  ·  Entoradas: ${c.cabezas_servicio || '-'}`, padding, cicloY + 40)
-      const pctDestNac = (c.terneros_nacidos || 0) > 0 ? ((c.terneros_destetados || 0) / c.terneros_nacidos * 100).toFixed(1) : '-'
-      const pctDestEnt = (c.cabezas_servicio || 0) > 0 ? ((c.terneros_destetados || 0) / c.cabezas_servicio * 100).toFixed(1) : '-'
+      const pctDestNac = (c.terneros_nacidos || 0) > 0 ? ((c.terneros_destetados || 0) / c.terneros_nacidos * 100).toFixed(1).replace(".", ",") : "-"
+      const pctDestEnt = (c.cabezas_servicio || 0) > 0 ? ((c.terneros_destetados || 0) / c.cabezas_servicio * 100).toFixed(1).replace(".", ",") : "-"
       ctx.fillStyle = colPrimario
       ctx.font = 'bold 13px Georgia'
       ctx.fillText(`Destetados: ${c.terneros_destetados || 0}`, padding, cicloY + 60)
