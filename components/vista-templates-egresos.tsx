@@ -708,7 +708,7 @@ export function VistaTemplatesEgresos() {
     try {
       // Determinar monto a propagar (personalizado o el mismo de la cuota)
       const montoParaPropagar = montoPropagacionPersonalizado
-        ? parseFloat(montoPropagacionPersonalizado) || modalPropagacion.nuevoMonto
+        ? parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || modalPropagacion.nuevoMonto
         : modalPropagacion.nuevoMonto
 
       // 1. Propagar a cuotas futuras
@@ -834,7 +834,7 @@ export function VistaTemplatesEgresos() {
           egreso_id: templateSeleccionado,
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
-          monto: parseFloat(nuevaCuota.monto),
+          monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
@@ -1493,7 +1493,7 @@ export function VistaTemplatesEgresos() {
                 <Label className="text-sm font-medium">💵 Rango de Montos</Label>
                 <div className="flex gap-2">
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
@@ -1501,7 +1501,7 @@ export function VistaTemplatesEgresos() {
                     className="text-xs"
                   />
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
@@ -1820,7 +1820,7 @@ export function VistaTemplatesEgresos() {
                 Monto a propagar (opcional):
               </label>
               <Input
-                type="number"
+                type="text"
                 placeholder={`Dejar vacío = $${modalPropagacion.nuevoMonto.toLocaleString('es-AR')}`}
                 value={montoPropagacionPersonalizado}
                 onChange={(e) => setMontoPropagacionPersonalizado(e.target.value)}
@@ -1834,7 +1834,7 @@ export function VistaTemplatesEgresos() {
             </div>
 
             <ul className="text-sm text-gray-500 list-disc pl-5 space-y-1">
-              <li><strong>SÍ, propagar:</strong> Cuotas futuras con monto {montoPropagacionPersonalizado ? `$${parseFloat(montoPropagacionPersonalizado).toLocaleString('es-AR')}` : 'igual'}</li>
+              <li><strong>SÍ, propagar:</strong> Cuotas futuras con monto {montoPropagacionPersonalizado ? `$${(parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || 0).toLocaleString('es-AR')}` : 'igual'}</li>
               <li><strong>NO, solo esta:</strong> Solo se modificará esta cuota</li>
               <li><strong>Cancelar:</strong> No hacer ningún cambio</li>
             </ul>
@@ -2006,9 +2006,8 @@ export function VistaTemplatesEgresos() {
                 <Label htmlFor="monto-pago">Monto</Label>
                 <Input
                   id="monto-pago"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
+                  type="text"
+                  placeholder="0,00"
                   value={nuevaCuota.monto}
                   onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
                 />

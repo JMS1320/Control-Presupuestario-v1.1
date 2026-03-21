@@ -933,7 +933,7 @@ export function VistaCashFlow() {
           egreso_id: templateSeleccionado,
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
-          monto: parseFloat(nuevaCuota.monto),
+          monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
@@ -1192,10 +1192,11 @@ export function VistaCashFlow() {
 
   // Calcular SICORE anticipo una vez seleccionado el tipo y los campos
   const calcularSicoreAnticipo = async (tipo: TipoSicore) => {
-    const netoGravado = parseFloat(camposSicore.neto_gravado) || 0
-    const netoNoGravado = parseFloat(camposSicore.neto_no_gravado) || 0
-    const opExentas = parseFloat(camposSicore.op_exentas) || 0
-    const iva = parseFloat(camposSicore.iva) || 0
+    const parseCampo = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
+    const netoGravado = parseCampo(camposSicore.neto_gravado)
+    const netoNoGravado = parseCampo(camposSicore.neto_no_gravado)
+    const opExentas = parseCampo(camposSicore.op_exentas)
+    const iva = parseCampo(camposSicore.iva)
     const impTotal = netoGravado + netoNoGravado + opExentas + iva
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
@@ -1263,7 +1264,7 @@ export function VistaCashFlow() {
 
     setGuardandoAnticipo(true)
     try {
-      const monto = parseFloat(nuevoAnticipo.monto)
+      const monto = parseFloat(nuevoAnticipo.monto.replace(/\./g, '').replace(',', '.'))
 
       const { data, error } = await supabase
         .from('anticipos_proveedores')
@@ -1370,8 +1371,8 @@ export function VistaCashFlow() {
             ) : columna.type === 'currency' ? (
               <Input
                 ref={hookEditor.inputRef}
-                type="number"
-                step="0.01"
+                type="text"
+                placeholder="0,00"
                 value={String(hookEditor.celdaEnEdicion?.valor || '')}
                 onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
                 onKeyDown={hookEditor.manejarKeyDown}
@@ -2244,12 +2245,11 @@ export function VistaCashFlow() {
                   Tipo de cambio al momento del pago
                 </label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
                   value={modalTcPago.inputVal}
                   onChange={e => setModalTcPago(prev => ({ ...prev, inputVal: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') guardarTcPago(); if (e.key === 'Escape') setModalTcPago(prev => ({ ...prev, open: false })) }}
-                  placeholder={String(modalTcPago.tcOriginal)}
+                  placeholder={String(modalTcPago.tcOriginal).replace('.', ',')}
                   autoFocus
                   className="text-right"
                 />
@@ -2394,9 +2394,8 @@ export function VistaCashFlow() {
                 <Label htmlFor="monto-pago-cf">Monto</Label>
                 <Input
                   id="monto-pago-cf"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
+                  type="text"
+                  placeholder="0,00"
                   value={nuevaCuota.monto}
                   onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
                 />
@@ -2549,9 +2548,8 @@ export function VistaCashFlow() {
                     <Label htmlFor="anticipo-monto">Monto *</Label>
                     <Input
                       id="anticipo-monto"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
+                      type="text"
+                      placeholder="0,00"
                       value={nuevoAnticipo.monto}
                       onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, monto: e.target.value }))}
                     />
@@ -2766,8 +2764,8 @@ export function VistaCashFlow() {
                   <div key={key}>
                     <label className="text-xs text-gray-500 mb-1 block">{label}</label>
                     <Input
-                      type="number"
-                      placeholder="0.00"
+                      type="text"
+                      placeholder="0,00"
                       value={camposSicore[key as keyof typeof camposSicore]}
                       onChange={e => setCamposSicore(prev => ({ ...prev, [key]: e.target.value }))}
                     />
@@ -2777,15 +2775,15 @@ export function VistaCashFlow() {
               <div className="bg-gray-50 rounded p-3 text-sm flex justify-between">
                 <span className="font-medium">Importe Total (calculado):</span>
                 <span className="font-bold">
-                  ${((parseFloat(camposSicore.neto_gravado) || 0) + (parseFloat(camposSicore.neto_no_gravado) || 0) +
-                    (parseFloat(camposSicore.op_exentas) || 0) + (parseFloat(camposSicore.iva) || 0))
+                  ${([camposSicore.neto_gravado, camposSicore.neto_no_gravado, camposSicore.op_exentas, camposSicore.iva]
+                    .reduce((sum, v) => sum + (parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0), 0))
                     .toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex gap-2">
                 <Button className="flex-1 bg-blue-600 hover:bg-blue-700"
                   onClick={() => calcularSicoreAnticipo(tipoSicoreAnticipo)}
-                  disabled={!(parseFloat(camposSicore.neto_gravado) > 0)}
+                  disabled={!(parseFloat(camposSicore.neto_gravado.replace(/\./g, '').replace(',', '.')) > 0)}
                 >
                   Calcular SICORE →
                 </Button>
@@ -2910,20 +2908,22 @@ export function VistaCashFlow() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
                 <input
-                  type="number"
+                  type="text"
+                  placeholder="0,00"
                   className="w-full border rounded px-3 py-2 text-sm"
-                  value={montoRetencion}
-                  onChange={e => setMontoRetencion(parseFloat(e.target.value) || 0)}
+                  value={montoRetencion === 0 ? '' : String(montoRetencion).replace('.', ',')}
+                  onChange={e => setMontoRetencion(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional{esUSD ? ' (ARS)' : ''}:</label>
                 <input
-                  type="number"
+                  type="text"
+                  placeholder="0,00"
                   className="w-full border rounded px-3 py-2 text-sm"
-                  value={descuentoAdicional}
-                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value) || 0)}
+                  value={descuentoAdicional === 0 ? '' : String(descuentoAdicional).replace('.', ',')}
+                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
                 />
               </div>
 

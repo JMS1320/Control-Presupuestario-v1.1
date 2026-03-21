@@ -461,12 +461,10 @@ export function TabTerneros() {
           <Label className="text-sm text-green-800 whitespace-nowrap">Ganancia diaria estimada:</Label>
           <div className="flex items-center gap-1">
             <Input
-              type="number"
-              step="0.1"
-              min="0"
-              max="5"
-              value={gananciaDiaria}
-              onChange={e => setGananciaDiaria(parseFloat(e.target.value) || 0)}
+              type="text"
+              placeholder="0,0"
+              value={gananciaDiaria === 0 ? '' : String(gananciaDiaria).replace('.', ',')}
+              onChange={e => setGananciaDiaria(parseFloat(e.target.value.replace(',', '.')) || 0)}
               className="w-20 h-7 text-sm text-center"
             />
             <span className="text-sm text-green-700">kg/día</span>

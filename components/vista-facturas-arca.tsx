@@ -1045,8 +1045,8 @@ export function VistaFacturasArca() {
           ) : (['monto_a_abonar', 'imp_total'].includes(columna as string)) ? (
             <Input
               ref={inputRefLocal}
-              type="number"
-              step="0.01"
+              type="text"
+              placeholder="0,00"
               value={String(celdaEnEdicion.valor)}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
               onKeyDown={manejarKeyDown}
@@ -5192,7 +5192,7 @@ export function VistaFacturasArca() {
                 <Label className="text-sm font-medium">💵 Rango de Montos</Label>
                 <div className="flex gap-2">
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
@@ -5200,7 +5200,7 @@ export function VistaFacturasArca() {
                     className="text-xs"
                   />
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
@@ -6048,10 +6048,8 @@ export function VistaFacturasArca() {
                     <option value="monto">$</option>
                   </select>
                   <input
-                    type="number"
-                    min="0"
-                    step={descuentoTipoInput === 'pct' ? '0.5' : '100'}
-                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21438'}
+                    type="text"
+                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21.438'}
                     value={descuentoInputValor}
                     onChange={(e) => setDescuentoInputValor(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') aplicarDescuentoSicore() }}

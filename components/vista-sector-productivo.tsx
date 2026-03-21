@@ -1104,9 +1104,10 @@ function TabHacienda() {
       tipo: nuevoMov.tipo,
       cantidad: parseInt(nuevoMov.cantidad),
     }
-    if (nuevoMov.peso_total_kg) datos.peso_total_kg = parseFloat(nuevoMov.peso_total_kg)
-    if (nuevoMov.precio_por_kg) datos.precio_por_kg = parseFloat(nuevoMov.precio_por_kg)
-    if (nuevoMov.monto_total) datos.monto_total = parseFloat(nuevoMov.monto_total)
+    const parseNum = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.'))
+    if (nuevoMov.peso_total_kg) datos.peso_total_kg = parseNum(nuevoMov.peso_total_kg)
+    if (nuevoMov.precio_por_kg) datos.precio_por_kg = parseNum(nuevoMov.precio_por_kg)
+    if (nuevoMov.monto_total) datos.monto_total = parseNum(nuevoMov.monto_total)
     if (nuevoMov.campo_origen) datos.campo_origen = nuevoMov.campo_origen
     if (nuevoMov.campo_destino) datos.campo_destino = nuevoMov.campo_destino
     if (nuevoMov.proveedor_cliente) datos.proveedor_cliente = nuevoMov.proveedor_cliente
@@ -1402,22 +1403,22 @@ function TabHacienda() {
               </div>
               <div>
                 <Label>Cantidad *</Label>
-                <Input type="number" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Peso Total (kg)</Label>
-                <Input type="number" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
+                <Input type="text" placeholder="0,00" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
               </div>
               <div>
                 <Label>Precio por kg</Label>
-                <Input type="number" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
+                <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
               </div>
             </div>
             <div>
               <Label>Monto Total</Label>
-              <Input type="number" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
+              <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

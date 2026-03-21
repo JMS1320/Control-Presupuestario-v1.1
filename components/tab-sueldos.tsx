@@ -609,8 +609,8 @@ export function TabSueldos() {
                     <div>
                       <Label>Categoría A</Label>
                       <Input
-                        type="number"
-                        placeholder="0"
+                        type="text"
+                        placeholder="0,00"
                         value={edMontoA}
                         onChange={e => setEdMontoA(e.target.value)}
                       />
@@ -618,8 +618,8 @@ export function TabSueldos() {
                     <div>
                       <Label>Categoría B</Label>
                       <Input
-                        type="number"
-                        placeholder="0"
+                        type="text"
+                        placeholder="0,00"
                         value={edMontoB}
                         onChange={e => setEdMontoB(e.target.value)}
                       />
@@ -629,7 +629,7 @@ export function TabSueldos() {
                     <div>
                       <Label>Cant. francos trabajados</Label>
                       <Input
-                        type="number"
+                        type="text"
                         placeholder="0"
                         value={edFrancos}
                         onChange={e => setEdFrancos(e.target.value)}
@@ -651,8 +651,8 @@ export function TabSueldos() {
                   <div>
                     <Label>Valor día</Label>
                     <Input
-                      type="number"
-                      placeholder="0"
+                      type="text"
+                      placeholder="0,00"
                       value={edValorDia}
                       onChange={e => setEdValorDia(e.target.value)}
                     />
@@ -660,7 +660,7 @@ export function TabSueldos() {
                   <div>
                     <Label>Días trabajados</Label>
                     <Input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={edDias}
                       onChange={e => setEdDias(e.target.value)}
@@ -675,8 +675,8 @@ export function TabSueldos() {
                   <div>
                     <Label>Valor hora</Label>
                     <Input
-                      type="number"
-                      placeholder="0"
+                      type="text"
+                      placeholder="0,00"
                       value={edValorHora}
                       onChange={e => setEdValorHora(e.target.value)}
                     />
@@ -684,7 +684,7 @@ export function TabSueldos() {
                   <div>
                     <Label>Horas del mes</Label>
                     <Input
-                      type="number"
+                      type="text"
                       placeholder="0"
                       value={edHoras}
                       onChange={e => setEdHoras(e.target.value)}
@@ -697,8 +697,8 @@ export function TabSueldos() {
               <div>
                 <Label>Varios (combustible, reintegros, etc.)</Label>
                 <Input
-                  type="number"
-                  placeholder="0"
+                  type="text"
+                  placeholder="0,00"
                   value={edVarios}
                   onChange={e => setEdVarios(e.target.value)}
                 />
@@ -758,8 +758,8 @@ export function TabSueldos() {
             <div>
               <Label>Monto *</Label>
               <Input
-                type="number"
-                placeholder="0"
+                type="text"
+                placeholder="0,00"
                 value={antMonto}
                 onChange={e => setAntMonto(e.target.value)}
               />

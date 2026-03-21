@@ -562,11 +562,10 @@ export function WizardTemplatesEgresos() {
                     <Label htmlFor="monto_base">Monto Base *</Label>
                     <Input
                       id="monto_base"
-                      type="number"
-                      step="0.01"
-                      value={state.datos_basicos.monto_base}
-                      onChange={(e) => actualizarDatosBasicos('monto_base', parseFloat(e.target.value) || 0)}
-                      placeholder="0.00"
+                      type="text"
+                      value={state.datos_basicos.monto_base === 0 ? '' : String(state.datos_basicos.monto_base).replace('.', ',')}
+                      onChange={(e) => actualizarDatosBasicos('monto_base', parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
+                      placeholder="0,00"
                     />
                   </div>
                 )}

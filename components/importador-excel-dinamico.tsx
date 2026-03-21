@@ -50,8 +50,8 @@ export default function ImportadorExcelDinamico() {
           required
         />
         <input
-          type="number"
-          placeholder="Saldo inicial"
+          type="text"
+          placeholder="Saldo inicial (ej: 1.250.000,00)"
           value={saldo}
           onChange={(e) => setSaldo(e.target.value)}
           required

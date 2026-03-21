@@ -882,7 +882,7 @@ export function VistaExtractoBancario() {
                     <label className="text-sm font-medium text-purple-700">💵 Rango de Montos</label>
                     <div className="flex gap-2">
                       <Input
-                        type="number"
+                        type="text"
                         placeholder="Monto desde"
                         value={montoDesde}
                         onChange={(e) => setMontoDesde(e.target.value)}
@@ -890,7 +890,7 @@ export function VistaExtractoBancario() {
                         className="text-xs"
                       />
                       <Input
-                        type="number"
+                        type="text"
                         placeholder="Monto hasta"
                         value={montoHasta}
                         onChange={(e) => setMontoHasta(e.target.value)}
