@@ -3328,7 +3328,7 @@ export function VistaFacturasArca() {
     setAnticipoSicoreEnProceso(null)
     setTipoSicoreAnt(null)
     setDatosSicoreAnt(null)
-    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${Math.round(montoSicoreAnt * 100) / 100} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${(Math.round(montoSicoreAnt * 100) / 100).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Saldo: $${saldoFinal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
     recargarAnticiposPagos()
   }
 

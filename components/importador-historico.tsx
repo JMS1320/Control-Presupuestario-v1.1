@@ -135,7 +135,7 @@ export function ImportadorHistorico() {
             />
             {file && (
               <p className="text-xs text-gray-500">
-                Archivo: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+                Archivo: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1).replace('.', ',')} KB)
               </p>
             )}
           </div>
