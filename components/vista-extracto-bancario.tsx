@@ -77,7 +77,8 @@ export function VistaExtractoBancario() {
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
+  const tablaActiva = cuentaSeleccionada || 'msa_galicia'
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva)
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -166,7 +167,7 @@ export function VistaExtractoBancario() {
         if (editData.estado === 'conciliado') {
           // Limpiar motivo_revision para movimientos marcados como Conciliado
           const { error: errorLimpiar } = await supabase
-            .from('msa_galicia')
+            .from(tablaActiva)
             .update({ motivo_revision: null })
             .in('id', ids)
           
@@ -254,9 +255,8 @@ export function VistaExtractoBancario() {
                 } else {
                   console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
                   // Guardar vínculo persistente en el movimiento bancario
-                  const tablaActual = cuentaSeleccionada || 'msa_galicia'
                   await supabase
-                    .from(tablaActual)
+                    .from(tablaActiva)
                     .update({ comprobante_arca_id: opcionId })
                     .eq('id', movimientoId)
                 }
@@ -621,8 +621,13 @@ export function VistaExtractoBancario() {
             <Banknote className="h-6 w-6" />
             Extracto Bancario
             {cuentaSeleccionada && (
-              <Badge variant="outline" className="ml-2">
-                {cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre}
+              <Badge
+                variant="outline"
+                className="ml-2 cursor-pointer hover:bg-gray-100"
+                onClick={() => setSelectorAbierto(true)}
+                title="Cambiar cuenta"
+              >
+                {cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre} ↕
               </Badge>
             )}
           </h2>
