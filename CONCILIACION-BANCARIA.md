@@ -297,27 +297,71 @@ donde saldo_calculado[i] = saldo_calculado[i-1] + creditos[i] - debitos[i]
 
 | Nombre | Empresa | Tabla BD |
 |--------|---------|---------|
-| MSA Galicia | MSA | `msa_galicia` |
-| PAM Galicia | PAM | `pam_galicia` |
+| MSA Galicia CC Pesos | MSA | `msa_galicia` |
+| PAM Galicia CA Pesos | PAM | `pam_galicia` |
+| PAM Galicia CC Pesos | PAM | `pam_galicia_cc` |
 
-Para agregar nuevas cuentas: crear tabla con mismo schema + registrar en config.
+Las tres tablas están en el schema `public`. Configuradas en `CUENTAS_BANCARIAS` dentro de `hooks/useMotorConciliacion.ts`.
+
+Para agregar nuevas cuentas: crear tabla con mismo schema en `public` + agregar entrada en `CUENTAS_BANCARIAS`.
+
+### Selector de cuenta en la vista
+
+El header de Extracto Bancario muestra un botón siempre visible:
+- Sin cuenta seleccionada → "Seleccionar cuenta"
+- Con cuenta seleccionada → nombre de la cuenta activa
+
+Al clickearlo abre el Dialog selector. La tabla activa se pasa al hook `useMovimientosBancarios(tablaActiva)`, que recarga automáticamente al cambiar.
 
 ---
 
-## 11. ARCHIVOS CLAVE
+## 11. ARQUITECTURA MULTI-SCHEMA (MSA / PAM)
+
+### Schemas en Supabase
+
+| Schema | Contenido | Acceso desde código |
+|--------|-----------|---------------------|
+| `public` | Extractos bancarios + todas las tablas compartidas | `supabase.from('tabla')` |
+| `msa` | Facturas ARCA empresa MSA | `supabase.schema('msa').from('tabla')` |
+| `pam` | Facturas ARCA empresa PAM | `supabase.schema('pam').from('tabla')` |
+
+### ⚠️ Problema resuelto (2026-03-22): schema `pam` devolvía HTTP 406
+
+**Síntoma**: Vista Facturas PAM mostraba "Error al cargar facturas: Invalid schema: pam".
+
+**Causa raíz**: PostgREST mantiene su propia lista interna `pgrst.db_schemas` en el rol `authenticator`. El Dashboard de Supabase ("Exposed Schemas") tenía `pam` configurado visualmente, pero el valor real en PostgreSQL nunca se actualizó.
+
+**Verificación que confirmó el problema**:
+```sql
+SELECT rolconfig FROM pg_roles WHERE rolname = 'authenticator';
+-- Resultado: pgrst.db_schemas=public, msa, productivo, sueldos
+-- ← pam no estaba en la lista
+```
+
+**Fix aplicado**:
+```sql
+ALTER ROLE authenticator SET pgrst.db_schemas TO 'public, msa, productivo, sueldos, pam';
+NOTIFY pgrst;
+```
+
+**Lección**: El Dashboard de Supabase puede mostrar un schema como configurado sin que el valor real en PostgreSQL se haya actualizado. Si un schema da 406, verificar siempre `SELECT rolconfig FROM pg_roles WHERE rolname = 'authenticator'` antes de buscar causas más complejas.
+
+---
+
+## 12. ARCHIVOS CLAVE
 
 | Archivo | Propósito |
 |---------|-----------|
 | `components/vista-extracto-bancario.tsx` | Vista principal + UI conciliación manual |
-| `hooks/useMotorConciliacion.ts` | Motor automático (matching CF + reglas) |
-| `hooks/useMovimientosBancarios.ts` | CRUD movimientos bancarios |
+| `hooks/useMotorConciliacion.ts` | Motor automático (matching CF + reglas) + `CUENTAS_BANCARIAS` config |
+| `hooks/useMovimientosBancarios.ts` | CRUD movimientos bancarios — acepta `tabla` como parámetro |
 | `app/api/import-excel/route.ts` | Import extracto Excel → BD |
 | `app/api/import-excel-dinamico/route.ts` | Import genérico multi-tabla |
 | `components/configurador-reglas.tsx` | CRUD reglas de conciliación automática |
 
 ---
 
-## 12. LIMITACIONES ACTUALES (A DESARROLLAR)
+## 13. LIMITACIONES ACTUALES (A DESARROLLAR)
 
 1. **Sin propagación inversa**: si se edita cuenta_contable en la factura ARCA después de conciliar, el extracto no se actualiza automáticamente.
 
