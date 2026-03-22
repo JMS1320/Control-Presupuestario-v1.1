@@ -837,7 +837,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       
       // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
       if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
-        for (const tabla of ['msa_galicia', 'pam_galicia']) {
+        for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
           supabase
             .from(tabla)
             .update({ categ: valorFinal })
