@@ -359,6 +359,34 @@ export function VistaExtractoBancario() {
           contable: '',
           interno: ''
         })
+        // Propagar categ a facturas ARCA vinculadas (para movimientos ya conciliados, edición posterior de categ)
+        // Solo cuando NO se está cambiando estado a 'conciliado' (ese caso ya lo maneja el bloque anterior)
+        if (editData.categ?.trim() && editData.estado !== 'conciliado') {
+          const categIngresado = editData.categ.trim().toUpperCase()
+          const categExiste = validarCateg(categIngresado)
+
+          if (categExiste) {
+            for (const movimientoId of ids) {
+              const movimiento = movimientos.find(m => m.id === movimientoId)
+              const arcaId = movimiento?.comprobante_arca_id
+
+              if (arcaId) {
+                const { error } = await supabase
+                  .schema('msa')
+                  .from('comprobantes_arca')
+                  .update({ cuenta_contable: categIngresado })
+                  .eq('id', arcaId)
+
+                if (error) {
+                  console.error(`Error propagando categ a factura ARCA ${arcaId}:`, error)
+                } else {
+                  console.log(`✅ categ propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
+                }
+              }
+            }
+          }
+        }
+
         recargar()
       }
     } catch (error) {
