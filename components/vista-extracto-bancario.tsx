@@ -620,31 +620,32 @@ export function VistaExtractoBancario() {
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Banknote className="h-6 w-6" />
             Extracto Bancario
-            {cuentaSeleccionada && (
-              <Badge
-                variant="outline"
-                className="ml-2 cursor-pointer hover:bg-gray-100"
-                onClick={() => setSelectorAbierto(true)}
-                title="Cambiar cuenta"
-              >
-                {cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre} ↕
-              </Badge>
-            )}
           </h2>
           <p className="text-gray-600">Conciliación automática de movimientos bancarios</p>
         </div>
         
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
+            onClick={() => setSelectorAbierto(true)}
+            className="flex items-center gap-2"
+          >
+            <Banknote className="h-4 w-4" />
+            {cuentaSeleccionada
+              ? cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre
+              : 'Seleccionar cuenta'}
+          </Button>
+
+          <Button
+            variant="outline"
             onClick={() => setConfiguradorAbierto(true)}
             className="flex items-center gap-2"
           >
             <Settings className="h-4 w-4" />
             Configuración
           </Button>
-          
-          <Button 
+
+          <Button
             onClick={iniciarConciliacion}
             disabled={procesoEnCurso}
             className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
