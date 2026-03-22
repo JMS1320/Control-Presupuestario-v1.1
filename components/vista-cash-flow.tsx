@@ -749,16 +749,17 @@ export function VistaCashFlow() {
   // Filtro rápido por búsqueda (client-side, siempre activo)
   const datosConBusqueda = busquedaRapida.trim()
     ? data.filter(fila => {
-        const q = busquedaRapida.toLowerCase()
-        const montoDebito = fila.debitos > 0 ? fila.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
-        const montoCredito = fila.creditos > 0 ? fila.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+        const q = busquedaRapida.toLowerCase().replace(/\./g, '')
+        const normalizarMonto = (n: number) => n > 0
+          ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
+          : ''
         return (
           fila.nombre_proveedor?.toLowerCase().includes(q) ||
           fila.cuit_proveedor?.toLowerCase().includes(q) ||
           fila.categ?.toLowerCase().includes(q) ||
           fila.detalle?.toLowerCase().includes(q) ||
-          montoDebito.includes(q) ||
-          montoCredito.includes(q)
+          normalizarMonto(fila.debitos).includes(q) ||
+          normalizarMonto(fila.creditos).includes(q)
         )
       })
     : data
