@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus } from "lucide-react"
+import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus, Search } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
@@ -76,6 +76,7 @@ interface CeldaEnEdicion {
 export function VistaCashFlow() {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [busquedaRapida, setBusquedaRapida] = useState('')
   
   // Estados para filtros específicos
   const [fechaDesde, setFechaDesde] = useState('')
@@ -745,12 +746,25 @@ export function VistaCashFlow() {
   }
 
   // Filtrar datos según origen seleccionado en modo PAGOS
-  const datosFiltradosPagos = modoPagos ? data.filter(fila => {
+  // Filtro rápido por búsqueda (client-side, siempre activo)
+  const datosConBusqueda = busquedaRapida.trim()
+    ? data.filter(fila => {
+        const q = busquedaRapida.toLowerCase()
+        return (
+          fila.nombre_proveedor?.toLowerCase().includes(q) ||
+          fila.cuit_proveedor?.toLowerCase().includes(q) ||
+          fila.categ?.toLowerCase().includes(q) ||
+          fila.detalle?.toLowerCase().includes(q)
+        )
+      })
+    : data
+
+  const datosFiltradosPagos = modoPagos ? datosConBusqueda.filter(fila => {
     if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
     if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
     if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
     return true
-  }) : data
+  }) : datosConBusqueda
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
@@ -1628,8 +1642,26 @@ export function VistaCashFlow() {
               </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
+              {/* Buscador rápido siempre visible */}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <Input
+                  placeholder="Buscar proveedor, CUIT, categ, detalle..."
+                  value={busquedaRapida}
+                  onChange={(e) => setBusquedaRapida(e.target.value)}
+                  className="pl-8 h-8 w-72 text-sm"
+                />
+                {busquedaRapida && (
+                  <button
+                    onClick={() => setBusquedaRapida('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setMostrarFiltros(!mostrarFiltros)}
               >
@@ -2034,7 +2066,7 @@ export function VistaCashFlow() {
 
                 {/* Body */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {(modoPagos ? datosFiltradosPagos : data).length === 0 ? (
+                  {(modoPagos ? datosFiltradosPagos : datosConBusqueda).length === 0 ? (
                     <tr>
                       <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
@@ -2045,7 +2077,7 @@ export function VistaCashFlow() {
                       </td>
                     </tr>
                   ) : (
-                    (modoPagos ? datosFiltradosPagos : data).map((fila, index) => {
+                    (modoPagos ? datosFiltradosPagos : datosConBusqueda).map((fila, index) => {
                       const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
                       return (
                       <tr
