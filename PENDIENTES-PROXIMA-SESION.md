@@ -1,7 +1,91 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-03-20
-> **Sesión anterior**: ECHEQ — integración facturas + anticipos
+> **Última actualización**: 2026-03-22
+> **Sesión anterior**: Conciliación bancaria — fixes schema PAM + extracto bancario multi-cuenta
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-03-22
+
+| Feature | Commits |
+|---------|---------|
+| Fix schema `pam` HTTP 406 — `ALTER ROLE authenticator SET pgrst.db_schemas` | SQL directo |
+| Selector de cuenta siempre visible en Extracto Bancario | `7d1b53f` |
+| `useMovimientosBancarios` dinámico — acepta tabla como parámetro | `c6bfeca` |
+| Toda propagación categ usa `tablaActiva` en lugar de `msa_galicia` hardcodeado | `c6bfeca` |
+| Documentación `CONCILIACION-BANCARIA.md` y `ARQUITECTURA-BD.md` actualizadas | `3e7a056` |
+
+---
+
+## 🔧 PENDIENTES — CONCILIACIÓN BANCARIA (atacar de a uno)
+
+### C1 — Traer cuenta contable automáticamente al vincular factura/template
+
+**Situación actual**: Al conciliar un movimiento contra una factura ARCA o template que ya tiene `cuenta_contable` / `categ` asignada, ese valor NO se trae automáticamente al campo `categ` del extracto. El usuario lo tiene que escribir manualmente.
+
+**Comportamiento deseado**:
+- Al seleccionar una factura/template para vincular → pre-completar `categ` del extracto con la cuenta que ya tiene esa factura/template
+- Si la factura/template no tiene cuenta → dejar vacío
+- El usuario puede editar el valor pre-completado antes de confirmar
+
+**Impacto**: Es el flujo más común — la mayoría de las facturas ya tienen cuenta contable asignada.
+
+---
+
+### C2 — Propagación factura → extracto no cubre `pam_galicia_cc`
+
+**Situación actual**: En `vista-facturas-arca.tsx` línea 840, cuando se edita `cuenta_contable` en una factura, propaga a `msa_galicia` y `pam_galicia` pero **no a `pam_galicia_cc`**.
+
+**Fix**: Agregar `pam_galicia_cc` al array `['msa_galicia', 'pam_galicia', 'pam_galicia_cc']`.
+
+---
+
+### C3 — Motor de reglas contable e interno (no implementado)
+
+**Situación actual**:
+- Tabla `reglas_contable_interno` existe pero está **vacía**
+- Componente `configurador-reglas-contable.tsx` existe (CRUD de reglas) pero nunca fue testeado
+- **No existe código** en el motor de conciliación que lea esas reglas y las aplique
+
+**Pendiente**:
+1. Definir estructura y lógica de las reglas (qué variables determinan contable e interno)
+2. Implementar el motor que aplique las reglas al conciliar
+3. Cargar las reglas iniciales en la tabla
+4. Testear el configurador CRUD
+
+---
+
+### C4 — Verificar coherencia reglas_conciliacion vs cuentas_contables
+
+**Situación actual**:
+- `reglas_conciliacion` usa códigos cortos: `IMP 2`, `BANC`, `CRED P`
+- `cuentas_contables` tiene nombres largos: `ADMINISTRACION Y ESTRUCTURA`, `HERBICIDAS`, etc.
+- **No verificado** si los códigos cortos de las reglas existen como `categ` en `cuentas_contables`
+
+**Pendiente**: Hacer query cruzada para identificar qué categ de las reglas no existen en `cuentas_contables` y decidir cómo unificar.
+
+---
+
+### C5 — Reglas de conciliación no asignan contable ni interno
+
+**Situación actual**: La tabla `reglas_conciliacion` tiene columnas `categ`, `centro_costo`, `detalle` — pero **no tiene columnas `contable` ni `interno`**. Las reglas automáticas del motor solo pueden asignar categ/detalle, no los campos contable e interno.
+
+**Pendiente**: Decidir si:
+- (A) Agregar columnas `contable` e `interno` a `reglas_conciliacion`
+- (B) Dejar contable/interno exclusivamente a cargo de `reglas_contable_interno`
+- (C) Combinación: reglas_conciliacion para categ, reglas_contable_interno para contable+interno
+
+---
+
+### Contexto técnico para atacar los pendientes
+
+**Import extracto (aclaración)**: El importador mapea CATEG, Contable, Interno, Centro de Costo del Excel si están presentes. Galicia en práctica no manda esas columnas → llegan vacías. No hay distinción histórico/actual en el import.
+
+**30 reglas activas** en `reglas_conciliacion`, todas sobre `descripcion` tipo `contiene`. Asignan categ e interno. Ordenadas por prioridad (orden 1 a 30+).
+
+**reglas_contable_interno**: Vacía.
+
+---
 
 ---
 
