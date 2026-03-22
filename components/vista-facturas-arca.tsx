@@ -5645,12 +5645,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
         {/* Tab Content: Histórico */}
         <TabsContent value="historico" className="space-y-6">
-          <VistaHistoricoFacturas />
+          <VistaHistoricoFacturas empresa={empresa} />
         </TabsContent>
 
         {/* Tab Content: Asignación Cuentas */}
         <TabsContent value="asignacion" className="space-y-6">
-          <VistaAsignacionArca />
+          <VistaAsignacionArca empresa={empresa} />
         </TabsContent>
       </Tabs>
 

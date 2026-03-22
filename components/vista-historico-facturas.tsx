@@ -104,7 +104,8 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function VistaHistoricoFacturas() {
+export function VistaHistoricoFacturas({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
   const [loading, setLoading] = useState(true)
@@ -138,7 +139,7 @@ export function VistaHistoricoFacturas() {
     setError(null)
     try {
       const [{ data: hist, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
-        supabase.schema("msa").from("comprobantes_historico")
+        supabase.schema(schemaName).from("comprobantes_historico")
           .select("id,fecha,tipo,nro_doc_emisor,denominacion_emisor,imp_neto_gravado,iva,imp_total,fc,cuenta_contable,nro_cuenta,cuenta_asignada,anio_contable,mes_contable")
           .order("fecha", { ascending: false }),
         supabase.from("cuentas_contables")
@@ -307,7 +308,7 @@ export function VistaHistoricoFacturas() {
       // ── PRIORIDAD 2: Historial CUIT en comprobantes_arca operacionales ──
       if (cuitNorm) {
         const { data: arcaRows } = await supabase
-          .schema("msa")
+          .schema(schemaName)
           .from("comprobantes_arca")
           .select("cuenta_contable")
           .eq("cuit", cuit!)

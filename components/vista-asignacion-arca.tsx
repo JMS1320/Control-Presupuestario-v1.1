@@ -102,7 +102,8 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function VistaAsignacionArca() {
+export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
   const [comprobantes, setComprobantes] = useState<ComprobanteArca[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,7 +137,7 @@ export function VistaAsignacionArca() {
     setError(null)
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
-        supabase.schema("msa").from("comprobantes_arca")
+        supabase.schema(schemaName).from("comprobantes_arca")
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
@@ -278,7 +279,7 @@ export function VistaAsignacionArca() {
       // ── PRIORIDAD 1: Historial en comprobantes_historico (mismo CUIT, ya asignados) ──
       if (cuitNorm) {
         const { data: histRows } = await supabase
-          .schema("msa")
+          .schema(schemaName)
           .from("comprobantes_historico")
           .select("cuenta_asignada,nro_cuenta")
           .eq("nro_doc_emisor", cuit!)
@@ -305,7 +306,7 @@ export function VistaAsignacionArca() {
       // ── PRIORIDAD 2: Historial en comprobantes_arca (mismo CUIT, ya asignados) ──
       if (cuitNorm) {
         const { data: arcaRows } = await supabase
-          .schema("msa")
+          .schema(schemaName)
           .from("comprobantes_arca")
           .select("cuenta_contable,nro_cuenta")
           .eq("cuit", cuit!)
