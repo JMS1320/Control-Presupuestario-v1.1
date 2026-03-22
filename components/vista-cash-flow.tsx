@@ -750,11 +750,15 @@ export function VistaCashFlow() {
   const datosConBusqueda = busquedaRapida.trim()
     ? data.filter(fila => {
         const q = busquedaRapida.toLowerCase()
+        const montoDebito = fila.debitos > 0 ? fila.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
+        const montoCredito = fila.creditos > 0 ? fila.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
         return (
           fila.nombre_proveedor?.toLowerCase().includes(q) ||
           fila.cuit_proveedor?.toLowerCase().includes(q) ||
           fila.categ?.toLowerCase().includes(q) ||
-          fila.detalle?.toLowerCase().includes(q)
+          fila.detalle?.toLowerCase().includes(q) ||
+          montoDebito.includes(q) ||
+          montoCredito.includes(q)
         )
       })
     : data
