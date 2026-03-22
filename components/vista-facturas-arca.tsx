@@ -835,9 +835,23 @@ export function VistaFacturasArca() {
         return
       }
       
+      // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
+      if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
+        for (const tabla of ['msa_galicia', 'pam_galicia']) {
+          supabase
+            .from(tabla)
+            .update({ categ: valorFinal })
+            .eq('comprobante_arca_id', datosEdicion.facturaId)
+            .then(({ error }) => {
+              if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
+              else console.log(`✅ cuenta_contable propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
+            })
+        }
+      }
+
       // Actualizar estado local
-      const nuevasFacturas = facturas.map(f => 
-        f.id === datosEdicion.facturaId 
+      const nuevasFacturas = facturas.map(f =>
+        f.id === datosEdicion.facturaId
           ? { ...f, [datosEdicion.columna]: valorFinal }
           : f
       )

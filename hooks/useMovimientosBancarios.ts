@@ -22,6 +22,7 @@ export interface MovimientoBancario {
   interno: string | null
   cuenta: string
   orden: number
+  comprobante_arca_id: string | null
 }
 
 export interface EstadisticasMovimientos {

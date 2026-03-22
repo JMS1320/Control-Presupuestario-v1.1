@@ -248,11 +248,17 @@ export function VistaExtractoBancario() {
                   .from('comprobantes_arca')
                   .update(updateData)
                   .eq('id', opcionId)
-                
+
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
                 } else {
                   console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
+                  // Guardar vínculo persistente en el movimiento bancario
+                  const tablaActual = cuentaSeleccionada || 'msa_galicia'
+                  await supabase
+                    .from(tablaActual)
+                    .update({ comprobante_arca_id: opcionId })
+                    .eq('id', movimientoId)
                 }
                 
               } else if (opcionVinculada.tipo === 'TEMPLATE') {
