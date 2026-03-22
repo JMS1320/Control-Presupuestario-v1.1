@@ -226,7 +226,8 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
   )
 }
 
-export function VistaFacturasArca() {
+export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)
@@ -454,7 +455,6 @@ export function VistaFacturasArca() {
   const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
   const [importandoExcel, setImportandoExcel] = useState(false)
   const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
-  const [empresa, setEmpresa] = useState<'MSA' | 'PAM'>('MSA')
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -538,8 +538,8 @@ export function VistaFacturasArca() {
       setError(null)
 
       const [arcaResult, historicoResult] = await Promise.all([
-        supabase.schema('msa').from('comprobantes_arca').select('*').order('fecha_emision', { ascending: false }),
-        supabase.schema('msa').from('comprobantes_historico').select('*').order('fecha', { ascending: false }),
+        supabase.schema(schemaName).from('comprobantes_arca').select('*').order('fecha_emision', { ascending: false }),
+        supabase.schema(schemaName).from('comprobantes_historico').select('*').order('fecha', { ascending: false }),
       ])
 
       if (arcaResult.error) {
@@ -824,7 +824,7 @@ export function VistaFacturasArca() {
       }
       
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .update({ [datosEdicion.columna]: valorFinal })
         .eq('id', datosEdicion.facturaId)
@@ -1343,7 +1343,7 @@ export function VistaFacturasArca() {
       const [mes, año] = periodo.split('/') // FIX: formato es MM/YYYY
       console.log('🔍 DEBUG cargarFacturasSubdiarios:', { periodo, mes, año })
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('año_contable', parseInt(año))
@@ -1410,7 +1410,7 @@ export function VistaFacturasArca() {
         return
       }
 
-      let query = supabase.schema('msa').from('comprobantes_arca').select('*')
+      let query = supabase.schema(schemaName).from('comprobantes_arca').select('*')
 
       // Filtro por fecha: solo facturas <= período objetivo
       if (periodoObjetivo) {
@@ -1483,7 +1483,7 @@ export function VistaFacturasArca() {
         console.log(`📦 Procesando lote ${Math.floor(i/LOTE_SIZE) + 1}: ${lote.length} facturas`)
         
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({
             año_contable: parseInt(año),
@@ -1531,7 +1531,7 @@ export function VistaFacturasArca() {
       
       // Actualizar todas las facturas imputadas del período a DDJJ OK
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .update({ ddjj_iva: 'DDJJ OK' })
         .eq('mes_contable', parseInt(mes))
@@ -1549,7 +1549,7 @@ export function VistaFacturasArca() {
       
       // DESCARGA AUTOMÁTICA: Obtener facturas actualizadas directamente de BD
       const { data: facturasActualizadas, error: errorFetch } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('mes_contable', parseInt(mes))
@@ -1588,7 +1588,7 @@ export function VistaFacturasArca() {
       
       // Obtener todas las facturas del período (independiente del estado DDJJ)
       const { data: facturasReporte, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('mes_contable', parseInt(mes))
@@ -2165,7 +2165,7 @@ export function VistaFacturasArca() {
     
     try {
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('mes_contable', parseInt(mes))
@@ -2437,7 +2437,7 @@ export function VistaFacturasArca() {
         const lote = facturasIds.slice(i, i + LOTE_SIZE)
         
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update(updateData)
           .in('id', lote)
@@ -2487,7 +2487,7 @@ export function VistaFacturasArca() {
         const lote = facturasIds.slice(i, i + LOTE_SIZE)
 
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({ estado: nuevoEstadoMasivo })
           .in('id', lote)
@@ -2533,7 +2533,7 @@ export function VistaFacturasArca() {
     const tc = parseFloat(tcPagoInputPagos.replace(/\./g, '').replace(',', '.'))
     if (!tc || tc <= 1) { toast.error('TC inválido (debe ser mayor a 1)'); return }
 
-    const { error } = await supabase.schema('msa').from('comprobantes_arca')
+    const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
       .update({ tc_pago: tc }).eq('id', modalTcPagoPagos.factura.id)
     if (error) { toast.error('Error guardando TC de pago'); return }
 
@@ -2559,7 +2559,7 @@ export function VistaFacturasArca() {
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
     try {
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('cuit', cuit)
@@ -2675,7 +2675,7 @@ export function VistaFacturasArca() {
   }) => {
     try {
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('sicore_retenciones')
         .insert(params)
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
@@ -2854,7 +2854,7 @@ export function VistaFacturasArca() {
 
         // Restaurar en BD también
         await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({ estado: guardadoPendiente.estadoAnterior })
           .eq('id', guardadoPendiente.facturaId)
@@ -2880,7 +2880,7 @@ export function VistaFacturasArca() {
       // Recargar facturas
       if (mostrarModalPagos) {
         const { data } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
@@ -2905,7 +2905,7 @@ export function VistaFacturasArca() {
 
       if (anticipoId) {
         // Evitar duplicados: verificar si ya existe cheque para este anticipo
-        const { data: existente } = await supabase.schema('msa').from('cheques')
+        const { data: existente } = await supabase.schema(schemaName).from('cheques')
           .select('id').eq('anticipo_id', anticipoId).limit(1)
         if (existente && existente.length > 0) return
 
@@ -2932,7 +2932,7 @@ export function VistaFacturasArca() {
       } else {
         // Pago de facturas via ECHEQ — filtrar las que ya tienen cheque registrado
         const idsFacturas = facturasACambiar.map(f => f.id)
-        const { data: existentes } = await supabase.schema('msa').from('cheques')
+        const { data: existentes } = await supabase.schema(schemaName).from('cheques')
           .select('factura_id').in('factura_id', idsFacturas)
         const yaExisten = new Set((existentes || []).map((e: any) => e.factura_id))
         const facturasNuevas = facturasACambiar.filter(f => !yaExisten.has(f.id))
@@ -2958,7 +2958,7 @@ export function VistaFacturasArca() {
         }))
       }
 
-      const { error } = await supabase.schema('msa').from('cheques').insert(registros)
+      const { error } = await supabase.schema(schemaName).from('cheques').insert(registros)
       if (error) console.error('Error guardando cheque(s):', error)
     } catch (e) {
       console.error('Error guardarCheques:', e)
@@ -2998,7 +2998,7 @@ export function VistaFacturasArca() {
         updateFactura.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
       }
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .update(updateFactura)
         .eq('id', facturaEnProceso.id)
@@ -3092,7 +3092,7 @@ export function VistaFacturasArca() {
       // Recargar facturas del modal de pagos si está abierto
       if (mostrarModalPagos) {
         const { data } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
@@ -3119,7 +3119,7 @@ export function VistaFacturasArca() {
     }
 
     const { error } = await supabase
-      .schema('msa')
+      .schema(schemaName)
       .from('comprobantes_arca')
       .update(updateData)
       .eq('id', siguiente.id)
@@ -3161,7 +3161,7 @@ export function VistaFacturasArca() {
     try {
       // Si tiene factura vinculada, limpiar SICORE de esa factura
       if (anticipo.factura_id) {
-        await supabase.schema('msa').from('comprobantes_arca')
+        await supabase.schema(schemaName).from('comprobantes_arca')
           .update({ sicore: null, monto_sicore: null, tipo_sicore: null })
           .eq('id', anticipo.factura_id)
       }
@@ -3235,7 +3235,7 @@ export function VistaFacturasArca() {
 
     // Verificar retención previa en ambas tablas
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema('msa').from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
+      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
       supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).neq('id', anticipoSicoreEnProceso.id).limit(1)
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
@@ -3386,7 +3386,7 @@ export function VistaFacturasArca() {
 
       // Traer todos los campos necesarios para el export completo
       const [{ data, error }, { data: tiposData }] = await Promise.all([
-        supabase.schema('msa').from('comprobantes_arca').select('*')
+        supabase.schema(schemaName).from('comprobantes_arca').select('*')
           .eq('sicore', quincena)
           .not('monto_sicore', 'is', null)
           .gt('monto_sicore', 0)
@@ -3424,7 +3424,7 @@ export function VistaFacturasArca() {
     try {
       const [{ data: facturas }, { data: anticipos }] = await Promise.all([
         supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('id, denominacion_emisor, cuit, monto_sicore, imp_total, imp_neto_gravado, fecha_vencimiento, estado')
           .eq('sicore', quincena)
@@ -3484,7 +3484,7 @@ export function VistaFacturasArca() {
 
       // VALIDACIÓN: facturas con SICORE asignado pero aún en estado 'pendiente'
       const { data: facturasPendientes } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id, denominacion_emisor, imp_total')
         .eq('sicore', quincena)
@@ -3560,7 +3560,7 @@ export function VistaFacturasArca() {
 
   const buscarRetencionesV2 = async (quincena: string) => {
     const { data, error } = await supabase
-      .schema('msa')
+      .schema(schemaName)
       .from('sicore_retenciones')
       .select('*')
       .eq('quincena', quincena)
@@ -3776,7 +3776,7 @@ export function VistaFacturasArca() {
     if (!quincena) return
     setCargandoV2(true)
     try {
-      const { data } = await supabase.schema('msa').from('sicore_retenciones')
+      const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
         .select('*')
         .eq('quincena', quincena)
         .order('fecha_pago', { ascending: true })
@@ -4990,7 +4990,7 @@ export function VistaFacturasArca() {
 
               // Cargar en paralelo las 3 fuentes
               const [arcaResult, templatesResult, anticiposResult] = await Promise.all([
-                supabase.schema('msa').from('comprobantes_arca').select('*')
+                supabase.schema(schemaName).from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
                 supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
@@ -5386,7 +5386,7 @@ export function VistaFacturasArca() {
                                       // Si pertenece a un grupo, buscar todas las facturas del grupo
                                       if (factura.grupo_pago_id) {
                                         const { data: grupoFacs } = await supabase
-                                          .schema('msa').from('comprobantes_arca')
+                                          .schema(schemaName).from('comprobantes_arca')
                                           .select('*')
                                           .eq('grupo_pago_id', factura.grupo_pago_id)
                                         if (grupoFacs && grupoFacs.length > 0) {
@@ -5543,20 +5543,6 @@ export function VistaFacturasArca() {
           </DialogHeader>
           
           <div className="space-y-4">
-            {/* Selector de empresa */}
-            <div className="space-y-2">
-              <Label>Empresa destino</Label>
-              <Select value={empresa} onValueChange={(value: 'MSA' | 'PAM') => setEmpresa(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MSA">MSA</SelectItem>
-                  <SelectItem value="PAM">PAM</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Selector de archivo */}
             <div className="space-y-2">
               <Label>Archivo Excel de ARCA</Label>
@@ -5878,7 +5864,7 @@ export function VistaFacturasArca() {
                   className="flex-1 bg-green-600 hover:bg-green-700"
                   onClick={async () => {
                     const { error } = await supabase
-                      .schema('msa')
+                      .schema(schemaName)
                       .from('comprobantes_arca')
                       .update({ sicore: confirmCambioQuincena.quincenahNueva })
                       .eq('id', confirmCambioQuincena.facturaId)
@@ -6602,7 +6588,7 @@ export function VistaFacturasArca() {
               )
               // 1. Crear grupo
               const { data: grupo, error: errGrupo } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primeraF.cuit,
@@ -6616,7 +6602,7 @@ export function VistaFacturasArca() {
               // 2. Asignar grupo a las facturas
               const ids = seleccionadasEnPagar.map(f => f.id)
               const { error: errUpd } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('comprobantes_arca')
                 .update({ grupo_pago_id: grupo.id })
                 .in('id', ids)
@@ -6638,17 +6624,17 @@ export function VistaFacturasArca() {
               const quedan = todasDelGrupo.filter(f => !ids.includes(f.id))
               // Quitar grupo de las seleccionadas
               await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('comprobantes_arca')
                 .update({ grupo_pago_id: null })
                 .in('id', ids)
               // Si el grupo queda con 0 o 1 factura, eliminar el grupo
               if (quedan.length <= 1) {
                 if (quedan.length === 1) {
-                  await supabase.schema('msa').from('comprobantes_arca')
+                  await supabase.schema(schemaName).from('comprobantes_arca')
                     .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
                 }
-                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
               }
               // Actualizar estado local
               setFacturasPagos(prev => prev.map(f =>
@@ -6676,7 +6662,7 @@ export function VistaFacturasArca() {
               const primero = seleccionadasTemplatesActivas[0]
               const monto_total = seleccionadasTemplatesActivas.reduce((s, t) => s + (t.monto || 0), 0)
               const { data: grupo, error: errGrupo } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primero.egreso?.cuit_quien_cobra,
@@ -6715,7 +6701,7 @@ export function VistaFacturasArca() {
                   await supabase.from('cuotas_egresos_sin_factura')
                     .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
                 }
-                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
               }
               setTemplatesPagos(prev => prev.map(t =>
                 ids.includes(t.id) ? { ...t, grupo_pago_id: null } : t
@@ -6803,7 +6789,7 @@ export function VistaFacturasArca() {
                   if (facturasNoCalifican.length > 0) {
                     const idsNoSicore = facturasNoCalifican.map(f => f.id)
                     await supabase
-                      .schema('msa')
+                      .schema(schemaName)
                       .from('comprobantes_arca')
                       .update(datosUpdate)
                       .in('id', idsNoSicore)
@@ -6829,7 +6815,7 @@ export function VistaFacturasArca() {
 
                   // Procesar la primera (actualizar BD con fecha)
                   const { error } = await supabase
-                    .schema('msa')
+                    .schema(schemaName)
                     .from('comprobantes_arca')
                     .update(datosUpdate)
                     .eq('id', primera.id)
@@ -6869,7 +6855,7 @@ export function VistaFacturasArca() {
 
               try {
                 const { error } = await supabase
-                  .schema('msa')
+                  .schema(schemaName)
                   .from('comprobantes_arca')
                   .update(datosUpdate)
                   .in('id', ids)
@@ -6885,7 +6871,7 @@ export function VistaFacturasArca() {
                     const quincenahNueva = generarQuincenaSicore(fechaFinal)
                     if (quincenahNueva !== f.sicore) {
                       await supabase
-                        .schema('msa')
+                        .schema(schemaName)
                         .from('comprobantes_arca')
                         .update({ sicore: quincenahNueva })
                         .eq('id', f.id)

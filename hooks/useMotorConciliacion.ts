@@ -18,15 +18,22 @@ export interface CuentaBancaria {
 export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
   {
     id: 'msa_galicia',
-    nombre: 'MSA Galicia Pesos',
+    nombre: 'MSA Galicia CC Pesos',
     tabla_bd: 'msa_galicia',
     empresa: 'MSA',
     activa: true
   },
   {
-    id: 'pam_galicia', 
-    nombre: 'PAM Galicia Pesos',
+    id: 'pam_galicia',
+    nombre: 'PAM Galicia CA Pesos',
     tabla_bd: 'pam_galicia',
+    empresa: 'PAM',
+    activa: true
+  },
+  {
+    id: 'pam_galicia_cc',
+    nombre: 'PAM Galicia CC Pesos',
+    tabla_bd: 'pam_galicia_cc',
     empresa: 'PAM',
     activa: true
   }
@@ -45,15 +52,8 @@ export function useMotorConciliacion() {
     try {
       console.log(`🏦 Cargando movimientos de ${cuenta.tabla_bd}...`)
       
-      let query = supabase.from(cuenta.tabla_bd).select('*')
-      
-      // Si es PAM, usar schema específico
-      if (cuenta.empresa === 'PAM') {
-        query = supabase.schema('pam').from('galicia').select('*').eq('estado', 'Pendiente')
-      } else {
-        // Para MSA, filtrar solo movimientos pendientes
-        query = query.eq('estado', 'Pendiente')
-      }
+      // Todas las tablas de extractos bancarios están en el schema public
+      let query = supabase.from(cuenta.tabla_bd).select('*').eq('estado', 'Pendiente')
       
       const { data, error } = await query.order('fecha', { ascending: true })
 
@@ -309,12 +309,8 @@ export function useMotorConciliacion() {
   // Función para actualizar movimiento en BD
   const actualizarMovimientoBD = async (cuenta: CuentaBancaria, movimientoId: string, datos: any) => {
     try {
+      // Todas las tablas de extractos bancarios están en el schema public
       let query = supabase.from(cuenta.tabla_bd).update(datos).eq('id', movimientoId)
-      
-      // Si es PAM, usar schema específico
-      if (cuenta.empresa === 'PAM') {
-        query = supabase.schema('pam').from('galicia').update(datos).eq('id', movimientoId)
-      }
       
       const { error } = await query
 
