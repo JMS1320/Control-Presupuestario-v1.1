@@ -163,9 +163,10 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia') {
 
   // Actualización masiva de movimientos
   const actualizarMasivo = async (
-    ids: string[], 
+    ids: string[],
     campos: {
       categ?: string
+      nro_cuenta?: string | null
       centro_de_costo?: string
       estado?: string
       contable?: string
@@ -173,9 +174,12 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia') {
     }
   ): Promise<boolean> => {
     try {
-      // Filtrar campos vacíos
-      const camposLimpios = Object.fromEntries(
-        Object.entries(campos).filter(([key, value]) => value && value.trim() !== '')
+      // Filtrar campos vacíos (nro_cuenta puede ser null explícito — lo incluimos si categ tiene valor)
+      const camposLimpios: Record<string, unknown> = Object.fromEntries(
+        Object.entries(campos).filter(([key, value]) => {
+          if (key === 'nro_cuenta') return campos.categ && campos.categ.trim() !== ''
+          return value && typeof value === 'string' && value.trim() !== ''
+        })
       )
 
       if (Object.keys(camposLimpios).length === 0) {

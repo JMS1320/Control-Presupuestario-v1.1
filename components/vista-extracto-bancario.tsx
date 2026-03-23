@@ -54,6 +54,7 @@ export function VistaExtractoBancario() {
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
   const [editData, setEditData] = useState({
     categ: '',
+    nro_cuenta: '' as string | null,
     centro_de_costo: '',
     estado: '',
     contable: '',
@@ -605,6 +606,7 @@ export function VistaExtractoBancario() {
     setBusquedaCombobox({})
     setEditData({
       categ: '',
+      nro_cuenta: null,
       centro_de_costo: '',
       estado: '',
       contable: '',
@@ -1017,6 +1019,7 @@ export function VistaExtractoBancario() {
                     <CategCombobox
                       value={editData.categ}
                       onValueChange={(value) => setEditData({...editData, categ: value})}
+                      onSelectFull={(categ, nro_cuenta) => setEditData({...editData, categ, nro_cuenta})}
                       placeholder="Seleccionar cuenta contable..."
                       className="w-full"
                     />
