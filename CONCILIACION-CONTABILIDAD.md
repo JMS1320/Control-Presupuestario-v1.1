@@ -1,9 +1,45 @@
-# CONCILIACIÓN BANCARIA — Documentación Técnica Completa
+# CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
+
+---
+
+## 0. ARQUITECTURA CONTABLE INTEGRAL
+
+Todo el sistema de registro contable se construye desde tres grupos de origen que convergen en un único registro de ingresos y gastos:
+
+### Grupo 1 — Facturas ARCA
+- **Qué son**: gastos e ingresos que informa AFIP/ARCA (facturas de proveedores y clientes)
+- **Dónde se registran**: `msa.comprobantes_arca` / `pam.comprobantes_arca`
+- **Cuenta contable**: campo `cuenta_contable` + `nro_cuenta` del plan de cuentas formal (`cuentas_contables`)
+- **Usos**: subdiario IVA para DDJJ mensual + primer bloque contable de ingresos/gastos
+
+### Grupo 2 — Templates
+- **Qué son**: gastos que ARCA no informa (impuestos provinciales, sueldos, expensas, tarjetas, distribuciones, seguros, etc.)
+- **Dónde se registran**: `egresos_sin_factura` / `cuotas_egresos_sin_factura`
+- **Cuenta contable**: campo `categ` del template (plan de cuentas de templates — hoy nomenclatura separada, pendiente unificar)
+- **Carga**: manual o semi-manual por el usuario
+- **Conciliación**: se cruzan contra débitos del extracto bancario (y en el futuro contra caja)
+
+### Grupo 3 — Gastos bancarios automáticos
+- **Qué son**: gastos no presupuestables que surgen directamente del extracto bancario: comisiones bancarias, impuestos sobre débitos (IIBB, IMP AL DEBER, etc.)
+- **Dónde se registran**: directamente en las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) al momento de la conciliación
+- **Cuenta contable**: asignada automáticamente por las **reglas de conciliación** según descripción del movimiento
+- **Problema actual**: las categ de las reglas (`BANC`, `IMP 2`, etc.) no coinciden con el plan de cuentas formal → pendiente unificar (ver sección 13)
+
+### Objetivo
+Que los 3 grupos tengan **cuenta contable correcta y consistente**, permitiendo un registro certero de todos los ingresos y gastos de la empresa desde sus distintas fuentes.
+
+```
+Facturas ARCA  ──────────────────────────────┐
+                                              │
+Templates (sin factura)  ────────────────────┼──► Registro contable unificado
+                                              │    (ingresos + gastos por cuenta)
+Gastos bancarios (conciliación automática) ──┘
+```
 
 ---
 
