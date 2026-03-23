@@ -443,3 +443,75 @@ Las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) ahora ti
 4. **Re-apertura no revierte cambios en factura**: si se "desconcilia" un movimiento manualmente, la factura vinculada NO revierte automáticamente a su estado anterior.
 
 5. **Reglas de conciliación desincronizadas**: las categ en `reglas_conciliacion` no coinciden con `cuentas_contables` ni con `egresos_sin_factura`. Pendiente unificación.
+
+---
+
+## 15. HOJA DE RUTA — INTEGRACIÓN COMPLETA CONCILIACIÓN + CONTABILIDAD
+
+### Clasificación de las reglas de conciliación actuales
+
+**Tipo #1 — Gastos bancarios sin template** (`BANC`, `IMP 2`, etc.)
+Hoy la regla solo asigna una categ, pero no hay template detrás. La propuesta es crear templates para estos (probablemente abiertos, con monto 0, que se llenan al conciliar). Así pasan del Grupo 3 al Grupo 2 y el registro queda completo.
+
+**Tipo #2 — Facturas ARCA por débito automático** (Smart Farming)
+La regla es redundante porque el motor automático debería hacer el match por monto+fecha. Propuesta: eliminar esas reglas una vez verificado que el match funciona.
+
+**Tipo #3 — Templates por débito automático con monto variable** (Metrogas, AYSA)
+La regla reconoce el nombre pero no actualiza el template. La propuesta es que al conciliar, si la regla matchea con un template, actualice el monto de la cuota correspondiente con el real del extracto. Esto cierra la diferencia entre lo presupuestado y lo real.
+
+**Tipo #4 — Movimientos específicos con template existente** (FCI, interbancarias, CAJA)
+Similar al #3 pero son movimientos no-egreso. La regla los identifica, debería llenar o modificar el template.
+
+**Visión ideal**: todos los movimientos del extracto tienen correlato en una factura ARCA o un template → el extracto queda 100% cubierto sin residuos sin clasificar.
+
+---
+
+### Desafíos y riesgos por tipo
+
+**#1 → nuevos templates**
+- ¿Qué tipo de template? Son gastos variables mes a mes → templates abiertos con monto 0 tiene sentido
+- Riesgo bajo, es solo crear los templates faltantes
+
+**#2 → eliminar reglas**
+- Antes de eliminar hay que confirmar que el motor hace el match en esos casos
+- Riesgo: si el match falla (por diferencia de centavos, fecha desplazada) quedarían sin conciliar
+- Recomendado: primero verificar en la práctica, después eliminar
+
+**#3 → actualizar template al conciliar**
+- ¿Qué cuota actualizar? Hay que definir la lógica: ¿la próxima pendiente en fecha? ¿la más cercana al débito?
+- Riesgo de falso positivo: si la regla matchea mal, puede pisar el monto de un template equivocado → necesita confirmación del usuario antes de ejecutar
+- Si el template tiene múltiples cuotas futuras y el usuario activó "propagar a cuotas siguientes", la actualización puede tener efecto en cascada
+
+**#4 → FCI / interbancarias**
+- FCI es bidireccional: la regla tiene que distinguir suscripción (débito) de rescate (crédito) → ya tenemos la arquitectura `tipo_movimiento` diseñada pero no implementada
+- Interbancarias: no son gasto ni ingreso real, son movimiento entre cuentas propias → ¿deben generar registro contable? Requiere definición
+
+**Desafío transversal — consistencia de códigos**
+Para que todo esto funcione, las categ de las reglas deben ser **idénticas** a las categ de los templates correspondientes. Hoy no lo son (`TJETA MSA` vs `Tarjetas MSA`, `BANC` sin template, etc.). Antes de implementar la lógica de "regla llena template", hay que resolver esa unificación.
+
+---
+
+### Pasos a seguir (en orden)
+
+**Paso 1 — Unificar categ de reglas con categ de templates** ← *próximo*
+- Revisar el Excel `Plan_Cuentas_2026-03-23.xlsx` con los dos planes de cuentas
+- Para cada regla, determinar su categ correcta (template existente o nueva)
+- Actualizar las reglas en BD con las categ unificadas
+- *Más info a proveer por el usuario al llegar a este paso*
+
+**Paso 2 — Crear templates Tipo #1 faltantes**
+- Identificar qué gastos bancarios e impuestos bancarios no tienen template
+- Crear templates abiertos con monto 0 para cada uno
+- Asignar cuenta contable correcta del plan de cuentas
+- *Más info a proveer por el usuario al llegar a este paso*
+
+**Paso 3 — Implementar lógica "regla actualiza cuota de template"**
+- Aplica a Tipo #3 (Metrogas, AYSA) y Tipo #4 (FCI, interbancarias, CAJA)
+- Definir lógica de selección de cuota a actualizar
+- Implementar con confirmación del usuario antes de ejecutar
+- *Más info a proveer por el usuario al llegar a este paso*
+
+**Paso 4 — Verificar y eliminar reglas Tipo #2 redundantes**
+- Verificar en la práctica que el motor automático hace el match
+- Una vez confirmado, eliminar las reglas redundantes
+- *Más info a proveer por el usuario al llegar a este paso*
