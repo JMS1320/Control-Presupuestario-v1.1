@@ -361,7 +361,42 @@ NOTIFY pgrst;
 
 ---
 
-## 13. LIMITACIONES ACTUALES (A DESARROLLAR)
+## 13. PLAN DE CUENTAS — CONSISTENCIA
+
+### Dos sistemas de categ actualmente en uso
+
+| Sistema | Fuente | Estilo | Ejemplo |
+|---------|--------|--------|---------|
+| `cuentas_contables` | Facturas ARCA | Plan contable con nro_cuenta | `INTERESES` (422132) |
+| `egresos_sin_factura` | Templates | Descriptivo operativo | `Tarjetas MSA`, `Impuesto inmobiliario` |
+
+Las categ de `reglas_conciliacion` fueron creadas antes del plan de cuentas actual y **no coinciden con ninguno de los dos sistemas**. Pendiente unificar contra las categ de templates (ver PENDIENTES-PROXIMA-SESION.md C4).
+
+### nro_cuenta en extractos (implementado 2026-03-23)
+
+Las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) ahora tienen columna `nro_cuenta VARCHAR(20)`.
+
+**Motivación**: pueden existir dos cuentas con el mismo nombre descriptivo pero distinto número. El `nro_cuenta` es el identificador único y no ambiguo del plan de cuentas.
+
+**Flujo**: al seleccionar una categ en la edición masiva del extracto, el `CategCombobox` devuelve también el `nro_cuenta` correspondiente (si existe en `cuentas_contables`) y lo persiste junto con la categ.
+
+**Estado en otras tablas**:
+- ✅ `msa.comprobantes_arca` — tiene `nro_cuenta` (implementado previamente)
+- ✅ `comprobantes_historico` — tiene `nro_cuenta` (implementado previamente)
+- ✅ `msa_galicia` / `pam_galicia` / `pam_galicia_cc` — tiene `nro_cuenta` (implementado 2026-03-23)
+- ⚠️ `egresos_sin_factura` / `cuotas_egresos_sin_factura` — pendiente agregar `nro_cuenta`
+
+### CategCombobox (actualizado 2026-03-23)
+
+- Carga **`cuentas_contables` como fuente maestra** (ordenada por nro_cuenta)
+- Muestra el nro_cuenta junto a cada opción en el dropdown
+- Prop `onSelectFull(categ, nro_cuenta)` para capturar ambos valores
+- Fuentes secundarias (templates, extractos) aparecen debajo como "Sin número de cuenta"
+- **Fix**: bug previo consultaba columna `codigo` inexistente — corregido a `categ`
+
+---
+
+## 14. LIMITACIONES ACTUALES (A DESARROLLAR)
 
 1. **Sin propagación inversa**: si se edita cuenta_contable en la factura ARCA después de conciliar, el extracto no se actualiza automáticamente.
 
@@ -370,3 +405,5 @@ NOTIFY pgrst;
 3. **Sin historial de cambios de estado**: un movimiento puede pasar de 'conciliado' a 'Pendiente' sin dejar traza.
 
 4. **Re-apertura no revierte cambios en factura**: si se "desconcilia" un movimiento manualmente, la factura vinculada NO revierte automáticamente a su estado anterior.
+
+5. **Reglas de conciliación desincronizadas**: las categ en `reglas_conciliacion` no coinciden con `cuentas_contables` ni con `egresos_sin_factura`. Pendiente unificación.
