@@ -1,6 +1,6 @@
 # CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-24
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
@@ -25,10 +25,10 @@ Todo el sistema de registro contable se construye desde tres grupos de origen qu
 - **Conciliación**: se cruzan contra débitos del extracto bancario (y en el futuro contra caja)
 
 ### Grupo 3 — Gastos bancarios automáticos
-- **Qué son**: gastos no presupuestables que surgen directamente del extracto bancario: comisiones bancarias, impuestos sobre débitos (IIBB, IMP AL DEBER, etc.)
-- **Dónde se registran**: directamente en las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) al momento de la conciliación
-- **Cuenta contable**: asignada automáticamente por las **reglas de conciliación** según descripción del movimiento
-- **Problema actual**: las categ de las reglas (`BANC`, `IMP 2`, etc.) no coinciden con el plan de cuentas formal → pendiente unificar (ver sección 13)
+- **Qué son**: gastos que surgen directamente del extracto bancario: comisiones bancarias, impuestos bancarios (IIBB, Débitos/Créditos, IVA bancario, etc.), FCI, CAJA, tarjetas
+- **Dónde se registran**: en las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) + en su **template correspondiente** (cuota abierta creada automáticamente)
+- **Cuenta contable**: asignada automáticamente por las **reglas de conciliación** según descripción del movimiento — cada categ de regla es ahora idéntica a la categ del template
+- **Estado (2026-03-24)**: ✅ unificación categ reglas ↔ templates completada; templates creados; arquitectura BD lista; lógica motor pendiente de implementar en código
 
 ### Objetivo
 Que los 3 grupos tengan **cuenta contable correcta y consistente**, permitiendo un registro certero de todos los ingresos y gastos de la empresa desde sus distintas fuentes.
@@ -408,19 +408,25 @@ NOTIFY pgrst;
 
 Las categ de `reglas_conciliacion` fueron creadas antes del plan de cuentas actual y **no coinciden con ninguno de los dos sistemas**. Pendiente unificar contra las categ de templates (ver PENDIENTES-PROXIMA-SESION.md C4).
 
-### nro_cuenta en extractos (implementado 2026-03-23)
+### Arquitectura 4 columnas en extractos (completada 2026-03-24)
 
-Las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) ahora tienen columna `nro_cuenta VARCHAR(20)`.
+Las tablas de extracto tienen cuatro columnas de referencia con propósitos distintos:
 
-**Motivación**: pueden existir dos cuentas con el mismo nombre descriptivo pero distinto número. El `nro_cuenta` es el identificador único y no ambiguo del plan de cuentas.
+| Columna | Nivel | Contenido | Aplica a |
+|---------|-------|-----------|----------|
+| `nro_cuenta` | cuenta | código numérico de `cuentas_contables` | Grupo 1 (ARCA) |
+| `template_id` | cuenta | UUID estable del template | Grupo 2 y 3 (templates) |
+| `comprobante_arca_id` | pago | UUID de la factura ARCA vinculada | Grupo 1 (ARCA) |
+| `template_cuota_id` | pago | UUID de la cuota de template vinculada | Grupo 2 y 3 (templates) |
 
-**Flujo**: al seleccionar una categ en la edición masiva del extracto, el `CategCombobox` devuelve también el `nro_cuenta` correspondiente (si existe en `cuentas_contables`) y lo persiste junto con la categ.
+**Motivación**: desacoplar la "cuenta" (identificador estable que no cambia si se edita el nombre) del "pago" (el registro específico del movimiento). El `nro_cuenta` y `template_id` son el equivalente de un código de cuenta contable para sus respectivos mundos — permiten agrupar y reportar sin depender de string matching.
 
-**Estado en otras tablas**:
+**Deduplicación motor**: antes de crear una cuota, el motor verifica si `template_cuota_id` ya está asignado en el extracto — si sí, omite la creación.
+
+**Estado en tablas**:
 - ✅ `msa.comprobantes_arca` — tiene `nro_cuenta` (implementado previamente)
-- ✅ `comprobantes_historico` — tiene `nro_cuenta` (implementado previamente)
-- ✅ `msa_galicia` / `pam_galicia` / `pam_galicia_cc` — tiene `nro_cuenta` (implementado 2026-03-23)
-- ⚠️ `egresos_sin_factura` / `cuotas_egresos_sin_factura` — pendiente agregar `nro_cuenta`
+- ✅ `msa_galicia` / `pam_galicia` / `pam_galicia_cc` — tiene las 4 columnas (nro_cuenta: 2026-03-23, template_id + template_cuota_id: 2026-03-24)
+- ⚠️ `egresos_sin_factura` / `cuotas_egresos_sin_factura` — `nro_cuenta` pendiente
 
 ### CategCombobox (actualizado 2026-03-23)
 
@@ -442,7 +448,7 @@ Las tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) ahora ti
 
 4. **Re-apertura no revierte cambios en factura**: si se "desconcilia" un movimiento manualmente, la factura vinculada NO revierte automáticamente a su estado anterior.
 
-5. **Reglas de conciliación desincronizadas**: las categ en `reglas_conciliacion` no coinciden con `cuentas_contables` ni con `egresos_sin_factura`. Pendiente unificación.
+5. ~~**Reglas de conciliación desincronizadas**~~ ✅ **Resuelto (2026-03-24)**: todas las categ en `reglas_conciliacion` ahora coinciden exactamente con la categ del template correspondiente. `BANC` e `IMP 2` eliminados. ASES desactivada.
 
 ---
 
@@ -493,25 +499,27 @@ Para que todo esto funcione, las categ de las reglas deben ser **idénticas** a 
 
 ### Pasos a seguir (en orden)
 
-**Paso 1 — Unificar categ de reglas con categ de templates** ← *próximo*
-- Revisar el Excel `Plan_Cuentas_2026-03-23.xlsx` con los dos planes de cuentas
-- Para cada regla, determinar su categ correcta (template existente o nueva)
-- Actualizar las reglas en BD con las categ unificadas
-- *Más info a proveer por el usuario al llegar a este paso*
+**Paso 1 — Unificar categ de reglas con categ de templates** ✅ *Completado 2026-03-24*
+- 14 templates nuevos creados: 7 `Gastos Bancarios` + 7 `Impuestos Bancarios`
+- Templates CAJA, Tarjetas MSA/PAM convertidos a `abierto` + `es_bidireccional`
+- Tarjeta VISA PAM consolidada (USS desactivada)
+- 40 reglas actualizadas: categ = nombre exacto del template
+- Campo `llena_template BOOLEAN` agregado a `reglas_conciliacion` (true en todas excepto ASES)
+- Campo `llena_template` en reglas: `true` = al ejecutar la regla, crear cuota en el template
 
-**Paso 2 — Crear templates Tipo #1 faltantes**
-- Identificar qué gastos bancarios e impuestos bancarios no tienen template
-- Crear templates abiertos con monto 0 para cada uno
-- Asignar cuenta contable correcta del plan de cuentas
-- *Más info a proveer por el usuario al llegar a este paso*
+**Paso 2 — Crear templates Tipo #1 faltantes** ✅ *Completado 2026-03-24*
+- Ver detalle en Paso 1 — los 14 templates son los que cubrían este paso
+- Pendiente aún: `CRED P` (Intereses Descubierto) — no tiene template todavía
 
-**Paso 3 — Implementar lógica "regla actualiza cuota de template"**
-- Aplica a Tipo #3 (Metrogas, AYSA) y Tipo #4 (FCI, interbancarias, CAJA)
-- Definir lógica de selección de cuota a actualizar
-- Implementar con confirmación del usuario antes de ejecutar
-- *Más info a proveer por el usuario al llegar a este paso*
+**Paso 3 — Implementar lógica "regla crea cuota en template"** ← *próximo*
+- Aplica a todos los tipos cuando `llena_template = true`
+- En `useMotorConciliacion.ts`: al ejecutar una regla, si `llena_template = true`:
+  1. Buscar el template cuya `categ` coincide con la de la regla
+  2. Crear cuota en `cuotas_egresos_sin_factura` con monto/fecha del extracto + `tipo_movimiento` según débito/crédito
+  3. Escribir `template_id` + `template_cuota_id` en el extracto
+  4. Control deduplicación: si `template_cuota_id` ya existe en el extracto → omitir
+- Para Tipo #3 (templates fijo con cuota preset): la cuota nueva se crea con el monto real; el preset queda como referencia de alerta solamente
 
 **Paso 4 — Verificar y eliminar reglas Tipo #2 redundantes**
 - Verificar en la práctica que el motor automático hace el match
 - Una vez confirmado, eliminar las reglas redundantes
-- *Más info a proveer por el usuario al llegar a este paso*
