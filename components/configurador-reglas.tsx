@@ -28,7 +28,8 @@ export function ConfiguradorReglas() {
     categ: '',
     centro_costo: '',
     detalle: '',
-    activo: true
+    activo: true,
+    llena_template: true
   })
 
   // Reset formulario
@@ -42,7 +43,8 @@ export function ConfiguradorReglas() {
       categ: '',
       centro_costo: '',
       detalle: '',
-      activo: true
+      activo: true,
+      llena_template: true
     })
     setReglaEditando(null)
   }
@@ -68,7 +70,8 @@ export function ConfiguradorReglas() {
       categ: regla.categ,
       centro_costo: regla.centro_costo || '',
       detalle: regla.detalle,
-      activo: regla.activo
+      activo: regla.activo,
+      llena_template: regla.llena_template
     })
     setModalAbierto(true)
   }
@@ -84,7 +87,8 @@ export function ConfiguradorReglas() {
       categ: formulario.categ,
       centro_costo: formulario.centro_costo || null,
       detalle: formulario.detalle,
-      activo: formulario.activo
+      activo: formulario.activo,
+      llena_template: formulario.llena_template ?? true
     }
 
     let exito = false

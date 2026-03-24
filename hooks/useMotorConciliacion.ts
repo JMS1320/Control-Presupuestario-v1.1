@@ -262,17 +262,28 @@ export function useMotorConciliacion() {
                 tipo_match: 'regla',
                 requiere_revision: false,
                 categ_asignado: regla.categ,
-                centro_costo_asignado: regla.centro_costo,
+                centro_costo_asignado: regla.centro_costo ?? undefined,
                 detalle_asignado: regla.detalle
               }
 
-              // Actualizar BD con datos de la regla y marcar como conciliado
+              // Actualizar extracto con categ/detalle de la regla
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
                 centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
                 estado: 'conciliado'
               })
+
+              // Si la regla tiene llena_template=true, crear cuota en el template correspondiente
+              if (regla.llena_template) {
+                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
+                if (cuotaResult) {
+                  await actualizarMovimientoBD(cuenta, movimiento.id, {
+                    template_id: cuotaResult.templateId,
+                    template_cuota_id: cuotaResult.cuotaId
+                  })
+                }
+              }
 
               resultadosProceso.automaticos++
               reglaAplicada = true
@@ -303,6 +314,67 @@ export function useMotorConciliacion() {
       throw error
     } finally {
       setProcesoEnCurso(false)
+    }
+  }
+
+  // Crear cuota en template cuando una regla con llena_template=true hace match
+  const crearCuotaEnTemplate = async (
+    cuenta: CuentaBancaria,
+    regla: ReglaConciliacion,
+    movimiento: MovimientoBancario
+  ): Promise<{ templateId: string; cuotaId: string } | null> => {
+    try {
+      // Buscar templates activos con categ coincidente
+      const { data: templates } = await supabase
+        .from('egresos_sin_factura')
+        .select('id, responsable')
+        .eq('categ', regla.categ)
+        .eq('activo', true)
+
+      if (!templates || templates.length === 0) {
+        console.warn(`⚠️ No hay template activo con categ "${regla.categ}" — cuota no creada`)
+        return null
+      }
+
+      // Si hay varios (ej: FCI MSA + PAM), elegir el que corresponde a la empresa de la cuenta
+      let template = templates[0]
+      if (templates.length > 1) {
+        const coincide = templates.find(t =>
+          t.responsable?.toLowerCase().includes(cuenta.empresa.toLowerCase())
+        )
+        if (coincide) template = coincide
+      }
+
+      // Determinar tipo_movimiento y monto desde el extracto
+      const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
+      const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+      // Crear cuota con estado conciliado directamente
+      const { data: cuota, error } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .insert({
+          egreso_id: template.id,
+          fecha_vencimiento: movimiento.fecha,
+          fecha_estimada: movimiento.fecha,
+          monto,
+          estado: 'conciliado',
+          tipo_movimiento: tipoMovimiento,
+          descripcion: regla.detalle || movimiento.descripcion
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('Error creando cuota en template:', error)
+        return null
+      }
+
+      console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
+      return { templateId: template.id, cuotaId: cuota.id }
+
+    } catch (err) {
+      console.error('Error en crearCuotaEnTemplate:', err)
+      return null
     }
   }
 
