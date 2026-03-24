@@ -18,6 +18,7 @@ interface CuentaSistema {
   nro_cuenta: string
   cuenta_contable: string
   imputable: boolean
+  nombre_totalizadora: string | null
 }
 
 interface ComprobanteArca {
@@ -40,6 +41,7 @@ interface Sugerencia {
   categ: string
   nro_cuenta: string
   cuenta_contable: string
+  nombre_totalizadora: string | null
   score: number
   fuente: "historial_historico" | "historial_arca" | "nombre_similar" | "exacto"
   usos?: number
@@ -141,7 +143,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
-          .select("categ,nro_cuenta,cuenta_contable,imputable")
+          .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
           .order("nro_cuenta"),
       ])
       if (e1) throw new Error(e1.message)
@@ -640,6 +642,9 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                     className={`w-full text-left flex items-center gap-3 rounded-lg border px-3 py-2 transition-all
                       ${elegida ? "border-blue-400 bg-blue-50 ring-1 ring-blue-300" : "border-gray-200 hover:bg-gray-50"}`}>
                     <div className="flex-1 min-w-0">
+                      {sug.nombre_totalizadora && (
+                        <p className="text-[10px] text-gray-400 mb-0.5 truncate">{sug.nombre_totalizadora}</p>
+                      )}
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{sug.categ}</span>
                         <span className="shrink-0 font-mono text-xs text-gray-400 bg-gray-100 rounded px-1">{sug.nro_cuenta}</span>
