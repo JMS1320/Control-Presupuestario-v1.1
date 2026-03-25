@@ -58,6 +58,9 @@ interface Periodo {
   horas_mes: number | null
   varios: number | null
   valor_franco: number | null
+  vacaciones: number | null
+  premio: number | null
+  observaciones: string | null
 }
 
 interface Pago {
@@ -170,8 +173,15 @@ export function TabSueldos() {
   const [edHoras, setEdHoras] = useState('')
   const [edVarios, setEdVarios] = useState('')
   const [edValorFranco, setEdValorFranco] = useState('')
-  const [francoAutoSync, setFrancoAutoSync] = useState(true) // true = calculado de (A+B)/25
+  const [francoAutoSync, setFrancoAutoSync] = useState(true)
+  const [edVacaciones, setEdVacaciones] = useState('')
+  const [edPremio, setEdPremio] = useState('')
+  const [edObservaciones, setEdObservaciones] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+
+  // Modal propagar
+  const [modalPropagar, setModalPropagar] = useState(false)
+  const [propagarData, setPropagandoData] = useState<{ updateData: Record<string, any>; nuevoBruto: number } | null>(null)
 
   // Modal edición pago
   const [editandoPago, setEditandoPago] = useState<Pago | null>(null)
@@ -348,12 +358,13 @@ export function TabSueldos() {
 
   const num = (v: string) => parseFloat(v.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
 
-  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number) => {
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0) => {
+    const extras = varios + vacaciones + premio
     switch (tipo) {
-      case 'ab_francos':   return (a + b) + (valorFranco * francos) + varios
-      case 'por_dia':      return vdia * dias + varios
-      case 'por_hora_ipc': return vhora * horas + varios
-      default:             return (edPeriodo?.bruto_calculado ?? 0) + varios
+      case 'ab_francos':   return (a + b) + (valorFranco * francos) + extras
+      case 'por_dia':      return vdia * dias + extras
+      case 'por_hora_ipc': return vhora * horas + extras
+      default:             return (edPeriodo?.bruto_calculado ?? 0) + extras
     }
   }
 
@@ -367,6 +378,9 @@ export function TabSueldos() {
     setEdValorHora(p.valor_por_hora !== null ? String(p.valor_por_hora) : '')
     setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
     setEdVarios(p.varios !== null && p.varios !== 0 ? String(p.varios) : '')
+    setEdVacaciones(p.vacaciones !== null && p.vacaciones !== 0 ? String(p.vacaciones) : '')
+    setEdPremio(p.premio !== null && p.premio !== 0 ? String(p.premio) : '')
+    setEdObservaciones(p.observaciones ?? '')
     // Valor franco: si tiene uno guardado, usarlo; sino calcular de A+B
     if (p.valor_franco !== null && p.valor_franco !== undefined) {
       setEdValorFranco(String(p.valor_franco))
@@ -407,22 +421,27 @@ export function TabSueldos() {
   const guardarEdicion = async () => {
     if (!edPeriodo) return
     setGuardandoEdicion(true)
-    const tipo    = edPeriodo.empleado?.tipo_empleado
-    const a       = num(edMontoA)
-    const b       = num(edMontoB)
-    const francos = parseInt(edFrancos) || 0
-    const vf      = num(edValorFranco)
-    const vdia    = num(edValorDia)
-    const dias    = parseInt(edDias) || 0
-    const vhora   = num(edValorHora)
-    const horas   = parseInt(edHoras) || 0
-    const varios  = num(edVarios)
+    const tipo      = edPeriodo.empleado?.tipo_empleado
+    const a         = num(edMontoA)
+    const b         = num(edMontoB)
+    const francos   = parseInt(edFrancos) || 0
+    const vf        = num(edValorFranco)
+    const vdia      = num(edValorDia)
+    const dias      = parseInt(edDias) || 0
+    const vhora     = num(edValorHora)
+    const horas     = parseInt(edHoras) || 0
+    const varios    = num(edVarios)
+    const vacaciones = num(edVacaciones)
+    const premio    = num(edPremio)
 
-    const nuevoBruto = calcularBruto(tipo, a, b, francos, vf, vdia, dias, vhora, horas, varios)
+    const nuevoBruto = calcularBruto(tipo, a, b, francos, vf, vdia, dias, vhora, horas, varios, vacaciones, premio)
     const nuevoSaldo = nuevoBruto - (edPeriodo.anticipos_descontados ?? 0)
 
-    const updateData: Record<string, number | null> = {
+    const updateData: Record<string, any> = {
       varios,
+      vacaciones: vacaciones || null,
+      premio: premio || null,
+      observaciones: edObservaciones.trim() || null,
       bruto_calculado: nuevoBruto,
       saldo_pendiente: nuevoSaldo,
     }
@@ -441,12 +460,16 @@ export function TabSueldos() {
 
     await supabase.from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
 
-    // Propagar a meses siguientes del mismo empleado
-    const propagar = window.confirm(
-      `¿Aplicar estos parámetros a todos los meses siguientes de ${edPeriodo.empleado?.nombre}?`
-    )
-    if (propagar) {
-      // Buscar períodos del mismo empleado posteriores al actual
+    setGuardandoEdicion(false)
+    setModalEdicion(false)
+    // Mostrar modal para propagar (sin bloquear el cierre del modal de edición)
+    setPropagandoData({ updateData, nuevoBruto })
+    setModalPropagar(true)
+  }
+
+  const ejecutarPropagar = async (propagar: boolean) => {
+    setModalPropagar(false)
+    if (propagar && edPeriodo && propagarData) {
       const { data: siguientes } = await supabase
         .from('sueldos_periodos')
         .select('id, anticipos_descontados')
@@ -455,17 +478,15 @@ export function TabSueldos() {
 
       if (siguientes && siguientes.length > 0) {
         await Promise.all(siguientes.map((sig: any) => {
-          const sigSaldo = nuevoBruto - (sig.anticipos_descontados ?? 0)
+          const sigSaldo = propagarData.nuevoBruto - (sig.anticipos_descontados ?? 0)
           return supabase
             .from('sueldos_periodos')
-            .update({ ...updateData, saldo_pendiente: sigSaldo })
+            .update({ ...propagarData.updateData, saldo_pendiente: sigSaldo })
             .eq('id', sig.id)
         }))
       }
     }
-
-    setGuardandoEdicion(false)
-    setModalEdicion(false)
+    setPropagandoData(null)
     await cargar()
   }
 
@@ -477,7 +498,7 @@ export function TabSueldos() {
         num(edValorFranco),
         num(edValorDia), parseInt(edDias) || 0,
         num(edValorHora), parseInt(edHoras) || 0,
-        num(edVarios),
+        num(edVarios), num(edVacaciones), num(edPremio),
       )
     : 0
 
@@ -627,7 +648,27 @@ export function TabSueldos() {
                 )}
                 {periodos.map(p => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.empleado?.nombre}</TableCell>
+                    <TableCell className="font-medium">
+                      <div>{p.empleado?.nombre}</div>
+                      {/* Indicadores extras del período */}
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {p.vacaciones ? (
+                          <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0 rounded">
+                            Vac +{formatoMoneda(p.vacaciones)}
+                          </span>
+                        ) : null}
+                        {p.premio ? (
+                          <span className="text-xs bg-yellow-50 text-yellow-700 px-1.5 py-0 rounded">
+                            Premio +{formatoMoneda(p.premio)}
+                          </span>
+                        ) : null}
+                        {p.observaciones ? (
+                          <span className="text-xs text-gray-400 italic" title={p.observaciones}>
+                            {p.observaciones.length > 40 ? p.observaciones.slice(0, 40) + '…' : p.observaciones}
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>{empresaBadge(p.empleado?.empresa ?? '')}</TableCell>
                     <TableCell>
                       <span className="text-xs text-gray-500">{tipoLabel(p.empleado?.tipo_empleado)}</span>
@@ -869,6 +910,40 @@ export function TabSueldos() {
                 />
               </div>
 
+              {/* Vacaciones y Premio — opcionales */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Vacaciones</Label>
+                  <Input
+                    type="text"
+                    placeholder="0,00"
+                    value={edVacaciones}
+                    onChange={e => setEdVacaciones(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Premio</Label>
+                  <Input
+                    type="text"
+                    placeholder="0,00"
+                    value={edPremio}
+                    onChange={e => setEdPremio(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Observaciones */}
+              <div>
+                <Label>Observaciones</Label>
+                <textarea
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={2}
+                  placeholder="Notas del mes (se muestra en el resumen)..."
+                  value={edObservaciones}
+                  onChange={e => setEdObservaciones(e.target.value)}
+                />
+              </div>
+
               {/* Preview bruto */}
               <div className="rounded-md bg-gray-50 px-4 py-3 flex justify-between items-center border">
                 <span className="text-sm text-gray-500">Bruto calculado</span>
@@ -992,6 +1067,27 @@ export function TabSueldos() {
             >
               {guardando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {editandoPago ? 'Guardar cambios' : 'Registrar Anticipo'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Propagar parámetros ── */}
+      <Dialog open={modalPropagar} onOpenChange={setModalPropagar}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>¿Propagar parámetros?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            ¿Querés aplicar los mismos valores a todos los meses siguientes de{' '}
+            <span className="font-semibold">{edPeriodo?.empleado?.nombre}</span>?
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => ejecutarPropagar(false)}>
+              No, solo este mes
+            </Button>
+            <Button onClick={() => ejecutarPropagar(true)}>
+              Sí, propagar
             </Button>
           </DialogFooter>
         </DialogContent>
