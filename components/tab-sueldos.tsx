@@ -57,6 +57,7 @@ interface Periodo {
   valor_por_hora: number | null
   horas_mes: number | null
   varios: number | null
+  valor_franco: number | null
 }
 
 interface Pago {
@@ -168,7 +169,12 @@ export function TabSueldos() {
   const [edValorHora, setEdValorHora] = useState('')
   const [edHoras, setEdHoras] = useState('')
   const [edVarios, setEdVarios] = useState('')
+  const [edValorFranco, setEdValorFranco] = useState('')
+  const [francoAutoSync, setFrancoAutoSync] = useState(true) // true = calculado de (A+B)/25
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+
+  // Modal edición pago
+  const [editandoPago, setEditandoPago] = useState<Pago | null>(null)
 
   // ── Cargar datos del mes seleccionado ──────────────────────────────────────
 
@@ -244,30 +250,57 @@ export function TabSueldos() {
 
     const periodo = periodos.find(p => p.empleado_id === antEmpId)
 
-    const { error: errPago } = await supabase
-      .from('sueldos_pagos')
-      .insert({
-        periodo_id:       periodo?.id ?? null,
-        empleado_id:      antEmpId,
-        tipo:             'anticipo',
-        fecha:            antFecha,
-        monto,
-        cuenta_destino_id: antCuenta || null,
-        descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
-        estado:            antEstado,
-      })
-
-    if (!errPago && periodo) {
-      const nuevosAnticipos = (periodo.anticipos_descontados ?? 0) + monto
-      const nuevoSaldo      = (periodo.saldo_pendiente ?? 0) - monto
+    if (editandoPago) {
+      // MODO EDICIÓN: actualizar pago existente y recalcular período
       await supabase
-        .from('sueldos_periodos')
-        .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
-        .eq('id', periodo.id)
+        .from('sueldos_pagos')
+        .update({
+          fecha: antFecha,
+          monto,
+          cuenta_destino_id: antCuenta || null,
+          descripcion: antDesc || null,
+          estado: antEstado,
+        })
+        .eq('id', editandoPago.id)
+
+      // Revertir monto viejo y aplicar nuevo en el período
+      if (periodo) {
+        const anticiposSinViejo = (periodo.anticipos_descontados ?? 0) - editandoPago.monto
+        const nuevosAnticipos   = anticiposSinViejo + monto
+        const nuevoSaldo        = (periodo.bruto_calculado ?? 0) - nuevosAnticipos
+        await supabase
+          .from('sueldos_periodos')
+          .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
+          .eq('id', periodo.id)
+      }
+    } else {
+      // MODO CREACIÓN
+      const { error: errPago } = await supabase
+        .from('sueldos_pagos')
+        .insert({
+          periodo_id:        periodo?.id ?? null,
+          empleado_id:       antEmpId,
+          tipo:              'anticipo',
+          fecha:             antFecha,
+          monto,
+          cuenta_destino_id: antCuenta || null,
+          descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
+          estado:            antEstado,
+        })
+
+      if (!errPago && periodo) {
+        const nuevosAnticipos = (periodo.anticipos_descontados ?? 0) + monto
+        const nuevoSaldo      = (periodo.saldo_pendiente ?? 0) - monto
+        await supabase
+          .from('sueldos_periodos')
+          .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
+          .eq('id', periodo.id)
+      }
     }
 
     setGuardando(false)
     setModalAnticipo(false)
+    setEditandoPago(null)
     setAntEmpId('')
     setAntMonto('')
     setAntFecha(new Date().toISOString().split('T')[0])
@@ -277,7 +310,19 @@ export function TabSueldos() {
     await cargar()
   }
 
-  // ── Eliminar pago ─────────────────────────────────────────────────────────
+  // ── Editar / Eliminar pago ────────────────────────────────────────────────
+
+  const abrirEdicionPago = (pago: Pago) => {
+    setEditandoPago(pago)
+    // Pre-llenar campos del modal anticipo con datos del pago existente
+    setAntEmpId(pago.empleado_id)
+    setAntMonto(String(pago.monto))
+    setAntFecha(pago.fecha)
+    setAntCuenta(pago.cuenta_destino_id ?? '')
+    setAntDesc(pago.descripcion ?? '')
+    setAntEstado((pago as any).estado ?? 'pagar')
+    setModalAnticipo(true)
+  }
 
   const eliminarPago = async (pago: Pago) => {
     if (!window.confirm(`¿Eliminar este ${pago.tipo} de ${formatoMoneda(pago.monto)}? Esta acción no se puede deshacer.`)) return
@@ -303,9 +348,9 @@ export function TabSueldos() {
 
   const num = (v: string) => parseFloat(v.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
 
-  const calcularBruto = (tipo: string, a: number, b: number, francos: number, vdia: number, dias: number, vhora: number, horas: number, varios: number) => {
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number) => {
     switch (tipo) {
-      case 'ab_francos':   return (a + b) + ((a + b) / 25 * francos) + varios
+      case 'ab_francos':   return (a + b) + (valorFranco * francos) + varios
       case 'por_dia':      return vdia * dias + varios
       case 'por_hora_ipc': return vhora * horas + varios
       default:             return (edPeriodo?.bruto_calculado ?? 0) + varios
@@ -322,23 +367,58 @@ export function TabSueldos() {
     setEdValorHora(p.valor_por_hora !== null ? String(p.valor_por_hora) : '')
     setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
     setEdVarios(p.varios !== null && p.varios !== 0 ? String(p.varios) : '')
+    // Valor franco: si tiene uno guardado, usarlo; sino calcular de A+B
+    if (p.valor_franco !== null && p.valor_franco !== undefined) {
+      setEdValorFranco(String(p.valor_franco))
+      setFrancoAutoSync(false)
+    } else {
+      const vf = p.monto_a !== null && p.monto_b !== null ? (p.monto_a + p.monto_b) / 25 : 0
+      setEdValorFranco(String(vf))
+      setFrancoAutoSync(true)
+    }
     setModalEdicion(true)
+  }
+
+  // Sincronizar valor franco cuando cambia A o B (solo si no fue editado manualmente)
+  const onChangeA = (v: string) => {
+    setEdMontoA(v)
+    if (francoAutoSync) {
+      const vf = (num(v) + num(edMontoB)) / 25
+      setEdValorFranco(String(vf))
+    }
+  }
+  const onChangeB = (v: string) => {
+    setEdMontoB(v)
+    if (francoAutoSync) {
+      const vf = (num(edMontoA) + num(v)) / 25
+      setEdValorFranco(String(vf))
+    }
+  }
+  const onChangeFrancoManual = (v: string) => {
+    setEdValorFranco(v)
+    setFrancoAutoSync(false)
+  }
+  const resetFrancoAuto = () => {
+    const vf = (num(edMontoA) + num(edMontoB)) / 25
+    setEdValorFranco(String(vf))
+    setFrancoAutoSync(true)
   }
 
   const guardarEdicion = async () => {
     if (!edPeriodo) return
     setGuardandoEdicion(true)
-    const tipo = edPeriodo.empleado?.tipo_empleado
+    const tipo    = edPeriodo.empleado?.tipo_empleado
     const a       = num(edMontoA)
     const b       = num(edMontoB)
     const francos = parseInt(edFrancos) || 0
+    const vf      = num(edValorFranco)
     const vdia    = num(edValorDia)
     const dias    = parseInt(edDias) || 0
     const vhora   = num(edValorHora)
     const horas   = parseInt(edHoras) || 0
     const varios  = num(edVarios)
 
-    const nuevoBruto = calcularBruto(tipo, a, b, francos, vdia, dias, vhora, horas, varios)
+    const nuevoBruto = calcularBruto(tipo, a, b, francos, vf, vdia, dias, vhora, horas, varios)
     const nuevoSaldo = nuevoBruto - (edPeriodo.anticipos_descontados ?? 0)
 
     const updateData: Record<string, number | null> = {
@@ -350,6 +430,7 @@ export function TabSueldos() {
       updateData.monto_a = a
       updateData.monto_b = b
       updateData.francos_cantidad = francos
+      updateData.valor_franco = francoAutoSync ? null : vf
     } else if (tipo === 'por_dia') {
       updateData.valor_por_dia = vdia
       updateData.dias_trabajados = dias
@@ -359,6 +440,30 @@ export function TabSueldos() {
     }
 
     await supabase.from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
+
+    // Propagar a meses siguientes del mismo empleado
+    const propagar = window.confirm(
+      `¿Aplicar estos parámetros a todos los meses siguientes de ${edPeriodo.empleado?.nombre}?`
+    )
+    if (propagar) {
+      // Buscar períodos del mismo empleado posteriores al actual
+      const { data: siguientes } = await supabase
+        .from('sueldos_periodos')
+        .select('id, anticipos_descontados')
+        .eq('empleado_id', edPeriodo.empleado_id)
+        .or(`anio.gt.${edPeriodo.anio},and(anio.eq.${edPeriodo.anio},mes.gt.${edPeriodo.mes})`)
+
+      if (siguientes && siguientes.length > 0) {
+        await Promise.all(siguientes.map((sig: any) => {
+          const sigSaldo = nuevoBruto - (sig.anticipos_descontados ?? 0)
+          return supabase
+            .from('sueldos_periodos')
+            .update({ ...updateData, saldo_pendiente: sigSaldo })
+            .eq('id', sig.id)
+        }))
+      }
+    }
+
     setGuardandoEdicion(false)
     setModalEdicion(false)
     await cargar()
@@ -369,6 +474,7 @@ export function TabSueldos() {
     ? calcularBruto(
         edPeriodo.empleado?.tipo_empleado,
         num(edMontoA), num(edMontoB), parseInt(edFrancos) || 0,
+        num(edValorFranco),
         num(edValorDia), parseInt(edDias) || 0,
         num(edValorHora), parseInt(edHoras) || 0,
         num(edVarios),
@@ -607,13 +713,22 @@ export function TabSueldos() {
                     <TableCell className="text-sm text-gray-500">{pago.descripcion}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatoMoneda(pago.monto)}</TableCell>
                     <TableCell>
-                      <button
-                        onClick={() => eliminarPago(pago)}
-                        className="text-gray-300 hover:text-red-500 transition-colors"
-                        title="Eliminar"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => abrirEdicionPago(pago)}
+                          className="text-gray-300 hover:text-blue-500 transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => eliminarPago(pago)}
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                          title="Eliminar"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -645,7 +760,7 @@ export function TabSueldos() {
                         type="text"
                         placeholder="0,00"
                         value={edMontoA}
-                        onChange={e => setEdMontoA(e.target.value)}
+                        onChange={e => onChangeA(e.target.value)}
                       />
                     </div>
                     <div>
@@ -654,11 +769,11 @@ export function TabSueldos() {
                         type="text"
                         placeholder="0,00"
                         value={edMontoB}
-                        onChange={e => setEdMontoB(e.target.value)}
+                        onChange={e => onChangeB(e.target.value)}
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 items-end">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label>Cant. francos trabajados</Label>
                       <Input
@@ -668,11 +783,28 @@ export function TabSueldos() {
                         onChange={e => setEdFrancos(e.target.value)}
                       />
                     </div>
-                    <div className="text-sm text-gray-500 pb-2">
-                      Valor franco:{' '}
-                      <span className="font-mono font-semibold text-gray-700">
-                        {formatoMoneda((num(edMontoA) + num(edMontoB)) / 25)}
-                      </span>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label>Valor franco</Label>
+                        {!francoAutoSync && (
+                          <button
+                            onClick={resetFrancoAuto}
+                            className="text-xs text-blue-500 hover:underline"
+                          >
+                            ↺ Recalcular de A+B
+                          </button>
+                        )}
+                      </div>
+                      <Input
+                        type="text"
+                        placeholder="0,00"
+                        value={francoAutoSync ? formatoMoneda(num(edValorFranco)).replace('$','').trim() : edValorFranco}
+                        onChange={e => onChangeFrancoManual(e.target.value)}
+                        className={francoAutoSync ? 'bg-gray-50 text-gray-500' : ''}
+                      />
+                      {francoAutoSync && (
+                        <p className="text-xs text-gray-400 mt-0.5">Calculado de (A+B)/25 · editar para fijar valor</p>
+                      )}
                     </div>
                   </div>
                 </>
@@ -761,10 +893,10 @@ export function TabSueldos() {
       </Dialog>
 
       {/* ── Modal Anticipo ── */}
-      <Dialog open={modalAnticipo} onOpenChange={setModalAnticipo}>
+      <Dialog open={modalAnticipo} onOpenChange={v => { setModalAnticipo(v); if (!v) setEditandoPago(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Registrar Anticipo</DialogTitle>
+            <DialogTitle>{editandoPago ? 'Editar Pago' : 'Registrar Anticipo'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
@@ -851,7 +983,7 @@ export function TabSueldos() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAnticipo(false)}>
+            <Button variant="outline" onClick={() => { setModalAnticipo(false); setEditandoPago(null) }}>
               Cancelar
             </Button>
             <Button
@@ -859,7 +991,7 @@ export function TabSueldos() {
               disabled={guardando || !antEmpId || !antMonto}
             >
               {guardando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Registrar Anticipo
+              {editandoPago ? 'Guardar cambios' : 'Registrar Anticipo'}
             </Button>
           </DialogFooter>
         </DialogContent>
