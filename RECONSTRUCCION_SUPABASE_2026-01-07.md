@@ -10385,3 +10385,75 @@ ed9e0c2 - Feature: crearCuotaEnTemplate en motor + tipos MovimientoBancario exte
 ```
 
 **Branch**: `desarrollo` — pendiente merge a `main` después de testing
+
+---
+
+## Sesión 2026-03-25 — Supervisión BD + reglas por cuenta bancaria
+
+### Supervisión de rigor ejecutada
+
+Auditoría completa de templates, reglas y cuentas contables. Queries ejecutadas sobre BD en vivo.
+
+#### Templates — hallazgos
+
+- **`responsable = 'MSA / PAM'`** en 14 templates bancarios (Gastos + Impuestos): cambiado a `'MSA'`. Cuando se agreguen PAM y MA se crearán sets propios.
+- **`es_bidireccional = true`** en esos mismos 14 templates: confirmado correcto — los bancos a veces reintegran cargos mal cobrados, por lo que el template puede recibir créditos.
+- **Template `Pasajes`** sin `cuenta_agrupadora`: asentado como pendiente. El campo es solo display/reportes, se puede cambiar en cualquier momento sin impacto en movimientos.
+- **Todos los demás templates**: `cuenta_agrupadora` ✅, `categ` consistente ✅, `responsable` correcto ✅.
+
+#### Reglas — hallazgos
+
+- 40 reglas activas, 1 inactiva (ASES orden 41).
+- Todos los `categ` de reglas activas tienen template correspondiente en BD ✅.
+- **Sin campo `cuenta_bancaria_id`**: problema identificado — el motor aplicaba todas las reglas a cualquier cuenta. Resuelto en esta sesión (ver abajo).
+- Regla 3 (`texto_buscar = "Iva"`, tipo "contiene"): texto genérico, funciona correctamente por precedencia (orden 3 vs orden 2 para Percepcion IVA).
+
+#### Cuentas contables — hallazgos
+
+Estructura de campos aclarada:
+- `categ` y `cuenta_contable`: **idénticos** en los 67 registros — campo duplicado, el sistema usa `categ` como identificador
+- `nro_cuenta`: número contable jerárquico
+- `cta_totalizadora`: número cuenta padre
+- `nombre_totalizadora`: nombre cuenta padre — **ya populado** ✅
+- `grupo_cuenta`: NULL en todos los 67 registros — columna vacía sin uso
+- Inconsistencia menor: cuenta `423` tiene `nombre_totalizadora` en mixed case ("Egresos Por Ganaderia") vs resto en UPPERCASE — pendiente análisis si corresponde corregir
+
+### Implementación: reglas filtradas por cuenta bancaria
+
+**Problema**: `reglas_conciliacion` no tenía campo de cuenta. El motor aplicaba todas las reglas a cualquier cuenta bancaria. Con cuentas PAM y MA esto mezclaría reglas con leyendas distintas.
+
+**Solución implementada**:
+
+```sql
+ALTER TABLE reglas_conciliacion
+ADD COLUMN cuenta_bancaria_id VARCHAR DEFAULT 'msa_galicia';
+-- 40 reglas existentes quedan con 'msa_galicia' por el DEFAULT
+```
+
+**Archivos modificados**:
+- `types/conciliacion.ts`: campo `cuenta_bancaria_id: string` en `ReglaConciliacion`
+- `hooks/useReglasConciliacion.ts`: `cargarReglasActivas(cuentaId: string)` filtra `.eq('cuenta_bancaria_id', cuentaId)`. El insert incluye `cuenta_bancaria_id` y `llena_template`.
+- `hooks/useMotorConciliacion.ts`: `cargarReglasActivas(cuenta.id)` — pasa el id de la cuenta siendo conciliada
+- `components/configurador-reglas.tsx`: selector de cuenta bancaria arriba de la lista, filtro de la lista por cuenta, campo `cuenta_bancaria_id` en formulario crear/editar (pre-llenado con cuenta seleccionada)
+
+**Resultado**: al conciliar MSA Galicia, solo se cargan reglas con `cuenta_bancaria_id = 'msa_galicia'`. Para PAM y MA: crear sets de reglas con `cuenta_bancaria_id = 'pam_galicia'` / `'pam_galicia_cc'` desde el configurador sin tocar código.
+
+**Build**: ✅ exit code 0, sin errores nuevos introducidos.
+
+### Pendientes identificados en supervisión
+
+Ver `CONCILIACION-CONTABILIDAD.md` sección "Pendientes identificados al 2026-03-24" para lista completa. Resumen de nuevos:
+
+- **Templates bancarios PAM + MA**: crear sets con `responsable = 'PAM'` y `'MA'` cuando se configuren esas cuentas
+- **Template Pasajes**: asignar `cuenta_agrupadora` cuando se defina el valor correcto
+- **`grupo_cuenta` en cuentas_contables**: NULL en todos — columna sin uso, evaluar si eliminar
+- **`cuenta_contable` en cuentas_contables**: idéntico a `categ` — columna redundante, evaluar simplificación futura
+- **`nombre_totalizadora` capitalización**: inconsistencia menor en cuenta 423
+
+### Commits aplicados
+
+```
+8b9f600 - Docs+Data: Supervisión 2026-03-25 — responsable MSA en templates bancarios
+a3fb0ab - Feature: reglas de conciliacion filtradas por cuenta bancaria
+714cee0 - Docs: cuenta_bancaria_id en reglas — marcado como completado
+```
