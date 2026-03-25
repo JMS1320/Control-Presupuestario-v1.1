@@ -174,30 +174,31 @@ export function TabSueldos() {
 
   const cargar = async () => {
     setCargando(true)
-    const mesStr = String(mesActual.mes).padStart(2, '0')
-    const primerDia = `${mesActual.anio}-${mesStr}-01`
-    // último día del mes
-    const ultimoDia = new Date(mesActual.anio, mesActual.mes, 0).toISOString().split('T')[0]
 
-    const [{ data: pdata }, { data: cdata }, { data: pagoData }] = await Promise.all([
-      supabase
-        .from('sueldos_periodos')
-        .select('*, empleado:sueldos_empleados(*)')
-        .eq('anio', mesActual.anio)
-        .eq('mes', mesActual.mes)
-        .order('empleado(nombre)'),
+    // Primero cargamos los períodos del mes para obtener sus IDs
+    const { data: pdata } = await supabase
+      .from('sueldos_periodos')
+      .select('*, empleado:sueldos_empleados(*)')
+      .eq('anio', mesActual.anio)
+      .eq('mes', mesActual.mes)
+      .order('empleado(nombre)')
 
+    const periodoIds = (pdata ?? []).map((p: any) => p.id)
+
+    // Cuentas y pagos en paralelo; pagos filtrados por periodo_id (mes asignado, no fecha de pago)
+    const [{ data: cdata }, { data: pagoData }] = await Promise.all([
       supabase
         .from('sueldos_cuentas_empleado')
         .select('*')
         .eq('activo', true),
 
-      supabase
-        .from('sueldos_pagos')
-        .select('*, empleado:sueldos_empleados(nombre)')
-        .gte('fecha', primerDia)
-        .lte('fecha', ultimoDia)
-        .order('fecha', { ascending: false }),
+      periodoIds.length > 0
+        ? supabase
+            .from('sueldos_pagos')
+            .select('*, empleado:sueldos_empleados(nombre)')
+            .in('periodo_id', periodoIds)
+            .order('fecha', { ascending: false })
+        : Promise.resolve({ data: [] as any[], error: null }),
     ])
 
     setPeriodos((pdata ?? []) as Periodo[])
@@ -282,7 +283,7 @@ export function TabSueldos() {
 
   const calcularBruto = (tipo: string, a: number, b: number, francos: number, vdia: number, dias: number, vhora: number, horas: number, varios: number) => {
     switch (tipo) {
-      case 'ab_francos':   return (a + b) - ((a + b) / 25 * francos) + varios
+      case 'ab_francos':   return (a + b) + ((a + b) / 25 * francos) + varios
       case 'por_dia':      return vdia * dias + varios
       case 'por_hora_ipc': return vhora * horas + varios
       default:             return (edPeriodo?.bruto_calculado ?? 0) + varios

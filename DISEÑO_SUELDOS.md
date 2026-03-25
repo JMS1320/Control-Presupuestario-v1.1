@@ -90,11 +90,13 @@ El usuario los actualiza manualmente desde el botón ✏️ en la tabla del mes.
 ### Fórmulas de cálculo (en `guardarEdicion`)
 
 ```
-ab_francos:    (A + B) - ((A + B) / 25 × francos_cantidad) + varios
+ab_francos:    (A + B) + ((A + B) / 25 × francos_cantidad) + varios
 por_dia:       valor_por_dia × dias_trabajados + varios
 por_hora_ipc:  valor_por_hora × horas_mes + varios
 plano_ipc:     bruto_actual + varios  (IPC pendiente)
 ```
+
+> **Nota**: `francos_cantidad` = días TRABAJADOS (no días de descanso). Más francos = más pago.
 
 ### Workflow del usuario
 
@@ -205,6 +207,10 @@ por_hora_ipc:  valor_por_hora × horas_promedio
 - Cada anticipo = 1 fila propia (conciliable con extracto bancario)
 - **Editable** desde Cash Flow: estado, fecha, monto, detalle → UPDATE directo en `sueldos_pagos`
 - Distinción en `actualizarRegistro`: si `origen_tabla = 'sueldos.pagos'` → editable
+
+### Detalle de pagos en vista Sueldos _(fix 2026-03-25)_
+
+El listado "Pagos registrados" del mes filtra por **`periodo_id`** (mes al que pertenece el pago), NO por `fecha` del pago. Esto permite que un pago de febrero efectuado el 5 de marzo aparezca en el detalle de febrero (el mes al que descuenta), no en el de marzo. La `fecha` sigue siendo la fecha real del movimiento bancario.
 
 ---
 
