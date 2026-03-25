@@ -33,7 +33,8 @@ import {
   Check,
   ChevronsUpDown,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
@@ -76,6 +77,17 @@ export function VistaExtractoBancario() {
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
+
+  // Estados modal Asignar Manualmente
+  const [modalAsignar, setModalAsignar] = useState(false)
+  const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template'>('template')
+  const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
+  const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
+  const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
+  const [templateElegido, setTemplateElegido] = useState<any>(null)
+  const [arcaElegida, setArcaElegida] = useState<any>(null)
+  const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
@@ -481,6 +493,93 @@ export function VistaExtractoBancario() {
       console.log('📋 Templates (NO conciliados):', templatesEgresos?.map(t => `${t.egreso?.nombre_quien_cobra || t.egreso?.responsable} - ${t.monto} [${t.estado}]`) || [])
     } catch (error) {
       console.error('Error cargando facturas y templates:', error)
+    }
+  }
+
+  // Abrir modal asignar manualmente
+  const abrirModalAsignar = async (movimiento: any) => {
+    setMovimientoAsignando(movimiento)
+    setTemplateElegido(null)
+    setArcaElegida(null)
+    setBusquedaAsignarArca('')
+    setBusquedaAsignarTemplate('')
+    setTabAsignar('template')
+
+    // Cargar templates abiertos para asignación
+    const { data } = await supabase
+      .from('egresos_sin_factura')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional')
+      .eq('activo', true)
+      .order('cuenta_agrupadora')
+      .order('nombre_referencia')
+    setTemplatesParaAsignar(data || [])
+
+    // Asegurar facturas ARCA cargadas
+    if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
+
+    setModalAsignar(true)
+  }
+
+  // Ejecutar asignación manual
+  const ejecutarAsignacion = async () => {
+    if (!movimientoAsignando) return
+    setGuardandoAsignacion(true)
+    try {
+      const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
+      const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
+
+      if (tabAsignar === 'template' && templateElegido) {
+        // Crear cuota nueva en el template
+        const { data: cuota, error: errCuota } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert({
+            egreso_id: templateElegido.id,
+            fecha_vencimiento: movimientoAsignando.fecha,
+            fecha_estimada: movimientoAsignando.fecha,
+            monto,
+            estado: 'conciliado',
+            tipo_movimiento: tipoMovimiento,
+            descripcion: templateElegido.nombre_referencia
+          })
+          .select('id')
+          .single()
+
+        if (errCuota) throw errCuota
+
+        // Actualizar extracto con template_id + cuota_id + categ + estado
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update({
+            template_id: templateElegido.id,
+            template_cuota_id: cuota.id,
+            categ: templateElegido.categ,
+            detalle: templateElegido.nombre_referencia,
+            estado: 'conciliado'
+          })
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+      } else if (tabAsignar === 'arca' && arcaElegida) {
+        // Vincular a factura ARCA existente
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update({
+            comprobante_arca_id: arcaElegida.id,
+            categ: arcaElegida.cuenta_contable || '',
+            estado: 'conciliado'
+          })
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+      }
+
+      setModalAsignar(false)
+      recargar()
+    } catch (err) {
+      console.error('Error en asignación manual:', err)
+    } finally {
+      setGuardandoAsignacion(false)
     }
   }
 
@@ -1271,6 +1370,7 @@ export function VistaExtractoBancario() {
                         <TableHead>Estado</TableHead>
                         <TableHead>Detalle</TableHead>
                         <TableHead>Motivo Revisión</TableHead>
+                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1322,6 +1422,19 @@ export function VistaExtractoBancario() {
                           </TableCell>
                           <TableCell className="max-w-xs truncate text-xs text-orange-600">
                             {movimiento.motivo_revision || '-'}
+                          </TableCell>
+                          <TableCell>
+                            {movimiento.estado !== 'conciliado' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1"
+                                onClick={() => abrirModalAsignar(movimiento)}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Asignar
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1425,6 +1538,128 @@ export function VistaExtractoBancario() {
               ))}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Asignar Manualmente */}
+      <Dialog open={modalAsignar} onOpenChange={setModalAsignar}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Asignar Manualmente</DialogTitle>
+            {movimientoAsignando && (
+              <DialogDescription className="font-mono text-xs">
+                {movimientoAsignando.fecha} · {movimientoAsignando.descripcion} ·{' '}
+                <span className="font-semibold">
+                  {movimientoAsignando.debitos > 0
+                    ? `Débito $${movimientoAsignando.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                    : `Crédito $${movimientoAsignando.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                </span>
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template')}>
+            <TabsList className="w-full">
+              <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
+              <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
+            </TabsList>
+
+            {/* Tab Template */}
+            <TabsContent value="template" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar template por nombre o agrupadora..."
+                value={busquedaAsignarTemplate}
+                onChange={e => setBusquedaAsignarTemplate(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {templatesParaAsignar
+                  .filter(t => {
+                    const q = busquedaAsignarTemplate.toLowerCase()
+                    return !q || t.nombre_referencia?.toLowerCase().includes(q) || t.cuenta_agrupadora?.toLowerCase().includes(q) || t.categ?.toLowerCase().includes(q)
+                  })
+                  .map(t => (
+                    <div
+                      key={t.id}
+                      onClick={() => setTemplateElegido(templateElegido?.id === t.id ? null : t)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        templateElegido?.id === t.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {t.cuenta_agrupadora && (
+                        <div className="text-[10px] text-gray-400 mb-0.5">{t.cuenta_agrupadora}</div>
+                      )}
+                      <div className="font-medium text-sm">{t.nombre_referencia}</div>
+                      <div className="text-xs text-gray-500">
+                        {t.categ}
+                        {t.responsable && <span className="ml-2 text-blue-600">· {t.responsable}</span>}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              {templateElegido && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Tab ARCA */}
+            <TabsContent value="arca" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por proveedor, CUIT o monto..."
+                value={busquedaAsignarArca}
+                onChange={e => setBusquedaAsignarArca(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {facturasDisponibles
+                  .filter(f => f.tipo === 'ARCA')
+                  .filter(f => {
+                    const q = busquedaAsignarArca.toLowerCase()
+                    return !q ||
+                      f.display_nombre?.toLowerCase().includes(q) ||
+                      f.cuit?.includes(busquedaAsignarArca) ||
+                      String(f.display_monto).includes(busquedaAsignarArca)
+                  })
+                  .map(f => (
+                    <div
+                      key={f.id}
+                      onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        arcaElegida?.id === f.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium text-sm">{f.display_nombre}</div>
+                      <div className="text-xs text-gray-500 flex gap-3">
+                        <span>{f.cuit}</span>
+                        <span>{f.fecha_estimada}</span>
+                        <span className="font-mono">${f.display_monto?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              {arcaElegida && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se vinculará factura <strong>{arcaElegida.display_nombre}</strong>. La cuenta contable se completará desde la factura si tiene asignada.
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
+            <Button
+              onClick={ejecutarAsignacion}
+              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : !arcaElegida)}
+            >
+              {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
