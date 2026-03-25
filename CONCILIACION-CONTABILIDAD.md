@@ -640,23 +640,22 @@ Con la nueva arquitectura, `template_id` ya contiene toda la información de cat
 
 Los 14 templates de Gastos Bancarios + Impuestos Bancarios tenían `responsable = 'MSA / PAM'` (ambiguo). Cambiado a `responsable = 'MSA'` vía SQL directo. Cuando se creen cuentas PAM y MA, se crearán sets separados de templates con `responsable = 'PAM'` y `responsable = 'MA'`.
 
-### 🟡 Pendiente — arquitectura reglas por cuenta bancaria
+### ✅ Resuelto 2026-03-25 — reglas filtradas por cuenta bancaria
 
-**Problema identificado**: `reglas_conciliacion` no tiene campo de cuenta bancaria. El motor aplica todas las reglas activas a cualquier cuenta. Las 40 reglas actuales funcionan solo para MSA Galicia por los textos de búsqueda específicos.
-
-**Solución diseñada** (pendiente implementar):
-- Agregar columna `cuenta_bancaria_id VARCHAR` a `reglas_conciliacion`
+**Columna `cuenta_bancaria_id`** agregada a `reglas_conciliacion`.
 - Valores: `'msa_galicia'` | `'pam_galicia'` | `'pam_galicia_cc'` (matching `CuentaBancaria.id`)
-- El motor filtra: `.eq('cuenta_bancaria_id', cuenta.id)` al cargar reglas
-- Las 40 reglas actuales reciben `cuenta_bancaria_id = 'msa_galicia'`
-- Para PAM y MA: crear sets nuevos con textos propios + cuenta_bancaria_id correspondiente
-- **Alternativa descartada**: columna `empresa` — no sirve si PAM tiene CA y CC con leyendas distintas
+- DEFAULT `'msa_galicia'` — 40 reglas existentes actualizadas automáticamente
+- El motor pasa `cuenta.id` a `cargarReglasActivas(cuentaId)` que filtra por la columna
+- El configurador muestra selector de cuenta bancaria y filtra la lista por cuenta activa
+- Crear/editar regla pre-llena `cuenta_bancaria_id` con la cuenta seleccionada
 
-**Archivos a modificar cuando se implemente**:
-- Migración BD: `ALTER TABLE reglas_conciliacion ADD COLUMN cuenta_bancaria_id VARCHAR`
-- `hooks/useReglasConciliacion.ts`: pasar `cuenta_id` al cargar reglas activas
-- `hooks/useMotorConciliacion.ts`: pasar `cuenta.id` a `cargarReglasActivas()`
-- `components/configurador-reglas.tsx`: selector cuenta bancaria + filtro por cuenta
+**Archivos modificados**:
+- `types/conciliacion.ts`: campo `cuenta_bancaria_id: string` en `ReglaConciliacion`
+- `hooks/useReglasConciliacion.ts`: `cargarReglasActivas(cuentaId)` + insert incluye campo
+- `hooks/useMotorConciliacion.ts`: `cargarReglasActivas(cuenta.id)`
+- `components/configurador-reglas.tsx`: selector + filtro lista + campo en modal
+
+**Para PAM y MA**: cuando se configuren esas cuentas, crear sets de reglas con `cuenta_bancaria_id = 'pam_galicia'` / `'pam_galicia_cc'` con textos de búsqueda propios de cada banco.
 
 ### 🟡 Pendiente — templates para PAM y MA
 
