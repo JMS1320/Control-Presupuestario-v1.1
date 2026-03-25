@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select"
 import {
   Users, DollarSign, ArrowDownCircle, Clock,
-  ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil,
+  ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -274,6 +274,28 @@ export function TabSueldos() {
     setAntCuenta('')
     setAntDesc('')
     setAntEstado('pagar')
+    await cargar()
+  }
+
+  // ── Eliminar pago ─────────────────────────────────────────────────────────
+
+  const eliminarPago = async (pago: Pago) => {
+    if (!window.confirm(`¿Eliminar este ${pago.tipo} de ${formatoMoneda(pago.monto)}? Esta acción no se puede deshacer.`)) return
+
+    // Revertir anticipos_descontados y saldo_pendiente en el período vinculado
+    if (pago.periodo_id) {
+      const periodo = periodos.find(p => p.id === pago.periodo_id)
+      if (periodo) {
+        const nuevosAnticipos = Math.max(0, (periodo.anticipos_descontados ?? 0) - pago.monto)
+        const nuevoSaldo = (periodo.bruto_calculado ?? 0) - nuevosAnticipos
+        await supabase
+          .from('sueldos_periodos')
+          .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
+          .eq('id', periodo.id)
+      }
+    }
+
+    await supabase.from('sueldos_pagos').delete().eq('id', pago.id)
     await cargar()
   }
 
@@ -565,6 +587,7 @@ export function TabSueldos() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -583,6 +606,15 @@ export function TabSueldos() {
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{pago.descripcion}</TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatoMoneda(pago.monto)}</TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => eliminarPago(pago)}
+                        className="text-gray-300 hover:text-red-500 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
