@@ -144,7 +144,15 @@ export function TabSueldos() {
   const [cuentas, setCuentas] = useState<CuentaEmpleado[]>([])
   const [pagos, setPagos] = useState<Pago[]>([])
   const [cargando, setCargando] = useState(true)
-  const [mesActual, setMesActual] = useState<{ anio: number; mes: number }>(MES_MIN)
+  const [mesActual, setMesActual] = useState<{ anio: number; mes: number }>(() => {
+    const hoy = new Date()
+    const anio = hoy.getFullYear()
+    const mes  = hoy.getMonth() + 1
+    // Clamp dentro del rango disponible
+    if (anio < MES_MIN.anio || (anio === MES_MIN.anio && mes < MES_MIN.mes)) return MES_MIN
+    if (anio > MES_MAX.anio || (anio === MES_MAX.anio && mes > MES_MAX.mes)) return MES_MAX
+    return { anio, mes }
+  })
 
   // Modal anticipo
   const [modalAnticipo, setModalAnticipo] = useState(false)
@@ -424,7 +432,7 @@ export function TabSueldos() {
     const tipo      = edPeriodo.empleado?.tipo_empleado
     const a         = num(edMontoA)
     const b         = num(edMontoB)
-    const francos   = parseInt(edFrancos) || 0
+    const francos   = num(edFrancos)
     const vf        = num(edValorFranco)
     const vdia      = num(edValorDia)
     const dias      = parseInt(edDias) || 0
@@ -494,7 +502,7 @@ export function TabSueldos() {
   const brutoPreview = edPeriodo
     ? calcularBruto(
         edPeriodo.empleado?.tipo_empleado,
-        num(edMontoA), num(edMontoB), parseInt(edFrancos) || 0,
+        num(edMontoA), num(edMontoB), num(edFrancos),
         num(edValorFranco),
         num(edValorDia), parseInt(edDias) || 0,
         num(edValorHora), parseInt(edHoras) || 0,
