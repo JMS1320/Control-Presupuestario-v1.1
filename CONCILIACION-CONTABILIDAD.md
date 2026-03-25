@@ -1,6 +1,6 @@
 # CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-24
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-25
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
@@ -677,3 +677,223 @@ Revisar todos los templates existentes para verificar:
 - `cuenta_agrupadora` asignada en todos
 - `categ` consistente con código de regla
 - `es_bidireccional`: hoy los 14 bancarios tienen `true` (correcto: bancos a veces reintegran gastos mal cobrados)
+
+---
+
+## 16. GUÍA DE TESTING — LO QUE SE IMPLEMENTÓ Y CÓMO VERIFICARLO
+
+> **Contexto**: Todo lo de los Pasos 1-3d fue implementado en sesiones 2026-03-24/25 pero **no fue testeado en producción**. Esta sección existe para que al retomar, se pueda verificar cada funcionalidad de forma sistemática sabiendo exactamente qué debe pasar y cómo confirmarlo en BD.
+
+---
+
+### TEST 1 — Motor automático: regla matchea y crea cuota en template
+
+**Ubicación UI**: Vista Extracto Bancario → botón "Ejecutar Conciliación" (seleccionar cuenta MSA Galicia)
+
+**Pre-condición**: que existan movimientos en estado `'Pendiente'` en la tabla `msa_galicia`. Verificar con:
+```sql
+SELECT id, fecha, descripcion, debitos, creditos, estado
+FROM msa_galicia
+WHERE estado = 'Pendiente'
+ORDER BY fecha
+LIMIT 10;
+```
+
+**Qué hace el motor (código: `hooks/useMotorConciliacion.ts` → `ejecutarConciliacion()`)**:
+1. Carga movimientos con `estado = 'Pendiente'` de `msa_galicia`
+2. Carga reglas activas con `cuenta_bancaria_id = 'msa_galicia'` (filtro clave nuevo)
+3. Para cada movimiento: intenta match por Cash Flow primero, luego por reglas en orden
+4. Si una regla matchea y tiene `llena_template = true`: llama `crearCuotaEnTemplate()`
+5. `crearCuotaEnTemplate()`:
+   - Busca en `egresos_sin_factura` donde `categ = regla.categ` y `activo = true`
+   - Si hay varios, elige el que tiene `responsable` que incluye `'MSA'` (empresa de la cuenta)
+   - Inserta en `cuotas_egresos_sin_factura` con `estado='conciliado'`, `tipo_movimiento='egreso'/'ingreso'`, `monto=debitos||creditos`, `fecha_vencimiento=movimiento.fecha`
+   - Retorna `{ templateId, cuotaId }`
+6. El extracto queda actualizado con: `categ`, `detalle`, `estado='conciliado'`, `template_id`, `template_cuota_id`
+
+**Cómo verificar resultado en BD** (ejecutar después del motor):
+```sql
+-- Ver movimientos que se conciliaron por regla y tienen template vinculado
+SELECT
+  m.id,
+  m.fecha,
+  m.descripcion,
+  m.debitos,
+  m.creditos,
+  m.estado,
+  m.categ,
+  m.template_id,
+  m.template_cuota_id,
+  e.nombre_referencia AS template_nombre
+FROM msa_galicia m
+LEFT JOIN egresos_sin_factura e ON e.id::text = m.template_id
+WHERE m.estado = 'conciliado'
+  AND m.template_id IS NOT NULL
+ORDER BY m.fecha DESC
+LIMIT 20;
+```
+
+```sql
+-- Ver cuotas creadas automáticamente por el motor (las recientes)
+SELECT
+  c.id,
+  c.egreso_id,
+  c.fecha_vencimiento,
+  c.monto,
+  c.estado,
+  c.tipo_movimiento,
+  c.descripcion,
+  c.created_at,
+  e.nombre_referencia AS template_nombre,
+  e.categ
+FROM cuotas_egresos_sin_factura c
+JOIN egresos_sin_factura e ON e.id = c.egreso_id
+WHERE c.estado = 'conciliado'
+ORDER BY c.created_at DESC
+LIMIT 20;
+```
+
+**Resultado esperado**:
+- Movimientos con regla que matcheó: `estado='conciliado'`, `categ` = categ de la regla, `template_id` y `template_cuota_id` no nulos
+- En `cuotas_egresos_sin_factura`: nueva fila con `egreso_id` del template correspondiente, `monto` = monto del movimiento, `estado='conciliado'`, `tipo_movimiento='egreso'` (si era débito) o `'ingreso'` (si era crédito)
+- El `template_cuota_id` del extracto debe coincidir con el `id` de la cuota recién creada
+
+**Posibles errores y qué buscar**:
+- "No hay template activo con categ X": la categ de la regla no coincide con ningún template en BD. Verificar con: `SELECT categ, nombre_referencia FROM egresos_sin_factura WHERE activo=true ORDER BY categ`
+- Motor no aplica reglas: verificar que las reglas tienen `cuenta_bancaria_id='msa_galicia'`. Query: `SELECT id, orden, texto_buscar, cuenta_bancaria_id FROM reglas_conciliacion WHERE activo=true ORDER BY orden`
+- Cuota creada pero `template_id` no escrito en extracto: buscar error en consola del browser al ejecutar el motor
+
+---
+
+### TEST 2 — Motor: regla matchea sin llena_template (solo categ)
+
+Algunas reglas tienen `llena_template = false` (ej: ASES que está desactivada, o futuras reglas de solo categorización).
+
+**Resultado esperado**: movimiento queda `estado='conciliado'`, `categ` asignada, pero `template_id` y `template_cuota_id` quedan NULL.
+
+---
+
+### TEST 3 — Modal "Asignar Manualmente" — Camino A (Template)
+
+**Ubicación UI**: Vista Extracto Bancario → fila con estado `'Pendiente'` o `'auditar'` → botón "Asignar"
+
+**Flujo esperado**:
+1. Se abre Dialog con dos tabs: "Template" (activa) y "Factura ARCA"
+2. Campo de búsqueda libre → escribir parte del nombre del template (ej: "comision")
+3. Lista muestra templates con `cuenta_agrupadora` en gris encima del `nombre_referencia`
+4. Seleccionar un template → aparece confirmación
+5. Confirmar → el sistema:
+   - Crea cuota nueva en `cuotas_egresos_sin_factura`
+   - Actualiza extracto: `template_id`, `template_cuota_id`, `categ`, `detalle`, `estado='conciliado'`
+
+**Verificar en BD**:
+```sql
+-- Ver el movimiento que se asignó manualmente
+SELECT
+  m.id, m.fecha, m.descripcion, m.debitos, m.creditos,
+  m.estado, m.categ, m.detalle,
+  m.template_id, m.template_cuota_id, m.comprobante_arca_id
+FROM msa_galicia m
+WHERE m.id = '[ID_DEL_MOVIMIENTO]';
+
+-- Ver la cuota creada
+SELECT * FROM cuotas_egresos_sin_factura
+WHERE id = '[template_cuota_id del extracto]';
+```
+
+**Resultado esperado**: `estado='conciliado'`, `template_id` = UUID del template seleccionado, `template_cuota_id` = UUID de la cuota recién creada (ambos coinciden entre extracto y cuotas).
+
+**Posibles errores**:
+- Lista de templates vacía: verificar que `egresos_sin_factura` tiene registros con `activo=true`
+- Cuota creada pero extracto no actualizado: buscar error en consola del browser en función `ejecutarAsignacion()`
+- Archivo: `components/vista-extracto-bancario.tsx` → función `ejecutarAsignacion()`
+
+---
+
+### TEST 4 — Modal "Asignar Manualmente" — Camino B (Factura ARCA)
+
+**Flujo esperado**:
+1. Tab "Factura ARCA"
+2. Buscar por proveedor/CUIT/descripción
+3. Seleccionar factura
+4. Confirmar → el sistema actualiza el extracto: `comprobante_arca_id`, `categ` (si la factura tiene cuenta_contable), `estado='conciliado'`
+5. La factura ARCA NO se modifica en este paso (solo se vincula el extracto hacia la factura)
+
+**Verificar en BD**:
+```sql
+SELECT
+  m.id, m.fecha, m.estado, m.categ,
+  m.comprobante_arca_id,
+  f.denominacion_emisor, f.imp_total, f.estado AS estado_factura
+FROM msa_galicia m
+JOIN msa.comprobantes_arca f ON f.id::text = m.comprobante_arca_id
+WHERE m.comprobante_arca_id IS NOT NULL
+ORDER BY m.fecha DESC LIMIT 5;
+```
+
+**Resultado esperado**: `comprobante_arca_id` no nulo, `estado='conciliado'`, `categ` propagada si la factura tenía `cuenta_contable`.
+
+---
+
+### TEST 5 — Selectores con cuenta_agrupadora y nombre_totalizadora
+
+**Ubicación 1**: Vista Cash Flow o Vista Templates → botón "Pago Manual" → selector de template
+- **Esperado**: Lista muestra agrupador en gris pequeño encima del nombre del template
+- **Ejemplo**: "Gastos Bancarios" (gris) / "Comision Cuenta Bancaria" (negro)
+
+**Ubicación 2**: Vista Extracto → Modal Asignar → tab Template → lista de templates
+- **Mismo comportamiento** que el anterior
+
+**Ubicación 3**: Vista Asignación ARCA → selector de cuenta contable
+- **Esperado**: Lista muestra `nombre_totalizadora` en gris encima del `categ`
+- **Ejemplo**: "GASTOS DE COMERCIALIZACION" (gris) / "COMISIONES VENTAS" (negro)
+- Archivos: `components/vista-asignacion-arca.tsx`
+
+---
+
+### TEST 6 — Configurador de reglas: filtro por cuenta bancaria
+
+**Ubicación UI**: Vista Extracto Bancario → tab "Configuración" → "Reglas de Conciliación"
+
+**Esperado**:
+- Selector en el header que muestra las 3 cuentas bancarias (MSA Galicia CC, PAM Galicia CA, PAM Galicia CC)
+- Al seleccionar MSA Galicia: muestra las 40 reglas existentes
+- Al seleccionar PAM: muestra 0 reglas (aún no creadas)
+- Crear nueva regla: el campo `cuenta_bancaria_id` se pre-llena con la cuenta seleccionada en el filtro
+
+**Verificar en BD**:
+```sql
+SELECT cuenta_bancaria_id, COUNT(*) as total
+FROM reglas_conciliacion
+GROUP BY cuenta_bancaria_id;
+-- Esperado: msa_galicia: 40, pam_galicia: 0, pam_galicia_cc: 0
+```
+
+---
+
+### ERRORES CONOCIDOS / POSIBLES DURANTE TESTING
+
+| Síntoma | Causa probable | Dónde buscar |
+|---------|---------------|--------------|
+| Motor no encuentra reglas | `cuenta_bancaria_id` faltante o distinto | Query en `reglas_conciliacion` para verificar valores |
+| `crearCuotaEnTemplate` no crea cuota | categ de regla no coincide con categ de template | `SELECT categ FROM egresos_sin_factura WHERE activo=true` |
+| Cuota creada duplicada | Motor ejecutado dos veces sobre mismo movimiento | Verificar lógica deduplicación por `template_cuota_id` en extracto |
+| `template_id` escrito pero `template_cuota_id` nulo | Error al crear cuota, falla silenciosa | Ver console.error en browser al ejecutar motor |
+| Modal Asignar no abre | Botón no visible para movimientos 'conciliado' | Verificar condición: `estado != 'conciliado'` en renderizado fila |
+| Lista templates vacía en modal | `egresos_sin_factura` sin activos o query falla | Verificar `activo=true` en BD + network tab browser |
+| Selector no muestra agrupadora | Cambio no deployado o localStorage corrupto | Hard refresh (Ctrl+Shift+R) |
+
+---
+
+### ARCHIVOS CLAVE Y QUÉ HACE CADA UNO
+
+| Archivo | Función relevante | Qué hace |
+|---------|------------------|----------|
+| `hooks/useMotorConciliacion.ts` | `ejecutarConciliacion()` | Loop principal movimientos → Cash Flow → reglas |
+| `hooks/useMotorConciliacion.ts` | `crearCuotaEnTemplate()` | Crea cuota + retorna IDs |
+| `hooks/useMotorConciliacion.ts` | `actualizarMovimientoBD()` | Escribe campos en extracto |
+| `hooks/useReglasConciliacion.ts` | `cargarReglasActivas(cuentaId)` | Filtra reglas por cuenta_bancaria_id |
+| `components/vista-extracto-bancario.tsx` | `ejecutarAsignacion()` | Lógica modal Asignar Manual |
+| `components/configurador-reglas.tsx` | estado `cuentaFiltro` | Selector y filtro lista de reglas |
+| `types/conciliacion.ts` | `ReglaConciliacion` | Incluye campo `cuenta_bancaria_id` |
+| `types/conciliacion.ts` | `MovimientoBancario` | Incluye `nro_cuenta`, `template_id`, `template_cuota_id`, `comprobante_arca_id` |
