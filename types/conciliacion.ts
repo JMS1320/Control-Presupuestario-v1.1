@@ -15,6 +15,9 @@ export interface ReglaConciliacion {
   centro_costo?: string | null
   detalle: string
   
+  // Cuenta bancaria a la que aplica esta regla
+  cuenta_bancaria_id: string
+
   // Control
   activo: boolean
   llena_template: boolean

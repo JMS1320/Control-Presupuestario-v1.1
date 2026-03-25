@@ -195,7 +195,7 @@ export function useMotorConciliacion() {
 
       // 1. Cargar datos
       const movimientos = await obtenerMovimientosBancarios(cuenta)
-      const reglas = await cargarReglasActivas()
+      const reglas = await cargarReglasActivas(cuenta.id)
       
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)

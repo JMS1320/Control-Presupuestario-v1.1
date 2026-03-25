@@ -12,11 +12,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
+import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
 
 export function ConfiguradorReglas() {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas } = useReglasConciliacion()
   
+  const [cuentaFiltro, setCuentaFiltro] = useState('msa_galicia')
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
   const [formulario, setFormulario] = useState({
@@ -29,7 +31,8 @@ export function ConfiguradorReglas() {
     centro_costo: '',
     detalle: '',
     activo: true,
-    llena_template: true
+    llena_template: true,
+    cuenta_bancaria_id: 'msa_galicia'
   })
 
   // Reset formulario
@@ -44,7 +47,8 @@ export function ConfiguradorReglas() {
       centro_costo: '',
       detalle: '',
       activo: true,
-      llena_template: true
+      llena_template: true,
+      cuenta_bancaria_id: cuentaFiltro
     })
     setReglaEditando(null)
   }
@@ -71,7 +75,8 @@ export function ConfiguradorReglas() {
       centro_costo: regla.centro_costo || '',
       detalle: regla.detalle,
       activo: regla.activo,
-      llena_template: regla.llena_template
+      llena_template: regla.llena_template,
+      cuenta_bancaria_id: regla.cuenta_bancaria_id
     })
     setModalAbierto(true)
   }
@@ -88,7 +93,8 @@ export function ConfiguradorReglas() {
       centro_costo: formulario.centro_costo || null,
       detalle: formulario.detalle,
       activo: formulario.activo,
-      llena_template: formulario.llena_template ?? true
+      llena_template: formulario.llena_template ?? true,
+      cuenta_bancaria_id: formulario.cuenta_bancaria_id
     }
 
     let exito = false
@@ -159,6 +165,24 @@ export function ConfiguradorReglas() {
         </Button>
       </div>
 
+      {/* Selector cuenta bancaria */}
+      <div className="flex items-center gap-3">
+        <Label className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</Label>
+        <Select value={cuentaFiltro} onValueChange={setCuentaFiltro}>
+          <SelectTrigger className="w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-gray-400">
+          {reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).length} reglas para esta cuenta
+        </span>
+      </div>
+
       {/* Error */}
       {error && (
         <Alert variant="destructive">
@@ -205,6 +229,7 @@ export function ConfiguradorReglas() {
         <CardContent>
           <div className="space-y-2">
             {reglas
+              .filter(r => r.cuenta_bancaria_id === cuentaFiltro)
               .sort((a, b) => a.orden - b.orden)
               .map((regla) => (
                 <div
@@ -302,6 +327,23 @@ export function ConfiguradorReglas() {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Label htmlFor="cuenta_bancaria_id">Cuenta Bancaria</Label>
+              <Select
+                value={formulario.cuenta_bancaria_id}
+                onValueChange={(value) => setFormulario(prev => ({ ...prev, cuenta_bancaria_id: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona cuenta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label htmlFor="orden">Orden (Prioridad)</Label>
               <Input
