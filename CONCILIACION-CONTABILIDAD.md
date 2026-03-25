@@ -511,15 +511,142 @@ Para que todo esto funcione, las categ de las reglas deben ser **idénticas** a 
 - Ver detalle en Paso 1 — los 14 templates son los que cubrían este paso
 - Pendiente aún: `CRED P` (Intereses Descubierto) — no tiene template todavía
 
-**Paso 3 — Implementar lógica "regla crea cuota en template"** ← *próximo*
+**Paso 3 — Implementar lógica "regla crea cuota en template"** ✅ *Completado 2026-03-24*
 - Aplica a todos los tipos cuando `llena_template = true`
-- En `useMotorConciliacion.ts`: al ejecutar una regla, si `llena_template = true`:
-  1. Buscar el template cuya `categ` coincide con la de la regla
-  2. Crear cuota en `cuotas_egresos_sin_factura` con monto/fecha del extracto + `tipo_movimiento` según débito/crédito
-  3. Escribir `template_id` + `template_cuota_id` en el extracto
-  4. Control deduplicación: si `template_cuota_id` ya existe en el extracto → omitir
-- Para Tipo #3 (templates fijo con cuota preset): la cuota nueva se crea con el monto real; el preset queda como referencia de alerta solamente
+- Implementado en `hooks/useMotorConciliacion.ts` función `crearCuotaEnTemplate()`:
+  1. Busca template activo cuya `categ` coincide con la de la regla
+  2. Si hay múltiples (ej: FCI MSA + PAM), elige el que tiene `responsable` con nombre de empresa de la cuenta (`cuenta.empresa`)
+  3. Determina `tipo_movimiento`: 'egreso' si `debitos > 0`, 'ingreso' si `creditos > 0`
+  4. Inserta en `cuotas_egresos_sin_factura` con `estado='conciliado'`, `fecha_vencimiento=movimiento.fecha`, `monto=debitos||creditos`, `descripcion=regla.detalle||movimiento.descripcion`
+  5. Escribe `template_id` + `template_cuota_id` en el extracto (llamada a `actualizarMovimientoBD` adicional)
+- Fix TypeScript aplicado: `centro_costo_asignado: regla.centro_costo ?? undefined` (era `string|null`, necesitaba `string|undefined`)
+- Fix configurador: campo `llena_template` faltaba en initialState/resetFormulario/abrirModalEditar de `configurador-reglas.tsx`
 
-**Paso 4 — Verificar y eliminar reglas Tipo #2 redundantes**
+**Paso 3b — Modal "Asignar Manualmente" para movimientos sin conciliar** ✅ *Completado 2026-03-24*
+
+Para movimientos que el motor no pudo conciliar automáticamente (descripción bancaria cambió, nueva operación, etc.), se agregó una asignación manual por fila.
+
+**Trigger**: Botón "Asignar" visible en cada fila con `estado != 'conciliado'` en la vista Extracto Bancario.
+
+**Flujo — Camino A (Template)**:
+1. Usuario abre modal → tab "Template" activa por default
+2. Busca template por nombre (campo búsqueda libre)
+3. Lista muestra: `cuenta_agrupadora` (agrupador) + `nombre_referencia` + `categ` + `responsable`
+4. Selecciona template → sistema crea cuota nueva en `cuotas_egresos_sin_factura` con `estado='conciliado'`
+5. Sistema escribe en extracto: `template_id`, `template_cuota_id`, `categ`, `detalle`, `estado='conciliado'`
+
+**Flujo — Camino B (Factura ARCA)**:
+1. Tab "Factura ARCA"
+2. Busca factura por proveedor/CUIT/descripción
+3. Lista muestra: fecha, proveedor, CUIT, monto, estado
+4. Selecciona factura → sistema escribe en extracto: `comprobante_arca_id`, `categ` de la factura (si tiene), `estado='conciliado'`
+
+**Nota sobre Camino C (solo categ)**: Se decidió NO implementar. Todo movimiento debe quedar vinculado a un template o una factura ARCA para trazabilidad completa.
+
+**Campos llenados automáticamente** — usuario nunca ingresa IDs:
+
+| Campo extracto | Camino A (Template) | Camino B (ARCA) |
+|----------------|---------------------|-----------------|
+| `template_id` | ✅ ID del template | — |
+| `template_cuota_id` | ✅ ID de la cuota nueva | — |
+| `comprobante_arca_id` | — | ✅ ID de la factura |
+| `categ` | ✅ categ del template | ✅ categ de la factura |
+| `detalle` | ✅ nombre del template | — |
+| `estado` | `'conciliado'` | `'conciliado'` |
+
+**Archivos modificados**:
+- `components/vista-extracto-bancario.tsx`: 8 nuevos estados, función `abrirModalAsignar()`, función `ejecutarAsignacion()`, botón por fila, Dialog completo con Tabs
+- `types/conciliacion.ts`: campos `nro_cuenta`, `template_id`, `template_cuota_id`, `comprobante_arca_id` agregados a `MovimientoBancario`
+
+**Paso 3c — Mejora selectores: mostrar cuenta_agrupadora y nombre_totalizadora** ✅ *Completado 2026-03-24*
+
+Problema previo: ante múltiples templates/cuentas con nombres similares, el usuario no sabía cuál elegir.
+
+**Templates** (afecta: Modal Pago Manual en Cash Flow y Templates, Modal Asignar en Extracto):
+- Se agrega `cuenta_agrupadora` al select de templates
+- Lista ordena por `cuenta_agrupadora` primero, luego `nombre_referencia`
+- UI muestra agrupador encima del nombre en gris pequeño
+
+**Cuentas contables** (afecta: Vista Asignación ARCA):
+- Se agrega `nombre_totalizadora` al select de cuentas
+- UI muestra totalizadora encima del categ en gris pequeño
+- Confirmado que `nombre_totalizadora` ya está poblado en BD (ej: "VENTA DE HACIENDA", "CREDITOS FISCALES")
+
+**Archivos modificados**:
+- `components/vista-cash-flow.tsx`: type + query + UI con cuenta_agrupadora
+- `components/vista-templates-egresos.tsx`: ídem
+- `components/vista-asignacion-arca.tsx`: type + query + UI con nombre_totalizadora
+
+**Paso 3d — Templates Créditos Bancarios** ✅ *Completado 2026-03-24*
+
+Creados 2 nuevos templates abiertos en BD:
+
+| ID | Nombre | categ | cuenta_agrupadora | responsable | tipo_template |
+|----|--------|-------|-------------------|-------------|---------------|
+| (auto) | Créditos Tomados | CRED T | Créditos Bancarios | MSA | abierto |
+| (auto) | Créditos Pagados | CRED P | Créditos Bancarios | MSA | abierto |
+
+La regla orden=17 (categ=CRED P, `llena_template=true`) ahora tiene template destino válido.
+
+**Paso 4 — Verificar y eliminar reglas Tipo #2 redundantes** ← *pendiente testing*
 - Verificar en la práctica que el motor automático hace el match
 - Una vez confirmado, eliminar las reglas redundantes
+
+---
+
+## Pendientes identificados al 2026-03-24
+
+### 🔴 Pendiente testing — funcionalidades implementadas
+
+Todo lo de Paso 3 fue implementado pero **no pudo ser probado en esta sesión**. Requiere:
+
+1. **Motor automático** (`ejecutarConciliacion`):
+   - Ejecutar sobre extracto MSA Galicia con movimientos en estado 'Pendiente'
+   - Verificar que reglas matchean correctamente
+   - Verificar que `llena_template=true` crea cuota en template correspondiente
+   - Verificar que `template_id` + `template_cuota_id` quedan escritos en extracto
+
+2. **Modal Asignar Manualmente**:
+   - Abrir sobre movimiento no conciliado
+   - Probar Camino A: buscar template, seleccionar, confirmar → verificar cuota creada + campos extracto escritos
+   - Probar Camino B: buscar factura ARCA, seleccionar, confirmar → verificar `comprobante_arca_id` escrito
+
+3. **Selectores con agrupador**:
+   - En Pago Manual (Cash Flow y Templates): verificar que muestra `cuenta_agrupadora`
+   - En Asignación ARCA: verificar que muestra `nombre_totalizadora`
+
+### 🟡 Pendiente diseño — templates bancarios por empresa
+
+Los 14 templates de Gastos Bancarios + 7 de Impuestos Bancarios + 2 de Créditos tienen actualmente `responsable='MSA'`. Necesitan versiones para PAM y MA:
+
+- Las leyendas bancarias difieren entre cuentas → las reglas PAM/MA serán distintas
+- Cuando el motor concilia cuenta PAM, debe usar template con `responsable='PAM'`
+- La función `crearCuotaEnTemplate()` ya tiene lógica para elegir por empresa, pero solo funciona si existen los 3 sets de templates
+
+**Acción futura**: Crear ~21 templates adicionales (PAM + MA × cada template bancario)
+
+### 🟡 Pendiente análisis — campo `categ` en extracto vs `template_id`
+
+Hoy el extracto tiene dos campos que potencialmente son redundantes:
+- `categ`: código de categoría (texto), llenado por reglas + asignación manual
+- `template_id`: UUID del template (UUID), llenado por motor + asignación manual
+
+Con la nueva arquitectura, `template_id` ya contiene toda la información de categorización. Se debe analizar:
+- ¿Sigue siendo necesario `categ` en el extracto?
+- ¿Hay vistas/queries que dependen de `categ` directamente?
+- Posible simplificación: eliminar `categ` del extracto y derivar siempre del template
+
+### 🟡 Pendiente — reglas para PAM y MA
+
+Las 22+ reglas actuales son para cuenta MSA Galicia. Cuando se agreguen cuentas PAM y MA:
+- Las leyendas del banco son diferentes para cada cuenta
+- Hay que crear sets de reglas equivalentes con textos de búsqueda distintos
+- Los templates destino serán los de `responsable='PAM'` o `responsable='MA'`
+
+### 🟡 Pendiente — consistencia completa de templates
+
+Revisar todos los templates existentes (10-61) para verificar:
+- `responsable` correcto (MSA/PAM/MA por separado, no mezclados)
+- `cuenta_agrupadora` asignada
+- `categ` consistente con código de regla
+- Todos los que necesitan `es_bidireccional=true` lo tienen

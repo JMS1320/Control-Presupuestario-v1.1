@@ -10118,3 +10118,270 @@ Input de búsqueda en tiempo real en el header de la tab Facturas.
 4c5d265 - Feature: Mostrar comprobantes_historico en tab Facturas ARCA (estado=historico, solo lectura)
 d0fc3b8 - Feature: Buscador rápido en tab Facturas ARCA (emisor, CUIT, cuenta)
 ```
+
+---
+
+## Sesión 2026-03-18 — Fix SICORE Cash Flow (stale closure)
+
+### Contexto
+
+El sistema SICORE (retenciones ganancias AFIP) ya estaba completamente implementado en `vista-facturas-arca.tsx`. Se detectó que desde `vista-cash-flow.tsx` el modal SICORE **no finalizaba correctamente** al cambiar estado individualmente para facturas por debajo del mínimo ($67,170): el cambio de estado se perdía (no se guardaba en BD).
+
+### Root Cause: Stale React Closure
+
+```typescript
+// En cambiarEstado():
+setGuardadoPendienteCF(pending)   // ← React encola la actualización
+await evaluarRetencionSicoreCF(fila)
+// ↑ ejecuta en el mismo call stack → guardadoPendienteCF sigue siendo null
+// Dentro de evaluarRetencionSicoreCF → cancelarSicoreCF(true)
+// → lee guardadoPendienteCF (null) → no guarda nada en BD
+```
+
+### Fix aplicado (commit `2ae5577`)
+
+Se agregaron parámetros opcionales `freshPending` y `freshCola` a `evaluarRetencionSicoreCF` y `cancelarSicoreCF` para pasar los datos frescos explícitamente:
+
+```typescript
+type PendingSicore = { filaId: string, nuevoEstado: string, estadoAnterior: string }
+
+const evaluarRetencionSicoreCF = async (
+  fila: CashFlowRow,
+  freshPending?: PendingSicore | null,
+  freshCola?: CashFlowRow[]
+) => { ... }
+
+const cancelarSicoreCF = async (
+  continuarSinSicore: boolean = false,
+  freshPending?: PendingSicore | null,
+  freshCola?: CashFlowRow[]
+) => {
+  const pending = freshPending !== undefined ? freshPending : guardadoPendienteCF
+  const cola    = freshCola    !== undefined ? freshCola    : colaLoteSicore
+  ...
+}
+```
+
+**Regla**: Todas las llamadas desde código (inmediatamente después de `setState`) pasan los parámetros frescos. Las llamadas desde botones del modal usan el estado React (sin parámetros, ya re-renderizó).
+
+El mismo patrón se aplicó en:
+- `finalizarProcesoSicoreCF` → avance de cola
+- `cancelarSicoreCF` → avance de cola en modo `continuarSinSicore`
+- Ruta TC de pago → SICORE
+- `aplicarCambiosLote` → inicio de cola SICORE
+
+### Documentación completa SICORE
+
+Ver archivo `SICORE.md` para documentación técnica completa del módulo, incluyendo:
+- Fórmulas y umbrales
+- Flujo desde Egresos/Pagos (individual + lote)
+- Flujo desde Cash Flow (individual + lote)
+- Facturas agrupadas (grupo_pago_id)
+- Anticipos con SICORE
+- Descuentos adicionales con desglose proporcional
+- Facturas negativas
+- Cierre de quincena (Excel + PDF)
+- Corrección quincena al marcar pagado
+
+### Commits aplicados
+
+```
+2ae5577 - Fix: SICORE Cash Flow stale closure — fresh params en evaluarRetencionSicoreCF/cancelarSicoreCF
+```
+
+---
+
+## Sesión 2026-03-24 — Motor conciliación: llena_template + Modal Asignar Manualmente
+
+### Contexto
+
+Continuación directa de la sesión anterior (arquitectura conciliación). El motor automático ya tenía la lógica de match por reglas configurables, pero faltaba la parte que crea la cuota en el template cuando `llena_template = true`. También se diseñó e implementó el flujo de asignación manual para movimientos que el motor no puede conciliar.
+
+### Fix TypeScript — configurador-reglas.tsx
+
+**Problema**: `Property 'llena_template' is missing in type {...} but required in type 'Omit<ReglaConciliacion, ...>'`
+
+**Causa**: El campo `llena_template: boolean` fue agregado a la interface `ReglaConciliacion` en sesión anterior, pero el formulario de `configurador-reglas.tsx` no lo incluía en ninguno de sus estados iniciales.
+
+**Fix aplicado** en `components/configurador-reglas.tsx`:
+- `useState` inicial: agregado `llena_template: true`
+- `resetFormulario()`: agregado `llena_template: true`
+- `abrirModalEditar()`: agregado `llena_template: regla.llena_template ?? true`
+- `datosRegla` (objeto que se guarda): agregado `llena_template: formulario.llena_template ?? true`
+
+### Fix TypeScript — useMotorConciliacion.ts
+
+**Problema**: `Type 'string | null | undefined' is not assignable to type 'string | undefined'`
+
+**Causa**: `regla.centro_costo` es `string | null` pero `centro_costo_asignado` del resultado espera `string | undefined`.
+
+**Fix**: `centro_costo_asignado: regla.centro_costo ?? undefined`
+
+### Implementación crearCuotaEnTemplate()
+
+Función en `hooks/useMotorConciliacion.ts` que se ejecuta cuando una regla tiene `llena_template = true`.
+
+**Lógica**:
+1. Query `egresos_sin_factura` buscando templates activos con `categ = regla.categ`
+2. Si hay múltiples templates (ej: FCI MSA + PAM), elige el que tiene `responsable` conteniendo `cuenta.empresa`
+3. Determina `tipo_movimiento`: `'egreso'` si `debitos > 0`, `'ingreso'` si `creditos > 0`
+4. Inserta en `cuotas_egresos_sin_factura`:
+   ```typescript
+   {
+     egreso_id: template.id,
+     fecha_vencimiento: movimiento.fecha,
+     fecha_estimada: movimiento.fecha,
+     monto: debitos || creditos,
+     estado: 'conciliado',
+     tipo_movimiento: tipoMovimiento,
+     descripcion: regla.detalle || movimiento.descripcion
+   }
+   ```
+5. Retorna `{ templateId, cuotaId }` para que el motor escriba ambos en el extracto
+
+**Wiring en el motor** (bloque de ejecución de reglas):
+```typescript
+if (regla.llena_template) {
+  const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
+  if (cuotaResult) {
+    await actualizarMovimientoBD(cuenta, movimiento.id, {
+      template_id: cuotaResult.templateId,
+      template_cuota_id: cuotaResult.cuotaId
+    })
+  }
+}
+```
+
+### Templates nuevos creados en BD — Créditos Bancarios
+
+Insertados vía MCP en tabla `egresos_sin_factura`:
+
+| Nombre | categ | cuenta_agrupadora | responsable | tipo_template |
+|--------|-------|-------------------|-------------|---------------|
+| Créditos Tomados | CRED T | Créditos Bancarios | MSA | abierto |
+| Créditos Pagados | CRED P | Créditos Bancarios | MSA | abierto |
+
+La regla orden=17 (`categ=CRED P`, `llena_template=true`) ahora tiene template destino válido.
+
+### Mejora selectores — cuenta_agrupadora y nombre_totalizadora
+
+**Problema**: Ante múltiples templates/cuentas con nombres similares el usuario no sabía cuál elegir.
+
+**Solución**: mostrar el agrupador en todos los selectores de templates y cuentas contables.
+
+**Archivos modificados**:
+
+`components/vista-cash-flow.tsx`:
+- Type `templatesAbiertos`: agregado `cuenta_agrupadora: string | null`
+- Query `cargarTemplatesAbiertos`: select incluye `cuenta_agrupadora`, order por `cuenta_agrupadora` luego `nombre_referencia`
+- UI: línea gris encima del nombre con el agrupador
+
+`components/vista-templates-egresos.tsx`:
+- Mismo patrón exacto que Cash Flow (mismas 3 líneas)
+
+`components/vista-asignacion-arca.tsx`:
+- Interface `CuentaSistema`: agregado `nombre_totalizadora: string | null`
+- Interface `Sugerencia`: agregado `nombre_totalizadora: string | null`
+- Query: select incluye `nombre_totalizadora`
+- UI: línea gris encima del categ con la totalizadora
+- Confirmado: `nombre_totalizadora` ya poblado en BD (ej: "VENTA DE HACIENDA", "CREDITOS FISCALES")
+
+### Modal "Asignar Manualmente" — vista-extracto-bancario.tsx
+
+**Propósito**: Conciliar manualmente movimientos que el motor no reconoció (descripción bancaria cambió, nueva operación, etc.).
+
+**Trigger**: Botón "Asignar" (ícono `Plus`) visible en cada fila con `estado != 'conciliado'`.
+
+**Nuevos estados React**:
+```typescript
+const [modalAsignar, setModalAsignar] = useState(false)
+const [movimientoAsignando, setMovimientoAsignando] = useState<MovimientoBancario | null>(null)
+const [tabAsignar, setTabAsignar] = useState<'template' | 'arca'>('template')
+const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
+const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
+const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
+const [templateElegido, setTemplateElegido] = useState<any | null>(null)
+const [arcaElegida, setArcaElegida] = useState<any | null>(null)
+const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
+```
+
+**Función `abrirModalAsignar(movimiento)`**:
+- Carga todos los templates activos (no solo abiertos)
+- Carga facturas ARCA si tab='arca'
+- Abre el modal
+
+**Función `ejecutarAsignacion()`**:
+
+Camino A — Template:
+```typescript
+// 1. Crear cuota en template seleccionado
+const { data: cuota } = await supabase
+  .from('cuotas_egresos_sin_factura')
+  .insert({
+    egreso_id: templateElegido.id,
+    fecha_vencimiento: movimientoAsignando.fecha,
+    fecha_estimada: movimientoAsignando.fecha,
+    monto: movimientoAsignando.debitos || movimientoAsignando.creditos,
+    estado: 'conciliado',
+    tipo_movimiento: movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso',
+  })
+  .select('id').single()
+
+// 2. Actualizar extracto
+await supabase.from(cuentaSeleccionada.tabla_bd).update({
+  template_id: templateElegido.id,
+  template_cuota_id: cuota.id,
+  categ: templateElegido.categ,
+  detalle: templateElegido.nombre_referencia,
+  estado: 'conciliado'
+}).eq('id', movimientoAsignando.id)
+```
+
+Camino B — ARCA:
+```typescript
+await supabase.from(cuentaSeleccionada.tabla_bd).update({
+  comprobante_arca_id: arcaElegida.id,
+  categ: arcaElegida.categ || null,
+  estado: 'conciliado'
+}).eq('id', movimientoAsignando.id)
+```
+
+**UI del modal**:
+- Tabs: "Asignar a Template" | "Asignar a Factura ARCA"
+- Tab Template: input búsqueda libre → lista con `cuenta_agrupadora` + `nombre_referencia` + `categ` + `responsable` → selección con highlighting → botón Confirmar
+- Tab ARCA: input búsqueda → lista con fecha + proveedor + CUIT + monto + estado → selección → botón Confirmar
+
+### Campos del extracto — arquitectura 4 columnas
+
+Decisión de diseño documentada: el extracto tiene 4 columnas de vinculación:
+
+| Campo | Tipo | Cuándo se llena |
+|-------|------|-----------------|
+| `nro_cuenta` | texto | En import; también puede ser CUIT de factura ARCA |
+| `template_id` | UUID | Motor automático (regla) + Asignar Manual |
+| `template_cuota_id` | UUID | Motor automático (regla) + Asignar Manual |
+| `comprobante_arca_id` | UUID | Asignar Manual (tab ARCA) |
+
+El usuario nunca ingresa IDs — siempre selecciona por nombre y el sistema resuelve los UUIDs.
+
+### Pendientes identificados
+
+Ver `CONCILIACION-CONTABILIDAD.md` sección "Pendientes identificados al 2026-03-24" para lista completa.
+
+Resumen:
+1. **Testing completo** de todo lo implementado (motor + llena_template + modal asignar)
+2. **Templates por empresa**: crear versiones PAM + MA de los 23 templates bancarios actuales (todos tienen `responsable='MSA'`)
+3. **Análisis categ vs template_id**: determinar si `categ` en extracto es redundante con nueva arquitectura
+4. **Reglas PAM y MA**: crear cuando se configuren esas cuentas bancarias
+5. **Consistencia templates**: revisar templates 10-61 (responsable, categ, cuenta_agrupadora)
+
+### Commits aplicados
+
+```
+1bcf767 - Fix: TypeScript llena_template en configurador-reglas + centro_costo en motor
+ed9e0c2 - Feature: crearCuotaEnTemplate en motor + tipos MovimientoBancario extendidos
+6c4efed - Feature: cuenta_agrupadora en selectores + Modal Asignar Manualmente en extracto
+2941217 - Docs: Avances sesión 2026-03-24 conciliación + pendientes
+```
+
+**Branch**: `desarrollo` — pendiente merge a `main` después de testing
