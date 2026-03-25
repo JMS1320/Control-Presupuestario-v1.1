@@ -636,17 +636,45 @@ Con la nueva arquitectura, `template_id` ya contiene toda la información de cat
 - ¿Hay vistas/queries que dependen de `categ` directamente?
 - Posible simplificación: eliminar `categ` del extracto y derivar siempre del template
 
-### 🟡 Pendiente — reglas para PAM y MA
+### ✅ Resuelto 2026-03-25 — responsable 'MSA / PAM' en templates bancarios
 
-Las 22+ reglas actuales son para cuenta MSA Galicia. Cuando se agreguen cuentas PAM y MA:
-- Las leyendas del banco son diferentes para cada cuenta
-- Hay que crear sets de reglas equivalentes con textos de búsqueda distintos
-- Los templates destino serán los de `responsable='PAM'` o `responsable='MA'`
+Los 14 templates de Gastos Bancarios + Impuestos Bancarios tenían `responsable = 'MSA / PAM'` (ambiguo). Cambiado a `responsable = 'MSA'` vía SQL directo. Cuando se creen cuentas PAM y MA, se crearán sets separados de templates con `responsable = 'PAM'` y `responsable = 'MA'`.
+
+### 🟡 Pendiente — arquitectura reglas por cuenta bancaria
+
+**Problema identificado**: `reglas_conciliacion` no tiene campo de cuenta bancaria. El motor aplica todas las reglas activas a cualquier cuenta. Las 40 reglas actuales funcionan solo para MSA Galicia por los textos de búsqueda específicos.
+
+**Solución diseñada** (pendiente implementar):
+- Agregar columna `cuenta_bancaria_id VARCHAR` a `reglas_conciliacion`
+- Valores: `'msa_galicia'` | `'pam_galicia'` | `'pam_galicia_cc'` (matching `CuentaBancaria.id`)
+- El motor filtra: `.eq('cuenta_bancaria_id', cuenta.id)` al cargar reglas
+- Las 40 reglas actuales reciben `cuenta_bancaria_id = 'msa_galicia'`
+- Para PAM y MA: crear sets nuevos con textos propios + cuenta_bancaria_id correspondiente
+- **Alternativa descartada**: columna `empresa` — no sirve si PAM tiene CA y CC con leyendas distintas
+
+**Archivos a modificar cuando se implemente**:
+- Migración BD: `ALTER TABLE reglas_conciliacion ADD COLUMN cuenta_bancaria_id VARCHAR`
+- `hooks/useReglasConciliacion.ts`: pasar `cuenta_id` al cargar reglas activas
+- `hooks/useMotorConciliacion.ts`: pasar `cuenta.id` a `cargarReglasActivas()`
+- `components/configurador-reglas.tsx`: selector cuenta bancaria + filtro por cuenta
+
+### 🟡 Pendiente — templates para PAM y MA
+
+Cuando se configuren cuentas PAM y MA:
+- Crear set de 14 templates bancarios con `responsable = 'PAM'` (mismos nombres, mismos categ)
+- Crear set de 14 templates bancarios con `responsable = 'MA'`
+- Crear sets de reglas con textos de búsqueda propios de cada banco
+- El motor elegirá el template correcto por `responsable` matching `cuenta.empresa`
+
+### 🟡 Pendiente — template Pasajes sin cuenta_agrupadora
+
+Template `nombre_referencia = 'Pasajes'`, `categ = 'Viaticos'` no tiene `cuenta_agrupadora`.
+Nota del usuario: se puede cambiar en cualquier momento ya que cuenta_agrupadora es solo para display/reportes, no se registra en ningún movimiento.
 
 ### 🟡 Pendiente — consistencia completa de templates
 
-Revisar todos los templates existentes (10-61) para verificar:
-- `responsable` correcto (MSA/PAM/MA por separado, no mezclados)
-- `cuenta_agrupadora` asignada
+Revisar todos los templates existentes para verificar:
+- `responsable` correcto (MSA/PAM/MA por separado — `'MSA / PAM'` ya eliminado ✅)
+- `cuenta_agrupadora` asignada en todos
 - `categ` consistente con código de regla
-- Todos los que necesitan `es_bidireccional=true` lo tienen
+- `es_bidireccional`: hoy los 14 bancarios tienen `true` (correcto: bancos a veces reintegran gastos mal cobrados)
