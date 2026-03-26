@@ -1,6 +1,6 @@
 # CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-25
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-26
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
@@ -49,10 +49,15 @@ Gastos bancarios (conciliación automática) ──┘
 |-------|-----------|--------|
 | `msa_galicia` | Extracto bancario MSA (Galicia) | public |
 | `pam_galicia` | Extracto bancario PAM (Galicia) | public |
+| `pam_galicia_cc` | Extracto bancario PAM CC (Galicia) | public |
+| `msa.caja_general` | Extracto Caja General MSA | msa |
+| `msa.caja_ams` | Extracto Caja AMS MSA | msa |
+| `msa.caja_sigot` | Extracto Caja Sigot MSA | msa |
 | `msa.comprobantes_arca` | Facturas ARCA | msa |
 | `cuotas_egresos_sin_factura` | Líneas de templates | public |
 | `egresos_sin_factura` | Templates (maestro) | public |
 | `reglas_conciliacion` | Reglas automáticas de matching | public |
+| `sueldos.pagos` | Pagos/anticipos de sueldos | sueldos |
 | `anticipos_proveedores` | Anticipos de Cash Flow | public |
 
 ### Campos clave de `msa_galicia` / `pam_galicia`:
@@ -329,25 +334,33 @@ donde saldo_calculado[i] = saldo_calculado[i-1] + creditos[i] - debitos[i]
 
 ---
 
-## 10. CUENTAS BANCARIAS CONFIGURADAS
+## 10. CUENTAS BANCARIAS Y CAJAS CONFIGURADAS
 
-| Nombre | Empresa | Tabla BD |
-|--------|---------|---------|
-| MSA Galicia CC Pesos | MSA | `msa_galicia` |
-| PAM Galicia CA Pesos | PAM | `pam_galicia` |
-| PAM Galicia CC Pesos | PAM | `pam_galicia_cc` |
+### Cuentas bancarias
 
-Las tres tablas están en el schema `public`. Configuradas en `CUENTAS_BANCARIAS` dentro de `hooks/useMotorConciliacion.ts`.
+| Nombre | Empresa | Tabla BD | Schema |
+|--------|---------|---------|--------|
+| MSA Galicia CC Pesos | MSA | `msa_galicia` | public |
+| PAM Galicia CA Pesos | PAM | `pam_galicia` | public |
+| PAM Galicia CC Pesos | PAM | `pam_galicia_cc` | public |
 
-Para agregar nuevas cuentas: crear tabla con mismo schema en `public` + agregar entrada en `CUENTAS_BANCARIAS`.
+### Cajas (2026-03-26)
+
+| Nombre | Empresa | Tabla BD | Schema |
+|--------|---------|---------|--------|
+| Caja General MSA | MSA | `caja_general` | msa |
+| Caja AMS MSA | MSA | `caja_ams` | msa |
+| Caja Sigot MSA | MSA | `caja_sigot` | msa |
+
+Las cajas tienen la misma estructura de columnas que las tablas bancarias (excepto campos propios del extracto bancario como `origen`, `grupo_de_conceptos`, `numero_de_terminal`, etc.). Ver sección 17 para detalle completo del sistema caja.
+
+Todas las cuentas + cajas están configuradas en `CUENTAS_BANCARIAS` dentro de `hooks/useMotorConciliacion.ts`. El campo `tipo: 'banco' | 'caja'` y `schema_bd?: string` distinguen el comportamiento de cada una.
 
 ### Selector de cuenta en la vista
 
-El header de Extracto Bancario muestra un botón siempre visible:
-- Sin cuenta seleccionada → "Seleccionar cuenta"
-- Con cuenta seleccionada → nombre de la cuenta activa
+El header de Extracto Bancario muestra un botón siempre visible con la cuenta/caja activa.
 
-Al clickearlo abre el Dialog selector. La tabla activa se pasa al hook `useMovimientosBancarios(tablaActiva)`, que recarga automáticamente al cambiar.
+Al clickearlo abre el Dialog selector con **dos grupos**: "Cuentas Bancarias" y "Cajas". La cuenta/caja seleccionada se pasa al hook `useMovimientosBancarios(tabla, schema)`, que recarga automáticamente al cambiar. El schema se detecta automáticamente desde `CuentaBancaria.schema_bd`.
 
 ---
 
@@ -358,8 +371,9 @@ Al clickearlo abre el Dialog selector. La tabla activa se pasa al hook `useMovim
 | Schema | Contenido | Acceso desde código |
 |--------|-----------|---------------------|
 | `public` | Extractos bancarios + todas las tablas compartidas | `supabase.from('tabla')` |
-| `msa` | Facturas ARCA empresa MSA | `supabase.schema('msa').from('tabla')` |
+| `msa` | Facturas ARCA + tablas de caja empresa MSA | `supabase.schema('msa').from('tabla')` |
 | `pam` | Facturas ARCA empresa PAM | `supabase.schema('pam').from('tabla')` |
+| `sueldos` | Empleados, períodos, pagos | `supabase.schema('sueldos').from('tabla')` |
 
 ### ⚠️ Problema resuelto (2026-03-22): schema `pam` devolvía HTTP 406
 
@@ -896,4 +910,72 @@ GROUP BY cuenta_bancaria_id;
 | `components/vista-extracto-bancario.tsx` | `ejecutarAsignacion()` | Lógica modal Asignar Manual |
 | `components/configurador-reglas.tsx` | estado `cuentaFiltro` | Selector y filtro lista de reglas |
 | `types/conciliacion.ts` | `ReglaConciliacion` | Incluye campo `cuenta_bancaria_id` |
+
+---
+
+## 17. SISTEMA CAJA (2026-03-26)
+
+### Arquitectura
+
+Las cajas funcionan **exactamente igual** que los extractos bancarios: misma vista, misma lógica de conciliación, mismo import. La diferencia es que las tablas están en el schema `msa` (no `public`) y los movimientos se originan en el reporte físico de caja (no en un extracto bancario digital).
+
+### Tablas BD
+
+```sql
+-- Las 3 tablas tienen la misma estructura
+msa.caja_general  -- Caja General MSA
+msa.caja_ams      -- Caja AMS MSA (Alejandro Martínez Sobrado)
+msa.caja_sigot    -- Caja Sigot MSA (Rubén Sigot)
+
+-- Columnas incluidas (subconjunto de msa_galicia — solo las relevantes para caja):
+id, fecha, descripcion, debitos, creditos, saldo, control,
+categ, detalle, contable, interno, centro_de_costo, cuenta, orden,
+estado, motivo_revision, comprobante_arca_id, nro_cuenta, template_id, template_cuota_id
+```
+
+**Columnas de msa_galicia NO incluidas** (son propias del extracto bancario Galicia):
+`origen`, `grupo_de_conceptos`, `concepto`, `numero_de_terminal`, `observaciones_cliente`, `numero_de_comprobante`, `leyendas_adicionales_1-4`, `tipo_de_movimiento`
+
+### Campo `medio_pago`
+
+Agregado en **2026-03-26** para rastrear desde dónde sale cada pago:
+
+| Tabla | Campo | Valores posibles | Default |
+|-------|-------|-----------------|---------|
+| `cuotas_egresos_sin_factura` | `medio_pago` | banco / caja_general / caja_ams / caja_sigot | banco |
+| `sueldos.pagos` | `medio_pago` | banco / caja_general / caja_ams / caja_sigot | banco |
+| `msa.comprobantes_arca` | `medio_pago` | banco / caja_general / caja_ams / caja_sigot | banco |
+
+**Dónde se setea en UI**:
+- Templates → modal "Pago Manual": selector antes de fecha
+- Sueldos → modal "Anticipo": selector bajo "Estado en Cash Flow"
+- ARCA → columna inline editable (oculta por defecto, activable desde configurador columnas)
+- Cash Flow → filtro "Medio de Pago" en panel de filtros
+
+### Schema routing en hooks
+
+```typescript
+// useMotorConciliacion.ts — CuentaBancaria extendida
+interface CuentaBancaria {
+  schema_bd?: string  // 'public' (default) | 'msa'
+  tipo?: 'banco' | 'caja'
+}
+
+// useMovimientosBancarios.ts — acepta schema
+function useMovimientosBancarios(tabla: string, schema: string = 'public') {
+  // queries → schema === 'msa' ? supabase.schema('msa') : supabase
+}
+
+// vista-extracto-bancario.tsx — auto-detecta schema
+const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === cuentaSeleccionada)?.schema_bd || 'public'
+```
+
+### Pendientes caja
+
+| Pendiente | Descripción |
+|-----------|-------------|
+| **Importador caja** | API `/api/import-caja` — leer reporte físico de caja (Excel/CSV) y poblar la tabla correspondiente. Definir formato del reporte primero. |
+| **Interceptor template CAJA** | Cuando el motor concilia un movimiento bancario y asigna template CAJA (débito banco → ingreso caja), interceptar y pedir confirmación al usuario antes de ejecutar. Pendiente para Fase 5. |
+| **Reglas de conciliación para cajas** | Hoy las 40 reglas son solo para `msa_galicia`. Cuando se carguen datos en las cajas, crear reglas con `cuenta_bancaria_id = 'caja_general'` etc. |
+| **Cajas PAM** | Si PAM necesita cajas en el futuro, crear tablas equivalentes en schema `pam`. |
 | `types/conciliacion.ts` | `MovimientoBancario` | Incluye `nro_cuenta`, `template_id`, `template_cuota_id`, `comprobante_arca_id` |

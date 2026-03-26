@@ -1,7 +1,27 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-03-22
-> **Sesión anterior**: Conciliación bancaria — fixes schema PAM + extracto bancario multi-cuenta
+> **Última actualización**: 2026-03-26
+> **Sesión anterior**: Sistema Caja + fixes monetarios + preview import ARCA
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-03-26
+
+| Feature | Commits |
+|---------|---------|
+| Fix separador decimal coma en todos los inputs monetarios (Cash Flow, ARCA, Templates, Extracto, Sueldos) | `a534219` (parcial) |
+| Fix Sigot anticipo crash — `SelectItem value=""` → `value="__none__"` (Radix crash) | `a534219` |
+| Preview import ARCA — muestra listado facturas antes de confirmar (nueva/duplicada/error) | `a534219` |
+| BD: 3 tablas caja `msa.caja_general/ams/sigot` con misma estructura que extracto bancario | migrations |
+| BD: campo `medio_pago` en `cuotas_egresos_sin_factura`, `sueldos.pagos`, `msa.comprobantes_arca` | migrations |
+| `CuentaBancaria`: campo `tipo` (banco/caja) + `schema_bd` para routing schema automático | `a534219` |
+| `useMovimientosBancarios`: soporte schema `msa` para tablas de caja | `a534219` |
+| Extracto: selector expandido con dos grupos (Cuentas Bancarias / Cajas) | `a534219` |
+| Cash Flow: filtro medio_pago en panel de filtros | `a534219` |
+| Templates pago manual: selector medio_pago | `a534219` |
+| Sueldos anticipo: selector medio_pago | `a534219` |
+| ARCA: columna `medio_pago` disponible (oculta, activable) | `a534219` |
+| Documentación: `CONCILIACION-CONTABILIDAD.md` sección 17 Sistema Caja | — |
 
 ---
 
@@ -133,6 +153,20 @@
 
 ## 🚨 PENDIENTES INMEDIATOS (próxima sesión)
 
+### 0b. Sistema Caja — Importador (Fase 1 pendiente)
+
+- Definir formato del reporte físico de caja que se exportará
+- Crear API `/api/import-caja` — leer Excel/CSV del reporte y poblar `msa.caja_general`, `msa.caja_ams` o `msa.caja_sigot` según corresponda
+- Igual que import extracto pero sin campos bancarios (sin `origen`, `grupo_de_conceptos`, etc.)
+
+### 0c. Sistema Caja — Interceptor template CAJA (Fase 5, al final)
+
+- Cuando motor concilia movimiento bancario y detecta template CAJA:
+  - El débito bancario representa una transferencia al efectivo (banco → caja)
+  - Interceptar y pedir confirmación antes de ejecutar
+  - Si confirma: crear registro de ingreso en la tabla de caja correspondiente
+- Dejar para después de que el importador funcione y haya datos reales en las cajas
+
 ### 0. Testing ECHEQ facturas (nuevo)
 - Probar botón ECHEQ en factura en estado 'pendiente' con SICORE → verificar queda en 'echeq'
 - Probar botón ECHEQ en factura ya en 'pagar'/'preparado' → verificar queda en 'echeq' sin abrir SICORE de nuevo
@@ -166,6 +200,11 @@
 ### Opción C — Módulo Terneros Flujo B
 - Flujo B: lectura lector orejas (pendiente en DISEÑO_TERNEROS.md)
 - Completar proceso destete UI (confirmar ciclos en BD)
+
+### Opción E — Caja: importador y conciliación
+- Importador API para los 3 reportes de caja
+- Una vez cargados datos: motor conciliación de caja igual que bancos
+- Interceptor template CAJA (banco → caja transfers)
 
 ### Opción D — Cierre Quincena SICORE mejorado
 - Generación PDF comprobante retención formato AFIP oficial
