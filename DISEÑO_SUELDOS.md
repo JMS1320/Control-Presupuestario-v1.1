@@ -1,7 +1,7 @@
 # DISEÑO E IMPLEMENTACIÓN: Módulo Sueldos
 
 > **Estado**: ✅ IMPLEMENTADO — Operativo, pendiente IPC real
-> **Última actualización**: 2026-03-13
+> **Última actualización**: 2026-03-25
 > **Fecha diseño**: 2026-03-05
 > **Fecha implementación**: 2026-03-05
 > **Prioridad**: Alta — reemplaza templates 47-54 del sistema de egresos
@@ -23,13 +23,20 @@
 | Tab `Sueldos` en dashboard (grid-cols-10) | ✅ |
 | Cards resumen: empleados / bruto total / anticipos / saldo | ✅ |
 | Navegación por mes (Feb–Jun 2026) | ✅ |
+| Mes inicial = mes en curso (clamp al rango disponible) | ✅ 2026-03-25 |
 | Tabla empleados del mes: tipo, bruto, anticipos, saldo, estado | ✅ |
 | Modal registrar anticipo | ✅ |
+| Modal editar anticipo/pago existente | ✅ 2026-03-25 |
+| Botón eliminar pago (con confirmación + reversión período) | ✅ 2026-03-25 |
 | Modal historial pivot (meses como columnas) | ✅ |
 | Cash Flow 4ta fuente (origen `SUELDO`) | ✅ |
 | Columnas parámetros por período en BD | ✅ |
 | Modal edición parámetros por fila (botón ✏️) | ✅ |
 | Preview bruto en tiempo real en modal | ✅ |
+| Valor franco editable (default `(A+B)/25`, override manual) | ✅ 2026-03-25 |
+| Propagar parámetros a meses siguientes (modal Sí/No) | ✅ 2026-03-25 |
+| Campos vacaciones y premio opcionales (suman al bruto) | ✅ 2026-03-25 |
+| Campo observaciones por período (visible en tabla principal) | ✅ 2026-03-25 |
 | Anticipos en Cash Flow como filas propias (`SUELD ANT`) | ✅ 2026-03-12 |
 | Selector estado al registrar anticipo (default `pagar`) | ✅ 2026-03-12 |
 | Anticipos editables desde Cash Flow (estado, fecha, monto) | ✅ 2026-03-12 |
@@ -67,50 +74,73 @@ public.sueldos_pagos               → sueldos.pagos
 **Importante**: Todos los queries en el código usan las vistas (`sueldos_periodos`, etc.)
 y NO usan `.schema('sueldos')`.
 
+> ⚠️ **Cada vez que se agregan columnas a `sueldos.periodos`** hay que recrear la vista:
+> ```sql
+> DROP VIEW IF EXISTS public.sueldos_periodos;
+> -- ALTER TABLE ...
+> CREATE VIEW public.sueldos_periodos AS SELECT * FROM sueldos.periodos;
+> ```
+> No usar `CREATE OR REPLACE` si la columna cambia de tipo (PostgreSQL lo rechaza con error de dependencia).
+
 ---
 
-## 📋 Parámetros Editables por Período (2026-03-10)
+## 📋 Parámetros Editables por Período
 
 Cada período en `sueldos_periodos` tiene sus propios parámetros editables mes a mes.
-El usuario los actualiza manualmente desde el botón ✏️ en la tabla del mes.
+El usuario los actualiza desde el botón ✏️ en la tabla del mes.
 
-### Columnas agregadas a `sueldos.periodos`
+### Columnas de `sueldos.periodos`
 
-| Columna | Tipo | Aplica a |
-|---------|------|----------|
-| `monto_a` | NUMERIC | `ab_francos` |
-| `monto_b` | NUMERIC | `ab_francos` |
-| `francos_cantidad` | NUMERIC | `ab_francos` |
-| `valor_por_dia` | NUMERIC | `por_dia` |
-| `dias_trabajados` | INTEGER | `por_dia` |
-| `valor_por_hora` | NUMERIC | `por_hora_ipc` |
-| `horas_mes` | INTEGER | `por_hora_ipc` |
-| `varios` | NUMERIC | todos |
+| Columna | Tipo | Aplica a | Notas |
+|---------|------|----------|-------|
+| `monto_a` | NUMERIC | `ab_francos` | Categoría A del convenio |
+| `monto_b` | NUMERIC | `ab_francos` | Categoría B del convenio |
+| `francos_cantidad` | NUMERIC | `ab_francos` | Días trabajados (admite decimales, ej: 2.5) |
+| `valor_franco` | NUMERIC | `ab_francos` | NULL = usa (A+B)/25; si hay valor = override manual |
+| `valor_por_dia` | NUMERIC | `por_dia` | |
+| `dias_trabajados` | INTEGER | `por_dia` | |
+| `valor_por_hora` | NUMERIC | `por_hora_ipc` | |
+| `horas_mes` | INTEGER | `por_hora_ipc` | |
+| `varios` | NUMERIC | todos | Combustible, reintegros, etc. |
+| `vacaciones` | NUMERIC | todos | NULL cuando no aplica |
+| `premio` | NUMERIC | todos | NULL cuando no aplica |
+| `observaciones` | TEXT | todos | Visible en tabla principal (truncado 40 chars) |
 
-### Fórmulas de cálculo (en `guardarEdicion`)
+### Fórmulas de cálculo
 
 ```
-ab_francos:    (A + B) + ((A + B) / 25 × francos_cantidad) + varios
-por_dia:       valor_por_dia × dias_trabajados + varios
-por_hora_ipc:  valor_por_hora × horas_mes + varios
-plano_ipc:     bruto_actual + varios  (IPC pendiente)
+extras = varios + vacaciones + premio
+
+ab_francos:    (A + B) + (valor_franco × francos_cantidad) + extras
+               donde valor_franco = monto guardado en BD, o (A+B)/25 si es NULL
+
+por_dia:       valor_por_dia × dias_trabajados + extras
+por_hora_ipc:  valor_por_hora × horas_mes + extras
+plano_ipc:     bruto_anterior + extras  (IPC pendiente)
 ```
 
-> **Nota**: `francos_cantidad` = días TRABAJADOS (no días de descanso). Más francos = más pago.
+> **francos = días TRABAJADOS** (no días de descanso). Más francos → más pago.
+>
+> **valor_franco**: por defecto se calcula automáticamente como `(A+B)/25` y se sincroniza al cambiar A o B. Si el usuario lo edita manualmente, se guarda el valor custom en BD y aparece un botón "↺ Recalcular de A+B" para volver al modo automático. En BD: `NULL` = automático, valor numérico = override.
 
-### Workflow del usuario
+### Workflow del usuario — actualización mensual
 
-1. Llega la escala del convenio → abre ✏️ en cada empleado `ab_francos` → carga nuevo A y B
-2. El valor del franco se muestra calculado automáticamente en el modal: `(A+B)/25`
-3. Carga la cantidad de francos trabajados ese mes
-4. Si hubo reintegro combustible u otro concepto esporádico → campo **Varios**
-5. El bruto se muestra en tiempo real antes de guardar
-6. Al guardar: UPDATE en BD + recálculo de `saldo_pendiente`
+1. Llega la escala del convenio → abre ✏️ → carga nuevo A y B → el valor franco se recalcula solo
+2. Carga la cantidad de francos trabajados ese mes (admite decimales como 2,5)
+3. Si hubo reintegro combustible u otro concepto esporádico → campo **Varios**
+4. Si hubo vacaciones pagadas ese mes → campo **Vacaciones** (suma al bruto)
+5. Si hubo premio → campo **Premio** (suma al bruto)
+6. Notas del mes → campo **Observaciones** (se ve en la tabla principal)
+7. El bruto se muestra en tiempo real antes de guardar
+8. Al guardar → UPDATE del período actual → modal pregunta **"¿Propagar a meses siguientes?"**
+   - **Sí, propagar**: aplica los mismos parámetros a todos los períodos posteriores del mismo empleado, recalculando `saldo_pendiente` según los anticipos de cada mes
+   - **No, solo este mes**: guarda solo el período actual
+
+> **Vacaciones y Premio**: aparecen en la tabla principal como badges de color bajo el nombre del empleado (azul = vacaciones, amarillo = premio). Solo se muestran si tienen valor distinto de cero.
+>
+> **Observaciones**: aparecen en cursiva gris bajo el nombre. Si supera 40 caracteres se trunca; el texto completo aparece en tooltip al hacer hover.
 
 ### Valores iniciales pre-poblados (migración `sueldos_periodos_parametros_mes`)
-
-Los 35 períodos existentes fueron pre-poblados desde `sueldos.componentes_salario`
-y `sueldos.empleados` al momento de aplicar la migración:
 
 | Empleado | Valores iniciales cargados |
 |----------|---------------------------|
@@ -121,14 +151,6 @@ y `sueldos.empleados` al momento de aplicar la migración:
 | Vulcano | valor_dia=80.000 · dias=22 |
 | AMS | valor_hora=24.862 · horas=45 |
 | JMS | solo varios disponible (plano_ipc pendiente) |
-
-### Vista pública recreada
-
-```sql
-CREATE OR REPLACE VIEW public.sueldos_periodos AS
-SELECT * FROM sueldos.periodos;
--- Necesario cada vez que se agregan columnas a sueldos.periodos
-```
 
 ---
 
@@ -144,27 +166,6 @@ SELECT * FROM sueldos.periodos;
 | AMS | `por_hora_ipc` | ambas | 45 horas/mes |
 | Alondra Olivo | `ab_francos` | PAM | 0 francos/mes |
 
-### Fórmulas bruto por tipo
-
-```
-ab_francos:    (A + B) - ((A + B) / 25 × francos_dias_promedio)
-por_dia:       valor_por_dia × dias_promedio
-plano_ipc:     monto_plano  (fijo; IPC solo para comparación)
-por_hora_ipc:  valor_por_hora × horas_promedio
-```
-
-### Brutoes calculados Feb 2026
-
-| Empleado | Cálculo | Bruto |
-|---------|---------|-------|
-| Sigot | (1.408.347 + 191.653) - (64.000 × 5) | $1.280.000 |
-| Barreto | (0 + 1.100.000) - (44.000 × 4) | $924.000 |
-| Elvio | 60.000 × 16 | $960.000 |
-| Vulcano | 80.000 × 22 | $1.760.000 |
-| JMS | monto plano | $2.415.571 |
-| AMS | 24.862 × 45 | $1.118.790 |
-| Alondra | (0 + 500.000) - 0 | $500.000 |
-
 ---
 
 ## 🗓️ Campaña y Períodos
@@ -174,16 +175,35 @@ por_hora_ipc:  valor_por_hora × horas_promedio
 - **Estado inicial**: `'proyectado'`
 - **sueldo_x_ipc**: igual a `bruto_calculado` hasta que se carguen datos IPC reales
   - Tabla a usar: `public.indices_ipc` (anio, mes, valor_ipc)
+- **Mes inicial en UI**: mes en curso (clamp a Feb si < Feb, clamp a Jun si > Jun 2026)
 
 ---
 
-## 💰 Flujo de Anticipos
+## 💰 Flujo de Anticipos / Pagos
 
-1. Modal: seleccionar empleado + monto + fecha + cuenta destino (opcional) + descripción
+### Registrar anticipo
+
+1. Modal: empleado + monto + fecha + cuenta destino (opcional) + descripción + estado Cash Flow
 2. INSERT en `sueldos_pagos` con `tipo = 'anticipo'`
-3. UPDATE `sueldos_periodos`:
-   - `anticipos_descontados += monto`
-   - `saldo_pendiente = bruto_calculado - anticipos_descontados`
+3. UPDATE `sueldos_periodos`: `anticipos_descontados += monto`, `saldo_pendiente = bruto - anticipos`
+
+### Editar pago existente
+
+- Botón lápiz (✏️) en tabla "Pagos registrados" del mes
+- Abre el mismo modal en modo edición, pre-llenado con los datos del pago
+- Al guardar: revierte el monto viejo del período, aplica el nuevo → recalcula saldo
+- El empleado no se puede cambiar (el pago ya está vinculado al período)
+
+### Eliminar pago
+
+- Botón papelera (🗑) en tabla "Pagos registrados"
+- Pide confirmación con el monto
+- Revierte `anticipos_descontados` y recalcula `saldo_pendiente` en el período vinculado
+- Borra el registro de `sueldos_pagos`
+
+### Filtro "Pagos registrados del mes"
+
+Los pagos se filtran por **`periodo_id`** (el mes al que fue asignado el pago), **no por `fecha`** del pago. Así un pago de febrero efectuado el 5 de marzo aparece en el detalle de febrero. La `fecha` sigue siendo la fecha real del movimiento bancario.
 
 ---
 
@@ -200,17 +220,13 @@ por_hora_ipc:  valor_por_hora × horas_promedio
 - `fecha_estimada` = último día del mes del período
 - **Solo lectura** desde Cash Flow (`actualizarRegistro` bloquea si `origen_tabla = 'sueldos.periodos'`)
 
-### Fuente 2 — Anticipos (`sueldos_pagos`)  _(agregado 2026-03-12)_
+### Fuente 2 — Anticipos (`sueldos_pagos`)
 
 - Origen: `'SUELDO'`, `categ: 'SUELD ANT'`
 - Query: `sueldos_pagos` con `tipo = 'anticipo'`, excluye `estado = 'conciliado'`, desde 2026-02-01
 - Cada anticipo = 1 fila propia (conciliable con extracto bancario)
 - **Editable** desde Cash Flow: estado, fecha, monto, detalle → UPDATE directo en `sueldos_pagos`
 - Distinción en `actualizarRegistro`: si `origen_tabla = 'sueldos.pagos'` → editable
-
-### Detalle de pagos en vista Sueldos _(fix 2026-03-25)_
-
-El listado "Pagos registrados" del mes filtra por **`periodo_id`** (mes al que pertenece el pago), NO por `fecha` del pago. Esto permite que un pago de febrero efectuado el 5 de marzo aparezca en el detalle de febrero (el mes al que descuenta), no en el de marzo. La `fecha` sigue siendo la fecha real del movimiento bancario.
 
 ---
 
@@ -224,14 +240,26 @@ El listado "Pagos registrados" del mes filtra por **`periodo_id`** (mes al que p
 
 ---
 
+## 🐛 Bugs corregidos (2026-03-25)
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| Francos restaban al bruto | Fórmula usaba `-` en vez de `+` | Cambiar a `+` en `calcularBruto` |
+| Detalle anticipos filtraba por fecha de pago | Query usaba `fecha BETWEEN` | Cambiar a `periodo_id IN [ids del mes]` |
+| Francos no aceptaba decimales | Columna BD era `INTEGER` | Migración: `ALTER COLUMN francos_cantidad TYPE NUMERIC` |
+| Mes inicial siempre febrero | Estado hardcodeado a `MES_MIN` | Estado inicializado con fecha actual |
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **IPC real**: Cargar datos en `public.indices_ipc` para calcular `sueldo_x_ipc` real
   - Por ahora `sueldo_x_ipc = bruto_calculado`
+- **plano_ipc (JMS)**: Implementar lógica IPC completa (pendiente, solo varios disponible)
 - **Planilla de asistencia**: Reemplazar ingreso manual de francos/días por importación de planilla
 - **Cerrar períodos**: Cambiar estado `proyectado → cerrado` al pagar sueldo mensual
 - **Aguinaldo**: Agregar lógica semestral (Jun/Dic)
 - **Recibos**: Generar PDF recibo de sueldo por empleado
 - **Modo histórico**: Períodos anteriores a la campaña activa
 - **Wilson Barreto monto_a**: Actualmente $0 — confirmar si corresponde dejar así
-- **plano_ipc (JMS)**: Implementar lógica IPC completa (pendiente, solo varios disponible)
+- **Rango de meses**: Hoy hardcodeado Feb–Jun 2026. Cuando se cargue nueva campaña, actualizar `MES_MIN`/`MES_MAX` en `tab-sueldos.tsx`
