@@ -91,7 +91,8 @@ export function VistaExtractoBancario() {
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva)
+  const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -1509,33 +1510,56 @@ export function VistaExtractoBancario() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Selector de Cuenta */}
+      {/* Modal Selector de Cuenta / Caja */}
       <Dialog open={selectorAbierto} onOpenChange={setSelectorAbierto}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Seleccionar Cuenta Bancaria</DialogTitle>
+            <DialogTitle>Seleccionar Cuenta / Caja</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Selecciona la cuenta bancaria que deseas conciliar:
-            </p>
-            <div className="space-y-2">
-              {cuentasDisponibles.map((cuenta) => (
-                <Button
-                  key={cuenta.id}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => ejecutarConCuenta(cuenta.id)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Banknote className="h-4 w-4" />
-                    <div className="text-left">
-                      <div className="font-medium">{cuenta.nombre}</div>
-                      <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+            {/* Cuentas bancarias */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo !== 'caja').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-blue-500 bg-blue-50' : ''}`}
+                    onClick={() => ejecutarConCuenta(cuenta.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
                     </div>
-                  </div>
-                </Button>
-              ))}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {/* Cajas */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cajas</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo === 'caja').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-green-500 bg-green-50' : ''}`}
+                    onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4 text-green-600" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         </DialogContent>

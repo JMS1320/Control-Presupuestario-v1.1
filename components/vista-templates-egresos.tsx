@@ -154,6 +154,7 @@ export function VistaTemplatesEgresos() {
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
+  const [medioPagoManual, setMedioPagoManual] = useState('banco')
   const [nuevaCuota, setNuevaCuota] = useState({
     fecha: '',
     monto: '',
@@ -805,6 +806,7 @@ export function VistaTemplatesEgresos() {
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
+    setMedioPagoManual('banco')
     setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
     setModalPagoManual(true)
   }
@@ -838,7 +840,8 @@ export function VistaTemplatesEgresos() {
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
-          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
+          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
+          medio_pago: medioPagoManual
         })
 
       if (error) throw error
@@ -1995,6 +1998,22 @@ export function VistaTemplatesEgresos() {
                 }
                 return null
               })()}
+
+              {/* Medio de pago */}
+              <div className="space-y-2">
+                <Label>Medio de Pago</Label>
+                <Select value={medioPagoManual} onValueChange={setMedioPagoManual}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="banco">Banco</SelectItem>
+                    <SelectItem value="caja_general">Caja General</SelectItem>
+                    <SelectItem value="caja_ams">Caja AMS</SelectItem>
+                    <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="fecha-pago">Fecha</Label>

@@ -50,6 +50,8 @@ export interface CashFlowRow {
   grupo_pago_id?: string | null
   facturas_agrupadas?: number   // > 1 indica fila de grupo
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
+  // Medio de pago
+  medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
 }
 
 // Filtros para Cash Flow
@@ -63,6 +65,7 @@ export interface CashFlowFilters {
   busquedaDetalle?: string
   busquedaCateg?: string
   busquedaCUIT?: string
+  medioPago?: string  // 'todos' | 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
 }
 
 export function useMultiCashFlowData(filtros?: CashFlowFilters) {
@@ -106,6 +109,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: 0,
         saldo_cta_cte: 0,
         estado: f.estado || 'pendiente',
+        medio_pago: f.medio_pago || 'banco',
         sicore: f.sicore || null,
         imp_neto_gravado: f.imp_neto_gravado || 0,
         imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
@@ -198,6 +202,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
+        medio_pago: c.medio_pago || 'banco',
         grupo_pago_id: null,
       }
     })
@@ -369,6 +374,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       if (filtros.busquedaCUIT && filtros.busquedaCUIT.trim()) {
         const cuitSearch = filtros.busquedaCUIT.toLowerCase()
         if (!fila.cuit_proveedor.toLowerCase().includes(cuitSearch)) return false
+      }
+
+      // Filtro por medio de pago
+      if (filtros.medioPago && filtros.medioPago !== 'todos') {
+        if ((fila.medio_pago || 'banco') !== filtros.medioPago) return false
       }
 
       return true

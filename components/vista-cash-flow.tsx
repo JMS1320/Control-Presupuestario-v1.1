@@ -87,6 +87,7 @@ export function VistaCashFlow() {
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
+  const [medioPagoFiltro, setMedioPagoFiltro] = useState('todos')
   
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
@@ -712,7 +713,8 @@ export function VistaCashFlow() {
     if (busquedaDetalle.trim()) nuevosFiltros.busquedaDetalle = busquedaDetalle.trim()
     if (busquedaCateg.trim()) nuevosFiltros.busquedaCateg = busquedaCateg.trim()
     if (busquedaCUIT.trim()) nuevosFiltros.busquedaCUIT = busquedaCUIT.trim()
-    
+    if (medioPagoFiltro && medioPagoFiltro !== 'todos') nuevosFiltros.medioPago = medioPagoFiltro
+
     setFiltros(nuevosFiltros)
     toast.success(`Filtros aplicados: ${Object.keys(nuevosFiltros).length} criterios`)
   }
@@ -726,6 +728,7 @@ export function VistaCashFlow() {
     setBusquedaDetalle('')
     setBusquedaCateg('')
     setBusquedaCUIT('')
+    setMedioPagoFiltro('todos')
     setFiltros(undefined)
     toast.success('Filtros limpiados')
   }
@@ -1778,6 +1781,23 @@ export function VistaCashFlow() {
                     onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
+                </div>
+
+                {/* Filtro por medio de pago */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">💳 Medio de Pago</Label>
+                  <Select value={medioPagoFiltro} onValueChange={setMedioPagoFiltro}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="banco">Banco</SelectItem>
+                      <SelectItem value="caja_general">Caja General</SelectItem>
+                      <SelectItem value="caja_ams">Caja AMS</SelectItem>
+                      <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 
                 {/* Búsqueda por detalle */}

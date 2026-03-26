@@ -133,6 +133,7 @@ const COLUMNAS_CONFIG = {
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
   ddjj_iva: { label: "DDJJ IVA", visible: true, width: "100px" },
+  medio_pago: { label: "Medio Pago", visible: false, width: "120px" },
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 

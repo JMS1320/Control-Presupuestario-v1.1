@@ -6,13 +6,15 @@ import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 
-// Configuración de cuentas bancarias
+// Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
   id: string
   nombre: string
   tabla_bd: string
+  schema_bd?: string   // 'public' (default) | 'msa'
   empresa: 'MSA' | 'PAM'
   activa: boolean
+  tipo?: 'banco' | 'caja'
 }
 
 export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
@@ -21,21 +23,51 @@ export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
     nombre: 'MSA Galicia CC Pesos',
     tabla_bd: 'msa_galicia',
     empresa: 'MSA',
-    activa: true
+    activa: true,
+    tipo: 'banco'
   },
   {
     id: 'pam_galicia',
     nombre: 'PAM Galicia CA Pesos',
     tabla_bd: 'pam_galicia',
     empresa: 'PAM',
-    activa: true
+    activa: true,
+    tipo: 'banco'
   },
   {
     id: 'pam_galicia_cc',
     nombre: 'PAM Galicia CC Pesos',
     tabla_bd: 'pam_galicia_cc',
     empresa: 'PAM',
-    activa: true
+    activa: true,
+    tipo: 'banco'
+  },
+  {
+    id: 'caja_general',
+    nombre: 'Caja General MSA',
+    tabla_bd: 'caja_general',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
+  },
+  {
+    id: 'caja_ams',
+    nombre: 'Caja AMS MSA',
+    tabla_bd: 'caja_ams',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
+  },
+  {
+    id: 'caja_sigot',
+    nombre: 'Caja Sigot MSA',
+    tabla_bd: 'caja_sigot',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
   }
 ]
 

@@ -162,6 +162,7 @@ export function TabSueldos() {
   const [antCuenta, setAntCuenta] = useState('')
   const [antDesc, setAntDesc] = useState('')
   const [antEstado, setAntEstado] = useState('pagar')
+  const [antMedioPago, setAntMedioPago] = useState('banco')
   const [guardando, setGuardando] = useState(false)
 
   // Modal historial
@@ -258,6 +259,7 @@ export function TabSueldos() {
     setAntFecha(new Date().toISOString().split('T')[0])
     setAntCuenta('__none__')
     setAntDesc('')
+    setAntMedioPago('banco')
     setModalAnticipo(true)
   }
 
@@ -278,6 +280,7 @@ export function TabSueldos() {
           cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
           descripcion: antDesc || null,
           estado: antEstado,
+          medio_pago: antMedioPago,
         })
         .eq('id', editandoPago.id)
 
@@ -304,6 +307,7 @@ export function TabSueldos() {
           cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
           descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
           estado:            antEstado,
+          medio_pago:        antMedioPago,
         })
 
       if (!errPago && periodo) {
@@ -325,6 +329,7 @@ export function TabSueldos() {
     setAntCuenta('__none__')
     setAntDesc('')
     setAntEstado('pagar')
+    setAntMedioPago('banco')
     await cargar()
   }
 
@@ -1066,6 +1071,21 @@ export function TabSueldos() {
                   <SelectItem value="programado">programado</SelectItem>
                   <SelectItem value="pendiente">pendiente</SelectItem>
                   <SelectItem value="pagado">pagado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Medio de Pago</Label>
+              <Select value={antMedioPago} onValueChange={setAntMedioPago}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="banco">Banco</SelectItem>
+                  <SelectItem value="caja_general">Caja General</SelectItem>
+                  <SelectItem value="caja_ams">Caja AMS</SelectItem>
+                  <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
                 </SelectContent>
               </Select>
             </div>
