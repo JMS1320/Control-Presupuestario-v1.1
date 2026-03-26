@@ -2615,9 +2615,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return
       }
 
-      const netoGravado = factura.imp_neto_gravado || 0
-      const netoNoGravado = factura.imp_neto_no_gravado || 0
-      const opExentas = factura.imp_op_exentas || 0
+      const tc = (factura.tc_pago ?? factura.tipo_cambio ?? 1) as number
+      const netoGravado = (factura.imp_neto_gravado || 0) * tc
+      const netoNoGravado = (factura.imp_neto_no_gravado || 0) * tc
+      const opExentas = (factura.imp_op_exentas || 0) * tc
       const netoFactura = netoGravado + netoNoGravado + opExentas
       const minimoServicios = 67170 // Mínimo más bajo (Servicios/Transporte)
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
@@ -2625,6 +2626,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       console.log('🔍 SICORE: Evaluando factura', {
         id: factura.id,
         proveedor: factura.denominacion_emisor,
+        tc,
         netoGravado,
         netoNoGravado,
         opExentas,
@@ -2656,6 +2658,22 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
       if (netoFactura <= minimoServicios) {
         console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
+        // Ofrecer descuento pronto pago aunque no haya retención
+        const aplicarDescuento = window.confirm(
+          'No corresponde retención SICORE (monto menor al mínimo).\n\n¿Desea aplicar un descuento pronto pago?'
+        )
+        if (aplicarDescuento) {
+          setFacturaEnProceso(factura)
+          setMostrarModalSicore(true)
+          setMontoRetencion(0)
+          setDescuentoAdicional(0)
+          setDescuentoDesglose(null)
+          setDescuentoInputValor('')
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false })
+          setPasoSicore('calculo')
+        } else {
+          await ejecutarGuardadoPendiente()
+        }
         return
       }
 
@@ -2715,9 +2733,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   // FÓRMULA: (gravado + no_gravado + exento) - minimo_no_imponible = base_imponible * porcentaje
   const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
     try {
-      const netoGravado = factura.imp_neto_gravado || 0
-      const netoNoGravado = factura.imp_neto_no_gravado || 0
-      const opExentas = factura.imp_op_exentas || 0
+      const tc = (factura.tc_pago ?? factura.tipo_cambio ?? 1) as number
+      const netoGravado = (factura.imp_neto_gravado || 0) * tc
+      const netoNoGravado = (factura.imp_neto_no_gravado || 0) * tc
+      const opExentas = (factura.imp_op_exentas || 0) * tc
       const netoFactura = netoGravado + netoNoGravado + opExentas
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
 
@@ -2992,13 +3011,19 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   }
 
   const finalizarProcesoSicore = async () => {
-    if (!facturaEnProceso || !tipoSeleccionado) return
+    if (!facturaEnProceso) return
+    // Permitir continuar si hay descuento aunque no haya retención SICORE
+    if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0) return
     
     try {
       // PRIMERO: Ejecutar el cambio de estado pendiente (estado → 'pagar')
       await ejecutarGuardadoPendiente()
       
-      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      // Retención y descuento están en ARS; imp_total puede ser USD → convertir retención a moneda original
+      const tc = ((facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1) as number)
+      const retencionEnMoneda = tc > 1.01 ? montoRetencion / tc : montoRetencion
+      const descuentoEnMoneda = tc > 1.01 && descuentoAdicional > 0 ? descuentoAdicional / tc : descuentoAdicional
+      const saldoFinal = (facturaEnProceso.imp_total || 0) - retencionEnMoneda - descuentoEnMoneda
       const quincena = generarQuincenaSicore(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
       
       console.log('💾 SICORE: Finalizando proceso', {
@@ -3015,7 +3040,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         monto_a_abonar: saldoFinal,
         sicore: quincena,
         monto_sicore: montoRetencion,
-        tipo_sicore: tipoSeleccionado.tipo,
+        tipo_sicore: tipoSeleccionado?.tipo || null,
         descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
       }
       if (esEcheqFactura) {
@@ -3033,7 +3058,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         throw new Error(error.message)
       }
 
-      // ── Registrar en tabla nueva sicore_retenciones (paralelo, no interrumpe) ──
+      // ── Registrar en tabla nueva sicore_retenciones solo si hay retención real ──
+      if (tipoSeleccionado && montoRetencion > 0) {
       const minimoAplicado = datosSicoreCalculo?.minimoAplicado ?? tipoSeleccionado.minimo_no_imponible
       const descPct = (facturaEnProceso.imp_total || 0) > 0
         ? descuentoAdicional / (facturaEnProceso.imp_total || 1)
@@ -3062,6 +3088,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         retencion: montoRetencion,
         pago: saldoFinal,
       })
+      } // fin if (tipoSeleccionado && montoRetencion > 0)
 
       // Actualizar estado local con datos SICORE
       const nuevasFacturas = facturas.map(f =>
@@ -6028,11 +6055,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
           {/* PASO 2: Mostrar cálculo + opciones */}
           {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && (() => {
-            const impTotal = facturaEnProceso.imp_total || 0
-            const impGravado = facturaEnProceso.imp_neto_gravado || 0
-            const impIva = facturaEnProceso.iva || 0
-            const impNoGravado = facturaEnProceso.imp_neto_no_gravado || 0
-            const impExento = facturaEnProceso.imp_op_exentas || 0
+            const tcModal = ((facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1) as number)
+            const impTotal = (facturaEnProceso.imp_total || 0) * tcModal
+            const impGravado = (facturaEnProceso.imp_neto_gravado || 0) * tcModal
+            const impIva = (facturaEnProceso.iva || 0) * tcModal
+            const impNoGravado = (facturaEnProceso.imp_neto_no_gravado || 0) * tcModal
+            const impExento = (facturaEnProceso.imp_op_exentas || 0) * tcModal
             const saldoGravado = impGravado - (descuentoDesglose?.gravado || 0)
             const saldoIva = impIva - (descuentoDesglose?.iva || 0)
             const transferencia = impTotal - (descuentoDesglose?.total || 0) - montoRetencion
@@ -6047,7 +6075,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
               {/* Tabla desglose gravado / IVA */}
               <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado.emoji} {tipoSeleccionado.tipo} — Desglose</p>
+                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado ? `${tipoSeleccionado.emoji} ${tipoSeleccionado.tipo} — Desglose` : 'Desglose'}</p>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-gray-500 border-b">
@@ -6093,7 +6121,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   <span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span>
+                  <span className="text-gray-500">Retención {tipoSeleccionado ? `${(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%` : ''}:</span>
                   <span className="font-bold text-red-600">${fmt(montoRetencion)}</span>
                 </div>
                 <hr className="border-gray-300" />
