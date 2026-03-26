@@ -256,7 +256,7 @@ export function TabSueldos() {
     else setAntEmpId('')
     setAntMonto('')
     setAntFecha(new Date().toISOString().split('T')[0])
-    setAntCuenta('')
+    setAntCuenta('__none__')
     setAntDesc('')
     setModalAnticipo(true)
   }
@@ -275,7 +275,7 @@ export function TabSueldos() {
         .update({
           fecha: antFecha,
           monto,
-          cuenta_destino_id: antCuenta || null,
+          cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
           descripcion: antDesc || null,
           estado: antEstado,
         })
@@ -301,7 +301,7 @@ export function TabSueldos() {
           tipo:              'anticipo',
           fecha:             antFecha,
           monto,
-          cuenta_destino_id: antCuenta || null,
+          cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
           descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
           estado:            antEstado,
         })
@@ -322,7 +322,7 @@ export function TabSueldos() {
     setAntEmpId('')
     setAntMonto('')
     setAntFecha(new Date().toISOString().split('T')[0])
-    setAntCuenta('')
+    setAntCuenta('__none__')
     setAntDesc('')
     setAntEstado('pagar')
     await cargar()
@@ -336,7 +336,7 @@ export function TabSueldos() {
     setAntEmpId(pago.empleado_id)
     setAntMonto(pago.monto ? pago.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
     setAntFecha(pago.fecha)
-    setAntCuenta(pago.cuenta_destino_id ?? '')
+    setAntCuenta(pago.cuenta_destino_id ?? '__none__')
     setAntDesc(pago.descripcion ?? '')
     setAntEstado((pago as any).estado ?? 'pagar')
     setModalAnticipo(true)
@@ -1035,7 +1035,7 @@ export function TabSueldos() {
                     <SelectValue placeholder="Sin especificar" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin especificar</SelectItem>
+                    <SelectItem value="__none__">Sin especificar</SelectItem>
                     {cuentas
                       .filter(c => c.empleado_id === antEmpId)
                       .map(c => (
