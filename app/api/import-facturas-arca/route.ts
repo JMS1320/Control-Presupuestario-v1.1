@@ -416,6 +416,7 @@ export async function POST(req: Request) {
     // Determinar esquema de base de datos según empresa
     const esquema = empresa.toLowerCase()  // 'msa' o 'pam'
     const tabla = `${esquema}.comprobantes_arca`
+    const modoPreview = formData.get('preview') === 'true'
 
     // 🔍 TEST DE CONEXIÓN - Verificar que podemos acceder a la tabla
     console.log(`🔍 Probando conexión a esquema: ${esquema}`)
@@ -425,24 +426,69 @@ export async function POST(req: Request) {
         .from('comprobantes_arca')
         .select('id')
         .limit(1)
-      
+
       console.log(`✅ Test conexión resultado:`, { testData, testError })
-      
+
       if (testError) {
         console.error(`❌ FALLO TEST DE CONEXIÓN:`, testError)
-        return NextResponse.json({ 
-          error: `No se puede conectar a la tabla ${esquema}.comprobantes_arca: ${testError.message}` 
+        return NextResponse.json({
+          error: `No se puede conectar a la tabla ${esquema}.comprobantes_arca: ${testError.message}`
         }, { status: 500 })
       }
-      
+
       console.log(`✅ Conexión exitosa a ${esquema}.comprobantes_arca`)
-      
+
     } catch (error) {
       console.error(`❌ ERROR CRÍTICO EN TEST:`, error)
-      return NextResponse.json({ 
-        error: `Error crítico de conexión: ${error}` 
+      return NextResponse.json({
+        error: `Error crítico de conexión: ${error}`
       }, { status: 500 })
     }
+
+    // ── MODO PREVIEW ─────────────────────────────────────────────────────────
+    if (modoPreview) {
+      // Traer claves de todos los comprobantes existentes para check de duplicados
+      const { data: existentes } = await supabase
+        .schema(esquema)
+        .from('comprobantes_arca')
+        .select('tipo_comprobante, punto_venta, numero_desde, cuit')
+
+      const existentesSet = new Set(
+        (existentes ?? []).map((e: any) =>
+          `${e.tipo_comprobante}-${e.punto_venta}-${e.numero_desde}-${e.cuit}`
+        )
+      )
+
+      const filasMapeadas = await Promise.all(
+        filasCSV.map(async (filaOriginal, indice) => {
+          try {
+            const f = await mapearFilaCSVaBBDD(filaOriginal, file.name)
+            const sinDatos = !f.fecha_emision || !f.cuit || f.imp_total === 0
+            const clave = `${f.tipo_comprobante}-${f.punto_venta}-${f.numero_desde}-${f.cuit}`
+            const duplicado = !sinDatos && existentesSet.has(clave)
+            return {
+              fila: indice + 2,
+              fecha_emision: f.fecha_emision,
+              razon_social: f.denominacion_emisor || f.cuit || '—',
+              imp_total: f.imp_total,
+              estado: sinDatos ? 'error' : duplicado ? 'duplicado' : 'nueva',
+            }
+          } catch {
+            return { fila: indice + 2, fecha_emision: null, razon_social: '—', imp_total: 0, estado: 'error' }
+          }
+        })
+      )
+
+      return NextResponse.json({
+        preview: true,
+        total: filasMapeadas.length,
+        nuevas: filasMapeadas.filter(f => f.estado === 'nueva').length,
+        duplicadas: filasMapeadas.filter(f => f.estado === 'duplicado').length,
+        errores_parse: filasMapeadas.filter(f => f.estado === 'error').length,
+        facturas: filasMapeadas,
+      })
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     let filasImportadas = 0
     let filasIgnoradas = 0
