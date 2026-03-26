@@ -255,7 +255,7 @@ export function VistaCashFlow() {
             valorFinal = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
           }
         } else if (['debitos', 'creditos'].includes(celda.columna)) {
-          valorFinal = parseFloat(String(valorFinal)) || 0
+          valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
         }
         const exito = await actualizarRegistro(
           celda.filaId,
@@ -439,10 +439,15 @@ export function VistaCashFlow() {
       }
     }
 
+    // Para campos de moneda, mostrar valor formateado con coma decimal (es-AR)
+    const valorFormateado = columna.type === 'currency' && typeof valor === 'number' && valor !== 0
+      ? valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : (valor || '')
+
     const celdaHook: CeldaEnEdicionHook = {
       filaId: fila.id,
       columna: columna.key,
-      valor: valor || '',
+      valor: valorFormateado,
       tableName,
       origen: origenHook,
       campoReal: campoReal // ← Mapeo del campo real en BD
@@ -600,7 +605,7 @@ export function VistaCashFlow() {
       const columna = columnasDefinicion.find(c => c.key === celda.columna)
       
       if (columna?.type === 'currency') {
-        valorFinal = parseFloat(String(valorFinal)) || 0
+        valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
       } else if (columna?.type === 'date') {
         // Validar formato de fecha
         if (valorFinal && !Date.parse(String(valorFinal))) {

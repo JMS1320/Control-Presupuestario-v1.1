@@ -71,7 +71,8 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
     }
     
     if (['monto', 'monto_a_abonar', 'imp_total', 'debitos', 'creditos'].includes(columna)) {
-      return parseFloat(String(valor)) || 0
+      // Acepta tanto punto como coma como separador decimal (formato es-AR: 1.234,56 o 1234,56)
+      return parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
     }
     
     return valor
