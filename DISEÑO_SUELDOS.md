@@ -80,7 +80,7 @@ El usuario los actualiza manualmente desde el botón ✏️ en la tabla del mes.
 |---------|------|----------|
 | `monto_a` | NUMERIC | `ab_francos` |
 | `monto_b` | NUMERIC | `ab_francos` |
-| `francos_cantidad` | INTEGER | `ab_francos` |
+| `francos_cantidad` | NUMERIC | `ab_francos` |
 | `valor_por_dia` | NUMERIC | `por_dia` |
 | `dias_trabajados` | INTEGER | `por_dia` |
 | `valor_por_hora` | NUMERIC | `por_hora_ipc` |
