@@ -6181,7 +6181,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button onClick={finalizarProcesoSicore} className="flex-1 bg-green-600 hover:bg-green-700">
                   ✅ Confirmar
                 </Button>
@@ -6191,11 +6191,27 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2).replace('.', ','))
                     if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(/\./g, '').replace(',', '.')) || 0)
                   }}
+                  title="Modificar monto retención"
                 >
                   📝
                 </Button>
-                <Button variant="outline" onClick={cancelarGuardadoPendiente}>
-                  ❌
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setDescuentoAdicional(0)
+                    setDescuentoDesglose(null)
+                    setDescuentoInputValor('')
+                    await ejecutarGuardadoPendiente()
+                    setMostrarModalSicore(false)
+                    setFacturaEnProceso(null)
+                    setPasoSicore('tipo')
+                  }}
+                  title="Continuar sin descuento ni retención"
+                >
+                  ➡️ Sin descuento
+                </Button>
+                <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={cancelarGuardadoPendiente} title="Abortar — revierte el cambio de estado">
+                  🚫 Abortar
                 </Button>
               </div>
             </div>
