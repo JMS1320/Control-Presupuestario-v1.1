@@ -671,8 +671,8 @@ export function VistaExtractoBancario() {
     // Agregar filtros adicionales
     if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
-    if (montoDesde) filtros.montoDesde = parseFloat(montoDesde)
-    if (montoHasta) filtros.montoHasta = parseFloat(montoHasta)
+    if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
+    if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
     if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
 

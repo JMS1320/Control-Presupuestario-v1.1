@@ -334,7 +334,7 @@ export function TabSueldos() {
     setEditandoPago(pago)
     // Pre-llenar campos del modal anticipo con datos del pago existente
     setAntEmpId(pago.empleado_id)
-    setAntMonto(String(pago.monto))
+    setAntMonto(pago.monto ? pago.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
     setAntFecha(pago.fecha)
     setAntCuenta(pago.cuenta_destino_id ?? '')
     setAntDesc(pago.descripcion ?? '')
@@ -378,42 +378,47 @@ export function TabSueldos() {
 
   const abrirEdicion = (p: Periodo) => {
     setEdPeriodo(p)
-    setEdMontoA(p.monto_a !== null ? String(p.monto_a) : '')
-    setEdMontoB(p.monto_b !== null ? String(p.monto_b) : '')
-    setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad) : '')
-    setEdValorDia(p.valor_por_dia !== null ? String(p.valor_por_dia) : '')
+    const fmt = (v: number | null, decimales = 2) =>
+      v !== null && v !== 0 ? v.toLocaleString('es-AR', { minimumFractionDigits: decimales, maximumFractionDigits: decimales }) : ''
+    setEdMontoA(p.monto_a !== null ? fmt(p.monto_a) : '')
+    setEdMontoB(p.monto_b !== null ? fmt(p.monto_b) : '')
+    setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
+    setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
     setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
-    setEdValorHora(p.valor_por_hora !== null ? String(p.valor_por_hora) : '')
+    setEdValorHora(p.valor_por_hora !== null ? fmt(p.valor_por_hora) : '')
     setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
-    setEdVarios(p.varios !== null && p.varios !== 0 ? String(p.varios) : '')
-    setEdVacaciones(p.vacaciones !== null && p.vacaciones !== 0 ? String(p.vacaciones) : '')
-    setEdPremio(p.premio !== null && p.premio !== 0 ? String(p.premio) : '')
+    setEdVarios(p.varios !== null && p.varios !== 0 ? fmt(p.varios) : '')
+    setEdVacaciones(p.vacaciones !== null && p.vacaciones !== 0 ? fmt(p.vacaciones) : '')
+    setEdPremio(p.premio !== null && p.premio !== 0 ? fmt(p.premio) : '')
     setEdObservaciones(p.observaciones ?? '')
     // Valor franco: si tiene uno guardado, usarlo; sino calcular de A+B
     if (p.valor_franco !== null && p.valor_franco !== undefined) {
-      setEdValorFranco(String(p.valor_franco))
+      setEdValorFranco(fmt(p.valor_franco))
       setFrancoAutoSync(false)
     } else {
       const vf = p.monto_a !== null && p.monto_b !== null ? (p.monto_a + p.monto_b) / 25 : 0
-      setEdValorFranco(String(vf))
+      setEdValorFranco(fmt(vf))
       setFrancoAutoSync(true)
     }
     setModalEdicion(true)
   }
 
   // Sincronizar valor franco cuando cambia A o B (solo si no fue editado manualmente)
+  const fmtFranco = (v: number) =>
+    v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
   const onChangeA = (v: string) => {
     setEdMontoA(v)
     if (francoAutoSync) {
       const vf = (num(v) + num(edMontoB)) / 25
-      setEdValorFranco(String(vf))
+      setEdValorFranco(fmtFranco(vf))
     }
   }
   const onChangeB = (v: string) => {
     setEdMontoB(v)
     if (francoAutoSync) {
       const vf = (num(edMontoA) + num(v)) / 25
-      setEdValorFranco(String(vf))
+      setEdValorFranco(fmtFranco(vf))
     }
   }
   const onChangeFrancoManual = (v: string) => {
@@ -422,7 +427,7 @@ export function TabSueldos() {
   }
   const resetFrancoAuto = () => {
     const vf = (num(edMontoA) + num(edMontoB)) / 25
-    setEdValorFranco(String(vf))
+    setEdValorFranco(fmtFranco(vf))
     setFrancoAutoSync(true)
   }
 

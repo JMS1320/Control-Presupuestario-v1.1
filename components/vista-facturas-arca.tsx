@@ -702,11 +702,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     
     // Filtro por rango de montos
     if (montoMinimo) {
-      const minimo = parseFloat(montoMinimo)
+      const minimo = parseFloat(montoMinimo.replace(/\./g, '').replace(',', '.'))
       facturasFiltradas = facturasFiltradas.filter(f => f.imp_total >= minimo)
     }
     if (montoMaximo) {
-      const maximo = parseFloat(montoMaximo)
+      const maximo = parseFloat(montoMaximo.replace(/\./g, '').replace(',', '.'))
       facturasFiltradas = facturasFiltradas.filter(f => f.imp_total <= maximo)
     }
     
@@ -754,10 +754,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       hookEditor.iniciarEdicion(celdaHook)
     } else {
       // Lógica original para otros campos
+      // Para campos monetarios, mostrar valor formateado con coma decimal (es-AR)
+      const valorFormateado = ['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(columna) && typeof valor === 'number' && valor !== 0
+        ? valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : (valor || '')
       setCeldaEnEdicion({
         facturaId,
         columna,
-        valor: valor || ''
+        valor: valorFormateado
       })
     }
   }
@@ -820,7 +824,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       
       // Convertir valores según el tipo de campo
       if (['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(datosEdicion.columna)) {
-        valorFinal = parseFloat(String(valorFinal)) || 0
+        valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
       }
       
       const { error } = await supabase

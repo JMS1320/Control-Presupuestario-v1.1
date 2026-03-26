@@ -424,11 +424,11 @@ export function VistaTemplatesEgresos() {
     
     // Filtro por rango de montos
     if (montoMinimo) {
-      const minimo = parseFloat(montoMinimo)
+      const minimo = parseFloat(montoMinimo.replace(/\./g, '').replace(',', '.'))
       cuotasFiltradas = cuotasFiltradas.filter(c => c.monto >= minimo)
     }
     if (montoMaximo) {
-      const maximo = parseFloat(montoMaximo)
+      const maximo = parseFloat(montoMaximo.replace(/\./g, '').replace(',', '.'))
       cuotasFiltradas = cuotasFiltradas.filter(c => c.monto <= maximo)
     }
     
