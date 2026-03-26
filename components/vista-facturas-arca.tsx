@@ -286,6 +286,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     minimoAplicado: number
     baseImponible: number
     esRetencionAdicional: boolean
+    sinRetencion?: boolean  // true cuando no aplica retención (neto < mínimo del tipo)
   } | null>(null)
   // Descuento en SICORE
   const [descuentoTipoInput, setDescuentoTipoInput] = useState<'pct' | 'monto'>('pct')
@@ -2669,7 +2670,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           setDescuentoAdicional(0)
           setDescuentoDesglose(null)
           setDescuentoInputValor('')
-          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false })
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
           setPasoSicore('calculo')
         } else {
           await ejecutarGuardadoPendiente()
@@ -2762,7 +2763,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         // Primera retención: verificar si supera mínimo específico del tipo
         if (netoFactura <= tipo.minimo_no_imponible) {
           // No corresponde retención pero dar opción de aplicar descuento pronto pago
-          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false })
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
           setTipoSeleccionado(tipo)
           setMontoRetencion(0)
           setDescuentoAdicional(0)
@@ -2837,23 +2838,31 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     setDescuentoDesglose({ gravado: descGravado, iva: descIva, noGravado: descNoGravado, exento: descExento, total: descTotal })
     setDescuentoAdicional(descTotal)
 
-    // Recalcular base SICORE sobre neto ajustado
+    // Recalcular base SICORE sobre neto ajustado (solo si aplica retención)
     const netoAjustado = (impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento)
-    const minimoAplicado = datosSicoreCalculo.minimoAplicado
-    const baseAjustada = Math.max(0, netoAjustado - minimoAplicado)
-    const nuevaRetencion = baseAjustada * tipoSeleccionado.porcentaje_retencion
-
-    setMontoRetencion(nuevaRetencion)
-    setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+    if (!datosSicoreCalculo.sinRetencion && tipoSeleccionado) {
+      const minimoAplicado = datosSicoreCalculo.minimoAplicado
+      const baseAjustada = Math.max(0, netoAjustado - minimoAplicado)
+      const nuevaRetencion = baseAjustada * tipoSeleccionado.porcentaje_retencion
+      setMontoRetencion(nuevaRetencion)
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+    } else {
+      // Sin retención: mantener montoRetencion en 0, solo actualizar neto
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado })
+    }
   }
 
   // Limpiar descuento y restaurar cálculo SICORE original
   const limpiarDescuentoSicore = () => {
-    if (!facturaEnProceso || !tipoSeleccionado) return
+    if (!facturaEnProceso) return
     setDescuentoAdicional(0)
     setDescuentoDesglose(null)
     setDescuentoInputValor('')
-    calcularRetencionSicore(facturaEnProceso, tipoSeleccionado)
+    if (tipoSeleccionado && !datosSicoreCalculo?.sinRetencion) {
+      calcularRetencionSicore(facturaEnProceso, tipoSeleccionado)
+    } else {
+      setMontoRetencion(0)
+    }
   }
 
   // Ejecutar cambio de estado pendiente (después de confirmar SICORE)
