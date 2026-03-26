@@ -6,10 +6,33 @@
 
 # 🤖 **REGLAS AUTOMÁTICAS CLAUDE**
 
+## 💰 **Convención Inputs Monetarios (es-AR) — OBLIGATORIO**
+
+Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
+
+```tsx
+// Input
+<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
+
+// Al guardar — parsear aceptando coma como decimal y punto como miles
+parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
+
+// Al pre-cargar un valor numérico existente en el input
+numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Resultado: 1234567.89 → "1.234.567,89"
+```
+
+**Reglas:**
+- `type="text"` siempre (nunca `type="number"` para montos)
+- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`
+- Filtros de monto (mínimo/máximo): también usar `.replace(/\./g, '').replace(',', '.')` antes del parseFloat
+
+---
+
 ## 🔄 **Reglas de Objetivos:**
 1. **Verificar contexto objetivo** antes de responder
 2. **Buscar en KNOWLEDGE.md** solo si no está en contexto cargado
-3. **Documentar avances en Claude** durante objetivo activo  
+3. **Documentar avances en Claude** durante objetivo activo
 4. **Proponer finalizar objetivo** cuando mencione "completado"
 5. **Usar tags sistemáticos** en toda documentación
 6. **Nunca esperar que usuario pregunte** → proponer automático
