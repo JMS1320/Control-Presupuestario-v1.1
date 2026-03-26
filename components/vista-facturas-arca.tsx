@@ -2761,8 +2761,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       if (!yaRetuvo) {
         // Primera retención: verificar si supera mínimo específico del tipo
         if (netoFactura <= tipo.minimo_no_imponible) {
-          alert(`No corresponde retención para ${tipo.tipo}.\nNeto Factura: $${netoFactura.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
-          setMostrarModalSicore(false)
+          // No corresponde retención pero dar opción de aplicar descuento pronto pago
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false })
+          setTipoSeleccionado(tipo)
+          setMontoRetencion(0)
+          setDescuentoAdicional(0)
+          setDescuentoDesglose(null)
+          setDescuentoInputValor('')
+          setPasoSicore('calculo')
           return
         }
         // Descontar mínimo no imponible para primera retención
@@ -2809,7 +2815,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
   // Aplicar descuento al cálculo SICORE, desglosa gravado/IVA con la alícuota de la factura
   const aplicarDescuentoSicore = () => {
-    if (!facturaEnProceso || !tipoSeleccionado || !datosSicoreCalculo) return
+    if (!facturaEnProceso || !datosSicoreCalculo) return
 
     const impTotal = facturaEnProceso.imp_total || 0
     const impGravado = facturaEnProceso.imp_neto_gravado || 0
