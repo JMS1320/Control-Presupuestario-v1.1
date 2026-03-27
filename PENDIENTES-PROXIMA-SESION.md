@@ -222,3 +222,33 @@
 | Wilson Barreto monto_a = $0 | Baja | Confirmar si corresponde |
 | Aguinaldo lógica | Baja | Jun/Dic no implementado |
 | Sistema backup Supabase | Alta | Upload nunca funcionó |
+
+---
+
+## 🔧 OPTIMIZACIONES IDENTIFICADAS
+
+### OPT-1 — Pago Manual disponible también para templates `fijo`
+
+**Situación actual**: el modal "Pago Manual" filtra exclusivamente por `tipo_template = 'abierto'` (2 archivos: `vista-templates-egresos.tsx` y `vista-cash-flow.tsx`). Los templates `fijo` no pueden recibir pagos extra aunque ocasionalmente lo necesiten.
+
+**Propuesta**: eliminar o relajar el filtro `.eq('tipo_template', 'abierto')` para que muestre todos los templates activos.
+
+**Impacto**: cambio de 1 línea en 2 archivos — sin riesgo para la lógica de cuotas ni la conversión anual↔cuotas.
+
+**Por qué no se hizo ahora**: los templates de distribuciones/retiros e interbancarias ya fueron pasados a `abierto` (ver más abajo), cubriendo los casos más frecuentes. Esta optimización cubre casos edge en templates de impuestos/seguros.
+
+**Archivos a modificar**:
+- `components/vista-templates-egresos.tsx` — query en modal Pago Manual
+- `components/vista-cash-flow.tsx` — ídem
+
+---
+
+### Cambios BD aplicados (2026-03-27)
+
+Templates pasados de `fijo` → `abierto`:
+- Retiro MA mensual, Retiro MA semestral
+- Retiro Manuel semestral, Retiro Mechi semestral, Retiro Soledad semestral
+- Retiro Andres semestral, Retiro Jose semestral
+- Interbancaria BAPRO, Interbancaria Santander
+
+**Razón**: pagos variables/múltiples por período — la rigidez de `fijo` era una limitación sin beneficio para estos casos.
