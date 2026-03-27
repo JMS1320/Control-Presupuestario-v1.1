@@ -121,6 +121,17 @@ export function VistaExtractoBancario() {
 
   const col = (key: string) => columnasVisibles[key] ?? false
 
+  // Anticipos sin factura
+  const [anticiposSinFactura, setAnticiposSinFactura] = useState<number>(0)
+
+  useEffect(() => {
+    supabase
+      .from('anticipos_proveedores')
+      .select('id', { count: 'exact', head: true })
+      .eq('estado', 'pendiente_vincular')
+      .then(({ count }) => setAnticiposSinFactura(count ?? 0))
+  }, [])
+
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
@@ -935,6 +946,17 @@ export function VistaExtractoBancario() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Alerta anticipos sin factura */}
+          {anticiposSinFactura > 0 && (
+            <Alert className="border-amber-300 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <span className="font-semibold">{anticiposSinFactura} anticipo{anticiposSinFactura > 1 ? 's' : ''} sin factura</span>
+                {' '}— pagos realizados a proveedores que aún no tienen factura asociada en ARCA.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Filtros */}
           <Card>
