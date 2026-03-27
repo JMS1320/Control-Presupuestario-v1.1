@@ -266,12 +266,20 @@ export function useMotorConciliacion() {
 
             // Actualizar BD con datos del Cash Flow y estado según revisión
             const estadoFinal = matchCF.requiere_revision ? 'auditar' : 'conciliado'
+            const extraIdsCF: any = {}
+            if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+              if (matchCF.cashFlowRow.egreso_id) extraIdsCF.template_id = matchCF.cashFlowRow.egreso_id
+              extraIdsCF.template_cuota_id = matchCF.cashFlowRow.id
+            } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+              extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
+            }
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
               estado: estadoFinal,
-              motivo_revision: matchCF.motivo_revision
+              motivo_revision: matchCF.motivo_revision,
+              ...extraIdsCF
             })
 
             if (matchCF.requiere_revision) {
