@@ -44,7 +44,7 @@ import { supabase } from "@/lib/supabase"
 
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
-  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
+  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -114,20 +114,19 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Ejecutar conciliación con cuenta seleccionada
+  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación
   const ejecutarConCuenta = async (cuentaId: string) => {
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaId)
     if (!cuenta) return
-    
+
     setCuentaSeleccionada(cuentaId)
     setSelectorAbierto(false)
-    
+
     try {
-      await ejecutarConciliacion(cuenta)
-      // Recargar movimientos después de conciliación
+      // Solo recarga los movimientos de la cuenta seleccionada
       recargar()
     } catch (error) {
-      console.error('Error en conciliación:', error)
+      console.error('Error al cargar movimientos:', error)
     }
   }
 
