@@ -1099,4 +1099,64 @@ El monto guardado en el cheque es `imp_total - monto_sicore` (lo que realmente s
 
 ---
 
+## 29. Fixes SICORE — Sesión 2026-03-26
+
+### 29.1. SICORE USD — Aplicar TC en evaluación, cálculo y modal (`278aac6`)
+
+**Problema**: Las facturas en USD no convertían correctamente el neto a pesos antes de comparar con los mínimos SICORE ni al calcular la base imponible.
+
+**Fixes aplicados en `vista-facturas-arca.tsx`**:
+
+- `evaluarRetencionSicore`: `netoFactura` se multiplica por `tc_pago` antes de comparar contra los mínimos.
+- `calcularRetencionSicore`: la base imponible se calcula en ARS (`neto × tc_pago`), produciendo la retención correcta.
+- `finalizarProcesoSicore`: retención y descuento se dividen por `tc_pago` al guardar en BD (se almacenan en moneda original).
+- Modal paso 2: `impTotal`, `impGravado` e `iva` se muestran multiplicados por `tc_pago` → siempre en ARS.
+
+**Flujo solo-descuento para USD bajo mínimo**: cuando la factura en USD no supera el mínimo del tipo, se ofrece descuento pronto pago mediante `confirm dialog`. Guard en `finalizarProcesoSicore` permite continuar sin `tipoSeleccionado`.
+
+---
+
+### 29.2. Modal descuento-solo + display ARS exacto sin redondeo doble (`e660166`)
+
+**Problema 1**: El modal paso 2 no renderizaba cuando `tipoSeleccionado = null` (flujo solo-descuento para facturas bajo el mínimo).
+**Fix**: Condicional ampliado para renderizar el paso 2 también cuando no hay tipo seleccionado.
+
+**Problema 2**: Los montos en ARS mostraban artefactos de redondeo por doble conversión USD→ARS.
+**Fix**: `montoEnPesos`, `montoPesos`, totales de grupo, ECHEQ y PDF usan directamente `imp_total × tc - sicore - descuento` cuando hay retención o descuento, eliminando la doble conversión.
+
+**Fix adicional**: El alert final de `finalizarProcesoSicore` muestra el saldo en ARS correcto (no en USD).
+
+---
+
+### 29.3. Descuento disponible cuando el tipo no supera su mínimo (`8404a25`)
+
+**Problema**: Al seleccionar un tipo SICORE (ej: Bienes) y el neto estar por debajo del mínimo de ese tipo, el modal cerraba sin ofrecer alternativa.
+
+**Fix**: En lugar de cerrar, el modal avanza al paso 2 con `montoRetencion = 0`, permitiendo aplicar descuento pronto pago. También se removió el guard `!tipoSeleccionado` en `aplicarDescuentoSicore`.
+
+**Resultado**: El usuario puede aplicar descuento incluso cuando no corresponde retención por el tipo seleccionado.
+
+---
+
+### 29.4. Botones paso 2 — "Sin descuento" vs "Abortar" (`d830557`)
+
+**Problema**: El botón ❌ en el paso 2 era ambiguo: no quedaba claro si cancelaba solo el descuento o abortaba todo el proceso.
+
+**Fix**: Reemplazado por dos botones con semánticas claras:
+
+| Botón | Acción |
+|-------|--------|
+| **Sin descuento** | Confirma el pago sin retención ni descuento — ejecuta `ejecutarGuardadoPendiente()` |
+| **🚫 Abortar** | Revierte el cambio de estado — ejecuta `cancelarGuardadoPendiente()` |
+
+---
+
+### 29.5. Flag `sinRetencion` en `aplicarDescuentoSicore` (`e6fda05`)
+
+**Problema**: Al aplicar descuento en modo "sin retención" (neto < mínimo del tipo), `aplicarDescuentoSicore` recalculaba `montoRetencion` al 2% en lugar de mantenerlo en 0.
+
+**Fix**: Campo `sinRetencion: boolean` agregado a `datosSicoreCalculo`. Cuando `sinRetencion = true`, `aplicarDescuentoSicore` y `limpiarDescuentoSicore` preservan `montoRetencion = 0` sin recalcular.
+
+---
+
 *Archivo mantenido manualmente. Actualizar al implementar nuevas funcionalidades SICORE.*
