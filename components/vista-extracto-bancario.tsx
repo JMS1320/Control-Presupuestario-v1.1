@@ -121,18 +121,6 @@ export function VistaExtractoBancario() {
 
   const col = (key: string) => columnasVisibles[key] ?? false
 
-  // Anticipos en extracto sin factura asociada
-  const [anticiposSinFactura, setAnticiposSinFactura] = useState<number>(0)
-
-  useEffect(() => {
-    supabase
-      .from(tablaActiva)
-      .select('id', { count: 'exact', head: true })
-      .ilike('categ', '%anticipo%')
-      .is('comprobante_arca_id', null)
-      .then(({ count }) => setAnticiposSinFactura(count ?? 0))
-  }, [tablaActiva, movimientos])
-
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
@@ -148,6 +136,17 @@ export function VistaExtractoBancario() {
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
+
+  // Anticipos en extracto activo sin factura asociada
+  const [anticiposSinFactura, setAnticiposSinFactura] = useState<number>(0)
+  useEffect(() => {
+    supabase
+      .from(tablaActiva)
+      .select('id', { count: 'exact', head: true })
+      .ilike('categ', '%anticipo%')
+      .is('comprobante_arca_id', null)
+      .then(({ count }) => setAnticiposSinFactura(count ?? 0))
+  }, [tablaActiva, movimientos])
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
