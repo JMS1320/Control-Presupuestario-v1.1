@@ -17,11 +17,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { 
-  Banknote, 
-  Settings, 
-  Play, 
-  FileSpreadsheet, 
-  Upload, 
+  Banknote,
+  Settings,
+  Play,
+  FileSpreadsheet,
+  Upload,
   RotateCcw,
   CheckCircle,
   AlertTriangle,
@@ -34,7 +34,8 @@ import {
   ChevronsUpDown,
   Filter,
   RefreshCw,
-  Plus
+  Plus,
+  Columns
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
@@ -77,6 +78,48 @@ export function VistaExtractoBancario() {
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
+
+  // Columnas opcionales — selector
+  const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
+    { key: 'saldo',               label: 'Saldo',            defaultVisible: true  },
+    { key: 'categ',               label: 'CATEG',            defaultVisible: true  },
+    { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
+    { key: 'motivo_revision',     label: 'Motivo Revisión',  defaultVisible: true  },
+    { key: 'centro_de_costo',     label: 'Centro de Costo',  defaultVisible: false },
+    { key: 'contable',            label: 'Contable',         defaultVisible: false },
+    { key: 'interno',             label: 'Interno',          defaultVisible: false },
+    { key: 'nro_cuenta',          label: 'Nro Cuenta',       defaultVisible: false },
+    { key: 'template_id',         label: 'Template ID',      defaultVisible: false },
+    { key: 'template_cuota_id',   label: 'Cuota ID',         defaultVisible: false },
+    { key: 'comprobante_arca_id', label: 'Factura ARCA ID',  defaultVisible: false },
+    { key: 'origen',              label: 'Origen',           defaultVisible: false },
+    { key: 'control',             label: 'Control',          defaultVisible: false },
+    { key: 'orden',               label: 'Orden',            defaultVisible: false },
+  ]
+
+  const defaultColVis = Object.fromEntries(COLUMNAS_OPCIONALES.map(c => [c.key, c.defaultVisible]))
+
+  const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return defaultColVis
+    try {
+      const saved = localStorage.getItem('extracto_columnas_visibles')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // Filtrar solo claves conocidas
+        return Object.fromEntries(COLUMNAS_OPCIONALES.map(c => [c.key, parsed[c.key] ?? c.defaultVisible]))
+      }
+    } catch {}
+    return defaultColVis
+  })
+  const [selectorColumnasAbierto, setSelectorColumnasAbierto] = useState(false)
+
+  const toggleColumna = (key: string) => {
+    const nuevo = { ...columnasVisibles, [key]: !columnasVisibles[key] }
+    setColumnasVisibles(nuevo)
+    localStorage.setItem('extracto_columnas_visibles', JSON.stringify(nuevo))
+  }
+
+  const col = (key: string) => columnasVisibles[key] ?? false
 
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
@@ -1332,7 +1375,31 @@ export function VistaExtractoBancario() {
           {/* Tabla de Movimientos */}
           <Card>
             <CardHeader>
-              <CardTitle>Movimientos Bancarios</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Movimientos Bancarios</CardTitle>
+                <Popover open={selectorColumnasAbierto} onOpenChange={setSelectorColumnasAbierto}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Columns className="h-4 w-4" />
+                      Columnas
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-3" align="end">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Columnas visibles</p>
+                    <div className="space-y-1">
+                      {COLUMNAS_OPCIONALES.map(c => (
+                        <label key={c.key} className="flex items-center gap-2 cursor-pointer py-0.5">
+                          <Checkbox
+                            checked={col(c.key)}
+                            onCheckedChange={() => toggleColumna(c.key)}
+                          />
+                          <span className="text-sm">{c.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -1365,11 +1432,21 @@ export function VistaExtractoBancario() {
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Débitos</TableHead>
                         <TableHead className="text-right">Créditos</TableHead>
-                        <TableHead className="text-right">Saldo</TableHead>
-                        <TableHead>CATEG</TableHead>
+                        {col('saldo') && <TableHead className="text-right">Saldo</TableHead>}
+                        {col('categ') && <TableHead>CATEG</TableHead>}
                         <TableHead>Estado</TableHead>
-                        <TableHead>Detalle</TableHead>
-                        <TableHead>Motivo Revisión</TableHead>
+                        {col('detalle') && <TableHead>Detalle</TableHead>}
+                        {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
+                        {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
+                        {col('contable') && <TableHead>Contable</TableHead>}
+                        {col('interno') && <TableHead>Interno</TableHead>}
+                        {col('nro_cuenta') && <TableHead>Nro Cuenta</TableHead>}
+                        {col('template_id') && <TableHead>Template</TableHead>}
+                        {col('template_cuota_id') && <TableHead>Cuota</TableHead>}
+                        {col('comprobante_arca_id') && <TableHead>Factura ARCA</TableHead>}
+                        {col('origen') && <TableHead>Origen</TableHead>}
+                        {col('control') && <TableHead className="text-right">Control</TableHead>}
+                        {col('orden') && <TableHead className="text-right">Orden</TableHead>}
                         <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1396,33 +1473,85 @@ export function VistaExtractoBancario() {
                           <TableCell className="text-right font-mono">
                             {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : '-'}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(movimiento.saldo)}
-                          </TableCell>
-                          <TableCell>
-                            {movimiento.categ ? (
-                              <Badge variant={movimiento.categ.startsWith('INVALIDA:') ? 'destructive' : 'default'}>
-                                {movimiento.categ}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">Sin CATEG</Badge>
-                            )}
-                          </TableCell>
+                          {col('saldo') && (
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(movimiento.saldo)}
+                            </TableCell>
+                          )}
+                          {col('categ') && (
+                            <TableCell>
+                              {movimiento.categ ? (
+                                <Badge variant={movimiento.categ.startsWith('INVALIDA:') ? 'destructive' : 'default'}>
+                                  {movimiento.categ}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Sin CATEG</Badge>
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge variant={
-                              movimiento.estado === 'conciliado' ? 'default' : 
-                              movimiento.estado === 'auditar' ? 'secondary' : 
+                              movimiento.estado === 'conciliado' ? 'default' :
+                              movimiento.estado === 'auditar' ? 'secondary' :
                               'outline'
                             }>
                               {movimiento.estado}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-xs truncate text-sm text-gray-600">
-                            {movimiento.detalle || '-'}
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate text-xs text-orange-600">
-                            {movimiento.motivo_revision || '-'}
-                          </TableCell>
+                          {col('detalle') && (
+                            <TableCell className="max-w-xs truncate text-sm text-gray-600">
+                              {movimiento.detalle || '-'}
+                            </TableCell>
+                          )}
+                          {col('motivo_revision') && (
+                            <TableCell className="max-w-xs truncate text-xs text-orange-600">
+                              {movimiento.motivo_revision || '-'}
+                            </TableCell>
+                          )}
+                          {col('centro_de_costo') && (
+                            <TableCell className="text-sm">{movimiento.centro_de_costo || '-'}</TableCell>
+                          )}
+                          {col('contable') && (
+                            <TableCell className="text-sm">{movimiento.contable || '-'}</TableCell>
+                          )}
+                          {col('interno') && (
+                            <TableCell className="text-sm">{movimiento.interno || '-'}</TableCell>
+                          )}
+                          {col('nro_cuenta') && (
+                            <TableCell className="text-sm font-mono">{movimiento.nro_cuenta || '-'}</TableCell>
+                          )}
+                          {col('template_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.template_id
+                                ? <span className="text-green-700" title={movimiento.template_id}>✓ {movimiento.template_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('template_cuota_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.template_cuota_id
+                                ? <span className="text-green-700" title={movimiento.template_cuota_id}>✓ {movimiento.template_cuota_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('comprobante_arca_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.comprobante_arca_id
+                                ? <span className="text-blue-700" title={movimiento.comprobante_arca_id}>✓ {movimiento.comprobante_arca_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('origen') && (
+                            <TableCell className="text-sm">{movimiento.origen || '-'}</TableCell>
+                          )}
+                          {col('control') && (
+                            <TableCell className="text-right font-mono text-sm">
+                              {movimiento.control !== undefined && movimiento.control !== null ? formatCurrency(movimiento.control) : '-'}
+                            </TableCell>
+                          )}
+                          {col('orden') && (
+                            <TableCell className="text-right text-sm font-mono">{movimiento.orden ?? '-'}</TableCell>
+                          )}
                           <TableCell>
                             {movimiento.estado !== 'conciliado' && (
                               <Button

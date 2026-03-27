@@ -650,6 +650,20 @@ Con la nueva arquitectura, `template_id` ya contiene toda la información de cat
 - ¿Hay vistas/queries que dependen de `categ` directamente?
 - Posible simplificación: eliminar `categ` del extracto y derivar siempre del template
 
+### ✅ Resuelto 2026-03-27 — Seleccionar cuenta no dispara conciliación + MSA como default
+
+**Bug**: Al seleccionar una cuenta en el modal selector, `ejecutarConCuenta()` llamaba automáticamente a `ejecutarConciliacion()`. Correcto es que seleccionar cuenta solo cargue los movimientos — la conciliación corre solo al presionar el botón explícito.
+
+**Bug adicional**: `cuentaSeleccionada` inicializaba en `""` → header mostraba "Seleccionar cuenta" aunque ya mostraba datos de MSA.
+
+**Fix aplicado** (`components/vista-extracto-bancario.tsx`):
+- `useState<string>("")` → `useState<string>("msa_galicia")`
+- `ejecutarConCuenta()`: eliminado `await ejecutarConciliacion(cuenta)`, reemplazado por solo `recargar()`
+
+**Commit**: `cd555ad`
+
+---
+
 ### ✅ Resuelto 2026-03-25 — responsable 'MSA / PAM' en templates bancarios
 
 Los 14 templates de Gastos Bancarios + Impuestos Bancarios tenían `responsable = 'MSA / PAM'` (ambiguo). Cambiado a `responsable = 'MSA'` vía SQL directo. Cuando se creen cuentas PAM y MA, se crearán sets separados de templates con `responsable = 'PAM'` y `responsable = 'MA'`.
@@ -979,3 +993,99 @@ const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === cuentaSeleccionada)?.s
 | **Reglas de conciliación para cajas** | Hoy las 40 reglas son solo para `msa_galicia`. Cuando se carguen datos en las cajas, crear reglas con `cuenta_bancaria_id = 'caja_general'` etc. |
 | **Cajas PAM** | Si PAM necesita cajas en el futuro, crear tablas equivalentes en schema `pam`. |
 | `types/conciliacion.ts` | `MovimientoBancario` | Incluye `nro_cuenta`, `template_id`, `template_cuota_id`, `comprobante_arca_id` |
+
+---
+
+## 18. DIAGNÓSTICO Y FIXES — PRIMERA PRUEBA REAL (2026-03-27)
+
+### 18.1 — Arquitectura de IDs: dos sistemas paralelos
+
+El extracto bancario tiene 4 campos de referencia que corresponden a **dos sistemas independientes**:
+
+| Sistema | Identifica al | Vincula el pago a su | Solo aplica cuando |
+|---------|--------------|----------------------|--------------------|
+| **Facturas ARCA** | `nro_cuenta` (código plan de cuentas) | `comprobante_arca_id` (UUID factura) | El movimiento bancario paga una factura ARCA |
+| **Templates** | `template_id` (UUID del template) | `template_cuota_id` (UUID de la cuota) | El movimiento bancario corresponde a un template (boleta, impuesto, etc.) |
+
+El campo `categ` es el **nombre** que funciona para ambos sistemas.
+
+**`nro_cuenta` es para ARCA únicamente** — para templates no aplica (el `template_id` cumple esa función).
+
+### 18.2 — Bug detectado: Fase 1 no escribía IDs
+
+**Síntoma**: Al conciliar 15 movimientos reales de MSA Galicia (Feb 2026):
+- 10 movimientos (Grupo A) conciliados por Fase 2 (reglas + `llena_template=true`) → `template_id` + `template_cuota_id` correctos ✅
+- 4 movimientos (Grupo B) conciliados por Fase 1 (Cash Flow match) → `conciliado` pero sin `template_id` ni `template_cuota_id` ❌
+
+**Root cause**: En `useMotorConciliacion.ts`, el bloque de Fase 1 llamaba a `actualizarMovimientoBD` sin incluir los campos de ID.
+
+**Fix aplicado** (commit `3869724`):
+```typescript
+// Antes de escribir en BD, detectar origen del CF row y agregar IDs correspondientes
+const extraIdsCF: any = {}
+if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+  if (matchCF.cashFlowRow.egreso_id) extraIdsCF.template_id = matchCF.cashFlowRow.egreso_id
+  extraIdsCF.template_cuota_id = matchCF.cashFlowRow.id
+} else if (matchCF.cashFlowRow.origen === 'ARCA') {
+  extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
+}
+// ANTICIPO y SUELDO no tienen IDs que mapear en el extracto
+```
+
+Los datos estaban disponibles en `cashFlowRow` (`id` = cuota/factura, `egreso_id` = template padre, `origen` = tipo).
+
+### 18.3 — Fix manual: IDs de los 2 movimientos del Grupo B con template
+
+Los 2 movimientos del Grupo B que eran de origen TEMPLATE fueron corregidos manualmente en BD:
+
+| orden | Descripción | Template | Template ID | Cuota ID |
+|-------|-------------|----------|-------------|----------|
+| 12 | Rescate Fima | FIMA Premium Galicia Pesos | `886bba83…` | `cd39844f…` |
+| 13 | Trf Inmed Proveed | Retiro MA mensual | `dc5e3309…` | `906ff947…` |
+
+Los otros 2 del Grupo B (órdenes 14 y 15, origen ANTICIPO) no tienen `template_id` — es correcto, los anticipos tienen su propia tabla de seguimiento.
+
+### 18.4 — Fix: selector cuenta no dispara conciliación + MSA como default
+
+**Síntoma**: Al abrir Extracto Bancario el header decía "Seleccionar cuenta" aunque los datos de MSA ya se mostraban. Al seleccionar MSA explícitamente, el motor corría automáticamente.
+
+**Root cause**:
+- `cuentaSeleccionada` inicializado como `""` mientras `tablaActiva` defaultea a `'msa_galicia'`
+- `ejecutarConCuenta()` llamaba `await ejecutarConciliacion(cuenta)` al seleccionar
+
+**Fix aplicado** (commit `cd555ad`):
+- `useState<string>("")` → `useState<string>("msa_galicia")`
+- `ejecutarConCuenta()`: eliminado el `await ejecutarConciliacion()`, queda solo `recargar()`
+
+### 18.5 — Feature: selector de columnas en tabla de movimientos
+
+**Qué hace**: Botón "Columnas" en el header de la tabla → Popover con checkboxes para activar/desactivar columnas. Persiste en `localStorage`.
+
+**Columnas fijas** (siempre visibles): Fecha, Descripción, Débitos, Créditos, Estado, Acciones.
+
+**Columnas opcionales**:
+
+| Columna | Default | Uso |
+|---------|---------|-----|
+| Saldo | ON | Verificación saldo acumulado |
+| CATEG | ON | Categoría asignada por motor |
+| Detalle | ON | Detalle de la regla aplicada |
+| Motivo Revisión | ON | Motivo cuando estado = auditar |
+| Centro de Costo | OFF | Centro de costo asignado |
+| Contable | OFF | Campo contable (pendiente motor contable) |
+| Interno | OFF | Campo interno (pendiente motor contable) |
+| Nro Cuenta | OFF | Solo aplica en sistema ARCA |
+| Template ID | OFF | UUID del template (verde ✓ si tiene) |
+| Cuota ID | OFF | UUID de la cuota del template (verde ✓ si tiene) |
+| Factura ARCA ID | OFF | UUID de la factura ARCA (azul ✓ si tiene) |
+| Origen | OFF | Texto libre del extracto bancario |
+| Control | OFF | Diferencia saldo real vs calculado |
+| Orden | OFF | Número de orden del movimiento |
+
+Los IDs (UUIDs) se muestran abreviados (primeros 8 chars + "…") con tooltip para ver el UUID completo.
+
+**Commit**: `[próximo commit]`
+
+### 18.6 — Pendiente Fix B: nro_cuenta para movimientos ARCA
+
+Cuando un movimiento se concilia contra una factura ARCA (via `comprobante_arca_id`), escribir también `nro_cuenta` requiere un lookup adicional: `categ de la factura → cuentas_contables → nro_cuenta`. No implementado aún. Solo relevante cuando empiecen a conciliarse movimientos vinculados a facturas ARCA.
