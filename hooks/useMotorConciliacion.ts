@@ -282,6 +282,22 @@ export function useMotorConciliacion() {
               ...extraIdsCF
             })
 
+            // Actualizar estado de la cuota/factura origen si el match fue definitivo
+            if (estadoFinal === 'conciliado') {
+              if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+                await supabase
+                  .from('cuotas_egresos_sin_factura')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+              } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+                await supabase
+                  .from('comprobantes_arca')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+                  .schema('msa')
+              }
+            }
+
             if (matchCF.requiere_revision) {
               resultadosProceso.revision_manual++
             } else {
