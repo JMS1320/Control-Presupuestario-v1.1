@@ -121,16 +121,17 @@ export function VistaExtractoBancario() {
 
   const col = (key: string) => columnasVisibles[key] ?? false
 
-  // Anticipos sin factura
+  // Anticipos en extracto sin factura asociada
   const [anticiposSinFactura, setAnticiposSinFactura] = useState<number>(0)
 
   useEffect(() => {
     supabase
-      .from('anticipos_proveedores')
+      .from(tablaActiva)
       .select('id', { count: 'exact', head: true })
-      .eq('estado', 'pendiente_vincular')
+      .ilike('categ', '%anticipo%')
+      .is('comprobante_arca_id', null)
       .then(({ count }) => setAnticiposSinFactura(count ?? 0))
-  }, [])
+  }, [tablaActiva, movimientos])
 
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
