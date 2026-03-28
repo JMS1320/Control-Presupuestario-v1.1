@@ -156,7 +156,7 @@ export function VistaExtractoBancario() {
   }, [modoEdicion])
 
   // Iniciar proceso de conciliación
-  const iniciarConciliacion = () => {
+  const iniciarConciliacion = async () => {
     if (!cuentaSeleccionada) {
       setSelectorAbierto(true)
       return
@@ -164,7 +164,8 @@ export function VistaExtractoBancario() {
     
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
     if (cuenta) {
-      ejecutarConciliacion(cuenta)
+      await ejecutarConciliacion(cuenta)
+      recargar()
     }
   }
 
