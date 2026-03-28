@@ -1084,8 +1084,172 @@ Los otros 2 del Grupo B (órdenes 14 y 15, origen ANTICIPO) no tienen `template_
 
 Los IDs (UUIDs) se muestran abreviados (primeros 8 chars + "…") con tooltip para ver el UUID completo.
 
-**Commit**: `[próximo commit]`
+**Commit**: `1d1aea1`
 
-### 18.6 — Pendiente Fix B: nro_cuenta para movimientos ARCA
+### 18.6 — Fix: Fase 1 actualiza estado cuota/factura a 'conciliado'
+
+**Síntoma**: Al conciliar un movimiento via Fase 1 (Cash Flow match), el extracto quedaba en estado `'conciliado'` pero la cuota del template (o factura ARCA) seguía en estado `'pagado'`/`'pagar'`. No se actualizaba el lado del template/factura.
+
+**Fix aplicado** (commit `955051e`):
+```typescript
+if (estadoFinal === 'conciliado') {
+  if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+    await supabase.from('cuotas_egresos_sin_factura')
+      .update({ estado: 'conciliado' })
+      .eq('id', matchCF.cashFlowRow.id)
+  } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+    await supabase.from('comprobantes_arca')
+      .update({ estado: 'conciliado' })
+      .eq('id', matchCF.cashFlowRow.id)
+      .schema('msa')
+  }
+}
+```
+
+Solo se actualiza cuando `estadoFinal === 'conciliado'` (no cuando queda en `'auditar'`).
+
+### 18.7 — Feature: alerta anticipos sin factura en extracto activo
+
+**Qué hace**: Badge en el header de Extracto Bancario que muestra cuántos movimientos del extracto activo tienen categ que contiene `'anticipo'` (case-insensitive) y `comprobante_arca_id IS NULL`. Indica anticipos pagados que aún no fueron vinculados a su factura ARCA.
+
+**Scope**: Solo el extracto activo (tabla seleccionada en el selector de cuentas), no es global del sistema.
+
+**Implementación**: `useState` + `useEffect` con query:
+```sql
+SELECT COUNT(*) FROM [tablaActiva]
+WHERE categ ILIKE '%anticipo%'
+AND comprobante_arca_id IS NULL
+```
+
+**Issue durante implementación**: El `useEffect` fue colocado inicialmente antes de que `tablaActiva` y `movimientos` estuvieran declarados en el cuerpo del componente, causando un crash por TDZ (Temporal Dead Zone) de React. Fix: mover el `useState` + `useEffect` a después del hook `useMovimientosBancarios`.
+
+**Commit**: `b5fffba`
+
+### 18.8 — Fix manual: orden 15 (González Omar → factura ARCA)
+
+El movimiento de orden 15 (débito $1.900.000, González Omar) fue conciliado manualmente en BD asignando los datos de su factura ARCA:
+
+```sql
+UPDATE msa.msa_galicia SET
+  comprobante_arca_id = '00e27255-...',
+  categ = 'AGUADAS',
+  nro_cuenta = '42325',
+  estado = 'conciliado'
+WHERE orden = 15;
+
+UPDATE msa.comprobantes_arca SET estado = 'conciliado'
+WHERE id = '00e27255-...';
+```
+
+La factura fue encontrada buscando por CUIT del proveedor y monto coincidente ($1.900.000).
+
+### 18.9 — Pendiente Fix B: nro_cuenta para movimientos ARCA
 
 Cuando un movimiento se concilia contra una factura ARCA (via `comprobante_arca_id`), escribir también `nro_cuenta` requiere un lookup adicional: `categ de la factura → cuentas_contables → nro_cuenta`. No implementado aún. Solo relevante cuando empiecen a conciliarse movimientos vinculados a facturas ARCA.
+
+**Commit**: pendiente
+
+---
+
+## 19. ARQUITECTURA DE NIVELES — CATEG, TEMPLATE_ID Y MODELO DE AGRUPACIÓN (2026-03-27)
+
+> Este diagnóstico surgió al investigar inconsistencias en el campo `categ` del extracto. La conclusión es que la arquitectura tiene imperfecciones conocidas pero todos los datos necesarios para reportes están presentes — en el peor caso se requieren queries con JOINs adicionales.
+
+### 19.1 — El modelo de 4 niveles en templates
+
+Los templates tienen una jerarquía de **4 niveles**. En la BD se ven así:
+
+```
+Nivel 0 — cuenta_agrupadora  (texto, sin ID)   →  ej: "Impuestos Rurales"
+Nivel 1 — categ              (texto, sin ID)   →  ej: "Impuesto inmobiliario"
+Nivel 2 — nombre_referencia  (con ID)          →  ej: "Inmobiliario Cuota Tapera 1"
+           egresos_sin_factura.id              →  3dc6b92e-fc3a-4e30-bf34-183e0feae5a0
+Nivel 3 — cuota individual   (con ID)          →  ej: cuota marzo 2026
+           cuotas_egresos_sin_factura.id       →  3a378b93-0739-444e-935a-0004d164a331
+```
+
+Ejemplo concreto con datos reales:
+
+```
+cuenta_agrupadora:   "Impuestos Rurales"
+categ:               "Impuesto inmobiliario"
+nombre_referencia:   "Inmobiliario Cuota Tapera 1"
+template_id:         3dc6b92e-fc3a-4e30-bf34-183e0feae5a0
+                     ├── Cuota Mar-2026  id: 3a378b93  pagado   $35.672,80
+                     ├── Cuota Jun-2026  id: 292207bb  pendiente
+                     ├── Cuota Sep-2026  id: ce69821e  pendiente
+                     └── Cuota Nov-2026  id: 0389af4a  pendiente
+```
+
+**Clave para entenderlo**: `categ` NO tiene ID propio. Un mismo categ (`"Impuesto inmobiliario"`) agrupa 30+ templates distintos, cada uno con su `template_id`. El `template_id` no es el identificador de categ — es el identificador del `nombre_referencia`, que está **un nivel más abajo**.
+
+### 19.2 — Lo que el extracto registra al conciliar un template
+
+Al conciliar un movimiento bancario contra un template, el extracto guarda:
+
+```
+extracto.categ             →  nivel 1  ("Impuesto inmobiliario")       — texto
+extracto.template_id       →  nivel 2  (UUID de "Inmobiliario Tapera 1") — UUID
+extracto.template_cuota_id →  nivel 3  (UUID de cuota marzo 2026)        — UUID
+```
+
+`cuenta_agrupadora` (nivel 0) **no se guarda** en el extracto. Se obtiene via JOIN:
+```sql
+extracto → template_id → egresos_sin_factura.cuenta_agrupadora
+```
+
+### 19.3 — Inconsistencia de categ entre ARCA y Templates
+
+El campo `extracto.categ` tiene **semántica distinta** según el origen del movimiento:
+
+| Origen | Qué guarda extracto.categ | Ejemplo |
+|--------|--------------------------|---------|
+| ARCA | Código de cuenta contable de `cuentas_contables` | `"42325"`, `"AGUADAS"` |
+| Template | categ propio del template (nivel 1 del árbol) | `"Impuesto inmobiliario"`, `"CRED P"` |
+
+Estos dos vocabularios **no se cruzan**: los categ de templates no existen en `cuentas_contables` y viceversa. Esto es por diseño — son sistemas de cuentas distintos — pero genera que el campo `categ` del extracto no tenga una semántica uniforme.
+
+### 19.4 — Inconsistencia en ARCA: cuenta_contable almacena categ
+
+En `comprobantes_arca`, el campo se llama `cuenta_contable` pero almacena el valor de `cuentas_contables.categ` (no el nombre de la cuenta). El selector ARCA hace:
+
+```typescript
+value={cuenta.categ}  // guarda categ, no nombre
+```
+
+Esto funciona porque en `cuentas_contables` los campos `categ` y `cuenta_contable` son siempre el mismo valor. Pero el nombre del campo `cuenta_contable` en facturas ARCA es engañoso — en realidad contiene una categ.
+
+La cadena completa para ARCA:
+```
+cuentas_contables.categ → comprobantes_arca.cuenta_contable → CashFlowRow.categ → extracto.categ
+```
+
+### 19.5 — categ como agrupador: no debe igualarse a nombre_referencia
+
+Una tentación natural es "simplificar" igualando `categ = nombre_referencia` para evitar la distinción. **Esto sería un error**: el categ funciona como agrupador de múltiples templates. Si se iguala, se pierde la capacidad de reportar "todos los Inmobiliarios juntos" o "todos los Sueldos juntos".
+
+Los únicos categ que conviene limpiar son los **abreviados inconsistentes**:
+
+| categ actual | propuesto | cuenta_agrupadora |
+|-------------|-----------|-------------------|
+| CRED P | Créditos Pagados | Créditos Bancarios |
+| CRED T | Créditos Tomados | Créditos Bancarios |
+| FCI | Fondos Comunes de Inversión | Inversiones |
+| CAJA | Caja | Movimientos Internos empresa |
+
+Este cambio es **solo datos** (sin código): UPDATE en `egresos_sin_factura.categ` + UPDATE en `reglas_conciliacion.categ` correspondientes + opcional UPDATE en filas históricas del extracto.
+
+### 19.6 — Conclusión: reportes posibles con la arquitectura actual
+
+Todos los datos necesarios para reportes están presentes. Algunos requerirán JOINs adicionales:
+
+| Reporte | Query directa | Requiere JOIN |
+|---------|--------------|---------------|
+| Movimientos por categ | `extracto.categ` | No |
+| Movimientos por cuenta_agrupadora | — | Sí: `template_id → egresos_sin_factura.cuenta_agrupadora` |
+| Movimientos por responsable | — | Sí: `template_id → egresos_sin_factura.responsable` |
+| Movimientos por factura ARCA | `comprobante_arca_id` | No |
+| Movimientos por template específico | `template_id` | No |
+| Movimientos por cuota específica | `template_cuota_id` | No |
+
+Nada imposible — solo algunas queries más elaboradas donde el dato no está directo en el extracto.

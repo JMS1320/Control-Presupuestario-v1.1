@@ -227,6 +227,14 @@
 
 ## 🔧 OPTIMIZACIONES IDENTIFICADAS
 
+### OPT-2 — Eliminar warning "error de categoría" en importador de extractos
+
+**Situación actual**: el importador cuenta "Errores de categoría" cuando la categ llega vacía. Era útil cuando se importaban históricos con categ pre-llena. Con el flujo actual la categ siempre llega vacía y se llena en conciliación → el warning es ruido confuso.
+
+**Fix**: eliminar esa validación/contador en `app/api/import-excel/route.ts`.
+
+---
+
 ### OPT-1 — Pago Manual disponible también para templates `fijo`
 
 **Situación actual**: el modal "Pago Manual" filtra exclusivamente por `tipo_template = 'abierto'` (2 archivos: `vista-templates-egresos.tsx` y `vista-cash-flow.tsx`). Los templates `fijo` no pueden recibir pagos extra aunque ocasionalmente lo necesiten.
