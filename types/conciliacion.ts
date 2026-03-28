@@ -18,6 +18,12 @@ export interface ReglaConciliacion {
   // Cuenta bancaria a la que aplica esta regla
   cuenta_bancaria_id: string
 
+  // Códigos contables específicos por cuenta bancaria
+  // Tienen prioridad sobre seccion_regla del template
+  // Vacío = usar fallback del template
+  codigo_contable?: string | null
+  codigo_interno?: string | null
+
   // Control
   activo: boolean
   llena_template: boolean

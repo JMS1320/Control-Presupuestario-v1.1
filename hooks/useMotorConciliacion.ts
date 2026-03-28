@@ -293,9 +293,15 @@ export function useMotorConciliacion() {
             } else if (matchCF.cashFlowRow.origen === 'ARCA') {
               extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
             }
-            // Obtener contable/interno del template si el match viene de Cash Flow tipo TEMPLATE
+            // Obtener contable/interno: prioridad 1 = regla que matchee, prioridad 2 = seccion_regla del template
             const extraCF: any = {}
-            if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
+            const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+            if (reglaQueMatcheaF1 && (esValorContableValido(reglaQueMatcheaF1.codigo_contable) || esValorContableValido(reglaQueMatcheaF1.codigo_interno))) {
+              // Prioridad 1: usar códigos de la regla (específicos por cuenta bancaria)
+              if (esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+              if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+            } else if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
+              // Prioridad 2: fallback a seccion_regla del template
               const { data: tmplData } = await supabase
                 .from('egresos_sin_factura')
                 .select('codigo_contable, codigo_interno, seccion_regla, responsable')
@@ -357,12 +363,18 @@ export function useMotorConciliacion() {
                 detalle_asignado: regla.detalle
               }
 
-              // Actualizar extracto con categ/detalle de la regla
+              // Códigos contables: prioridad 1 = campos de la regla, prioridad 2 = seccion_regla del template
+              const codigosRegla: any = {}
+              if (esValorContableValido(regla.codigo_contable)) codigosRegla.contable = regla.codigo_contable
+              if (esValorContableValido(regla.codigo_interno)) codigosRegla.interno = regla.codigo_interno
+
+              // Actualizar extracto con categ/detalle/estado y códigos de la regla (si tiene)
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
                 centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
-                estado: 'conciliado'
+                estado: 'conciliado',
+                ...codigosRegla
               })
 
               // Si la regla tiene llena_template=true, crear cuota en el template correspondiente
@@ -370,8 +382,9 @@ export function useMotorConciliacion() {
                 const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
                 if (cuotaResult) {
                   const extraRegla: any = {}
-                  if (cuotaResult.contable) extraRegla.contable = cuotaResult.contable
-                  if (cuotaResult.interno) extraRegla.interno = cuotaResult.interno
+                  // Solo usar códigos del template como fallback si la regla no tenía códigos propios
+                  if (!codigosRegla.contable && cuotaResult.contable) extraRegla.contable = cuotaResult.contable
+                  if (!codigosRegla.interno && cuotaResult.interno) extraRegla.interno = cuotaResult.interno
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,

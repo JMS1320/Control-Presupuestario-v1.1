@@ -30,6 +30,8 @@ export function ConfiguradorReglas() {
     categ: '',
     centro_costo: '',
     detalle: '',
+    codigo_contable: '',
+    codigo_interno: '',
     activo: true,
     llena_template: true,
     cuenta_bancaria_id: 'msa_galicia'
@@ -46,6 +48,8 @@ export function ConfiguradorReglas() {
       categ: '',
       centro_costo: '',
       detalle: '',
+      codigo_contable: '',
+      codigo_interno: '',
       activo: true,
       llena_template: true,
       cuenta_bancaria_id: cuentaFiltro
@@ -74,6 +78,8 @@ export function ConfiguradorReglas() {
       categ: regla.categ,
       centro_costo: regla.centro_costo || '',
       detalle: regla.detalle,
+      codigo_contable: regla.codigo_contable || '',
+      codigo_interno: regla.codigo_interno || '',
       activo: regla.activo,
       llena_template: regla.llena_template,
       cuenta_bancaria_id: regla.cuenta_bancaria_id
@@ -92,6 +98,8 @@ export function ConfiguradorReglas() {
       categ: formulario.categ,
       centro_costo: formulario.centro_costo || null,
       detalle: formulario.detalle,
+      codigo_contable: formulario.codigo_contable.trim() || null,
+      codigo_interno: formulario.codigo_interno.trim() || null,
       activo: formulario.activo,
       llena_template: formulario.llena_template ?? true,
       cuenta_bancaria_id: formulario.cuenta_bancaria_id
@@ -261,6 +269,11 @@ export function ConfiguradorReglas() {
                     <div className="text-right">
                       <div className="font-medium text-blue-600">{regla.categ}</div>
                       <div className="text-sm text-gray-500">{regla.detalle}</div>
+                      {(regla.codigo_contable || regla.codigo_interno) && (
+                        <div className="text-xs text-emerald-600 font-mono mt-0.5">
+                          {[regla.codigo_contable, regla.codigo_interno].filter(Boolean).join(' / ')}
+                        </div>
+                      )}
                     </div>
 
                     {/* Estado */}
@@ -438,6 +451,33 @@ export function ConfiguradorReglas() {
                 value={formulario.detalle}
                 onChange={(e) => setFormulario(prev => ({ ...prev, detalle: e.target.value }))}
                 placeholder="Ej: Comision Extracciones Efectivo"
+              />
+            </div>
+
+            {/* Códigos contables — específicos por cuenta bancaria */}
+            <div className="col-span-2 border-t pt-3">
+              <p className="text-xs text-gray-500 mb-2">
+                Códigos contables (opcional) — específicos para esta cuenta bancaria. Tienen prioridad sobre los códigos del template.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="codigo_contable">Contable</Label>
+              <Input
+                id="codigo_contable"
+                value={formulario.codigo_contable}
+                onChange={(e) => setFormulario(prev => ({ ...prev, codigo_contable: e.target.value }))}
+                placeholder="Ej: RET 3 PAM, AP 3 MSA, LIB"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="codigo_interno">Interno</Label>
+              <Input
+                id="codigo_interno"
+                value={formulario.codigo_interno}
+                onChange={(e) => setFormulario(prev => ({ ...prev, codigo_interno: e.target.value }))}
+                placeholder="Ej: DIST MA, CTA JMS"
               />
             </div>
 
