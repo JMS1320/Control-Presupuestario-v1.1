@@ -1969,7 +1969,9 @@ export function VistaExtractoBancario() {
               />
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {(() => {
-                  const propuestas = generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                  const propuestas = movimientoAsignando
+                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                    : []
                   const conScore   = propuestas.filter(p => p.score > 0)
                   const sinScore   = propuestas.filter(p => p.score === 0)
                   const busqueda   = busquedaAsignarArca.toLowerCase().trim()
