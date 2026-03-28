@@ -85,6 +85,20 @@ export function useMotorConciliacion() {
     return !val.toLowerCase().replace(/\s+/g, '').includes('nolleva')
   }
 
+  // Helper: determina si un template debe aplicar contable/interno según su seccion_regla
+  // seccion_regla=1 → siempre aplica
+  // seccion_regla=2 → solo si empresa pagadora ≠ responsable del template
+  const debeAplicarCodigos = (tmpl: { seccion_regla?: number | null; responsable?: string | null }, cuenta: CuentaBancaria): boolean => {
+    if (!tmpl.seccion_regla) return false
+    if (tmpl.seccion_regla === 1) return true
+    if (tmpl.seccion_regla === 2) {
+      const empresa = cuenta.empresa.toLowerCase()
+      const resp = (tmpl.responsable || '').toLowerCase()
+      return empresa !== resp
+    }
+    return false
+  }
+
   // Función para obtener movimientos bancarios de una cuenta específica
   const obtenerMovimientosBancarios = async (cuenta: CuentaBancaria): Promise<MovimientoBancario[]> => {
     try {
@@ -284,10 +298,10 @@ export function useMotorConciliacion() {
             if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
               const { data: tmplData } = await supabase
                 .from('egresos_sin_factura')
-                .select('codigo_contable, codigo_interno')
+                .select('codigo_contable, codigo_interno, seccion_regla, responsable')
                 .eq('id', matchCF.cashFlowRow.egreso_id)
                 .maybeSingle()
-              if (tmplData) {
+              if (tmplData && debeAplicarCodigos(tmplData as any, cuenta)) {
                 const td = tmplData as any
                 if (esValorContableValido(td.codigo_contable)) extraCF.contable = td.codigo_contable
                 if (esValorContableValido(td.codigo_interno)) extraCF.interno = td.codigo_interno
@@ -408,7 +422,7 @@ export function useMotorConciliacion() {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
-        .select('id, responsable, codigo_contable, codigo_interno')
+        .select('id, responsable, codigo_contable, codigo_interno, seccion_regla')
         .eq('categ', regla.categ)
         .eq('activo', true)
 
@@ -452,11 +466,12 @@ export function useMotorConciliacion() {
 
       console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
       const t = template as any
+      const aplicar = debeAplicarCodigos(t, cuenta)
       return {
         templateId: template.id,
         cuotaId: cuota.id,
-        ...(esValorContableValido(t.codigo_contable) && { contable: t.codigo_contable }),
-        ...(esValorContableValido(t.codigo_interno) && { interno: t.codigo_interno })
+        ...(aplicar && esValorContableValido(t.codigo_contable) && { contable: t.codigo_contable }),
+        ...(aplicar && esValorContableValido(t.codigo_interno) && { interno: t.codigo_interno })
       }
 
     } catch (err) {
