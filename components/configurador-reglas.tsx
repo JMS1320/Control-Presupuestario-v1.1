@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,10 +15,13 @@ import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
 
-export function ConfiguradorReglas() {
+export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas } = useReglasConciliacion()
-  
-  const [cuentaFiltro, setCuentaFiltro] = useState('msa_galicia')
+
+  const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
+
+  // Sincronizar si el padre cambia la cuenta
+  useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
   const [formulario, setFormulario] = useState({
@@ -173,23 +176,30 @@ export function ConfiguradorReglas() {
         </Button>
       </div>
 
-      {/* Selector cuenta bancaria */}
-      <div className="flex items-center gap-3">
-        <Label className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</Label>
-        <Select value={cuentaFiltro} onValueChange={setCuentaFiltro}>
-          <SelectTrigger className="w-64">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
-              <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Selector cuenta bancaria — solo si no viene del padre */}
+      {!cuentaBancariaId && (
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</Label>
+          <Select value={cuentaFiltro} onValueChange={setCuentaFiltro}>
+            <SelectTrigger className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-gray-400">
+            {reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).length} reglas para esta cuenta
+          </span>
+        </div>
+      )}
+      {cuentaBancariaId && (
         <span className="text-xs text-gray-400">
           {reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).length} reglas para esta cuenta
         </span>
-      </div>
+      )}
 
       {/* Error */}
       {error && (

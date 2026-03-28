@@ -45,6 +45,7 @@ import { supabase } from "@/lib/supabase"
 
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
+  const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
@@ -1643,19 +1644,34 @@ export function VistaExtractoBancario() {
           <DialogHeader>
             <DialogTitle>Configuración de Reglas</DialogTitle>
           </DialogHeader>
-          
+
+          {/* Selector cuenta — compartido entre ambas tabs */}
+          <div className="flex items-center gap-3 pb-2 border-b">
+            <span className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</span>
+            <Select value={cuentaConfig} onValueChange={setCuentaConfig}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <Tabs defaultValue="conciliacion" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
               <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="conciliacion" className="mt-4">
-              <ConfiguradorReglas />
+              <ConfiguradorReglas cuentaBancariaId={cuentaConfig} />
             </TabsContent>
-            
+
             <TabsContent value="contable-interno" className="mt-4">
-              <ConfiguradorReglasContable />
+              <ConfiguradorReglasContable cuentaBancariaId={cuentaConfig} />
             </TabsContent>
           </Tabs>
         </DialogContent>
