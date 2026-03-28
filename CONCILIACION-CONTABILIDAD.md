@@ -1151,6 +1151,22 @@ Cuando un movimiento se concilia contra una factura ARCA (via `comprobante_arca_
 
 ---
 
+## 20. FIX IMPORTADOR — DEDUPLICACIÓN MISMO DÍA (2026-03-27)
+
+**Problema**: El importador descartaba todas las filas con fecha igual o anterior a la última fecha existente en BD (`<=`). Si se importaba un lote parcial de un día y quedaban movimientos de ese mismo día sin importar, no había forma de agregarlos después.
+
+**Fix aplicado** (commit `92adcb3`):
+
+- Fechas **anteriores** a la última → se descartan siempre (sin cambio)
+- Fechas **del mismo día** que la última → se verifica si el movimiento ya existe por `descripcion + debitos + creditos`. Si existe se saltea, si no existe se inserta
+- Fechas **posteriores** → se insertan siempre (sin cambio)
+
+**Cómo funciona**: Al iniciar la importación, si hay una última fecha en BD, se carga un Set con todos los movimientos de ese día ya existentes. Cada fila del Excel del mismo día se verifica contra ese Set antes de insertar.
+
+**Archivo**: `app/api/import-excel/route.ts`
+
+---
+
 ## 19. ARQUITECTURA DE NIVELES — CATEG, TEMPLATE_ID Y MODELO DE AGRUPACIÓN (2026-03-27)
 
 > Este diagnóstico surgió al investigar inconsistencias en el campo `categ` del extracto. La conclusión es que la arquitectura tiene imperfecciones conocidas pero todos los datos necesarios para reportes están presentes — en el peor caso se requieren queries con JOINs adicionales.
