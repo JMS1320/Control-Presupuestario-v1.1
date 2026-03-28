@@ -806,6 +806,9 @@ export function VistaExtractoBancario() {
             monto_a_abonar: monto   // ajusta al monto exacto del débito (ej: redondeo terminal)
           })
           .eq('id', arcaElegida.id)
+
+        // Quitar de la lista local para que no vuelva a aparecer como opción
+        setFacturasDisponibles(prev => prev.filter(f => f.id !== arcaElegida.id))
       }
 
       setModalAsignar(false)
