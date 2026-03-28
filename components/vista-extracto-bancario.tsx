@@ -93,6 +93,8 @@ export function VistaExtractoBancario() {
     { key: 'template_id',         label: 'Template ID',      defaultVisible: false },
     { key: 'template_cuota_id',   label: 'Cuota ID',         defaultVisible: false },
     { key: 'comprobante_arca_id', label: 'Factura ARCA ID',  defaultVisible: false },
+    { key: 'leyenda1',             label: 'Leyenda Adic. 1',  defaultVisible: false },
+    { key: 'leyenda2',             label: 'Leyenda Adic. 2',  defaultVisible: false },
     { key: 'origen',              label: 'Origen',           defaultVisible: false },
     { key: 'control',             label: 'Control',          defaultVisible: false },
     { key: 'orden',               label: 'Orden',            defaultVisible: false },
@@ -584,7 +586,41 @@ export function VistaExtractoBancario() {
       const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
       const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
 
+      // Buscar códigos contable/interno en reglas_contable_interno (misma lógica que el motor)
+      const buscarCodigos = async (templateId?: string | null, responsable?: string | null) => {
+        if (templateId) {
+          const { data } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'especifica')
+            .eq('template_id', templateId)
+            .eq('activo', true)
+            .maybeSingle()
+          if (data && (data.codigo_contable || data.codigo_interno)) {
+            return { contable: data.codigo_contable, interno: data.codigo_interno }
+          }
+        }
+        if (responsable) {
+          const { data } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'responsable')
+            .eq('responsable', responsable)
+            .eq('activo', true)
+            .maybeSingle()
+          if (data && (data.codigo_contable || data.codigo_interno)) {
+            return { contable: data.codigo_contable, interno: data.codigo_interno }
+          }
+        }
+        return {}
+      }
+
       if (tabAsignar === 'template' && templateElegido) {
+        // Buscar códigos contable/interno: Tipo A (template específico) → Tipo B (responsable)
+        const codigos = await buscarCodigos(templateElegido.id, templateElegido.responsable)
+
         // Crear cuota nueva en el template
         const { data: cuota, error: errCuota } = await supabase
           .from('cuotas_egresos_sin_factura')
@@ -602,29 +638,44 @@ export function VistaExtractoBancario() {
 
         if (errCuota) throw errCuota
 
-        // Actualizar extracto con template_id + cuota_id + categ + estado
+        // Actualizar extracto con todos los campos incluyendo contable/interno
+        const updateTemplate: Record<string, any> = {
+          template_id: templateElegido.id,
+          template_cuota_id: cuota.id,
+          categ: templateElegido.categ,
+          detalle: templateElegido.nombre_referencia,
+          estado: 'conciliado'
+        }
+        if (codigos.contable) updateTemplate.contable = codigos.contable
+        if (codigos.interno) updateTemplate.interno = codigos.interno
+
         const { error: errExt } = await supabase
           .from(tablaActiva)
-          .update({
-            template_id: templateElegido.id,
-            template_cuota_id: cuota.id,
-            categ: templateElegido.categ,
-            detalle: templateElegido.nombre_referencia,
-            estado: 'conciliado'
-          })
+          .update(updateTemplate)
           .eq('id', movimientoAsignando.id)
 
         if (errExt) throw errExt
 
       } else if (tabAsignar === 'arca' && arcaElegida) {
-        // Vincular a factura ARCA existente
+        // Obtener nro_cuenta de la factura ARCA (no incluido en lista reducida)
+        const { data: facturaCompleta } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .select('nro_cuenta')
+          .eq('id', arcaElegida.id)
+          .maybeSingle()
+        const nroCuenta = facturaCompleta?.nro_cuenta || null
+
+        const updateArca: Record<string, any> = {
+          comprobante_arca_id: arcaElegida.id,
+          detalle: arcaElegida.display_nombre || '',
+          estado: 'conciliado'
+        }
+        if (nroCuenta) updateArca.nro_cuenta = nroCuenta
+
         const { error: errExt } = await supabase
           .from(tablaActiva)
-          .update({
-            comprobante_arca_id: arcaElegida.id,
-            categ: arcaElegida.cuenta_contable || '',
-            estado: 'conciliado'
-          })
+          .update(updateArca)
           .eq('id', movimientoAsignando.id)
 
         if (errExt) throw errExt
@@ -1468,6 +1519,8 @@ export function VistaExtractoBancario() {
                         {col('template_id') && <TableHead>Template</TableHead>}
                         {col('template_cuota_id') && <TableHead>Cuota</TableHead>}
                         {col('comprobante_arca_id') && <TableHead>Factura ARCA</TableHead>}
+                        {col('leyenda1') && <TableHead>Leyenda Adic. 1</TableHead>}
+                        {col('leyenda2') && <TableHead>Leyenda Adic. 2</TableHead>}
                         {col('origen') && <TableHead>Origen</TableHead>}
                         {col('control') && <TableHead className="text-right">Control</TableHead>}
                         {col('orden') && <TableHead className="text-right">Orden</TableHead>}
@@ -1564,6 +1617,12 @@ export function VistaExtractoBancario() {
                                 ? <span className="text-blue-700" title={movimiento.comprobante_arca_id}>✓ {movimiento.comprobante_arca_id.slice(0, 8)}…</span>
                                 : <span className="text-gray-400">-</span>}
                             </TableCell>
+                          )}
+                          {col('leyenda1') && (
+                            <TableCell className="text-sm truncate max-w-xs">{movimiento.leyendas_adicionales_1 || '-'}</TableCell>
+                          )}
+                          {col('leyenda2') && (
+                            <TableCell className="text-sm truncate max-w-xs">{movimiento.leyendas_adicionales_2 || '-'}</TableCell>
                           )}
                           {col('origen') && (
                             <TableCell className="text-sm">{movimiento.origen || '-'}</TableCell>
