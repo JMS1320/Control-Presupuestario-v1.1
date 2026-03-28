@@ -105,8 +105,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.ilike('detalle', `%${filtros.detalle}%`)
       }
 
-      // Ordenar por fecha descendente (más recientes primero)
-      query = query.order('fecha', { ascending: false })
+      // Ordenar por orden descendente — respeta el orden del extracto bancario original
+      query = query.order('orden', { ascending: false })
 
       // Aplicar límite
       if (filtros?.limite) {
