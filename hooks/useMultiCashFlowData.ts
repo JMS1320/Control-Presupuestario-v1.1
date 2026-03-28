@@ -36,6 +36,8 @@ export interface CashFlowRow {
   creditos: number
   saldo_cta_cte: number // Calculado
   estado: string // Para tracking de cambios
+  // Cuenta contable (solo para filas ARCA)
+  nro_cuenta?: string | null
   // Campos SICORE (solo para filas ARCA)
   sicore?: string | null
   imp_neto_gravado?: number
@@ -110,6 +112,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: f.estado || 'pendiente',
         medio_pago: f.medio_pago || 'banco',
+        nro_cuenta: f.nro_cuenta || null,
         sicore: f.sicore || null,
         imp_neto_gravado: f.imp_neto_gravado || 0,
         imp_neto_no_gravado: f.imp_neto_no_gravado || 0,

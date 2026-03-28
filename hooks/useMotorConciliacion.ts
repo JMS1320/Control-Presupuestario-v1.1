@@ -322,6 +322,7 @@ export function useMotorConciliacion() {
               extraIdsCF.template_cuota_id = matchCF.cashFlowRow.id
             } else if (matchCF.cashFlowRow.origen === 'ARCA') {
               extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
+              if (matchCF.cashFlowRow.nro_cuenta) extraIdsCF.nro_cuenta = matchCF.cashFlowRow.nro_cuenta
             }
             // Obtener contable/interno: Tab2 TipoA→TipoB > Tab1 regla con código
             const extraCF: any = {}
