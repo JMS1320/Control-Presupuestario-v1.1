@@ -795,6 +795,16 @@ export function VistaExtractoBancario() {
           .eq('id', movimientoAsignando.id)
 
         if (errExt) throw errExt
+
+        // Actualizar factura ARCA: conciliado + fecha_vencimiento = fecha real de pago (extracto)
+        await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update({
+            estado: 'conciliado',
+            fecha_vencimiento: movimientoAsignando.fecha
+          })
+          .eq('id', arcaElegida.id)
       }
 
       setModalAsignar(false)
@@ -1989,6 +1999,22 @@ export function VistaExtractoBancario() {
                   const sinScore   = propuestas.filter(p => p.score === 0)
                   const busqueda   = busquedaAsignarArca.toLowerCase().trim()
 
+                  // Helper fechas: muestra emision siempre; estimada solo si difiere
+                  const fmtFecha = (iso: string | null | undefined) =>
+                    iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '-'
+
+                  const fechasRow = (f: any) => {
+                    const emStr  = fmtFecha(f.fecha_emision)
+                    const estStr = fmtFecha(f.fecha_estimada)
+                    const difieren = f.fecha_emision && f.fecha_estimada && f.fecha_emision !== f.fecha_estimada
+                    return difieren
+                      ? <><span>Em: {emStr}</span><span className="text-gray-400">Est: {estStr}</span></>
+                      : <span>{emStr}</span>
+                  }
+
+                  const montoRow = (f: any) =>
+                    <span className="font-mono">${(f.display_monto ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+
                   // Con búsqueda activa: filtrar todo
                   if (busqueda) {
                     return propuestas
@@ -2004,10 +2030,10 @@ export function VistaExtractoBancario() {
                           className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${arcaElegida?.id === f.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
                         >
                           <div className="font-medium text-sm">{f.display_nombre}</div>
-                          <div className="text-xs text-gray-500 flex gap-3">
+                          <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
                             <span>{f.cuit}</span>
-                            <span>{f.fecha_estimada}</span>
-                            <span className="font-mono">${f.display_monto?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                            {fechasRow(f)}
+                            {montoRow(f)}
                           </div>
                         </div>
                       ))
@@ -2032,8 +2058,8 @@ export function VistaExtractoBancario() {
                       </div>
                       <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
                         <span>{f.cuit}</span>
-                        <span>{f.fecha_estimada}</span>
-                        <span className="font-mono">${f.display_monto?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                        {fechasRow(f)}
+                        {montoRow(f)}
                       </div>
                     </div>
                   )
