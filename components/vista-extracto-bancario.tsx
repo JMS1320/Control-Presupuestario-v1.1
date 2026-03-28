@@ -796,13 +796,14 @@ export function VistaExtractoBancario() {
 
         if (errExt) throw errExt
 
-        // Actualizar factura ARCA: conciliado + fecha_vencimiento = fecha real de pago (extracto)
+        // Actualizar factura ARCA: conciliado + fecha_vencimiento = fecha real + monto = lo pagado
         await supabase
           .schema('msa')
           .from('comprobantes_arca')
           .update({
             estado: 'conciliado',
-            fecha_vencimiento: movimientoAsignando.fecha
+            fecha_vencimiento: movimientoAsignando.fecha,
+            monto_a_abonar: monto   // ajusta al monto exacto del débito (ej: redondeo terminal)
           })
           .eq('id', arcaElegida.id)
       }
