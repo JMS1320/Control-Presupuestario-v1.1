@@ -43,6 +43,107 @@ import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConcili
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
 
+// ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
+
+const STOP_WORDS_ARCA = new Set(['s.a', 'sa', 'srl', 'sas', 'de', 'del', 'la', 'el', 'los', 'las', 'por', 'con', 'cta', 'cte', 'deb', 'aut', 'hno', 'hnos', 'ltda', 'and'])
+
+function extraerCuitDeTexto(texto: string | null | undefined): string | null {
+  if (!texto) return null
+  const match = texto.match(/\b(\d{2}-?\d{8}-?\d)\b/)
+  return match ? match[1].replace(/-/g, '') : null
+}
+
+function palabrasSignificativas(texto: string): string[] {
+  return texto
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(p => p.length > 3 && !STOP_WORDS_ARCA.has(p))
+}
+
+function diasDiferencia(f1: string, f2: string): number {
+  return Math.abs((new Date(f1 + 'T12:00:00').getTime() - new Date(f2 + 'T12:00:00').getTime()) / 86400000)
+}
+
+interface PropuestaArca { factura: any; score: number; badges: { texto: string; color: string }[] }
+
+function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[] {
+  const cuitLeyenda = extraerCuitDeTexto(movimiento.leyendas_adicionales_2)
+  const leyenda1    = movimiento.leyendas_adicionales_1 || ''
+  const descripcion = movimiento.descripcion || ''
+  const fechaMov    = movimiento.fecha
+  const monto       = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+  const arcas = facturas.filter(f => f.tipo === 'ARCA')
+
+  return arcas
+    .map(f => {
+      let score = 0
+      const badges: { texto: string; color: string }[] = []
+      const nombreFactura = f.display_nombre || ''
+      const cuitFactura   = (f.cuit || '').replace(/-/g, '')
+
+      // 1. CUIT exacto desde leyenda_2
+      if (cuitLeyenda && cuitFactura && cuitFactura === cuitLeyenda) {
+        score += 100
+        badges.push({ texto: 'CUIT exacto', color: 'bg-green-100 text-green-700' })
+      }
+
+      // 2. Proximidad de fecha (débito ≤ 5 días de la factura)
+      if (f.fecha_estimada) {
+        const dias = diasDiferencia(fechaMov, f.fecha_estimada)
+        if (dias <= 1) {
+          score += 50
+          badges.push({ texto: 'Fecha exacta', color: 'bg-blue-100 text-blue-700' })
+        } else if (dias <= 5) {
+          score += 30
+          badges.push({ texto: `Fecha ±${Math.round(dias)}d`, color: 'bg-yellow-100 text-yellow-700' })
+        }
+      }
+
+      // 3. Similitud nombre — descripcion del extracto vs denominacion_emisor
+      const palDesc    = palabrasSignificativas(descripcion)
+      const palNombre  = palabrasSignificativas(nombreFactura)
+      if (palDesc.length && palNombre.length) {
+        const coincDesc = palDesc.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
+        const simDesc   = coincDesc / Math.max(palDesc.length, palNombre.length)
+        if (simDesc >= 0.5) {
+          score += 40
+          badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
+        } else if (simDesc > 0) {
+          score += Math.round(simDesc * 40)
+        }
+      }
+
+      // 4. Similitud nombre — leyenda_1 vs denominacion_emisor
+      if (leyenda1) {
+        const palLey1   = palabrasSignificativas(leyenda1)
+        if (palLey1.length && palNombre.length) {
+          const coincLey = palLey1.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
+          const simLey   = coincLey / Math.max(palLey1.length, palNombre.length)
+          if (simLey >= 0.5 && !badges.find(b => b.texto === 'Nombre similar')) {
+            score += 25
+            badges.push({ texto: 'Leyenda similar', color: 'bg-orange-100 text-orange-700' })
+          } else if (simLey > 0) {
+            score += Math.round(simLey * 25)
+          }
+        }
+      }
+
+      // 5. Monto exacto
+      if (Math.abs((f.display_monto || 0) - monto) < 0.01) {
+        score += 20
+        badges.push({ texto: 'Monto exacto', color: 'bg-purple-100 text-purple-700' })
+      }
+
+      return { factura: f, score: Math.round(score), badges }
+    })
+    .sort((a, b) => b.score - a.score)
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
@@ -1867,37 +1968,80 @@ export function VistaExtractoBancario() {
                 autoFocus
               />
               <div className="max-h-72 overflow-y-auto space-y-1">
-                {facturasDisponibles
-                  .filter(f => f.tipo === 'ARCA')
-                  .filter(f => {
-                    const q = busquedaAsignarArca.toLowerCase()
-                    return !q ||
-                      f.display_nombre?.toLowerCase().includes(q) ||
-                      f.cuit?.includes(busquedaAsignarArca) ||
-                      String(f.display_monto).includes(busquedaAsignarArca)
-                  })
-                  .map(f => (
+                {(() => {
+                  const propuestas = generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                  const conScore   = propuestas.filter(p => p.score > 0)
+                  const sinScore   = propuestas.filter(p => p.score === 0)
+                  const busqueda   = busquedaAsignarArca.toLowerCase().trim()
+
+                  // Con búsqueda activa: filtrar todo
+                  if (busqueda) {
+                    return propuestas
+                      .filter(({ factura: f }) =>
+                        f.display_nombre?.toLowerCase().includes(busqueda) ||
+                        (f.cuit || '').includes(busqueda) ||
+                        String(f.display_monto).includes(busqueda)
+                      )
+                      .map(({ factura: f }) => (
+                        <div
+                          key={f.id}
+                          onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                          className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${arcaElegida?.id === f.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
+                        >
+                          <div className="font-medium text-sm">{f.display_nombre}</div>
+                          <div className="text-xs text-gray-500 flex gap-3">
+                            <span>{f.cuit}</span>
+                            <span>{f.fecha_estimada}</span>
+                            <span className="font-mono">${f.display_monto?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      ))
+                  }
+
+                  // Sin búsqueda: sugerencias primero, luego el resto
+                  const renderFila = ({ factura: f, badges }: PropuestaArca, sugerida: boolean) => (
                     <div
                       key={f.id}
                       onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
-                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
-                        arcaElegida?.id === f.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                      }`}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${arcaElegida?.id === f.id ? 'border-blue-500 bg-blue-50' : sugerida ? 'border-green-200 hover:border-green-400 hover:bg-green-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
                     >
-                      <div className="font-medium text-sm">{f.display_nombre}</div>
-                      <div className="text-xs text-gray-500 flex gap-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium text-sm">{f.display_nombre}</div>
+                        {sugerida && badges.length > 0 && (
+                          <div className="flex gap-1 flex-wrap justify-end shrink-0">
+                            {badges.map((b, i) => (
+                              <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${b.color}`}>{b.texto}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
                         <span>{f.cuit}</span>
                         <span>{f.fecha_estimada}</span>
                         <span className="font-mono">${f.display_monto?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                       </div>
                     </div>
-                  ))}
+                  )
+
+                  return (
+                    <>
+                      {conScore.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {conScore.map(p => renderFila(p, true))}
+                          {sinScore.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otras facturas</p>
+                          )}
+                        </>
+                      )}
+                      {sinScore.map(p => renderFila(p, false))}
+                    </>
+                  )
+                })()}
               </div>
               {arcaElegida && (
                 <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Se vinculará factura <strong>{arcaElegida.display_nombre}</strong>. La cuenta contable se completará desde la factura si tiene asignada.
+                  Se vinculará factura <strong>{arcaElegida.display_nombre}</strong>. Cuenta contable y nro_cuenta se completarán desde la factura.
                 </div>
               )}
             </TabsContent>
