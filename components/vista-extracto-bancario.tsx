@@ -1773,7 +1773,8 @@ export function VistaExtractoBancario() {
                             <TableCell className="text-right text-sm font-mono">{movimiento.orden ?? '-'}</TableCell>
                           )}
                           <TableCell>
-                            {movimiento.estado !== 'conciliado' && (
+                            {(movimiento.estado !== 'conciliado' ||
+                              (movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id)) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -1781,7 +1782,7 @@ export function VistaExtractoBancario() {
                                 onClick={() => abrirModalAsignar(movimiento)}
                               >
                                 <Plus className="h-3 w-3" />
-                                Asignar
+                                {movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'}
                               </Button>
                             )}
                           </TableCell>

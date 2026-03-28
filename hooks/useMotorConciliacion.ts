@@ -414,12 +414,19 @@ export function useMotorConciliacion() {
               if (esValorContableValido(regla.codigo_contable)) codigosRegla.contable = regla.codigo_contable
               if (esValorContableValido(regla.codigo_interno)) codigosRegla.interno = regla.codigo_interno
 
+              // Anticipos: si la descripción contiene "anticipo", marcar como auditar
+              // para que el usuario lo vincule manualmente a la factura ARCA correcta
+              const esAnticipo = /anticipo/i.test(movimiento.descripcion || '')
+              const estadoRegla = esAnticipo ? 'auditar' : 'conciliado'
+              const motivoRegla = esAnticipo ? 'Anticipo: requiere vinculación con factura ARCA' : null
+
               // Actualizar extracto con categ/detalle/estado y códigos de la regla (si tiene)
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
                 centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
-                estado: 'conciliado',
+                estado: estadoRegla,
+                motivo_revision: motivoRegla,
                 ...codigosRegla
               })
 
