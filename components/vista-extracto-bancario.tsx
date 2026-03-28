@@ -247,6 +247,8 @@ export function VistaExtractoBancario() {
   const [templateElegido, setTemplateElegido] = useState<any>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
+  const [contableManual, setContableManual] = useState('')
+  const [internoManual, setInternoManual] = useState('')
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
@@ -676,6 +678,8 @@ export function VistaExtractoBancario() {
     setBusquedaAsignarArca('')
     setBusquedaAsignarTemplate('')
     setTabAsignar('template')
+    setContableManual(movimiento.contable || '')
+    setInternoManual(movimiento.interno || '')
 
     // Cargar templates abiertos para asignación
     const { data } = await supabase
@@ -753,6 +757,7 @@ export function VistaExtractoBancario() {
         if (errCuota) throw errCuota
 
         // Actualizar extracto con todos los campos incluyendo contable/interno
+        // Manual tiene prioridad sobre auto-detectado por reglas
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
           template_cuota_id: cuota.id,
@@ -760,8 +765,8 @@ export function VistaExtractoBancario() {
           detalle: templateElegido.nombre_referencia,
           estado: 'conciliado'
         }
-        if (codigos.contable) updateTemplate.contable = codigos.contable
-        if (codigos.interno) updateTemplate.interno = codigos.interno
+        updateTemplate.contable = contableManual.trim() || codigos.contable || ''
+        updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
         const { error: errExt } = await supabase
           .from(tablaActiva)
@@ -788,6 +793,8 @@ export function VistaExtractoBancario() {
         }
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
+        if (contableManual.trim()) updateArca.contable = contableManual.trim()
+        if (internoManual.trim()) updateArca.interno = internoManual.trim()
 
         const { error: errExt } = await supabase
           .from(tablaActiva)
@@ -2091,6 +2098,33 @@ export function VistaExtractoBancario() {
               )}
             </TabsContent>
           </Tabs>
+
+          {/* Códigos contable/interno — opcionales, aplican a cualquier asignación */}
+          <div className="border-t pt-3 mt-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Contable / Interno <span className="normal-case font-normal">(opcional — sobreescribe reglas automáticas)</span>
+            </p>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-0.5 block">Contable</label>
+                <Input
+                  className="h-7 text-xs"
+                  placeholder="Ej: AP i"
+                  value={contableManual}
+                  onChange={e => setContableManual(e.target.value)}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-0.5 block">Interno</label>
+                <Input
+                  className="h-7 text-xs"
+                  placeholder="Ej: DIST MA"
+                  value={internoManual}
+                  onChange={e => setInternoManual(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
