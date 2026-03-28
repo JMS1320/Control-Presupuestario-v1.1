@@ -99,6 +99,50 @@ export function useMotorConciliacion() {
     return false
   }
 
+  // Busca códigos contable/interno en reglas_contable_interno (Tab 2 — fuente primaria)
+  // Prioridad: Tipo A (cuenta+template) → Tipo B (cuenta+responsable)
+  const buscarCodigosContableInterno = async (
+    cuentaId: string,
+    templateId?: string | null,
+    responsable?: string | null
+  ): Promise<{ contable?: string; interno?: string }> => {
+    // Tipo A: regla específica cuenta + template
+    if (templateId) {
+      const { data } = await supabase
+        .from('reglas_contable_interno')
+        .select('codigo_contable, codigo_interno')
+        .eq('cuenta_bancaria_id', cuentaId)
+        .eq('tipo_regla', 'especifica')
+        .eq('template_id', templateId)
+        .eq('activo', true)
+        .maybeSingle()
+      if (data) {
+        const result: { contable?: string; interno?: string } = {}
+        if (esValorContableValido(data.codigo_contable)) result.contable = data.codigo_contable!
+        if (esValorContableValido(data.codigo_interno)) result.interno = data.codigo_interno!
+        if (result.contable || result.interno) return result
+      }
+    }
+    // Tipo B: regla responsable (cross-company)
+    if (responsable) {
+      const { data } = await supabase
+        .from('reglas_contable_interno')
+        .select('codigo_contable, codigo_interno')
+        .eq('cuenta_bancaria_id', cuentaId)
+        .eq('tipo_regla', 'responsable')
+        .eq('responsable', responsable)
+        .eq('activo', true)
+        .maybeSingle()
+      if (data) {
+        const result: { contable?: string; interno?: string } = {}
+        if (esValorContableValido(data.codigo_contable)) result.contable = data.codigo_contable!
+        if (esValorContableValido(data.codigo_interno)) result.interno = data.codigo_interno!
+        if (result.contable || result.interno) return result
+      }
+    }
+    return {}
+  }
+
   // Función para obtener movimientos bancarios de una cuenta específica
   const obtenerMovimientosBancarios = async (cuenta: CuentaBancaria): Promise<MovimientoBancario[]> => {
     try {
@@ -293,24 +337,46 @@ export function useMotorConciliacion() {
             } else if (matchCF.cashFlowRow.origen === 'ARCA') {
               extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
             }
-            // Obtener contable/interno: prioridad 1 = regla que matchee, prioridad 2 = seccion_regla del template
+            // Obtener contable/interno: Tab2 TipoA→TipoB > Tab1 regla con código > seccion_regla (legacy)
             const extraCF: any = {}
-            const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
-            if (reglaQueMatcheaF1 && (esValorContableValido(reglaQueMatcheaF1.codigo_contable) || esValorContableValido(reglaQueMatcheaF1.codigo_interno))) {
-              // Prioridad 1: usar códigos de la regla (específicos por cuenta bancaria)
-              if (esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
-              if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
-            } else if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
-              // Prioridad 2: fallback a seccion_regla del template
+            if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
+              // Consultar template (responsable + seccion_regla para fallback legacy)
               const { data: tmplData } = await supabase
                 .from('egresos_sin_factura')
                 .select('codigo_contable, codigo_interno, seccion_regla, responsable')
                 .eq('id', matchCF.cashFlowRow.egreso_id)
                 .maybeSingle()
-              if (tmplData && debeAplicarCodigos(tmplData as any, cuenta)) {
+
+              // Prioridad 1: Tab 2 — reglas_contable_interno (Tipo A → Tipo B)
+              const codigosTab2 = await buscarCodigosContableInterno(
+                cuenta.id,
+                matchCF.cashFlowRow.egreso_id,
+                (tmplData as any)?.responsable
+              )
+              if (codigosTab2.contable) extraCF.contable = codigosTab2.contable
+              if (codigosTab2.interno) extraCF.interno = codigosTab2.interno
+
+              // Prioridad 2: Tab 1 — regla de texto que matchee y tenga código propio
+              if (!extraCF.contable || !extraCF.interno) {
+                const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+                if (reglaQueMatcheaF1) {
+                  if (!extraCF.contable && esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                  if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+                }
+              }
+
+              // Prioridad 3: seccion_regla del template (legacy fallback)
+              if ((!extraCF.contable || !extraCF.interno) && tmplData && debeAplicarCodigos(tmplData as any, cuenta)) {
                 const td = tmplData as any
-                if (esValorContableValido(td.codigo_contable)) extraCF.contable = td.codigo_contable
-                if (esValorContableValido(td.codigo_interno)) extraCF.interno = td.codigo_interno
+                if (!extraCF.contable && esValorContableValido(td.codigo_contable)) extraCF.contable = td.codigo_contable
+                if (!extraCF.interno && esValorContableValido(td.codigo_interno)) extraCF.interno = td.codigo_interno
+              }
+            } else {
+              // ARCA u otros orígenes: solo regla de texto con código propio
+              const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+              if (reglaQueMatcheaF1) {
+                if (esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
               }
             }
             await actualizarMovimientoBD(cuenta, movimiento.id, {
@@ -381,10 +447,19 @@ export function useMotorConciliacion() {
               if (regla.llena_template) {
                 const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
                 if (cuotaResult) {
+                  // Prioridad: Tab 2 (Tipo A→B) > Tab 1 (codigosRegla ya aplicados) > seccion_regla (cuotaResult)
+                  const codigosTab2F2 = await buscarCodigosContableInterno(
+                    cuenta.id,
+                    cuotaResult.templateId,
+                    cuotaResult.responsable
+                  )
                   const extraRegla: any = {}
-                  // Solo usar códigos del template como fallback si la regla no tenía códigos propios
-                  if (!codigosRegla.contable && cuotaResult.contable) extraRegla.contable = cuotaResult.contable
-                  if (!codigosRegla.interno && cuotaResult.interno) extraRegla.interno = cuotaResult.interno
+                  if (codigosTab2F2.contable) extraRegla.contable = codigosTab2F2.contable
+                  else if (!codigosRegla.contable && cuotaResult.contable) extraRegla.contable = cuotaResult.contable
+
+                  if (codigosTab2F2.interno) extraRegla.interno = codigosTab2F2.interno
+                  else if (!codigosRegla.interno && cuotaResult.interno) extraRegla.interno = cuotaResult.interno
+
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,
@@ -430,7 +505,7 @@ export function useMotorConciliacion() {
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
     movimiento: MovimientoBancario
-  ): Promise<{ templateId: string; cuotaId: string; contable?: string; interno?: string } | null> => {
+  ): Promise<{ templateId: string; cuotaId: string; responsable?: string | null; contable?: string; interno?: string } | null> => {
     try {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
@@ -483,6 +558,7 @@ export function useMotorConciliacion() {
       return {
         templateId: template.id,
         cuotaId: cuota.id,
+        responsable: t.responsable ?? null,
         ...(aplicar && esValorContableValido(t.codigo_contable) && { contable: t.codigo_contable }),
         ...(aplicar && esValorContableValido(t.codigo_interno) && { interno: t.codigo_interno })
       }
