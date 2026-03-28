@@ -79,6 +79,12 @@ export function useMotorConciliacion() {
   const { data: cashFlowData } = useMultiCashFlowData()
   const { cargarReglasActivas } = useReglasConciliacion()
 
+  // Helper: valor contable/interno es válido si no está vacío ni es "No Lleva"
+  const esValorContableValido = (val: string | null | undefined): boolean => {
+    if (!val || val.trim() === '') return false
+    return !val.toLowerCase().replace(/\s+/g, '').includes('nolleva')
+  }
+
   // Función para obtener movimientos bancarios de una cuenta específica
   const obtenerMovimientosBancarios = async (cuenta: CuentaBancaria): Promise<MovimientoBancario[]> => {
     try {
@@ -273,13 +279,28 @@ export function useMotorConciliacion() {
             } else if (matchCF.cashFlowRow.origen === 'ARCA') {
               extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
             }
+            // Obtener contable/interno del template si el match viene de Cash Flow tipo TEMPLATE
+            const extraCF: any = {}
+            if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
+              const { data: tmplData } = await supabase
+                .from('egresos_sin_factura')
+                .select('codigo_contable, codigo_interno')
+                .eq('id', matchCF.cashFlowRow.egreso_id)
+                .maybeSingle()
+              if (tmplData) {
+                const td = tmplData as any
+                if (esValorContableValido(td.codigo_contable)) extraCF.contable = td.codigo_contable
+                if (esValorContableValido(td.codigo_interno)) extraCF.interno = td.codigo_interno
+              }
+            }
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
               estado: estadoFinal,
               motivo_revision: matchCF.motivo_revision,
-              ...extraIdsCF
+              ...extraIdsCF,
+              ...extraCF
             })
 
             // Actualizar estado de la cuota/factura origen si el match fue definitivo
@@ -334,9 +355,13 @@ export function useMotorConciliacion() {
               if (regla.llena_template) {
                 const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
                 if (cuotaResult) {
+                  const extraRegla: any = {}
+                  if (cuotaResult.contable) extraRegla.contable = cuotaResult.contable
+                  if (cuotaResult.interno) extraRegla.interno = cuotaResult.interno
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
-                    template_cuota_id: cuotaResult.cuotaId
+                    template_cuota_id: cuotaResult.cuotaId,
+                    ...extraRegla
                   })
                 }
               }
@@ -378,12 +403,12 @@ export function useMotorConciliacion() {
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
     movimiento: MovimientoBancario
-  ): Promise<{ templateId: string; cuotaId: string } | null> => {
+  ): Promise<{ templateId: string; cuotaId: string; contable?: string; interno?: string } | null> => {
     try {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
-        .select('id, responsable')
+        .select('id, responsable, codigo_contable, codigo_interno')
         .eq('categ', regla.categ)
         .eq('activo', true)
 
@@ -426,7 +451,13 @@ export function useMotorConciliacion() {
       }
 
       console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
-      return { templateId: template.id, cuotaId: cuota.id }
+      const t = template as any
+      return {
+        templateId: template.id,
+        cuotaId: cuota.id,
+        ...(esValorContableValido(t.codigo_contable) && { contable: t.codigo_contable }),
+        ...(esValorContableValido(t.codigo_interno) && { interno: t.codigo_interno })
+      }
 
     } catch (err) {
       console.error('Error en crearCuotaEnTemplate:', err)
