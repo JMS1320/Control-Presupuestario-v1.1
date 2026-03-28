@@ -1843,3 +1843,61 @@ ALTER TABLE egresos_sin_factura
 ```
 
 **Condición para desactivar:** confirmar que `reglas_contable_interno` cubre todos los templates activos de todas las empresas (MSA, PAM, MA) y que no hay conciliaciones reales que dependan del fallback.
+
+> **Actualización 2026-03-28:** el fallback a `seccion_regla` fue eliminado del motor (commit `a77c949`). Las columnas en `egresos_sin_factura` aún existen pero el motor ya no las lee. Solo quedan como referencia histórica hasta que se decida hacer el DROP.
+
+---
+
+## 26. ARQUITECTURA FINAL — ROL DE TAB 1 Y TAB 2
+
+> **Fecha**: 2026-03-28
+
+Tab 1 y Tab 2 **no compiten** — tienen roles distintos y complementarios.
+
+### 26.1 — Qué hace cada tab
+
+**Tab 1 — Reglas de Conciliación** (`reglas_conciliacion`):
+- Motor de **clasificación**: define cuándo un movimiento hace match (por texto en descripción, CUIT, monto)
+- Al hacer match asigna: `categ`, `centro_costo`, `detalle`, `estado`
+- Opcionalmente puede tener `codigo_contable`/`codigo_interno` propios (campo adicional, para edge cases)
+- Es la fuente de Fase 2
+
+**Tab 2 — Contable e Interno** (`reglas_contable_interno`):
+- Motor de **códigos**: define qué `contable`/`interno` se anota en el extracto
+- No clasifica movimientos — solo provee códigos cuando ya se sabe qué template está involucrado
+- Opera por `cuenta_bancaria_id` + `template_id` (Tipo A) o `cuenta_bancaria_id` + `responsable` (Tipo B)
+- Cada regla es para una sola cuenta bancaria — no hay mezcla entre empresas
+
+### 26.2 — Flujo completo por fase
+
+**Fase 1 — Match por monto+fecha (Cash Flow):**
+1. El movimiento coincide con una cuota de template o factura ARCA por monto y ventana de fechas
+2. Categ/detalle/centro_costo vienen del registro Cash Flow (no de reglas de texto)
+3. Para códigos contable/interno:
+   - **Tab 2 primero**: busca regla en `reglas_contable_interno` para esta cuenta + template (Tipo A), luego cuenta + responsable (Tipo B)
+   - **Tab 1 secundario**: si Tab 2 no tiene nada, busca si alguna regla de texto también matchea el movimiento y tiene códigos propios
+4. Si ninguno tiene códigos → contable/interno quedan vacíos (sin asignación silenciosa)
+
+**Fase 2 — Match por texto (Tab 1):**
+1. Una regla de Tab 1 hace match por texto → asigna categ/detalle/estado
+2. Si la regla tiene `llena_template=true`:
+   - Crea una cuota nueva en el template correspondiente
+   - Consulta Tab 2 para los códigos (Tipo A → Tipo B)
+   - Tab 2 tiene prioridad — sobreescribe los códigos propios de la regla si los tiene
+3. Si la regla tiene `llena_template=false` (gastos bancarios, impuestos):
+   - Solo aplican los códigos propios de la regla (campo `codigo_contable`/`codigo_interno` de Tab 1)
+   - No se consulta Tab 2 (no hay template involucrado)
+
+### 26.3 — Prioridad de códigos (resumen)
+
+```
+Fase 1 (CF match):   Tab 2 (A→B)  >  Tab 1 código en regla  >  vacío
+Fase 2 llena=true:   Tab 2 (A→B)  >  Tab 1 código en regla  >  vacío
+Fase 2 llena=false:  Tab 1 código en regla  >  vacío
+```
+
+Tab 2 siempre tiene mayor prioridad que Tab 1 para los códigos.
+
+### 26.4 — Independencia por empresa
+
+Cada regla en `reglas_contable_interno` tiene `cuenta_bancaria_id` explícito. Una regla de `msa_galicia` nunca aplica a `pam_galicia`. Las empresas son completamente independientes. Hoy solo existen reglas para `msa_galicia` (18 Tipo A). PAM y MA se configurarán cuando sus bancos se activen.
