@@ -1269,3 +1269,493 @@ Todos los datos necesarios para reportes están presentes. Algunos requerirán J
 | Movimientos por cuota específica | `template_cuota_id` | No |
 
 Nada imposible — solo algunas queries más elaboradas donde el dato no está directo en el extracto.
+
+---
+
+## 21. SISTEMA CONTABLE E INTERNO — REGLAS POR TEMPLATE (2026-03-27)
+
+### 21.1 — Propósito
+
+Los campos `contable` e `interno` del extracto bancario son imputaciones contables que indican **cómo se asienta el movimiento** en los libros de la empresa. No todos los pagos generan asiento (ej: PAM paga algo de PAM → no se asienta nada). Solo algunos pagos entre empresas distintas requieren un código de contable/interno.
+
+La lógica correcta es:
+- Si la empresa que paga **es la misma** que el responsable del template → no hay asiento → no escribir `contable`/`interno`
+- Si la empresa que paga **es distinta** del responsable → hay asiento → escribir `contable`/`interno`
+- Algunos templates tienen reglas **siempre activas** (ej: Sueldos, Retiros) que aplican sin importar quién paga
+
+### 21.2 — Columna `seccion_regla` en `egresos_sin_factura`
+
+**Migración aplicada**:
+
+```sql
+ALTER TABLE egresos_sin_factura
+ADD COLUMN IF NOT EXISTS seccion_regla INTEGER DEFAULT NULL;
+
+-- Auto-asignación inicial: templates con valores reales en contable/interno → sección 1
+UPDATE egresos_sin_factura SET seccion_regla = 1
+WHERE seccion_regla IS NULL
+AND (
+  (codigo_contable IS NOT NULL AND TRIM(codigo_contable) != ''
+   AND LOWER(REPLACE(REPLACE(codigo_contable,' ',''),chr(160),'')) != 'nolleva')
+  OR
+  (codigo_interno IS NOT NULL AND TRIM(codigo_interno) != ''
+   AND LOWER(REPLACE(REPLACE(codigo_interno,' ',''),chr(160),'')) != 'nolleva')
+);
+-- Resultado: 23 templates → seccion_regla=1 | 133 templates → NULL
+```
+
+**Semántica de los valores**:
+
+| Valor | Nombre | Comportamiento en el motor |
+|-------|--------|---------------------------|
+| `1` | Regla fija | Siempre escribe `contable`/`interno` — independiente de quién paga |
+| `2` | Regla por responsable | Solo escribe si `cuenta.empresa ≠ template.responsable` |
+| `NULL` | Sin regla | No escribe nada — se ignora |
+
+Se eligió INTEGER (no boolean) para extensibilidad futura (sección 3, 4, etc.).
+
+### 21.3 — Helpers en el motor
+
+Agregados en `hooks/useMotorConciliacion.ts`:
+
+```typescript
+// Filtra valores que no son un código real
+const esValorContableValido = (val: string | null | undefined): boolean => {
+  if (!val || val.trim() === '') return false
+  return !val.toLowerCase().replace(/\s+/g, '').includes('nolleva')
+}
+
+// Decide si un template debe escribir sus códigos al extracto
+const debeAplicarCodigos = (
+  tmpl: { seccion_regla?: number | null; responsable?: string | null },
+  cuenta: CuentaBancaria
+): boolean => {
+  if (!tmpl.seccion_regla) return false
+  if (tmpl.seccion_regla === 1) return true
+  if (tmpl.seccion_regla === 2) {
+    const empresa = cuenta.empresa.toLowerCase()
+    const resp = (tmpl.responsable || '').toLowerCase()
+    return empresa !== resp
+  }
+  return false
+}
+```
+
+**`esValorContableValido`**: rechaza `null`, vacío, y cualquier variante de "No Lleva" (con/sin espacios, mayúsculas). "No Lleva" no es un código contable real — es un valor placeholder que indica "no aplica".
+
+**`debeAplicarCodigos`**: la lógica de sección:
+- `seccion_regla = null` → skip
+- `seccion_regla = 1` → siempre aplica
+- `seccion_regla = 2` → solo si empresa pagadora ≠ responsable del template
+
+### 21.4 — Fase 1 (Cash Flow match → TEMPLATE): escritura de contable/interno
+
+Cuando el motor concilia un movimiento por Fase 1 y el origen es `'TEMPLATE'`, ahora consulta los campos del template y los escribe condicionalmente:
+
+```typescript
+const { data: tmplData } = await supabase
+  .from('egresos_sin_factura')
+  .select('codigo_contable, codigo_interno, seccion_regla, responsable')
+  .eq('id', matchCF.cashFlowRow.egreso_id)
+  .maybeSingle()
+
+if (tmplData && debeAplicarCodigos(tmplData as any, cuenta)) {
+  const td = tmplData as any
+  if (esValorContableValido(td.codigo_contable)) extraCF.contable = td.codigo_contable
+  if (esValorContableValido(td.codigo_interno)) extraCF.interno = td.codigo_interno
+}
+```
+
+El spread `extraCF` se pasa a `actualizarMovimientoBD` junto con los demás campos.
+
+### 21.5 — Fase 2 (`llena_template`): escritura de contable/interno
+
+La función `crearCuotaEnTemplate()` fue modificada para retornar los códigos contables (cuando aplican), y el motor los incluye en el update del extracto:
+
+```typescript
+// En crearCuotaEnTemplate():
+const t = template as any
+const aplicar = debeAplicarCodigos(t, cuenta)
+return {
+  templateId: template.id,
+  cuotaId: cuota.id,
+  ...(aplicar && esValorContableValido(t.codigo_contable) && { contable: t.codigo_contable }),
+  ...(aplicar && esValorContableValido(t.codigo_interno) && { interno: t.codigo_interno })
+}
+
+// En el loop principal — spread sobre extraRegla:
+const extraRegla = {
+  ...cuotaResult.contable ? { contable: cuotaResult.contable } : {},
+  ...cuotaResult.interno ? { interno: cuotaResult.interno } : {}
+}
+```
+
+### 21.6 — Correcciones manuales en `msa_galicia`
+
+Durante el análisis, se detectaron 3 movimientos con valores incorrectos o faltantes:
+
+```sql
+-- Orden 13: Retiro MA mensual → asiento contable correcto
+UPDATE msa_galicia SET contable = 'CTA MA', interno = 'DIST MA' WHERE orden = 13;
+
+-- Órdenes 38-39: Saldo Tarjeta VISA y Saldo Anterior Tarjeta → requieren desglose
+UPDATE msa_galicia SET contable = 'Desglosar', interno = 'Desglosar' WHERE orden IN (38, 39);
+```
+
+---
+
+## 22. CONFIGURADOR CONTABLE E INTERNO (2026-03-27)
+
+### 22.1 — Contexto y decisión de arquitectura
+
+Existía una tabla `reglas_contable_interno` pero estaba **vacía y desconectada del motor**. En lugar de conectarla, se decidió usar directamente `egresos_sin_factura` como fuente de verdad para las reglas contables — los campos `codigo_contable`, `codigo_interno`, `seccion_regla` ya estaban ahí.
+
+La tabla `reglas_contable_interno` se mantiene intacta en BD pero no se usa.
+
+### 22.2 — Estructura del configurador
+
+El componente `components/configurador-reglas-contable.tsx` fue reescrito completamente. La nueva arquitectura tiene **tres secciones**:
+
+| Sección | Color UI | Contenido | Criterio |
+|---------|----------|-----------|---------|
+| **Sección 1 — Regla fija** | Azul | Templates con `seccion_regla = 1` | Siempre escriben contable/interno |
+| **Sección 2 — Por responsable** | Ámbar | Templates con `seccion_regla = 2` | Escriben solo si empresa ≠ responsable |
+| **Sin regla** | Gris (colapsable) | Templates con `seccion_regla = NULL` y valores reales | Pool para asignar |
+
+**Filtros de la vista**:
+- Checkbox "Mostrar inactivos": por defecto solo se ven templates activos (`activo = true`)
+- "Sin regla" es colapsable (oculta por defecto para no contaminar la vista)
+
+### 22.3 — Agrupación por `grupo_impuesto_id`
+
+Los templates que comparten `grupo_impuesto_id` son **pares** (ejemplo: "Inmobiliario Cuota PAM" y "Inmobiliario Anual PAM" tienen el mismo `grupo_impuesto_id`). La regla contable/interno debe ser la misma para todos los miembros del grupo.
+
+**Comportamiento del configurador**:
+- Agrupa templates por `grupo_impuesto_id` en la UI → muestra una sola fila por grupo
+- Al editar cualquier campo (contable, interno, responsable), el update se aplica a **todos los IDs del grupo**
+- Si el grupo tiene un solo template, se comporta igual (el array `ids[]` tiene un elemento)
+
+**Interface de fila**:
+```typescript
+interface FilaTabla {
+  key: string                    // grupo_impuesto_id o id del template
+  nombre: string                 // nombre del grupo o del template
+  ids: string[]                  // todos los IDs del grupo
+  responsable: string | null
+  codigo_contable: string | null
+  codigo_interno: string | null
+  seccion_regla: number | null
+  tieneActivo: boolean           // si al menos uno del grupo está activo
+  esGrupo: boolean               // si agrupa más de un template
+}
+```
+
+### 22.4 — Análisis de consistencia de pares (resultado)
+
+Se verificó via SQL si todos los templates que comparten `grupo_impuesto_id` tienen los mismos valores de `responsable`, `codigo_contable` e `codigo_interno`.
+
+**Resultado**: No existen conflictos reales. Los 11 grupos que mostraban diferencias tenían únicamente variantes de `null` vs `"No Lleva"` — semánticamente equivalentes, ningún par tiene dos valores distintos reales. El `responsable` es siempre consistente dentro de cada grupo.
+
+Conclusión: **se puede editar cualquier miembro del grupo y sincronizar todo el grupo sin riesgo de pisar valores reales con vacíos** — todos los miembros ya tienen el mismo valor efectivo.
+
+### 22.5 — "No Lleva" vs null
+
+`"No Lleva"` es un valor placeholder que significa "este template no tiene código contable/interno". Semánticamente equivale a `null`. El motor (`esValorContableValido`) los trata igual — ambos se descartan.
+
+En el configurador, la función `esValorReal()` aplica la misma lógica: no muestra "No Lleva" como si fuera un código real ni lo cuenta como template con regla asignada.
+
+### 22.6 — Commits de esta sesión
+
+| Commit | Descripción |
+|--------|-------------|
+| `2c9a9da` | Motor: `esValorContableValido` + `debeAplicarCodigos` + Fase 1 + Fase 2 escritura contable/interno |
+| `5e05b18` | BD: migración columna `seccion_regla` + auto-asignación 23 templates + correcciones manuales órdenes 13/38/39 |
+| `82e47ab` | Configurador: reescritura completa con secciones 1/2/sin-regla + grupo_impuesto_id sync |
+
+---
+
+## 23. CÓDIGOS CONTABLE/INTERNO EN REGLAS DE CONCILIACIÓN (2026-03-28)
+
+### 23.1 — Problema que resuelve
+
+El sistema de `seccion_regla` en templates (sección 21) tiene un límite: cada template tiene **un solo par de códigos** contable/interno. Con 3 empresas (MSA, PAM, MA), el mismo template puede ser pagado por distintas empresas y cada una necesita un código diferente:
+
+```
+Template "Expensas Libertad" — responsable: PAM
+  MSA paga PAM → desde MSA: "RET 3 PAM"
+  MA  paga PAM → desde MA:  código diferente
+  PAM paga PAM → no se asienta nada
+```
+
+Un solo `codigo_contable` en el template no puede representar las tres situaciones.
+
+### 23.2 — Solución: códigos en la regla de conciliación
+
+Las `reglas_conciliacion` ya tienen `cuenta_bancaria_id` — cada cuenta tiene su propio set. Al agregar `codigo_contable` y `codigo_interno` directamente a cada regla, el código queda explícito por cuenta:
+
+```
+Regla "EXPENSAS LIBERTAD" — cuenta: msa_galicia → codigo_contable = 'RET 3 PAM'
+Regla "EXPENSAS LIBERTAD" — cuenta: pam_galicia → codigo_contable = 'AP 3 MSA'
+Regla "EXPENSAS LIBERTAD" — cuenta: ma_galicia  → codigo_contable = 'RET 3 MA'
+```
+
+Sin lógica condicional — cada cuenta dice exactamente qué escribir.
+
+### 23.3 — BD: columnas nuevas en `reglas_conciliacion`
+
+**Migración aplicada** (commit `eb6ec94`):
+
+```sql
+ALTER TABLE reglas_conciliacion
+ADD COLUMN IF NOT EXISTS codigo_contable VARCHAR(50) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS codigo_interno VARCHAR(50) DEFAULT NULL;
+```
+
+Ambos campos son opcionales (`NULL`). Las 40 reglas existentes de MSA quedan con `NULL` — el motor cae al fallback de `seccion_regla` del template, que ya funciona para MSA.
+
+### 23.4 — Nueva jerarquía de prioridad en el motor
+
+El motor aplica la siguiente jerarquía para determinar `contable`/`interno`:
+
+```
+PRIORIDAD 1 — Códigos de la regla de conciliación
+  → Si la regla que matcheó tiene codigo_contable/codigo_interno → usar esos
+
+PRIORIDAD 2 — seccion_regla del template (fallback)
+  → Si la regla no tiene códigos propios → usar los del template según seccion_regla
+  → Si no hay template → no se escribe nada
+```
+
+Esta jerarquía aplica tanto a **Fase 1** como a **Fase 2**:
+
+**Fase 1 (Cash Flow match)**:
+```typescript
+// Después de encontrar el match en Cash Flow:
+// 1. Buscar si alguna regla también matchea el movimiento
+const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+if (reglaQueMatcheaF1 && tiene códigos válidos) {
+  → usar códigos de la regla  // PRIORIDAD 1
+} else if (origen === 'TEMPLATE') {
+  → consultar seccion_regla del template  // PRIORIDAD 2
+}
+```
+
+**Fase 2 (regla matchea directamente)**:
+```typescript
+// La regla que matcheó:
+const codigosRegla = { contable: regla.codigo_contable, interno: regla.codigo_interno }
+// Se aplican al primer update (junto con categ/detalle/estado)
+
+// Si la regla también llena_template:
+// → crearCuotaEnTemplate() retorna códigos del template
+// → solo se usan como fallback si la regla no tenía códigos propios
+if (!codigosRegla.contable && cuotaResult.contable) extraRegla.contable = cuotaResult.contable
+```
+
+### 23.5 — Configurador de reglas: campos nuevos
+
+El modal crear/editar de `configurador-reglas.tsx` tiene una nueva sección "Códigos contables" con dos campos opcionales:
+
+- **Contable**: texto libre — ej: `RET 3 PAM`, `AP 3 MSA`, `LIB`
+- **Interno**: texto libre — ej: `DIST MA`, `CTA JMS`
+
+Descripción visible en el modal: *"Específicos para esta cuenta bancaria. Tienen prioridad sobre los códigos del template."*
+
+En la **lista de reglas**: si una regla tiene códigos asignados, aparecen en verde (`text-emerald-600`) debajo del categ/detalle. Reglas sin códigos no muestran nada — comportamiento igual al anterior.
+
+### 23.6 — `seccion_regla` del template: rol actualizado
+
+Con este cambio, `seccion_regla` pasa a ser **fallback** en lugar de fuente principal:
+
+| Escenario | Fuente de códigos |
+|-----------|-----------------|
+| Regla tiene `codigo_contable`/`codigo_interno` | **Regla** (principal) |
+| Regla sin códigos + template con `seccion_regla` | **Template** (fallback) |
+| Regla sin códigos + template sin `seccion_regla` | Sin asiento |
+
+Para **MSA hoy**: todas las reglas tienen `NULL` en los nuevos campos → el motor usa `seccion_regla` del template exactamente como antes. Sin cambio funcional.
+
+### 23.7 — Cómo usar cuando lleguen PAM y MA
+
+1. Crear set de reglas de conciliación para cada cuenta nueva (`cuenta_bancaria_id = 'pam_galicia'`, `'pam_galicia_cc'`, etc.)
+2. Al crear cada regla, completar `Contable` e `Interno` según el código que corresponde desde la perspectiva de esa cuenta
+3. Las reglas de MSA no se tocan — cada cuenta tiene su propio set independiente
+
+Ejemplo para "Expensas Libertad" con las 3 empresas configuradas:
+
+| Cuenta | Regla texto | Contable | Interno |
+|--------|-------------|---------|---------|
+| msa_galicia | "EXPENSAS LIBERTAD" | RET 3 PAM | — |
+| pam_galicia | "EXPENSAS LIBERTAD" | AP 3 MSA | — |
+| ma_galicia | "EXPENSAS LIBERTAD" | RET 3 MA | — |
+
+### 23.8 — Paso futuro: pre-llenado desde `medio_pago`
+
+Cuando el usuario marca una cuota como pagada y especifica el banco (`medio_pago`), el sistema ya tiene suficiente información para pre-determinar los códigos antes de que llegue el extracto bancario:
+
+```
+cuota.medio_pago = 'msa_galicia'  →  empresa pagadora = MSA
+template.responsable = 'PAM'
+→ buscar regla: cuenta_bancaria_id='msa_galicia' + categ del template
+→ pre-llenar cuota.contable + cuota.interno
+```
+
+No implementado aún — pendiente como mejora futura independiente.
+
+### 23.9 — Commits
+
+| Commit | Descripción |
+|--------|-------------|
+| `eb6ec94` | BD + motor + configurador: códigos contable/interno en reglas por cuenta bancaria |
+| `eea71a9` | Sistema reglas_contable_interno como fuente primaria — motor + configurador Tab2 reescritos |
+
+---
+
+## 24. SISTEMA `reglas_contable_interno` — FUENTE PRIMARIA CONTABLE/INTERNO
+
+> **Fecha**: 2026-03-28
+> **Objetivo**: Reemplazar `seccion_regla` de templates por una tabla dedicada que soporte multi-empresa y sea independiente del template.
+
+### 24.1 — Problema que resuelve
+
+El sistema anterior (`seccion_regla` en `egresos_sin_factura`) tenía un único código contable e interno por template, sin distinción de quién pagaba. Esto no permite manejar el caso:
+
+- MSA paga template de PAM → contable = `RET 3 PAM`
+- MA paga template de PAM → contable = `RET 3 MA`
+
+El mismo template necesita códigos distintos según la cuenta bancaria que ejecuta el pago.
+
+### 24.2 — Estructura de la tabla
+
+```sql
+reglas_contable_interno (
+  id UUID PRIMARY KEY,
+  cuenta_bancaria_id VARCHAR(50) NOT NULL,  -- 'msa_galicia', 'pam_galicia', etc.
+  tipo_regla VARCHAR(20) NOT NULL,          -- 'especifica' | 'responsable'
+  template_id UUID NULL,                    -- solo para tipo='especifica'
+  responsable VARCHAR(50) NULL,             -- solo para tipo='responsable'
+  codigo_contable VARCHAR(50) NULL,
+  codigo_interno VARCHAR(50) NULL,
+  descripcion VARCHAR(200) NULL,
+  activo BOOLEAN DEFAULT true,
+  orden INT
+)
+```
+
+Constraints:
+- `chk_tipo_regla`: tipo_regla IN ('especifica', 'responsable')
+- `chk_campos_por_tipo`: especifica requiere template_id; responsable requiere responsable
+
+### 24.3 — Dos tipos de regla
+
+**Tipo A — Específica** (`tipo_regla = 'especifica'`):
+- Identifica: `cuenta_bancaria_id` + `template_id` → `codigo_contable` + `codigo_interno`
+- Ejemplo: MSA Galicia + Template "Expensas Libertad" → LIB / DIST MA
+- Uso: cuando se sabe exactamente qué template paga esta cuenta
+- Mayor prioridad
+
+**Tipo B — Responsable** (`tipo_regla = 'responsable'`):
+- Identifica: `cuenta_bancaria_id` + `responsable` → `codigo_contable` + `codigo_interno`
+- Ejemplo: MSA Galicia + responsable "PAM" → RET 3 PAM / —
+- Uso: para casos cross-company donde todos los templates de un responsable tienen el mismo tratamiento contable cuando los paga una cuenta de otra empresa
+- Solo aplica cuando empresa pagadora ≠ responsable del template
+- Menor prioridad que Tipo A
+
+### 24.4 — Jerarquía de prioridad completa
+
+Al conciliar un movimiento, el motor aplica contable/interno con esta prioridad:
+
+```
+1. Tab 2 Tipo A (reglas_contable_interno, especifica, cuenta+template)  ← MÁS ESPECÍFICO
+2. Tab 2 Tipo B (reglas_contable_interno, responsable, cuenta+responsable)
+3. Tab 1 (codigo_contable/interno en regla de texto — campo opcional en reglas_conciliacion)
+4. seccion_regla del template en egresos_sin_factura  ← LEGACY, se mantiene como fallback
+```
+
+### 24.5 — Implementación en el motor
+
+Función nueva en `useMotorConciliacion.ts`:
+
+```typescript
+const buscarCodigosContableInterno = async (
+  cuentaId: string,
+  templateId?: string | null,
+  responsable?: string | null
+): Promise<{ contable?: string; interno?: string }> => {
+  // Tipo A: cuenta + template
+  if (templateId) {
+    const { data } = await supabase.from('reglas_contable_interno')
+      .select('codigo_contable, codigo_interno')
+      .eq('cuenta_bancaria_id', cuentaId).eq('tipo_regla', 'especifica')
+      .eq('template_id', templateId).eq('activo', true).maybeSingle()
+    if (data && (esValorContableValido(data.codigo_contable) || esValorContableValido(data.codigo_interno)))
+      return { contable: ..., interno: ... }
+  }
+  // Tipo B: cuenta + responsable
+  if (responsable) { ... }
+  return {}
+}
+```
+
+**Fase 1 (Cash Flow match) — TEMPLATE**:
+1. Consulta template para obtener responsable
+2. Llama `buscarCodigosContableInterno(cuenta.id, egreso_id, responsable)`
+3. Si Tab2 no da resultados: busca regla de texto que matchee (Tab 1)
+4. Si Tab1 tampoco: usa seccion_regla legacy
+
+**Fase 2 (regla de texto match) — con llena_template**:
+1. Crea cuota en template → obtiene templateId + responsable
+2. Llama `buscarCodigosContableInterno(cuenta.id, templateId, responsable)`
+3. Si Tab2 no da resultados: usa codigosRegla (Tab 1)
+4. Si Tab1 tampoco: usa seccion_regla desde `crearCuotaEnTemplate`
+
+### 24.6 — Datos migrados
+
+Al activar el nuevo sistema se migraron los 18 templates con `seccion_regla` y códigos reales como reglas Tipo A para `msa_galicia`:
+
+| Template | Contable | Interno |
+|----------|----------|---------|
+| ABL Cochera Libertad | LIB | DIST MA |
+| ABL Libertad | LIB | DIST MA |
+| AYSA Libertad | LIB | DIST MA |
+| Expensas Libertad | LIB | DIST MA |
+| Metrogas Libertad | LIB | DIST MA |
+| Retiro Andres | DIST AMS | DIST AMS |
+| Retiro Jose | DIST JMS | DIST JMS |
+| Retiro MA mensual | CTA MA | DIST MA |
+| Retiro Manuel | DIST MANU | DIST MANU |
+| Retiro Mechi | DIST MECHI | DIST MECHI |
+| Retiro Soledad | DIST SOLE | DIST SOLE |
+| Seguro Flota | — | Desglosar |
+| Sueldo AMS | CTA AMS | — |
+| Sueldo JMS | CTA JMS | — |
+| Tarjeta Visa Business MSA | Desglosar | Desglosar |
+| Tarjeta VISA PAM | Desglosar | Desglosar |
+| Imp Automotores Gol | — | DIST JMS |
+| Imp Automotores Tiguan | — | DIST MA |
+
+`seccion_regla` queda en la tabla como columna legacy (fallback de prioridad 4). No se elimina.
+
+### 24.7 — UI Configurador Tab 2
+
+Componente: `components/configurador-reglas-contable.tsx`
+
+Muestra dos secciones:
+
+**Sección Tipo A (azul):** tabla con template name, contable, interno — inline editing + eliminar
+**Sección Tipo B (amber):** tabla con responsable, contable, interno — inline editing + eliminar
+**Modal crear/editar:** formulario adaptativo según tipo (selector template vs campo responsable), dos inputs de código, descripción opcional
+
+Acepta prop `cuentaBancariaId?: string` para sincronizarse con selector del padre. Si no recibe prop, muestra su propio selector.
+
+### 24.8 — Uso para PAM y MA (próxima fase)
+
+Cuando se activen bancos PAM y MA, crear reglas Tipo B en cada cuenta:
+
+```
+PAM Galicia CA  + responsable="MSA" → contable="RET 3 MSA", interno="—"
+PAM Galicia CA  + responsable="MA"  → contable="RET 3 MA",  interno="—"
+MA Galicia (futuro) + responsable="PAM" → según convenio
+```
+
+Las reglas Tipo A se crean a medida que se descubran tratamientos específicos por template + cuenta.
