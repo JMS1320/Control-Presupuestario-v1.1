@@ -666,12 +666,24 @@ export function VistaExtractoBancario() {
           .maybeSingle()
         const nroCuenta = facturaCompleta?.nro_cuenta || null
 
+        // Derivar categ desde cuentas_contables usando el nro_cuenta
+        let categFromCuenta: string | null = null
+        if (nroCuenta) {
+          const { data: cuentaContable } = await supabase
+            .from('cuentas_contables')
+            .select('categ')
+            .eq('nro_cuenta', nroCuenta)
+            .maybeSingle()
+          categFromCuenta = cuentaContable?.categ || null
+        }
+
         const updateArca: Record<string, any> = {
           comprobante_arca_id: arcaElegida.id,
           detalle: arcaElegida.display_nombre || '',
           estado: 'conciliado'
         }
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
+        if (categFromCuenta) updateArca.categ = categFromCuenta
 
         const { error: errExt } = await supabase
           .from(tablaActiva)
