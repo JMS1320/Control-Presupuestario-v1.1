@@ -271,10 +271,14 @@ export function VistaExtractoBancario() {
     () => new Set(cuentas.map(c => c.categ.toUpperCase().trim())),
     [cuentas]
   )
+  // Categs propias del sistema de sueldos — siempre válidas
+  const CATEGS_SISTEMA = new Set(['SUELDOS', 'ANTICIPO', 'ANTICIPO COBRO'])
+
   const movimientosCategInvalida = useMemo(
     () => movimientos.filter(m => {
       if (!m.categ || m.categ.trim() === '') return false
       const cu = m.categ.toUpperCase().trim()
+      if (CATEGS_SISTEMA.has(cu)) return false
       return !cuentasCategSet.has(cu) && !templateCategSet.has(cu)
     }),
     [movimientos, cuentasCategSet, templateCategSet]

@@ -281,7 +281,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       origen_tabla: 'sueldos.periodos',
       fecha_estimada: p.fecha_fin_periodo,
       fecha_vencimiento: null,
-      categ: 'SUELD',
+      categ: 'Sueldos',
       centro_costo: 'ESTRUCTURA',
       cuit_proveedor: p.empleado?.cuit_empleado ?? '',
       nombre_proveedor: p.empleado?.nombre ?? '',
@@ -440,11 +440,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin anticipos
       }
 
-      // 4. Cargar períodos de sueldos (desde Feb 2026, no históricos)
+      // 4. Cargar períodos de sueldos (desde Ene 2026, no históricos)
       const { data: periodosSueldos, error: errorSueldos } = await supabase
         .from('sueldos_periodos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
-        .gte('fecha_inicio_periodo', '2026-02-01')
+        .gte('fecha_inicio_periodo', '2026-01-01')
         .neq('estado', 'historico')
         .order('fecha_fin_periodo', { ascending: true })
 
@@ -453,13 +453,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin sueldos
       }
 
-      // 5. Cargar anticipos de sueldos (pagos tipo 'anticipo', no conciliados)
+      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
-        .eq('tipo', 'anticipo')
+        .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
-        .gte('fecha', '2026-02-01')
+        .gte('fecha', '2026-01-01')
         .order('fecha', { ascending: true })
 
       if (errorAntSueldos) {
@@ -477,11 +477,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         origen_tabla: 'sueldos.pagos',
         fecha_estimada: a.fecha,
         fecha_vencimiento: null,
-        categ: 'SUELD ANT',
+        categ: 'Sueldos',
         centro_costo: 'ESTRUCTURA',
         cuit_proveedor: a.empleado?.cuit_empleado ?? '',
         nombre_proveedor: a.empleado?.nombre ?? '',
-        detalle: `Anticipo ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
+        detalle: `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
         debitos: a.monto ?? 0,
         creditos: 0,
         saldo_cta_cte: 0,

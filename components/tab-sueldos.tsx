@@ -87,7 +87,7 @@ interface CuentaEmpleado {
 const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MESES_LONG  = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const MES_MIN = { anio: 2026, mes: 2 }  // Feb 2026
+const MES_MIN = { anio: 2026, mes: 1 }  // Ene 2026
 const MES_MAX = { anio: 2026, mes: 6 }  // Jun 2026
 
 function formatoMoneda(v: number | null | undefined): string {
@@ -154,9 +154,10 @@ export function TabSueldos() {
     return { anio, mes }
   })
 
-  // Modal anticipo
+  // Modal anticipo / pago saldo
   const [modalAnticipo, setModalAnticipo] = useState(false)
   const [antEmpId, setAntEmpId] = useState('')
+  const [antTipo, setAntTipo] = useState<'anticipo' | 'sueldo'>('anticipo')
   const [antMonto, setAntMonto] = useState('')
   const [antFecha, setAntFecha] = useState(new Date().toISOString().split('T')[0])
   const [antCuenta, setAntCuenta] = useState('')
@@ -252,10 +253,18 @@ export function TabSueldos() {
 
   // ── Registrar anticipo ────────────────────────────────────────────────────
 
-  const abrirAnticipo = (empleadoId?: string) => {
+  const abrirAnticipo = (empleadoId?: string, tipo: 'anticipo' | 'sueldo' = 'anticipo') => {
     if (empleadoId) setAntEmpId(empleadoId)
     else setAntEmpId('')
-    setAntMonto('')
+    setAntTipo(tipo)
+    // Pago Saldo: pre-llenar con el saldo pendiente del empleado
+    if (tipo === 'sueldo' && empleadoId) {
+      const periodo = periodos.find(p => p.empleado_id === empleadoId)
+      const saldo = periodo?.saldo_pendiente ?? 0
+      setAntMonto(saldo > 0 ? saldo.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
+    } else {
+      setAntMonto('')
+    }
     setAntFecha(new Date().toISOString().split('T')[0])
     setAntCuenta('__none__')
     setAntDesc('')
@@ -301,11 +310,11 @@ export function TabSueldos() {
         .insert({
           periodo_id:        periodo?.id ?? null,
           empleado_id:       antEmpId,
-          tipo:              'anticipo',
+          tipo:              antTipo,
           fecha:             antFecha,
           monto,
           cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
-          descripcion:       antDesc || `Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
+          descripcion:       antDesc || `${antTipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`,
           estado:            antEstado,
           medio_pago:        antMedioPago,
         })
@@ -324,6 +333,7 @@ export function TabSueldos() {
     setModalAnticipo(false)
     setEditandoPago(null)
     setAntEmpId('')
+    setAntTipo('anticipo')
     setAntMonto('')
     setAntFecha(new Date().toISOString().split('T')[0])
     setAntCuenta('__none__')
@@ -721,10 +731,21 @@ export function TabSueldos() {
                           variant="ghost"
                           size="sm"
                           className="text-xs h-7 px-2"
-                          onClick={() => abrirAnticipo(p.empleado_id)}
+                          onClick={() => abrirAnticipo(p.empleado_id, 'anticipo')}
                         >
                           + Anticipo
                         </Button>
+                        {(p.saldo_pendiente ?? 0) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2 text-green-700"
+                            onClick={() => abrirAnticipo(p.empleado_id, 'sueldo')}
+                            title="Registrar pago del saldo restante"
+                          >
+                            + Saldo
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -985,13 +1006,37 @@ export function TabSueldos() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Modal Anticipo ── */}
-      <Dialog open={modalAnticipo} onOpenChange={v => { setModalAnticipo(v); if (!v) setEditandoPago(null) }}>
+      {/* ── Modal Anticipo / Pago Saldo ── */}
+      <Dialog open={modalAnticipo} onOpenChange={v => { setModalAnticipo(v); if (!v) { setEditandoPago(null); setAntTipo('anticipo') } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editandoPago ? 'Editar Pago' : 'Registrar Anticipo'}</DialogTitle>
+            <DialogTitle>
+              {editandoPago ? 'Editar Pago' : antTipo === 'sueldo' ? 'Registrar Pago Saldo' : 'Registrar Anticipo'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Selector tipo — solo en creación */}
+            {!editandoPago && (
+              <div>
+                <Label>Tipo de pago</Label>
+                <Select value={antTipo} onValueChange={(v: 'anticipo' | 'sueldo') => {
+                  setAntTipo(v)
+                  if (v === 'sueldo' && antEmpId) {
+                    const periodo = periodos.find(p => p.empleado_id === antEmpId)
+                    const saldo = periodo?.saldo_pendiente ?? 0
+                    setAntMonto(saldo > 0 ? saldo.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
+                  }
+                }}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="anticipo">Anticipo (pago parcial)</SelectItem>
+                    <SelectItem value="sueldo">Pago Saldo (cierre del mes)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Empleado *</Label>
               <Select value={antEmpId} onValueChange={setAntEmpId}>
@@ -1054,7 +1099,7 @@ export function TabSueldos() {
             <div>
               <Label>Descripción</Label>
               <Input
-                placeholder={`Anticipo ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`}
+                placeholder={`${antTipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`}
                 value={antDesc}
                 onChange={e => setAntDesc(e.target.value)}
               />
@@ -1099,7 +1144,7 @@ export function TabSueldos() {
               disabled={guardando || !antEmpId || !antMonto}
             >
               {guardando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              {editandoPago ? 'Guardar cambios' : 'Registrar Anticipo'}
+              {editandoPago ? 'Guardar cambios' : antTipo === 'sueldo' ? 'Registrar Pago Saldo' : 'Registrar Anticipo'}
             </Button>
           </DialogFooter>
         </DialogContent>
