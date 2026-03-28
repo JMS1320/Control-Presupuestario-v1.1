@@ -1759,3 +1759,87 @@ MA Galicia (futuro) + responsable="PAM" → según convenio
 ```
 
 Las reglas Tipo A se crean a medida que se descubran tratamientos específicos por template + cuenta.
+
+---
+
+## 25. PENDIENTES Y DEPRECACIONES
+
+> **Fecha**: 2026-03-28
+
+### 25.1 — Pendientes de implementación
+
+#### 🥇 PRIORIDAD 1 — Modal asignación manual extracto
+
+Movimientos con estado `Pendiente` o `Auditar` en `vista-extracto-bancario.tsx` necesitan un modal para asignación manual cuando el motor automático no resuelve.
+
+**Dos caminos posibles (el usuario elige):**
+
+**Camino A — Factura ARCA:**
+- Buscar factura por fecha/monto/proveedor en `msa.comprobantes_arca`
+- Al vincular: auto-llena `comprobante_arca_id` + `nro_cuenta` (si la factura tiene cuenta contable asignada)
+- Estado final: `conciliado`
+
+**Camino B — Template:**
+- Buscar template por nombre en `egresos_sin_factura`
+- Al vincular: crea cuota + llena `template_id` + `template_cuota_id` + `categ`
+- Aplica `reglas_contable_interno` (Tipo A→B) para `contable`/`interno`
+- Estado final: `conciliado`
+
+**Regla UX:** el usuario nunca ingresa IDs ni códigos — solo busca por nombre. El monto se pre-llena desde el movimiento (débito o crédito).
+
+---
+
+#### 🥈 PRIORIDAD 2 — Separar templates bancarios por empresa
+
+Hoy los 14 templates de gastos e impuestos bancarios tienen `responsable = 'MSA / PAM'` (ambiguo). El motor no puede filtrar correctamente por empresa.
+
+**Acción:** crear versiones separadas:
+- 14 templates × 3 empresas (MSA, PAM, MA) = 42 templates
+- Cada versión con `responsable` correcto: `'MSA'`, `'PAM'`, `'MA'`
+- Desactivar los templates actuales con `responsable = 'MSA / PAM'`
+
+---
+
+#### 🥉 PRIORIDAD 3 — Reglas de conciliación para PAM y MA
+
+Cuando se activen los bancos PAM Galicia y futuros bancos MA:
+- Crear reglas en `reglas_conciliacion` para `pam_galicia` y `pam_galicia_cc` (el extracto PAM usa textos distintos al MSA)
+- Crear reglas Tipo B en `reglas_contable_interno`:
+  - `pam_galicia` + responsable=`MSA` → contable=`RET 3 MSA`
+  - `pam_galicia` + responsable=`MA` → contable=`RET 3 MA`
+
+---
+
+#### Menor — Selector cuenta compartido Tab 1 + Tab 2
+
+En `vista-extracto-bancario.tsx` cada tab tiene su propio selector. Refactorizar para un selector único en el padre pasado como prop a ambos componentes. `ConfiguradorReglasContable` ya acepta `cuentaBancariaId?: string`. Falta ajustar `ConfiguradorReglas` y el padre.
+
+---
+
+### 25.2 — Pendientes de desactivar (desarrollado, cambiamos de enfoque)
+
+#### Sistema `seccion_regla` en `egresos_sin_factura`
+
+**Qué es:** sistema original de contable/interno. Cada template tenía `seccion_regla` (1=siempre, 2=cross-company), `codigo_contable` e `codigo_interno`. Era la única fuente de códigos.
+
+**Por qué se reemplazó:** un único código por template no permite diferenciar quién paga. Si MSA paga template de PAM el código difiere de si MA paga el mismo template. El nuevo sistema `reglas_contable_interno` resuelve esto con `cuenta_bancaria_id` por fila.
+
+**Estado actual:** sigue activo como **prioridad 4 (fallback legacy)** en el motor. Las 18 reglas existentes ya fueron migradas a `reglas_contable_interno` (Tipo A, `msa_galicia`).
+
+**Qué desactivar cuando el nuevo sistema esté validado:**
+
+**1. Motor** `hooks/useMotorConciliacion.ts`:
+- Fase 1 — eliminar bloque `// Prioridad 3: seccion_regla del template (legacy fallback)` (~líneas 368-374)
+- `crearCuotaEnTemplate` — eliminar retorno de `contable`/`interno` desde seccion_regla (~líneas 557-562)
+- Helper `debeAplicarCodigos()` — eliminar función completa (~líneas 88-100)
+- En el SELECT de Fase 1 cambiar `.select('codigo_contable, codigo_interno, seccion_regla, responsable')` → `.select('responsable')`
+
+**2. BD** — columnas en `egresos_sin_factura` se pueden poner a NULL y luego eliminar:
+```sql
+ALTER TABLE egresos_sin_factura
+  DROP COLUMN seccion_regla,
+  DROP COLUMN codigo_contable,
+  DROP COLUMN codigo_interno;
+```
+
+**Condición para desactivar:** confirmar que `reglas_contable_interno` cubre todos los templates activos de todas las empresas (MSA, PAM, MA) y que no hay conciliaciones reales que dependan del fallback.
