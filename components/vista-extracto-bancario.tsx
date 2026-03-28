@@ -75,71 +75,83 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
   const fechaMov    = movimiento.fecha
   const monto       = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
 
+  // Si es compra débito, comparar contra fecha_emision (pago inmediato al generar la FC)
+  const esCompraDebito = /d[eé]bito/i.test(descripcion)
+
   const arcas = facturas.filter(f => f.tipo === 'ARCA')
 
-  return arcas
+  const resultados = arcas
     .map(f => {
-      let score = 0
-      const badges: { texto: string; color: string }[] = []
-      const nombreFactura = f.display_nombre || ''
+      const montoFactura  = f.display_monto || 0
+      const diffAbs       = Math.abs(montoFactura - monto)
+      const diffRel       = monto > 0 ? diffAbs / monto : 1
       const cuitFactura   = (f.cuit || '').replace(/-/g, '')
+      const cuitMatch     = !!(cuitLeyenda && cuitFactura && cuitFactura === cuitLeyenda)
 
-      // 1. CUIT exacto desde leyenda_2
-      if (cuitLeyenda && cuitFactura && cuitFactura === cuitLeyenda) {
-        score += 100
-        badges.push({ texto: 'CUIT exacto', color: 'bg-green-100 text-green-700' })
+      // Filtro: monto muy diferente (>15%) sin CUIT → excluir
+      if (diffRel > 0.15 && !cuitMatch) return null
+
+      let score = 0
+      const matchMonto  = diffAbs <= 2 || diffRel <= 0.001   // ±$2 ó ±0.1%
+      const matchMontoCercano = diffRel <= 0.05              // ±5%
+
+      // ── 1. MONTO (prioridad máxima) ────────────────────────────────────────
+      if (matchMonto)        score += 80
+      else if (matchMontoCercano) score += 50
+
+      // ── 2. CUIT ─────────────────────────────────────────────────────────────
+      if (cuitMatch) score += matchMonto ? 100 : 30   // 100 extra si también hay monto
+
+      // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
+      const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
+      let matchFecha = false
+      let diasDiff   = Infinity
+      if (fechaRef) {
+        diasDiff   = diasDiferencia(fechaMov, fechaRef)
+        matchFecha = diasDiff <= 5
+        if      (diasDiff <= 1) score += 20
+        else if (diasDiff <= 5) score += 10
       }
 
-      // 2. Proximidad de fecha (débito ≤ 5 días de la factura)
-      if (f.fecha_estimada) {
-        const dias = diasDiferencia(fechaMov, f.fecha_estimada)
-        if (dias <= 1) {
-          score += 50
-          badges.push({ texto: 'Fecha exacta', color: 'bg-blue-100 text-blue-700' })
-        } else if (dias <= 5) {
-          score += 30
-          badges.push({ texto: `Fecha ±${Math.round(dias)}d`, color: 'bg-yellow-100 text-yellow-700' })
-        }
+      // ── 4. NOMBRE/LEYENDA (cuaternario) ─────────────────────────────────────
+      const palNombre = palabrasSignificativas(f.display_nombre || '')
+      let   matchNombre = false
+      for (const fuente of [descripcion, leyenda1]) {
+        if (!fuente) continue
+        const pal = palabrasSignificativas(fuente)
+        if (!pal.length || !palNombre.length) continue
+        const coinc = pal.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
+        const sim   = coinc / Math.max(pal.length, palNombre.length)
+        if (sim >= 0.4) { matchNombre = true; score += 15; break }
+        else if (sim > 0) score += Math.round(sim * 15)
       }
 
-      // 3. Similitud nombre — descripcion del extracto vs denominacion_emisor
-      const palDesc    = palabrasSignificativas(descripcion)
-      const palNombre  = palabrasSignificativas(nombreFactura)
-      if (palDesc.length && palNombre.length) {
-        const coincDesc = palDesc.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
-        const simDesc   = coincDesc / Math.max(palDesc.length, palNombre.length)
-        if (simDesc >= 0.5) {
-          score += 40
-          badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
-        } else if (simDesc > 0) {
-          score += Math.round(simDesc * 40)
-        }
+      // ── Badges combinados ───────────────────────────────────────────────────
+      const badges: { texto: string; color: string }[] = []
+
+      if (matchMonto && cuitMatch && matchFecha) {
+        badges.push({ texto: 'Monto + CUIT + Fecha', color: 'bg-green-100 text-green-800' })
+      } else if (matchMonto && cuitMatch) {
+        badges.push({ texto: 'Monto + CUIT', color: 'bg-green-100 text-green-800' })
+      } else if (matchMonto && matchFecha) {
+        badges.push({ texto: 'Monto + Fecha', color: 'bg-blue-100 text-blue-800' })
+      } else if (matchMonto) {
+        const label = matchMontoCercano || diffAbs <= 2 ? 'Monto exacto' : 'Monto ≈'
+        badges.push({ texto: label, color: 'bg-purple-100 text-purple-700' })
+      } else if (cuitMatch) {
+        badges.push({ texto: 'CUIT (monto distinto)', color: 'bg-yellow-100 text-yellow-700' })
       }
 
-      // 4. Similitud nombre — leyenda_1 vs denominacion_emisor
-      if (leyenda1) {
-        const palLey1   = palabrasSignificativas(leyenda1)
-        if (palLey1.length && palNombre.length) {
-          const coincLey = palLey1.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
-          const simLey   = coincLey / Math.max(palLey1.length, palNombre.length)
-          if (simLey >= 0.5 && !badges.find(b => b.texto === 'Nombre similar')) {
-            score += 25
-            badges.push({ texto: 'Leyenda similar', color: 'bg-orange-100 text-orange-700' })
-          } else if (simLey > 0) {
-            score += Math.round(simLey * 25)
-          }
-        }
-      }
-
-      // 5. Monto exacto
-      if (Math.abs((f.display_monto || 0) - monto) < 0.01) {
-        score += 20
-        badges.push({ texto: 'Monto exacto', color: 'bg-purple-100 text-purple-700' })
+      if (matchNombre && !badges.find(b => b.texto.includes('CUIT'))) {
+        badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
       }
 
       return { factura: f, score: Math.round(score), badges }
     })
+    .filter((p): p is PropuestaArca => p !== null && p.score > 0)
     .sort((a, b) => b.score - a.score)
+
+  return resultados
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -573,7 +585,7 @@ export function VistaExtractoBancario() {
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit, estado')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, fecha_emision, cuit, estado')
         .neq('estado', 'conciliado')
         .order('fecha_estimada', { ascending: false })
 
@@ -623,7 +635,8 @@ export function VistaExtractoBancario() {
         // Campos para mostrar en UI
         display_nombre: f.denominacion_emisor,
         display_referencia: `${f.tipo_comprobante}-${f.numero_desde}`,
-        display_monto: f.monto_a_abonar
+        display_monto: f.monto_a_abonar,
+        fecha_emision: f.fecha_emision
       }))
 
       const templatesFormateados = (templatesEgresos || []).map(t => ({
