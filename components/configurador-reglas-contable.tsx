@@ -1,407 +1,329 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Plus, Edit, Trash2, Building, FileText } from "lucide-react"
+import { Loader2, Plus, Check, X, Building } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
-interface ReglaContableInterno {
+interface TemplateContable {
   id: string
-  orden: number
-  tipo_regla: 'contable' | 'interno'
-  banco_origen: 'MSA' | 'PAM' // Si es pagado por MSA o PAM
-  tipo_gasto: 'template' | 'factura' // Si viene de template o factura
-  proveedor_pattern: string // Patrón para identificar proveedor
-  valor_asignar: string // Valor a asignar en contable o interno
+  nombre_referencia: string
+  responsable: string | null
+  categ: string | null
+  codigo_contable: string | null
+  codigo_interno: string | null
   activo: boolean
-  created_at: string
 }
 
 export function ConfiguradorReglasContable() {
-  const [reglas, setReglas] = useState<ReglaContableInterno[]>([])
+  const [templates, setTemplates] = useState<TemplateContable[]>([])
+  const [todosTemplates, setTodosTemplates] = useState<TemplateContable[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [modalAbierto, setModalAbierto] = useState(false)
-  const [reglaEditando, setReglaEditando] = useState<ReglaContableInterno | null>(null)
-  const [formulario, setFormulario] = useState({
-    orden: '',
-    tipo_regla: '',
-    banco_origen: '',
-    tipo_gasto: '',
-    proveedor_pattern: '',
-    valor_asignar: '',
-    activo: true
-  })
+  const [guardando, setGuardando] = useState<string | null>(null)
 
-  // Cargar reglas
-  const cargarReglas = async () => {
+  // Modal agregar
+  const [modalAgregar, setModalAgregar] = useState(false)
+  const [templateSeleccionado, setTemplateSeleccionado] = useState('')
+  const [nuevoContable, setNuevoContable] = useState('')
+  const [nuevoInterno, setNuevoInterno] = useState('')
+  const [guardandoNuevo, setGuardandoNuevo] = useState(false)
+
+  const cargarTemplates = async () => {
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      setError(null)
-      
-      const { data, error: supabaseError } = await supabase
-        .from('reglas_contable_interno')
-        .select('*')
-        .order('orden', { ascending: true })
+      const { data: todos, error: e } = await supabase
+        .from('egresos_sin_factura')
+        .select('id, nombre_referencia, responsable, categ, codigo_contable, codigo_interno, activo')
+        .order('nombre_referencia', { ascending: true })
 
-      if (supabaseError) {
-        console.error('Error al cargar reglas contable/interno:', supabaseError)
-        setError(`Error al cargar reglas: ${supabaseError.message}`)
-        return
-      }
+      if (e) throw e
 
-      setReglas(data || [])
-    } catch (error) {
-      console.error('Error inesperado:', error)
-      setError('Error inesperado al cargar las reglas')
+      const all = todos || []
+      setTodosTemplates(all)
+      // Sección estándar: solo los que tienen al menos uno de los dos campos
+      setTemplates(all.filter(t =>
+        (t.codigo_contable && t.codigo_contable.trim() !== '') ||
+        (t.codigo_interno && t.codigo_interno.trim() !== '')
+      ))
+    } catch (err: any) {
+      setError(err.message || 'Error cargando templates')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    cargarReglas()
-  }, [])
+  useEffect(() => { cargarTemplates() }, [])
 
-  // Reset formulario
-  const resetFormulario = () => {
-    setFormulario({
-      orden: '',
-      tipo_regla: '',
-      banco_origen: '',
-      tipo_gasto: '',
-      proveedor_pattern: '',
-      valor_asignar: '',
-      activo: true
-    })
-    setReglaEditando(null)
-  }
-
-  // Abrir modal para nueva regla
-  const abrirModalNueva = () => {
-    resetFormulario()
-    const maxOrden = Math.max(...reglas.map(r => r.orden), 0)
-    setFormulario(prev => ({ ...prev, orden: String(maxOrden + 1) }))
-    setModalAbierto(true)
-  }
-
-  // Abrir modal para editar
-  const abrirModalEditar = (regla: ReglaContableInterno) => {
-    setReglaEditando(regla)
-    setFormulario({
-      orden: String(regla.orden),
-      tipo_regla: regla.tipo_regla,
-      banco_origen: regla.banco_origen,
-      tipo_gasto: regla.tipo_gasto,
-      proveedor_pattern: regla.proveedor_pattern,
-      valor_asignar: regla.valor_asignar,
-      activo: regla.activo
-    })
-    setModalAbierto(true)
-  }
-
-  // Guardar regla
-  const guardarRegla = async () => {
-    // Validar campos requeridos
-    if (!formulario.orden || !formulario.tipo_regla || !formulario.banco_origen || 
-        !formulario.tipo_gasto || !formulario.proveedor_pattern || !formulario.valor_asignar) {
-      setError('Todos los campos son requeridos')
-      return
-    }
-
+  const guardarCampo = async (id: string, campo: 'codigo_contable' | 'codigo_interno', valor: string) => {
+    const key = id + campo
+    setGuardando(key)
     try {
-      const datosRegla = {
-        orden: parseInt(formulario.orden),
-        tipo_regla: formulario.tipo_regla as 'contable' | 'interno',
-        banco_origen: formulario.banco_origen as 'MSA' | 'PAM',
-        tipo_gasto: formulario.tipo_gasto as 'template' | 'factura',
-        proveedor_pattern: formulario.proveedor_pattern,
-        valor_asignar: formulario.valor_asignar,
-        activo: formulario.activo
-      }
-
-      let supabaseError
-      if (reglaEditando) {
-        const { error } = await supabase
-          .from('reglas_contable_interno')
-          .update(datosRegla)
-          .eq('id', reglaEditando.id)
-        supabaseError = error
-      } else {
-        const { error } = await supabase
-          .from('reglas_contable_interno')
-          .insert(datosRegla)
-        supabaseError = error
-      }
-
-      if (supabaseError) {
-        console.error('Error al guardar regla:', supabaseError)
-        setError(`Error al guardar regla: ${supabaseError.message}`)
-        return
-      }
-
-      setModalAbierto(false)
-      resetFormulario()
-      setError(null)
-      await cargarReglas()
-    } catch (error) {
-      console.error('Error inesperado:', error)
-      setError('Error inesperado al guardar la regla')
-    }
-  }
-
-  // Eliminar regla
-  const eliminarRegla = async (id: string) => {
-    if (!confirm('¿Estás seguro de eliminar esta regla?')) return
-
-    try {
-      const { error: supabaseError } = await supabase
-        .from('reglas_contable_interno')
-        .delete()
+      const { error } = await supabase
+        .from('egresos_sin_factura')
+        .update({ [campo]: valor.trim() || null })
         .eq('id', id)
-
-      if (supabaseError) {
-        console.error('Error al eliminar regla:', supabaseError)
-        setError(`Error al eliminar regla: ${supabaseError.message}`)
-        return
-      }
-
-      await cargarReglas()
-    } catch (error) {
-      console.error('Error inesperado:', error)
-      setError('Error inesperado al eliminar la regla')
+      if (error) throw error
+      await cargarTemplates()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setGuardando(null)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <span className="ml-2">Cargando reglas contable/interno...</span>
-      </div>
-    )
+  const agregarNueva = async () => {
+    if (!templateSeleccionado) return
+    if (!nuevoContable.trim() && !nuevoInterno.trim()) return
+    setGuardandoNuevo(true)
+    const updates: any = {}
+    if (nuevoContable.trim()) updates.codigo_contable = nuevoContable.trim()
+    if (nuevoInterno.trim()) updates.codigo_interno = nuevoInterno.trim()
+    try {
+      const { error } = await supabase
+        .from('egresos_sin_factura')
+        .update(updates)
+        .eq('id', templateSeleccionado)
+      if (error) throw error
+      setModalAgregar(false)
+      setTemplateSeleccionado('')
+      setNuevoContable('')
+      setNuevoInterno('')
+      await cargarTemplates()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setGuardandoNuevo(false)
+    }
   }
+
+  if (loading) return (
+    <div className="flex items-center justify-center p-8">
+      <Loader2 className="h-8 w-8 animate-spin" />
+      <span className="ml-2">Cargando...</span>
+    </div>
+  )
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold">Reglas Contable e Interno</h3>
-          <p className="text-gray-600">Automatización de campos contable e interno según proveedor y contexto</p>
+          <h3 className="text-base font-bold">Reglas Estándar — Contable e Interno</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Valores guardados en cada template. El motor los aplica automáticamente al conciliar.
+          </p>
         </div>
-        <Button onClick={abrirModalNueva} className="bg-green-600 hover:bg-green-700">
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva Regla
+        <Button onClick={() => { setTemplateSeleccionado(''); setNuevoContable(''); setNuevoInterno(''); setModalAgregar(true) }}
+          className="bg-green-600 hover:bg-green-700" size="sm">
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Agregar a template
         </Button>
       </div>
 
-      {/* Error */}
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      {/* Estadísticas */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{reglas.length}</div>
-            <p className="text-xs text-gray-600">Total Reglas</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-blue-600">{reglas.filter(r => r.tipo_regla === 'contable').length}</div>
-            <p className="text-xs text-gray-600">Contable</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-purple-600">{reglas.filter(r => r.tipo_regla === 'interno').length}</div>
-            <p className="text-xs text-gray-600">Interno</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">{reglas.filter(r => r.activo).length}</div>
-            <p className="text-xs text-gray-600">Activas</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Lista de Reglas */}
+      {/* Tabla estándar */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building className="h-5 w-5" />
-            Reglas Contable e Interno ({reglas.length})
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Building className="h-4 w-4" />
+            Templates con reglas configuradas ({templates.length})
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {reglas.map((regla) => (
-              <div
-                key={regla.id}
-                className={`flex items-center justify-between p-4 border rounded-lg ${
-                  !regla.activo ? 'opacity-50 bg-gray-50' : 'bg-white'
-                }`}
-              >
-                <div className="flex items-center gap-4 flex-1">
-                  {/* Orden */}
-                  <div className="text-sm font-mono bg-gray-100 px-2 py-1 rounded">
-                    #{regla.orden}
-                  </div>
-
-                  {/* Tipo */}
-                  <Badge className={regla.tipo_regla === 'contable' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
-                    {regla.tipo_regla.toUpperCase()}
-                  </Badge>
-
-                  {/* Contexto */}
-                  <div className="flex gap-2">
-                    <Badge variant="outline">{regla.banco_origen}</Badge>
-                    <Badge variant="outline">{regla.tipo_gasto}</Badge>
-                  </div>
-
-                  {/* Criterio */}
-                  <div className="flex-1">
-                    <div className="font-medium">{regla.proveedor_pattern}</div>
-                    <div className="text-sm text-gray-500">
-                      Proveedor Pattern
-                    </div>
-                  </div>
-
-                  {/* Resultado */}
-                  <div className="text-right">
-                    <div className="font-medium text-green-600">{regla.valor_asignar}</div>
-                    <div className="text-sm text-gray-500">Valor a asignar</div>
-                  </div>
-                </div>
-
-                {/* Acciones */}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => abrirModalEditar(regla)}
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => eliminarRegla(regla.id)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+        <CardContent className="p-0">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="text-left p-3 font-medium">Template</th>
+                <th className="text-left p-3 font-medium text-xs text-gray-500 w-24">Responsable</th>
+                <th className="text-left p-3 font-medium w-44">Contable</th>
+                <th className="text-left p-3 font-medium w-44">Interno</th>
+              </tr>
+            </thead>
+            <tbody>
+              {templates.map((t, i) => (
+                <tr key={t.id} className={`border-b last:border-0 ${!t.activo ? 'opacity-50' : ''} ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                  <td className="p-3">
+                    <div className="font-medium">{t.nombre_referencia}</div>
+                    {t.categ && <div className="text-xs text-gray-400">{t.categ}</div>}
+                  </td>
+                  <td className="p-3 text-xs text-gray-400">{t.responsable || '—'}</td>
+                  <td className="p-3">
+                    <CeldaEditable
+                      valor={t.codigo_contable}
+                      guardando={guardando === t.id + 'codigo_contable'}
+                      onGuardar={(v) => guardarCampo(t.id, 'codigo_contable', v)}
+                    />
+                  </td>
+                  <td className="p-3">
+                    <CeldaEditable
+                      valor={t.codigo_interno}
+                      guardando={guardando === t.id + 'codigo_interno'}
+                      onGuardar={(v) => guardarCampo(t.id, 'codigo_interno', v)}
+                    />
+                  </td>
+                </tr>
+              ))}
+              {templates.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-gray-400 text-sm">
+                    No hay templates con reglas configuradas. Usá "Agregar a template" para comenzar.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 
-      {/* Modal Crear/Editar */}
-      <Dialog open={modalAbierto} onOpenChange={setModalAbierto}>
-        <DialogContent className="max-w-2xl">
+      {/* Modal Agregar */}
+      <Dialog open={modalAgregar} onOpenChange={setModalAgregar}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {reglaEditando ? 'Editar Regla' : 'Nueva Regla'} Contable/Interno
-            </DialogTitle>
+            <DialogTitle>Agregar regla a template</DialogTitle>
           </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 pt-1">
             <div>
-              <Label htmlFor="orden">Orden (Prioridad)</Label>
-              <Input
-                id="orden"
-                type="number"
-                value={formulario.orden}
-                onChange={(e) => setFormulario(prev => ({ ...prev, orden: e.target.value }))}
-                placeholder="1, 2, 3..."
-              />
+              <Label className="text-sm">Template</Label>
+              <select
+                className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                value={templateSeleccionado}
+                onChange={(e) => setTemplateSeleccionado(e.target.value)}
+              >
+                <option value="">— Seleccionar —</option>
+                {todosTemplates.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre_referencia}{t.responsable ? ` (${t.responsable})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
-
-            <div>
-              <Label htmlFor="tipo_regla">Tipo de Campo</Label>
-              <Select value={formulario.tipo_regla} onValueChange={(value) => setFormulario(prev => ({ ...prev, tipo_regla: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona campo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contable">Contable</SelectItem>
-                  <SelectItem value="interno">Interno</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-sm">Contable</Label>
+                <Input
+                  className="mt-1"
+                  value={nuevoContable}
+                  onChange={(e) => setNuevoContable(e.target.value)}
+                  placeholder="Ej: CTA MA, Desglosar"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">Interno</Label>
+                <Input
+                  className="mt-1"
+                  value={nuevoInterno}
+                  onChange={(e) => setNuevoInterno(e.target.value)}
+                  placeholder="Ej: DIST MA"
+                />
+              </div>
             </div>
-
-            <div>
-              <Label htmlFor="banco_origen">Banco que Paga</Label>
-              <Select value={formulario.banco_origen} onValueChange={(value) => setFormulario(prev => ({ ...prev, banco_origen: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona banco" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MSA">MSA (30617786016)</SelectItem>
-                  <SelectItem value="PAM">PAM (20044390222)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="tipo_gasto">Tipo de Gasto</Label>
-              <Select value={formulario.tipo_gasto} onValueChange={(value) => setFormulario(prev => ({ ...prev, tipo_gasto: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Origen del gasto" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="template">Template (tiene responsable)</SelectItem>
-                  <SelectItem value="factura">Factura ARCA (MSA/PAM por CUIT)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="col-span-2">
-              <Label htmlFor="proveedor_pattern">Patrón Proveedor</Label>
-              <Input
-                id="proveedor_pattern"
-                value={formulario.proveedor_pattern}
-                onChange={(e) => setFormulario(prev => ({ ...prev, proveedor_pattern: e.target.value }))}
-                placeholder="Ej: TELECOM, YPF, Jose Perez (responsable template)"
-              />
-            </div>
-
-            <div className="col-span-2">
-              <Label htmlFor="valor_asignar">Valor a Asignar</Label>
-              <Input
-                id="valor_asignar"
-                value={formulario.valor_asignar}
-                onChange={(e) => setFormulario(prev => ({ ...prev, valor_asignar: e.target.value }))}
-                placeholder="Ej: TEL001, SUM-YPF, REF-JP"
-              />
-            </div>
+            <p className="text-xs text-gray-400">Podés completar solo uno de los dos campos.</p>
           </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setModalAbierto(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={guardarRegla} className="bg-green-600 hover:bg-green-700">
-              {reglaEditando ? 'Actualizar' : 'Crear'} Regla
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setModalAgregar(false)}>Cancelar</Button>
+            <Button
+              size="sm"
+              onClick={agregarNueva}
+              disabled={!templateSeleccionado || (!nuevoContable.trim() && !nuevoInterno.trim()) || guardandoNuevo}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {guardandoNuevo && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+              Guardar
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+
     </div>
+  )
+}
+
+// Celda con edición inline: click para editar, Enter/blur para guardar, Escape para cancelar
+function CeldaEditable({
+  valor,
+  guardando,
+  onGuardar
+}: {
+  valor: string | null
+  guardando: boolean
+  onGuardar: (v: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [valorLocal, setValorLocal] = useState(valor || '')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setValorLocal(valor || '')
+  }, [valor])
+
+  useEffect(() => {
+    if (editando && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editando])
+
+  const confirmar = () => {
+    onGuardar(valorLocal)
+    setEditando(false)
+  }
+
+  const cancelar = () => {
+    setValorLocal(valor || '')
+    setEditando(false)
+  }
+
+  if (guardando) return (
+    <div className="flex items-center gap-1 text-gray-400 text-xs">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      <span>guardando...</span>
+    </div>
+  )
+
+  if (editando) return (
+    <div className="flex items-center gap-1">
+      <input
+        ref={inputRef}
+        className="border rounded px-2 py-0.5 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-blue-400"
+        value={valorLocal}
+        onChange={(e) => setValorLocal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') confirmar()
+          if (e.key === 'Escape') cancelar()
+        }}
+        onBlur={confirmar}
+      />
+      <button onMouseDown={(e) => { e.preventDefault(); confirmar() }} className="text-green-600 hover:text-green-700">
+        <Check className="h-3.5 w-3.5" />
+      </button>
+      <button onMouseDown={(e) => { e.preventDefault(); cancelar() }} className="text-red-400 hover:text-red-600">
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+
+  return (
+    <span
+      onClick={() => { setValorLocal(valor || ''); setEditando(true) }}
+      className={`cursor-pointer inline-block px-1.5 py-0.5 rounded transition-colors hover:bg-blue-50 hover:text-blue-700 ${
+        valor ? 'font-medium text-gray-800' : 'text-gray-300 italic text-xs'
+      }`}
+      title="Click para editar"
+    >
+      {valor || 'click para editar'}
+    </span>
   )
 }
