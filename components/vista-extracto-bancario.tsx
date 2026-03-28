@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -255,16 +255,30 @@ export function VistaExtractoBancario() {
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
-  // Anticipos en extracto activo sin factura asociada
-  const [anticiposSinFactura, setAnticiposSinFactura] = useState<number>(0)
+  // Set de categs de templates (para validación de categ en extracto)
+  const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
   useEffect(() => {
     supabase
-      .from(tablaActiva)
-      .select('id', { count: 'exact', head: true })
-      .ilike('categ', '%anticipo%')
-      .is('comprobante_arca_id', null)
-      .then(({ count }) => setAnticiposSinFactura(count ?? 0))
-  }, [tablaActiva, movimientos])
+      .from('egresos_sin_factura')
+      .select('categ')
+      .then(({ data }) => {
+        setTemplateCategSet(new Set((data || []).map(t => (t.categ || '').toUpperCase().trim()).filter(Boolean)))
+      })
+  }, [])
+
+  // Movimientos con categ que no existe en cuentas_contables ni en templates
+  const cuentasCategSet = useMemo(
+    () => new Set(cuentas.map(c => c.categ.toUpperCase().trim())),
+    [cuentas]
+  )
+  const movimientosCategInvalida = useMemo(
+    () => movimientos.filter(m => {
+      if (!m.categ || m.categ.trim() === '') return false
+      const cu = m.categ.toUpperCase().trim()
+      return !cuentasCategSet.has(cu) && !templateCategSet.has(cu)
+    }),
+    [movimientos, cuentasCategSet, templateCategSet]
+  )
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -1137,13 +1151,19 @@ export function VistaExtractoBancario() {
             </Card>
           </div>
 
-          {/* Alerta anticipos sin factura */}
-          {anticiposSinFactura > 0 && (
+          {/* Alerta CATEG inválida — valores que no corresponden a ninguna cuenta contable ni template */}
+          {movimientosCategInvalida.length > 0 && (
             <Alert className="border-amber-300 bg-amber-50">
               <AlertTriangle className="h-4 w-4 text-amber-600" />
               <AlertDescription className="text-amber-800">
-                <span className="font-semibold">{anticiposSinFactura} anticipo{anticiposSinFactura > 1 ? 's' : ''} sin factura</span>
-                {' '}— pagos realizados a proveedores que aún no tienen factura asociada en ARCA.
+                <span className="font-semibold">
+                  {movimientosCategInvalida.length} movimiento{movimientosCategInvalida.length > 1 ? 's' : ''} con CATEG inválida
+                </span>
+                {' '}— el valor asignado no corresponde a ninguna cuenta contable ni template registrado.{' '}
+                <span className="text-amber-700 text-xs font-mono">
+                  ({[...new Set(movimientosCategInvalida.map(m => m.categ))].join(', ')})
+                </span>
+                {' '}— usá el botón <span className="font-semibold">Re-asignar</span> en cada fila para corregirlo.
               </AlertDescription>
             </Alert>
           )}
@@ -1773,18 +1793,24 @@ export function VistaExtractoBancario() {
                             <TableCell className="text-right text-sm font-mono">{movimiento.orden ?? '-'}</TableCell>
                           )}
                           <TableCell>
-                            {(movimiento.estado !== 'conciliado' ||
-                              (movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id)) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs gap-1"
-                                onClick={() => abrirModalAsignar(movimiento)}
-                              >
-                                <Plus className="h-3 w-3" />
-                                {movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'}
-                              </Button>
-                            )}
+                            {(() => {
+                              const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
+                              const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
+                              const mostrar = movimiento.estado !== 'conciliado' || sinVincular || categInvalida
+                              if (!mostrar) return null
+                              const label = categInvalida && movimiento.estado === 'conciliado' ? 'Re-asignar' : movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant={categInvalida ? 'destructive' : 'outline'}
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => abrirModalAsignar(movimiento)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  {label}
+                                </Button>
+                              )
+                            })()}
                           </TableCell>
                         </TableRow>
                       ))}
