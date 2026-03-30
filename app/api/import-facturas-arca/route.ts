@@ -298,7 +298,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     ...camposIVA,
 
     // Campos calculados automáticamente (PRESERVAR LÓGICA EXISTENTE)
-    fecha_estimada: calcularFechaEstimada(fechaEmision),
+    fecha_estimada: reglaCuit.estado === 'debito' ? fechaEmision : calcularFechaEstimada(fechaEmision),
     monto_a_abonar: camposIVA.imp_total, // Inicialmente igual al importe total
 
     // Campos adicionales con valores por defecto (PRESERVAR)
