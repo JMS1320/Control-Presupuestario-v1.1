@@ -561,6 +561,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       } else if (origen === 'ARCA') {
         // Comprobar si es una fila de grupo → propagar a todos los miembros
         const filaActualArca = data.find(f => f.id === id)
+
+        // Si cambia a estado 'debito', fecha_estimada = fecha_emision (pago inmediato)
+        if (campo === 'estado' && valor === 'debito' && filaActualArca?.fecha_emision) {
+          updateData.fecha_estimada = filaActualArca.fecha_emision
+          console.log(`🔄 Auto-ajuste fecha_estimada = fecha_emision (${filaActualArca.fecha_emision}) por estado debito`)
+        }
+
         const idsGrupoArca = filaActualArca?.ids_grupo
 
         if (idsGrupoArca && idsGrupoArca.length > 0) {

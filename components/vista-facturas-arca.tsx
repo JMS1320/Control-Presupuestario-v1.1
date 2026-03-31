@@ -831,18 +831,28 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
       }
       
+      // Si cambia a estado 'debito', fecha_estimada = fecha_emision (pago inmediato)
+      let camposUpdate: any = { [datosEdicion.columna]: valorFinal }
+      if (datosEdicion.columna === 'estado' && valorFinal === 'debito') {
+        const facturaActual = facturas.find(f => f.id === datosEdicion.facturaId)
+        if (facturaActual?.fecha_emision) {
+          camposUpdate.fecha_estimada = facturaActual.fecha_emision
+          console.log(`🔄 Auto-ajuste fecha_estimada = fecha_emision (${facturaActual.fecha_emision}) por estado debito`)
+        }
+      }
+
       const { error } = await supabase
         .schema(schemaName)
         .from('comprobantes_arca')
-        .update({ [datosEdicion.columna]: valorFinal })
+        .update(camposUpdate)
         .eq('id', datosEdicion.facturaId)
-      
+
       if (error) {
         console.error('Error actualizando factura:', error)
         alert('Error al guardar cambio: ' + error.message)
         return
       }
-      
+
       // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
       if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
         for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
@@ -857,17 +867,17 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         }
       }
 
-      // Actualizar estado local
+      // Actualizar estado local (incluir fecha_estimada si aplica)
       const nuevasFacturas = facturas.map(f =>
         f.id === datosEdicion.facturaId
-          ? { ...f, [datosEdicion.columna]: valorFinal }
+          ? { ...f, ...camposUpdate }
           : f
       )
       setFacturas(nuevasFacturas)
-      
-      const nuevasFacturasOriginales = facturasOriginales.map(f => 
-        f.id === datosEdicion.facturaId 
-          ? { ...f, [datosEdicion.columna]: valorFinal }
+
+      const nuevasFacturasOriginales = facturasOriginales.map(f =>
+        f.id === datosEdicion.facturaId
+          ? { ...f, ...camposUpdate }
           : f
       )
       setFacturasOriginales(nuevasFacturasOriginales)
