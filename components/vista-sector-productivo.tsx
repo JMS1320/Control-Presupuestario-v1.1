@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -2248,6 +2248,7 @@ function SubTabOrdenesAplicacion() {
 
   // Modo edicion: null = nueva orden, string = id de orden editando
   const [ordenEditandoId, setOrdenEditandoId] = useState<string | null>(null)
+  const [modoVer, setModoVer] = useState(false)
 
   // Modal confirmar/ejecutar orden
   const [mostrarModalConfirmar, setMostrarModalConfirmar] = useState(false)
@@ -2587,12 +2588,19 @@ function SubTabOrdenesAplicacion() {
   const cerrarModal = () => {
     setMostrarModal(false)
     setOrdenEditandoId(null)
+    setModoVer(false)
     setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
     setRodeosSeleccionados({})
     setLaboresSeleccionadas({})
     setLineas([])
     setLaborEspecial(null)
     limpiarDatosCiclo()
+  }
+
+  // Abrir modal en modo solo lectura (ver orden eliminada)
+  const abrirVer = (orden: OrdenAplicacion) => {
+    abrirEdicion(orden)
+    setModoVer(true)
   }
 
   // Abrir modal confirmar/ejecutar orden
@@ -3097,7 +3105,13 @@ function SubTabOrdenesAplicacion() {
                         </Button>
                       </>
                     )}
-                    {o.estado !== 'eliminada' && (
+                    {o.estado === 'eliminada' ? (
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
+                        title="Ver detalle"
+                        onClick={() => abrirVer(o)}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
                       <>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                           title="Exportar imagen para WhatsApp"
@@ -3125,10 +3139,11 @@ function SubTabOrdenesAplicacion() {
       <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{ordenEditandoId ? 'Editar Orden de Aplicacion' : 'Nueva Orden de Aplicacion'}</DialogTitle>
-            <DialogDescription>Seleccione rodeos, agregue insumos con dosis y el sistema calcula totales.</DialogDescription>
+            <DialogTitle>{modoVer ? 'Ver Orden de Aplicación' : ordenEditandoId ? 'Editar Orden de Aplicación' : 'Nueva Orden de Aplicación'}</DialogTitle>
+            <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Seleccione rodeos, agregue insumos con dosis y el sistema calcula totales.'}</DialogDescription>
           </DialogHeader>
 
+          <fieldset disabled={modoVer} className="contents">
           {/* Cabecera */}
           <div className="grid gap-3 border-b pb-4">
             <div className="grid grid-cols-3 gap-3">
@@ -3498,12 +3513,19 @@ function SubTabOrdenesAplicacion() {
             )}
           </div>
 
+          </fieldset>
           <DialogFooter>
-            <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
-            <Button onClick={guardarOrden} disabled={guardando}>
-              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {ordenEditandoId ? 'Actualizar Orden' : 'Guardar Orden'}
-            </Button>
+            {modoVer ? (
+              <Button variant="outline" onClick={cerrarModal}>Cerrar</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
+                <Button onClick={guardarOrden} disabled={guardando}>
+                  {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {ordenEditandoId ? 'Actualizar Orden' : 'Guardar Orden'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3796,6 +3818,13 @@ function SubTabOrdenesAgricolas() {
   const [loading, setLoading] = useState(true)
   const [mostrarModal, setMostrarModal] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  const [ordenEditandoId, setOrdenEditandoId] = useState<string | null>(null)
+  const [modoVer, setModoVer] = useState(false)
+
+  // Eliminar orden agrícola
+  const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
+  const [ordenEliminando, setOrdenEliminando] = useState<OrdenAgricola | null>(null)
+  const [motivoEliminacion, setMotivoEliminacion] = useState('')
 
   const [mostrarModalEjecutar, setMostrarModalEjecutar] = useState(false)
   const [ordenEjecutando, setOrdenEjecutando] = useState<OrdenAgricola | null>(null)
@@ -3867,6 +3896,8 @@ function SubTabOrdenesAgricolas() {
 
   const cerrarModal = () => {
     setMostrarModal(false)
+    setOrdenEditandoId(null)
+    setModoVer(false)
     setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], observaciones: '' })
     setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
     setLaboresSeleccionadas({})
@@ -3936,19 +3967,41 @@ function SubTabOrdenesAgricolas() {
       const loteNombreGuardar = lotesConNombre.length > 0
         ? lotesConNombre.map(l => l.lote_nombre.trim()).join(' / ')
         : null
-      const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
-        .from('ordenes_agricolas')
-        .insert({
-          fecha: nuevaOrden.fecha,
-          lote_id: null,
-          lote_nombre: loteNombreGuardar,
-          hectareas,
-          estado: 'planificada',
-          observaciones: nuevaOrden.observaciones || null
-        })
-        .select('id').single()
-      if (ordenError) throw new Error(ordenError.message)
-      const ordenId = ordenData.id
+
+      let ordenId: string
+
+      if (ordenEditandoId) {
+        // Modo edición: actualizar cabecera
+        const { error: ordenError } = await supabase.schema('productivo')
+          .from('ordenes_agricolas')
+          .update({
+            fecha: nuevaOrden.fecha,
+            lote_nombre: loteNombreGuardar,
+            hectareas,
+            observaciones: nuevaOrden.observaciones || null
+          })
+          .eq('id', ordenEditandoId)
+        if (ordenError) throw new Error(ordenError.message)
+        ordenId = ordenEditandoId
+        // Borrar lineas e insumos anteriores
+        await supabase.schema('productivo').from('lineas_orden_agricola').delete().eq('orden_id', ordenId)
+        await supabase.schema('productivo').from('lineas_orden_agricola_labores').delete().eq('orden_id', ordenId)
+      } else {
+        // Modo nuevo
+        const { data: ordenData, error: ordenError } = await supabase.schema('productivo')
+          .from('ordenes_agricolas')
+          .insert({
+            fecha: nuevaOrden.fecha,
+            lote_id: null,
+            lote_nombre: loteNombreGuardar,
+            hectareas,
+            estado: 'planificada',
+            observaciones: nuevaOrden.observaciones || null
+          })
+          .select('id').single()
+        if (ordenError) throw new Error(ordenError.message)
+        ordenId = ordenData.id
+      }
 
       if (lineasValidas.length > 0) {
         const lineasInsert = lineasValidas.map(l => {
@@ -3975,12 +4028,70 @@ function SubTabOrdenesAgricolas() {
         if (laboresError) throw new Error(laboresError.message)
       }
 
-      toast.success('Orden agrícola guardada')
+      toast.success(ordenEditandoId ? 'Orden agrícola actualizada' : 'Orden agrícola guardada')
       cerrarModal()
       cargarDatos()
     } catch (err: any) {
       console.error('Error guardando orden agrícola:', err)
       toast.error(err.message || 'Error al guardar orden')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const abrirEdicion = (orden: OrdenAgricola) => {
+    setOrdenEditandoId(orden.id)
+    setNuevaOrden({ fecha: orden.fecha, observaciones: orden.observaciones || '' })
+    setLotesOrden([{
+      key: Date.now(),
+      lote_id: orden.lote_id || '',
+      lote_nombre: orden.lote?.nombre_lote || orden.lote_nombre || '',
+      hectareas: String(orden.hectareas)
+    }])
+    const laboresMap: Record<number, boolean> = {}
+    for (const labor of laboresAgricolas) {
+      if (orden.labores?.includes(labor.nombre)) laboresMap[labor.id] = true
+    }
+    setLaboresSeleccionadas(laboresMap)
+    setLineas((orden.lineas || []).map(l => ({
+      key: Math.random(),
+      insumo_nombre: l.insumo_nombre,
+      insumo_stock_id: l.insumo_stock_id || '',
+      dosis: String(l.dosis),
+      unidad_dosis: l.unidad_dosis
+    })))
+    setMostrarModal(true)
+  }
+
+  const abrirVer = (orden: OrdenAgricola) => {
+    abrirEdicion(orden)
+    setModoVer(true)
+  }
+
+  const abrirEliminacion = (orden: OrdenAgricola) => {
+    setOrdenEliminando(orden)
+    setMotivoEliminacion('')
+    setMostrarModalEliminar(true)
+  }
+
+  const eliminarOrden = async () => {
+    if (!ordenEliminando) return
+    if (!motivoEliminacion.trim()) { toast.error('Debe ingresar un motivo de eliminación'); return }
+    setGuardando(true)
+    try {
+      await supabase.schema('productivo').from('ordenes_agricolas')
+        .update({
+          estado: 'eliminada',
+          observaciones: [ordenEliminando.observaciones, `[ELIMINADA] ${motivoEliminacion.trim()}`].filter(Boolean).join('\n')
+        })
+        .eq('id', ordenEliminando.id)
+      toast.success('Orden marcada como eliminada')
+      setMostrarModalEliminar(false)
+      setOrdenEliminando(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error eliminando orden:', err)
+      toast.error(err.message || 'Error al eliminar orden')
     } finally {
       setGuardando(false)
     }
@@ -4099,15 +4210,34 @@ function SubTabOrdenesAgricolas() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
-                      onClick={() => exportarOrdenAgricolaImagen(o)}>
-                      <Download className="h-3.5 w-3.5" />
-                    </Button>
-                    {o.estado === 'planificada' && (
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700" title="Ejecutar orden"
-                        onClick={() => abrirModalEjecutar(o)}>
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                    {o.estado === 'eliminada' ? (
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
+                        title="Ver detalle" onClick={() => abrirVer(o)}>
+                        <Eye className="h-3.5 w-3.5" />
                       </Button>
+                    ) : (
+                      <>
+                        {o.estado === 'planificada' && (
+                          <>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                              title="Editar orden" onClick={() => abrirEdicion(o)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700"
+                              title="Ejecutar orden" onClick={() => abrirModalEjecutar(o)}>
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
+                          onClick={() => exportarOrdenAgricolaImagen(o)}>
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                          title="Eliminar orden" onClick={() => abrirEliminacion(o)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </TableCell>
@@ -4121,9 +4251,10 @@ function SubTabOrdenesAgricolas() {
       <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nueva Orden Agrícola</DialogTitle>
-            <DialogDescription>Registrar aplicación de insumos en lotes / hectáreas.</DialogDescription>
+            <DialogTitle>{modoVer ? 'Ver Orden Agrícola' : ordenEditandoId ? 'Editar Orden Agrícola' : 'Nueva Orden Agrícola'}</DialogTitle>
+            <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Registrar aplicación de insumos en lotes / hectáreas.'}</DialogDescription>
           </DialogHeader>
+          <fieldset disabled={modoVer} className="contents">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -4316,12 +4447,19 @@ function SubTabOrdenesAgricolas() {
               )}
             </div>
           </div>
+          </fieldset>
           <DialogFooter>
-            <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
-            <Button onClick={guardarOrden} disabled={guardando}>
-              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Guardar Orden
-            </Button>
+            {modoVer ? (
+              <Button variant="outline" onClick={cerrarModal}>Cerrar</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
+                <Button onClick={guardarOrden} disabled={guardando}>
+                  {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {ordenEditandoId ? 'Actualizar Orden' : 'Guardar Orden'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4397,6 +4535,43 @@ function SubTabOrdenesAgricolas() {
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Confirmar Ejecutada
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Eliminar Orden */}
+      <Dialog open={mostrarModalEliminar} onOpenChange={(open) => { if (!open) { setMostrarModalEliminar(false); setOrdenEliminando(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar Orden Agrícola</DialogTitle>
+            <DialogDescription>
+              La orden quedará marcada como <strong>eliminada</strong> y seguirá visible en el historial.
+            </DialogDescription>
+          </DialogHeader>
+          {ordenEliminando && (
+            <div className="space-y-4">
+              <div className="text-sm space-y-1">
+                <p><span className="font-medium">Fecha:</span> {formatoFecha(ordenEliminando.fecha)}</p>
+                <p><span className="font-medium">Lote:</span> {ordenEliminando.lote?.nombre_lote || ordenEliminando.lote_nombre || '-'}</p>
+                <p><span className="font-medium">Hectáreas:</span> {formatoNumero(ordenEliminando.hectareas)} ha</p>
+              </div>
+              <div>
+                <Label>Motivo de eliminación *</Label>
+                <Textarea
+                  className="mt-1 min-h-[80px]"
+                  placeholder="Ej: Orden duplicada, error de fecha..."
+                  value={motivoEliminacion}
+                  onChange={e => setMotivoEliminacion(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setMostrarModalEliminar(false); setOrdenEliminando(null) }}>Cancelar</Button>
+            <Button variant="destructive" onClick={eliminarOrden} disabled={guardando}>
+              {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Eliminar Orden
             </Button>
           </DialogFooter>
         </DialogContent>
