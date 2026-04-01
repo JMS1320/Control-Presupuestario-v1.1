@@ -944,7 +944,7 @@ const TIPOS_MOV_HACIENDA = [
   { value: 'venta', label: 'Venta' },
   { value: 'nacimiento', label: 'Nacimiento' },
   { value: 'mortandad', label: 'Mortandad' },
-  { value: 'transferencia', label: 'Transferencia' },
+  { value: 'cambio_categoria', label: 'Cambio de Categoría' },
   { value: 'ajuste_stock', label: 'Ajuste de Stock' },
 ]
 
@@ -955,57 +955,80 @@ function TabHacienda() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
-  const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[] }[] | null>(null)
+  const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[], tipo_origen: 'tacto' | 'cambio_categoria' }[] | null>(null)
   const [cargandoCUT, setCargandoCUT] = useState(false)
+  const [caravanasActivasCUT, setCaravanasActivasCUT] = useState<{ id: string, caravana: string }[]>([])
+  const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
 
-  const cargarDetalleCUT = async (stockActual: number) => {
+  const cargarDetalleCUT = async (stockActual: number, categoriaId?: string) => {
     if (detalleCUT) return // ya cargado
     setCargandoCUT(true)
     try {
-      // Buscar ciclos que tienen vacías registradas (más viejo primero para FIFO)
+      const detalles: { rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[], tipo_origen: 'tacto' | 'cambio_categoria' }[] = []
+
+      // ── Entradas desde tactos (ciclos_cria) con FIFO ──────────────────────
       const { data: ciclos } = await supabase.schema('productivo').from('ciclos_cria')
         .select('id, rodeo, cabezas_vacias, fecha_tacto, anio_servicio')
         .gt('cabezas_vacias', 0)
         .order('fecha_tacto', { ascending: true })
       if (ciclos) {
-        // Total ingresado por tacto
         const totalIngresado = ciclos.reduce((s, c) => s + c.cabezas_vacias, 0)
-        // Cuántas se vendieron = total ingresado - stock actual
         let vendidas = Math.max(0, totalIngresado - stockActual)
-
-        const detalles = []
         for (const c of ciclos) {
-          // FIFO: descontar vendidas de las entradas más viejas primero
-          if (vendidas >= c.cabezas_vacias) {
-            vendidas -= c.cabezas_vacias
-            continue // Este lote completo fue vendido
-          }
+          if (vendidas >= c.cabezas_vacias) { vendidas -= c.cabezas_vacias; continue }
           const restantes = c.cabezas_vacias - vendidas
           vendidas = 0
-
           const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-            .select('caravana').eq('ciclo_id', c.id)
+            .select('caravana').eq('ciclo_id', c.id).eq('estado', 'activa')
           const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
-
           detalles.push({
-            rodeo: c.rodeo,
-            vacias: restantes,
-            vaciasTotales: c.cabezas_vacias,
+            rodeo: c.rodeo, vacias: restantes, vaciasTotales: c.cabezas_vacias,
             fecha: c.fecha_tacto,
-            caravanas: restantes < c.cabezas_vacias
-              ? caravanas.slice(-restantes) // Si vendieron algunas, mostrar las últimas
-              : caravanas
+            caravanas: restantes < c.cabezas_vacias ? caravanas.slice(-restantes) : caravanas,
+            tipo_origen: 'tacto'
           })
         }
-        // Mostrar más recientes primero
         detalles.reverse()
-        setDetalleCUT(detalles)
       }
+
+      // ── Entradas desde Cambio de Categoría ───────────────────────────────
+      if (categoriaId) {
+        const { data: movsDirectos } = await supabase.schema('productivo').from('movimientos_hacienda')
+          .select('id, fecha, cantidad, observaciones')
+          .eq('categoria_id', categoriaId)
+          .eq('tipo', 'cambio_categoria')
+          .gt('cantidad', 0)
+          .order('fecha', { ascending: false })
+        for (const m of movsDirectos || []) {
+          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
+            .select('caravana').eq('movimiento_id', m.id).eq('estado', 'activa')
+          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
+          detalles.unshift({
+            rodeo: m.observaciones || 'Cambio de Categoría',
+            vacias: caravanas.length > 0 ? caravanas.length : m.cantidad,
+            vaciasTotales: m.cantidad,
+            fecha: m.fecha, caravanas,
+            tipo_origen: 'cambio_categoria'
+          })
+        }
+      }
+
+      setDetalleCUT(detalles)
     } catch (err) {
       console.error('Error cargando detalle CUT:', err)
     } finally {
       setCargandoCUT(false)
     }
+  }
+
+  const cargarCaravanasParaBaja = async (categoriaId: string) => {
+    const cat = categorias.find(c => c.id === categoriaId)
+    const esCUT = cat?.nombre.toLowerCase().includes('cut') || cat?.nombre.toLowerCase().includes('descarte')
+    if (!esCUT) { setCaravanasActivasCUT([]); setCaravanasSeleccionadas([]); return }
+    const { data } = await supabase.schema('productivo').from('detalle_descarte')
+      .select('id, caravana').eq('estado', 'activa').order('caravana')
+    setCaravanasActivasCUT((data || []).filter(d => d.caravana) as { id: string, caravana: string }[])
+    setCaravanasSeleccionadas([])
   }
 
   // Hook edición inline (mismo patrón que Cash Flow)
@@ -1038,6 +1061,7 @@ function TabHacienda() {
   const [nuevoMov, setNuevoMov] = useState({
     fecha: new Date().toISOString().split('T')[0],
     categoria_id: '',
+    categoria_destino_id: '',
     tipo: 'compra',
     cantidad: '',
     peso_total_kg: '',
@@ -1047,6 +1071,7 @@ function TabHacienda() {
     campo_destino: '',
     proveedor_cliente: '',
     cuit: '',
+    caravanas: '',
     observaciones: ''
   })
 
@@ -1072,10 +1097,9 @@ function TabHacienda() {
             stockMap[catId].cantidad += m.cantidad
           } else if (m.tipo === 'venta' || m.tipo === 'mortandad') {
             stockMap[catId].cantidad -= m.cantidad
-          } else if (m.tipo === 'ajuste_stock') {
-            stockMap[catId].cantidad += m.cantidad // puede ser negativo
+          } else if (m.tipo === 'ajuste_stock' || m.tipo === 'cambio_categoria') {
+            stockMap[catId].cantidad += m.cantidad // puede ser negativo (egreso) o positivo (ingreso)
           }
-          // transferencia: no cambia total (solo cambia ubicación)
         }
         const stockCalculado = Object.values(stockMap)
           .filter(s => s.cantidad !== 0)
@@ -1092,17 +1116,75 @@ function TabHacienda() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
+  const resetNuevoMov = () => {
+    setNuevoMov({
+      fecha: new Date().toISOString().split('T')[0],
+      categoria_id: '', categoria_destino_id: '', tipo: 'compra', cantidad: '',
+      peso_total_kg: '', precio_por_kg: '', monto_total: '', campo_origen: '',
+      campo_destino: '', proveedor_cliente: '', cuit: '', caravanas: '', observaciones: ''
+    })
+    setCaravanasActivasCUT([])
+    setCaravanasSeleccionadas([])
+  }
+
   const guardarMovimiento = async () => {
-    if (!nuevoMov.categoria_id || !nuevoMov.cantidad) {
-      toast.error('Categoria y cantidad son obligatorios')
+    const N = parseInt(nuevoMov.cantidad)
+
+    // ── Cambio de Categoría ───────────────────────────────────────────────
+    if (nuevoMov.tipo === 'cambio_categoria') {
+      if (!nuevoMov.categoria_id || !nuevoMov.categoria_destino_id || !N) {
+        toast.error('Categoría origen, destino y cantidad son obligatorios')
+        return
+      }
+      const catOrigen = categorias.find(c => c.id === nuevoMov.categoria_id)
+      const catDestino = categorias.find(c => c.id === nuevoMov.categoria_destino_id)
+
+      // Egreso de categoría origen
+      const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+        fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_id,
+        tipo: 'cambio_categoria', cantidad: -N,
+        observaciones: nuevoMov.observaciones || `Cambio categ → ${catDestino?.nombre || ''}`
+      })
+      if (e1) { toast.error('Error al guardar egreso: ' + e1.message); return }
+
+      // Ingreso a categoría destino
+      const { data: movDestino, error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+        fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_destino_id,
+        tipo: 'cambio_categoria', cantidad: N,
+        observaciones: nuevoMov.observaciones || `Cambio categ ← ${catOrigen?.nombre || ''}`
+      }).select().single()
+      if (e2) { toast.error('Error al guardar ingreso: ' + e2.message); return }
+
+      // Caravanas (solo si destino es CUT/Descarte)
+      const esDestinosCUT = catDestino?.nombre.toLowerCase().includes('cut') || catDestino?.nombre.toLowerCase().includes('descarte')
+      if (esDestinosCUT && nuevoMov.caravanas.trim() && movDestino) {
+        const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
+        if (lineas.length > 0) {
+          await supabase.schema('productivo').from('detalle_descarte').insert(
+            lineas.map(caravana => ({
+              movimiento_id: movDestino.id, caravana,
+              categoria_origen: catOrigen?.nombre || '', estado: 'activa'
+            }))
+          )
+        }
+      }
+
+      toast.success('Cambio de categoría registrado')
+      setMostrarModalMov(false)
+      resetNuevoMov()
+      cargarDatos()
+      return
+    }
+
+    // ── Otros tipos ───────────────────────────────────────────────────────
+    if (!nuevoMov.categoria_id || !N) {
+      toast.error('Categoría y cantidad son obligatorios')
       return
     }
 
     const datos: any = {
-      fecha: nuevoMov.fecha,
-      categoria_id: nuevoMov.categoria_id,
-      tipo: nuevoMov.tipo,
-      cantidad: parseInt(nuevoMov.cantidad),
+      fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_id,
+      tipo: nuevoMov.tipo, cantidad: N,
     }
     const parseNum = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.'))
     if (nuevoMov.peso_total_kg) datos.peso_total_kg = parseNum(nuevoMov.peso_total_kg)
@@ -1115,20 +1197,18 @@ function TabHacienda() {
     if (nuevoMov.observaciones) datos.observaciones = nuevoMov.observaciones
 
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
-    if (error) {
-      console.error('Error guardando movimiento:', error)
-      toast.error('Error al guardar movimiento')
-      return
+    if (error) { toast.error('Error al guardar movimiento'); return }
+
+    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja
+    if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
+      await supabase.schema('productivo').from('detalle_descarte')
+        .update({ estado: 'baja' })
+        .in('id', caravanasSeleccionadas)
     }
 
     toast.success('Movimiento registrado')
     setMostrarModalMov(false)
-    setNuevoMov({
-      fecha: new Date().toISOString().split('T')[0],
-      categoria_id: '', tipo: 'compra', cantidad: '', peso_total_kg: '',
-      precio_por_kg: '', monto_total: '', campo_origen: '', campo_destino: '',
-      proveedor_cliente: '', cuit: '', observaciones: ''
-    })
+    resetNuevoMov()
     cargarDatos()
   }
 
@@ -1182,7 +1262,7 @@ function TabHacienda() {
                     <TableRow key={s.categoria_id}>
                       <TableCell className="font-medium">
                         {esCUT ? (
-                          <Popover onOpenChange={(open) => { if (open) cargarDetalleCUT(s.cantidad) }}>
+                          <Popover onOpenChange={(open) => { if (open) cargarDetalleCUT(s.cantidad, s.categoria_id) }}>
                             <PopoverTrigger asChild>
                               <button className="flex items-center gap-1.5 hover:text-blue-600 cursor-pointer underline decoration-dotted underline-offset-4">
                                 {s.nombre}
@@ -1201,8 +1281,10 @@ function TabHacienda() {
                                     {detalleCUT.map((d, i) => (
                                       <div key={i} className="border rounded p-2 text-sm">
                                         <div className="flex justify-between items-center">
-                                          <span className="font-medium">{d.vacias} {d.rodeo}{d.vacias > 1 ? 's' : ''}</span>
-                                          <Badge variant="outline" className="text-xs">Vacias tacto {new Date(d.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</Badge>
+                                          <span className="font-medium">{d.vacias} cab. — {d.rodeo}</span>
+                                          <Badge variant="outline" className="text-xs">
+                                            {d.tipo_origen === 'cambio_categoria' ? 'Cambio categ.' : 'Vacias tacto'} {new Date(d.fecha + 'T00:00:00').toLocaleDateString('es-AR')}
+                                          </Badge>
                                         </div>
                                         {d.caravanas.length > 0 && (
                                           <div className="mt-1.5 pt-1.5 border-t">
@@ -1366,9 +1448,10 @@ function TabHacienda() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nuevo Movimiento Hacienda</DialogTitle>
-            <DialogDescription>Registrar compra, venta, nacimiento, mortandad o transferencia.</DialogDescription>
+            <DialogDescription>Registrar compra, venta, nacimiento, mortandad o cambio de categoría.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
+            {/* Fila 1: Fecha + Tipo — siempre visible */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Fecha *</Label>
@@ -1376,74 +1459,154 @@ function TabHacienda() {
               </div>
               <div>
                 <Label>Tipo *</Label>
-                <Select value={nuevoMov.tipo} onValueChange={v => setNuevoMov(p => ({ ...p, tipo: v }))}>
+                <Select value={nuevoMov.tipo} onValueChange={v => {
+                  setNuevoMov(p => ({ ...p, tipo: v, categoria_id: '', categoria_destino_id: '', caravanas: '' }))
+                  setCaravanasActivasCUT([])
+                  setCaravanasSeleccionadas([])
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent position="popper" className="z-[9999]">
                     <SelectItem value="compra">Compra</SelectItem>
                     <SelectItem value="venta">Venta</SelectItem>
                     <SelectItem value="nacimiento">Nacimiento</SelectItem>
                     <SelectItem value="mortandad">Mortandad</SelectItem>
-                    <SelectItem value="transferencia">Transferencia</SelectItem>
+                    <SelectItem value="cambio_categoria">Cambio de Categoría</SelectItem>
                     <SelectItem value="ajuste_stock">Ajuste de Stock</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Categoria *</Label>
-                <Select value={nuevoMov.categoria_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_id: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                  <SelectContent position="popper" className="z-[9999]">
-                    {categorias.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Cantidad *</Label>
-                <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Peso Total (kg)</Label>
-                <Input type="text" placeholder="0,00" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Precio por kg</Label>
-                <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Monto Total</Label>
-              <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Campo Origen</Label>
-                <Input value={nuevoMov.campo_origen} onChange={e => setNuevoMov(p => ({ ...p, campo_origen: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Campo Destino</Label>
-                <Input value={nuevoMov.campo_destino} onChange={e => setNuevoMov(p => ({ ...p, campo_destino: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Proveedor/Cliente</Label>
-                <Input value={nuevoMov.proveedor_cliente} onChange={e => setNuevoMov(p => ({ ...p, proveedor_cliente: e.target.value }))} />
-              </div>
-              <div>
-                <Label>CUIT</Label>
-                <Input value={nuevoMov.cuit} onChange={e => setNuevoMov(p => ({ ...p, cuit: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Observaciones</Label>
-              <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
-            </div>
+
+            {/* ── CAMBIO DE CATEGORÍA ──────────────────────────────────────── */}
+            {nuevoMov.tipo === 'cambio_categoria' ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Categoría Origen *</Label>
+                    <Select value={nuevoMov.categoria_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_id: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        {categorias.map(c => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Categoría Destino *</Label>
+                    <Select value={nuevoMov.categoria_destino_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_destino_id: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        {categorias.filter(c => c.id !== nuevoMov.categoria_id).map(c => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label>Cantidad *</Label>
+                  <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
+                  <textarea
+                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+                    placeholder={"032 010012326425\n032 010012326426\n..."}
+                    value={nuevoMov.caravanas}
+                    onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label>Observaciones</Label>
+                  <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
+                </div>
+              </>
+            ) : (
+              /* ── OTROS TIPOS ──────────────────────────────────────────────── */
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Categoría *</Label>
+                    <Select value={nuevoMov.categoria_id} onValueChange={v => {
+                      setNuevoMov(p => ({ ...p, categoria_id: v }))
+                      if (nuevoMov.tipo === 'venta') cargarCaravanasParaBaja(v)
+                    }}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        {categorias.map(c => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Cantidad *</Label>
+                    <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Peso Total (kg)</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Precio por kg</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Monto Total</Label>
+                  <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Campo Origen</Label>
+                    <Input value={nuevoMov.campo_origen} onChange={e => setNuevoMov(p => ({ ...p, campo_origen: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Campo Destino</Label>
+                    <Input value={nuevoMov.campo_destino} onChange={e => setNuevoMov(p => ({ ...p, campo_destino: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Proveedor/Cliente</Label>
+                    <Input value={nuevoMov.proveedor_cliente} onChange={e => setNuevoMov(p => ({ ...p, proveedor_cliente: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>CUIT</Label>
+                    <Input value={nuevoMov.cuit} onChange={e => setNuevoMov(p => ({ ...p, cuit: e.target.value }))} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Observaciones</Label>
+                  <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
+                </div>
+
+                {/* Selector de caravanas a dar de baja — solo Venta desde CUT */}
+                {nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && (
+                  <div>
+                    <Label>Caravanas que salen <span className="text-muted-foreground text-xs">({caravanasSeleccionadas.length} seleccionadas)</span></Label>
+                    <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1 mt-1">
+                      {caravanasActivasCUT.map(car => (
+                        <label key={car.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
+                          <input
+                            type="checkbox"
+                            checked={caravanasSeleccionadas.includes(car.id)}
+                            onChange={e => setCaravanasSeleccionadas(prev =>
+                              e.target.checked ? [...prev, car.id] : prev.filter(id => id !== car.id)
+                            )}
+                            className="rounded"
+                          />
+                          <span className="font-mono text-xs">{car.caravana}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMostrarModalMov(false)}>Cancelar</Button>
