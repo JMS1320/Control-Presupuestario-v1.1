@@ -33,6 +33,8 @@ interface Empleado {
   dias_promedio: number
   horas_promedio: number
   activo: boolean
+  fecha_ingreso?: string | null
+  fecha_egreso?: string | null
 }
 
 interface Periodo {
@@ -229,7 +231,17 @@ export function TabSueldos() {
         : Promise.resolve({ data: [] as any[], error: null }),
     ])
 
-    setPeriodos((pdata ?? []) as Periodo[])
+    // Filtrar empleados según fecha_ingreso/fecha_egreso
+    const primerDiaMes = new Date(mesActual.anio, mesActual.mes - 1, 1)
+    const ultimoDiaMes = new Date(mesActual.anio, mesActual.mes, 0)
+    const periodosFiltrados = (pdata ?? []).filter((p: any) => {
+      const emp = p.empleado
+      if (!emp) return true
+      if (emp.fecha_ingreso && new Date(emp.fecha_ingreso) > ultimoDiaMes) return false
+      if (emp.fecha_egreso && new Date(emp.fecha_egreso) < primerDiaMes) return false
+      return true
+    })
+    setPeriodos(periodosFiltrados as Periodo[])
     setCuentas((cdata ?? []) as CuentaEmpleado[])
     setPagos((pagoData ?? []) as Pago[])
     setCargando(false)
