@@ -423,7 +423,7 @@ export function TabSueldos() {
 
   // ── Edición parámetros del período ────────────────────────────────────────
 
-  const num = (v: string) => parseFloat(v.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0
+  const num = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
 
   const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0) => {
     const extras = varios + vacaciones + premio
