@@ -387,6 +387,7 @@ export function TabSueldos() {
       case 'ab_francos':   return (a + b) + (valorFranco * francos) + extras
       case 'por_dia':      return vdia * dias + extras
       case 'por_hora_ipc': return vhora * horas + extras
+      case 'plano_ipc':    return a + extras
       default:             return (edPeriodo?.bruto_calculado ?? 0) + extras
     }
   }
@@ -395,7 +396,10 @@ export function TabSueldos() {
     setEdPeriodo(p)
     const fmt = (v: number | null, decimales = 2) =>
       v !== null && v !== 0 ? v.toLocaleString('es-AR', { minimumFractionDigits: decimales, maximumFractionDigits: decimales }) : ''
-    setEdMontoA(p.monto_a !== null ? fmt(p.monto_a) : '')
+    setEdMontoA(p.empleado?.tipo_empleado === 'plano_ipc'
+      ? fmt(p.bruto_calculado)
+      : (p.monto_a !== null ? fmt(p.monto_a) : '')
+    )
     setEdMontoB(p.monto_b !== null ? fmt(p.monto_b) : '')
     setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
     setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
@@ -484,6 +488,8 @@ export function TabSueldos() {
     } else if (tipo === 'por_hora_ipc') {
       updateData.valor_por_hora = vhora
       updateData.horas_mes = horas
+    } else if (tipo === 'plano_ipc') {
+      updateData.monto_a = a
     }
 
     await supabase.from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
@@ -935,6 +941,19 @@ export function TabSueldos() {
                       onChange={e => setEdHoras(e.target.value)}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* plano_ipc */}
+              {edPeriodo.empleado?.tipo_empleado === 'plano_ipc' && (
+                <div>
+                  <Label>Sueldo</Label>
+                  <Input
+                    type="text"
+                    placeholder="0,00"
+                    value={edMontoA}
+                    onChange={e => setEdMontoA(e.target.value)}
+                  />
                 </div>
               )}
 

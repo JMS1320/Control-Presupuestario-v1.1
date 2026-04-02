@@ -240,6 +240,16 @@ Los pagos se filtran por **`periodo_id`** (el mes al que fue asignado el pago), 
 
 ---
 
+## 🐛 Bugs corregidos (2026-04-02)
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| Pagos de sueldos no se registraban (falla silenciosa) | Vista `public.sueldos_pagos` no incluía columna `medio_pago` (agregada a `sueldos.pagos` el 2026-03-26 pero la vista nunca se actualizó). El insert enviaba el campo, fallaba en BD, el modal cerraba sin mostrar el error. | `CREATE OR REPLACE VIEW public.sueldos_pagos AS SELECT ... medio_pago FROM sueldos.pagos` |
+
+**Regla importante**: cada vez que se agregue una columna a `sueldos.pagos` o `sueldos.periodos`, hay que recrear la vista pública correspondiente. El código usa `supabase.from('sueldos_pagos')` sin `.schema()` — accede a la vista, no a la tabla directa.
+
+---
+
 ## 🐛 Bugs corregidos (2026-03-25)
 
 | Bug | Causa | Fix |
