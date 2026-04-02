@@ -164,6 +164,7 @@ export function TabSueldos() {
   const [antDesc, setAntDesc] = useState('')
   const [antEstado, setAntEstado] = useState('pagar')
   const [antMedioPago, setAntMedioPago] = useState('banco')
+  const [antMesAplicado, setAntMesAplicado] = useState<{ anio: number; mes: number }>({ anio: 2026, mes: 3 })
   const [guardando, setGuardando] = useState(false)
 
   // Modal historial
@@ -280,28 +281,67 @@ export function TabSueldos() {
     const periodo = periodos.find(p => p.empleado_id === antEmpId)
 
     if (editandoPago) {
-      // MODO EDICIÓN: actualizar pago existente y recalcular período
-      await supabase
-        .from('sueldos_pagos')
-        .update({
-          fecha: antFecha,
-          monto,
-          cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
-          descripcion: antDesc || null,
-          estado: antEstado,
-          medio_pago: antMedioPago,
-        })
-        .eq('id', editandoPago.id)
+      // MODO EDICIÓN
+      // Período viejo: el que tiene asignado el pago actualmente
+      let periodoViejo: any = periodos.find(p => p.id === editandoPago.periodo_id) ?? null
+      if (!periodoViejo && editandoPago.periodo_id) {
+        const { data } = await supabase.from('sueldos_periodos').select('*').eq('id', editandoPago.periodo_id).maybeSingle()
+        periodoViejo = data
+      }
 
-      // Revertir monto viejo y aplicar nuevo en el período
-      if (periodo) {
-        const anticiposSinViejo = (periodo.anticipos_descontados ?? 0) - editandoPago.monto
-        const nuevosAnticipos   = anticiposSinViejo + monto
-        const nuevoSaldo        = (periodo.bruto_calculado ?? 0) - nuevosAnticipos
-        await supabase
-          .from('sueldos_periodos')
-          .update({ anticipos_descontados: nuevosAnticipos, saldo_pendiente: nuevoSaldo })
-          .eq('id', periodo.id)
+      // Período nuevo: el mes seleccionado por el usuario
+      let periodoNuevo: any = null
+      if (antMesAplicado.anio === mesActual.anio && antMesAplicado.mes === mesActual.mes) {
+        periodoNuevo = periodos.find(p => p.empleado_id === antEmpId) ?? null
+      } else {
+        const { data } = await supabase.from('sueldos_periodos').select('*')
+          .eq('empleado_id', antEmpId)
+          .eq('anio', antMesAplicado.anio)
+          .eq('mes', antMesAplicado.mes)
+          .maybeSingle()
+        periodoNuevo = data
+      }
+
+      const cambioPeriodo = periodoViejo?.id !== periodoNuevo?.id
+
+      // Actualizar el pago (incluye periodo_id si cambió)
+      await supabase.from('sueldos_pagos').update({
+        fecha: antFecha,
+        monto,
+        cuenta_destino_id: antCuenta && antCuenta !== '__none__' ? antCuenta : null,
+        descripcion: antDesc || null,
+        estado: antEstado,
+        medio_pago: antMedioPago,
+        ...(cambioPeriodo && periodoNuevo ? { periodo_id: periodoNuevo.id } : {}),
+      }).eq('id', editandoPago.id)
+
+      if (cambioPeriodo) {
+        // Revertir del período viejo
+        if (periodoViejo) {
+          const antSinViejo = Math.max(0, (periodoViejo.anticipos_descontados ?? 0) - editandoPago.monto)
+          await supabase.from('sueldos_periodos').update({
+            anticipos_descontados: antSinViejo,
+            saldo_pendiente: (periodoViejo.bruto_calculado ?? 0) - antSinViejo,
+          }).eq('id', periodoViejo.id)
+        }
+        // Aplicar al período nuevo
+        if (periodoNuevo) {
+          const antNuevo = (periodoNuevo.anticipos_descontados ?? 0) + monto
+          await supabase.from('sueldos_periodos').update({
+            anticipos_descontados: antNuevo,
+            saldo_pendiente: (periodoNuevo.bruto_calculado ?? 0) - antNuevo,
+          }).eq('id', periodoNuevo.id)
+        }
+      } else {
+        // Mismo período, ajustar por cambio de monto
+        if (periodoNuevo) {
+          const antSinViejo = (periodoNuevo.anticipos_descontados ?? 0) - editandoPago.monto
+          const antNuevo    = antSinViejo + monto
+          await supabase.from('sueldos_periodos').update({
+            anticipos_descontados: antNuevo,
+            saldo_pendiente: (periodoNuevo.bruto_calculado ?? 0) - antNuevo,
+          }).eq('id', periodoNuevo.id)
+        }
       }
     } else {
       // MODO CREACIÓN
@@ -340,6 +380,7 @@ export function TabSueldos() {
     setAntDesc('')
     setAntEstado('pagar')
     setAntMedioPago('banco')
+    setAntMesAplicado(mesActual)
     await cargar()
   }
 
@@ -347,13 +388,15 @@ export function TabSueldos() {
 
   const abrirEdicionPago = (pago: Pago) => {
     setEditandoPago(pago)
-    // Pre-llenar campos del modal anticipo con datos del pago existente
     setAntEmpId(pago.empleado_id)
     setAntMonto(pago.monto ? pago.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
     setAntFecha(pago.fecha)
     setAntCuenta(pago.cuenta_destino_id ?? '__none__')
     setAntDesc(pago.descripcion ?? '')
     setAntEstado((pago as any).estado ?? 'pagar')
+    // Mes al que pertenece el pago: buscarlo en los períodos cargados
+    const periodoPago = periodos.find(p => p.id === pago.periodo_id)
+    setAntMesAplicado(periodoPago ? { anio: periodoPago.anio, mes: periodoPago.mes } : mesActual)
     setModalAnticipo(true)
   }
 
@@ -783,7 +826,7 @@ export function TabSueldos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pagos.map(pago => (
+                {[...pagos].sort((a, b) => (a.empleado?.nombre ?? '').localeCompare(b.empleado?.nombre ?? '')).map(pago => (
                   <TableRow key={pago.id}>
                     <TableCell className="text-sm tabular-nums">
                       {pago.fecha.split('-').reverse().join('/')}
@@ -1076,6 +1119,39 @@ export function TabSueldos() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Selector mes aplicado — solo en edición */}
+            {editandoPago && (
+              <div>
+                <Label>Mes al que se imputa</Label>
+                <Select
+                  value={`${antMesAplicado.anio}-${antMesAplicado.mes}`}
+                  onValueChange={v => {
+                    const [a, m] = v.split('-').map(Number)
+                    setAntMesAplicado({ anio: a, mes: m })
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const opts = []
+                      let a = MES_MIN.anio, m = MES_MIN.mes
+                      while (a < MES_MAX.anio || (a === MES_MAX.anio && m <= MES_MAX.mes)) {
+                        opts.push({ anio: a, mes: m })
+                        m++; if (m > 12) { m = 1; a++ }
+                      }
+                      return opts.map(o => (
+                        <SelectItem key={`${o.anio}-${o.mes}`} value={`${o.anio}-${o.mes}`}>
+                          {MESES_LONG[o.mes - 1]} {o.anio}
+                        </SelectItem>
+                      ))
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <Label>Monto *</Label>
