@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select"
 import {
   Users, DollarSign, ArrowDownCircle, Clock,
-  ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2,
+  ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2, UserPlus,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -196,6 +196,23 @@ export function TabSueldos() {
   // Modal propagar
   const [modalPropagar, setModalPropagar] = useState(false)
   const [propagarData, setPropagandoData] = useState<{ updateData: Record<string, any>; nuevoBruto: number } | null>(null)
+
+  // Modal agregar empleado
+  const [modalNuevoEmp, setModalNuevoEmp] = useState(false)
+  const [nuevoNombre, setNuevoNombre] = useState('')
+  const [nuevoEmpresa, setNuevoEmpresa] = useState('MSA')
+  const [nuevoTipo, setNuevoTipo] = useState<'ab_francos' | 'por_dia' | 'plano_ipc' | 'por_hora_ipc'>('ab_francos')
+  const [nuevoCuit, setNuevoCuit] = useState('')
+  const [nuevoFechaIngreso, setNuevoFechaIngreso] = useState('')
+  const [nuevoFechaEgreso, setNuevoFechaEgreso] = useState('')
+  const [nuevoMontoA, setNuevoMontoA] = useState('')
+  const [nuevoMontoB, setNuevoMontoB] = useState('')
+  const [nuevoFrancos, setNuevoFrancos] = useState('')
+  const [nuevoValorDia, setNuevoValorDia] = useState('')
+  const [nuevoDias, setNuevoDias] = useState('')
+  const [nuevoValorHora, setNuevoValorHora] = useState('')
+  const [nuevoHoras, setNuevoHoras] = useState('')
+  const [guardandoNuevoEmp, setGuardandoNuevoEmp] = useState(false)
 
   // Modal edición pago
   const [editandoPago, setEditandoPago] = useState<Pago | null>(null)
@@ -616,6 +633,131 @@ export function TabSueldos() {
   ]
   const mesesHistorial = [2, 3, 4, 5, 6]
 
+  // ── Agregar empleado ──────────────────────────────────────────────────────
+
+  const abrirNuevoEmp = () => {
+    setNuevoNombre('')
+    setNuevoEmpresa('MSA')
+    setNuevoTipo('ab_francos')
+    setNuevoCuit('')
+    setNuevoFechaIngreso('')
+    setNuevoFechaEgreso('')
+    setNuevoMontoA('')
+    setNuevoMontoB('')
+    setNuevoFrancos('')
+    setNuevoValorDia('')
+    setNuevoDias('')
+    setNuevoValorHora('')
+    setNuevoHoras('')
+    setModalNuevoEmp(true)
+  }
+
+  const crearEmpleado = async () => {
+    if (!nuevoNombre.trim()) return
+    setGuardandoNuevoEmp(true)
+    const n = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
+
+    // 1. Crear empleado
+    const empPayload: Record<string, any> = {
+      nombre:       nuevoNombre.trim(),
+      empresa:      nuevoEmpresa,
+      tipo_empleado: nuevoTipo,
+      cuit_empleado: nuevoCuit.trim() || null,
+      activo:       true,
+      fecha_ingreso: nuevoFechaIngreso || null,
+      fecha_egreso:  nuevoFechaEgreso  || null,
+      // promedios de referencia
+      francos_dias_promedio: nuevoTipo === 'ab_francos' ? (n(nuevoFrancos) || 0) : 0,
+      dias_promedio:         nuevoTipo === 'por_dia'    ? (n(nuevoDias)    || 0) : 0,
+      horas_promedio:        nuevoTipo === 'por_hora_ipc' ? (n(nuevoHoras) || 0) : 0,
+    }
+
+    const { data: empData, error: empError } = await supabase
+      .from('sueldos_empleados')
+      .insert(empPayload)
+      .select()
+      .single()
+
+    if (empError || !empData) {
+      alert('Error al crear empleado: ' + (empError?.message ?? 'desconocido'))
+      setGuardandoNuevoEmp(false)
+      return
+    }
+
+    // 2. Generar períodos para cada mes activo dentro del rango de campaña
+    const CAMPANA_ID = '8ffb3f4f-6dc7-4df1-88de-09607518d2c1'
+    const periodoInserts: Record<string, any>[] = []
+
+    for (let anio = MES_MIN.anio, mes = MES_MIN.mes; ; ) {
+      const primerDia = new Date(anio, mes - 1, 1)
+      const ultimoDia = new Date(anio, mes, 0)
+
+      // Verificar que el empleado estaba activo este mes
+      const ingreso = nuevoFechaIngreso ? new Date(nuevoFechaIngreso) : null
+      const egreso  = nuevoFechaEgreso  ? new Date(nuevoFechaEgreso)  : null
+      const activo  = (!ingreso || ingreso <= ultimoDia) && (!egreso || egreso >= primerDia)
+
+      if (activo) {
+        // Calcular bruto inicial con los parámetros ingresados
+        const a        = n(nuevoMontoA)
+        const b        = n(nuevoMontoB)
+        const francos  = n(nuevoFrancos)
+        const vFranco  = a + b > 0 ? (a + b) / 25 : 0
+        const vDia     = n(nuevoValorDia)
+        const dias     = n(nuevoDias)
+        const vHora    = n(nuevoValorHora)
+        const horas    = n(nuevoHoras)
+
+        let bruto = 0
+        switch (nuevoTipo) {
+          case 'ab_francos':   bruto = (a + b) + (vFranco * francos); break
+          case 'por_dia':      bruto = vDia * dias; break
+          case 'por_hora_ipc': bruto = vHora * horas; break
+          case 'plano_ipc':    bruto = a; break
+        }
+
+        periodoInserts.push({
+          empleado_id:          empData.id,
+          campana_id:           CAMPANA_ID,
+          anio,
+          mes,
+          fecha_inicio_periodo: primerDia.toISOString().split('T')[0],
+          fecha_fin_periodo:    ultimoDia.toISOString().split('T')[0],
+          bruto_calculado:      bruto,
+          sueldo_x_ipc:         bruto,
+          anticipos_descontados: 0,
+          saldo_pendiente:      bruto,
+          estado:               'proyectado',
+          monto_a:              a || null,
+          monto_b:              b || null,
+          francos_cantidad:     nuevoTipo === 'ab_francos' ? (francos || null) : null,
+          valor_por_dia:        nuevoTipo === 'por_dia'    ? (vDia || null)    : null,
+          dias_trabajados:      nuevoTipo === 'por_dia'    ? (dias || null)    : null,
+          valor_por_hora:       nuevoTipo === 'por_hora_ipc' ? (vHora || null) : null,
+          horas_mes:            nuevoTipo === 'por_hora_ipc' ? (horas || null) : null,
+        })
+      }
+
+      // Avanzar al siguiente mes
+      if (anio === MES_MAX.anio && mes === MES_MAX.mes) break
+      mes++
+      if (mes > 12) { mes = 1; anio++ }
+    }
+
+    if (periodoInserts.length > 0) {
+      const { error: perError } = await supabase
+        .from('sueldos_periodos')
+        .insert(periodoInserts)
+      if (perError) {
+        alert('Empleado creado pero error al generar períodos: ' + perError.message)
+      }
+    }
+
+    setGuardandoNuevoEmp(false)
+    setModalNuevoEmp(false)
+    await cargar()
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -631,6 +773,10 @@ export function TabSueldos() {
           <Button variant="outline" onClick={abrirHistorial}>
             <History className="h-4 w-4 mr-2" />
             Historial
+          </Button>
+          <Button variant="outline" onClick={abrirNuevoEmp}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Agregar Empleado
           </Button>
           <Button onClick={() => abrirAnticipo()}>
             <Plus className="h-4 w-4 mr-2" />
@@ -1381,6 +1527,162 @@ export function TabSueldos() {
               </Table>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Agregar Empleado ─────────────────────────────────────────── */}
+      <Dialog open={modalNuevoEmp} onOpenChange={setModalNuevoEmp}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Agregar Empleado</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+
+            {/* Datos básicos */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>Nombre completo *</Label>
+                <Input
+                  placeholder="Ej: Juan Pérez"
+                  value={nuevoNombre}
+                  onChange={e => setNuevoNombre(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label>Empresa *</Label>
+                <Select value={nuevoEmpresa} onValueChange={setNuevoEmpresa}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MSA">MSA</SelectItem>
+                    <SelectItem value="PAM">PAM</SelectItem>
+                    <SelectItem value="MSA/PAM">MSA/PAM</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Tipo de sueldo *</Label>
+                <Select value={nuevoTipo} onValueChange={v => setNuevoTipo(v as typeof nuevoTipo)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ab_francos">A+B Francos (convenio)</SelectItem>
+                    <SelectItem value="por_dia">Por Día</SelectItem>
+                    <SelectItem value="por_hora_ipc">Por Hora IPC</SelectItem>
+                    <SelectItem value="plano_ipc">Plano IPC (monto fijo)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>CUIT <span className="text-gray-400 font-normal">(sin guiones)</span></Label>
+                <Input
+                  placeholder="20123456789"
+                  value={nuevoCuit}
+                  onChange={e => setNuevoCuit(e.target.value)}
+                />
+              </div>
+
+              <div />
+
+              <div>
+                <Label>Fecha de ingreso</Label>
+                <Input
+                  type="date"
+                  value={nuevoFechaIngreso}
+                  onChange={e => setNuevoFechaIngreso(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <Label>Fecha de egreso <span className="text-gray-400 font-normal">(si ya se fue)</span></Label>
+                <Input
+                  type="date"
+                  value={nuevoFechaEgreso}
+                  onChange={e => setNuevoFechaEgreso(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Parámetros según tipo */}
+            <div className="border-t pt-4">
+              <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wide">
+                Parámetros iniciales de sueldo
+              </p>
+
+              {nuevoTipo === 'ab_francos' && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Monto A</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoMontoA} onChange={e => setNuevoMontoA(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Monto B</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoMontoB} onChange={e => setNuevoMontoB(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Francos / mes</Label>
+                    <Input type="text" placeholder="0" value={nuevoFrancos} onChange={e => setNuevoFrancos(e.target.value)} />
+                  </div>
+                  <div className="col-span-3 text-xs text-gray-400">
+                    Valor franco = (A+B)/25 automático. Editable luego desde el botón ✏️.
+                  </div>
+                </div>
+              )}
+
+              {nuevoTipo === 'por_dia' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Valor por día</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoValorDia} onChange={e => setNuevoValorDia(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Días por mes</Label>
+                    <Input type="text" placeholder="0" value={nuevoDias} onChange={e => setNuevoDias(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {nuevoTipo === 'por_hora_ipc' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Valor por hora</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoValorHora} onChange={e => setNuevoValorHora(e.target.value)} />
+                  </div>
+                  <div>
+                    <Label>Horas por mes</Label>
+                    <Input type="text" placeholder="0" value={nuevoHoras} onChange={e => setNuevoHoras(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {nuevoTipo === 'plano_ipc' && (
+                <div>
+                  <Label>Sueldo base</Label>
+                  <Input type="text" placeholder="0,00" value={nuevoMontoA} onChange={e => setNuevoMontoA(e.target.value)} />
+                </div>
+              )}
+            </div>
+
+            {/* Info sobre períodos a generar */}
+            <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
+              Se generarán automáticamente los períodos de la campaña 25/26 donde el empleado esté activo
+              {' '}({MESES_SHORT[MES_MIN.mes - 1]} {MES_MIN.anio} – {MESES_SHORT[MES_MAX.mes - 1]} {MES_MAX.anio}).
+            </div>
+
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalNuevoEmp(false)}>Cancelar</Button>
+            <Button
+              onClick={crearEmpleado}
+              disabled={guardandoNuevoEmp || !nuevoNombre.trim()}
+            >
+              {guardandoNuevoEmp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Crear Empleado
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
