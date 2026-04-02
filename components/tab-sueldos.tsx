@@ -274,7 +274,7 @@ export function TabSueldos() {
   }
 
   const registrarAnticipo = async () => {
-    const monto = parseFloat(antMonto.replace(/[^0-9.,]/g, '').replace(',', '.'))
+    const monto = parseFloat(antMonto.replace(/\./g, '').replace(',', '.')) || 0
     if (!antEmpId || !monto || monto <= 0 || !antFecha) return
     setGuardando(true)
 
