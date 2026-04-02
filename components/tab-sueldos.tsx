@@ -72,6 +72,7 @@ interface Pago {
   monto: number
   descripcion: string | null
   cuenta_destino_id: string | null
+  medio_pago?: string | null
   empleado?: { nombre: string }
 }
 
@@ -821,6 +822,7 @@ export function TabSueldos() {
                   <TableHead>Empleado</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
+                  <TableHead>Medio</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -840,6 +842,18 @@ export function TabSueldos() {
                       </span>
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">{pago.descripcion}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const mp = (pago as any).medio_pago ?? 'banco'
+                        const esBanco = mp === 'banco'
+                        const label = mp === 'banco' ? 'Banco' : mp === 'caja_general' ? 'Caja' : mp === 'caja_ams' ? 'Caja AMS' : mp === 'caja_sigot' ? 'Caja Sigot' : mp
+                        return (
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs ${esBanco ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                            {label}
+                          </span>
+                        )
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatoMoneda(pago.monto)}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
