@@ -19,6 +19,7 @@ import {
 import {
   Users, DollarSign, ArrowDownCircle, Clock,
   ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2, UserPlus,
+  Settings, UserMinus, CalendarDays,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -90,8 +91,17 @@ interface CuentaEmpleado {
 const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MESES_LONG  = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-const MES_MIN = { anio: 2026, mes: 1 }  // Ene 2026
-const MES_MAX = { anio: 2026, mes: 6 }  // Jun 2026
+// Fallback usados solo en el initializer de useState (antes de que cargue la campaña)
+const MES_MIN = { anio: 2026, mes: 1 }
+const MES_MAX = { anio: 2026, mes: 6 }
+
+interface Campana {
+  id: string
+  etiqueta: string
+  fecha_inicio: string
+  fecha_fin: string
+  activa: boolean
+}
 
 function formatoMoneda(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
@@ -214,6 +224,25 @@ export function TabSueldos() {
   const [nuevoHoras, setNuevoHoras] = useState('')
   const [guardandoNuevoEmp, setGuardandoNuevoEmp] = useState(false)
 
+  // Campaña dinámica
+  const [campanaActiva, setCampanaActiva] = useState<Campana | null>(null)
+  const [todasCampanas, setTodasCampanas] = useState<Campana[]>([])
+  const [mesMin, setMesMin] = useState(MES_MIN)
+  const [mesMax, setMesMax] = useState(MES_MAX)
+
+  // Modal gestión campaña
+  const [modalCampana, setModalCampana] = useState(false)
+  const [nuevaCampanaEtiqueta, setNuevaCampanaEtiqueta] = useState('')
+  const [nuevaCampanaActivar, setNuevaCampanaActivar] = useState(true)
+  const [creandoCampana, setCreandoCampana] = useState(false)
+
+  // Modal dar de baja empleado
+  const [modalTerminar, setModalTerminar] = useState(false)
+  const [terminarEmpId, setTerminarEmpId] = useState('')
+  const [terminarEmpNombre, setTerminarEmpNombre] = useState('')
+  const [terminarFecha, setTerminarFecha] = useState('')
+  const [guardandoTerminar, setGuardandoTerminar] = useState(false)
+
   // Modal edición pago
   const [editandoPago, setEditandoPago] = useState<Pago | null>(null)
 
@@ -264,12 +293,37 @@ export function TabSueldos() {
     setCargando(false)
   }
 
+  // ── Cargar campañas ───────────────────────────────────────────────────────
+
+  const cargarCampanas = async () => {
+    const { data } = await supabase.from('sueldos_campanas').select('*').order('fecha_inicio', { ascending: false })
+    const lista = (data ?? []) as Campana[]
+    setTodasCampanas(lista)
+    const activa = lista.find(c => c.activa) ?? null
+    setCampanaActiva(activa)
+    if (activa) {
+      const inicio = new Date(activa.fecha_inicio)
+      const fin    = new Date(activa.fecha_fin)
+      const min = { anio: inicio.getUTCFullYear(), mes: inicio.getUTCMonth() + 1 }
+      const max = { anio: fin.getUTCFullYear(),   mes: fin.getUTCMonth()   + 1 }
+      setMesMin(min)
+      setMesMax(max)
+      setMesActual(prev => {
+        const pk = prev.anio * 100 + prev.mes
+        if (pk < min.anio * 100 + min.mes) return min
+        if (pk > max.anio * 100 + max.mes) return max
+        return prev
+      })
+    }
+  }
+
+  useEffect(() => { cargarCampanas() }, [])
   useEffect(() => { cargar() }, [mesActual])
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
 
-  const puedeRetroceder = !(mesActual.anio === MES_MIN.anio && mesActual.mes === MES_MIN.mes)
-  const puedeAvanzar    = !(mesActual.anio === MES_MAX.anio && mesActual.mes === MES_MAX.mes)
+  const puedeRetroceder = !(mesActual.anio === mesMin.anio && mesActual.mes === mesMin.mes)
+  const puedeAvanzar    = !(mesActual.anio === mesMax.anio && mesActual.mes === mesMax.mes)
 
   const navMes = (delta: number) => {
     const d = new Date(mesActual.anio, mesActual.mes - 1 + delta, 1)
@@ -633,6 +687,137 @@ export function TabSueldos() {
   ]
   const mesesHistorial = [2, 3, 4, 5, 6]
 
+  // ── Gestión campaña ───────────────────────────────────────────────────────
+
+  const parsearCampana = (etiqueta: string) => {
+    const m = etiqueta.trim().match(/^(\d{2})\/(\d{2})$/)
+    if (!m) return null
+    const a1 = 2000 + parseInt(m[1])
+    const a2 = 2000 + parseInt(m[2])
+    return { inicio: `${a1}-07-01`, fin: `${a2}-06-30`, anio1: a1, anio2: a2 }
+  }
+
+  const crearCampana = async () => {
+    const parsed = parsearCampana(nuevaCampanaEtiqueta)
+    if (!parsed) { alert('Formato inválido. Ejemplo: 26/27'); return }
+    setCreandoCampana(true)
+
+    // Desactivar campaña actual si se activa la nueva
+    if (nuevaCampanaActivar) {
+      await supabase.from('sueldos_campanas').update({ activa: false }).eq('activa', true)
+    }
+
+    const { data: campData, error: campError } = await supabase
+      .from('sueldos_campanas')
+      .insert({ etiqueta: nuevaCampanaEtiqueta.trim(), fecha_inicio: parsed.inicio, fecha_fin: parsed.fin, activa: nuevaCampanaActivar })
+      .select().single()
+
+    if (campError || !campData) {
+      alert('Error al crear campaña: ' + (campError?.message ?? 'desconocido'))
+      setCreandoCampana(false)
+      return
+    }
+
+    // Obtener todos los empleados activos
+    const { data: empData } = await supabase.from('sueldos_empleados').select('*').eq('activo', true)
+    const empleados = (empData ?? []) as Empleado[]
+    const campMin = { anio: parsed.anio1, mes: 7 }
+    const campMax = { anio: parsed.anio2, mes: 6 }
+    const periodoInserts: Record<string, any>[] = []
+
+    for (const emp of empleados) {
+      // Saltar si el empleado se fue antes de que empiece la campaña
+      const egreso = emp.fecha_egreso ? new Date(emp.fecha_egreso) : null
+      if (egreso && egreso < new Date(parsed.inicio)) continue
+
+      // Últimos parámetros conocidos
+      const { data: ul } = await supabase
+        .from('sueldos_periodos')
+        .select('*')
+        .eq('empleado_id', emp.id)
+        .order('anio', { ascending: false })
+        .order('mes', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      for (let anio = campMin.anio, mes = campMin.mes; ; ) {
+        const primerDia  = new Date(anio, mes - 1, 1)
+        const ultimoDia  = new Date(anio, mes, 0)
+        const ingreso    = emp.fecha_ingreso ? new Date(emp.fecha_ingreso) : null
+        const egresoMes  = emp.fecha_egreso  ? new Date(emp.fecha_egreso)  : null
+        const activo = (!ingreso || ingreso <= ultimoDia) && (!egresoMes || egresoMes >= primerDia)
+
+        if (activo) {
+          const a      = ul?.monto_a ?? 0
+          const b      = ul?.monto_b ?? 0
+          const francos = ul?.francos_cantidad ?? 0
+          const vf     = ul?.valor_franco ?? (a + b > 0 ? (a + b) / 25 : 0)
+          const vdia   = ul?.valor_por_dia ?? 0
+          const dias   = ul?.dias_trabajados ?? 0
+          const vhora  = ul?.valor_por_hora ?? 0
+          const horas  = ul?.horas_mes ?? 0
+
+          let bruto = 0
+          switch (emp.tipo_empleado) {
+            case 'ab_francos':   bruto = (a + b) + (vf * francos); break
+            case 'por_dia':      bruto = vdia * dias; break
+            case 'por_hora_ipc': bruto = vhora * horas; break
+            case 'plano_ipc':    bruto = a; break
+          }
+
+          periodoInserts.push({
+            empleado_id: emp.id, campana_id: campData.id,
+            anio, mes,
+            fecha_inicio_periodo: primerDia.toISOString().split('T')[0],
+            fecha_fin_periodo:    ultimoDia.toISOString().split('T')[0],
+            bruto_calculado: bruto, sueldo_x_ipc: bruto,
+            anticipos_descontados: 0, saldo_pendiente: bruto,
+            estado: 'proyectado',
+            monto_a: ul?.monto_a ?? null, monto_b: ul?.monto_b ?? null,
+            francos_cantidad:  ul?.francos_cantidad  ?? null,
+            valor_por_dia:     ul?.valor_por_dia     ?? null,
+            dias_trabajados:   ul?.dias_trabajados   ?? null,
+            valor_por_hora:    ul?.valor_por_hora    ?? null,
+            horas_mes:         ul?.horas_mes         ?? null,
+            valor_franco:      ul?.valor_franco      ?? null,
+          })
+        }
+
+        if (anio === campMax.anio && mes === campMax.mes) break
+        mes++; if (mes > 12) { mes = 1; anio++ }
+      }
+    }
+
+    // Insertar en lotes de 50
+    for (let i = 0; i < periodoInserts.length; i += 50) {
+      await supabase.from('sueldos_periodos').insert(periodoInserts.slice(i, i + 50))
+    }
+
+    setCreandoCampana(false)
+    setModalCampana(false)
+    setNuevaCampanaEtiqueta('')
+    await cargarCampanas()
+    await cargar()
+  }
+
+  // ── Dar de baja empleado ──────────────────────────────────────────────────
+
+  const abrirTerminar = (empId: string, nombre: string) => {
+    setTerminarEmpId(empId)
+    setTerminarEmpNombre(nombre)
+    setTerminarFecha('')
+    setModalTerminar(true)
+  }
+
+  const terminarEmpleado = async () => {
+    if (!terminarEmpId || !terminarFecha) return
+    setGuardandoTerminar(true)
+    await supabase.from('sueldos_empleados').update({ fecha_egreso: terminarFecha }).eq('id', terminarEmpId)
+    setGuardandoTerminar(false)
+    setModalTerminar(false)
+    await cargar()
+  }
+
   // ── Agregar empleado ──────────────────────────────────────────────────────
 
   const abrirNuevoEmp = () => {
@@ -688,7 +873,11 @@ export function TabSueldos() {
     const CAMPANA_ID = '8ffb3f4f-6dc7-4df1-88de-09607518d2c1'
     const periodoInserts: Record<string, any>[] = []
 
-    for (let anio = MES_MIN.anio, mes = MES_MIN.mes; ; ) {
+    const campanaId = campanaActiva?.id ?? CAMPANA_ID
+    const campMin   = campanaActiva ? (() => { const d = new Date(campanaActiva.fecha_inicio); return { anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 } })() : mesMin
+    const campMax   = campanaActiva ? (() => { const d = new Date(campanaActiva.fecha_fin);   return { anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 } })() : mesMax
+
+    for (let anio = campMin.anio, mes = campMin.mes; ; ) {
       const primerDia = new Date(anio, mes - 1, 1)
       const ultimoDia = new Date(anio, mes, 0)
 
@@ -698,7 +887,6 @@ export function TabSueldos() {
       const activo  = (!ingreso || ingreso <= ultimoDia) && (!egreso || egreso >= primerDia)
 
       if (activo) {
-        // Calcular bruto inicial con los parámetros ingresados
         const a        = n(nuevoMontoA)
         const b        = n(nuevoMontoB)
         const francos  = n(nuevoFrancos)
@@ -717,31 +905,26 @@ export function TabSueldos() {
         }
 
         periodoInserts.push({
-          empleado_id:          empData.id,
-          campana_id:           CAMPANA_ID,
-          anio,
-          mes,
-          fecha_inicio_periodo: primerDia.toISOString().split('T')[0],
-          fecha_fin_periodo:    ultimoDia.toISOString().split('T')[0],
-          bruto_calculado:      bruto,
-          sueldo_x_ipc:         bruto,
-          anticipos_descontados: 0,
-          saldo_pendiente:      bruto,
-          estado:               'proyectado',
+          empleado_id:           empData.id,
+          campana_id:            campanaId,
+          anio, mes,
+          fecha_inicio_periodo:  primerDia.toISOString().split('T')[0],
+          fecha_fin_periodo:     ultimoDia.toISOString().split('T')[0],
+          bruto_calculado:       bruto, sueldo_x_ipc: bruto,
+          anticipos_descontados: 0, saldo_pendiente: bruto,
+          estado:                'proyectado',
           monto_a:              a || null,
           monto_b:              b || null,
-          francos_cantidad:     nuevoTipo === 'ab_francos' ? (francos || null) : null,
-          valor_por_dia:        nuevoTipo === 'por_dia'    ? (vDia || null)    : null,
-          dias_trabajados:      nuevoTipo === 'por_dia'    ? (dias || null)    : null,
-          valor_por_hora:       nuevoTipo === 'por_hora_ipc' ? (vHora || null) : null,
-          horas_mes:            nuevoTipo === 'por_hora_ipc' ? (horas || null) : null,
+          francos_cantidad:     nuevoTipo === 'ab_francos'   ? (francos || null) : null,
+          valor_por_dia:        nuevoTipo === 'por_dia'      ? (vDia    || null) : null,
+          dias_trabajados:      nuevoTipo === 'por_dia'      ? (dias    || null) : null,
+          valor_por_hora:       nuevoTipo === 'por_hora_ipc' ? (vHora   || null) : null,
+          horas_mes:            nuevoTipo === 'por_hora_ipc' ? (horas   || null) : null,
         })
       }
 
-      // Avanzar al siguiente mes
-      if (anio === MES_MAX.anio && mes === MES_MAX.mes) break
-      mes++
-      if (mes > 12) { mes = 1; anio++ }
+      if (anio === campMax.anio && mes === campMax.mes) break
+      mes++; if (mes > 12) { mes = 1; anio++ }
     }
 
     if (periodoInserts.length > 0) {
@@ -767,9 +950,15 @@ export function TabSueldos() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Sueldos</h2>
-          <p className="text-sm text-gray-500">Campaña 25/26 · {periodos.length} empleados</p>
+          <p className="text-sm text-gray-500">
+            Campaña {campanaActiva?.etiqueta ?? '…'} · {periodos.length} empleados
+          </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setNuevaCampanaActivar(true); setModalCampana(true) }}>
+            <Settings className="h-4 w-4 mr-2" />
+            Campañas
+          </Button>
           <Button variant="outline" onClick={abrirHistorial}>
             <History className="h-4 w-4 mr-2" />
             Historial
@@ -952,6 +1141,17 @@ export function TabSueldos() {
                             title="Registrar pago del saldo restante"
                           >
                             + Saldo
+                          </Button>
+                        )}
+                        {!p.empleado?.fecha_egreso && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2 text-red-400 hover:text-red-600"
+                            onClick={() => abrirTerminar(p.empleado_id, p.empleado?.nombre ?? '')}
+                            title="Dar de baja"
+                          >
+                            <UserMinus className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
@@ -1309,8 +1509,8 @@ export function TabSueldos() {
                   <SelectContent>
                     {(() => {
                       const opts = []
-                      let a = MES_MIN.anio, m = MES_MIN.mes
-                      while (a < MES_MAX.anio || (a === MES_MAX.anio && m <= MES_MAX.mes)) {
+                      let a = mesMin.anio, m = mesMin.mes
+                      while (a < mesMax.anio || (a === mesMax.anio && m <= mesMax.mes)) {
                         opts.push({ anio: a, mes: m })
                         m++; if (m > 12) { m = 1; a++ }
                       }
@@ -1667,8 +1867,8 @@ export function TabSueldos() {
 
             {/* Info sobre períodos a generar */}
             <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
-              Se generarán automáticamente los períodos de la campaña 25/26 donde el empleado esté activo
-              {' '}({MESES_SHORT[MES_MIN.mes - 1]} {MES_MIN.anio} – {MESES_SHORT[MES_MAX.mes - 1]} {MES_MAX.anio}).
+              Se generarán automáticamente los períodos de la campaña {campanaActiva?.etiqueta ?? '…'} donde el empleado esté activo
+              {' '}({MESES_SHORT[mesMin.mes - 1]} {mesMin.anio} – {MESES_SHORT[mesMax.mes - 1]} {mesMax.anio}).
             </div>
 
           </div>
@@ -1683,6 +1883,134 @@ export function TabSueldos() {
               Crear Empleado
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Dar de Baja Empleado ─────────────────────────────────────── */}
+      <Dialog open={modalTerminar} onOpenChange={setModalTerminar}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <UserMinus className="h-5 w-5" />
+              Dar de baja: {terminarEmpNombre}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-gray-600">
+              El empleado dejará de aparecer en los meses posteriores a la fecha de egreso.
+            </p>
+            <div>
+              <Label>Fecha de egreso (último día trabajado) *</Label>
+              <Input
+                type="date"
+                value={terminarFecha}
+                onChange={e => setTerminarFecha(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalTerminar(false)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={terminarEmpleado}
+              disabled={guardandoTerminar || !terminarFecha}
+            >
+              {guardandoTerminar ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Confirmar baja
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Gestionar Campañas ───────────────────────────────────────── */}
+      <Dialog open={modalCampana} onOpenChange={setModalCampana}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5" />
+              Gestionar Campañas
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+
+            {/* Lista de campañas existentes */}
+            <div>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-2">Campañas existentes</p>
+              <div className="space-y-1">
+                {todasCampanas.map(c => {
+                  const inicio = new Date(c.fecha_inicio)
+                  const fin    = new Date(c.fecha_fin)
+                  const label  = `${MESES_SHORT[inicio.getUTCMonth()]} ${inicio.getUTCFullYear()} – ${MESES_SHORT[fin.getUTCMonth()]} ${fin.getUTCFullYear()}`
+                  return (
+                    <div key={c.id} className="flex items-center justify-between px-3 py-2 rounded border bg-gray-50">
+                      <div>
+                        <span className="font-semibold text-sm">{c.etiqueta}</span>
+                        <span className="text-xs text-gray-400 ml-2">{label}</span>
+                      </div>
+                      {c.activa
+                        ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Activa</span>
+                        : <span className="text-xs text-gray-300">Inactiva</span>
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Crear nueva campaña */}
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Nueva campaña</p>
+
+              <div>
+                <Label>Etiqueta <span className="text-gray-400 font-normal">(ej: 26/27)</span></Label>
+                <Input
+                  placeholder="26/27"
+                  value={nuevaCampanaEtiqueta}
+                  onChange={e => setNuevaCampanaEtiqueta(e.target.value)}
+                />
+                {(() => {
+                  const p = parsearCampana(nuevaCampanaEtiqueta)
+                  return p ? (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Períodos: julio {p.anio1} – junio {p.anio2}
+                    </p>
+                  ) : nuevaCampanaEtiqueta.length > 0 ? (
+                    <p className="text-xs text-red-500 mt-1">Formato inválido (usar AA/AA)</p>
+                  ) : null
+                })()}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="activarCampana"
+                  checked={nuevaCampanaActivar}
+                  onChange={e => setNuevaCampanaActivar(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="activarCampana" className="text-sm">
+                  Activar esta campaña (desactiva la actual)
+                </label>
+              </div>
+
+              <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
+                Se generarán períodos para todos los empleados vigentes, copiando los últimos parámetros conocidos de cada uno.
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={crearCampana}
+                disabled={creandoCampana || !parsearCampana(nuevaCampanaEtiqueta)}
+              >
+                {creandoCampana
+                  ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Generando períodos…</>
+                  : <><Plus className="h-4 w-4 mr-2" />Crear campaña y generar períodos</>
+                }
+              </Button>
+            </div>
+
+          </div>
         </DialogContent>
       </Dialog>
 
