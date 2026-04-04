@@ -236,12 +236,13 @@ export function TabSueldos() {
   const [nuevaCampanaActivar, setNuevaCampanaActivar] = useState(true)
   const [creandoCampana, setCreandoCampana] = useState(false)
 
-  // Modal dar de baja empleado
-  const [modalTerminar, setModalTerminar] = useState(false)
-  const [terminarEmpId, setTerminarEmpId] = useState('')
-  const [terminarEmpNombre, setTerminarEmpNombre] = useState('')
-  const [terminarFecha, setTerminarFecha] = useState('')
-  const [guardandoTerminar, setGuardandoTerminar] = useState(false)
+  // Modal Gestión de Nómina
+  const [modalNomina, setModalNomina] = useState(false)
+  const [nominaVista, setNominaVista] = useState<'menu' | 'baja'>('menu')
+  const [empleadosActivos, setEmpleadosActivos] = useState<Empleado[]>([])
+  const [bajaFechas, setBajaFechas] = useState<Record<string, string>>({})
+  const [bajasGuardando, setBajasGuardando] = useState<Record<string, boolean>>({})
+
 
   // Modal edición pago
   const [editandoPago, setEditandoPago] = useState<Pago | null>(null)
@@ -800,21 +801,29 @@ export function TabSueldos() {
     await cargar()
   }
 
-  // ── Dar de baja empleado ──────────────────────────────────────────────────
+  // ── Gestión de Nómina ─────────────────────────────────────────────────────
 
-  const abrirTerminar = (empId: string, nombre: string) => {
-    setTerminarEmpId(empId)
-    setTerminarEmpNombre(nombre)
-    setTerminarFecha('')
-    setModalTerminar(true)
+  const abrirNomina = async () => {
+    setNominaVista('menu')
+    setBajaFechas({})
+    setBajasGuardando({})
+    const { data } = await supabase
+      .from('sueldos_empleados')
+      .select('*')
+      .eq('activo', true)
+      .order('nombre')
+    setEmpleadosActivos((data ?? []) as Empleado[])
+    setModalNomina(true)
   }
 
-  const terminarEmpleado = async () => {
-    if (!terminarEmpId || !terminarFecha) return
-    setGuardandoTerminar(true)
-    await supabase.from('sueldos_empleados').update({ fecha_egreso: terminarFecha }).eq('id', terminarEmpId)
-    setGuardandoTerminar(false)
-    setModalTerminar(false)
+  const darDeBaja = async (emp: Empleado) => {
+    const fecha = bajaFechas[emp.id]
+    if (!fecha) return
+    setBajasGuardando(prev => ({ ...prev, [emp.id]: true }))
+    await supabase.from('sueldos_empleados').update({ fecha_egreso: fecha }).eq('id', emp.id)
+    setBajasGuardando(prev => ({ ...prev, [emp.id]: false }))
+    // Actualizar lista local
+    setEmpleadosActivos(prev => prev.map(e => e.id === emp.id ? { ...e, fecha_egreso: fecha } : e))
     await cargar()
   }
 
@@ -963,9 +972,9 @@ export function TabSueldos() {
             <History className="h-4 w-4 mr-2" />
             Historial
           </Button>
-          <Button variant="outline" onClick={abrirNuevoEmp}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Agregar Empleado
+          <Button variant="outline" onClick={abrirNomina}>
+            <Users className="h-4 w-4 mr-2" />
+            Gestión de Nómina
           </Button>
           <Button onClick={() => abrirAnticipo()}>
             <Plus className="h-4 w-4 mr-2" />
@@ -1141,17 +1150,6 @@ export function TabSueldos() {
                             title="Registrar pago del saldo restante"
                           >
                             + Saldo
-                          </Button>
-                        )}
-                        {!p.empleado?.fecha_egreso && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs h-7 px-2 text-red-400 hover:text-red-600"
-                            onClick={() => abrirTerminar(p.empleado_id, p.empleado?.nombre ?? '')}
-                            title="Dar de baja"
-                          >
-                            <UserMinus className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
@@ -1886,39 +1884,125 @@ export function TabSueldos() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Modal Dar de Baja Empleado ─────────────────────────────────────── */}
-      <Dialog open={modalTerminar} onOpenChange={setModalTerminar}>
-        <DialogContent className="max-w-sm">
+      {/* ── Modal Gestión de Nómina ───────────────────────────────────────── */}
+      <Dialog open={modalNomina} onOpenChange={setModalNomina}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <UserMinus className="h-5 w-5" />
-              Dar de baja: {terminarEmpNombre}
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Gestión de Nómina
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-gray-600">
-              El empleado dejará de aparecer en los meses posteriores a la fecha de egreso.
-            </p>
-            <div>
-              <Label>Fecha de egreso (último día trabajado) *</Label>
-              <Input
-                type="date"
-                value={terminarFecha}
-                onChange={e => setTerminarFecha(e.target.value)}
-              />
+
+          {nominaVista === 'menu' && (
+            <div className="grid grid-cols-1 gap-3 py-2">
+
+              {/* Alta */}
+              <button
+                onClick={() => { setModalNomina(false); abrirNuevoEmp() }}
+                className="flex items-start gap-4 p-4 rounded-lg border hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+              >
+                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <UserPlus className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">Alta de Empleado</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Registrar un nuevo empleado y generar sus períodos en la campaña activa.
+                  </p>
+                </div>
+              </button>
+
+              {/* Baja */}
+              <button
+                onClick={() => setNominaVista('baja')}
+                className="flex items-start gap-4 p-4 rounded-lg border hover:border-red-400 hover:bg-red-50 transition-colors text-left"
+              >
+                <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <UserMinus className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm">Baja de Empleado</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Registrar la fecha de egreso de un empleado. Deja de aparecer en meses posteriores.
+                  </p>
+                </div>
+              </button>
+
+              {/* Planilla de asistencia — placeholder */}
+              <div className="flex items-start gap-4 p-4 rounded-lg border border-dashed bg-gray-50 opacity-60 cursor-not-allowed">
+                <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <CalendarDays className="h-5 w-5 text-gray-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm text-gray-500">Planilla de Asistencia</p>
+                    <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">Próximamente</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Importar planilla mensual de francos, días y horas trabajadas por empleado.
+                  </p>
+                </div>
+              </div>
+
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModalTerminar(false)}>Cancelar</Button>
-            <Button
-              variant="destructive"
-              onClick={terminarEmpleado}
-              disabled={guardandoTerminar || !terminarFecha}
-            >
-              {guardandoTerminar ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Confirmar baja
-            </Button>
-          </DialogFooter>
+          )}
+
+          {nominaVista === 'baja' && (
+            <div className="py-2 space-y-3">
+              <button
+                onClick={() => setNominaVista('menu')}
+                className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+              >
+                ← Volver
+              </button>
+              <p className="text-sm text-gray-500">
+                Seleccioná la fecha de egreso (último día trabajado) para cada empleado que da de baja.
+              </p>
+              <div className="space-y-2">
+                {empleadosActivos.map(emp => {
+                  const yaConEgreso = !!emp.fecha_egreso
+                  return (
+                    <div key={emp.id} className={`flex items-center gap-3 p-3 rounded-lg border ${yaConEgreso ? 'bg-gray-50 opacity-60' : 'bg-white'}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{emp.nombre}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {empresaBadge(emp.empresa)}
+                          <span className="text-xs text-gray-400">{tipoLabel(emp.tipo_empleado)}</span>
+                          {yaConEgreso && (
+                            <span className="text-xs text-red-400">Egreso: {emp.fecha_egreso}</span>
+                          )}
+                        </div>
+                      </div>
+                      {!yaConEgreso && (
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Input
+                            type="date"
+                            className="h-8 text-xs w-36"
+                            value={bajaFechas[emp.id] ?? ''}
+                            onChange={e => setBajaFechas(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                          />
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="h-8 text-xs"
+                            disabled={!bajaFechas[emp.id] || bajasGuardando[emp.id]}
+                            onClick={() => darDeBaja(emp)}
+                          >
+                            {bajasGuardando[emp.id]
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : 'Dar de baja'
+                            }
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
         </DialogContent>
       </Dialog>
 
