@@ -523,6 +523,26 @@ export function VistaCashFlow() {
         }
       }
 
+      // Barrera: conciliación manual de cuotas TEMPLATE con monto real
+      if (nuevoEstado === 'conciliado' && filaParaCambioEstado.origen === 'TEMPLATE') {
+        const monto = Math.abs(filaParaCambioEstado.debitos ?? 0)
+
+        if (monto > 0) {
+          toast.error(`Esta cuota tiene monto $${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}. La conciliación debe realizarse desde el extracto bancario.`)
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
+          return
+        }
+
+        // Monto = 0: confirmación explícita
+        const confirmar = window.confirm('Esta cuota es de $0.\n¿Confirmar como conciliada sin movimiento bancario?')
+        if (!confirmar) {
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
+          return
+        }
+      }
+
       const exito = await actualizarRegistro(
         filaParaCambioEstado.id,
         'estado',

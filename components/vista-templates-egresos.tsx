@@ -636,6 +636,25 @@ export function VistaTemplatesEgresos() {
       return
     }
 
+    // Barrera: conciliación manual de cuotas
+    if (celdaEnEdicion.columna === 'estado' && String(nuevoValor).toLowerCase() === 'conciliado') {
+      const cuota = cuotasOriginales.find(c => c.id === celdaEnEdicion.cuotaId)
+      const monto = cuota?.monto ?? 1
+
+      if (monto > 0) {
+        alert(`⛔ Esta cuota tiene monto $${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.\nPara conciliar debe existir un movimiento en el extracto bancario.`)
+        setCeldaEnEdicion(null)
+        return
+      }
+
+      // Monto = 0: confirmación explícita
+      const confirmar = window.confirm('Esta cuota es de $0.\n¿Confirmar como conciliada sin movimiento bancario?')
+      if (!confirmar) {
+        setCeldaEnEdicion(null)
+        return
+      }
+    }
+
     // Para otros campos, continuar con el guardado normal
     await ejecutarGuardadoRealTemplates(celdaEnEdicion, nuevoValor)
   }
