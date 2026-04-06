@@ -156,7 +156,9 @@ export function VistaCashFlow() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
+  const [mostrarBancarios, setMostrarBancarios] = useState(false)
+  const [togglingSoloConciliacion, setTogglingSoloConciliacion] = useState<string | null>(null)
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
@@ -934,7 +936,7 @@ export function VistaCashFlow() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, responsable')
+        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, responsable, solo_conciliacion')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
         .order('cuenta_agrupadora')
@@ -953,7 +955,22 @@ export function VistaCashFlow() {
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
     setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+    setMostrarBancarios(false)
     setModalPagoManual(true)
+  }
+
+  const toggleSoloConciliacion = async (templateId: string, valorActual: boolean) => {
+    setTogglingSoloConciliacion(templateId)
+    const { error } = await supabase
+      .from('egresos_sin_factura')
+      .update({ solo_conciliacion: !valorActual })
+      .eq('id', templateId)
+    if (!error) {
+      setTemplatesAbiertos(prev => prev.map(t =>
+        t.id === templateId ? { ...t, solo_conciliacion: !valorActual } : t
+      ))
+    }
+    setTogglingSoloConciliacion(null)
   }
 
   const guardarPagoManual = async () => {
@@ -2380,39 +2397,89 @@ export function VistaCashFlow() {
           </DialogHeader>
 
           {/* Paso 1: Seleccionar template */}
-          {pasoModal === 'seleccionar' && (
-            <div className="py-4 space-y-3">
-              {templatesAbiertos.length === 0 ? (
-                <div className="text-center text-gray-500 py-6">
-                  <p>No hay templates abiertos disponibles.</p>
-                  <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {templatesAbiertos.map(template => (
-                    <div
-                      key={template.id}
-                      onClick={() => setTemplateSeleccionado(template.id)}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        templateSeleccionado === template.id
-                          ? 'border-purple-500 bg-purple-50'
-                          : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      {template.cuenta_agrupadora && (
-                        <div className="text-xs text-gray-400 mb-0.5">{template.cuenta_agrupadora}</div>
-                      )}
-                      <div className="font-medium">{template.nombre_referencia}</div>
-                      <div className="text-xs text-gray-500">
-                        {template.categ}
-                        {template.responsable && <span className="ml-2 text-blue-600">• {template.responsable}</span>}
+          {pasoModal === 'seleccionar' && (() => {
+            const templatesUso = templatesAbiertos.filter(t => !t.solo_conciliacion)
+            const templatesBancarios = templatesAbiertos.filter(t => t.solo_conciliacion)
+            return (
+              <div className="py-4 space-y-3">
+                {templatesUso.length === 0 ? (
+                  <div className="text-center text-gray-500 py-6">
+                    <p>No hay templates disponibles.</p>
+                    <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto">
+                    {templatesUso.map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => setTemplateSeleccionado(template.id)}
+                        className={`p-3 border rounded-lg cursor-pointer transition-colors relative group ${
+                          templateSeleccionado === template.id
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {template.cuenta_agrupadora && (
+                          <div className="text-xs text-gray-400 mb-0.5">{template.cuenta_agrupadora}</div>
+                        )}
+                        <div className="font-medium pr-6">{template.nombre_referencia}</div>
+                        <div className="text-xs text-gray-500">
+                          {template.categ}
+                          {template.responsable && <span className="ml-2 text-blue-600">• {template.responsable}</span>}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={togglingSoloConciliacion === template.id}
+                          onClick={(e) => { e.stopPropagation(); toggleSoloConciliacion(template.id, template.solo_conciliacion) }}
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity disabled:opacity-30"
+                          title="Mover a solo conciliación"
+                        >
+                          {togglingSoloConciliacion === template.id ? '...' : '↓'}
+                        </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                    ))}
+                  </div>
+                )}
+
+                {/* Sección bancarios / motor */}
+                {templatesBancarios.length > 0 && (
+                  <div className="border-t pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setMostrarBancarios(p => !p)}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 w-full"
+                    >
+                      <span>{mostrarBancarios ? '▾' : '▸'}</span>
+                      <span>Solo conciliación bancaria ({templatesBancarios.length})</span>
+                    </button>
+                    {mostrarBancarios && (
+                      <div className="mt-2 space-y-1 max-h-[180px] overflow-y-auto">
+                        {templatesBancarios.map(template => (
+                          <div key={template.id} className="flex items-center justify-between px-3 py-2 border border-gray-100 rounded-lg bg-gray-50">
+                            <div>
+                              {template.cuenta_agrupadora && (
+                                <div className="text-xs text-gray-400">{template.cuenta_agrupadora}</div>
+                              )}
+                              <div className="text-sm text-gray-600">{template.nombre_referencia}</div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={togglingSoloConciliacion === template.id}
+                              onClick={() => toggleSoloConciliacion(template.id, template.solo_conciliacion)}
+                              className="ml-3 text-xs px-2 py-1 rounded border border-gray-300 hover:bg-white transition-colors disabled:opacity-50"
+                              title="Mover a lista principal"
+                            >
+                              {togglingSoloConciliacion === template.id ? '...' : '↑ Habilitar'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Paso 2: Ingresar datos */}
           {pasoModal === 'datos' && (
