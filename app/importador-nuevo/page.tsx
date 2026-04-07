@@ -63,9 +63,9 @@ export default function Page() {
 
         {esPrimeraCarga && (
           <input
-            type="number"
+            type="text"
             required
-            placeholder="Saldo inicial"
+            placeholder="Saldo inicial (ej: 1.250.000,00)"
             value={saldoInicio}
             onChange={(e) => setSaldoInicio(e.target.value)}
             className="w-full border p-2 rounded"

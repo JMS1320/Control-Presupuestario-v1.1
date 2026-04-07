@@ -129,6 +129,18 @@ export async function POST(req: Request) {
     let nextOrden = ultimaFila?.orden ? Number(ultimaFila.orden) + 1 : 1
     let controlAnterior = ultimaFila?.control ?? 0
 
+    // Traer movimientos ya existentes para la última fecha (para deduplicar mismo día)
+    const movimientosUltimaFecha: Set<string> = new Set()
+    if (ultimaFecha) {
+      const { data: existentesUltimaFecha } = await supabase
+        .from("msa_galicia")
+        .select("descripcion, debitos, creditos")
+        .eq("fecha", ultimaFecha)
+      existentesUltimaFecha?.forEach((m: any) => {
+        movimientosUltimaFecha.add(`${m.descripcion}|${m.debitos}|${m.creditos}`)
+      })
+    }
+
     // Obtener todas las categorías válidas
     const { data: categsValidas } = await supabase.from("cuentas_contables").select("categ")
     const setCategs = new Set(categsValidas?.map((c: any) => c.categ))
@@ -154,13 +166,16 @@ export async function POST(req: Request) {
       const fechaNormalizada = new Date(fecha).toISOString().split("T")[0]
 
       // Validar que la fecha sea válida y cumpla con las reglas de negocio
-      if (
-        !fechaNormalizada ||
-        fechaNormalizada === hoy ||
-        fechaNormalizada > hoy ||
-        (ultimaFecha && fechaNormalizada <= ultimaFecha)
-      ) {
-        continue
+      if (!fechaNormalizada || fechaNormalizada === hoy || fechaNormalizada > hoy) continue
+      if (ultimaFecha && fechaNormalizada < ultimaFecha) continue
+
+      // Para el mismo día que la última fecha: descartar si el movimiento ya existe
+      if (ultimaFecha && fechaNormalizada === ultimaFecha) {
+        const debitos = parseNumber(fila["Débitos"])
+        const creditos = parseNumber(fila["Créditos"])
+        const descripcion = cleanString(fila["Descripción"])
+        const clave = `${descripcion}|${debitos}|${creditos}`
+        if (movimientosUltimaFecha.has(clave)) continue
       }
 
       console.log(`Procesando fila ${index + 1} - fecha: ${fechaNormalizada}`)

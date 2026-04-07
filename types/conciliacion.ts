@@ -15,8 +15,18 @@ export interface ReglaConciliacion {
   centro_costo?: string | null
   detalle: string
   
+  // Cuenta bancaria a la que aplica esta regla
+  cuenta_bancaria_id: string
+
+  // Códigos contables específicos por cuenta bancaria
+  // Tienen prioridad sobre seccion_regla del template
+  // Vacío = usar fallback del template
+  codigo_contable?: string | null
+  codigo_interno?: string | null
+
   // Control
   activo: boolean
+  llena_template: boolean
   created_at: string
   updated_at: string
 }
@@ -43,11 +53,16 @@ export interface MovimientoBancario {
   // Campos completados por conciliación
   control?: string
   categ?: string
+  nro_cuenta?: string | null
   centro_de_costo?: string
   detalle?: string
   contable?: string
   interno?: string
   motivo_revision?: string
+  // Referencias cuenta + pago (arquitectura 4 columnas)
+  template_id?: string | null
+  template_cuota_id?: string | null
+  comprobante_arca_id?: string | null
 }
 
 export interface ResultadoConciliacion {

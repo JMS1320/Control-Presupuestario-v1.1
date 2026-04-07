@@ -6,10 +6,33 @@
 
 # 🤖 **REGLAS AUTOMÁTICAS CLAUDE**
 
+## 💰 **Convención Inputs Monetarios (es-AR) — OBLIGATORIO**
+
+Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
+
+```tsx
+// Input
+<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
+
+// Al guardar — parsear aceptando coma como decimal y punto como miles
+parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
+
+// Al pre-cargar un valor numérico existente en el input
+numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Resultado: 1234567.89 → "1.234.567,89"
+```
+
+**Reglas:**
+- `type="text"` siempre (nunca `type="number"` para montos)
+- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`
+- Filtros de monto (mínimo/máximo): también usar `.replace(/\./g, '').replace(',', '.')` antes del parseFloat
+
+---
+
 ## 🔄 **Reglas de Objetivos:**
 1. **Verificar contexto objetivo** antes de responder
 2. **Buscar en KNOWLEDGE.md** solo si no está en contexto cargado
-3. **Documentar avances en Claude** durante objetivo activo  
+3. **Documentar avances en Claude** durante objetivo activo
 4. **Proponer finalizar objetivo** cuando mencione "completado"
 5. **Usar tags sistemáticos** en toda documentación
 6. **Nunca esperar que usuario pregunte** → proponer automático
@@ -68,14 +91,133 @@ npm test
 
 ---
 
-# 🎯 **OBJETIVO ACTUAL: Carga Masiva Templates + Nuevos Procesos Implicados**
+# 🎯 **OBJETIVO ACTUAL: Arquitectura Conciliación Bancaria + Motor Automático**
 
 ## 📍 **Estado Objetivo:**
-**Progreso**: INICIADO - Análisis Excel templates + definición procesos
-**Transición**: 2025-08-20 (desde desarrollo mejoras continuas)
-**Iniciado**: 2025-08-20
-**Contexto**: Archivo Excel Templates.csv recibido - 53 templates + procesos complejos
-**⚠️ CRÍTICO**: Registrar minuciosamente para continuidad sesión
+**Progreso**: EN CURSO — Motor funcional, templates multi-cuenta implementados, guards conciliación manual OK
+**Transición**: 2026-03-24 (desde carga masiva templates)
+**Iniciado**: 2026-03-22
+**Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
+
+## 🚀 **AVANCES SESIÓN 2026-04-04:**
+
+### ✅ **GUARDS DE CONCILIACIÓN MANUAL — TEMPLATES Y CASH FLOW**
+- `monto > 0` → bloqueo total (alert en Templates, toast.error en Cash Flow)
+- `monto = 0` → window.confirm() para cuotas placeholder de $0
+- Aplica en: `guardarCambio` (vista-templates-egresos) + `cambiarEstado` (vista-cash-flow)
+
+### ✅ **`solo_conciliacion` — FILTRO PAGO MANUAL**
+- Campo `solo_conciliacion BOOLEAN DEFAULT FALSE` en `egresos_sin_factura`
+- Templates bancarios/motor no aparecen en sección principal de Pago Manual
+- Sección colapsable "Bancarios / motor" con botón "Habilitar" por template
+- `toggleSoloConciliacion` actualiza BD + estado local
+
+### ✅ **TEMPLATES MULTI-CUENTA — ARQUITECTURA COMPLETA**
+- Campo `es_multi_cuenta BOOLEAN DEFAULT FALSE` en `egresos_sin_factura`
+- Campo `categ VARCHAR(100)` en `cuotas_egresos_sin_factura`
+- Regla prioridad: `cuota.categ ?? template.categ` en Cash Flow hook, motor y vista
+- Wizard: checkbox visible solo en tipo abierto; al activar, oculta categ/agrupadora
+- Pago Manual paso 2: selector categ solo cuando `es_multi_cuenta=true`
+- Cash Flow: edición categ multi-cuenta → escribe en cuota; normal → toast.error bloqueante
+- Motor: sin categ en cuota multi-cuenta → `auditar` + motivo específico
+- Visual en Templates: badge naranja (cuota propia) vs azul (heredada del template)
+
+### ✅ **DOCUMENTACIÓN GENERADA**
+- `DISEÑO_TEMPLATES.md` — referencia completa arquitectura 3 tipos, flags, guards, flujos
+- `memory/project_conciliacion_bancaria.md` — actualizado con guards + solo_conciliacion + multi-cuenta
+- `DISEÑO_SUELDOS.md` — sección transición templates 47-54 + cómo desactivar
+
+## 🚀 **AVANCES SESIÓN 2026-03-24:**
+
+### ✅ **ARQUITECTURA 4 COLUMNAS EXTRACTO — IMPLEMENTADA**
+Cada fila del extracto bancario tiene 4 referencias:
+- `nro_cuenta` — código cuenta contable (nivel cuenta, de facturas ARCA)
+- `template_id` — UUID del template (nivel cuenta, de templates)
+- `comprobante_arca_id` — UUID factura ARCA (nivel pago)
+- `template_cuota_id` — UUID cuota del template (nivel pago)
+
+Migraciones aplicadas en BD: columnas template_id + template_cuota_id en msa_galicia, pam_galicia, pam_galicia_cc.
+
+### ✅ **MOTOR CONCILIACIÓN — llena_template IMPLEMENTADO**
+- Campo `llena_template` (boolean) agregado a `reglas_conciliacion`
+- Función `crearCuotaEnTemplate()` en `useMotorConciliacion.ts`
+- Cuando regla hace match y llena_template=true → crea cuota en template + vincula IDs en extracto
+- Filtro por empresa: si hay varios templates con mismo categ, elige el de la empresa de la cuenta
+- ASES desactivado (llena_template=false)
+- Commits: 1bcf767
+
+### ✅ **14 TEMPLATES BANCARIOS CREADOS EN BD**
+- 7 Gastos Bancarios: Comision Cuenta Bancaria, Comision Cheques, Comision Extraccion Efectivo, Comision Transferencias, Comision Certificaciones de Firma, Comision Caja de Seguridad, Com. Uso Atm
+- 7 Impuestos Bancarios: IIBB Bancario, Iva Bancario, Percepcion IVA, Percepcion Rg 5463/23, Sellos Bancario, Debitos / Creditos, Impuesto Pais
+- Todos abiertos, responsable 'MSA / PAM' (pendiente separar)
+
+### ✅ **2 TEMPLATES CRÉDITOS CREADOS EN BD**
+- "Créditos Tomados" — categ CRED T — Créditos Bancarios — MSA
+- "Créditos Pagados" — categ CRED P — Créditos Bancarios — MSA
+- Regla orden 17 (Intereses Sobre Saldos Deudores) → categ CRED P → llenará "Créditos Pagados"
+
+### ✅ **40 REGLAS ACTUALIZADAS — categ apunta a templates reales**
+- Eliminado BANC e IMP 2 como categs genéricos
+- Cada regla apunta al categ exacto del template correspondiente
+- Todas las reglas actuales son para MSA Galicia únicamente
+
+### ✅ **CUENTA AGRUPADORA EN TODOS LOS SELECTORES**
+- Modal Pago Manual (Cash Flow y Templates): muestra cuenta_agrupadora sobre nombre_referencia
+- Selector cuentas contables (Asignación ARCA): muestra nombre_totalizadora sobre categ
+- Ordenado por agrupadora luego por nombre
+- Commit: ed9e0c2
+
+### ✅ **CONSOLIDACIÓN TARJETAS Y OTROS**
+- Tarjeta VISA PAM USS desactivada (una sola tarjeta PAM, siempre en pesos)
+- Tarjeta VISA PAM renombrada, tipo_template abierto
+- Tarjeta Visa Business MSA: tipo_template abierto
+- CAJA: tipo_template abierto + es_bidireccional = true
+
+---
+
+## 🚨 **PENDIENTES CRÍTICOS — PRÓXIMA SESIÓN**
+
+### 🥇 **PRIORIDAD 1 — MODAL ASIGNACIÓN MANUAL EXTRACTO**
+Modal para movimientos Pendiente/Auditar en vista-extracto-bancario.tsx:
+- **Camino A: ARCA Factura** → buscar factura por fecha/monto/proveedor → auto-llena comprobante_arca_id + nro_cuenta (si tiene cuenta contable)
+- **Camino B: Template** → buscar template por nombre + cuenta_agrupadora → crea cuota → auto-llena template_id + template_cuota_id + categ
+- Sin Camino C: todo debe tener template o factura
+- Usuario nunca ingresa IDs ni códigos — solo busca por nombre
+- Monto pre-lleno desde extracto (débito o crédito)
+
+### 🥈 **PRIORIDAD 2 — REVISIÓN ARQUITECTURAL PENDIENTE**
+
+#### ⚠️ Templates bancarios: separar MSA / PAM / MA
+- Hoy: 14 templates con responsable 'MSA / PAM' (ambiguo)
+- Necesario: 3 versiones × 14 = 42 templates con responsable 'MSA', 'PAM', 'MA'
+- Motor ya filtra por empresa — solo falta crear los templates y las reglas PAM/MA
+- Las reglas PAM/MA tendrán diferentes leyendas bancarias
+
+#### ⚠️ Revisar si categ es obsoleto dado template_id
+- Vieja arquitectura: categ era el identificador principal
+- Nueva arquitectura: template_id (UUID) es referencia directa
+- Pregunta: ¿categ en extracto sigue siendo necesario?
+- Para ARCA puro (sin template): sí, categ sigue siendo la clasificación
+- Para template: categ es derivable del template (JOIN)
+- Pendiente: definir si se mantiene categ como campo de display o se elimina
+
+#### ⚠️ Consistencia general templates y cuentas contables
+- Todos los templates deben tener: responsable correcto, cuenta_agrupadora, categ válido
+- Cuentas contables: verificar que nombre_totalizadora y cta_totalizadora estén completos
+- Templates 11-61 del Excel original: pendientes de carga masiva
+
+### 🥉 **PRIORIDAD 3 — REGLAS PAM Y MA**
+- Cuando se configuren bancos PAM y MA, crear reglas con leyendas propias
+- Misma estructura que MSA, diferentes textos de búsqueda
+- Motor ya soporta múltiples cuentas/empresas
+
+---
+
+## 💡 **AVANCES OBJETIVO ANTERIOR (Carga Masiva Templates):**
+- [2025-08-20] ✅ FIX CRÍTICO: Campos vacíos categoría ARCA facturas ahora editables (Ctrl+Click)
+- [2025-08-20] ✅ FEATURE: Centro de costo opcional en creación templates
+- [2025-08-20] ✅ FEATURE: Sistema reglas contable e interno automatizado
+- [2025-08-20] ✅ FEATURE: Vista Principal como página inicio + Sistema IPC
 
 ## 💡 **Avances Objetivo Anterior (Desarrollo Continuo):**
 - [2025-08-20] ✅ FIX CRÍTICO: Campos vacíos categoría ARCA facturas ahora editables (Ctrl+Click)

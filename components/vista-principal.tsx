@@ -283,7 +283,7 @@ export function VistaPrincipal() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-orange-600">{ultimoIPC.valor_ipc.toFixed(2)}%</div>
+                  <div className="text-2xl font-bold text-orange-600">{ultimoIPC.valor_ipc.toFixed(2).replace(".", ",")}%</div>
                   <div className="text-xs text-gray-500 uppercase">{ultimoIPC.fuente}</div>
                 </div>
               </div>

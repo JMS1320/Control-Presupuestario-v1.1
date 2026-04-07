@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus } from "lucide-react"
+import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus, Search } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
@@ -76,6 +76,7 @@ interface CeldaEnEdicion {
 export function VistaCashFlow() {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [busquedaRapida, setBusquedaRapida] = useState('')
   
   // Estados para filtros específicos
   const [fechaDesde, setFechaDesde] = useState('')
@@ -86,6 +87,7 @@ export function VistaCashFlow() {
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
+  const [medioPagoFiltro, setMedioPagoFiltro] = useState('todos')
   
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
@@ -154,11 +156,14 @@ export function VistaCashFlow() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, es_bidireccional: boolean, responsable: string}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string | null, cuenta_agrupadora: string | null, es_bidireccional: boolean, es_multi_cuenta: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
+  const [mostrarBancarios, setMostrarBancarios] = useState(false)
+  const [togglingSoloConciliacion, setTogglingSoloConciliacion] = useState<string | null>(null)
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
-  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
+  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '' })
+  const [cuentasContablesOpciones, setCuentasContablesOpciones] = useState<{categ: string, nombre_totalizadora: string | null}[]>([])
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
 
   // Estado para modal Anticipos (crear + ver existentes)
@@ -254,7 +259,7 @@ export function VistaCashFlow() {
             valorFinal = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
           }
         } else if (['debitos', 'creditos'].includes(celda.columna)) {
-          valorFinal = parseFloat(String(valorFinal)) || 0
+          valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
         }
         const exito = await actualizarRegistro(
           celda.filaId,
@@ -438,10 +443,15 @@ export function VistaCashFlow() {
       }
     }
 
+    // Para campos de moneda, mostrar valor formateado con coma decimal (es-AR)
+    const valorFormateado = columna.type === 'currency' && typeof valor === 'number' && valor !== 0
+      ? valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : (valor || '')
+
     const celdaHook: CeldaEnEdicionHook = {
       filaId: fila.id,
       columna: columna.key,
-      valor: valor || '',
+      valor: valorFormateado,
       tableName,
       origen: origenHook,
       campoReal: campoReal // ← Mapeo del campo real en BD
@@ -512,6 +522,26 @@ export function VistaCashFlow() {
           setFilaParaCambioEstado(null)
           setGuardandoCambio(false)
           cargarDatos()
+          return
+        }
+      }
+
+      // Barrera: conciliación manual de cuotas TEMPLATE con monto real
+      if (nuevoEstado === 'conciliado' && filaParaCambioEstado.origen === 'TEMPLATE') {
+        const monto = Math.abs(filaParaCambioEstado.debitos ?? 0)
+
+        if (monto > 0) {
+          toast.error(`Esta cuota tiene monto $${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}. La conciliación debe realizarse desde el extracto bancario.`)
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
+          return
+        }
+
+        // Monto = 0: confirmación explícita
+        const confirmar = window.confirm('Esta cuota es de $0.\n¿Confirmar como conciliada sin movimiento bancario?')
+        if (!confirmar) {
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
           return
         }
       }
@@ -599,7 +629,7 @@ export function VistaCashFlow() {
       const columna = columnasDefinicion.find(c => c.key === celda.columna)
       
       if (columna?.type === 'currency') {
-        valorFinal = parseFloat(String(valorFinal)) || 0
+        valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
       } else if (columna?.type === 'date') {
         // Validar formato de fecha
         if (valorFinal && !Date.parse(String(valorFinal))) {
@@ -706,7 +736,8 @@ export function VistaCashFlow() {
     if (busquedaDetalle.trim()) nuevosFiltros.busquedaDetalle = busquedaDetalle.trim()
     if (busquedaCateg.trim()) nuevosFiltros.busquedaCateg = busquedaCateg.trim()
     if (busquedaCUIT.trim()) nuevosFiltros.busquedaCUIT = busquedaCUIT.trim()
-    
+    if (medioPagoFiltro && medioPagoFiltro !== 'todos') nuevosFiltros.medioPago = medioPagoFiltro
+
     setFiltros(nuevosFiltros)
     toast.success(`Filtros aplicados: ${Object.keys(nuevosFiltros).length} criterios`)
   }
@@ -720,6 +751,7 @@ export function VistaCashFlow() {
     setBusquedaDetalle('')
     setBusquedaCateg('')
     setBusquedaCUIT('')
+    setMedioPagoFiltro('todos')
     setFiltros(undefined)
     toast.success('Filtros limpiados')
   }
@@ -745,12 +777,30 @@ export function VistaCashFlow() {
   }
 
   // Filtrar datos según origen seleccionado en modo PAGOS
-  const datosFiltradosPagos = modoPagos ? data.filter(fila => {
+  // Filtro rápido por búsqueda (client-side, siempre activo)
+  const datosConBusqueda = busquedaRapida.trim()
+    ? data.filter(fila => {
+        const q = busquedaRapida.toLowerCase().replace(/\./g, '')
+        const normalizarMonto = (n: number) => n > 0
+          ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
+          : ''
+        return (
+          fila.nombre_proveedor?.toLowerCase().includes(q) ||
+          fila.cuit_proveedor?.toLowerCase().includes(q) ||
+          fila.categ?.toLowerCase().includes(q) ||
+          fila.detalle?.toLowerCase().includes(q) ||
+          normalizarMonto(fila.debitos).includes(q) ||
+          normalizarMonto(fila.creditos).includes(q)
+        )
+      })
+    : data
+
+  const datosFiltradosPagos = modoPagos ? datosConBusqueda.filter(fila => {
     if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
     if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
     if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
     return true
-  }) : data
+  }) : datosConBusqueda
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
@@ -887,9 +937,10 @@ export function VistaCashFlow() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ, es_bidireccional, responsable')
+        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, es_multi_cuenta, responsable, solo_conciliacion')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
+        .order('cuenta_agrupadora')
         .order('nombre_referencia')
 
       if (error) throw error
@@ -901,11 +952,33 @@ export function VistaCashFlow() {
 
   const abrirModalPagoManual = async () => {
     await cargarTemplatesAbiertos()
+    // Cargar cuentas contables para selector de categ
+    const { data: cuentas } = await supabase
+      .from('cuentas_contables')
+      .select('categ, nombre_totalizadora')
+      .order('nombre_totalizadora')
+      .order('categ')
+    setCuentasContablesOpciones(cuentas || [])
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
-    setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '' })
+    setMostrarBancarios(false)
     setModalPagoManual(true)
+  }
+
+  const toggleSoloConciliacion = async (templateId: string, valorActual: boolean) => {
+    setTogglingSoloConciliacion(templateId)
+    const { error } = await supabase
+      .from('egresos_sin_factura')
+      .update({ solo_conciliacion: !valorActual })
+      .eq('id', templateId)
+    if (!error) {
+      setTemplatesAbiertos(prev => prev.map(t =>
+        t.id === templateId ? { ...t, solo_conciliacion: !valorActual } : t
+      ))
+    }
+    setTogglingSoloConciliacion(null)
   }
 
   const guardarPagoManual = async () => {
@@ -927,16 +1000,18 @@ export function VistaCashFlow() {
 
     setGuardandoNuevaCuota(true)
     try {
+      const categCuota = nuevaCuota.categ.trim() || null
       const { error } = await supabase
         .from('cuotas_egresos_sin_factura')
         .insert({
           egreso_id: templateSeleccionado,
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
-          monto: parseFloat(nuevaCuota.monto),
+          monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
-          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
+          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
+          ...(categCuota ? { categ: categCuota } : {})
         })
 
       if (error) throw error
@@ -1192,10 +1267,11 @@ export function VistaCashFlow() {
 
   // Calcular SICORE anticipo una vez seleccionado el tipo y los campos
   const calcularSicoreAnticipo = async (tipo: TipoSicore) => {
-    const netoGravado = parseFloat(camposSicore.neto_gravado) || 0
-    const netoNoGravado = parseFloat(camposSicore.neto_no_gravado) || 0
-    const opExentas = parseFloat(camposSicore.op_exentas) || 0
-    const iva = parseFloat(camposSicore.iva) || 0
+    const parseCampo = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
+    const netoGravado = parseCampo(camposSicore.neto_gravado)
+    const netoNoGravado = parseCampo(camposSicore.neto_no_gravado)
+    const opExentas = parseCampo(camposSicore.op_exentas)
+    const iva = parseCampo(camposSicore.iva)
     const impTotal = netoGravado + netoNoGravado + opExentas + iva
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
@@ -1263,7 +1339,7 @@ export function VistaCashFlow() {
 
     setGuardandoAnticipo(true)
     try {
-      const monto = parseFloat(nuevoAnticipo.monto)
+      const monto = parseFloat(nuevoAnticipo.monto.replace(/\./g, '').replace(',', '.'))
 
       const { data, error } = await supabase
         .from('anticipos_proveedores')
@@ -1370,8 +1446,8 @@ export function VistaCashFlow() {
             ) : columna.type === 'currency' ? (
               <Input
                 ref={hookEditor.inputRef}
-                type="number"
-                step="0.01"
+                type="text"
+                placeholder="0,00"
                 value={String(hookEditor.celdaEnEdicion?.valor || '')}
                 onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
                 onKeyDown={hookEditor.manejarKeyDown}
@@ -1627,8 +1703,26 @@ export function VistaCashFlow() {
               </Badge>
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
+              {/* Buscador rápido siempre visible */}
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <Input
+                  placeholder="Buscar proveedor, CUIT, categ, detalle..."
+                  value={busquedaRapida}
+                  onChange={(e) => setBusquedaRapida(e.target.value)}
+                  className="pl-8 h-8 w-72 text-sm"
+                />
+                {busquedaRapida && (
+                  <button
+                    onClick={() => setBusquedaRapida('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setMostrarFiltros(!mostrarFiltros)}
               >
@@ -1734,6 +1828,23 @@ export function VistaCashFlow() {
                     onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="text-xs"
                   />
+                </div>
+
+                {/* Filtro por medio de pago */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">💳 Medio de Pago</Label>
+                  <Select value={medioPagoFiltro} onValueChange={setMedioPagoFiltro}>
+                    <SelectTrigger className="text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="banco">Banco</SelectItem>
+                      <SelectItem value="caja_general">Caja General</SelectItem>
+                      <SelectItem value="caja_ams">Caja AMS</SelectItem>
+                      <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 
                 {/* Búsqueda por detalle */}
@@ -2033,7 +2144,7 @@ export function VistaCashFlow() {
 
                 {/* Body */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {(modoPagos ? datosFiltradosPagos : data).length === 0 ? (
+                  {(modoPagos ? datosFiltradosPagos : datosConBusqueda).length === 0 ? (
                     <tr>
                       <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
@@ -2044,7 +2155,7 @@ export function VistaCashFlow() {
                       </td>
                     </tr>
                   ) : (
-                    (modoPagos ? datosFiltradosPagos : data).map((fila, index) => {
+                    (modoPagos ? datosFiltradosPagos : datosConBusqueda).map((fila, index) => {
                       const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
                       return (
                       <tr
@@ -2244,12 +2355,11 @@ export function VistaCashFlow() {
                   Tipo de cambio al momento del pago
                 </label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
                   value={modalTcPago.inputVal}
                   onChange={e => setModalTcPago(prev => ({ ...prev, inputVal: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') guardarTcPago(); if (e.key === 'Escape') setModalTcPago(prev => ({ ...prev, open: false })) }}
-                  placeholder={String(modalTcPago.tcOriginal)}
+                  placeholder={String(modalTcPago.tcOriginal).replace('.', ',')}
                   autoFocus
                   className="text-right"
                 />
@@ -2297,36 +2407,89 @@ export function VistaCashFlow() {
           </DialogHeader>
 
           {/* Paso 1: Seleccionar template */}
-          {pasoModal === 'seleccionar' && (
-            <div className="py-4 space-y-3">
-              {templatesAbiertos.length === 0 ? (
-                <div className="text-center text-gray-500 py-6">
-                  <p>No hay templates abiertos disponibles.</p>
-                  <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {templatesAbiertos.map(template => (
-                    <div
-                      key={template.id}
-                      onClick={() => setTemplateSeleccionado(template.id)}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        templateSeleccionado === template.id
-                          ? 'border-purple-500 bg-purple-50'
-                          : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="font-medium">{template.nombre_referencia}</div>
-                      <div className="text-xs text-gray-500">
-                        {template.categ}
-                        {template.responsable && <span className="ml-2 text-blue-600">• {template.responsable}</span>}
+          {pasoModal === 'seleccionar' && (() => {
+            const templatesUso = templatesAbiertos.filter(t => !t.solo_conciliacion)
+            const templatesBancarios = templatesAbiertos.filter(t => t.solo_conciliacion)
+            return (
+              <div className="py-4 space-y-3">
+                {templatesUso.length === 0 ? (
+                  <div className="text-center text-gray-500 py-6">
+                    <p>No hay templates disponibles.</p>
+                    <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto">
+                    {templatesUso.map(template => (
+                      <div
+                        key={template.id}
+                        onClick={() => setTemplateSeleccionado(template.id)}
+                        className={`p-3 border rounded-lg cursor-pointer transition-colors relative group ${
+                          templateSeleccionado === template.id
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {template.cuenta_agrupadora && (
+                          <div className="text-xs text-gray-400 mb-0.5">{template.cuenta_agrupadora}</div>
+                        )}
+                        <div className="font-medium pr-6">{template.nombre_referencia}</div>
+                        <div className="text-xs text-gray-500">
+                          {template.categ}
+                          {template.responsable && <span className="ml-2 text-blue-600">• {template.responsable}</span>}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={togglingSoloConciliacion === template.id}
+                          onClick={(e) => { e.stopPropagation(); toggleSoloConciliacion(template.id, template.solo_conciliacion) }}
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-opacity disabled:opacity-30"
+                          title="Mover a solo conciliación"
+                        >
+                          {togglingSoloConciliacion === template.id ? '...' : '↓'}
+                        </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                    ))}
+                  </div>
+                )}
+
+                {/* Sección bancarios / motor */}
+                {templatesBancarios.length > 0 && (
+                  <div className="border-t pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setMostrarBancarios(p => !p)}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 w-full"
+                    >
+                      <span>{mostrarBancarios ? '▾' : '▸'}</span>
+                      <span>Solo conciliación bancaria ({templatesBancarios.length})</span>
+                    </button>
+                    {mostrarBancarios && (
+                      <div className="mt-2 space-y-1 max-h-[180px] overflow-y-auto">
+                        {templatesBancarios.map(template => (
+                          <div key={template.id} className="flex items-center justify-between px-3 py-2 border border-gray-100 rounded-lg bg-gray-50">
+                            <div>
+                              {template.cuenta_agrupadora && (
+                                <div className="text-xs text-gray-400">{template.cuenta_agrupadora}</div>
+                              )}
+                              <div className="text-sm text-gray-600">{template.nombre_referencia}</div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={togglingSoloConciliacion === template.id}
+                              onClick={() => toggleSoloConciliacion(template.id, template.solo_conciliacion)}
+                              className="ml-3 text-xs px-2 py-1 rounded border border-gray-300 hover:bg-white transition-colors disabled:opacity-50"
+                              title="Mover a lista principal"
+                            >
+                              {togglingSoloConciliacion === template.id ? '...' : '↑ Habilitar'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* Paso 2: Ingresar datos */}
           {pasoModal === 'datos' && (
@@ -2394,13 +2557,41 @@ export function VistaCashFlow() {
                 <Label htmlFor="monto-pago-cf">Monto</Label>
                 <Input
                   id="monto-pago-cf"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
+                  type="text"
+                  placeholder="0,00"
                   value={nuevaCuota.monto}
                   onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
                 />
               </div>
+
+              {/* Categ por cuota: solo para templates multi-cuenta */}
+              {(() => {
+                const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
+                if (template?.es_multi_cuenta) {
+                  return (
+                    <div className="space-y-2">
+                      <Label htmlFor="categ-pago-cf">
+                        Cuenta contable
+                        <span className="ml-1 text-xs text-gray-400">(opcional — se puede asignar después)</span>
+                      </Label>
+                      <select
+                        id="categ-pago-cf"
+                        value={nuevaCuota.categ}
+                        onChange={(e) => setNuevaCuota(prev => ({ ...prev, categ: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="">— Sin asignar —</option>
+                        {cuentasContablesOpciones.map(c => (
+                          <option key={c.categ} value={c.categ}>
+                            {c.nombre_totalizadora ? `${c.nombre_totalizadora} · ` : ''}{c.categ}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {/* Descripción: oculta para FCI (es automática) */}
               {(() => {
@@ -2549,9 +2740,8 @@ export function VistaCashFlow() {
                     <Label htmlFor="anticipo-monto">Monto *</Label>
                     <Input
                       id="anticipo-monto"
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
+                      type="text"
+                      placeholder="0,00"
                       value={nuevoAnticipo.monto}
                       onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, monto: e.target.value }))}
                     />
@@ -2714,7 +2904,7 @@ export function VistaCashFlow() {
                   {tiposSicore.map(t => (
                     <div key={t.id} className="flex justify-between text-sm">
                       <span>{t.emoji} {t.tipo}</span>
-                      <span className="text-gray-600">${t.minimo_no_imponible.toLocaleString('es-AR')} — {(t.porcentaje_retencion * 100).toFixed(2)}%</span>
+                      <span className="text-gray-600">${t.minimo_no_imponible.toLocaleString('es-AR')} — {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span>
                     </div>
                   ))}
                 </div>
@@ -2743,7 +2933,7 @@ export function VistaCashFlow() {
                     <span className="text-xl">{tipo.emoji}</span>
                     <div className="text-left">
                       <div className="font-medium">{tipo.tipo}</div>
-                      <div className="text-xs text-gray-500">Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} · {(tipo.porcentaje_retencion * 100).toFixed(2)}%</div>
+                      <div className="text-xs text-gray-500">Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} · {(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</div>
                     </div>
                   </div>
                 </Button>
@@ -2766,8 +2956,8 @@ export function VistaCashFlow() {
                   <div key={key}>
                     <label className="text-xs text-gray-500 mb-1 block">{label}</label>
                     <Input
-                      type="number"
-                      placeholder="0.00"
+                      type="text"
+                      placeholder="0,00"
                       value={camposSicore[key as keyof typeof camposSicore]}
                       onChange={e => setCamposSicore(prev => ({ ...prev, [key]: e.target.value }))}
                     />
@@ -2777,15 +2967,15 @@ export function VistaCashFlow() {
               <div className="bg-gray-50 rounded p-3 text-sm flex justify-between">
                 <span className="font-medium">Importe Total (calculado):</span>
                 <span className="font-bold">
-                  ${((parseFloat(camposSicore.neto_gravado) || 0) + (parseFloat(camposSicore.neto_no_gravado) || 0) +
-                    (parseFloat(camposSicore.op_exentas) || 0) + (parseFloat(camposSicore.iva) || 0))
+                  ${([camposSicore.neto_gravado, camposSicore.neto_no_gravado, camposSicore.op_exentas, camposSicore.iva]
+                    .reduce((sum, v) => sum + (parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0), 0))
                     .toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex gap-2">
                 <Button className="flex-1 bg-blue-600 hover:bg-blue-700"
                   onClick={() => calcularSicoreAnticipo(tipoSicoreAnticipo)}
-                  disabled={!(parseFloat(camposSicore.neto_gravado) > 0)}
+                  disabled={!(parseFloat(camposSicore.neto_gravado.replace(/\./g, '').replace(',', '.')) > 0)}
                 >
                   Calcular SICORE →
                 </Button>
@@ -2808,7 +2998,7 @@ export function VistaCashFlow() {
                   <div className="flex justify-between"><span className="text-gray-600">Neto base:</span><span>${datosSicoreAnticipo.netoBase.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreAnticipo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnticipo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-600">% Retención:</span><span>{(tipoSicoreAnticipo.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">% Retención:</span><span>{(tipoSicoreAnticipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
                   <hr className="my-2"/>
                   <div className="flex justify-between font-semibold"><span>Retención SICORE:</span><span className="text-red-600">${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   {descuentoSicoreAnticipo > 0 && (
@@ -2854,7 +3044,7 @@ export function VistaCashFlow() {
                 <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención quincena):</div>
                 {tiposSicore.map(t => (
                   <div key={t.id} className="text-blue-700">
-                    {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2)}%
+                    {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%
                   </div>
                 ))}
               </div>
@@ -2868,7 +3058,7 @@ export function VistaCashFlow() {
                   >
                     <span className="text-2xl">{tipo.emoji}</span>
                     <span className="text-sm font-medium">{tipo.tipo}</span>
-                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}%</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span>
                   </button>
                 ))}
               </div>
@@ -2901,7 +3091,7 @@ export function VistaCashFlow() {
                   <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 )}
                 <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
                 {datosSicoreCalculo.esRetencionAdicional && (
                   <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
                 )}
@@ -2910,20 +3100,22 @@ export function VistaCashFlow() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
                 <input
-                  type="number"
+                  type="text"
+                  placeholder="0,00"
                   className="w-full border rounded px-3 py-2 text-sm"
-                  value={montoRetencion}
-                  onChange={e => setMontoRetencion(parseFloat(e.target.value) || 0)}
+                  value={montoRetencion === 0 ? '' : String(montoRetencion).replace('.', ',')}
+                  onChange={e => setMontoRetencion(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional{esUSD ? ' (ARS)' : ''}:</label>
                 <input
-                  type="number"
+                  type="text"
+                  placeholder="0,00"
                   className="w-full border rounded px-3 py-2 text-sm"
-                  value={descuentoAdicional}
-                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value) || 0)}
+                  value={descuentoAdicional === 0 ? '' : String(descuentoAdicional).replace('.', ',')}
+                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
                 />
               </div>
 

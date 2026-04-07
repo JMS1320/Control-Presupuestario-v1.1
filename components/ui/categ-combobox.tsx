@@ -18,9 +18,16 @@ import {
 } from "@/components/ui/popover"
 import { supabase } from "@/lib/supabase"
 
+interface CuentaContable {
+  categ: string
+  nro_cuenta: string | null
+}
+
 interface CategComboboxProps {
   value: string
   onValueChange: (value: string) => void
+  /** Callback adicional que devuelve categ + nro_cuenta cuando se selecciona desde cuentas_contables */
+  onSelectFull?: (categ: string, nro_cuenta: string | null) => void
   placeholder?: string
   className?: string
   disabled?: boolean
@@ -29,60 +36,41 @@ interface CategComboboxProps {
 export function CategCombobox({
   value,
   onValueChange,
+  onSelectFull,
   placeholder = "Buscar CATEG...",
   className,
   disabled = false
 }: CategComboboxProps) {
   const [open, setOpen] = useState(false)
-  const [categorias, setCategorias] = useState<string[]>([])
+  const [cuentas, setCuentas] = useState<CuentaContable[]>([])
+  const [extras, setExtras] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Cargar categorías únicas de todas las fuentes
   const cargarCategorias = async () => {
     setLoading(true)
     try {
-      // Obtener categorías de múltiples fuentes
-      const [facturas, templates, movimientos, contables] = await Promise.all([
-        // Facturas ARCA
-        supabase
-          .schema('msa')
-          .from('comprobantes_arca')
-          .select('cuenta_contable')
-          .not('cuenta_contable', 'is', null),
-        
-        // Templates egresos
-        supabase
-          .from('egresos_sin_factura')
-          .select('categ')
-          .not('categ', 'is', null),
-        
-        // Movimientos bancarios
-        supabase
-          .from('msa_galicia')
-          .select('categ')
-          .not('categ', 'is', null),
-        
-        // Cuentas contables maestras
-        supabase
-          .from('cuentas_contables')
-          .select('codigo')
-          .not('codigo', 'is', null)
+      // Fuente maestra: cuentas_contables (categ + nro_cuenta)
+      const { data: contables } = await supabase
+        .from('cuentas_contables')
+        .select('categ, nro_cuenta')
+        .eq('activo', true)
+        .order('nro_cuenta')
+
+      setCuentas(contables || [])
+
+      // Fuentes secundarias: categ usadas en extractos/templates que no estén en cuentas_contables
+      const [templates, movimientos] = await Promise.all([
+        supabase.from('egresos_sin_factura').select('categ').not('categ', 'is', null),
+        supabase.from('msa_galicia').select('categ').not('categ', 'is', null),
       ])
 
-      // Combinar todas las categorías únicas
-      const todasCategorias = new Set<string>()
-      
-      facturas.data?.forEach(f => f.cuenta_contable && todasCategorias.add(f.cuenta_contable))
-      templates.data?.forEach(t => t.categ && todasCategorias.add(t.categ))
-      movimientos.data?.forEach(m => m.categ && todasCategorias.add(m.categ))
-      contables.data?.forEach(c => c.codigo && todasCategorias.add(c.codigo))
+      const maestras = new Set((contables || []).map(c => c.categ))
+      const extrasSet = new Set<string>()
 
-      // Filtrar categorías inválidas y ordenar
-      const categoriasLimpias = Array.from(todasCategorias)
-        .filter(cat => cat && !cat.startsWith('INVALIDA:') && cat.trim() !== '')
-        .sort()
+      templates.data?.forEach(t => t.categ && !maestras.has(t.categ) && extrasSet.add(t.categ))
+      movimientos.data?.forEach(m => m.categ && !maestras.has(m.categ) && !m.categ.startsWith('INVALIDA:') && extrasSet.add(m.categ))
 
-      setCategorias(categoriasLimpias)
+      setExtras(Array.from(extrasSet).sort())
     } catch (error) {
       console.error('Error cargando categorías:', error)
     } finally {
@@ -94,10 +82,18 @@ export function CategCombobox({
     cargarCategorias()
   }, [])
 
-  // Filtrar categorías basado en búsqueda
-  const categoriasFiltradas = categorias.filter(categoria =>
-    categoria.toLowerCase().includes(value.toLowerCase())
-  )
+  const q = value.toLowerCase()
+  const cuentasFiltradas = cuentas.filter(c => c.categ.toLowerCase().includes(q))
+  const extrasFiltrados = extras.filter(e => e.toLowerCase().includes(q))
+
+  const handleSelect = (categ: string, nro_cuenta: string | null = null) => {
+    const newValue = categ === value ? "" : categ
+    onValueChange(newValue)
+    if (onSelectFull) {
+      onSelectFull(newValue, newValue ? nro_cuenta : null)
+    }
+    setOpen(false)
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -113,9 +109,9 @@ export function CategCombobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[300px] p-0">
+      <PopoverContent className="w-[340px] p-0">
         <Command>
-          <CommandInput 
+          <CommandInput
             placeholder={placeholder}
             value={value}
             onValueChange={onValueChange}
@@ -124,50 +120,55 @@ export function CategCombobox({
             {loading ? "Cargando categorías..." : "No se encontraron categorías"}
           </CommandEmpty>
           <CommandGroup className="max-h-64 overflow-auto">
-            {/* Opción para limpiar */}
+            {/* Limpiar */}
             {value && (
               <CommandItem
                 value=""
-                onSelect={() => {
-                  onValueChange("")
-                  setOpen(false)
-                }}
+                onSelect={() => handleSelect("")}
                 className="text-red-600"
               >
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    value === "" ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                Limpiar filtro
+                <Check className={cn("mr-2 h-4 w-4", value === "" ? "opacity-100" : "opacity-0")} />
+                Limpiar
               </CommandItem>
             )}
-            
-            {/* Categorías existentes */}
-            {categoriasFiltradas.slice(0, 20).map((categoria) => (
+
+            {/* Cuentas maestras */}
+            {cuentasFiltradas.slice(0, 20).map((cuenta) => (
               <CommandItem
-                key={categoria}
-                value={categoria}
-                onSelect={(currentValue) => {
-                  onValueChange(currentValue === value ? "" : currentValue)
-                  setOpen(false)
-                }}
+                key={cuenta.categ}
+                value={cuenta.categ}
+                onSelect={() => handleSelect(cuenta.categ, cuenta.nro_cuenta)}
               >
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    value === categoria ? "opacity-100" : "opacity-0"
-                  )}
-                />
-                {categoria}
+                <Check className={cn("mr-2 h-4 w-4", value === cuenta.categ ? "opacity-100" : "opacity-0")} />
+                <span className="flex-1">{cuenta.categ}</span>
+                {cuenta.nro_cuenta && (
+                  <span className="ml-2 text-xs text-gray-400">{cuenta.nro_cuenta}</span>
+                )}
               </CommandItem>
             ))}
-            
-            {/* Mostrar si hay más resultados */}
-            {categoriasFiltradas.length > 20 && (
-              <CommandItem disabled>
-                ... y {categoriasFiltradas.length - 20} más (sigue escribiendo)
+
+            {/* Extras (no en cuentas_contables) */}
+            {extrasFiltrados.length > 0 && cuentasFiltradas.length < 20 && (
+              <>
+                <CommandItem disabled className="text-xs text-gray-400 py-1">
+                  — Sin número de cuenta —
+                </CommandItem>
+                {extrasFiltrados.slice(0, 20 - cuentasFiltradas.length).map((e) => (
+                  <CommandItem
+                    key={e}
+                    value={e}
+                    onSelect={() => handleSelect(e, null)}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", value === e ? "opacity-100" : "opacity-0")} />
+                    {e}
+                  </CommandItem>
+                ))}
+              </>
+            )}
+
+            {(cuentasFiltradas.length + extrasFiltrados.length) > 20 && (
+              <CommandItem disabled className="text-xs text-gray-400">
+                ... sigue escribiendo para filtrar
               </CommandItem>
             )}
           </CommandGroup>

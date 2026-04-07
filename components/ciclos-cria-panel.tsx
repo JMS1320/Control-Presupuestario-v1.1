@@ -27,7 +27,7 @@ interface CicloCria {
 
 const formatoPct = (valor: number | null): string => {
   if (valor === null || isNaN(valor) || !isFinite(valor)) return '-'
-  return `${valor.toFixed(1)}%`
+  return `${valor.toFixed(1).replace(".", ",")}%`
 }
 
 const formatoFecha = (fecha: string | null): string => {

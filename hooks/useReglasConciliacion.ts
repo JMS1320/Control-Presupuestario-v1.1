@@ -39,13 +39,14 @@ export function useReglasConciliacion() {
     }
   }
 
-  // Cargar solo reglas activas para procesamiento
-  const cargarReglasActivas = async (): Promise<ReglaConciliacion[]> => {
+  // Cargar solo reglas activas para procesamiento — filtradas por cuenta bancaria
+  const cargarReglasActivas = async (cuentaId: string): Promise<ReglaConciliacion[]> => {
     try {
       const { data, error: supabaseError } = await supabase
         .from('reglas_conciliacion')
         .select('*')
         .eq('activo', true)
+        .eq('cuenta_bancaria_id', cuentaId)
         .order('orden', { ascending: true })
 
       if (supabaseError) {
@@ -76,7 +77,9 @@ export function useReglasConciliacion() {
           categ: nuevaRegla.categ,
           centro_costo: nuevaRegla.centro_costo,
           detalle: nuevaRegla.detalle,
-          activo: nuevaRegla.activo
+          activo: nuevaRegla.activo,
+          llena_template: nuevaRegla.llena_template,
+          cuenta_bancaria_id: nuevaRegla.cuenta_bancaria_id
         })
         .select()
 

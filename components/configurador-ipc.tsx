@@ -123,7 +123,7 @@ export function ConfiguradorIPC() {
 
     const anio = parseInt(formulario.anio)
     const mes = parseInt(formulario.mes)
-    const valorIpc = parseFloat(formulario.valor_ipc)
+    const valorIpc = parseFloat(formulario.valor_ipc.replace(',', '.'))
 
     if (anio < 2024) {
       setError('El año debe ser 2024 o posterior')
@@ -264,7 +264,7 @@ export function ConfiguradorIPC() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-2xl font-bold text-blue-600">
-              {indices.length > 0 ? indices[0].valor_ipc.toFixed(2) + '%' : '-'}
+              {indices.length > 0 ? indices[0].valor_ipc.toFixed(2).replace(".", ",") + "%" : '-'}
             </div>
             <p className="text-xs text-gray-600">Último IPC</p>
           </CardContent>
@@ -295,7 +295,7 @@ export function ConfiguradorIPC() {
 
                   {/* Valor IPC */}
                   <div className="text-2xl font-bold text-orange-600">
-                    {indice.valor_ipc.toFixed(2)}%
+                    {indice.valor_ipc.toFixed(2).replace(".", ",")}%
                   </div>
 
                   {/* Fuente */}
@@ -379,12 +379,10 @@ export function ConfiguradorIPC() {
               <Label htmlFor="valor_ipc">Valor IPC (%) *</Label>
               <Input
                 id="valor_ipc"
-                type="number"
-                step="0.001"
-                min="0"
+                type="text"
                 value={formulario.valor_ipc}
                 onChange={(e) => setFormulario(prev => ({ ...prev, valor_ipc: e.target.value }))}
-                placeholder="Ej: 2.5"
+                placeholder="Ej: 2,5"
               />
             </div>
 

@@ -6,29 +6,68 @@ import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 
-// Configuración de cuentas bancarias
+// Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
   id: string
   nombre: string
   tabla_bd: string
+  schema_bd?: string   // 'public' (default) | 'msa'
   empresa: 'MSA' | 'PAM'
   activa: boolean
+  tipo?: 'banco' | 'caja'
 }
 
 export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
   {
     id: 'msa_galicia',
-    nombre: 'MSA Galicia Pesos',
+    nombre: 'MSA Galicia CC Pesos',
     tabla_bd: 'msa_galicia',
     empresa: 'MSA',
-    activa: true
+    activa: true,
+    tipo: 'banco'
   },
   {
-    id: 'pam_galicia', 
-    nombre: 'PAM Galicia Pesos',
+    id: 'pam_galicia',
+    nombre: 'PAM Galicia CA Pesos',
     tabla_bd: 'pam_galicia',
     empresa: 'PAM',
-    activa: true
+    activa: true,
+    tipo: 'banco'
+  },
+  {
+    id: 'pam_galicia_cc',
+    nombre: 'PAM Galicia CC Pesos',
+    tabla_bd: 'pam_galicia_cc',
+    empresa: 'PAM',
+    activa: true,
+    tipo: 'banco'
+  },
+  {
+    id: 'caja_general',
+    nombre: 'Caja General MSA',
+    tabla_bd: 'caja_general',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
+  },
+  {
+    id: 'caja_ams',
+    nombre: 'Caja AMS MSA',
+    tabla_bd: 'caja_ams',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
+  },
+  {
+    id: 'caja_sigot',
+    nombre: 'Caja Sigot MSA',
+    tabla_bd: 'caja_sigot',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
   }
 ]
 
@@ -40,20 +79,63 @@ export function useMotorConciliacion() {
   const { data: cashFlowData } = useMultiCashFlowData()
   const { cargarReglasActivas } = useReglasConciliacion()
 
+  // Helper: valor contable/interno es válido si no está vacío ni es "No Lleva"
+  const esValorContableValido = (val: string | null | undefined): boolean => {
+    if (!val || val.trim() === '') return false
+    return !val.toLowerCase().replace(/\s+/g, '').includes('nolleva')
+  }
+
+  // Busca códigos contable/interno en reglas_contable_interno (Tab 2 — fuente primaria)
+  // Prioridad: Tipo A (cuenta+template) → Tipo B (cuenta+responsable)
+  const buscarCodigosContableInterno = async (
+    cuentaId: string,
+    templateId?: string | null,
+    responsable?: string | null
+  ): Promise<{ contable?: string; interno?: string }> => {
+    // Tipo A: regla específica cuenta + template
+    if (templateId) {
+      const { data } = await supabase
+        .from('reglas_contable_interno')
+        .select('codigo_contable, codigo_interno')
+        .eq('cuenta_bancaria_id', cuentaId)
+        .eq('tipo_regla', 'especifica')
+        .eq('template_id', templateId)
+        .eq('activo', true)
+        .maybeSingle()
+      if (data) {
+        const result: { contable?: string; interno?: string } = {}
+        if (esValorContableValido(data.codigo_contable)) result.contable = data.codigo_contable!
+        if (esValorContableValido(data.codigo_interno)) result.interno = data.codigo_interno!
+        if (result.contable || result.interno) return result
+      }
+    }
+    // Tipo B: regla responsable (cross-company)
+    if (responsable) {
+      const { data } = await supabase
+        .from('reglas_contable_interno')
+        .select('codigo_contable, codigo_interno')
+        .eq('cuenta_bancaria_id', cuentaId)
+        .eq('tipo_regla', 'responsable')
+        .eq('responsable', responsable)
+        .eq('activo', true)
+        .maybeSingle()
+      if (data) {
+        const result: { contable?: string; interno?: string } = {}
+        if (esValorContableValido(data.codigo_contable)) result.contable = data.codigo_contable!
+        if (esValorContableValido(data.codigo_interno)) result.interno = data.codigo_interno!
+        if (result.contable || result.interno) return result
+      }
+    }
+    return {}
+  }
+
   // Función para obtener movimientos bancarios de una cuenta específica
   const obtenerMovimientosBancarios = async (cuenta: CuentaBancaria): Promise<MovimientoBancario[]> => {
     try {
       console.log(`🏦 Cargando movimientos de ${cuenta.tabla_bd}...`)
       
-      let query = supabase.from(cuenta.tabla_bd).select('*')
-      
-      // Si es PAM, usar schema específico
-      if (cuenta.empresa === 'PAM') {
-        query = supabase.schema('pam').from('galicia').select('*').eq('estado', 'Pendiente')
-      } else {
-        // Para MSA, filtrar solo movimientos pendientes
-        query = query.eq('estado', 'Pendiente')
-      }
+      // Todas las tablas de extractos bancarios están en el schema public
+      let query = supabase.from(cuenta.tabla_bd).select('*').eq('estado', 'Pendiente')
       
       const { data, error } = await query.order('fecha', { ascending: true })
 
@@ -195,7 +277,7 @@ export function useMotorConciliacion() {
 
       // 1. Cargar datos
       const movimientos = await obtenerMovimientosBancarios(cuenta)
-      const reglas = await cargarReglasActivas()
+      const reglas = await cargarReglasActivas(cuenta.id)
       
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)
@@ -234,13 +316,90 @@ export function useMotorConciliacion() {
 
             // Actualizar BD con datos del Cash Flow y estado según revisión
             const estadoFinal = matchCF.requiere_revision ? 'auditar' : 'conciliado'
+            const extraIdsCF: any = {}
+            if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+              if (matchCF.cashFlowRow.egreso_id) extraIdsCF.template_id = matchCF.cashFlowRow.egreso_id
+              extraIdsCF.template_cuota_id = matchCF.cashFlowRow.id
+            } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+              extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
+              if (matchCF.cashFlowRow.nro_cuenta) extraIdsCF.nro_cuenta = matchCF.cashFlowRow.nro_cuenta
+            } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
+              extraIdsCF.sueldo_pago_id = matchCF.cashFlowRow.id
+            }
+            // Obtener contable/interno: Tab2 TipoA→TipoB > Tab1 regla con código
+            const extraCF: any = {}
+            if (matchCF.cashFlowRow.origen === 'TEMPLATE' && matchCF.cashFlowRow.egreso_id) {
+              // Consultar template solo para obtener responsable (para Tipo B)
+              const { data: tmplData } = await supabase
+                .from('egresos_sin_factura')
+                .select('responsable')
+                .eq('id', matchCF.cashFlowRow.egreso_id)
+                .maybeSingle()
+
+              // Prioridad 1: Tab 2 — reglas_contable_interno (Tipo A → Tipo B)
+              const codigosTab2 = await buscarCodigosContableInterno(
+                cuenta.id,
+                matchCF.cashFlowRow.egreso_id,
+                (tmplData as any)?.responsable
+              )
+              if (codigosTab2.contable) extraCF.contable = codigosTab2.contable
+              if (codigosTab2.interno) extraCF.interno = codigosTab2.interno
+
+              // Prioridad 2: Tab 1 — regla de texto que matchee y tenga código propio
+              if (!extraCF.contable || !extraCF.interno) {
+                const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+                if (reglaQueMatcheaF1) {
+                  if (!extraCF.contable && esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                  if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+                }
+              }
+            } else {
+              // ARCA u otros orígenes: solo regla de texto con código propio
+              const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+              if (reglaQueMatcheaF1) {
+                if (esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+              }
+            }
+            // Si es template multi-cuenta sin categ asignada en la cuota → auditar
+            const sinCateg = matchCF.cashFlowRow.origen === 'TEMPLATE' &&
+              matchCF.cashFlowRow.es_multi_cuenta === true &&
+              (!matchCF.cashFlowRow.categ || matchCF.cashFlowRow.categ === 'SIN_CATEG')
+            const estadoFinalConCateg = sinCateg ? 'auditar' : estadoFinal
+            const motivoFinal = sinCateg
+              ? 'Sin categ: requiere asignación de cuenta contable'
+              : matchCF.motivo_revision
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
-              categ: matchCF.cashFlowRow.categ,
+              categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
-              estado: estadoFinal,
-              motivo_revision: matchCF.motivo_revision
+              estado: estadoFinalConCateg,
+              motivo_revision: motivoFinal,
+              ...extraIdsCF,
+              ...extraCF
             })
+
+            // Actualizar estado de la cuota/factura origen si el match fue definitivo
+            if (estadoFinal === 'conciliado') {
+              if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+                await supabase
+                  .from('cuotas_egresos_sin_factura')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+              } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+                await supabase
+                  .from('comprobantes_arca')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+                  .schema('msa')
+              } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
+                await supabase
+                  .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+              }
+            }
 
             if (matchCF.requiere_revision) {
               resultadosProceso.revision_manual++
@@ -262,17 +421,52 @@ export function useMotorConciliacion() {
                 tipo_match: 'regla',
                 requiere_revision: false,
                 categ_asignado: regla.categ,
-                centro_costo_asignado: regla.centro_costo,
+                centro_costo_asignado: regla.centro_costo ?? undefined,
                 detalle_asignado: regla.detalle
               }
 
-              // Actualizar BD con datos de la regla y marcar como conciliado
+              // Códigos contables: prioridad 1 = campos de la regla, prioridad 2 = seccion_regla del template
+              const codigosRegla: any = {}
+              if (esValorContableValido(regla.codigo_contable)) codigosRegla.contable = regla.codigo_contable
+              if (esValorContableValido(regla.codigo_interno)) codigosRegla.interno = regla.codigo_interno
+
+              // Anticipos: si la descripción contiene "anticipo", marcar como auditar
+              // para que el usuario lo vincule manualmente a la factura ARCA correcta
+              const esAnticipo = /anticipo/i.test(movimiento.descripcion || '')
+              const estadoRegla = esAnticipo ? 'auditar' : 'conciliado'
+              const motivoRegla = esAnticipo ? 'Anticipo: requiere vinculación con factura ARCA' : null
+
+              // Actualizar extracto con categ/detalle/estado y códigos de la regla (si tiene)
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: regla.categ,
                 centro_de_costo: regla.centro_costo,
                 detalle: regla.detalle,
-                estado: 'conciliado'
+                estado: estadoRegla,
+                motivo_revision: motivoRegla,
+                ...codigosRegla
               })
+
+              // Si la regla tiene llena_template=true, crear cuota en el template correspondiente
+              if (regla.llena_template) {
+                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
+                if (cuotaResult) {
+                  // Prioridad: Tab 2 (Tipo A→B) > Tab 1 (codigosRegla ya aplicados) > seccion_regla (cuotaResult)
+                  const codigosTab2F2 = await buscarCodigosContableInterno(
+                    cuenta.id,
+                    cuotaResult.templateId,
+                    cuotaResult.responsable
+                  )
+                  const extraRegla: any = {}
+                  if (codigosTab2F2.contable) extraRegla.contable = codigosTab2F2.contable
+                  if (codigosTab2F2.interno) extraRegla.interno = codigosTab2F2.interno
+
+                  await actualizarMovimientoBD(cuenta, movimiento.id, {
+                    template_id: cuotaResult.templateId,
+                    template_cuota_id: cuotaResult.cuotaId,
+                    ...extraRegla
+                  })
+                }
+              }
 
               resultadosProceso.automaticos++
               reglaAplicada = true
@@ -306,15 +500,76 @@ export function useMotorConciliacion() {
     }
   }
 
+  // Crear cuota en template cuando una regla con llena_template=true hace match
+  const crearCuotaEnTemplate = async (
+    cuenta: CuentaBancaria,
+    regla: ReglaConciliacion,
+    movimiento: MovimientoBancario
+  ): Promise<{ templateId: string; cuotaId: string; responsable?: string | null } | null> => {
+    try {
+      // Buscar templates activos con categ coincidente
+      const { data: templates } = await supabase
+        .from('egresos_sin_factura')
+        .select('id, responsable')
+        .eq('categ', regla.categ)
+        .eq('activo', true)
+
+      if (!templates || templates.length === 0) {
+        console.warn(`⚠️ No hay template activo con categ "${regla.categ}" — cuota no creada`)
+        return null
+      }
+
+      // Si hay varios (ej: FCI MSA + PAM), elegir el que corresponde a la empresa de la cuenta
+      let template = templates[0]
+      if (templates.length > 1) {
+        const coincide = templates.find(t =>
+          t.responsable?.toLowerCase().includes(cuenta.empresa.toLowerCase())
+        )
+        if (coincide) template = coincide
+      }
+
+      // Determinar tipo_movimiento y monto desde el extracto
+      const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
+      const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+      // Crear cuota con estado conciliado directamente
+      const { data: cuota, error } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .insert({
+          egreso_id: template.id,
+          fecha_vencimiento: movimiento.fecha,
+          fecha_estimada: movimiento.fecha,
+          monto,
+          estado: 'conciliado',
+          tipo_movimiento: tipoMovimiento,
+          descripcion: regla.detalle || movimiento.descripcion
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('Error creando cuota en template:', error)
+        return null
+      }
+
+      console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
+      return {
+        templateId: template.id,
+        cuotaId: cuota.id,
+        responsable: (template as any).responsable ?? null
+      }
+
+    } catch (err) {
+      console.error('Error en crearCuotaEnTemplate:', err)
+      return null
+    }
+  }
+
   // Función para actualizar movimiento en BD
   const actualizarMovimientoBD = async (cuenta: CuentaBancaria, movimientoId: string, datos: any) => {
     try {
+      // Todas las tablas de extractos bancarios están en el schema public
       let query = supabase.from(cuenta.tabla_bd).update(datos).eq('id', movimientoId)
-      
-      // Si es PAM, usar schema específico
-      if (cuenta.empresa === 'PAM') {
-        query = supabase.schema('pam').from('galicia').update(datos).eq('id', movimientoId)
-      }
       
       const { error } = await query
 

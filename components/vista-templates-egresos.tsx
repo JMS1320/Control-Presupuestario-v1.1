@@ -150,10 +150,11 @@ export function VistaTemplatesEgresos() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, es_bidireccional: boolean, responsable: string}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string}[]>([])
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
+  const [medioPagoManual, setMedioPagoManual] = useState('banco')
   const [nuevaCuota, setNuevaCuota] = useState({
     fecha: '',
     monto: '',
@@ -424,11 +425,11 @@ export function VistaTemplatesEgresos() {
     
     // Filtro por rango de montos
     if (montoMinimo) {
-      const minimo = parseFloat(montoMinimo)
+      const minimo = parseFloat(montoMinimo.replace(/\./g, '').replace(',', '.'))
       cuotasFiltradas = cuotasFiltradas.filter(c => c.monto >= minimo)
     }
     if (montoMaximo) {
-      const maximo = parseFloat(montoMaximo)
+      const maximo = parseFloat(montoMaximo.replace(/\./g, '').replace(',', '.'))
       cuotasFiltradas = cuotasFiltradas.filter(c => c.monto <= maximo)
     }
     
@@ -635,6 +636,25 @@ export function VistaTemplatesEgresos() {
       return
     }
 
+    // Barrera: conciliación manual de cuotas
+    if (celdaEnEdicion.columna === 'estado' && String(nuevoValor).toLowerCase() === 'conciliado') {
+      const cuota = cuotasOriginales.find(c => c.id === celdaEnEdicion.cuotaId)
+      const monto = cuota?.monto ?? 1
+
+      if (monto > 0) {
+        alert(`⛔ Esta cuota tiene monto $${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.\nPara conciliar debe existir un movimiento en el extracto bancario.`)
+        setCeldaEnEdicion(null)
+        return
+      }
+
+      // Monto = 0: confirmación explícita
+      const confirmar = window.confirm('Esta cuota es de $0.\n¿Confirmar como conciliada sin movimiento bancario?')
+      if (!confirmar) {
+        setCeldaEnEdicion(null)
+        return
+      }
+    }
+
     // Para otros campos, continuar con el guardado normal
     await ejecutarGuardadoRealTemplates(celdaEnEdicion, nuevoValor)
   }
@@ -708,7 +728,7 @@ export function VistaTemplatesEgresos() {
     try {
       // Determinar monto a propagar (personalizado o el mismo de la cuota)
       const montoParaPropagar = montoPropagacionPersonalizado
-        ? parseFloat(montoPropagacionPersonalizado) || modalPropagacion.nuevoMonto
+        ? parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || modalPropagacion.nuevoMonto
         : modalPropagacion.nuevoMonto
 
       // 1. Propagar a cuotas futuras
@@ -786,9 +806,10 @@ export function VistaTemplatesEgresos() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ, es_bidireccional, responsable')
+        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, responsable')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
+        .order('cuenta_agrupadora')
         .order('nombre_referencia')
 
       if (error) throw error
@@ -804,6 +825,7 @@ export function VistaTemplatesEgresos() {
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
+    setMedioPagoManual('banco')
     setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
     setModalPagoManual(true)
   }
@@ -834,10 +856,11 @@ export function VistaTemplatesEgresos() {
           egreso_id: templateSeleccionado,
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
-          monto: parseFloat(nuevaCuota.monto),
+          monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
-          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
+          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
+          medio_pago: medioPagoManual
         })
 
       if (error) throw error
@@ -925,6 +948,9 @@ export function VistaTemplatesEgresos() {
     // Obtener valor según la columna
     if (['fecha_estimada', 'fecha_vencimiento', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
+    } else if (columna === 'categ') {
+      // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
+      valor = (cuota as any).categ || cuota.egreso?.categ
     } else {
       // Campos del egreso padre
       valor = cuota.egreso?.[columna as keyof typeof cuota.egreso]
@@ -1070,6 +1096,23 @@ export function VistaTemplatesEgresos() {
         case 'monto':
           return formatearNumero(valor as number)
         
+        case 'categ': {
+          const esCuotaPropia = !!(cuota as any).categ
+          const esMultiCuenta = !!(cuota.egreso as any)?.es_multi_cuenta
+          if (!valor) {
+            return <span className="text-xs text-orange-400 italic">sin categ</span>
+          }
+          return (
+            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+              esCuotaPropia && esMultiCuenta
+                ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                : 'bg-blue-100 text-blue-700'
+            }`} title={esCuotaPropia ? 'Categ de la cuota' : 'Categ del template'}>
+              {valor as string}
+            </span>
+          )
+        }
+
         case 'estado':
           return (
             <Badge className={colorEstado(valor as string)}>
@@ -1493,7 +1536,7 @@ export function VistaTemplatesEgresos() {
                 <Label className="text-sm font-medium">💵 Rango de Montos</Label>
                 <div className="flex gap-2">
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
@@ -1501,7 +1544,7 @@ export function VistaTemplatesEgresos() {
                     className="text-xs"
                   />
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
@@ -1820,7 +1863,7 @@ export function VistaTemplatesEgresos() {
                 Monto a propagar (opcional):
               </label>
               <Input
-                type="number"
+                type="text"
                 placeholder={`Dejar vacío = $${modalPropagacion.nuevoMonto.toLocaleString('es-AR')}`}
                 value={montoPropagacionPersonalizado}
                 onChange={(e) => setMontoPropagacionPersonalizado(e.target.value)}
@@ -1834,7 +1877,7 @@ export function VistaTemplatesEgresos() {
             </div>
 
             <ul className="text-sm text-gray-500 list-disc pl-5 space-y-1">
-              <li><strong>SÍ, propagar:</strong> Cuotas futuras con monto {montoPropagacionPersonalizado ? `$${parseFloat(montoPropagacionPersonalizado).toLocaleString('es-AR')}` : 'igual'}</li>
+              <li><strong>SÍ, propagar:</strong> Cuotas futuras con monto {montoPropagacionPersonalizado ? `$${(parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || 0).toLocaleString('es-AR')}` : 'igual'}</li>
               <li><strong>NO, solo esta:</strong> Solo se modificará esta cuota</li>
               <li><strong>Cancelar:</strong> No hacer ningún cambio</li>
             </ul>
@@ -1928,6 +1971,9 @@ export function VistaTemplatesEgresos() {
                           : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
                       }`}
                     >
+                      {template.cuenta_agrupadora && (
+                        <div className="text-xs text-gray-400 mb-0.5">{template.cuenta_agrupadora}</div>
+                      )}
                       <div className="font-medium">{template.nombre_referencia}</div>
                       <div className="text-xs text-gray-500">
                         {template.categ}
@@ -1992,6 +2038,22 @@ export function VistaTemplatesEgresos() {
                 return null
               })()}
 
+              {/* Medio de pago */}
+              <div className="space-y-2">
+                <Label>Medio de Pago</Label>
+                <Select value={medioPagoManual} onValueChange={setMedioPagoManual}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="banco">Banco</SelectItem>
+                    <SelectItem value="caja_general">Caja General</SelectItem>
+                    <SelectItem value="caja_ams">Caja AMS</SelectItem>
+                    <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="fecha-pago">Fecha</Label>
                 <Input
@@ -2006,9 +2068,8 @@ export function VistaTemplatesEgresos() {
                 <Label htmlFor="monto-pago">Monto</Label>
                 <Input
                   id="monto-pago"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
+                  type="text"
+                  placeholder="0,00"
                   value={nuevaCuota.monto}
                   onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
                 />

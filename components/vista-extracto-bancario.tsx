@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -17,11 +17,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { 
-  Banknote, 
-  Settings, 
-  Play, 
-  FileSpreadsheet, 
-  Upload, 
+  Banknote,
+  Settings,
+  Play,
+  FileSpreadsheet,
+  Upload,
   RotateCcw,
   CheckCircle,
   AlertTriangle,
@@ -33,7 +33,9 @@ import {
   Check,
   ChevronsUpDown,
   Filter,
-  RefreshCw
+  RefreshCw,
+  Plus,
+  Columns
 } from "lucide-react"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
@@ -41,9 +43,123 @@ import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConcili
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
 
+// ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
+
+const STOP_WORDS_ARCA = new Set(['s.a', 'sa', 'srl', 'sas', 'de', 'del', 'la', 'el', 'los', 'las', 'por', 'con', 'cta', 'cte', 'deb', 'aut', 'hno', 'hnos', 'ltda', 'and'])
+
+function extraerCuitDeTexto(texto: string | null | undefined): string | null {
+  if (!texto) return null
+  const match = texto.match(/\b(\d{2}-?\d{8}-?\d)\b/)
+  return match ? match[1].replace(/-/g, '') : null
+}
+
+function palabrasSignificativas(texto: string): string[] {
+  return texto
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(p => p.length > 3 && !STOP_WORDS_ARCA.has(p))
+}
+
+function diasDiferencia(f1: string, f2: string): number {
+  return Math.abs((new Date(f1 + 'T12:00:00').getTime() - new Date(f2 + 'T12:00:00').getTime()) / 86400000)
+}
+
+interface PropuestaArca { factura: any; score: number; badges: { texto: string; color: string }[] }
+
+function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[] {
+  const cuitLeyenda = extraerCuitDeTexto(movimiento.leyendas_adicionales_2)
+  const leyenda1    = movimiento.leyendas_adicionales_1 || ''
+  const descripcion = movimiento.descripcion || ''
+  const fechaMov    = movimiento.fecha
+  const monto       = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+  // Si es compra débito, comparar contra fecha_emision (pago inmediato al generar la FC)
+  const esCompraDebito = /d[eé]bito/i.test(descripcion)
+
+  const arcas = facturas.filter(f => f.tipo === 'ARCA')
+
+  const resultados = arcas
+    .map(f => {
+      const montoFactura  = f.display_monto || 0
+      const diffAbs       = Math.abs(montoFactura - monto)
+      const diffRel       = monto > 0 ? diffAbs / monto : 1
+      const cuitFactura   = (f.cuit || '').replace(/-/g, '')
+      const cuitMatch     = !!(cuitLeyenda && cuitFactura && cuitFactura === cuitLeyenda)
+
+      // Filtro: monto muy diferente (>15%) sin CUIT → excluir
+      if (diffRel > 0.15 && !cuitMatch) return null
+
+      let score = 0
+      const matchMonto  = diffAbs <= 2 || diffRel <= 0.001   // ±$2 ó ±0.1%
+      const matchMontoCercano = diffRel <= 0.05              // ±5%
+
+      // ── 1. MONTO (prioridad máxima) ────────────────────────────────────────
+      if (matchMonto)        score += 80
+      else if (matchMontoCercano) score += 50
+
+      // ── 2. CUIT ─────────────────────────────────────────────────────────────
+      if (cuitMatch) score += matchMonto ? 100 : 30   // 100 extra si también hay monto
+
+      // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
+      const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
+      let matchFecha = false
+      let diasDiff   = Infinity
+      if (fechaRef) {
+        diasDiff   = diasDiferencia(fechaMov, fechaRef)
+        matchFecha = diasDiff <= 5
+        if      (diasDiff <= 1) score += 20
+        else if (diasDiff <= 5) score += 10
+      }
+
+      // ── 4. NOMBRE/LEYENDA (cuaternario) ─────────────────────────────────────
+      const palNombre = palabrasSignificativas(f.display_nombre || '')
+      let   matchNombre = false
+      for (const fuente of [descripcion, leyenda1]) {
+        if (!fuente) continue
+        const pal = palabrasSignificativas(fuente)
+        if (!pal.length || !palNombre.length) continue
+        const coinc = pal.filter(p => palNombre.some(n => n.includes(p) || p.includes(n))).length
+        const sim   = coinc / Math.max(pal.length, palNombre.length)
+        if (sim >= 0.4) { matchNombre = true; score += 15; break }
+        else if (sim > 0) score += Math.round(sim * 15)
+      }
+
+      // ── Badges combinados ───────────────────────────────────────────────────
+      const badges: { texto: string; color: string }[] = []
+
+      if (matchMonto && cuitMatch && matchFecha) {
+        badges.push({ texto: 'Monto + CUIT + Fecha', color: 'bg-green-100 text-green-800' })
+      } else if (matchMonto && cuitMatch) {
+        badges.push({ texto: 'Monto + CUIT', color: 'bg-green-100 text-green-800' })
+      } else if (matchMonto && matchFecha) {
+        badges.push({ texto: 'Monto + Fecha', color: 'bg-blue-100 text-blue-800' })
+      } else if (matchMonto) {
+        const label = matchMontoCercano || diffAbs <= 2 ? 'Monto exacto' : 'Monto ≈'
+        badges.push({ texto: label, color: 'bg-purple-100 text-purple-700' })
+      } else if (cuitMatch) {
+        badges.push({ texto: 'CUIT (monto distinto)', color: 'bg-yellow-100 text-yellow-700' })
+      }
+
+      if (matchNombre && !badges.find(b => b.texto.includes('CUIT'))) {
+        badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
+      }
+
+      return { factura: f, score: Math.round(score), badges }
+    })
+    .filter((p): p is PropuestaArca => p !== null && p.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  return resultados
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+
 export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
-  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("")
+  const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
+  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -54,6 +170,7 @@ export function VistaExtractoBancario() {
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
   const [editData, setEditData] = useState({
     categ: '',
+    nro_cuenta: '' as string | null,
     centro_de_costo: '',
     estado: '',
     contable: '',
@@ -76,8 +193,96 @@ export function VistaExtractoBancario() {
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
 
+  // Columnas opcionales — selector
+  const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
+    { key: 'saldo',               label: 'Saldo',            defaultVisible: true  },
+    { key: 'categ',               label: 'CATEG',            defaultVisible: true  },
+    { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
+    { key: 'motivo_revision',     label: 'Motivo Revisión',  defaultVisible: true  },
+    { key: 'centro_de_costo',     label: 'Centro de Costo',  defaultVisible: false },
+    { key: 'contable',            label: 'Contable',         defaultVisible: false },
+    { key: 'interno',             label: 'Interno',          defaultVisible: false },
+    { key: 'nro_cuenta',          label: 'Nro Cuenta',       defaultVisible: false },
+    { key: 'template_id',         label: 'Template ID',      defaultVisible: false },
+    { key: 'template_cuota_id',   label: 'Cuota ID',         defaultVisible: false },
+    { key: 'comprobante_arca_id', label: 'Factura ARCA ID',  defaultVisible: false },
+    { key: 'leyenda1',             label: 'Leyenda Adic. 1',  defaultVisible: false },
+    { key: 'leyenda2',             label: 'Leyenda Adic. 2',  defaultVisible: false },
+    { key: 'origen',              label: 'Origen',           defaultVisible: false },
+    { key: 'control',             label: 'Control',          defaultVisible: false },
+    { key: 'orden',               label: 'Orden',            defaultVisible: false },
+  ]
+
+  const defaultColVis = Object.fromEntries(COLUMNAS_OPCIONALES.map(c => [c.key, c.defaultVisible]))
+
+  const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return defaultColVis
+    try {
+      const saved = localStorage.getItem('extracto_columnas_visibles')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // Filtrar solo claves conocidas
+        return Object.fromEntries(COLUMNAS_OPCIONALES.map(c => [c.key, parsed[c.key] ?? c.defaultVisible]))
+      }
+    } catch {}
+    return defaultColVis
+  })
+  const [selectorColumnasAbierto, setSelectorColumnasAbierto] = useState(false)
+
+  const toggleColumna = (key: string) => {
+    const nuevo = { ...columnasVisibles, [key]: !columnasVisibles[key] }
+    setColumnasVisibles(nuevo)
+    localStorage.setItem('extracto_columnas_visibles', JSON.stringify(nuevo))
+  }
+
+  const col = (key: string) => columnasVisibles[key] ?? false
+
+  // Estados modal Asignar Manualmente
+  const [modalAsignar, setModalAsignar] = useState(false)
+  const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template'>('template')
+  const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
+  const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
+  const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
+  const [templateElegido, setTemplateElegido] = useState<any>(null)
+  const [arcaElegida, setArcaElegida] = useState<any>(null)
+  const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
+  const [contableManual, setContableManual] = useState('')
+  const [internoManual, setInternoManual] = useState('')
+
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios()
+  const tablaActiva = cuentaSeleccionada || 'msa_galicia'
+  const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
+
+  // Set de categs de templates (para validación de categ en extracto)
+  const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    supabase
+      .from('egresos_sin_factura')
+      .select('categ')
+      .then(({ data }) => {
+        setTemplateCategSet(new Set((data || []).map(t => (t.categ || '').toUpperCase().trim()).filter(Boolean)))
+      })
+  }, [])
+
+  // Movimientos con categ que no existe en cuentas_contables ni en templates
+  const cuentasCategSet = useMemo(
+    () => new Set(cuentas.map(c => c.categ.toUpperCase().trim())),
+    [cuentas]
+  )
+  // Categs propias del sistema de sueldos — siempre válidas
+  const CATEGS_SISTEMA = new Set(['SUELDOS', 'ANTICIPO', 'ANTICIPO COBRO'])
+
+  const movimientosCategInvalida = useMemo(
+    () => movimientos.filter(m => {
+      if (!m.categ || m.categ.trim() === '') return false
+      const cu = m.categ.toUpperCase().trim()
+      if (CATEGS_SISTEMA.has(cu)) return false
+      return !cuentasCategSet.has(cu) && !templateCategSet.has(cu)
+    }),
+    [movimientos, cuentasCategSet, templateCategSet]
+  )
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -87,7 +292,7 @@ export function VistaExtractoBancario() {
   }, [modoEdicion])
 
   // Iniciar proceso de conciliación
-  const iniciarConciliacion = () => {
+  const iniciarConciliacion = async () => {
     if (!cuentaSeleccionada) {
       setSelectorAbierto(true)
       return
@@ -95,24 +300,24 @@ export function VistaExtractoBancario() {
     
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
     if (cuenta) {
-      ejecutarConciliacion(cuenta)
+      await ejecutarConciliacion(cuenta)
+      recargar()
     }
   }
 
-  // Ejecutar conciliación con cuenta seleccionada
+  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación
   const ejecutarConCuenta = async (cuentaId: string) => {
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaId)
     if (!cuenta) return
-    
+
     setCuentaSeleccionada(cuentaId)
     setSelectorAbierto(false)
-    
+
     try {
-      await ejecutarConciliacion(cuenta)
-      // Recargar movimientos después de conciliación
+      // Solo recarga los movimientos de la cuenta seleccionada
       recargar()
     } catch (error) {
-      console.error('Error en conciliación:', error)
+      console.error('Error al cargar movimientos:', error)
     }
   }
 
@@ -166,7 +371,7 @@ export function VistaExtractoBancario() {
         if (editData.estado === 'conciliado') {
           // Limpiar motivo_revision para movimientos marcados como Conciliado
           const { error: errorLimpiar } = await supabase
-            .from('msa_galicia')
+            .from(tablaActiva)
             .update({ motivo_revision: null })
             .in('id', ids)
           
@@ -207,9 +412,9 @@ export function VistaExtractoBancario() {
                   if (diferenciaPorcentaje > 10) {
                     const confirmar = window.confirm(
                       `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
-                      `Factura original: $${montoOriginal.toLocaleString()}\n` +
-                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
-                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `Factura original: $${montoOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1).replace('.', ',')}%\n\n` +
                       `¿Confirmas actualizar la factura con el monto del extracto?`
                     )
                     
@@ -248,11 +453,16 @@ export function VistaExtractoBancario() {
                   .from('comprobantes_arca')
                   .update(updateData)
                   .eq('id', opcionId)
-                
+
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
                 } else {
                   console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
+                  // Guardar vínculo persistente en el movimiento bancario
+                  await supabase
+                    .from(tablaActiva)
+                    .update({ comprobante_arca_id: opcionId })
+                    .eq('id', movimientoId)
                 }
                 
               } else if (opcionVinculada.tipo === 'TEMPLATE') {
@@ -270,9 +480,9 @@ export function VistaExtractoBancario() {
                   if (diferenciaPorcentaje > 10) {
                     const confirmar = window.confirm(
                       `⚠️ DIFERENCIA DE MONTO SIGNIFICATIVA\n\n` +
-                      `Template original: $${montoOriginal.toLocaleString()}\n` +
-                      `Extracto bancario: $${montoExtracto.toLocaleString()}\n` +
-                      `Diferencia: ${diferenciaPorcentaje.toFixed(1)}%\n\n` +
+                      `Template original: $${montoOriginal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Extracto bancario: $${montoExtracto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n` +
+                      `Diferencia: ${diferenciaPorcentaje.toFixed(1).replace('.', ',')}%\n\n` +
                       `¿Confirmas actualizar el template con el monto del extracto?`
                     )
                     
@@ -353,6 +563,34 @@ export function VistaExtractoBancario() {
           contable: '',
           interno: ''
         })
+        // Propagar categ a facturas ARCA vinculadas (para movimientos ya conciliados, edición posterior de categ)
+        // Solo cuando NO se está cambiando estado a 'conciliado' (ese caso ya lo maneja el bloque anterior)
+        if (editData.categ?.trim() && editData.estado !== 'conciliado') {
+          const categIngresado = editData.categ.trim().toUpperCase()
+          const categExiste = validarCateg(categIngresado)
+
+          if (categExiste) {
+            for (const movimientoId of ids) {
+              const movimiento = movimientos.find(m => m.id === movimientoId)
+              const arcaId = movimiento?.comprobante_arca_id
+
+              if (arcaId) {
+                const { error } = await supabase
+                  .schema('msa')
+                  .from('comprobantes_arca')
+                  .update({ cuenta_contable: categIngresado })
+                  .eq('id', arcaId)
+
+                if (error) {
+                  console.error(`Error propagando categ a factura ARCA ${arcaId}:`, error)
+                } else {
+                  console.log(`✅ categ propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
+                }
+              }
+            }
+          }
+        }
+
         recargar()
       }
     } catch (error) {
@@ -367,7 +605,7 @@ export function VistaExtractoBancario() {
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit, estado')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, fecha_emision, cuit, estado')
         .neq('estado', 'conciliado')
         .order('fecha_estimada', { ascending: false })
 
@@ -417,7 +655,8 @@ export function VistaExtractoBancario() {
         // Campos para mostrar en UI
         display_nombre: f.denominacion_emisor,
         display_referencia: `${f.tipo_comprobante}-${f.numero_desde}`,
-        display_monto: f.monto_a_abonar
+        display_monto: f.monto_a_abonar,
+        fecha_emision: f.fecha_emision
       }))
 
       const templatesFormateados = (templatesEgresos || []).map(t => ({
@@ -446,6 +685,163 @@ export function VistaExtractoBancario() {
       console.log('📋 Templates (NO conciliados):', templatesEgresos?.map(t => `${t.egreso?.nombre_quien_cobra || t.egreso?.responsable} - ${t.monto} [${t.estado}]`) || [])
     } catch (error) {
       console.error('Error cargando facturas y templates:', error)
+    }
+  }
+
+  // Abrir modal asignar manualmente
+  const abrirModalAsignar = async (movimiento: any) => {
+    setMovimientoAsignando(movimiento)
+    setTemplateElegido(null)
+    setArcaElegida(null)
+    setBusquedaAsignarArca('')
+    setBusquedaAsignarTemplate('')
+    setTabAsignar('template')
+    setContableManual(movimiento.contable || '')
+    setInternoManual(movimiento.interno || '')
+
+    // Cargar templates abiertos para asignación
+    const { data } = await supabase
+      .from('egresos_sin_factura')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional')
+      .eq('activo', true)
+      .order('cuenta_agrupadora')
+      .order('nombre_referencia')
+    setTemplatesParaAsignar(data || [])
+
+    // Asegurar facturas ARCA cargadas
+    if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
+
+    setModalAsignar(true)
+  }
+
+  // Ejecutar asignación manual
+  const ejecutarAsignacion = async () => {
+    if (!movimientoAsignando) return
+    setGuardandoAsignacion(true)
+    try {
+      const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
+      const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
+
+      // Buscar códigos contable/interno en reglas_contable_interno (misma lógica que el motor)
+      const buscarCodigos = async (templateId?: string | null, responsable?: string | null) => {
+        if (templateId) {
+          const { data } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'especifica')
+            .eq('template_id', templateId)
+            .eq('activo', true)
+            .maybeSingle()
+          if (data && (data.codigo_contable || data.codigo_interno)) {
+            return { contable: data.codigo_contable, interno: data.codigo_interno }
+          }
+        }
+        if (responsable) {
+          const { data } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'responsable')
+            .eq('responsable', responsable)
+            .eq('activo', true)
+            .maybeSingle()
+          if (data && (data.codigo_contable || data.codigo_interno)) {
+            return { contable: data.codigo_contable, interno: data.codigo_interno }
+          }
+        }
+        return {}
+      }
+
+      if (tabAsignar === 'template' && templateElegido) {
+        // Buscar códigos contable/interno: Tipo A (template específico) → Tipo B (responsable)
+        const codigos = await buscarCodigos(templateElegido.id, templateElegido.responsable)
+
+        // Crear cuota nueva en el template
+        const { data: cuota, error: errCuota } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert({
+            egreso_id: templateElegido.id,
+            fecha_vencimiento: movimientoAsignando.fecha,
+            fecha_estimada: movimientoAsignando.fecha,
+            monto,
+            estado: 'conciliado',
+            tipo_movimiento: tipoMovimiento,
+            descripcion: templateElegido.nombre_referencia
+          })
+          .select('id')
+          .single()
+
+        if (errCuota) throw errCuota
+
+        // Actualizar extracto con todos los campos incluyendo contable/interno
+        // Manual tiene prioridad sobre auto-detectado por reglas
+        const updateTemplate: Record<string, any> = {
+          template_id: templateElegido.id,
+          template_cuota_id: cuota.id,
+          categ: templateElegido.categ,
+          detalle: templateElegido.nombre_referencia,
+          estado: 'conciliado'
+        }
+        updateTemplate.contable = contableManual.trim() || codigos.contable || ''
+        updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateTemplate)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+      } else if (tabAsignar === 'arca' && arcaElegida) {
+        // Obtener cuenta_contable y nro_cuenta de la factura ARCA (igual que el motor)
+        const { data: facturaCompleta } = await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .select('cuenta_contable, nro_cuenta')
+          .eq('id', arcaElegida.id)
+          .maybeSingle()
+        const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
+        const nroCuenta = facturaCompleta?.nro_cuenta || null              // código numérico → nro_cuenta
+
+        const updateArca: Record<string, any> = {
+          comprobante_arca_id: arcaElegida.id,
+          detalle: arcaElegida.display_nombre || '',
+          estado: 'conciliado'
+        }
+        if (cuentaContable) updateArca.categ = cuentaContable
+        if (nroCuenta) updateArca.nro_cuenta = nroCuenta
+        if (contableManual.trim()) updateArca.contable = contableManual.trim()
+        if (internoManual.trim()) updateArca.interno = internoManual.trim()
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateArca)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+        // Actualizar factura ARCA: conciliado + fecha_vencimiento = fecha real + monto = lo pagado
+        await supabase
+          .schema('msa')
+          .from('comprobantes_arca')
+          .update({
+            estado: 'conciliado',
+            fecha_vencimiento: movimientoAsignando.fecha,
+            monto_a_abonar: monto   // ajusta al monto exacto del débito (ej: redondeo terminal)
+          })
+          .eq('id', arcaElegida.id)
+
+        // Quitar de la lista local para que no vuelva a aparecer como opción
+        setFacturasDisponibles(prev => prev.filter(f => f.id !== arcaElegida.id))
+      }
+
+      setModalAsignar(false)
+      recargar()
+    } catch (err) {
+      console.error('Error en asignación manual:', err)
+    } finally {
+      setGuardandoAsignacion(false)
     }
   }
 
@@ -537,8 +933,8 @@ export function VistaExtractoBancario() {
     // Agregar filtros adicionales
     if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
-    if (montoDesde) filtros.montoDesde = parseFloat(montoDesde)
-    if (montoHasta) filtros.montoHasta = parseFloat(montoHasta)
+    if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
+    if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
     if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
 
@@ -571,6 +967,7 @@ export function VistaExtractoBancario() {
     setBusquedaCombobox({})
     setEditData({
       categ: '',
+      nro_cuenta: null,
       centro_de_costo: '',
       estado: '',
       contable: '',
@@ -586,26 +983,32 @@ export function VistaExtractoBancario() {
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Banknote className="h-6 w-6" />
             Extracto Bancario
-            {cuentaSeleccionada && (
-              <Badge variant="outline" className="ml-2">
-                {cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre}
-              </Badge>
-            )}
           </h2>
           <p className="text-gray-600">Conciliación automática de movimientos bancarios</p>
         </div>
         
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
+            onClick={() => setSelectorAbierto(true)}
+            className="flex items-center gap-2"
+          >
+            <Banknote className="h-4 w-4" />
+            {cuentaSeleccionada
+              ? cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre
+              : 'Seleccionar cuenta'}
+          </Button>
+
+          <Button
+            variant="outline"
             onClick={() => setConfiguradorAbierto(true)}
             className="flex items-center gap-2"
           >
             <Settings className="h-4 w-4" />
             Configuración
           </Button>
-          
-          <Button 
+
+          <Button
             onClick={iniciarConciliacion}
             disabled={procesoEnCurso}
             className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
@@ -752,6 +1155,23 @@ export function VistaExtractoBancario() {
             </Card>
           </div>
 
+          {/* Alerta CATEG inválida — valores que no corresponden a ninguna cuenta contable ni template */}
+          {movimientosCategInvalida.length > 0 && (
+            <Alert className="border-amber-300 bg-amber-50">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800">
+                <span className="font-semibold">
+                  {movimientosCategInvalida.length} movimiento{movimientosCategInvalida.length > 1 ? 's' : ''} con CATEG inválida
+                </span>
+                {' '}— el valor asignado no corresponde a ninguna cuenta contable ni template registrado.{' '}
+                <span className="text-amber-700 text-xs font-mono">
+                  ({[...new Set(movimientosCategInvalida.map(m => m.categ))].join(', ')})
+                </span>
+                {' '}— usá el botón <span className="font-semibold">Re-asignar</span> en cada fila para corregirlo.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Filtros */}
           <Card>
             <CardContent className="pt-6">
@@ -882,7 +1302,7 @@ export function VistaExtractoBancario() {
                     <label className="text-sm font-medium text-purple-700">💵 Rango de Montos</label>
                     <div className="flex gap-2">
                       <Input
-                        type="number"
+                        type="text"
                         placeholder="Monto desde"
                         value={montoDesde}
                         onChange={(e) => setMontoDesde(e.target.value)}
@@ -890,7 +1310,7 @@ export function VistaExtractoBancario() {
                         className="text-xs"
                       />
                       <Input
-                        type="number"
+                        type="text"
                         placeholder="Monto hasta"
                         value={montoHasta}
                         onChange={(e) => setMontoHasta(e.target.value)}
@@ -977,6 +1397,7 @@ export function VistaExtractoBancario() {
                     <CategCombobox
                       value={editData.categ}
                       onValueChange={(value) => setEditData({...editData, categ: value})}
+                      onSelectFull={(categ, nro_cuenta) => setEditData({...editData, categ, nro_cuenta})}
                       placeholder="Seleccionar cuenta contable..."
                       className="w-full"
                     />
@@ -1190,7 +1611,31 @@ export function VistaExtractoBancario() {
           {/* Tabla de Movimientos */}
           <Card>
             <CardHeader>
-              <CardTitle>Movimientos Bancarios</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Movimientos Bancarios</CardTitle>
+                <Popover open={selectorColumnasAbierto} onOpenChange={setSelectorColumnasAbierto}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Columns className="h-4 w-4" />
+                      Columnas
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-3" align="end">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Columnas visibles</p>
+                    <div className="space-y-1">
+                      {COLUMNAS_OPCIONALES.map(c => (
+                        <label key={c.key} className="flex items-center gap-2 cursor-pointer py-0.5">
+                          <Checkbox
+                            checked={col(c.key)}
+                            onCheckedChange={() => toggleColumna(c.key)}
+                          />
+                          <span className="text-sm">{c.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -1223,11 +1668,24 @@ export function VistaExtractoBancario() {
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Débitos</TableHead>
                         <TableHead className="text-right">Créditos</TableHead>
-                        <TableHead className="text-right">Saldo</TableHead>
-                        <TableHead>CATEG</TableHead>
+                        {col('saldo') && <TableHead className="text-right">Saldo</TableHead>}
+                        {col('categ') && <TableHead>CATEG</TableHead>}
                         <TableHead>Estado</TableHead>
-                        <TableHead>Detalle</TableHead>
-                        <TableHead>Motivo Revisión</TableHead>
+                        {col('detalle') && <TableHead>Detalle</TableHead>}
+                        {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
+                        {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
+                        {col('contable') && <TableHead>Contable</TableHead>}
+                        {col('interno') && <TableHead>Interno</TableHead>}
+                        {col('nro_cuenta') && <TableHead>Nro Cuenta</TableHead>}
+                        {col('template_id') && <TableHead>Template</TableHead>}
+                        {col('template_cuota_id') && <TableHead>Cuota</TableHead>}
+                        {col('comprobante_arca_id') && <TableHead>Factura ARCA</TableHead>}
+                        {col('leyenda1') && <TableHead>Leyenda Adic. 1</TableHead>}
+                        {col('leyenda2') && <TableHead>Leyenda Adic. 2</TableHead>}
+                        {col('origen') && <TableHead>Origen</TableHead>}
+                        {col('control') && <TableHead className="text-right">Control</TableHead>}
+                        {col('orden') && <TableHead className="text-right">Orden</TableHead>}
+                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1253,32 +1711,110 @@ export function VistaExtractoBancario() {
                           <TableCell className="text-right font-mono">
                             {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : '-'}
                           </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {formatCurrency(movimiento.saldo)}
-                          </TableCell>
-                          <TableCell>
-                            {movimiento.categ ? (
-                              <Badge variant={movimiento.categ.startsWith('INVALIDA:') ? 'destructive' : 'default'}>
-                                {movimiento.categ}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">Sin CATEG</Badge>
-                            )}
-                          </TableCell>
+                          {col('saldo') && (
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(movimiento.saldo)}
+                            </TableCell>
+                          )}
+                          {col('categ') && (
+                            <TableCell>
+                              {movimiento.categ ? (
+                                <Badge variant={movimiento.categ.startsWith('INVALIDA:') ? 'destructive' : 'default'}>
+                                  {movimiento.categ}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Sin CATEG</Badge>
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge variant={
-                              movimiento.estado === 'conciliado' ? 'default' : 
-                              movimiento.estado === 'auditar' ? 'secondary' : 
+                              movimiento.estado === 'conciliado' ? 'default' :
+                              movimiento.estado === 'auditar' ? 'secondary' :
                               'outline'
                             }>
                               {movimiento.estado}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-xs truncate text-sm text-gray-600">
-                            {movimiento.detalle || '-'}
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate text-xs text-orange-600">
-                            {movimiento.motivo_revision || '-'}
+                          {col('detalle') && (
+                            <TableCell className="max-w-xs truncate text-sm text-gray-600">
+                              {movimiento.detalle || '-'}
+                            </TableCell>
+                          )}
+                          {col('motivo_revision') && (
+                            <TableCell className="max-w-xs truncate text-xs text-orange-600">
+                              {movimiento.motivo_revision || '-'}
+                            </TableCell>
+                          )}
+                          {col('centro_de_costo') && (
+                            <TableCell className="text-sm">{movimiento.centro_de_costo || '-'}</TableCell>
+                          )}
+                          {col('contable') && (
+                            <TableCell className="text-sm">{movimiento.contable || '-'}</TableCell>
+                          )}
+                          {col('interno') && (
+                            <TableCell className="text-sm">{movimiento.interno || '-'}</TableCell>
+                          )}
+                          {col('nro_cuenta') && (
+                            <TableCell className="text-sm font-mono">{movimiento.nro_cuenta || '-'}</TableCell>
+                          )}
+                          {col('template_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.template_id
+                                ? <span className="text-green-700" title={movimiento.template_id}>✓ {movimiento.template_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('template_cuota_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.template_cuota_id
+                                ? <span className="text-green-700" title={movimiento.template_cuota_id}>✓ {movimiento.template_cuota_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('comprobante_arca_id') && (
+                            <TableCell className="text-xs font-mono">
+                              {movimiento.comprobante_arca_id
+                                ? <span className="text-blue-700" title={movimiento.comprobante_arca_id}>✓ {movimiento.comprobante_arca_id.slice(0, 8)}…</span>
+                                : <span className="text-gray-400">-</span>}
+                            </TableCell>
+                          )}
+                          {col('leyenda1') && (
+                            <TableCell className="text-sm truncate max-w-xs">{movimiento.leyendas_adicionales_1 || '-'}</TableCell>
+                          )}
+                          {col('leyenda2') && (
+                            <TableCell className="text-sm truncate max-w-xs">{movimiento.leyendas_adicionales_2 || '-'}</TableCell>
+                          )}
+                          {col('origen') && (
+                            <TableCell className="text-sm">{movimiento.origen || '-'}</TableCell>
+                          )}
+                          {col('control') && (
+                            <TableCell className="text-right font-mono text-sm">
+                              {movimiento.control !== undefined && movimiento.control !== null ? formatCurrency(movimiento.control) : '-'}
+                            </TableCell>
+                          )}
+                          {col('orden') && (
+                            <TableCell className="text-right text-sm font-mono">{movimiento.orden ?? '-'}</TableCell>
+                          )}
+                          <TableCell>
+                            {(() => {
+                              const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
+                              const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
+                              const mostrar = movimiento.estado !== 'conciliado' || sinVincular || categInvalida
+                              if (!mostrar) return null
+                              const label = categInvalida && movimiento.estado === 'conciliado' ? 'Re-asignar' : movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant={categInvalida ? 'destructive' : 'outline'}
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => abrirModalAsignar(movimiento)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  {label}
+                                </Button>
+                              )
+                            })()}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1335,53 +1871,301 @@ export function VistaExtractoBancario() {
           <DialogHeader>
             <DialogTitle>Configuración de Reglas</DialogTitle>
           </DialogHeader>
-          
+
+          {/* Selector cuenta — compartido entre ambas tabs */}
+          <div className="flex items-center gap-3 pb-2 border-b">
+            <span className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</span>
+            <Select value={cuentaConfig} onValueChange={setCuentaConfig}>
+              <SelectTrigger className="w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <Tabs defaultValue="conciliacion" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
               <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="conciliacion" className="mt-4">
-              <ConfiguradorReglas />
+              <ConfiguradorReglas cuentaBancariaId={cuentaConfig} />
             </TabsContent>
-            
+
             <TabsContent value="contable-interno" className="mt-4">
-              <ConfiguradorReglasContable />
+              <ConfiguradorReglasContable cuentaBancariaId={cuentaConfig} />
             </TabsContent>
           </Tabs>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Selector de Cuenta */}
+      {/* Modal Selector de Cuenta / Caja */}
       <Dialog open={selectorAbierto} onOpenChange={setSelectorAbierto}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Seleccionar Cuenta Bancaria</DialogTitle>
+            <DialogTitle>Seleccionar Cuenta / Caja</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Selecciona la cuenta bancaria que deseas conciliar:
-            </p>
-            <div className="space-y-2">
-              {cuentasDisponibles.map((cuenta) => (
-                <Button
-                  key={cuenta.id}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => ejecutarConCuenta(cuenta.id)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Banknote className="h-4 w-4" />
-                    <div className="text-left">
-                      <div className="font-medium">{cuenta.nombre}</div>
-                      <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+            {/* Cuentas bancarias */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo !== 'caja').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-blue-500 bg-blue-50' : ''}`}
+                    onClick={() => ejecutarConCuenta(cuenta.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
                     </div>
-                  </div>
-                </Button>
-              ))}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {/* Cajas */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cajas</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo === 'caja').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-green-500 bg-green-50' : ''}`}
+                    onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4 text-green-600" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Asignar Manualmente */}
+      <Dialog open={modalAsignar} onOpenChange={setModalAsignar}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Asignar Manualmente</DialogTitle>
+            {movimientoAsignando && (
+              <DialogDescription className="font-mono text-xs">
+                {movimientoAsignando.fecha} · {movimientoAsignando.descripcion} ·{' '}
+                <span className="font-semibold">
+                  {movimientoAsignando.debitos > 0
+                    ? `Débito $${movimientoAsignando.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                    : `Crédito $${movimientoAsignando.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                </span>
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template')}>
+            <TabsList className="w-full">
+              <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
+              <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
+            </TabsList>
+
+            {/* Tab Template */}
+            <TabsContent value="template" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar template por nombre o agrupadora..."
+                value={busquedaAsignarTemplate}
+                onChange={e => setBusquedaAsignarTemplate(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {templatesParaAsignar
+                  .filter(t => {
+                    const q = busquedaAsignarTemplate.toLowerCase()
+                    return !q || t.nombre_referencia?.toLowerCase().includes(q) || t.cuenta_agrupadora?.toLowerCase().includes(q) || t.categ?.toLowerCase().includes(q)
+                  })
+                  .map(t => (
+                    <div
+                      key={t.id}
+                      onClick={() => setTemplateElegido(templateElegido?.id === t.id ? null : t)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        templateElegido?.id === t.id
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {t.cuenta_agrupadora && (
+                        <div className="text-[10px] text-gray-400 mb-0.5">{t.cuenta_agrupadora}</div>
+                      )}
+                      <div className="font-medium text-sm">{t.nombre_referencia}</div>
+                      <div className="text-xs text-gray-500">
+                        {t.categ}
+                        {t.responsable && <span className="ml-2 text-blue-600">· {t.responsable}</span>}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              {templateElegido && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Tab ARCA */}
+            <TabsContent value="arca" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por proveedor, CUIT o monto..."
+                value={busquedaAsignarArca}
+                onChange={e => setBusquedaAsignarArca(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const propuestas = movimientoAsignando
+                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                    : []
+                  const conScore   = propuestas.filter(p => p.score > 0)
+                  const sinScore   = propuestas.filter(p => p.score === 0)
+                  const busqueda   = busquedaAsignarArca.toLowerCase().trim()
+
+                  // Helper fechas: muestra emision siempre; estimada solo si difiere
+                  const fmtFecha = (iso: string | null | undefined) =>
+                    iso ? new Date(iso + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) : '-'
+
+                  const fechasRow = (f: any) => {
+                    const emStr  = fmtFecha(f.fecha_emision)
+                    const estStr = fmtFecha(f.fecha_estimada)
+                    const difieren = f.fecha_emision && f.fecha_estimada && f.fecha_emision !== f.fecha_estimada
+                    return difieren
+                      ? <><span>Em: {emStr}</span><span className="text-gray-400">Est: {estStr}</span></>
+                      : <span>{emStr}</span>
+                  }
+
+                  const montoRow = (f: any) =>
+                    <span className="font-mono">${(f.display_monto ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+
+                  // Con búsqueda activa: filtrar todo
+                  if (busqueda) {
+                    return propuestas
+                      .filter(({ factura: f }) =>
+                        f.display_nombre?.toLowerCase().includes(busqueda) ||
+                        (f.cuit || '').includes(busqueda) ||
+                        String(f.display_monto).includes(busqueda)
+                      )
+                      .map(({ factura: f }) => (
+                        <div
+                          key={f.id}
+                          onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                          className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${arcaElegida?.id === f.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
+                        >
+                          <div className="font-medium text-sm">{f.display_nombre}</div>
+                          <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                            <span>{f.cuit}</span>
+                            {fechasRow(f)}
+                            {montoRow(f)}
+                          </div>
+                        </div>
+                      ))
+                  }
+
+                  // Sin búsqueda: sugerencias primero, luego el resto
+                  const renderFila = ({ factura: f, badges }: PropuestaArca, sugerida: boolean) => (
+                    <div
+                      key={f.id}
+                      onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${arcaElegida?.id === f.id ? 'border-blue-500 bg-blue-50' : sugerida ? 'border-green-200 hover:border-green-400 hover:bg-green-50' : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium text-sm">{f.display_nombre}</div>
+                        {sugerida && badges.length > 0 && (
+                          <div className="flex gap-1 flex-wrap justify-end shrink-0">
+                            {badges.map((b, i) => (
+                              <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${b.color}`}>{b.texto}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                        <span>{f.cuit}</span>
+                        {fechasRow(f)}
+                        {montoRow(f)}
+                      </div>
+                    </div>
+                  )
+
+                  return (
+                    <>
+                      {conScore.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {conScore.map(p => renderFila(p, true))}
+                          {sinScore.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otras facturas</p>
+                          )}
+                        </>
+                      )}
+                      {sinScore.map(p => renderFila(p, false))}
+                    </>
+                  )
+                })()}
+              </div>
+              {arcaElegida && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se vinculará factura <strong>{arcaElegida.display_nombre}</strong>. Cuenta contable y nro_cuenta se completarán desde la factura.
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          {/* Códigos contable/interno — opcionales, aplican a cualquier asignación */}
+          <div className="border-t pt-3 mt-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
+              Contable / Interno <span className="normal-case font-normal">(opcional — sobreescribe reglas automáticas)</span>
+            </p>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-0.5 block">Contable</label>
+                <Input
+                  className="h-7 text-xs"
+                  placeholder="Ej: AP i"
+                  value={contableManual}
+                  onChange={e => setContableManual(e.target.value)}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-0.5 block">Interno</label>
+                <Input
+                  className="h-7 text-xs"
+                  placeholder="Ej: DIST MA"
+                  value={internoManual}
+                  onChange={e => setInternoManual(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
+            <Button
+              onClick={ejecutarAsignacion}
+              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : !arcaElegida)}
+            >
+              {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

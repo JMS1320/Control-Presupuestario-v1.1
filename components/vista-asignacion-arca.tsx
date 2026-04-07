@@ -18,6 +18,7 @@ interface CuentaSistema {
   nro_cuenta: string
   cuenta_contable: string
   imputable: boolean
+  nombre_totalizadora: string | null
 }
 
 interface ComprobanteArca {
@@ -40,6 +41,7 @@ interface Sugerencia {
   categ: string
   nro_cuenta: string
   cuenta_contable: string
+  nombre_totalizadora: string | null
   score: number
   fuente: "historial_historico" | "historial_arca" | "nombre_similar" | "exacto"
   usos?: number
@@ -102,7 +104,8 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function VistaAsignacionArca() {
+export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
   const [comprobantes, setComprobantes] = useState<ComprobanteArca[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,11 +139,11 @@ export function VistaAsignacionArca() {
     setError(null)
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
-        supabase.schema("msa").from("comprobantes_arca")
+        supabase.schema(schemaName).from("comprobantes_arca")
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
-          .select("categ,nro_cuenta,cuenta_contable,imputable")
+          .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
           .order("nro_cuenta"),
       ])
       if (e1) throw new Error(e1.message)
@@ -278,7 +281,7 @@ export function VistaAsignacionArca() {
       // ── PRIORIDAD 1: Historial en comprobantes_historico (mismo CUIT, ya asignados) ──
       if (cuitNorm) {
         const { data: histRows } = await supabase
-          .schema("msa")
+          .schema(schemaName)
           .from("comprobantes_historico")
           .select("cuenta_asignada,nro_cuenta")
           .eq("nro_doc_emisor", cuit!)
@@ -305,7 +308,7 @@ export function VistaAsignacionArca() {
       // ── PRIORIDAD 2: Historial en comprobantes_arca (mismo CUIT, ya asignados) ──
       if (cuitNorm) {
         const { data: arcaRows } = await supabase
-          .schema("msa")
+          .schema(schemaName)
           .from("comprobantes_arca")
           .select("cuenta_contable,nro_cuenta")
           .eq("cuit", cuit!)
@@ -639,6 +642,9 @@ export function VistaAsignacionArca() {
                     className={`w-full text-left flex items-center gap-3 rounded-lg border px-3 py-2 transition-all
                       ${elegida ? "border-blue-400 bg-blue-50 ring-1 ring-blue-300" : "border-gray-200 hover:bg-gray-50"}`}>
                     <div className="flex-1 min-w-0">
+                      {sug.nombre_totalizadora && (
+                        <p className="text-[10px] text-gray-400 mb-0.5 truncate">{sug.nombre_totalizadora}</p>
+                      )}
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{sug.categ}</span>
                         <span className="shrink-0 font-mono text-xs text-gray-400 bg-gray-100 rounded px-1">{sug.nro_cuenta}</span>

@@ -1,7 +1,111 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-03-20
-> **Sesión anterior**: ECHEQ — integración facturas + anticipos
+> **Última actualización**: 2026-03-26
+> **Sesión anterior**: Sistema Caja + fixes monetarios + preview import ARCA
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-03-26
+
+| Feature | Commits |
+|---------|---------|
+| Fix separador decimal coma en todos los inputs monetarios (Cash Flow, ARCA, Templates, Extracto, Sueldos) | `a534219` (parcial) |
+| Fix Sigot anticipo crash — `SelectItem value=""` → `value="__none__"` (Radix crash) | `a534219` |
+| Preview import ARCA — muestra listado facturas antes de confirmar (nueva/duplicada/error) | `a534219` |
+| BD: 3 tablas caja `msa.caja_general/ams/sigot` con misma estructura que extracto bancario | migrations |
+| BD: campo `medio_pago` en `cuotas_egresos_sin_factura`, `sueldos.pagos`, `msa.comprobantes_arca` | migrations |
+| `CuentaBancaria`: campo `tipo` (banco/caja) + `schema_bd` para routing schema automático | `a534219` |
+| `useMovimientosBancarios`: soporte schema `msa` para tablas de caja | `a534219` |
+| Extracto: selector expandido con dos grupos (Cuentas Bancarias / Cajas) | `a534219` |
+| Cash Flow: filtro medio_pago en panel de filtros | `a534219` |
+| Templates pago manual: selector medio_pago | `a534219` |
+| Sueldos anticipo: selector medio_pago | `a534219` |
+| ARCA: columna `medio_pago` disponible (oculta, activable) | `a534219` |
+| Documentación: `CONCILIACION-CONTABILIDAD.md` sección 17 Sistema Caja | — |
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-03-22
+
+| Feature | Commits |
+|---------|---------|
+| Fix schema `pam` HTTP 406 — `ALTER ROLE authenticator SET pgrst.db_schemas` | SQL directo |
+| Selector de cuenta siempre visible en Extracto Bancario | `7d1b53f` |
+| `useMovimientosBancarios` dinámico — acepta tabla como parámetro | `c6bfeca` |
+| Toda propagación categ usa `tablaActiva` en lugar de `msa_galicia` hardcodeado | `c6bfeca` |
+| Documentación `CONCILIACION-BANCARIA.md` y `ARQUITECTURA-BD.md` actualizadas | `3e7a056` |
+
+---
+
+## 🔧 PENDIENTES — CONCILIACIÓN BANCARIA (atacar de a uno)
+
+### C1 — Traer cuenta contable automáticamente al vincular factura/template
+
+**Situación actual**: Al conciliar un movimiento contra una factura ARCA o template que ya tiene `cuenta_contable` / `categ` asignada, ese valor NO se trae automáticamente al campo `categ` del extracto. El usuario lo tiene que escribir manualmente.
+
+**Comportamiento deseado**:
+- Al seleccionar una factura/template para vincular → pre-completar `categ` del extracto con la cuenta que ya tiene esa factura/template
+- Si la factura/template no tiene cuenta → dejar vacío
+- El usuario puede editar el valor pre-completado antes de confirmar
+
+**Impacto**: Es el flujo más común — la mayoría de las facturas ya tienen cuenta contable asignada.
+
+---
+
+### C2 — Propagación factura → extracto no cubre `pam_galicia_cc`
+
+**Situación actual**: En `vista-facturas-arca.tsx` línea 840, cuando se edita `cuenta_contable` en una factura, propaga a `msa_galicia` y `pam_galicia` pero **no a `pam_galicia_cc`**.
+
+**Fix**: Agregar `pam_galicia_cc` al array `['msa_galicia', 'pam_galicia', 'pam_galicia_cc']`.
+
+---
+
+### C3 — Motor de reglas contable e interno (no implementado)
+
+**Situación actual**:
+- Tabla `reglas_contable_interno` existe pero está **vacía**
+- Componente `configurador-reglas-contable.tsx` existe (CRUD de reglas) pero nunca fue testeado
+- **No existe código** en el motor de conciliación que lea esas reglas y las aplique
+
+**Pendiente**:
+1. Definir estructura y lógica de las reglas (qué variables determinan contable e interno)
+2. Implementar el motor que aplique las reglas al conciliar
+3. Cargar las reglas iniciales en la tabla
+4. Testear el configurador CRUD
+
+---
+
+### C4 — Verificar coherencia reglas_conciliacion vs cuentas_contables
+
+**Situación actual**:
+- `reglas_conciliacion` usa códigos cortos: `IMP 2`, `BANC`, `CRED P`
+- `cuentas_contables` tiene nombres largos: `ADMINISTRACION Y ESTRUCTURA`, `HERBICIDAS`, etc.
+- **No verificado** si los códigos cortos de las reglas existen como `categ` en `cuentas_contables`
+
+**Pendiente**: Hacer query cruzada para identificar qué categ de las reglas no existen en `cuentas_contables` y decidir cómo unificar.
+
+---
+
+### C5 — Reglas de conciliación no asignan contable ni interno
+
+**Situación actual**: La tabla `reglas_conciliacion` tiene columnas `categ`, `centro_costo`, `detalle` — pero **no tiene columnas `contable` ni `interno`**. Las reglas automáticas del motor solo pueden asignar categ/detalle, no los campos contable e interno.
+
+**Pendiente**: Decidir si:
+- (A) Agregar columnas `contable` e `interno` a `reglas_conciliacion`
+- (B) Dejar contable/interno exclusivamente a cargo de `reglas_contable_interno`
+- (C) Combinación: reglas_conciliacion para categ, reglas_contable_interno para contable+interno
+
+---
+
+### Contexto técnico para atacar los pendientes
+
+**Import extracto (aclaración)**: El importador mapea CATEG, Contable, Interno, Centro de Costo del Excel si están presentes. Galicia en práctica no manda esas columnas → llegan vacías. No hay distinción histórico/actual en el import.
+
+**30 reglas activas** en `reglas_conciliacion`, todas sobre `descripcion` tipo `contiene`. Asignan categ e interno. Ordenadas por prioridad (orden 1 a 30+).
+
+**reglas_contable_interno**: Vacía.
+
+---
 
 ---
 
@@ -49,6 +153,20 @@
 
 ## 🚨 PENDIENTES INMEDIATOS (próxima sesión)
 
+### 0b. Sistema Caja — Importador (Fase 1 pendiente)
+
+- Definir formato del reporte físico de caja que se exportará
+- Crear API `/api/import-caja` — leer Excel/CSV del reporte y poblar `msa.caja_general`, `msa.caja_ams` o `msa.caja_sigot` según corresponda
+- Igual que import extracto pero sin campos bancarios (sin `origen`, `grupo_de_conceptos`, etc.)
+
+### 0c. Sistema Caja — Interceptor template CAJA (Fase 5, al final)
+
+- Cuando motor concilia movimiento bancario y detecta template CAJA:
+  - El débito bancario representa una transferencia al efectivo (banco → caja)
+  - Interceptar y pedir confirmación antes de ejecutar
+  - Si confirma: crear registro de ingreso en la tabla de caja correspondiente
+- Dejar para después de que el importador funcione y haya datos reales en las cajas
+
 ### 0. Testing ECHEQ facturas (nuevo)
 - Probar botón ECHEQ en factura en estado 'pendiente' con SICORE → verificar queda en 'echeq'
 - Probar botón ECHEQ en factura ya en 'pagar'/'preparado' → verificar queda en 'echeq' sin abrir SICORE de nuevo
@@ -83,6 +201,11 @@
 - Flujo B: lectura lector orejas (pendiente en DISEÑO_TERNEROS.md)
 - Completar proceso destete UI (confirmar ciclos en BD)
 
+### Opción E — Caja: importador y conciliación
+- Importador API para los 3 reportes de caja
+- Una vez cargados datos: motor conciliación de caja igual que bancos
+- Interceptor template CAJA (banco → caja transfers)
+
 ### Opción D — Cierre Quincena SICORE mejorado
 - Generación PDF comprobante retención formato AFIP oficial
 - Templates SICORE 60-61 llenado automático al cerrar quincena
@@ -99,3 +222,41 @@
 | Wilson Barreto monto_a = $0 | Baja | Confirmar si corresponde |
 | Aguinaldo lógica | Baja | Jun/Dic no implementado |
 | Sistema backup Supabase | Alta | Upload nunca funcionó |
+
+---
+
+## 🔧 OPTIMIZACIONES IDENTIFICADAS
+
+### OPT-2 — Eliminar warning "error de categoría" en importador de extractos
+
+**Situación actual**: el importador cuenta "Errores de categoría" cuando la categ llega vacía. Era útil cuando se importaban históricos con categ pre-llena. Con el flujo actual la categ siempre llega vacía y se llena en conciliación → el warning es ruido confuso.
+
+**Fix**: eliminar esa validación/contador en `app/api/import-excel/route.ts`.
+
+---
+
+### OPT-1 — Pago Manual disponible también para templates `fijo`
+
+**Situación actual**: el modal "Pago Manual" filtra exclusivamente por `tipo_template = 'abierto'` (2 archivos: `vista-templates-egresos.tsx` y `vista-cash-flow.tsx`). Los templates `fijo` no pueden recibir pagos extra aunque ocasionalmente lo necesiten.
+
+**Propuesta**: eliminar o relajar el filtro `.eq('tipo_template', 'abierto')` para que muestre todos los templates activos.
+
+**Impacto**: cambio de 1 línea en 2 archivos — sin riesgo para la lógica de cuotas ni la conversión anual↔cuotas.
+
+**Por qué no se hizo ahora**: los templates de distribuciones/retiros e interbancarias ya fueron pasados a `abierto` (ver más abajo), cubriendo los casos más frecuentes. Esta optimización cubre casos edge en templates de impuestos/seguros.
+
+**Archivos a modificar**:
+- `components/vista-templates-egresos.tsx` — query en modal Pago Manual
+- `components/vista-cash-flow.tsx` — ídem
+
+---
+
+### Cambios BD aplicados (2026-03-27)
+
+Templates pasados de `fijo` → `abierto`:
+- Retiro MA mensual, Retiro MA semestral
+- Retiro Manuel semestral, Retiro Mechi semestral, Retiro Soledad semestral
+- Retiro Andres semestral, Retiro Jose semestral
+- Interbancaria BAPRO, Interbancaria Santander
+
+**Razón**: pagos variables/múltiples por período — la rigidez de `fijo` era una limitación sin beneficio para estos casos.

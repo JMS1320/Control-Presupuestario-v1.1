@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,11 +12,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
+import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
 
-export function ConfiguradorReglas() {
+export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas } = useReglasConciliacion()
-  
+
+  const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
+
+  // Sincronizar si el padre cambia la cuenta
+  useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
   const [formulario, setFormulario] = useState({
@@ -28,7 +33,11 @@ export function ConfiguradorReglas() {
     categ: '',
     centro_costo: '',
     detalle: '',
-    activo: true
+    codigo_contable: '',
+    codigo_interno: '',
+    activo: true,
+    llena_template: true,
+    cuenta_bancaria_id: 'msa_galicia'
   })
 
   // Reset formulario
@@ -42,7 +51,11 @@ export function ConfiguradorReglas() {
       categ: '',
       centro_costo: '',
       detalle: '',
-      activo: true
+      codigo_contable: '',
+      codigo_interno: '',
+      activo: true,
+      llena_template: true,
+      cuenta_bancaria_id: cuentaFiltro
     })
     setReglaEditando(null)
   }
@@ -68,7 +81,11 @@ export function ConfiguradorReglas() {
       categ: regla.categ,
       centro_costo: regla.centro_costo || '',
       detalle: regla.detalle,
-      activo: regla.activo
+      codigo_contable: regla.codigo_contable || '',
+      codigo_interno: regla.codigo_interno || '',
+      activo: regla.activo,
+      llena_template: regla.llena_template,
+      cuenta_bancaria_id: regla.cuenta_bancaria_id
     })
     setModalAbierto(true)
   }
@@ -84,7 +101,11 @@ export function ConfiguradorReglas() {
       categ: formulario.categ,
       centro_costo: formulario.centro_costo || null,
       detalle: formulario.detalle,
-      activo: formulario.activo
+      codigo_contable: formulario.codigo_contable.trim() || null,
+      codigo_interno: formulario.codigo_interno.trim() || null,
+      activo: formulario.activo,
+      llena_template: formulario.llena_template ?? true,
+      cuenta_bancaria_id: formulario.cuenta_bancaria_id
     }
 
     let exito = false
@@ -155,6 +176,31 @@ export function ConfiguradorReglas() {
         </Button>
       </div>
 
+      {/* Selector cuenta bancaria — solo si no viene del padre */}
+      {!cuentaBancariaId && (
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium whitespace-nowrap">Cuenta bancaria:</Label>
+          <Select value={cuentaFiltro} onValueChange={setCuentaFiltro}>
+            <SelectTrigger className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-gray-400">
+            {reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).length} reglas para esta cuenta
+          </span>
+        </div>
+      )}
+      {cuentaBancariaId && (
+        <span className="text-xs text-gray-400">
+          {reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).length} reglas para esta cuenta
+        </span>
+      )}
+
       {/* Error */}
       {error && (
         <Alert variant="destructive">
@@ -201,6 +247,7 @@ export function ConfiguradorReglas() {
         <CardContent>
           <div className="space-y-2">
             {reglas
+              .filter(r => r.cuenta_bancaria_id === cuentaFiltro)
               .sort((a, b) => a.orden - b.orden)
               .map((regla) => (
                 <div
@@ -232,6 +279,11 @@ export function ConfiguradorReglas() {
                     <div className="text-right">
                       <div className="font-medium text-blue-600">{regla.categ}</div>
                       <div className="text-sm text-gray-500">{regla.detalle}</div>
+                      {(regla.codigo_contable || regla.codigo_interno) && (
+                        <div className="text-xs text-emerald-600 font-mono mt-0.5">
+                          {[regla.codigo_contable, regla.codigo_interno].filter(Boolean).join(' / ')}
+                        </div>
+                      )}
                     </div>
 
                     {/* Estado */}
@@ -298,6 +350,23 @@ export function ConfiguradorReglas() {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <Label htmlFor="cuenta_bancaria_id">Cuenta Bancaria</Label>
+              <Select
+                value={formulario.cuenta_bancaria_id}
+                onValueChange={(value) => setFormulario(prev => ({ ...prev, cuenta_bancaria_id: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona cuenta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CUENTAS_BANCARIAS.filter(c => c.activa).map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label htmlFor="orden">Orden (Prioridad)</Label>
               <Input
@@ -392,6 +461,33 @@ export function ConfiguradorReglas() {
                 value={formulario.detalle}
                 onChange={(e) => setFormulario(prev => ({ ...prev, detalle: e.target.value }))}
                 placeholder="Ej: Comision Extracciones Efectivo"
+              />
+            </div>
+
+            {/* Códigos contables — específicos por cuenta bancaria */}
+            <div className="col-span-2 border-t pt-3">
+              <p className="text-xs text-gray-500 mb-2">
+                Códigos contables (opcional) — específicos para esta cuenta bancaria. Tienen prioridad sobre los códigos del template.
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="codigo_contable">Contable</Label>
+              <Input
+                id="codigo_contable"
+                value={formulario.codigo_contable}
+                onChange={(e) => setFormulario(prev => ({ ...prev, codigo_contable: e.target.value }))}
+                placeholder="Ej: RET 3 PAM, AP 3 MSA, LIB"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="codigo_interno">Interno</Label>
+              <Input
+                id="codigo_interno"
+                value={formulario.codigo_interno}
+                onChange={(e) => setFormulario(prev => ({ ...prev, codigo_interno: e.target.value }))}
+                placeholder="Ej: DIST MA, CTA JMS"
               />
             </div>
 

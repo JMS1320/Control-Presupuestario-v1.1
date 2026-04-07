@@ -22,6 +22,9 @@ export interface MovimientoBancario {
   interno: string | null
   cuenta: string
   orden: number
+  comprobante_arca_id: string | null
+  leyendas_adicionales_1: string | null
+  leyendas_adicionales_2: string | null
 }
 
 export interface EstadisticasMovimientos {
@@ -32,7 +35,7 @@ export interface EstadisticasMovimientos {
   sin_categ: number
 }
 
-export function useMovimientosBancarios() {
+export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: string = 'public') {
   const [movimientos, setMovimientos] = useState<MovimientoBancario[]>([])
   const [estadisticas, setEstadisticas] = useState<EstadisticasMovimientos>({
     total: 0,
@@ -60,8 +63,8 @@ export function useMovimientosBancarios() {
       setLoading(true)
       setError(null)
 
-      let query = supabase
-        .from('msa_galicia')
+      let query = (schema === 'msa' ? supabase.schema('msa') : supabase)
+        .from(tabla)
         .select('*')
 
       // Aplicar filtro de estado
@@ -104,8 +107,8 @@ export function useMovimientosBancarios() {
         query = query.ilike('detalle', `%${filtros.detalle}%`)
       }
 
-      // Ordenar por fecha descendente (más recientes primero)
-      query = query.order('fecha', { ascending: false })
+      // Ordenar por orden descendente — respeta el orden del extracto bancario original
+      query = query.order('orden', { ascending: false })
 
       // Aplicar límite
       if (filtros?.limite) {
@@ -131,8 +134,8 @@ export function useMovimientosBancarios() {
   // Cargar estadísticas
   const cargarEstadisticas = async () => {
     try {
-      const { data, error } = await supabase
-        .from('msa_galicia')
+      const { data, error } = await (schema === 'msa' ? supabase.schema('msa') : supabase)
+        .from(tabla)
         .select('estado, categ')
 
       if (error) {
@@ -154,17 +157,18 @@ export function useMovimientosBancarios() {
     }
   }
 
-  // Cargar datos iniciales
+  // Cargar datos iniciales — se re-ejecuta cuando cambia la tabla (cuenta seleccionada)
   useEffect(() => {
     cargarMovimientos({ limite: 100 })
     cargarEstadisticas()
-  }, [])
+  }, [tabla])
 
   // Actualización masiva de movimientos
   const actualizarMasivo = async (
-    ids: string[], 
+    ids: string[],
     campos: {
       categ?: string
+      nro_cuenta?: string | null
       centro_de_costo?: string
       estado?: string
       contable?: string
@@ -172,9 +176,12 @@ export function useMovimientosBancarios() {
     }
   ): Promise<boolean> => {
     try {
-      // Filtrar campos vacíos
-      const camposLimpios = Object.fromEntries(
-        Object.entries(campos).filter(([key, value]) => value && value.trim() !== '')
+      // Filtrar campos vacíos (nro_cuenta puede ser null explícito — lo incluimos si categ tiene valor)
+      const camposLimpios: Record<string, unknown> = Object.fromEntries(
+        Object.entries(campos).filter(([key, value]) => {
+          if (key === 'nro_cuenta') return campos.categ && campos.categ.trim() !== ''
+          return value && typeof value === 'string' && value.trim() !== ''
+        })
       )
 
       if (Object.keys(camposLimpios).length === 0) {
@@ -183,8 +190,8 @@ export function useMovimientosBancarios() {
 
       // Actualizar cada movimiento
       for (const id of ids) {
-        const { error } = await supabase
-          .from('msa_galicia')
+        const { error } = await (schema === 'msa' ? supabase.schema('msa') : supabase)
+          .from(tabla)
           .update(camposLimpios)
           .eq('id', id)
 

@@ -133,6 +133,7 @@ const COLUMNAS_CONFIG = {
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
   ddjj_iva: { label: "DDJJ IVA", visible: true, width: "100px" },
+  medio_pago: { label: "Medio Pago", visible: false, width: "120px" },
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
@@ -189,7 +190,7 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
               <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
               <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
               <td className="border border-green-100 px-2 py-1 text-right">
-                {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2)}%` : '-'}
+                {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2).replace(".", ",")}%` : '-'}
               </td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
               <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
@@ -226,7 +227,8 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
   )
 }
 
-export function VistaFacturasArca() {
+export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)
@@ -284,6 +286,7 @@ export function VistaFacturasArca() {
     minimoAplicado: number
     baseImponible: number
     esRetencionAdicional: boolean
+    sinRetencion?: boolean  // true cuando no aplica retención (neto < mínimo del tipo)
   } | null>(null)
   // Descuento en SICORE
   const [descuentoTipoInput, setDescuentoTipoInput] = useState<'pct' | 'monto'>('pct')
@@ -454,7 +457,8 @@ export function VistaFacturasArca() {
   const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
   const [importandoExcel, setImportandoExcel] = useState(false)
   const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
-  const [empresa, setEmpresa] = useState<'MSA' | 'PAM'>('MSA')
+  const [cargandoPreview, setCargandoPreview] = useState(false)
+  const [previewData, setPreviewData] = useState<any>(null)
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -538,8 +542,8 @@ export function VistaFacturasArca() {
       setError(null)
 
       const [arcaResult, historicoResult] = await Promise.all([
-        supabase.schema('msa').from('comprobantes_arca').select('*').order('fecha_emision', { ascending: false }),
-        supabase.schema('msa').from('comprobantes_historico').select('*').order('fecha', { ascending: false }),
+        supabase.schema(schemaName).from('comprobantes_arca').select('*').order('fecha_emision', { ascending: false }),
+        supabase.schema(schemaName).from('comprobantes_historico').select('*').order('fecha', { ascending: false }),
       ])
 
       if (arcaResult.error) {
@@ -702,11 +706,11 @@ export function VistaFacturasArca() {
     
     // Filtro por rango de montos
     if (montoMinimo) {
-      const minimo = parseFloat(montoMinimo)
+      const minimo = parseFloat(montoMinimo.replace(/\./g, '').replace(',', '.'))
       facturasFiltradas = facturasFiltradas.filter(f => f.imp_total >= minimo)
     }
     if (montoMaximo) {
-      const maximo = parseFloat(montoMaximo)
+      const maximo = parseFloat(montoMaximo.replace(/\./g, '').replace(',', '.'))
       facturasFiltradas = facturasFiltradas.filter(f => f.imp_total <= maximo)
     }
     
@@ -754,10 +758,14 @@ export function VistaFacturasArca() {
       hookEditor.iniciarEdicion(celdaHook)
     } else {
       // Lógica original para otros campos
+      // Para campos monetarios, mostrar valor formateado con coma decimal (es-AR)
+      const valorFormateado = ['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(columna) && typeof valor === 'number' && valor !== 0
+        ? valor.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : (valor || '')
       setCeldaEnEdicion({
         facturaId,
         columna,
-        valor: valor || ''
+        valor: valorFormateado
       })
     }
   }
@@ -820,32 +828,56 @@ export function VistaFacturasArca() {
       
       // Convertir valores según el tipo de campo
       if (['monto_a_abonar', 'imp_total', 'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 'otros_tributos', 'iva', 'tipo_cambio'].includes(datosEdicion.columna)) {
-        valorFinal = parseFloat(String(valorFinal)) || 0
+        valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
       }
       
+      // Si cambia a estado 'debito', fecha_estimada = fecha_emision (pago inmediato)
+      let camposUpdate: any = { [datosEdicion.columna]: valorFinal }
+      if (datosEdicion.columna === 'estado' && valorFinal === 'debito') {
+        const facturaActual = facturas.find(f => f.id === datosEdicion.facturaId)
+        if (facturaActual?.fecha_emision) {
+          camposUpdate.fecha_estimada = facturaActual.fecha_emision
+          console.log(`🔄 Auto-ajuste fecha_estimada = fecha_emision (${facturaActual.fecha_emision}) por estado debito`)
+        }
+      }
+
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
-        .update({ [datosEdicion.columna]: valorFinal })
+        .update(camposUpdate)
         .eq('id', datosEdicion.facturaId)
-      
+
       if (error) {
         console.error('Error actualizando factura:', error)
         alert('Error al guardar cambio: ' + error.message)
         return
       }
-      
-      // Actualizar estado local
-      const nuevasFacturas = facturas.map(f => 
-        f.id === datosEdicion.facturaId 
-          ? { ...f, [datosEdicion.columna]: valorFinal }
+
+      // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
+      if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
+        for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
+          supabase
+            .from(tabla)
+            .update({ categ: valorFinal })
+            .eq('comprobante_arca_id', datosEdicion.facturaId)
+            .then(({ error }) => {
+              if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
+              else console.log(`✅ cuenta_contable propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
+            })
+        }
+      }
+
+      // Actualizar estado local (incluir fecha_estimada si aplica)
+      const nuevasFacturas = facturas.map(f =>
+        f.id === datosEdicion.facturaId
+          ? { ...f, ...camposUpdate }
           : f
       )
       setFacturas(nuevasFacturas)
-      
-      const nuevasFacturasOriginales = facturasOriginales.map(f => 
-        f.id === datosEdicion.facturaId 
-          ? { ...f, [datosEdicion.columna]: valorFinal }
+
+      const nuevasFacturasOriginales = facturasOriginales.map(f =>
+        f.id === datosEdicion.facturaId
+          ? { ...f, ...camposUpdate }
           : f
       )
       setFacturasOriginales(nuevasFacturasOriginales)
@@ -1045,8 +1077,8 @@ export function VistaFacturasArca() {
           ) : (['monto_a_abonar', 'imp_total'].includes(columna as string)) ? (
             <Input
               ref={inputRefLocal}
-              type="number"
-              step="0.01"
+              type="text"
+              placeholder="0,00"
               value={String(celdaEnEdicion.valor)}
               onChange={(e) => setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
               onKeyDown={manejarKeyDown}
@@ -1280,6 +1312,25 @@ export function VistaFacturasArca() {
   }
 
   // Función para manejar la importación de Excel
+  const previsualizarImportacion = async (file: File) => {
+    setCargandoPreview(true)
+    setPreviewData(null)
+    setResultadoImportacion(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('empresa', empresa)
+      formData.append('preview', 'true')
+      const res = await fetch('/api/import-facturas-arca', { method: 'POST', body: formData })
+      const data = await res.json()
+      setPreviewData(data)
+    } catch {
+      setPreviewData({ error: 'Error al previsualizar el archivo' })
+    } finally {
+      setCargandoPreview(false)
+    }
+  }
+
   const manejarImportacionExcel = async () => {
     if (!archivoImportacion) return
 
@@ -1329,7 +1380,7 @@ export function VistaFacturasArca() {
       const [mes, año] = periodo.split('/') // FIX: formato es MM/YYYY
       console.log('🔍 DEBUG cargarFacturasSubdiarios:', { periodo, mes, año })
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('año_contable', parseInt(año))
@@ -1396,7 +1447,7 @@ export function VistaFacturasArca() {
         return
       }
 
-      let query = supabase.schema('msa').from('comprobantes_arca').select('*')
+      let query = supabase.schema(schemaName).from('comprobantes_arca').select('*')
 
       // Filtro por fecha: solo facturas <= período objetivo
       if (periodoObjetivo) {
@@ -1469,7 +1520,7 @@ export function VistaFacturasArca() {
         console.log(`📦 Procesando lote ${Math.floor(i/LOTE_SIZE) + 1}: ${lote.length} facturas`)
         
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({
             año_contable: parseInt(año),
@@ -1517,7 +1568,7 @@ export function VistaFacturasArca() {
       
       // Actualizar todas las facturas imputadas del período a DDJJ OK
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .update({ ddjj_iva: 'DDJJ OK' })
         .eq('mes_contable', parseInt(mes))
@@ -1535,7 +1586,7 @@ export function VistaFacturasArca() {
       
       // DESCARGA AUTOMÁTICA: Obtener facturas actualizadas directamente de BD
       const { data: facturasActualizadas, error: errorFetch } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('mes_contable', parseInt(mes))
@@ -1574,7 +1625,7 @@ export function VistaFacturasArca() {
       
       // Obtener todas las facturas del período (independiente del estado DDJJ)
       const { data: facturasReporte, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('*')
         .eq('mes_contable', parseInt(mes))
@@ -2151,7 +2202,7 @@ export function VistaFacturasArca() {
     
     try {
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('mes_contable', parseInt(mes))
@@ -2423,7 +2474,7 @@ export function VistaFacturasArca() {
         const lote = facturasIds.slice(i, i + LOTE_SIZE)
         
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update(updateData)
           .in('id', lote)
@@ -2473,7 +2524,7 @@ export function VistaFacturasArca() {
         const lote = facturasIds.slice(i, i + LOTE_SIZE)
 
         const { error } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({ estado: nuevoEstadoMasivo })
           .in('id', lote)
@@ -2519,7 +2570,7 @@ export function VistaFacturasArca() {
     const tc = parseFloat(tcPagoInputPagos.replace(/\./g, '').replace(',', '.'))
     if (!tc || tc <= 1) { toast.error('TC inválido (debe ser mayor a 1)'); return }
 
-    const { error } = await supabase.schema('msa').from('comprobantes_arca')
+    const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
       .update({ tc_pago: tc }).eq('id', modalTcPagoPagos.factura.id)
     if (error) { toast.error('Error guardando TC de pago'); return }
 
@@ -2545,7 +2596,7 @@ export function VistaFacturasArca() {
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
     try {
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('cuit', cuit)
@@ -2575,9 +2626,10 @@ export function VistaFacturasArca() {
         return
       }
 
-      const netoGravado = factura.imp_neto_gravado || 0
-      const netoNoGravado = factura.imp_neto_no_gravado || 0
-      const opExentas = factura.imp_op_exentas || 0
+      const tc = (factura.tc_pago ?? factura.tipo_cambio ?? 1) as number
+      const netoGravado = (factura.imp_neto_gravado || 0) * tc
+      const netoNoGravado = (factura.imp_neto_no_gravado || 0) * tc
+      const opExentas = (factura.imp_op_exentas || 0) * tc
       const netoFactura = netoGravado + netoNoGravado + opExentas
       const minimoServicios = 67170 // Mínimo más bajo (Servicios/Transporte)
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
@@ -2585,6 +2637,7 @@ export function VistaFacturasArca() {
       console.log('🔍 SICORE: Evaluando factura', {
         id: factura.id,
         proveedor: factura.denominacion_emisor,
+        tc,
         netoGravado,
         netoNoGravado,
         opExentas,
@@ -2616,6 +2669,22 @@ export function VistaFacturasArca() {
       // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
       if (netoFactura <= minimoServicios) {
         console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
+        // Ofrecer descuento pronto pago aunque no haya retención
+        const aplicarDescuento = window.confirm(
+          'No corresponde retención SICORE (monto menor al mínimo).\n\n¿Desea aplicar un descuento pronto pago?'
+        )
+        if (aplicarDescuento) {
+          setFacturaEnProceso(factura)
+          setMostrarModalSicore(true)
+          setMontoRetencion(0)
+          setDescuentoAdicional(0)
+          setDescuentoDesglose(null)
+          setDescuentoInputValor('')
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
+          setPasoSicore('calculo')
+        } else {
+          await ejecutarGuardadoPendiente()
+        }
         return
       }
 
@@ -2661,7 +2730,7 @@ export function VistaFacturasArca() {
   }) => {
     try {
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('sicore_retenciones')
         .insert(params)
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
@@ -2675,9 +2744,10 @@ export function VistaFacturasArca() {
   // FÓRMULA: (gravado + no_gravado + exento) - minimo_no_imponible = base_imponible * porcentaje
   const calcularRetencionSicore = async (factura: FacturaArca, tipo: TipoSicore) => {
     try {
-      const netoGravado = factura.imp_neto_gravado || 0
-      const netoNoGravado = factura.imp_neto_no_gravado || 0
-      const opExentas = factura.imp_op_exentas || 0
+      const tc = (factura.tc_pago ?? factura.tipo_cambio ?? 1) as number
+      const netoGravado = (factura.imp_neto_gravado || 0) * tc
+      const netoNoGravado = (factura.imp_neto_no_gravado || 0) * tc
+      const opExentas = (factura.imp_op_exentas || 0) * tc
       const netoFactura = netoGravado + netoNoGravado + opExentas
       const quincena = generarQuincenaSicore(factura.fecha_vencimiento || factura.fecha_estimada || new Date().toISOString())
 
@@ -2702,8 +2772,14 @@ export function VistaFacturasArca() {
       if (!yaRetuvo) {
         // Primera retención: verificar si supera mínimo específico del tipo
         if (netoFactura <= tipo.minimo_no_imponible) {
-          alert(`No corresponde retención para ${tipo.tipo}.\nNeto Factura: $${netoFactura.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
-          setMostrarModalSicore(false)
+          // No corresponde retención pero dar opción de aplicar descuento pronto pago
+          setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
+          setTipoSeleccionado(tipo)
+          setMontoRetencion(0)
+          setDescuentoAdicional(0)
+          setDescuentoDesglose(null)
+          setDescuentoInputValor('')
+          setPasoSicore('calculo')
           return
         }
         // Descontar mínimo no imponible para primera retención
@@ -2750,7 +2826,7 @@ export function VistaFacturasArca() {
 
   // Aplicar descuento al cálculo SICORE, desglosa gravado/IVA con la alícuota de la factura
   const aplicarDescuentoSicore = () => {
-    if (!facturaEnProceso || !tipoSeleccionado || !datosSicoreCalculo) return
+    if (!facturaEnProceso || !datosSicoreCalculo) return
 
     const impTotal = facturaEnProceso.imp_total || 0
     const impGravado = facturaEnProceso.imp_neto_gravado || 0
@@ -2772,23 +2848,31 @@ export function VistaFacturasArca() {
     setDescuentoDesglose({ gravado: descGravado, iva: descIva, noGravado: descNoGravado, exento: descExento, total: descTotal })
     setDescuentoAdicional(descTotal)
 
-    // Recalcular base SICORE sobre neto ajustado
+    // Recalcular base SICORE sobre neto ajustado (solo si aplica retención)
     const netoAjustado = (impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento)
-    const minimoAplicado = datosSicoreCalculo.minimoAplicado
-    const baseAjustada = Math.max(0, netoAjustado - minimoAplicado)
-    const nuevaRetencion = baseAjustada * tipoSeleccionado.porcentaje_retencion
-
-    setMontoRetencion(nuevaRetencion)
-    setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+    if (!datosSicoreCalculo.sinRetencion && tipoSeleccionado) {
+      const minimoAplicado = datosSicoreCalculo.minimoAplicado
+      const baseAjustada = Math.max(0, netoAjustado - minimoAplicado)
+      const nuevaRetencion = baseAjustada * tipoSeleccionado.porcentaje_retencion
+      setMontoRetencion(nuevaRetencion)
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+    } else {
+      // Sin retención: mantener montoRetencion en 0, solo actualizar neto
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado })
+    }
   }
 
   // Limpiar descuento y restaurar cálculo SICORE original
   const limpiarDescuentoSicore = () => {
-    if (!facturaEnProceso || !tipoSeleccionado) return
+    if (!facturaEnProceso) return
     setDescuentoAdicional(0)
     setDescuentoDesglose(null)
     setDescuentoInputValor('')
-    calcularRetencionSicore(facturaEnProceso, tipoSeleccionado)
+    if (tipoSeleccionado && !datosSicoreCalculo?.sinRetencion) {
+      calcularRetencionSicore(facturaEnProceso, tipoSeleccionado)
+    } else {
+      setMontoRetencion(0)
+    }
   }
 
   // Ejecutar cambio de estado pendiente (después de confirmar SICORE)
@@ -2840,7 +2924,7 @@ export function VistaFacturasArca() {
 
         // Restaurar en BD también
         await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .update({ estado: guardadoPendiente.estadoAnterior })
           .eq('id', guardadoPendiente.facturaId)
@@ -2866,7 +2950,7 @@ export function VistaFacturasArca() {
       // Recargar facturas
       if (mostrarModalPagos) {
         const { data } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
@@ -2891,7 +2975,7 @@ export function VistaFacturasArca() {
 
       if (anticipoId) {
         // Evitar duplicados: verificar si ya existe cheque para este anticipo
-        const { data: existente } = await supabase.schema('msa').from('cheques')
+        const { data: existente } = await supabase.schema(schemaName).from('cheques')
           .select('id').eq('anticipo_id', anticipoId).limit(1)
         if (existente && existente.length > 0) return
 
@@ -2918,7 +3002,7 @@ export function VistaFacturasArca() {
       } else {
         // Pago de facturas via ECHEQ — filtrar las que ya tienen cheque registrado
         const idsFacturas = facturasACambiar.map(f => f.id)
-        const { data: existentes } = await supabase.schema('msa').from('cheques')
+        const { data: existentes } = await supabase.schema(schemaName).from('cheques')
           .select('factura_id').in('factura_id', idsFacturas)
         const yaExisten = new Set((existentes || []).map((e: any) => e.factura_id))
         const facturasNuevas = facturasACambiar.filter(f => !yaExisten.has(f.id))
@@ -2944,7 +3028,7 @@ export function VistaFacturasArca() {
         }))
       }
 
-      const { error } = await supabase.schema('msa').from('cheques').insert(registros)
+      const { error } = await supabase.schema(schemaName).from('cheques').insert(registros)
       if (error) console.error('Error guardando cheque(s):', error)
     } catch (e) {
       console.error('Error guardarCheques:', e)
@@ -2952,13 +3036,19 @@ export function VistaFacturasArca() {
   }
 
   const finalizarProcesoSicore = async () => {
-    if (!facturaEnProceso || !tipoSeleccionado) return
+    if (!facturaEnProceso) return
+    // Permitir continuar si hay descuento aunque no haya retención SICORE
+    if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0) return
     
     try {
       // PRIMERO: Ejecutar el cambio de estado pendiente (estado → 'pagar')
       await ejecutarGuardadoPendiente()
       
-      const saldoFinal = (facturaEnProceso.imp_total || 0) - montoRetencion - descuentoAdicional
+      // Retención y descuento están en ARS; imp_total puede ser USD → convertir retención a moneda original
+      const tc = ((facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1) as number)
+      const retencionEnMoneda = tc > 1.01 ? montoRetencion / tc : montoRetencion
+      const descuentoEnMoneda = tc > 1.01 && descuentoAdicional > 0 ? descuentoAdicional / tc : descuentoAdicional
+      const saldoFinal = (facturaEnProceso.imp_total || 0) - retencionEnMoneda - descuentoEnMoneda
       const quincena = generarQuincenaSicore(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
       
       console.log('💾 SICORE: Finalizando proceso', {
@@ -2975,7 +3065,7 @@ export function VistaFacturasArca() {
         monto_a_abonar: saldoFinal,
         sicore: quincena,
         monto_sicore: montoRetencion,
-        tipo_sicore: tipoSeleccionado.tipo,
+        tipo_sicore: tipoSeleccionado?.tipo || null,
         descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
       }
       if (esEcheqFactura) {
@@ -2984,7 +3074,7 @@ export function VistaFacturasArca() {
         updateFactura.fecha_cobro_echeq = echeqPendienteRef.current!.fechaCobro
       }
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .update(updateFactura)
         .eq('id', facturaEnProceso.id)
@@ -2993,7 +3083,8 @@ export function VistaFacturasArca() {
         throw new Error(error.message)
       }
 
-      // ── Registrar en tabla nueva sicore_retenciones (paralelo, no interrumpe) ──
+      // ── Registrar en tabla nueva sicore_retenciones solo si hay retención real ──
+      if (tipoSeleccionado && montoRetencion > 0) {
       const minimoAplicado = datosSicoreCalculo?.minimoAplicado ?? tipoSeleccionado.minimo_no_imponible
       const descPct = (facturaEnProceso.imp_total || 0) > 0
         ? descuentoAdicional / (facturaEnProceso.imp_total || 1)
@@ -3022,6 +3113,7 @@ export function VistaFacturasArca() {
         retencion: montoRetencion,
         pago: saldoFinal,
       })
+      } // fin if (tipoSeleccionado && montoRetencion > 0)
 
       // Actualizar estado local con datos SICORE
       const nuevasFacturas = facturas.map(f =>
@@ -3060,7 +3152,9 @@ export function VistaFacturasArca() {
       setPasoSicore('tipo')
 
       const descMsg = descuentoDesglose ? `\nDescuento: $${descuentoDesglose.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : ''
-      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}${descMsg}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinal.toLocaleString('es-AR')}`)
+      // saldoFinalARS: calcular en ARS para el mensaje (tc puede ser >1 para USD)
+      const saldoFinalARS = (facturaEnProceso.imp_total || 0) * tc - montoRetencion - descuentoAdicional
+      alert(`✅ Retención SICORE aplicada exitosamente\n\nQuincena: ${quincena}${descMsg}\nRetención: $${montoRetencion.toLocaleString('es-AR')}\nSaldo a pagar: $${saldoFinalARS.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
 
       // Procesar siguiente factura de la cola si hay
       procesarSiguienteSicore()
@@ -3078,7 +3172,7 @@ export function VistaFacturasArca() {
       // Recargar facturas del modal de pagos si está abierto
       if (mostrarModalPagos) {
         const { data } = await supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
@@ -3105,7 +3199,7 @@ export function VistaFacturasArca() {
     }
 
     const { error } = await supabase
-      .schema('msa')
+      .schema(schemaName)
       .from('comprobantes_arca')
       .update(updateData)
       .eq('id', siguiente.id)
@@ -3147,7 +3241,7 @@ export function VistaFacturasArca() {
     try {
       // Si tiene factura vinculada, limpiar SICORE de esa factura
       if (anticipo.factura_id) {
-        await supabase.schema('msa').from('comprobantes_arca')
+        await supabase.schema(schemaName).from('comprobantes_arca')
           .update({ sicore: null, monto_sicore: null, tipo_sicore: null })
           .eq('id', anticipo.factura_id)
       }
@@ -3221,7 +3315,7 @@ export function VistaFacturasArca() {
 
     // Verificar retención previa en ambas tablas
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema('msa').from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
+      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
       supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).neq('id', anticipoSicoreEnProceso.id).limit(1)
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
@@ -3328,7 +3422,7 @@ export function VistaFacturasArca() {
     setAnticipoSicoreEnProceso(null)
     setTipoSicoreAnt(null)
     setDatosSicoreAnt(null)
-    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${Math.round(montoSicoreAnt * 100) / 100} | Saldo: $${saldoFinal.toLocaleString('es-AR')}`)
+    toast.success(`SICORE aplicado. Quincena: ${quincena} | Retención: $${(Math.round(montoSicoreAnt * 100) / 100).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Saldo: $${saldoFinal.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
     recargarAnticiposPagos()
   }
 
@@ -3372,7 +3466,7 @@ export function VistaFacturasArca() {
 
       // Traer todos los campos necesarios para el export completo
       const [{ data, error }, { data: tiposData }] = await Promise.all([
-        supabase.schema('msa').from('comprobantes_arca').select('*')
+        supabase.schema(schemaName).from('comprobantes_arca').select('*')
           .eq('sicore', quincena)
           .not('monto_sicore', 'is', null)
           .gt('monto_sicore', 0)
@@ -3410,7 +3504,7 @@ export function VistaFacturasArca() {
     try {
       const [{ data: facturas }, { data: anticipos }] = await Promise.all([
         supabase
-          .schema('msa')
+          .schema(schemaName)
           .from('comprobantes_arca')
           .select('id, denominacion_emisor, cuit, monto_sicore, imp_total, imp_neto_gravado, fecha_vencimiento, estado')
           .eq('sicore', quincena)
@@ -3470,7 +3564,7 @@ export function VistaFacturasArca() {
 
       // VALIDACIÓN: facturas con SICORE asignado pero aún en estado 'pendiente'
       const { data: facturasPendientes } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_arca')
         .select('id, denominacion_emisor, imp_total')
         .eq('sicore', quincena)
@@ -3546,7 +3640,7 @@ export function VistaFacturasArca() {
 
   const buscarRetencionesV2 = async (quincena: string) => {
     const { data, error } = await supabase
-      .schema('msa')
+      .schema(schemaName)
       .from('sicore_retenciones')
       .select('*')
       .eq('quincena', quincena)
@@ -3664,7 +3758,7 @@ export function VistaFacturasArca() {
       fNum(r.descuento_aplicado),
       fNum(r.minimo_no_imponible),
       fNum(r.base_imponible),
-      r.alicuota ? `${(Number(r.alicuota)*100).toFixed(2)}%` : '',
+      r.alicuota ? `${(Number(r.alicuota)*100).toFixed(2).replace(".", ",")}%` : '',
       fNum(r.retencion),
       fNum(r.pago),
     ])
@@ -3762,7 +3856,7 @@ export function VistaFacturasArca() {
     if (!quincena) return
     setCargandoV2(true)
     try {
-      const { data } = await supabase.schema('msa').from('sicore_retenciones')
+      const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
         .select('*')
         .eq('quincena', quincena)
         .order('fecha_pago', { ascending: true })
@@ -4976,7 +5070,7 @@ export function VistaFacturasArca() {
 
               // Cargar en paralelo las 3 fuentes
               const [arcaResult, templatesResult, anticiposResult] = await Promise.all([
-                supabase.schema('msa').from('comprobantes_arca').select('*')
+                supabase.schema(schemaName).from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
                 supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
@@ -5192,7 +5286,7 @@ export function VistaFacturasArca() {
                 <Label className="text-sm font-medium">💵 Rango de Montos</Label>
                 <div className="flex gap-2">
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto mínimo"
                     value={montoMinimo}
                     onChange={(e) => setMontoMinimo(e.target.value)}
@@ -5200,7 +5294,7 @@ export function VistaFacturasArca() {
                     className="text-xs"
                   />
                   <Input
-                    type="number"
+                    type="text"
                     placeholder="Monto máximo"
                     value={montoMaximo}
                     onChange={(e) => setMontoMaximo(e.target.value)}
@@ -5372,7 +5466,7 @@ export function VistaFacturasArca() {
                                       // Si pertenece a un grupo, buscar todas las facturas del grupo
                                       if (factura.grupo_pago_id) {
                                         const { data: grupoFacs } = await supabase
-                                          .schema('msa').from('comprobantes_arca')
+                                          .schema(schemaName).from('comprobantes_arca')
                                           .select('*')
                                           .eq('grupo_pago_id', factura.grupo_pago_id)
                                         if (grupoFacs && grupoFacs.length > 0) {
@@ -5516,92 +5610,122 @@ export function VistaFacturasArca() {
       </Dialog>
 
       {/* Modal para importación de Excel */}
-      <Dialog open={mostrarImportador} onOpenChange={setMostrarImportador}>
-        <DialogContent className="max-w-2xl">
+      <Dialog open={mostrarImportador} onOpenChange={(v) => {
+        setMostrarImportador(v)
+        if (!v) { setArchivoImportacion(null); setPreviewData(null); setResultadoImportacion(null) }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
               Importar Facturas ARCA desde Excel
             </DialogTitle>
             <DialogDescription>
-              Selecciona el archivo Excel de ARCA para importar las facturas automáticamente.
+              Seleccioná el archivo Excel de ARCA. El sistema mostrará un preview antes de importar.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            {/* Selector de empresa */}
-            <div className="space-y-2">
-              <Label>Empresa destino</Label>
-              <Select value={empresa} onValueChange={(value: 'MSA' | 'PAM') => setEmpresa(value)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MSA">MSA</SelectItem>
-                  <SelectItem value="PAM">PAM</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
+          <div className="space-y-4 overflow-y-auto flex-1">
             {/* Selector de archivo */}
             <div className="space-y-2">
-              <Label>Archivo Excel de ARCA</Label>
+              <Label>Archivo Excel de ARCA (.xlsx / .xls)</Label>
               <Input
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  setArchivoImportacion(file || null)
+                  const file = e.target.files?.[0] || null
+                  setArchivoImportacion(file)
+                  setPreviewData(null)
                   setResultadoImportacion(null)
+                  if (file) previsualizarImportacion(file)
                 }}
               />
-              {archivoImportacion && (
-                <div className="text-sm text-gray-600">
-                  Archivo seleccionado: {archivoImportacion.name}
-                </div>
-              )}
             </div>
 
-            {/* Información */}
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <div className="text-sm space-y-1">
-                  <p><strong>Formato esperado:</strong></p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Fila 1: Información general (se ignora)</li>
-                    <li>Fila 2: Headers de columnas</li>
-                    <li>Fila 3+: Datos de facturas</li>
-                    <li>Extensiones soportadas: .xlsx, .xls</li>
-                  </ul>
+            {/* Cargando preview */}
+            {cargandoPreview && (
+              <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Analizando archivo...
+              </div>
+            )}
+
+            {/* Preview de facturas */}
+            {previewData && !previewData.error && !resultadoImportacion && (
+              <div className="space-y-3">
+                {/* Resumen */}
+                <div className="flex gap-4 text-sm">
+                  <span className="font-medium">Total en archivo: <strong>{previewData.total}</strong></span>
+                  <span className="text-green-700">✅ Nuevas: <strong>{previewData.nuevas}</strong></span>
+                  {previewData.duplicadas > 0 && (
+                    <span className="text-amber-600">⚠️ Ya existen: <strong>{previewData.duplicadas}</strong></span>
+                  )}
+                  {previewData.errores_parse > 0 && (
+                    <span className="text-red-600">❌ Sin datos: <strong>{previewData.errores_parse}</strong></span>
+                  )}
                 </div>
-              </AlertDescription>
-            </Alert>
+
+                {/* Tabla */}
+                <div className="border rounded-md overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="text-left p-2 font-medium text-gray-600">Estado</th>
+                        <th className="text-left p-2 font-medium text-gray-600">Fecha</th>
+                        <th className="text-left p-2 font-medium text-gray-600">Proveedor</th>
+                        <th className="text-right p-2 font-medium text-gray-600">Monto Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(previewData.facturas as any[]).map((f: any) => (
+                        <tr key={f.fila} className={
+                          f.estado === 'nueva' ? 'bg-white' :
+                          f.estado === 'duplicado' ? 'bg-amber-50' : 'bg-red-50'
+                        }>
+                          <td className="p-2">
+                            {f.estado === 'nueva'     && <span className="text-green-700 font-medium">✅ Nueva</span>}
+                            {f.estado === 'duplicado' && <span className="text-amber-600">⚠️ Ya existe</span>}
+                            {f.estado === 'error'     && <span className="text-red-600">❌ Sin datos</span>}
+                          </td>
+                          <td className="p-2 text-gray-700">{f.fecha_emision ?? '—'}</td>
+                          <td className="p-2 text-gray-700 max-w-[200px] truncate" title={f.razon_social}>{f.razon_social}</td>
+                          <td className="p-2 text-right text-gray-700">
+                            {f.imp_total ? `$${Number(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Error de preview */}
+            {previewData?.error && (
+              <Alert className="border-red-200 bg-red-50">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-700">{previewData.error}</AlertDescription>
+              </Alert>
+            )}
 
             {/* Resultado de importación */}
             {resultadoImportacion && (
               <Alert className={resultadoImportacion.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
                 <div className="flex items-center gap-2">
-                  {resultadoImportacion.success ? (
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                  )}
+                  {resultadoImportacion.success
+                    ? <CheckCircle className="h-4 w-4 text-green-600" />
+                    : <AlertTriangle className="h-4 w-4 text-red-600" />}
                 </div>
                 <AlertDescription>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <p className="font-medium">
                       {resultadoImportacion.success ? 'Importación exitosa' : 'Error en importación'}
                     </p>
-                    <p className="text-sm">
-                      {resultadoImportacion.message || resultadoImportacion.error}
-                    </p>
-                    
+                    <p className="text-sm">{resultadoImportacion.message || resultadoImportacion.error}</p>
                     {resultadoImportacion.summary && (
-                      <div className="text-xs bg-white p-2 rounded border">
-                        <div>Total facturas procesadas: {resultadoImportacion.summary.totalFilas}</div>
-                        <div>Facturas importadas: {resultadoImportacion.insertedCount}</div>
-                        <div>Facturas duplicadas: {resultadoImportacion.ignoredCount || 0}</div>
+                      <div className="text-xs mt-1 space-y-0.5">
+                        <div>Importadas: <strong>{resultadoImportacion.insertedCount}</strong></div>
+                        <div>Ya existían: <strong>{resultadoImportacion.ignoredCount || 0}</strong></div>
                         {resultadoImportacion.errores?.length > 0 && (
                           <div className="text-red-600">Errores: {resultadoImportacion.errores.length}</div>
                         )}
@@ -5612,24 +5736,22 @@ export function VistaFacturasArca() {
               </Alert>
             )}
           </div>
-          
-          <DialogFooter>
+
+          <DialogFooter className="pt-2 border-t">
             <Button variant="outline" onClick={() => setMostrarImportador(false)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={manejarImportacionExcel} 
-              disabled={!archivoImportacion || importandoExcel}
+            <Button
+              onClick={manejarImportacionExcel}
+              disabled={!archivoImportacion || importandoExcel || cargandoPreview || !previewData || !!previewData?.error || (previewData?.nuevas === 0)}
             >
               {importandoExcel ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Importando...
-                </>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importando...</>
               ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Importar
+                <><Upload className="mr-2 h-4 w-4" />
+                  {previewData?.nuevas > 0
+                    ? `Importar ${previewData.nuevas} factura${previewData.nuevas !== 1 ? 's' : ''}`
+                    : 'Importar'}
                 </>
               )}
             </Button>
@@ -5645,12 +5767,12 @@ export function VistaFacturasArca() {
 
         {/* Tab Content: Histórico */}
         <TabsContent value="historico" className="space-y-6">
-          <VistaHistoricoFacturas />
+          <VistaHistoricoFacturas empresa={empresa} />
         </TabsContent>
 
         {/* Tab Content: Asignación Cuentas */}
         <TabsContent value="asignacion" className="space-y-6">
-          <VistaAsignacionArca />
+          <VistaAsignacionArca empresa={empresa} />
         </TabsContent>
       </Tabs>
 
@@ -5864,7 +5986,7 @@ export function VistaFacturasArca() {
                   className="flex-1 bg-green-600 hover:bg-green-700"
                   onClick={async () => {
                     const { error } = await supabase
-                      .schema('msa')
+                      .schema(schemaName)
                       .from('comprobantes_arca')
                       .update({ sicore: confirmCambioQuincena.quincenahNueva })
                       .eq('id', confirmCambioQuincena.facturaId)
@@ -5929,7 +6051,7 @@ export function VistaFacturasArca() {
                       <div className="text-left">
                         <div className="font-medium">{tipo.tipo}</div>
                         <div className="text-sm text-gray-500">
-                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2)}%)
+                          Mín: ${tipo.minimo_no_imponible.toLocaleString('es-AR')} ({(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%)
                         </div>
                       </div>
                     </div>
@@ -5958,13 +6080,14 @@ export function VistaFacturasArca() {
             </div>
           )}
 
-          {/* PASO 2: Mostrar cálculo + opciones */}
-          {pasoSicore === 'calculo' && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && (() => {
-            const impTotal = facturaEnProceso.imp_total || 0
-            const impGravado = facturaEnProceso.imp_neto_gravado || 0
-            const impIva = facturaEnProceso.iva || 0
-            const impNoGravado = facturaEnProceso.imp_neto_no_gravado || 0
-            const impExento = facturaEnProceso.imp_op_exentas || 0
+          {/* PASO 2: Mostrar cálculo + opciones (tipoSeleccionado puede ser null para flujo solo-descuento) */}
+          {pasoSicore === 'calculo' && facturaEnProceso && datosSicoreCalculo && (() => {
+            const tcModal = ((facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1) as number)
+            const impTotal = (facturaEnProceso.imp_total || 0) * tcModal
+            const impGravado = (facturaEnProceso.imp_neto_gravado || 0) * tcModal
+            const impIva = (facturaEnProceso.iva || 0) * tcModal
+            const impNoGravado = (facturaEnProceso.imp_neto_no_gravado || 0) * tcModal
+            const impExento = (facturaEnProceso.imp_op_exentas || 0) * tcModal
             const saldoGravado = impGravado - (descuentoDesglose?.gravado || 0)
             const saldoIva = impIva - (descuentoDesglose?.iva || 0)
             const transferencia = impTotal - (descuentoDesglose?.total || 0) - montoRetencion
@@ -5979,7 +6102,7 @@ export function VistaFacturasArca() {
 
               {/* Tabla desglose gravado / IVA */}
               <div className="bg-green-50 p-3 rounded-lg">
-                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado.emoji} {tipoSeleccionado.tipo} — Desglose</p>
+                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado ? `${tipoSeleccionado.emoji} ${tipoSeleccionado.tipo} — Desglose` : 'Desglose'}</p>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-gray-500 border-b">
@@ -6025,7 +6148,7 @@ export function VistaFacturasArca() {
                   <span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span className="text-gray-500">Retención {tipoSeleccionado ? `${(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%` : ''}:</span>
                   <span className="font-bold text-red-600">${fmt(montoRetencion)}</span>
                 </div>
                 <hr className="border-gray-300" />
@@ -6048,10 +6171,8 @@ export function VistaFacturasArca() {
                     <option value="monto">$</option>
                   </select>
                   <input
-                    type="number"
-                    min="0"
-                    step={descuentoTipoInput === 'pct' ? '0.5' : '100'}
-                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21438'}
+                    type="text"
+                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21.438'}
                     value={descuentoInputValor}
                     onChange={(e) => setDescuentoInputValor(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') aplicarDescuentoSicore() }}
@@ -6079,21 +6200,37 @@ export function VistaFacturasArca() {
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <Button onClick={finalizarProcesoSicore} className="flex-1 bg-green-600 hover:bg-green-700">
                   ✅ Confirmar
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => {
-                    const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2))
-                    if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(',', '.')) || 0)
+                    const nuevo = prompt('Cambiar monto retención:', montoRetencion.toFixed(2).replace('.', ','))
+                    if (nuevo !== null) setMontoRetencion(parseFloat(nuevo.replace(/\./g, '').replace(',', '.')) || 0)
                   }}
+                  title="Modificar monto retención"
                 >
                   📝
                 </Button>
-                <Button variant="outline" onClick={cancelarGuardadoPendiente}>
-                  ❌
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setDescuentoAdicional(0)
+                    setDescuentoDesglose(null)
+                    setDescuentoInputValor('')
+                    await ejecutarGuardadoPendiente()
+                    setMostrarModalSicore(false)
+                    setFacturaEnProceso(null)
+                    setPasoSicore('tipo')
+                  }}
+                  title="Continuar sin descuento ni retención"
+                >
+                  ➡️ Sin descuento
+                </Button>
+                <Button variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={cancelarGuardadoPendiente} title="Abortar — revierte el cambio de estado">
+                  🚫 Abortar
                 </Button>
               </div>
             </div>
@@ -6557,8 +6694,12 @@ export function VistaFacturasArca() {
             const facturasEcheq = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'echeq' && matchBusqueda(f)))
 
             // Calcular subtotales (convertir a pesos con TC de pago)
+            // Para facturas con SICORE/descuento: usar imp_total*tc - sicore - descuento (evita redondeo doble)
             const montoEnPesos = (f: FacturaArca) => {
               const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+              if (f.monto_sicore || f.descuento_aplicado) {
+                return (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+              }
               return (f.monto_a_abonar || f.imp_total || 0) * tc
             }
             const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + montoEnPesos(f), 0)
@@ -6586,11 +6727,11 @@ export function VistaFacturasArca() {
               if (!puedeAgrupar) return
               const primeraF = seleccionadasEnPagar[0]
               const monto_total = seleccionadasEnPagar.reduce(
-                (s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0) * (f.tc_pago ?? f.tipo_cambio ?? 1), 0
+                (s, f) => s + montoEnPesos(f), 0
               )
               // 1. Crear grupo
               const { data: grupo, error: errGrupo } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primeraF.cuit,
@@ -6604,7 +6745,7 @@ export function VistaFacturasArca() {
               // 2. Asignar grupo a las facturas
               const ids = seleccionadasEnPagar.map(f => f.id)
               const { error: errUpd } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('comprobantes_arca')
                 .update({ grupo_pago_id: grupo.id })
                 .in('id', ids)
@@ -6626,17 +6767,17 @@ export function VistaFacturasArca() {
               const quedan = todasDelGrupo.filter(f => !ids.includes(f.id))
               // Quitar grupo de las seleccionadas
               await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('comprobantes_arca')
                 .update({ grupo_pago_id: null })
                 .in('id', ids)
               // Si el grupo queda con 0 o 1 factura, eliminar el grupo
               if (quedan.length <= 1) {
                 if (quedan.length === 1) {
-                  await supabase.schema('msa').from('comprobantes_arca')
+                  await supabase.schema(schemaName).from('comprobantes_arca')
                     .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
                 }
-                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
               }
               // Actualizar estado local
               setFacturasPagos(prev => prev.map(f =>
@@ -6664,7 +6805,7 @@ export function VistaFacturasArca() {
               const primero = seleccionadasTemplatesActivas[0]
               const monto_total = seleccionadasTemplatesActivas.reduce((s, t) => s + (t.monto || 0), 0)
               const { data: grupo, error: errGrupo } = await supabase
-                .schema('msa')
+                .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primero.egreso?.cuit_quien_cobra,
@@ -6703,7 +6844,7 @@ export function VistaFacturasArca() {
                   await supabase.from('cuotas_egresos_sin_factura')
                     .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
                 }
-                await supabase.schema('msa').from('grupos_pago').delete().eq('id', grupoId)
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
               }
               setTemplatesPagos(prev => prev.map(t =>
                 ids.includes(t.id) ? { ...t, grupo_pago_id: null } : t
@@ -6791,7 +6932,7 @@ export function VistaFacturasArca() {
                   if (facturasNoCalifican.length > 0) {
                     const idsNoSicore = facturasNoCalifican.map(f => f.id)
                     await supabase
-                      .schema('msa')
+                      .schema(schemaName)
                       .from('comprobantes_arca')
                       .update(datosUpdate)
                       .in('id', idsNoSicore)
@@ -6817,7 +6958,7 @@ export function VistaFacturasArca() {
 
                   // Procesar la primera (actualizar BD con fecha)
                   const { error } = await supabase
-                    .schema('msa')
+                    .schema(schemaName)
                     .from('comprobantes_arca')
                     .update(datosUpdate)
                     .eq('id', primera.id)
@@ -6857,7 +6998,7 @@ export function VistaFacturasArca() {
 
               try {
                 const { error } = await supabase
-                  .schema('msa')
+                  .schema(schemaName)
                   .from('comprobantes_arca')
                   .update(datosUpdate)
                   .in('id', ids)
@@ -6873,7 +7014,7 @@ export function VistaFacturasArca() {
                     const quincenahNueva = generarQuincenaSicore(fechaFinal)
                     if (quincenahNueva !== f.sicore) {
                       await supabase
-                        .schema('msa')
+                        .schema(schemaName)
                         .from('comprobantes_arca')
                         .update({ sicore: quincenahNueva })
                         .eq('id', f.id)
@@ -6943,7 +7084,7 @@ export function VistaFacturasArca() {
                   ids: facs.map(f => f.id),
                   proveedor: facs[0].denominacion_emisor,
                   cuit: facs[0].cuit,
-                  montoTotal: facs.reduce((sum, f) => sum + (f.monto_a_abonar || f.imp_total || 0) * (f.tc_pago ?? f.tipo_cambio ?? 1), 0),
+                  montoTotal: facs.reduce((sum, f) => sum + montoEnPesos(f), 0),
                   fecha: [...facs.map(f => f.fecha_vencimiento || f.fecha_estimada || '')].sort().reverse()[0] || '',
                   cuentaContable: facs[0].cuenta_contable || '-',
                   cantFacturas: facs.length
@@ -7095,7 +7236,9 @@ export function VistaFacturasArca() {
                                             imp_total: (f.imp_total || 0) * tc,
                                             monto_sicore: f.monto_sicore,
                                             descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                              ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                              : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
                                           }
                                         })
                                       )}
@@ -7130,7 +7273,9 @@ export function VistaFacturasArca() {
                                     {(() => {
                                       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
                                       const esUSD = f.moneda === 'USD' || tc > 1.01
-                                      const montoPesos = (f.monto_a_abonar || f.imp_total || 0) * tc
+                                      const montoPesos = (f.monto_sicore || f.descuento_aplicado)
+                                        ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                        : (f.monto_a_abonar || f.imp_total || 0) * tc
                                       return (
                                         <span className={esUSD ? 'text-amber-700' : ''}>
                                           {esUSD && (
@@ -7164,7 +7309,9 @@ export function VistaFacturasArca() {
                                               imp_total: (f.imp_total || 0) * tc,
                                               monto_sicore: f.monto_sicore,
                                               descuento_aplicado: f.descuento_aplicado,
-                                              monto_a_abonar: (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                              monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                                ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                                : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
                                             }]
                                           )
                                         }}
@@ -7724,7 +7871,7 @@ export function VistaFacturasArca() {
                         {filtroOrigenPagos.arca && facturasEcheq.length > 0 && renderTablaFacturas(
                           facturasEcheq,
                           '📝 ARCA ECHEQ Emitidos',
-                          facturasEcheq.reduce((s, f) => s + ((f.monto_a_abonar || f.imp_total || 0) * (f.tc_pago ?? f.tipo_cambio ?? 1)), 0),
+                          facturasEcheq.reduce((s, f) => s + montoEnPesos(f), 0),
                           'echeq',
                           true,
                           { label: '✅ Marcar Pagado', estado: 'pagado' }
@@ -8044,7 +8191,7 @@ export function VistaFacturasArca() {
                     onClick={() => calcularSicoreAnt(tipo)}
                   >
                     <span className="font-semibold text-sm">{tipo.tipo}</span>
-                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2)}% · mín ${tipo.minimo_no_imponible.toLocaleString('es-AR')}</span>
+                    <span className="text-xs text-gray-500">{(tipo.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}% · mín ${tipo.minimo_no_imponible.toLocaleString('es-AR')}</span>
                   </Button>
                 ))}
               </div>
@@ -8075,7 +8222,7 @@ export function VistaFacturasArca() {
                 {!datosSicoreAnt.esAdicional && <div className="flex justify-between"><span className="text-gray-600">Mínimo no imponible:</span><span>-${datosSicoreAnt.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}
                 <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreAnt.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between font-semibold text-red-700 border-t pt-1 mt-1">
-                  <span>{tipoSicoreAnt.tipo} {(tipoSicoreAnt.porcentaje_retencion * 100).toFixed(2)}%:</span>
+                  <span>{tipoSicoreAnt.tipo} {(tipoSicoreAnt.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span>
                   <span>-${montoSicoreAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                 </div>
                 {descuentoAnt > 0 && <div className="flex justify-between text-orange-700"><span>Descuento adicional:</span><span>-${descuentoAnt.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>}

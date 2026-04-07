@@ -25,6 +25,7 @@ export interface CashFlowRow {
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO'
   origen_tabla: string // Para identificar tabla específica al editar
   egreso_id?: string // Para templates: ID del egreso padre
+  es_multi_cuenta?: boolean // Para templates: indica categ por cuota
   fecha_estimada: string
   fecha_vencimiento: string | null
   categ: string
@@ -36,6 +37,8 @@ export interface CashFlowRow {
   creditos: number
   saldo_cta_cte: number // Calculado
   estado: string // Para tracking de cambios
+  // Cuenta contable (solo para filas ARCA)
+  nro_cuenta?: string | null
   // Campos SICORE (solo para filas ARCA)
   sicore?: string | null
   imp_neto_gravado?: number
@@ -50,6 +53,8 @@ export interface CashFlowRow {
   grupo_pago_id?: string | null
   facturas_agrupadas?: number   // > 1 indica fila de grupo
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
+  // Medio de pago
+  medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
 }
 
 // Filtros para Cash Flow
@@ -63,6 +68,7 @@ export interface CashFlowFilters {
   busquedaDetalle?: string
   busquedaCateg?: string
   busquedaCUIT?: string
+  medioPago?: string  // 'todos' | 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
 }
 
 export function useMultiCashFlowData(filtros?: CashFlowFilters) {
@@ -106,6 +112,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: 0,
         saldo_cta_cte: 0,
         estado: f.estado || 'pendiente',
+        medio_pago: f.medio_pago || 'banco',
+        nro_cuenta: f.nro_cuenta || null,
         sicore: f.sicore || null,
         imp_neto_gravado: f.imp_neto_gravado || 0,
         imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
@@ -189,7 +197,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         egreso_id: c.egreso_id,
         fecha_estimada: c.fecha_estimada,
         fecha_vencimiento: c.fecha_vencimiento,
-        categ: c.egreso?.categ || 'SIN_CATEG',
+        categ: c.categ || c.egreso?.categ || 'SIN_CATEG',
+        es_multi_cuenta: c.egreso?.es_multi_cuenta ?? false,
         centro_costo: c.egreso?.centro_costo || 'SIN_CC',
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
@@ -198,6 +207,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
+        medio_pago: c.medio_pago || 'banco',
         grupo_pago_id: null,
       }
     })
@@ -246,7 +256,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         egreso_id: primera.egreso_id,
         fecha_estimada: fechaMax,
         fecha_vencimiento: fechaVencMax,
-        categ: primera.egreso?.categ || 'SIN_CATEG',
+        categ: primera.categ || primera.egreso?.categ || 'SIN_CATEG',
+        es_multi_cuenta: primera.egreso?.es_multi_cuenta ?? false,
         centro_costo: primera.egreso?.centro_costo || 'SIN_CC',
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
@@ -273,7 +284,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       origen_tabla: 'sueldos.periodos',
       fecha_estimada: p.fecha_fin_periodo,
       fecha_vencimiento: null,
-      categ: 'SUELD',
+      categ: 'Sueldos',
       centro_costo: 'ESTRUCTURA',
       cuit_proveedor: p.empleado?.cuit_empleado ?? '',
       nombre_proveedor: p.empleado?.nombre ?? '',
@@ -371,6 +382,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         if (!fila.cuit_proveedor.toLowerCase().includes(cuitSearch)) return false
       }
 
+      // Filtro por medio de pago
+      if (filtros.medioPago && filtros.medioPago !== 'todos') {
+        if ((fila.medio_pago || 'banco') !== filtros.medioPago) return false
+      }
+
       return true
     })
   }
@@ -427,11 +443,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin anticipos
       }
 
-      // 4. Cargar períodos de sueldos (desde Feb 2026, no históricos)
+      // 4. Cargar períodos de sueldos (desde Ene 2026, no históricos)
       const { data: periodosSueldos, error: errorSueldos } = await supabase
         .from('sueldos_periodos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
-        .gte('fecha_inicio_periodo', '2026-02-01')
+        .gte('fecha_inicio_periodo', '2026-01-01')
         .neq('estado', 'historico')
         .order('fecha_fin_periodo', { ascending: true })
 
@@ -440,13 +456,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin sueldos
       }
 
-      // 5. Cargar anticipos de sueldos (pagos tipo 'anticipo', no conciliados)
+      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
-        .eq('tipo', 'anticipo')
+        .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
-        .gte('fecha', '2026-02-01')
+        .gte('fecha', '2026-01-01')
         .order('fecha', { ascending: true })
 
       if (errorAntSueldos) {
@@ -464,11 +480,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         origen_tabla: 'sueldos.pagos',
         fecha_estimada: a.fecha,
         fecha_vencimiento: null,
-        categ: 'SUELD ANT',
+        categ: 'Sueldos',
         centro_costo: 'ESTRUCTURA',
         cuit_proveedor: a.empleado?.cuit_empleado ?? '',
         nombre_proveedor: a.empleado?.nombre ?? '',
-        detalle: `Anticipo ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
+        detalle: `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
         debitos: a.monto ?? 0,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -548,6 +564,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       } else if (origen === 'ARCA') {
         // Comprobar si es una fila de grupo → propagar a todos los miembros
         const filaActualArca = data.find(f => f.id === id)
+
+        // Si cambia a estado 'debito', fecha_estimada = fecha_emision (pago inmediato)
+        if (campo === 'estado' && valor === 'debito' && filaActualArca?.fecha_emision) {
+          updateData.fecha_estimada = filaActualArca.fecha_emision
+          console.log(`🔄 Auto-ajuste fecha_estimada = fecha_emision (${filaActualArca.fecha_emision}) por estado debito`)
+        }
+
         const idsGrupoArca = filaActualArca?.ids_grupo
 
         if (idsGrupoArca && idsGrupoArca.length > 0) {
@@ -593,17 +616,29 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
       } else {
-        // Para templates: categ y centro_costo van a la tabla padre
-        if (campo === 'categ' || campo === 'centro_costo') {
-          if (!egresoId) {
-            throw new Error('Se requiere egreso_id para actualizar categ/centro_costo')
+        // Para templates: manejo especial de categ
+        if (campo === 'categ') {
+          const filaActual = data.find(f => f.id === id)
+          if (filaActual?.es_multi_cuenta) {
+            // Multi-cuenta: categ va a la cuota (no al template padre)
+            const { error } = await supabase
+              .from('cuotas_egresos_sin_factura')
+              .update(updateData)
+              .eq('id', id)
+            if (error) throw error
+          } else {
+            // Template normal: bloquear edición de categ desde Cash Flow
+            toast.error('La categoría de un template solo puede modificarse desde la vista Templates')
+            return false
           }
-
+        } else if (campo === 'centro_costo') {
+          if (!egresoId) {
+            throw new Error('Se requiere egreso_id para actualizar centro_costo')
+          }
           const { error } = await supabase
             .from('egresos_sin_factura')
             .update(updateData)
             .eq('id', egresoId)
-
           if (error) throw error
         } else {
           // Comprobar si es una fila de grupo → propagar a todos los miembros

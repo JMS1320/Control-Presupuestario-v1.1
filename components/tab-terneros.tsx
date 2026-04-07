@@ -104,7 +104,7 @@ function formatFecha(iso: string): string {
 }
 
 function formatPeso(kg: number): string {
-  return `${kg.toFixed(1)} kg`
+  return `${kg.toFixed(1).replace(".", ",")} kg`
 }
 
 function formatKg(kg: number): string {
@@ -461,12 +461,10 @@ export function TabTerneros() {
           <Label className="text-sm text-green-800 whitespace-nowrap">Ganancia diaria estimada:</Label>
           <div className="flex items-center gap-1">
             <Input
-              type="number"
-              step="0.1"
-              min="0"
-              max="5"
-              value={gananciaDiaria}
-              onChange={e => setGananciaDiaria(parseFloat(e.target.value) || 0)}
+              type="text"
+              placeholder="0,0"
+              value={gananciaDiaria === 0 ? '' : String(gananciaDiaria).replace('.', ',')}
+              onChange={e => setGananciaDiaria(parseFloat(e.target.value.replace(',', '.')) || 0)}
               className="w-20 h-7 text-sm text-center"
             />
             <span className="text-sm text-green-700">kg/día</span>
@@ -501,7 +499,7 @@ export function TabTerneros() {
                   </div>
                   <div className="flex justify-between text-gray-500">
                     <span>Promedio</span>
-                    <span className="font-medium text-gray-700">{stats.promedioKg.toFixed(1)} kg</span>
+                    <span className="font-medium text-gray-700">{stats.promedioKg.toFixed(1).replace(".", ",")} kg</span>
                   </div>
                   {gananciaDiaria > 0 && (
                     <>
@@ -512,7 +510,7 @@ export function TabTerneros() {
                       </div>
                       <div className={`flex justify-between ${est}`}>
                         <span>Est. hoy prom.</span>
-                        <span className="font-medium">{stats.promedioEstimadoKg.toFixed(1)} kg</span>
+                        <span className="font-medium">{stats.promedioEstimadoKg.toFixed(1).replace(".", ",")} kg</span>
                       </div>
                     </>
                   )}
@@ -604,13 +602,13 @@ export function TabTerneros() {
                         <TableCell className="text-xs text-center">
                           {ganUlt2 !== null
                             ? <span className={`font-medium ${acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
-                                {acelerando ? '▲ ' : desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2)}
+                                {acelerando ? '▲ ' : desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2).replace(".", ",")}
                               </span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-xs text-center">
                           {ganPaP !== null
-                            ? <span className="text-gray-500">{ganPaP.toFixed(2)}</span>
+                            ? <span className="text-gray-500">{ganPaP.toFixed(2).replace(".", ",")}</span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-xs text-gray-500 max-w-[160px] truncate">
@@ -1068,7 +1066,7 @@ export function TabTerneros() {
                           return (
                             <TableCell key={f} className="text-center text-xs">
                               {pesada
-                                ? <span className="font-medium text-green-700">{pesada.peso_kg.toFixed(1)}</span>
+                                ? <span className="font-medium text-green-700">{pesada.peso_kg.toFixed(1).replace('.', ',')}</span>
                                 : <span className="text-gray-300">—</span>
                               }
                             </TableCell>
@@ -1118,7 +1116,7 @@ export function TabTerneros() {
                                 <TableCell key={f} className={`text-center text-xs py-1 ${bold ? 'font-bold' : 'font-medium'} ${cls}`}>
                                   {bold
                                     ? valor.toLocaleString('es-AR', { maximumFractionDigits: 0 })
-                                    : valor.toFixed(1)}
+                                    : valor.toFixed(1).replace('.', ',')}
                                 </TableCell>
                               )
                             })}
@@ -1177,7 +1175,7 @@ export function TabTerneros() {
                                   <TableCell key={i} className="text-center text-xs">
                                     {g !== null
                                       ? <span className={`font-medium ${mejora ? 'text-green-600' : baja ? 'text-red-600' : 'text-gray-600'}`}>
-                                          {mejora ? '▲ ' : baja ? '▼ ' : ''}{g.toFixed(2)}
+                                          {mejora ? '▲ ' : baja ? '▼ ' : ''}{g.toFixed(2).replace(".", ",")}
                                         </span>
                                       : <span className="text-gray-300">—</span>}
                                   </TableCell>
@@ -1221,7 +1219,7 @@ export function TabTerneros() {
                                   const prom = vals.reduce((s, v) => s + v, 0) / vals.length
                                   return (
                                     <TableCell key={i} className={`text-center text-xs font-medium py-1 ${cls}`}>
-                                      {prom.toFixed(2)}
+                                      {prom.toFixed(2).replace(".", ",")}
                                     </TableCell>
                                   )
                                 })}
