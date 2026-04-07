@@ -94,10 +94,38 @@ npm test
 # 🎯 **OBJETIVO ACTUAL: Arquitectura Conciliación Bancaria + Motor Automático**
 
 ## 📍 **Estado Objetivo:**
-**Progreso**: EN CURSO — Arquitectura 4 columnas implementada, motor funcional, modal asignación manual pendiente
+**Progreso**: EN CURSO — Motor funcional, templates multi-cuenta implementados, guards conciliación manual OK
 **Transición**: 2026-03-24 (desde carga masiva templates)
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
+
+## 🚀 **AVANCES SESIÓN 2026-04-04:**
+
+### ✅ **GUARDS DE CONCILIACIÓN MANUAL — TEMPLATES Y CASH FLOW**
+- `monto > 0` → bloqueo total (alert en Templates, toast.error en Cash Flow)
+- `monto = 0` → window.confirm() para cuotas placeholder de $0
+- Aplica en: `guardarCambio` (vista-templates-egresos) + `cambiarEstado` (vista-cash-flow)
+
+### ✅ **`solo_conciliacion` — FILTRO PAGO MANUAL**
+- Campo `solo_conciliacion BOOLEAN DEFAULT FALSE` en `egresos_sin_factura`
+- Templates bancarios/motor no aparecen en sección principal de Pago Manual
+- Sección colapsable "Bancarios / motor" con botón "Habilitar" por template
+- `toggleSoloConciliacion` actualiza BD + estado local
+
+### ✅ **TEMPLATES MULTI-CUENTA — ARQUITECTURA COMPLETA**
+- Campo `es_multi_cuenta BOOLEAN DEFAULT FALSE` en `egresos_sin_factura`
+- Campo `categ VARCHAR(100)` en `cuotas_egresos_sin_factura`
+- Regla prioridad: `cuota.categ ?? template.categ` en Cash Flow hook, motor y vista
+- Wizard: checkbox visible solo en tipo abierto; al activar, oculta categ/agrupadora
+- Pago Manual paso 2: selector categ solo cuando `es_multi_cuenta=true`
+- Cash Flow: edición categ multi-cuenta → escribe en cuota; normal → toast.error bloqueante
+- Motor: sin categ en cuota multi-cuenta → `auditar` + motivo específico
+- Visual en Templates: badge naranja (cuota propia) vs azul (heredada del template)
+
+### ✅ **DOCUMENTACIÓN GENERADA**
+- `DISEÑO_TEMPLATES.md` — referencia completa arquitectura 3 tipos, flags, guards, flujos
+- `memory/project_conciliacion_bancaria.md` — actualizado con guards + solo_conciliacion + multi-cuenta
+- `DISEÑO_SUELDOS.md` — sección transición templates 47-54 + cómo desactivar
 
 ## 🚀 **AVANCES SESIÓN 2026-03-24:**
 
