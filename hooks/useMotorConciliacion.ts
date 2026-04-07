@@ -361,12 +361,20 @@ export function useMotorConciliacion() {
                 if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
               }
             }
+            // Si el template no tiene categ (Otros Gastos / categ por cuota) → auditar
+            const sinCateg = matchCF.cashFlowRow.origen === 'TEMPLATE' &&
+              (!matchCF.cashFlowRow.categ || matchCF.cashFlowRow.categ === 'SIN_CATEG')
+            const estadoFinalConCateg = sinCateg ? 'auditar' : estadoFinal
+            const motivoFinal = sinCateg
+              ? 'Sin categ: requiere asignación de cuenta contable'
+              : matchCF.motivo_revision
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
-              categ: matchCF.cashFlowRow.categ,
+              categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
-              estado: estadoFinal,
-              motivo_revision: matchCF.motivo_revision,
+              estado: estadoFinalConCateg,
+              motivo_revision: motivoFinal,
               ...extraIdsCF,
               ...extraCF
             })

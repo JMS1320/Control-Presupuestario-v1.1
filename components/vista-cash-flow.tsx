@@ -156,13 +156,14 @@ export function VistaCashFlow() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string | null, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
   const [mostrarBancarios, setMostrarBancarios] = useState(false)
   const [togglingSoloConciliacion, setTogglingSoloConciliacion] = useState<string | null>(null)
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
-  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '' })
+  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '' })
+  const [cuentasContablesOpciones, setCuentasContablesOpciones] = useState<{categ: string, nombre_totalizadora: string | null}[]>([])
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
 
   // Estado para modal Anticipos (crear + ver existentes)
@@ -951,10 +952,17 @@ export function VistaCashFlow() {
 
   const abrirModalPagoManual = async () => {
     await cargarTemplatesAbiertos()
+    // Cargar cuentas contables para selector de categ
+    const { data: cuentas } = await supabase
+      .from('cuentas_contables')
+      .select('categ, nombre_totalizadora')
+      .order('nombre_totalizadora')
+      .order('categ')
+    setCuentasContablesOpciones(cuentas || [])
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
-    setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '' })
     setMostrarBancarios(false)
     setModalPagoManual(true)
   }
@@ -992,6 +1000,7 @@ export function VistaCashFlow() {
 
     setGuardandoNuevaCuota(true)
     try {
+      const categCuota = nuevaCuota.categ.trim() || null
       const { error } = await supabase
         .from('cuotas_egresos_sin_factura')
         .insert({
@@ -1001,7 +1010,8 @@ export function VistaCashFlow() {
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: 'pendiente',
-          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso'
+          tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
+          ...(categCuota ? { categ: categCuota } : {})
         })
 
       if (error) throw error
@@ -2553,6 +2563,35 @@ export function VistaCashFlow() {
                   onChange={(e) => setNuevaCuota(prev => ({ ...prev, monto: e.target.value }))}
                 />
               </div>
+
+              {/* Categ por cuota: solo cuando el template no tiene categ propia */}
+              {(() => {
+                const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
+                if (!template?.categ) {
+                  return (
+                    <div className="space-y-2">
+                      <Label htmlFor="categ-pago-cf">
+                        Cuenta contable
+                        <span className="ml-1 text-xs text-gray-400">(opcional — se puede asignar después)</span>
+                      </Label>
+                      <select
+                        id="categ-pago-cf"
+                        value={nuevaCuota.categ}
+                        onChange={(e) => setNuevaCuota(prev => ({ ...prev, categ: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        <option value="">— Sin asignar —</option>
+                        {cuentasContablesOpciones.map(c => (
+                          <option key={c.categ} value={c.categ}>
+                            {c.nombre_totalizadora ? `${c.nombre_totalizadora} · ` : ''}{c.categ}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {/* Descripción: oculta para FCI (es automática) */}
               {(() => {
