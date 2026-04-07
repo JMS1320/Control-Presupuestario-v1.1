@@ -25,6 +25,7 @@ export interface CashFlowRow {
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO'
   origen_tabla: string // Para identificar tabla específica al editar
   egreso_id?: string // Para templates: ID del egreso padre
+  es_multi_cuenta?: boolean // Para templates: indica categ por cuota
   fecha_estimada: string
   fecha_vencimiento: string | null
   categ: string
@@ -197,6 +198,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         fecha_estimada: c.fecha_estimada,
         fecha_vencimiento: c.fecha_vencimiento,
         categ: c.categ || c.egreso?.categ || 'SIN_CATEG',
+        es_multi_cuenta: c.egreso?.es_multi_cuenta ?? false,
         centro_costo: c.egreso?.centro_costo || 'SIN_CC',
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
@@ -255,6 +257,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         fecha_estimada: fechaMax,
         fecha_vencimiento: fechaVencMax,
         categ: primera.categ || primera.egreso?.categ || 'SIN_CATEG',
+        es_multi_cuenta: primera.egreso?.es_multi_cuenta ?? false,
         centro_costo: primera.egreso?.centro_costo || 'SIN_CC',
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
@@ -613,17 +616,29 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
       } else {
-        // Para templates: categ y centro_costo van a la tabla padre
-        if (campo === 'categ' || campo === 'centro_costo') {
-          if (!egresoId) {
-            throw new Error('Se requiere egreso_id para actualizar categ/centro_costo')
+        // Para templates: manejo especial de categ
+        if (campo === 'categ') {
+          const filaActual = data.find(f => f.id === id)
+          if (filaActual?.es_multi_cuenta) {
+            // Multi-cuenta: categ va a la cuota (no al template padre)
+            const { error } = await supabase
+              .from('cuotas_egresos_sin_factura')
+              .update(updateData)
+              .eq('id', id)
+            if (error) throw error
+          } else {
+            // Template normal: bloquear edición de categ desde Cash Flow
+            toast.error('La categoría de un template solo puede modificarse desde la vista Templates')
+            return false
           }
-
+        } else if (campo === 'centro_costo') {
+          if (!egresoId) {
+            throw new Error('Se requiere egreso_id para actualizar centro_costo')
+          }
           const { error } = await supabase
             .from('egresos_sin_factura')
             .update(updateData)
             .eq('id', egresoId)
-
           if (error) throw error
         } else {
           // Comprobar si es una fila de grupo → propagar a todos los miembros

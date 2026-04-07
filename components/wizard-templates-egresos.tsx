@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase"
 interface DatosBasicos {
   tipo_template: 'fijo' | 'abierto'
   es_bidireccional: boolean
+  es_multi_cuenta: boolean
   categ: string
   cuenta_agrupadora: string
   centro_costo: string
@@ -77,11 +78,13 @@ const MESES = [
 
 export function WizardTemplatesEgresos() {
   const [categoriasTemplates, setCategoriasTemplates] = useState<string[]>([])
+  const [cuentasAgrupadoras, setCuentasAgrupadoras] = useState<string[]>([])
   const [state, setState] = useState<WizardState>({
     paso: 1,
     datos_basicos: {
       tipo_template: 'fijo',
       es_bidireccional: false,
+      es_multi_cuenta: false,
       categ: '',
       cuenta_agrupadora: '',
       centro_costo: '',
@@ -100,31 +103,26 @@ export function WizardTemplatesEgresos() {
     cuotas_generadas: []
   })
 
-  // Cargar categorías existentes de templates al inicializar
+  // Cargar categorías y cuentas agrupadoras existentes al inicializar
   useEffect(() => {
-    async function cargarCategoriasTemplates() {
+    async function cargarOpciones() {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('egresos_sin_factura')
-          .select('categ')
+          .select('categ, cuenta_agrupadora')
           .order('categ')
 
-        if (error) {
-          console.error('Error cargando categorías templates:', error)
-          return
-        }
-
         if (data) {
-          // Extraer categorías únicas
           const categsUnicas = [...new Set(data.map(d => d.categ).filter(Boolean))] as string[]
+          const agrupadoras = [...new Set(data.map(d => d.cuenta_agrupadora).filter(Boolean))].sort() as string[]
           setCategoriasTemplates(categsUnicas)
+          setCuentasAgrupadoras(agrupadoras)
         }
       } catch (error) {
-        console.error('Error en cargarCategoriasTemplates:', error)
+        console.error('Error en cargarOpciones:', error)
       }
     }
-
-    cargarCategoriasTemplates()
+    cargarOpciones()
   }, [])
 
   // Función para obtener último día del mes
@@ -276,21 +274,23 @@ export function WizardTemplatesEgresos() {
 
       // 2. Crear renglón de egreso
       const esAbierto = state.datos_basicos.tipo_template === 'abierto'
+      const esMultiCuenta = state.datos_basicos.es_multi_cuenta
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
           template_master_id: templateMaster.id,
-          categ: state.datos_basicos.categ,
-          cuenta_agrupadora: state.datos_basicos.cuenta_agrupadora || null,
+          categ: esMultiCuenta ? null : state.datos_basicos.categ,
+          cuenta_agrupadora: esMultiCuenta ? null : (state.datos_basicos.cuenta_agrupadora || null),
           centro_costo: state.datos_basicos.centro_costo,
           nombre_referencia: state.datos_basicos.nombre_referencia,
           responsable: state.datos_basicos.responsable,
           cuit_quien_cobra: state.datos_basicos.cuit_quien_cobra || null,
           nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
-          tipo_recurrencia: esAbierto ? 'abierto' : state.configuracion.tipo,
-          tipo_template: state.datos_basicos.tipo_template,
-          es_bidireccional: state.datos_basicos.es_bidireccional,
-          configuracion_reglas: esAbierto ? null : state.configuracion,
+          tipo_recurrencia: esMultiCuenta ? 'abierto' : (esAbierto ? 'abierto' : state.configuracion.tipo),
+          tipo_template: esMultiCuenta ? 'abierto' : state.datos_basicos.tipo_template,
+          es_bidireccional: esMultiCuenta ? false : state.datos_basicos.es_bidireccional,
+          es_multi_cuenta: esMultiCuenta,
+          configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
           año: año_actual,
           activo: true
         })
@@ -340,6 +340,7 @@ export function WizardTemplatesEgresos() {
         datos_basicos: {
           tipo_template: 'fijo',
           es_bidireccional: false,
+          es_multi_cuenta: false,
           categ: '',
           cuenta_agrupadora: '',
           centro_costo: '',
@@ -366,15 +367,16 @@ export function WizardTemplatesEgresos() {
   // Validar paso actual
   const validarPaso = (): boolean => {
     const esAbierto = state.datos_basicos.tipo_template === 'abierto'
+    const esMultiCuenta = state.datos_basicos.es_multi_cuenta
 
     switch (state.paso) {
       case 1:
-        // Para templates abiertos, NO requerir monto_base
+        // Multi-cuenta: no requiere categ. Abierto normal: no requiere monto_base.
         return !!(
-          state.datos_basicos.categ &&
+          (esMultiCuenta || state.datos_basicos.categ) &&
           state.datos_basicos.nombre_referencia &&
           state.datos_basicos.responsable &&
-          (esAbierto || state.datos_basicos.monto_base > 0)
+          (esAbierto || esMultiCuenta || state.datos_basicos.monto_base > 0)
         )
       case 2:
         // Templates abiertos no requieren configuración adicional
@@ -483,39 +485,80 @@ export function WizardTemplatesEgresos() {
                     </ul>
                   </div>
                 )}
+
+                {/* Opción Multi-cuenta — solo visible para templates abiertos */}
+                {state.datos_basicos.tipo_template === 'abierto' && (
+                  <div className="mt-4 border-t pt-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="es_multi_cuenta"
+                        checked={state.datos_basicos.es_multi_cuenta}
+                        onCheckedChange={(checked) => {
+                          actualizarDatosBasicos('es_multi_cuenta', checked === true)
+                          if (checked) {
+                            actualizarDatosBasicos('categ', '')
+                            actualizarDatosBasicos('cuenta_agrupadora', '')
+                            actualizarDatosBasicos('es_bidireccional', false)
+                          }
+                        }}
+                      />
+                      <Label htmlFor="es_multi_cuenta" className="font-normal">
+                        <span className="font-medium text-orange-700">📂 Template Multi-cuenta</span>
+                        <span className="text-sm text-gray-500 ml-2">(cada cuota define su propia cuenta contable)</span>
+                      </Label>
+                    </div>
+                    {state.datos_basicos.es_multi_cuenta && (
+                      <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
+                        <strong>Ej: Otros Gastos, Gastos Varios</strong> — sin categoría fija.
+                        Al cargar cada pago manual se asigna la cuenta contable correspondiente.
+                        Si no se asigna, el sistema lo marca como irregularidad a corregir.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* CATEG con datalist */}
-                <div>
-                  <Label htmlFor="categ">Categoría (CATEG) *</Label>
-                  <Input
-                    id="categ"
-                    list="categs-existentes"
-                    value={state.datos_basicos.categ}
-                    onChange={(e) => actualizarDatosBasicos('categ', e.target.value)}
-                    placeholder="Seleccionar o escribir nueva categoría"
-                  />
-                  <datalist id="categs-existentes">
-                    {categoriasTemplates.map(categ => (
-                      <option key={categ} value={categ} />
-                    ))}
-                  </datalist>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Escriba para buscar o cree una nueva
-                  </p>
-                </div>
+                {/* CATEG — oculto para multi-cuenta */}
+                {!state.datos_basicos.es_multi_cuenta && (
+                  <div>
+                    <Label htmlFor="categ">Categoría (CATEG) *</Label>
+                    <Input
+                      id="categ"
+                      list="categs-existentes"
+                      value={state.datos_basicos.categ}
+                      onChange={(e) => actualizarDatosBasicos('categ', e.target.value)}
+                      placeholder="Seleccionar o escribir nueva categoría"
+                    />
+                    <datalist id="categs-existentes">
+                      {categoriasTemplates.map(categ => (
+                        <option key={categ} value={categ} />
+                      ))}
+                    </datalist>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Escriba para buscar o cree una nueva
+                    </p>
+                  </div>
+                )}
 
-                {/* Cuenta Agrupadora */}
-                <div>
-                  <Label htmlFor="cuenta_agrupadora">Cuenta Agrupadora</Label>
-                  <Input
-                    id="cuenta_agrupadora"
-                    value={state.datos_basicos.cuenta_agrupadora}
-                    onChange={(e) => actualizarDatosBasicos('cuenta_agrupadora', e.target.value)}
-                    placeholder="Ej: IMP 1, FIJOS BS AS (opcional)"
-                  />
-                </div>
+                {/* Cuenta Agrupadora — oculto para multi-cuenta */}
+                {!state.datos_basicos.es_multi_cuenta && (
+                  <div>
+                    <Label htmlFor="cuenta_agrupadora">Cuenta Agrupadora</Label>
+                    <Input
+                      id="cuenta_agrupadora"
+                      list="agrupadoras-existentes"
+                      value={state.datos_basicos.cuenta_agrupadora}
+                      onChange={(e) => actualizarDatosBasicos('cuenta_agrupadora', e.target.value)}
+                      placeholder="Ej: Gastos Bancarios, Retiros..."
+                    />
+                    <datalist id="agrupadoras-existentes">
+                      {cuentasAgrupadoras.map(ag => (
+                        <option key={ag} value={ag} />
+                      ))}
+                    </datalist>
+                  </div>
+                )}
 
                 <div>
                   <Label htmlFor="centro_costo">Centro de Costo</Label>

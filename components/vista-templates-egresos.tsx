@@ -948,6 +948,9 @@ export function VistaTemplatesEgresos() {
     // Obtener valor según la columna
     if (['fecha_estimada', 'fecha_vencimiento', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
+    } else if (columna === 'categ') {
+      // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
+      valor = (cuota as any).categ || cuota.egreso?.categ
     } else {
       // Campos del egreso padre
       valor = cuota.egreso?.[columna as keyof typeof cuota.egreso]
@@ -1093,6 +1096,23 @@ export function VistaTemplatesEgresos() {
         case 'monto':
           return formatearNumero(valor as number)
         
+        case 'categ': {
+          const esCuotaPropia = !!(cuota as any).categ
+          const esMultiCuenta = !!(cuota.egreso as any)?.es_multi_cuenta
+          if (!valor) {
+            return <span className="text-xs text-orange-400 italic">sin categ</span>
+          }
+          return (
+            <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+              esCuotaPropia && esMultiCuenta
+                ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                : 'bg-blue-100 text-blue-700'
+            }`} title={esCuotaPropia ? 'Categ de la cuota' : 'Categ del template'}>
+              {valor as string}
+            </span>
+          )
+        }
+
         case 'estado':
           return (
             <Badge className={colorEstado(valor as string)}>

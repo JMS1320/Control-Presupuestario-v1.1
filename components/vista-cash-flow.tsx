@@ -156,7 +156,7 @@ export function VistaCashFlow() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
-  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string | null, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
+  const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string | null, cuenta_agrupadora: string | null, es_bidireccional: boolean, es_multi_cuenta: boolean, responsable: string, solo_conciliacion: boolean}[]>([])
   const [mostrarBancarios, setMostrarBancarios] = useState(false)
   const [togglingSoloConciliacion, setTogglingSoloConciliacion] = useState<string | null>(null)
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
@@ -937,7 +937,7 @@ export function VistaCashFlow() {
     try {
       const { data, error } = await supabase
         .from('egresos_sin_factura')
-        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, responsable, solo_conciliacion')
+        .select('id, nombre_referencia, categ, cuenta_agrupadora, es_bidireccional, es_multi_cuenta, responsable, solo_conciliacion')
         .eq('tipo_template', 'abierto')
         .eq('activo', true)
         .order('cuenta_agrupadora')
@@ -2564,10 +2564,10 @@ export function VistaCashFlow() {
                 />
               </div>
 
-              {/* Categ por cuota: solo cuando el template no tiene categ propia */}
+              {/* Categ por cuota: solo para templates multi-cuenta */}
               {(() => {
                 const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
-                if (!template?.categ) {
+                if (template?.es_multi_cuenta) {
                   return (
                     <div className="space-y-2">
                       <Label htmlFor="categ-pago-cf">

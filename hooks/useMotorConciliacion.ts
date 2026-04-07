@@ -361,8 +361,9 @@ export function useMotorConciliacion() {
                 if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
               }
             }
-            // Si el template no tiene categ (Otros Gastos / categ por cuota) → auditar
+            // Si es template multi-cuenta sin categ asignada en la cuota → auditar
             const sinCateg = matchCF.cashFlowRow.origen === 'TEMPLATE' &&
+              matchCF.cashFlowRow.es_multi_cuenta === true &&
               (!matchCF.cashFlowRow.categ || matchCF.cashFlowRow.categ === 'SIN_CATEG')
             const estadoFinalConCateg = sinCateg ? 'auditar' : estadoFinal
             const motivoFinal = sinCateg
