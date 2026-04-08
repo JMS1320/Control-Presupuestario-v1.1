@@ -1159,4 +1159,30 @@ El monto guardado en el cheque es `imp_total - monto_sicore` (lo que realmente s
 
 ---
 
+---
+
+## 30. Pendiente — Deprecar SICORE v1
+
+### 30.1. Arquitectura actual (dos capas paralelas)
+
+| | V1 | V2 |
+|---|---|---|
+| **Dónde** | Campos inline en `msa.comprobantes_arca` | Tabla separada `msa.sicore_retenciones` |
+| **Campos** | `sicore`, `monto_sicore`, `tipo_sicore` | Una fila por evento con detalle completo |
+| **Query** | `WHERE sicore = quincena AND monto_sicore > 0` | `WHERE quincena = quincena` |
+| **Granularidad** | Por factura | Por evento (permite múltiples por factura) |
+| **Estado** | Activo (legacy) | Activo (nuevo) |
+
+### 30.2. Plan de deprecación
+
+1. **Verificar cobertura**: confirmar que v2 cubre todos los casos (ARS, USD, anticipos, agrupaciones)
+2. **Migrar huérfanos**: facturas con v1 data sin par en v2 → `INSERT INTO sicore_retenciones` desde `comprobantes_arca`
+3. **Unificar queries**: `buscarRetencionesQuincena` (v1) y `buscarRetencionesV2` → una sola función leyendo v2
+4. **Unificar UI**: panel SICORE "Ver Retenciones" y "Cierre Quincena" → solo v2
+5. **Evaluar columnas**: decidir si eliminar físicamente `sicore/monto_sicore/tipo_sicore` de `comprobantes_arca` o conservarlas como audit trail
+
+### 30.3. Nota sobre el botón Reset (2026-04-08)
+
+El botón "Resetear factura" implementado en `vista-facturas-arca.tsx` borra tanto v1 (campos inline) como v2 (`DELETE FROM sicore_retenciones WHERE factura_id`). Cuando se deprece v1, solo quedará el DELETE de v2.
+
 *Archivo mantenido manualmente. Actualizar al implementar nuevas funcionalidades SICORE.*
