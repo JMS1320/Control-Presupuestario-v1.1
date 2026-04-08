@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -3035,6 +3035,53 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  const resetearFactura = async (factura: FacturaArca) => {
+    const esUSD = factura.moneda && factura.moneda !== 'PES' && factura.moneda !== 'ARS'
+    const msg = esUSD
+      ? `¿Resetear FC ${factura.numero_desde} a estado importado?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- TC de pago\n- Descuento aplicado\n- monto_a_abonar (vuelve a imp_total en ${factura.moneda})\n- Estado → pendiente`
+      : `¿Resetear FC ${factura.numero_desde} a estado importado?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- Descuento aplicado\n- monto_a_abonar (vuelve a imp_total)\n- Estado → pendiente`
+    if (!window.confirm(msg)) return
+
+    try {
+      // 1. Borrar registro v2
+      const { error: errDel } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .delete()
+        .eq('factura_id', factura.id)
+      if (errDel) console.error('Error borrando sicore_retenciones:', errDel)
+
+      // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original)
+      const updateData: any = {
+        estado: 'pendiente',
+        sicore: null,
+        monto_sicore: null,
+        tipo_sicore: null,
+        descuento_aplicado: null,
+        tc_pago: null,
+        monto_a_abonar: factura.imp_total,
+      }
+      const { error: errUpd } = await supabase
+        .schema(schemaName)
+        .from('comprobantes_arca')
+        .update(updateData)
+        .eq('id', factura.id)
+      if (errUpd) throw errUpd
+
+      // 3. Actualizar estado local
+      const updated: FacturaArca = {
+        ...factura,
+        ...updateData,
+      }
+      setFacturas(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasOriginales(prev => prev.map(f => f.id === factura.id ? updated : f))
+
+      toast.success(`FC ${factura.numero_desde} reseteada a estado importado`)
+    } catch (e: any) {
+      toast.error('Error al resetear: ' + (e.message ?? e))
+    }
+  }
+
   const finalizarProcesoSicore = async () => {
     if (!facturaEnProceso) return
     // Permitir continuar si hay descuento aunque no haya retención SICORE
@@ -5460,6 +5507,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {(factura.sicore || factura.tc_pago || factura.descuento_aplicado) && (
+                                  <DropdownMenuItem
+                                    className="text-orange-600"
+                                    onClick={() => resetearFactura(factura)}
+                                  >
+                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                    Resetear a estado importado
+                                  </DropdownMenuItem>
+                                )}
                                 {(factura.estado === 'pagado' || factura.estado === 'conciliado') && (
                                   <DropdownMenuItem
                                     onClick={async () => {
