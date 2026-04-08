@@ -3157,7 +3157,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         minimo_no_imponible: minimoAplicado,
         base_imponible: baseImpNueva,
         retencion: montoRetencion,
-        pago: saldoFinal,
+        pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
       })
       } // fin if (tipoSeleccionado && montoRetencion > 0)
 
