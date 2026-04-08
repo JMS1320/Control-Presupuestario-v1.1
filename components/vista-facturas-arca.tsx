@@ -3132,13 +3132,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
       // ── Registrar en tabla nueva sicore_retenciones solo si hay retención real ──
       if (tipoSeleccionado && montoRetencion > 0) {
+      // Usar los valores que ya calculó el modal (todos en ARS, con tc aplicado)
       const minimoAplicado = datosSicoreCalculo?.minimoAplicado ?? tipoSeleccionado.minimo_no_imponible
-      const descPct = (facturaEnProceso.imp_total || 0) > 0
-        ? descuentoAdicional / (facturaEnProceso.imp_total || 1)
-        : 0
-      const netoGravadoPagado = Math.round(((facturaEnProceso.imp_neto_gravado || 0) * (1 - descPct)) * 100) / 100
-      const totalPagado = Math.round(((facturaEnProceso.imp_total || 0) - descuentoAdicional) * 100) / 100
-      const baseImpNueva = Math.max(0, netoGravadoPagado - minimoAplicado)
+      const netoGravadoPagado = datosSicoreCalculo?.netoFactura ?? 0
+      const baseImpNueva = datosSicoreCalculo?.baseImponible ?? Math.max(0, netoGravadoPagado - minimoAplicado)
+      // totalPagado = imp_total en ARS menos descuento en ARS
+      const totalPagado = Math.round(((facturaEnProceso.imp_total || 0) * tc - descuentoAdicional) * 100) / 100
       await registrarEnSicoreRetenciones({
         origen: procesandoColaSicore ? 'agrupacion' : 'directo',
         quincena,
