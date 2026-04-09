@@ -175,7 +175,8 @@ export function VistaCashFlow() {
     nombre: '',
     monto: '',
     fecha: '',
-    descripcion: ''
+    descripcion: '',
+    estado_pago: 'pagado'
   })
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
@@ -1035,7 +1036,7 @@ export function VistaCashFlow() {
 
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
-    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado' })
     setTabAnticipo('nuevo')
     setModalAnticipo(true)
     cargarAnticiposExistentes()
@@ -1351,16 +1352,17 @@ export function VistaCashFlow() {
           monto_restante: monto,
           fecha_pago: nuevoAnticipo.fecha,
           descripcion: nuevoAnticipo.descripcion || null,
-          estado: 'pendiente_vincular'
+          estado: 'pendiente_vincular',
+          estado_pago: nuevoAnticipo.estado_pago
         })
         .select('id')
 
       if (error) throw error
 
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
-      toast.success(`${tipoLabel} registrado. Cambiá el estado a "pagar" para aplicar SICORE.`)
+      toast.success(`${tipoLabel} registrado con estado "${nuevoAnticipo.estado_pago}".`)
 
-      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '' })
+      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado' })
       await cargarDatos()
       await cargarAnticiposExistentes()
     } catch (error) {
@@ -2767,6 +2769,24 @@ export function VistaCashFlow() {
                     value={nuevoAnticipo.descripcion}
                     onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, descripcion: e.target.value }))}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Estado</Label>
+                  <Select
+                    value={nuevoAnticipo.estado_pago}
+                    onValueChange={(v) => setNuevoAnticipo(prev => ({ ...prev, estado_pago: v }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pagado">pagado</SelectItem>
+                      <SelectItem value="pagar">pagar</SelectItem>
+                      <SelectItem value="preparado">preparado</SelectItem>
+                      <SelectItem value="pendiente">pendiente</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className={`p-3 ${nuevoAnticipo.tipo === 'cobro' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-orange-50 border-orange-200 text-orange-800'} border rounded text-sm`}>
