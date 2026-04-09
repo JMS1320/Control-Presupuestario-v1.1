@@ -99,6 +99,15 @@ npm test
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
 
+## 🚀 **AVANCES SESIÓN 2026-04-08:**
+
+### ✅ **SICORE v2 — FIXES USD + BOTÓN RESET**
+- Fix `finalizarProcesoSicore`: `neto_gravado_pagado`, `total_pagado`, `base_imponible`, `pago` en ARS para facturas USD (usaba valores USD antes)
+- Botón "Resetear a estado importado" en dropdown de cada factura (limpia v1 + borra v2 + restaura `monto_a_abonar=imp_total`)
+- GRANT DELETE a rol `anon` en `msa.sicore_retenciones` (necesario para que Reset funcione)
+- Fix Cash Flow: facturas USD calculan débitos como `imp_total × tc − monto_sicore − descuento` (evita redondeo de `monto_a_abonar` redondeado × TC)
+- Fix PDF detalle de pago: fecha real (`fecha_estimada`/`fecha_vencimiento`) debajo del CUIT, no fecha de impresión
+
 ## 🚀 **AVANCES SESIÓN 2026-04-04:**
 
 ### ✅ **GUARDS DE CONCILIACIÓN MANUAL — TEMPLATES Y CASH FLOW**
