@@ -26,6 +26,11 @@
 | Panel "Ver Retenciones" — muestra facturas + anticipos por quincena | ✅ |
 | Cierre quincena: validación + Excel + PDF generados | ✅ |
 | Índice BD `idx_sicore_performance (sicore, cuit)` | ✅ |
+| **SICORE v2 — tabla `sicore_retenciones` con FK dual** | ✅ |
+| **SICORE v2 para anticipos — `anticipo_id` FK en `sicore_retenciones`** | ✅ |
+| **Transferencia anticipo→FC en `confirmarVinculacion`** | ✅ |
+| **`resetearAnticipo` — limpia v2 + inline + estado** | ✅ |
+| **Botón ↩ revertir pagar→pendiente (Admin only, Vista Pagos)** | ✅ |
 
 ---
 
@@ -162,9 +167,63 @@ setMontoRetencion(baseAjustada * tipo.porcentaje_retencion)
 
 ---
 
+---
+
+## 🏗️ SICORE v2 — Tabla `sicore_retenciones`
+
+### Estructura
+
+La tabla `msa.sicore_retenciones` almacena cada retención calculada con FK hacia el origen del pago. Admite dos tipos de origen:
+
+```sql
+-- Columnas relevantes
+factura_id    UUID REFERENCES msa.comprobantes_arca(id)      -- nullable
+anticipo_id   UUID REFERENCES anticipos_proveedores(id)      -- nullable
+-- Una de las dos se llena; ambas cuando el anticipo se vincula a una FC
+```
+
+### Flujo anticipo → FC
+
+```
+1. Anticipo se pasa a 'pagar' con SICORE
+   → INSERT sicore_retenciones (anticipo_id=X, factura_id=NULL, fecha_pago, monto_sicore, ...)
+
+2. FC llega, se llama confirmarVinculacion()
+   → UPDATE sicore_retenciones SET factura_id=FC.id
+      WHERE anticipo_id=X AND factura_id IS NULL
+
+3. Ahora el registro tiene ambos FK: anticipo_id=X, factura_id=FC.id
+   La fecha_pago y montos originales se preservan (no se sobreescriben)
+```
+
+### Reset de anticipo (`resetearAnticipo`)
+
+Cuando se revierte un anticipo a `pendiente`:
+
+```typescript
+// Solo borra registros NO transferidos (guard factura_id IS NULL)
+await supabase.schema(schemaName).from('sicore_retenciones')
+  .delete().eq('anticipo_id', anticipo.id).is('factura_id', null)
+
+// Limpia campos inline
+UPDATE anticipos_proveedores SET
+  estado_pago = 'pendiente',
+  sicore = null, monto_sicore = null,
+  tipo_sicore = null, monto_restante = null
+```
+
+Si el registro ya fue transferido (tiene `factura_id`), no se borra — queda ligado a la FC. El campo `anticipo_id` sigue presente en ese registro como referencia histórica.
+
+### Por qué v1 inline sigue existiendo en anticipos
+
+`anticipos_proveedores` aún tiene columnas `sicore`, `monto_sicore`, `tipo_sicore` para compatibilidad con el hook de quincenas y el panel "Ver Retenciones". Ambos mecanismos (v1 inline + v2 tabla) coexisten.
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **PDF comprobante retención**: Formato AFIP oficial por proveedor
 - **Email automático**: Envío PDF al proveedor al confirmar
 - **Templates SICORE 60-61**: Llenado automático al cerrar quincena
 - **Gestión masiva + SICORE**: Modal unificado para múltiples facturas simultáneas
+- **Gap 28.5 / doble conteo**: Testear con caso real anticipo parcial + FC para validar comportamiento actual

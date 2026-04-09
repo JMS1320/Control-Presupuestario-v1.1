@@ -3075,10 +3075,49 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       }
       setFacturas(prev => prev.map(f => f.id === factura.id ? updated : f))
       setFacturasOriginales(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasPagos(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasSeleccionadasPagos(prev => { const next = new Set(prev); next.delete(factura.id); return next })
 
       toast.success(`FC ${factura.numero_desde} reseteada a estado importado`)
     } catch (e: any) {
       toast.error('Error al resetear: ' + (e.message ?? e))
+    }
+  }
+
+  // Solo Admin — Resetear anticipo a estado pendiente (limpia SICORE si existe)
+  const resetearAnticipo = async (anticipo: any) => {
+    const tieneSicore = anticipo.sicore || anticipo.monto_sicore
+    const msg = tieneSicore
+      ? `¿Resetear anticipo a estado pendiente?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- monto_restante\n- Estado → pendiente`
+      : `¿Volver anticipo a estado pendiente?`
+    if (!window.confirm(msg)) return
+    try {
+      if (tieneSicore) {
+        // Borrar registro v2 solo si aún no está vinculado a una FC
+        const { error: errDel } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .delete()
+          .eq('anticipo_id', anticipo.id)
+          .is('factura_id', null)
+        if (errDel) console.error('Error borrando sicore_retenciones anticipo:', errDel)
+      }
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({
+          estado_pago: 'pendiente',
+          sicore: null,
+          monto_sicore: null,
+          tipo_sicore: null,
+          monto_restante: null,
+        })
+        .eq('id', anticipo.id)
+      if (error) throw error
+      setAnticiposSeleccionadosPagos(prev => { const next = new Set(prev); next.delete(anticipo.id); return next })
+      toast.success('Anticipo revertido a pendiente')
+      await recargarAnticiposPagos()
+    } catch (e: any) {
+      toast.error('Error al revertir: ' + (e.message ?? e))
     }
   }
 
@@ -7111,8 +7150,35 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             // Exponer al modal ECHEQ que vive fuera de este IIFE
             cambiarEstadoSeleccionadasRef.current = cambiarEstadoSeleccionadas
 
+            // ── Helpers revertir estado (solo Admin) ──────────────────────────
+            const revertirFacturaAPendiente = async (f: FacturaArca) => {
+              if (f.sicore || f.monto_sicore) {
+                await resetearFactura(f)
+              } else {
+                if (!window.confirm(`¿Volver FC de ${f.denominacion_emisor} a estado pendiente?`)) return
+                const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+                  .update({ estado: 'pendiente' })
+                  .eq('id', f.id)
+                if (error) { toast.error('Error: ' + error.message); return }
+                setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, estado: 'pendiente' } : x))
+                setFacturasSeleccionadasPagos(prev => { const next = new Set(prev); next.delete(f.id); return next })
+                cargarFacturas()
+              }
+            }
+
+            const revertirTemplateAPendiente = async (t: any) => {
+              if (!window.confirm(`¿Volver "${t.nombre_referencia || t.descripcion || 'template'}" a estado pendiente?`)) return
+              const { error } = await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ estado: 'pendiente' })
+                .eq('id', t.id)
+              if (error) { toast.error('Error: ' + error.message); return }
+              setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, estado: 'pendiente' } : x))
+              setTemplatesSeleccionadosPagos(prev => { const next = new Set(prev); next.delete(t.id); return next })
+            }
+
             // Función para renderizar tabla de facturas
-            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
+            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, onRevertir?: (f: FacturaArca) => void) => {
               // Colapsar facturas agrupadas: una sola fila por grupo
               type GrupoRow = {
                 esGrupo: true
@@ -7360,27 +7426,37 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   </TableCell>
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
-                                      <Button
-                                        size="sm" variant="ghost"
-                                        title="Generar PDF detalle de pago"
-                                        onClick={() => {
-                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-                                          generarPDFDetallePago(
-                                            'arca', f.denominacion_emisor, f.cuit,
-                                            [{
-                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                              fecha: f.fecha_emision || '',
-                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
-                                              imp_total: (f.imp_total || 0) * tc,
-                                              monto_sicore: f.monto_sicore,
-                                              descuento_aplicado: f.descuento_aplicado,
-                                              monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
-                                                ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                                : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
-                                            }]
-                                          )
-                                        }}
-                                      >📄</Button>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm" variant="ghost"
+                                          title="Generar PDF detalle de pago"
+                                          onClick={() => {
+                                            const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                            generarPDFDetallePago(
+                                              'arca', f.denominacion_emisor, f.cuit,
+                                              [{
+                                                comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                                fecha: f.fecha_emision || '',
+                                                fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
+                                                imp_total: (f.imp_total || 0) * tc,
+                                                monto_sicore: f.monto_sicore,
+                                                descuento_aplicado: f.descuento_aplicado,
+                                                monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                                  ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                                  : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                              }]
+                                            )
+                                          }}
+                                        >📄</Button>
+                                        {onRevertir && (
+                                          <Button
+                                            size="sm" variant="ghost"
+                                            title="Volver a Pendiente"
+                                            className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                            onClick={() => onRevertir(f)}
+                                          >↩</Button>
+                                        )}
+                                      </div>
                                     </TableCell>
                                   )}
                                 </TableRow>
@@ -7461,7 +7537,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             cambiarEstadoAnticiposRef.current = cambiarEstadoAnticiposSeleccionados
 
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente') => {
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente', onRevertir?: (t: any) => void) => {
               // Colapsar templates agrupados: una sola fila por grupo
               type GrupoTRow = {
                 esGrupo: true; grupoPagoId: string; ids: string[]
@@ -7631,21 +7707,31 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   </TableCell>
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
-                                      <Button
-                                        size="sm" variant="ghost"
-                                        title="Generar PDF detalle de pago"
-                                        onClick={() => generarPDFDetallePago(
-                                          'template',
-                                          t.egreso?.nombre_quien_cobra || '-',
-                                          t.egreso?.cuit_quien_cobra || '',
-                                          [{
-                                            comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                            fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                            imp_total: t.monto || 0,
-                                            monto_a_abonar: t.monto || 0,
-                                          }]
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm" variant="ghost"
+                                          title="Generar PDF detalle de pago"
+                                          onClick={() => generarPDFDetallePago(
+                                            'template',
+                                            t.egreso?.nombre_quien_cobra || '-',
+                                            t.egreso?.cuit_quien_cobra || '',
+                                            [{
+                                              comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
+                                              fecha: t.fecha_vencimiento || t.fecha_estimada || '',
+                                              imp_total: t.monto || 0,
+                                              monto_a_abonar: t.monto || 0,
+                                            }]
+                                          )}
+                                        >📄</Button>
+                                        {onRevertir && (
+                                          <Button
+                                            size="sm" variant="ghost"
+                                            title="Volver a Pendiente"
+                                            className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                            onClick={() => onRevertir(t)}
+                                          >↩</Button>
                                         )}
-                                      >📄</Button>
+                                      </div>
                                     </TableCell>
                                   )}
                                 </TableRow>
@@ -7716,7 +7802,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + montoNetoAnticipo(a), 0)
             const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + montoNetoAnticipo(a), 0)
 
-            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
+            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, onRevertir?: (a: any) => void) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -7814,13 +7900,23 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             </TableCell>
                             <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
                             <TableCell>
-                              <button
-                                onClick={() => eliminarAnticipo(a)}
-                                className="text-gray-300 hover:text-red-500 transition-colors"
-                                title="Eliminar anticipo"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => eliminarAnticipo(a)}
+                                  className="text-gray-300 hover:text-red-500 transition-colors"
+                                  title="Eliminar anticipo"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                                {onRevertir && (
+                                  <Button
+                                    size="sm" variant="ghost"
+                                    title="Volver a Pendiente"
+                                    className="text-orange-500 hover:text-orange-700 hover:bg-orange-50 h-6 w-6 p-0"
+                                    onClick={() => onRevertir(a)}
+                                  >↩</Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -7865,64 +7961,151 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 {esAdmin ? (
                   // ADMIN: Preparado > Pagar > Pendiente, cada estado muestra Anticipo + ARCA + Template
                   <>
-                    {filtrosPagos.preparado && (
-                      <>
-                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                          anticiposPreparado,
-                          '✅ Preparado',
-                          subtotalAnticiposPreparado,
-                          true,
-                          { label: 'Marcar como Programado', estado: 'programado' },
-                          { label: 'Marcar como Pagado', estado: 'pagado' }
-                        )}
-                        {filtroOrigenPagos.arca && renderTablaFacturas(
-                          facturasPreparado,
-                          '✅ ARCA Preparado',
-                          subtotalPreparado,
-                          'preparado',
-                          true,
-                          { label: 'Marcar como Programado', estado: 'programado' },
-                          { label: 'Marcar como Pagado', estado: 'pagado' }
-                        )}
-                        {filtroOrigenPagos.template && renderTablaTemplates(
-                          templatesPreparado,
-                          '✅ Preparado',
-                          subtotalTemplatesPreparado,
-                          true,
-                          { label: 'Marcar como Programado', estado: 'programado' },
-                          { label: 'Marcar como Pagado', estado: 'pagado' },
-                          'preparado'
-                        )}
-                      </>
-                    )}
-                    {filtrosPagos.pagar && (
-                      <>
-                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                          anticiposPagar,
-                          '📋 Pagar',
-                          subtotalAnticiposPagar,
-                          true,
-                          { label: 'Marcar como Preparado', estado: 'preparado' }
-                        )}
-                        {filtroOrigenPagos.arca && renderTablaFacturas(
-                          facturasPagar,
-                          '📋 ARCA Pagar',
-                          subtotalPagar,
-                          'pagar',
-                          true,
-                          { label: 'Marcar como Preparado', estado: 'preparado' }
-                        )}
-                        {filtroOrigenPagos.template && renderTablaTemplates(
-                          templatesPagar,
-                          '📋 Pagar',
-                          subtotalTemplatesPagar,
-                          true,
-                          { label: 'Marcar como Preparado', estado: 'preparado' },
-                          undefined,
-                          'pagar'
-                        )}
-                      </>
-                    )}
+                    {/* ── PREPARADO ─────────────────────────────────────────── */}
+                    {filtrosPagos.preparado && (() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>✅ No hay pagos preparados</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">✅ PREPARADO</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Preparado: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 && renderTablaAnticipos(
+                            anticiposPreparado,
+                            '✅ Preparado',
+                            subtotalAnticiposPreparado,
+                            true,
+                            { label: 'Marcar como Programado', estado: 'programado' },
+                            { label: 'Marcar como Pagado', estado: 'pagado' }
+                          )}
+                          {filtroOrigenPagos.arca && facturasPreparado.length > 0 && renderTablaFacturas(
+                            facturasPreparado,
+                            '✅ ARCA Preparado',
+                            subtotalPreparado,
+                            'preparado',
+                            true,
+                            { label: 'Marcar como Programado', estado: 'programado' },
+                            { label: 'Marcar como Pagado', estado: 'pagado' }
+                          )}
+                          {filtroOrigenPagos.template && templatesPreparado.length > 0 && renderTablaTemplates(
+                            templatesPreparado,
+                            '✅ Preparado',
+                            subtotalTemplatesPreparado,
+                            true,
+                            { label: 'Marcar como Programado', estado: 'programado' },
+                            { label: 'Marcar como Pagado', estado: 'pagado' },
+                            'preparado'
+                          )}
+                        </>
+                      )
+                    })()}
+
+                    {/* ── PAGAR ─────────────────────────────────────────────── */}
+                    {filtrosPagos.pagar && (() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPagar : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>📋 No hay pagos para pagar</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">📋 PAGAR</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Pagar: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPagar.length > 0 && renderTablaAnticipos(
+                            anticiposPagar,
+                            '📋 Pagar',
+                            subtotalAnticiposPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            (a) => resetearAnticipo(a)
+                          )}
+                          {filtroOrigenPagos.arca && facturasPagar.length > 0 && renderTablaFacturas(
+                            facturasPagar,
+                            '📋 ARCA Pagar',
+                            subtotalPagar,
+                            'pagar',
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            (f) => revertirFacturaAPendiente(f)
+                          )}
+                          {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
+                            templatesPagar,
+                            '📋 Pagar',
+                            subtotalTemplatesPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            'pagar',
+                            (t) => revertirTemplateAPendiente(t)
+                          )}
+                        </>
+                      )
+                    })()}
+
                     {/* ECHEQs emitidos — siempre visibles si existen */}
                     {(anticiposEcheq.length > 0 || facturasEcheq.length > 0) && (
                       <>
@@ -7944,101 +8127,215 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                       </>
                     )}
 
-                    {filtrosPagos.pendiente && (
-                      <>
-                        {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                          anticiposPendiente,
-                          '⏳ Pendiente',
-                          subtotalAnticiposPendiente,
-                          true,
-                          { label: 'Marcar como Pagar', estado: 'pagar' }
-                        )}
-                        {filtroOrigenPagos.arca && renderTablaFacturas(
-                          facturasPendiente,
-                          '⏳ ARCA Pendiente',
-                          subtotalPendiente,
-                          'pendiente',
-                          true,
-                          { label: 'Marcar como Pagar', estado: 'pagar' }
-                        )}
-                        {filtroOrigenPagos.template && renderTablaTemplates(
-                          templatesPendiente,
-                          '⏳ Pendiente',
-                          subtotalTemplatesPendiente,
-                          true,
-                          { label: 'Marcar como Pagar', estado: 'pagar' },
-                          undefined,
-                          'pendiente'
-                        )}
-                      </>
-                    )}
+                    {/* ── PENDIENTE ─────────────────────────────────────────── */}
+                    {filtrosPagos.pendiente && (() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPendiente.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPendiente.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPendiente.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPendiente : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPendiente : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPendiente : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPendiente.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPendiente }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPendiente.length > 0 ? [{ label: 'ARCA', total: subtotalPendiente }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPendiente.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPendiente }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>⏳ No hay pagos pendientes</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">⏳ PENDIENTE</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Pendiente: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPendiente.length > 0 && renderTablaAnticipos(
+                            anticiposPendiente,
+                            '⏳ Pendiente',
+                            subtotalAnticiposPendiente,
+                            true,
+                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                          )}
+                          {filtroOrigenPagos.arca && facturasPendiente.length > 0 && renderTablaFacturas(
+                            facturasPendiente,
+                            '⏳ ARCA Pendiente',
+                            subtotalPendiente,
+                            'pendiente',
+                            true,
+                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                          )}
+                          {filtroOrigenPagos.template && templatesPendiente.length > 0 && renderTablaTemplates(
+                            templatesPendiente,
+                            '⏳ Pendiente',
+                            subtotalTemplatesPendiente,
+                            true,
+                            { label: 'Marcar como Pagar', estado: 'pagar' },
+                            undefined,
+                            'pendiente'
+                          )}
+                        </>
+                      )
+                    })()}
                   </>
                 ) : (
                   // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template
                   <>
-                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                      anticiposPagar,
-                      '📋 Pagar',
-                      subtotalAnticiposPagar,
-                      false
-                    )}
-                    {filtroOrigenPagos.arca && renderTablaFacturas(
-                      facturasPagar,
-                      '📋 ARCA Por Pagar',
-                      subtotalPagar,
-                      'pagar',
-                      true,
-                      { label: 'Marcar como Preparado', estado: 'preparado' }
-                    )}
-                    {filtroOrigenPagos.template && renderTablaTemplates(
-                      templatesPagar,
-                      '📋 Por Pagar',
-                      subtotalTemplatesPagar,
-                      true,
-                      { label: 'Marcar como Preparado', estado: 'preparado' },
-                      undefined,
-                      'pagar'
-                    )}
-                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                      anticiposPreparado,
-                      '✅ Preparado',
-                      subtotalAnticiposPreparado,
-                      false
-                    )}
-                    {filtroOrigenPagos.arca && renderTablaFacturas(
-                      facturasPreparado,
-                      '✅ ARCA Preparado',
-                      subtotalPreparado,
-                      'preparado',
-                      false
-                    )}
-                    {filtroOrigenPagos.template && renderTablaTemplates(
-                      templatesPreparado,
-                      '✅ Preparado',
-                      subtotalTemplatesPreparado,
-                      false,
-                      undefined,
-                      undefined,
-                      'preparado'
-                    )}
+                    {/* ── PAGAR ─────────────────────────────────────────────── */}
+                    {(() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPagar : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>📋 No hay pagos para pagar</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">📋 PAGAR</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Pagar: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPagar.length > 0 && renderTablaAnticipos(
+                            anticiposPagar,
+                            '📋 Pagar',
+                            subtotalAnticiposPagar,
+                            false
+                          )}
+                          {filtroOrigenPagos.arca && facturasPagar.length > 0 && renderTablaFacturas(
+                            facturasPagar,
+                            '📋 ARCA Por Pagar',
+                            subtotalPagar,
+                            'pagar',
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
+                          {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
+                            templatesPagar,
+                            '📋 Por Pagar',
+                            subtotalTemplatesPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            'pagar'
+                          )}
+                        </>
+                      )
+                    })()}
+
+                    {/* ── PREPARADO ─────────────────────────────────────────── */}
+                    {(() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>✅ No hay pagos preparados</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">✅ PREPARADO</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Preparado: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 && renderTablaAnticipos(
+                            anticiposPreparado,
+                            '✅ Preparado',
+                            subtotalAnticiposPreparado,
+                            false
+                          )}
+                          {filtroOrigenPagos.arca && facturasPreparado.length > 0 && renderTablaFacturas(
+                            facturasPreparado,
+                            '✅ ARCA Preparado',
+                            subtotalPreparado,
+                            'preparado',
+                            false
+                          )}
+                          {filtroOrigenPagos.template && templatesPreparado.length > 0 && renderTablaTemplates(
+                            templatesPreparado,
+                            '✅ Preparado',
+                            subtotalTemplatesPreparado,
+                            false,
+                            undefined,
+                            undefined,
+                            'preparado'
+                          )}
+                        </>
+                      )
+                    })()}
                   </>
                 )}
 
-                {/* Total general */}
-                <div className="pt-4 border-t">
-                  <div className="flex justify-between items-center">
-                    <div className="text-sm text-muted-foreground">
-                      {[filtroOrigenPagos.anticipo && 'Anticipos', filtroOrigenPagos.arca && 'ARCA', filtroOrigenPagos.template && 'Templates'].filter(Boolean).join(' + ') || 'Sin datos'}
-                    </div>
-                    <Badge className="text-xl px-4 py-2 bg-green-600">
-                      Total General: ${(
-                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar + subtotalAnticiposPreparado + (esAdmin ? subtotalAnticiposPendiente : 0) : 0) +
-                        (filtroOrigenPagos.arca ? subtotalPreparado + subtotalPagar + (esAdmin ? subtotalPendiente : 0) : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado + subtotalTemplatesPagar + (esAdmin ? subtotalTemplatesPendiente : 0) : 0)
-                      ).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                    </Badge>
-                  </div>
-                </div>
               </div>
             )
           })()}
