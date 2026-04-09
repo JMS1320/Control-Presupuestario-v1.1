@@ -93,6 +93,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const filasIndividuales: CashFlowRow[] = individuales.map(f => {
       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
       const montoBase = f.monto_a_abonar ?? f.imp_total ?? 0
+      // Para moneda extranjera: calcular en ARS desde componentes originales para evitar
+      // error de redondeo al reconvertir monto_a_abonar (USD redondeado) × tc
+      const esMonedaExtranjera = f.moneda && f.moneda !== 'PES' && f.moneda !== 'ARS'
+      const debitos = esMonedaExtranjera && tc > 1
+        ? Math.round(((f.imp_total ?? 0) * tc - (f.monto_sicore ?? 0) - (f.descuento_aplicado ?? 0)) * 100) / 100
+        : montoBase * tc
       // ECHEQ: usar fecha_cobro_echeq para Cash Flow (cuando el cheque se deposita)
       const fechaCF = (f.metodo_pago === 'echeq' && f.fecha_cobro_echeq)
         ? f.fecha_cobro_echeq
@@ -108,7 +114,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: f.cuit || '',
         nombre_proveedor: f.denominacion_emisor || '',
         detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
-        debitos: montoBase * tc,
+        debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
         estado: f.estado || 'pendiente',
