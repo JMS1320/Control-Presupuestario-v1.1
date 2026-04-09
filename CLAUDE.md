@@ -99,6 +99,31 @@ npm test
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
 
+## 🚀 **AVANCES SESIÓN 2026-04-09:**
+
+### ✅ **VISTA PAGOS — UX OCULTAR SECCIONES VACÍAS**
+- IIFE por sección (Preparado/Pagar/Pendiente): si no hay ítems visibles → placeholder único; si hay → sólo subcategorías no vacías con badge de totales
+- Warning amarillo cuando hay ítems filtrados por origen (filtroOrigenPagos)
+- Aplica a vista Admin y a vista Ulises (PAGAR + PREPARADO)
+- Total general eliminado; total por sección con ítems visibles únicamente
+
+### ✅ **BOTÓN ↩ REVERTIR PAGAR → PENDIENTE (Admin only)**
+- Disponible en Vista Pagos para ARCA facturas, Templates y Anticipos
+- ARCA con SICORE → reutiliza `resetearFactura()` (borra v2 + limpia inline)
+- ARCA sin SICORE → confirm + UPDATE estado
+- Template → confirm + UPDATE cuota
+- Anticipo → `resetearAnticipo()` nuevo (ver SICORE v2 anticipos)
+
+### ✅ **SICORE v2 — ANTICIPOS COMPLETO**
+- `sicore_retenciones` ya tenía `anticipo_id` FK; código ya creaba v2 para anticipos
+- Gap corregido: `confirmarVinculacion` ahora hace `UPDATE sicore_retenciones SET factura_id=FC.id WHERE anticipo_id=X AND factura_id IS NULL`
+- `resetearAnticipo`: borra solo registros no transferidos (`.is('factura_id', null)`), limpia inline, revierte estado
+- Fix deselección: todos los paths de revert hacen `.delete(id)` en el Set de seleccionados
+
+### ✅ **DOCUMENTACIÓN**
+- `CONCILIACION-CONTABILIDAD.md` Sección 29 agregada (revertir estados)
+- `DISEÑO_SICORE_RETENCIONES.md` actualizado (tabla summary, sección v2 anticipos, flujo anticipo→FC)
+
 ## 🚀 **AVANCES SESIÓN 2026-04-08:**
 
 ### ✅ **SICORE v2 — FIXES USD + BOTÓN RESET**

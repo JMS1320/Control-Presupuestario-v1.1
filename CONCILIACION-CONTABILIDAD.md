@@ -2295,3 +2295,43 @@ Por FC pueden existir:
 6. Manejo de overpayment (diferencial positivo a favor del proveedor)
 
 **Estado**: análisis completo documentado. Sin acción. Próximo paso: testeo con caso real para validar comportamiento actual antes de diseñar los cambios.
+
+---
+
+## 29 — Revertir estados en Vista Pagos (Admin only)
+
+### 29.1 — Funcionalidad
+
+Desde la Vista Pagos (pestaña modal), el admin puede revertir ítems de estado `pagar` o `preparado` de vuelta a `pendiente` mediante el botón **↩** en cada fila. La función no está disponible para el rol Ulises.
+
+### 29.2 — Implementación por tipo
+
+#### ARCA Facturas (`revertirFacturaAPendiente`)
+
+- Si la factura tiene SICORE (`sicore` o `monto_sicore` no nulos) → llama a `resetearFactura()` que borra `sicore_retenciones WHERE factura_id=X`, limpia campos inline y revierte estado.
+- Si no tiene SICORE → `window.confirm()` + UPDATE `estado = 'pendiente'`.
+- En ambos casos: deselecciona la fila (`setFacturasSeleccionadasPagos`).
+
+#### Templates (`revertirTemplateAPendiente`)
+
+- `window.confirm()` + UPDATE `cuotas_egresos_sin_factura.estado = 'pendiente'`.
+- Deselecciona la fila (`setTemplatesSeleccionadosPagos`).
+- Los templates no tienen SICORE, sin lógica especial.
+
+#### Anticipos (`resetearAnticipo`)
+
+- Si tiene SICORE: borra `sicore_retenciones WHERE anticipo_id=X AND factura_id IS NULL` (guard para no borrar registros ya transferidos a una FC).
+- UPDATE `anticipos_proveedores.estado_pago = 'pendiente'` + limpia `sicore`, `monto_sicore`, `tipo_sicore`, `monto_restante`.
+- Deselecciona la fila (`setAnticiposSeleccionadosPagos`).
+
+### 29.3 — Por qué limpiar SICORE al revertir anticipo
+
+Al revertir un anticipo a pendiente, si tiene SICORE registrado, esa retención queda semánticamente inválida (el pago no se hizo). Cuando el usuario vuelva a pasarlo a `pagar`, el hook SICORE se disparará nuevamente y calculará la retención correcta. El guard `.is('factura_id', null)` protege los casos donde el anticipo ya fue vinculado a una FC y el registro SICORE fue transferido.
+
+### 29.4 — Fix: deselección al revertir
+
+Bug detectado: al usar ↩, la fila quedaba marcada (checked) en la selección. Corregido agregando `prev.delete(id)` en los 4 paths de revert:
+- `resetearFactura` (con SICORE)
+- `revertirFacturaAPendiente` (sin SICORE)
+- `revertirTemplateAPendiente`
+- `resetearAnticipo`
