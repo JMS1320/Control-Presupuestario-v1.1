@@ -3075,6 +3075,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       }
       setFacturas(prev => prev.map(f => f.id === factura.id ? updated : f))
       setFacturasOriginales(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasPagos(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasSeleccionadasPagos(prev => { const next = new Set(prev); next.delete(factura.id); return next })
 
       toast.success(`FC ${factura.numero_desde} reseteada a estado importado`)
     } catch (e: any) {
@@ -3111,6 +3113,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         })
         .eq('id', anticipo.id)
       if (error) throw error
+      setAnticiposSeleccionadosPagos(prev => { const next = new Set(prev); next.delete(anticipo.id); return next })
       toast.success('Anticipo revertido a pendiente')
       await recargarAnticiposPagos()
     } catch (e: any) {
@@ -7158,6 +7161,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .eq('id', f.id)
                 if (error) { toast.error('Error: ' + error.message); return }
                 setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, estado: 'pendiente' } : x))
+                setFacturasSeleccionadasPagos(prev => { const next = new Set(prev); next.delete(f.id); return next })
                 cargarFacturas()
               }
             }
@@ -7170,6 +7174,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 .eq('id', t.id)
               if (error) { toast.error('Error: ' + error.message); return }
               setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, estado: 'pendiente' } : x))
+              setTemplatesSeleccionadosPagos(prev => { const next = new Set(prev); next.delete(t.id); return next })
             }
 
             // Función para renderizar tabla de facturas
