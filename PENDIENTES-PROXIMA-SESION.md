@@ -60,6 +60,24 @@
 
 ---
 
+### S1 — Deprecar SICORE v1 (campos inline en comprobantes_arca)
+
+**Situación actual**: El sistema SICORE tiene dos capas paralelas:
+- **V1**: campos `sicore`, `monto_sicore`, `tipo_sicore` en `msa.comprobantes_arca` (columnas inline)
+- **V2**: tabla separada `msa.sicore_retenciones` (una fila por evento de retención)
+
+Una vez que v2 esté probada y estable, v1 queda obsoleta.
+
+**Pendiente**:
+1. Verificar que v2 cubre todos los casos que cubre v1 (facturas ARS, USD, anticipos, agrupaciones)
+2. Migrar cualquier dato v1 sin par en v2 (`INSERT INTO sicore_retenciones` para registros huérfanos)
+3. Deprecar las queries que leen de v1 en `buscarRetencionesQuincena` → reemplazar por v2
+4. Evaluar si eliminar físicamente las columnas v1 o dejarlas como audit trail
+
+**Impacto**: El panel SICORE "Ver Retenciones" y "Cierre Quincena" deben unificarse en v2.
+
+---
+
 ### C3 — Motor de reglas contable e interno (no implementado)
 
 **Situación actual**:

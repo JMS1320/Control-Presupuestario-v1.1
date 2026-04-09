@@ -1159,4 +1159,88 @@ El monto guardado en el cheque es `imp_total - monto_sicore` (lo que realmente s
 
 ---
 
+---
+
+## 30. Pendiente — Deprecar SICORE v1
+
+### 30.1. Arquitectura actual (dos capas paralelas)
+
+| | V1 | V2 |
+|---|---|---|
+| **Dónde** | Campos inline en `msa.comprobantes_arca` | Tabla separada `msa.sicore_retenciones` |
+| **Campos** | `sicore`, `monto_sicore`, `tipo_sicore` | Una fila por evento con detalle completo |
+| **Query** | `WHERE sicore = quincena AND monto_sicore > 0` | `WHERE quincena = quincena` |
+| **Granularidad** | Por factura | Por evento (permite múltiples por factura) |
+| **Estado** | Activo (legacy) | Activo (nuevo) |
+
+### 30.2. Plan de deprecación
+
+1. **Verificar cobertura**: confirmar que v2 cubre todos los casos (ARS, USD, anticipos, agrupaciones)
+2. **Migrar huérfanos**: facturas con v1 data sin par en v2 → `INSERT INTO sicore_retenciones` desde `comprobantes_arca`
+3. **Unificar queries**: `buscarRetencionesQuincena` (v1) y `buscarRetencionesV2` → una sola función leyendo v2
+4. **Unificar UI**: panel SICORE "Ver Retenciones" y "Cierre Quincena" → solo v2
+5. **Evaluar columnas**: decidir si eliminar físicamente `sicore/monto_sicore/tipo_sicore` de `comprobantes_arca` o conservarlas como audit trail
+
+### 30.3. Botón "Resetear a estado importado" (2026-04-08)
+
+Disponible en el dropdown (⋯) de cada factura en la vista ARCA. Visible solo cuando la factura tiene `sicore`, `tc_pago` o `descuento_aplicado`.
+
+**Qué hace:**
+- Borra fila de `sicore_retenciones` (v2) — requiere GRANT DELETE al rol `anon` (ver guía reconstrucción)
+- Limpia campos v1: `sicore=null`, `monto_sicore=null`, `tipo_sicore=null`, `descuento_aplicado=null`, `tc_pago=null`
+- Restaura `monto_a_abonar = imp_total` en moneda original (USD o ARS)
+- Vuelve `estado = 'pendiente'`
+
+Permite reprocessar una factura desde cero si SICORE se procesó incorrectamente.
+
+---
+
+## 31. Facturas en moneda extranjera (USD) — convenciones (2026-04-08)
+
+### 31.1. Almacenamiento
+
+| Campo | Moneda | Notas |
+|-------|--------|-------|
+| `imp_total` | Moneda original (USD) | Valor AFIP |
+| `tipo_cambio` | — | TC del día AFIP al importar |
+| `tc_pago` | — | TC al momento del pago (ingresado por el usuario) |
+| `monto_a_abonar` | Moneda original (USD) | `imp_total - retención/TC - descuento/TC` |
+| `monto_sicore` | ARS | Siempre en pesos, independiente de la moneda |
+| `descuento_aplicado` | ARS | Siempre en pesos |
+
+### 31.2. Tabla `sicore_retenciones` — todos los campos en ARS
+
+Para facturas USD, los campos de detalle se calculan multiplicando por `tc_pago`:
+
+```
+neto_gravado_pagado = imp_neto_gravado × tc_pago
+total_pagado        = imp_total × tc_pago
+base_imponible      = max(0, neto_gravado_pagado − minimo_no_imponible)
+retencion           = base_imponible × alicuota   (en ARS)
+pago                = total_pagado − retencion    (en ARS)
+```
+
+Se usan los valores de `datosSicoreCalculo` (calculados por el modal, con tc ya aplicado) para evitar recálculos.
+
+### 31.3. Cash Flow — cálculo de débitos para USD
+
+El hook `useMultiCashFlowData.ts` usa la fórmula directa en ARS para evitar error de redondeo al reconvertir `monto_a_abonar` (USD redondeado) × TC:
+
+```typescript
+// Para moneda extranjera:
+debitos = imp_total × tc - monto_sicore - descuento_aplicado
+
+// Para ARS (sin cambio):
+debitos = monto_a_abonar × tc
+```
+
+### 31.4. Permisos BD requeridos
+
+```sql
+-- Necesario para que el botón Reset funcione desde el navegador (rol anon)
+GRANT DELETE ON msa.sicore_retenciones TO anon;
+```
+
+Este GRANT no está en el backup original — ver sección en `GUIA_RAPIDA_RECONSTRUCCION.md`.
+
 *Archivo mantenido manualmente. Actualizar al implementar nuevas funcionalidades SICORE.*

@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -3035,6 +3035,53 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  const resetearFactura = async (factura: FacturaArca) => {
+    const esUSD = factura.moneda && factura.moneda !== 'PES' && factura.moneda !== 'ARS'
+    const msg = esUSD
+      ? `¿Resetear FC ${factura.numero_desde} a estado importado?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- TC de pago\n- Descuento aplicado\n- monto_a_abonar (vuelve a imp_total en ${factura.moneda})\n- Estado → pendiente`
+      : `¿Resetear FC ${factura.numero_desde} a estado importado?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- Descuento aplicado\n- monto_a_abonar (vuelve a imp_total)\n- Estado → pendiente`
+    if (!window.confirm(msg)) return
+
+    try {
+      // 1. Borrar registro v2
+      const { error: errDel } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .delete()
+        .eq('factura_id', factura.id)
+      if (errDel) console.error('Error borrando sicore_retenciones:', errDel)
+
+      // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original)
+      const updateData: any = {
+        estado: 'pendiente',
+        sicore: null,
+        monto_sicore: null,
+        tipo_sicore: null,
+        descuento_aplicado: null,
+        tc_pago: null,
+        monto_a_abonar: factura.imp_total,
+      }
+      const { error: errUpd } = await supabase
+        .schema(schemaName)
+        .from('comprobantes_arca')
+        .update(updateData)
+        .eq('id', factura.id)
+      if (errUpd) throw errUpd
+
+      // 3. Actualizar estado local
+      const updated: FacturaArca = {
+        ...factura,
+        ...updateData,
+      }
+      setFacturas(prev => prev.map(f => f.id === factura.id ? updated : f))
+      setFacturasOriginales(prev => prev.map(f => f.id === factura.id ? updated : f))
+
+      toast.success(`FC ${factura.numero_desde} reseteada a estado importado`)
+    } catch (e: any) {
+      toast.error('Error al resetear: ' + (e.message ?? e))
+    }
+  }
+
   const finalizarProcesoSicore = async () => {
     if (!facturaEnProceso) return
     // Permitir continuar si hay descuento aunque no haya retención SICORE
@@ -3085,13 +3132,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
       // ── Registrar en tabla nueva sicore_retenciones solo si hay retención real ──
       if (tipoSeleccionado && montoRetencion > 0) {
+      // Usar los valores que ya calculó el modal (todos en ARS, con tc aplicado)
       const minimoAplicado = datosSicoreCalculo?.minimoAplicado ?? tipoSeleccionado.minimo_no_imponible
-      const descPct = (facturaEnProceso.imp_total || 0) > 0
-        ? descuentoAdicional / (facturaEnProceso.imp_total || 1)
-        : 0
-      const netoGravadoPagado = Math.round(((facturaEnProceso.imp_neto_gravado || 0) * (1 - descPct)) * 100) / 100
-      const totalPagado = Math.round(((facturaEnProceso.imp_total || 0) - descuentoAdicional) * 100) / 100
-      const baseImpNueva = Math.max(0, netoGravadoPagado - minimoAplicado)
+      const netoGravadoPagado = datosSicoreCalculo?.netoFactura ?? 0
+      const baseImpNueva = datosSicoreCalculo?.baseImponible ?? Math.max(0, netoGravadoPagado - minimoAplicado)
+      // totalPagado = imp_total en ARS menos descuento en ARS
+      const totalPagado = Math.round(((facturaEnProceso.imp_total || 0) * tc - descuentoAdicional) * 100) / 100
       await registrarEnSicoreRetenciones({
         origen: procesandoColaSicore ? 'agrupacion' : 'directo',
         quincena,
@@ -3111,7 +3157,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         minimo_no_imponible: minimoAplicado,
         base_imponible: baseImpNueva,
         retencion: montoRetencion,
-        pago: saldoFinal,
+        pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
       })
       } // fin if (tipoSeleccionado && montoRetencion > 0)
 
@@ -4182,6 +4228,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     items: Array<{
       comprobante: string
       fecha: string
+      fecha_estimada?: string | null
       imp_total: number
       monto_sicore?: number | null
       descuento_aplicado?: number | null
@@ -4205,8 +4252,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
       }
 
-      // Fecha de pago: del anticipo si existe, si no fecha actual
-      const fechaPago = anticipo ? fmtFechaStr(anticipo.fecha_pago) : new Date().toLocaleDateString('es-AR')
+      // Fecha de pago: del anticipo si existe, si no fecha_estimada del primer item
+      const fechaPagoRaw = anticipo
+        ? anticipo.fecha_pago
+        : (items[0]?.fecha_estimada || null)
+      const fechaPago = fechaPagoRaw ? fmtFechaStr(fechaPagoRaw) : '-'
 
       // ── Header ────────────────────────────────────────────────────────────
       doc.setFontSize(16)
@@ -4216,19 +4266,21 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
       doc.text('MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6', pageW / 2, 25, { align: 'center' })
-      doc.setFont('helvetica', 'bold')
-      doc.text(`Fecha de Pago: ${fechaPago}`, pageW / 2, 31, { align: 'center' })
 
       // ── Datos proveedor ────────────────────────────────────────────────────
       doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
-      doc.text('Beneficiario:', 15, 42)
+      doc.text('Beneficiario:', 15, 36)
       doc.setFont('helvetica', 'normal')
-      doc.text(proveedor, 45, 42)
+      doc.text(proveedor, 45, 36)
       doc.setFont('helvetica', 'bold')
-      doc.text('CUIT:', 15, 48)
+      doc.text('CUIT:', 15, 42)
       doc.setFont('helvetica', 'normal')
-      doc.text(cuit, 30, 48)
+      doc.text(cuit, 30, 42)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Fecha de Pago:', 15, 48)
+      doc.setFont('helvetica', 'normal')
+      doc.text(fechaPago, 47, 48)
 
       // ── Construir columnas y filas ─────────────────────────────────────────
       // Si hay anticipo, las columnas de retención/descuento vienen del anticipo
@@ -5460,6 +5512,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {(factura.sicore || factura.tc_pago || factura.descuento_aplicado) && (
+                                  <DropdownMenuItem
+                                    className="text-orange-600"
+                                    onClick={() => resetearFactura(factura)}
+                                  >
+                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                    Resetear a estado importado
+                                  </DropdownMenuItem>
+                                )}
                                 {(factura.estado === 'pagado' || factura.estado === 'conciliado') && (
                                   <DropdownMenuItem
                                     onClick={async () => {
@@ -5477,6 +5538,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             grupoFacs.map((f: any) => ({
                                               comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                               fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                               imp_total: f.imp_total || 0,
                                               monto_sicore: f.monto_sicore,
                                               descuento_aplicado: f.descuento_aplicado,
@@ -5501,6 +5563,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                         [{
                                           comprobante: `FC ${factura.tipo_comprobante}-${String(factura.punto_venta || 0).padStart(5,'0')}-${String(factura.numero_desde || 0).padStart(8,'0')}`,
                                           fecha: factura.fecha_emision || '',
+                                          fecha_estimada: factura.fecha_estimada || factura.fecha_vencimiento || null,
                                           imp_total: factura.imp_total || 0,
                                           monto_sicore: anticipo ? null : factura.monto_sicore,
                                           descuento_aplicado: anticipo ? null : factura.descuento_aplicado,
@@ -7233,6 +7296,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                           return {
                                             comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                             fecha: f.fecha_emision || '',
+                                            fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                             imp_total: (f.imp_total || 0) * tc,
                                             monto_sicore: f.monto_sicore,
                                             descuento_aplicado: f.descuento_aplicado,
@@ -7306,6 +7370,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             [{
                                               comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                               fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                               imp_total: (f.imp_total || 0) * tc,
                                               monto_sicore: f.monto_sicore,
                                               descuento_aplicado: f.descuento_aplicado,
