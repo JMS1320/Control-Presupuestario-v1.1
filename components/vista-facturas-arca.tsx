@@ -4228,6 +4228,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     items: Array<{
       comprobante: string
       fecha: string
+      fecha_estimada?: string | null
       imp_total: number
       monto_sicore?: number | null
       descuento_aplicado?: number | null
@@ -4251,8 +4252,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
       }
 
-      // Fecha de pago: del anticipo si existe, si no fecha actual
-      const fechaPago = anticipo ? fmtFechaStr(anticipo.fecha_pago) : new Date().toLocaleDateString('es-AR')
+      // Fecha de pago: del anticipo si existe, si no fecha_estimada del primer item
+      const fechaPagoRaw = anticipo
+        ? anticipo.fecha_pago
+        : (items[0]?.fecha_estimada || null)
+      const fechaPago = fechaPagoRaw ? fmtFechaStr(fechaPagoRaw) : '-'
 
       // ── Header ────────────────────────────────────────────────────────────
       doc.setFontSize(16)
@@ -4262,19 +4266,21 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
       doc.text('MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6', pageW / 2, 25, { align: 'center' })
-      doc.setFont('helvetica', 'bold')
-      doc.text(`Fecha de Pago: ${fechaPago}`, pageW / 2, 31, { align: 'center' })
 
       // ── Datos proveedor ────────────────────────────────────────────────────
       doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
-      doc.text('Beneficiario:', 15, 42)
+      doc.text('Beneficiario:', 15, 36)
       doc.setFont('helvetica', 'normal')
-      doc.text(proveedor, 45, 42)
+      doc.text(proveedor, 45, 36)
       doc.setFont('helvetica', 'bold')
-      doc.text('CUIT:', 15, 48)
+      doc.text('CUIT:', 15, 42)
       doc.setFont('helvetica', 'normal')
-      doc.text(cuit, 30, 48)
+      doc.text(cuit, 30, 42)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Fecha de Pago:', 15, 48)
+      doc.setFont('helvetica', 'normal')
+      doc.text(fechaPago, 47, 48)
 
       // ── Construir columnas y filas ─────────────────────────────────────────
       // Si hay anticipo, las columnas de retención/descuento vienen del anticipo
@@ -5532,6 +5538,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             grupoFacs.map((f: any) => ({
                                               comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                               fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                               imp_total: f.imp_total || 0,
                                               monto_sicore: f.monto_sicore,
                                               descuento_aplicado: f.descuento_aplicado,
@@ -5556,6 +5563,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                         [{
                                           comprobante: `FC ${factura.tipo_comprobante}-${String(factura.punto_venta || 0).padStart(5,'0')}-${String(factura.numero_desde || 0).padStart(8,'0')}`,
                                           fecha: factura.fecha_emision || '',
+                                          fecha_estimada: factura.fecha_estimada || factura.fecha_vencimiento || null,
                                           imp_total: factura.imp_total || 0,
                                           monto_sicore: anticipo ? null : factura.monto_sicore,
                                           descuento_aplicado: anticipo ? null : factura.descuento_aplicado,
@@ -7288,6 +7296,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                           return {
                                             comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                             fecha: f.fecha_emision || '',
+                                            fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                             imp_total: (f.imp_total || 0) * tc,
                                             monto_sicore: f.monto_sicore,
                                             descuento_aplicado: f.descuento_aplicado,
@@ -7361,6 +7370,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             [{
                                               comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
                                               fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
                                               imp_total: (f.imp_total || 0) * tc,
                                               monto_sicore: f.monto_sicore,
                                               descuento_aplicado: f.descuento_aplicado,
