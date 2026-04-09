@@ -1901,3 +1901,397 @@ Tab 2 siempre tiene mayor prioridad que Tab 1 para los códigos.
 ### 26.4 — Independencia por empresa
 
 Cada regla en `reglas_contable_interno` tiene `cuenta_bancaria_id` explícito. Una regla de `msa_galicia` nunca aplica a `pam_galicia`. Las empresas son completamente independientes. Hoy solo existen reglas para `msa_galicia` (18 Tipo A). PAM y MA se configurarán cuando sus bancos se activen.
+
+---
+
+## 27. ARQUITECTURA ANTICIPOS PROVEEDORES — ANÁLISIS COMPLETO (2026-04-08)
+
+> Análisis realizado en fase de investigación, previo a caso de testeo real. Pendiente validación con dato concreto.
+
+### 27.1 — Tabla `anticipos_proveedores`: las dos columnas de estado
+
+La tabla tiene **dos columnas de estado ortogonales** que representan dimensiones distintas del ciclo de vida de un anticipo:
+
+#### Columna `estado` — dimensión de vinculación contable
+
+| Valor | Significado |
+|-------|-------------|
+| `pendiente_vincular` | Recién creado. El pago existe pero no está atado a ninguna FC en `comprobantes_arca`. El anticipo "flota" contablemente. |
+| `vinculado` | Se asignó `factura_id` apuntando a una fila de `comprobantes_arca`. La FC sabe que tiene un anticipo detrás. |
+| `conciliado` | El movimiento bancario correspondiente fue conciliado con el extracto. Ciclo cerrado. |
+
+#### Columna `estado_pago` — dimensión de tesorería
+
+Idéntica en semántica a `comprobantes_arca.estado` y `cuotas_egresos_sin_factura.estado`:
+
+| Valor | Significado |
+|-------|-------------|
+| `pendiente` | No hay decisión de pago tomada. |
+| `pagar` | Confirmado para pagar. Dispara modal SICORE si corresponde. |
+| `preparado` | Cheque/transferencia preparada, no enviada aún. |
+| `pagado` | El dinero efectivamente salió de la cuenta. |
+| `echeq` | Pagado con e-cheq. Tiene `fecha_cobro_echeq` separada de `fecha_pago`. |
+
+Las dos columnas son **independientes entre sí**: un anticipo puede tener `estado='pendiente_vincular'` (sin FC todavía) y `estado_pago='pagado'` (el dinero ya salió) al mismo tiempo. Ninguna combinación está bloqueada por código.
+
+### 27.2 — Otros campos relevantes de `anticipos_proveedores`
+
+| Campo | Uso |
+|-------|-----|
+| `tipo` | `'pago'` (sale dinero) o `'cobro'` (entra dinero) |
+| `factura_id` | UUID de `comprobantes_arca` — NULL hasta vincular |
+| `monto` | Monto original del anticipo |
+| `monto_restante` | Monto neto después de SICORE y descuentos |
+| `sicore` | Quincena SICORE asignada (ej: `'26-04 - 1ra'`) |
+| `monto_sicore` | Retención SICORE aplicada |
+| `tipo_sicore` | Tipo de operación SICORE (Arrendamiento, Servicios, etc.) |
+| `descuento_aplicado` | Descuento adicional sobre el monto |
+| `neto_gravado` | Neto gravado ingresado manualmente en modal SICORE |
+| `metodo_pago` | `'banco'` o `'echeq'` |
+| `fecha_pago` | Fecha del pago efectivo |
+| `fecha_cobro_echeq` | Fecha de cobro del e-cheq (solo cuando `metodo_pago='echeq'`) |
+
+### 27.3 — Recorridos posibles
+
+#### Recorrido A — Anticipo puro: dinero sale antes de recibir la FC
+
+El caso más frecuente en el sistema. Se paga al proveedor sin tener aún la factura AFIP.
+
+```
+1. CREAR
+   → estado='pendiente_vincular', estado_pago=<elegido por usuario, default 'pagado'>
+   → Aparece en Cash Flow como débito
+   → Aparece en Vista Pagos solo si estado_pago ∈ {pendiente, pagar, preparado, echeq}
+   → Si estado_pago='pagado': NO aparece en Vista Pagos (filtro la excluye)
+
+2. (SICORE — si aplica)
+   → Al cambiar estado_pago → 'pagar': abre modal SICORE
+   → Guarda sicore/monto_sicore/tipo_sicore en el anticipo
+   → Registra fila en msa.sicore_retenciones con origen='anticipo', factura_id=NULL
+   → monto_restante = monto - monto_sicore - descuento_aplicado
+
+3. LLEGA LA FC (importada desde ARCA)
+   → FC en estado 'pendiente', sin vínculo
+   → Vista Principal muestra alerta: "N anticipo(s) con SICORE sin vincular"
+   → Condición: anticipo.sicore IS NOT NULL AND anticipo.factura_id IS NULL
+
+4. VINCULAR (desde Vista Principal)
+   → Usuario elige la FC correspondiente al anticipo
+   → Calcula: saldo = FC.imp_total - anticipo.monto
+   → Si saldo ≤ 0.01 → Caso A (anticipo cubre completamente)
+   → Si saldo > 0.01 → Caso B (anticipo parcial, queda saldo)
+
+5. CONCILIAR BANCARIAMENTE
+   → El extracto muestra el débito real
+   → Motor o manual lo concilia
+   → anticipo.estado → 'conciliado'
+   → Anticipo desaparece de Cash Flow y Vista Pagos
+```
+
+#### Recorrido B — Anticipo creado conociendo ya la FC
+
+Similar al Recorrido A pero sin la espera de la factura. La vinculation puede ser inmediata desde Vista Principal o en el mismo momento de creación (si se implementa). El flujo acorta el tramo 3-4 pero es idéntico en lo demás.
+
+#### Recorrido C — Anticipo de cobro (entra dinero)
+
+```
+tipo = 'cobro'
+→ Se muestra en Cash Flow como CRÉDITO (aumenta disponibilidad)
+→ Nota en código: "se vincularán cuando desarrollemos Ventas"
+→ Hoy: aparece pero NO tiene flujo de vinculación automática implementado
+→ Estado actual: pendiente desarrollo sección Ventas
+```
+
+### 27.4 — Lógica de vinculación: Caso A vs Caso B
+
+La vinculación se ejecuta en `vista-principal.tsx → confirmarVinculacion()`:
+
+#### Caso A: anticipo cubre completamente la FC (`saldo ≤ 0.01`)
+
+```typescript
+// Qué recibe la FC:
+{
+  estado: 'pagado',
+  sicore: anticipo.sicore,
+  monto_sicore: anticipo.monto_sicore,
+  tipo_sicore: anticipo.tipo_sicore,
+  monto_a_abonar: anticipo.monto - sicore - descuento,  // neto_pagado
+  fecha_vencimiento: anticipo.fecha_pago,
+  fecha_estimada: anticipo.fecha_pago,
+}
+
+// Qué recibe el anticipo:
+{
+  factura_id: FC.id,
+  estado: 'vinculado',
+}
+```
+
+#### Caso B: anticipo cubre parcialmente la FC (`saldo > 0.01`)
+
+```typescript
+// Qué recibe la FC:
+{
+  // estado NO cambia — sigue 'pendiente' (o el que tenía)
+  sicore: anticipo.sicore,
+  monto_sicore: anticipo.monto_sicore,
+  tipo_sicore: anticipo.tipo_sicore,
+  monto_a_abonar: saldo,  // lo que queda por pagar
+}
+
+// Qué recibe el anticipo:
+{
+  factura_id: FC.id,
+  estado: 'vinculado',
+}
+```
+
+### 27.5 — Visibilidad por vista según estado
+
+```
+                       CASH FLOW    VISTA PAGOS    VISTA ARCA
+                       (hook)       (vista-arca)   (vista-arca)
+
+ANTES DE VINCULAR:
+  Anticipo (pagado)       ✅            ❌*           ❌
+  FC (pendiente)          ✅            ✅            ✅
+
+CASO A — POST VINCULAR:
+  Anticipo (vinculado)    ✅            ❌*           ❌
+  FC (pagado)             ✅ ⚠️         ❌            ✅ (como pagada)
+
+CASO B — POST VINCULAR:
+  Anticipo (vinculado)    ✅            ❌*           ❌
+  FC (pendiente, saldo)   ✅            ✅            ✅
+
+POST CONCILIACIÓN:
+  Anticipo (conciliado)   ❌            ❌            ❌
+  FC (conciliado)         ❌            ❌            ✅ (histórica)
+```
+
+`*` Vista Pagos filtra `.in('estado_pago', ['pendiente','pagar','preparado','echeq'])` — los anticipos con `estado_pago='pagado'` nunca aparecen ahí.
+
+### 27.6 — GAP DETECTADO: doble conteo en Caso A
+
+**Descripción**: Tras la vinculación Caso A, tanto el anticipo como la FC aparecen en Cash Flow simultáneamente representando el mismo movimiento de dinero.
+
+**Root cause**:
+
+La query de ARCA en `useMultiCashFlowData.ts` excluye:
+```typescript
+.neq('estado', 'conciliado')
+.neq('estado', 'credito')
+.neq('estado', 'anterior')
+// 'pagado' NO está excluido → las FC pagadas SÍ aparecen en Cash Flow
+```
+
+La query de anticipos excluye:
+```typescript
+.neq('estado', 'conciliado')
+// 'vinculado' NO está excluido → los anticipos vinculados SÍ aparecen en Cash Flow
+```
+
+**Resultado concreto en Caso A**:
+- FC `pagado` → aparece en Cash Flow (fondo verde) con `monto_a_abonar = neto_pagado`
+- Anticipo `vinculado` → aparece en Cash Flow con `monto - monto_sicore`
+
+El código lo detecta pero no lo resuelve: en `mapearAnticipos` agrega el sufijo `"(vinculado - pend. conciliar)"` al detalle, solo como indicador visual.
+
+**Opciones de corrección identificadas** (pendiente decisión post-testeo):
+
+| Opción | Cambio | Efecto |
+|--------|--------|--------|
+| **A** | Excluir `pagado` de la query ARCA en Cash Flow | FC pagada desaparece. El anticipo es la única representación del movimiento hasta conciliación bancaria. |
+| **B** | Excluir anticipos `vinculado` de la query de anticipos en Cash Flow | El anticipo desaparece al vincularse. La FC (pagado, verde) es la representación. Problema: fecha del anticipo y de la FC pueden diferir. |
+
+**Opción A parece más correcta** conceptualmente: el anticipo es el movimiento bancario real; la FC es el documento contable. Pero requiere testeo real para confirmar que no rompe otros flujos.
+
+**Estado**: pendiente testeo con caso real → decisión e implementación de fix.
+
+### 27.7 — GAP DETECTADO: sin UI para borrar anticipos pagados o conciliados
+
+**Descripción**: El botón de borrar anticipo (`<Trash2>`) vive en Vista Pagos. Vista Pagos filtra por `estado_pago ∈ {pendiente, pagar, preparado, echeq}`. Por lo tanto:
+
+- Anticipos con `estado_pago='pagado'` → **no aparecen en Vista Pagos** → no tienen botón de borrar accesible
+- Anticipos con `estado='conciliado'` → tampoco aparecen → tampoco tienen botón
+
+Esto es en parte correcto por diseño (no debería ser fácil borrar algo ya procesado), pero genera un gap: si se crea un anticipo con `estado_pago='pagado'` por error, no hay forma de eliminarlo desde la UI.
+
+**Reglas de borrado sugeridas** (pendiente implementación):
+
+| Estado del anticipo | Regla |
+|--------------------|-------|
+| `estado='conciliado'` | Nunca borrar — hay un movimiento bancario que lo referencia |
+| `estado='vinculado'` + FC en `pagado`/`conciliado` | No borrar (o solo con reversión completa de la FC) |
+| `estado='vinculado'` + FC en `pendiente` | Permitir, pero revertir FC a estado limpio (limpiar sicore, factura_id, monto_a_abonar) |
+| `estado='pendiente_vincular'` con `estado_pago='pagado'` | Permitir con confirmación fuerte ("el dinero ya salió") |
+| `estado='pendiente_vincular'` con otros estados | Permitir con confirmación estándar |
+
+El código actual (`eliminarAnticipo` en `vista-facturas-arca.tsx:3282`) ya limpia SICORE de la FC cuando existe `factura_id`, pero no valida el estado del anticipo ni el de la FC antes de proceder.
+
+**Estado**: pendiente implementación de validaciones + eventual acceso desde otra vista para anticipos pagados.
+
+---
+
+## 28. ANÁLISIS ARQUITECTURAL — PAGOS MÚLTIPLES POR FACTURA (2026-04-08)
+
+> Análisis en fase de investigación. Sin acción implementada. Requiere análisis minucioso antes de cualquier cambio.
+
+### 28.1 — Los tres escenarios que activan la necesidad
+
+#### Escenario 1: Anticipo total → llega FC después
+
+```
+1. Se paga el total al proveedor sin tener FC todavía
+2. Se registra anticipo: estado='pendiente_vincular', estado_pago='pagado'
+3. Llega la FC (importada desde ARCA)
+4. Se vincula anticipo → FC (Caso A)
+
+Situación actual:   Anticipo queda en Cash Flow + FC aparece como pagada (doble conteo — Gap 27.6)
+Comportamiento ideal: Anticipo desaparece del Cash Flow. FC importa todos los datos del anticipo
+                      (monto, sicore, descuento, fecha) y aparece como pagada en Cash Flow.
+                      FC se convierte en la representación unificada del movimiento.
+                      Anticipo queda solo como registro histórico hasta conciliación bancaria.
+```
+
+#### Escenario 2: Anticipo parcial → FC queda con saldo pendiente
+
+```
+1. Se paga parte del total al proveedor
+2. Se registra anticipo, se vincula (Caso B)
+3. FC queda: estado sin cambiar, monto_a_abonar = saldo restante
+4. FC sigue en Cash Flow con monto reducido
+
+Situación actual:   FC en Cash Flow con saldo visible. Pero no hay flujo definido para el
+                    segundo pago. El usuario puede cambiar estado FC a 'pagar' directamente
+                    O crear otro anticipo — ambas rutas son técnicamente posibles pero sin guía.
+Problema no resuelto: ¿Cómo se procesa el pago del saldo? Sin flujo definido.
+```
+
+#### Escenario 3: FC pagada en 2+ cuotas sin anticipo previo
+
+```
+La FC existe desde el principio. Se acuerda pagar en partes.
+
+Situación actual:   No hay mecanismo. Si se hace un Caso B vinculation, la FC queda con
+                    monto_a_abonar = saldo, pero no hay forma de crear un segundo pago
+                    que apunte a esa FC y la cancele. Vista Principal solo muestra anticipos
+                    con factura_id IS NULL — el primer pago ya tiene factura_id asignado y
+                    desaparece de ese flujo.
+Observación:        La tabla anticipos_proveedores no tiene UNIQUE constraint sobre factura_id,
+                    por lo que técnicamente admite N filas con el mismo factura_id. La
+                    arquitectura de datos lo soporta; la UI no.
+```
+
+### 28.2 — El problema de naming: "anticipo" es conceptualmente incorrecto
+
+El nombre `anticipos_proveedores` implica en contabilidad un pago **antes** de recibir la factura. Pero la tabla hoy cubre tres situaciones distintas:
+
+| Situación | Nombre contable correcto | Momento respecto a FC |
+|-----------|--------------------------|----------------------|
+| Pago antes de la FC | Anticipo (sentido estricto) | Antes — `factura_id = NULL` inicialmente |
+| Primer pago parcial de FC existente | Pago a cuenta | Después — FC ya existe |
+| Segundo/tercer pago de FC existente | Pago de saldo | Después — FC ya existe con saldo |
+| Pago total de FC conocida pero registrado manualmente | Pago directo | Después — FC ya existe |
+
+El campo `tipo = 'pago'` vs `'cobro'` habla de **dirección del dinero**, no de cuándo ocurre respecto a la FC. El nombre "anticipo" confunde la dimensión temporal con la dimensión de dirección.
+
+**Implicación**: Si se generaliza la tabla para cubrir todos los escenarios, debería renombrarse conceptualmente a algo como `pagos_a_cuenta` o `pagos_parciales_factura`. El cambio de nombre en BD es una decisión de largo plazo; en el corto plazo al menos la UI debería usar terminología más neutra.
+
+### 28.3 — Gaps arquitecturales identificados
+
+#### Gap A — Lógica fina para FC pagada en Cash Flow
+
+Excluir `pagado` de la query ARCA en Cash Flow (Opción A del Gap 27.6) **rompe el caso de pago directo**:
+
+```
+FC pagada con anticipo:   anticipo la representa → FC debería desaparecer del CF
+FC pagada directamente:   no hay anticipo → FC pagada-pero-no-conciliada SÍ debería
+                          verse en CF (confirma que el pago ocurrió, pend. bancario)
+```
+
+La lógica correcta no es `excluir todo 'pagado'` sino:
+- FC `pagado` + tiene anticipo vinculado → excluir del CF (el anticipo la representa)
+- FC `pagado` + sin anticipo vinculado → mantener en CF hasta conciliación
+
+Requiere un JOIN o un flag en la FC (`tiene_anticipo_vinculado BOOLEAN`) para poder filtrar correctamente. Esto no está implementado.
+
+#### Gap B — Sin indicador visual de pago parcial en la FC
+
+En Caso B, la FC muestra `monto_a_abonar = saldo`. No hay ningún indicador en Vista ARCA ni en Cash Flow que explique por qué el monto difiere de `imp_total`. El usuario ve el número reducido sin contexto.
+
+Falta: badge o nota en la FC que muestre "Pago parcial registrado: $X — Saldo: $Y".
+
+La información existe (hay un anticipo con ese `factura_id`), solo falta el lookup y el display.
+
+#### Gap C — Segundo pago para el saldo de Caso B sin flujo definido
+
+Después de la vinculation Caso B:
+- FC tiene `monto_a_abonar = saldo`, `estado = 'pendiente'`
+- Anticipo tiene `factura_id` asignado → desaparece de Vista Principal (solo muestra `factura_id IS NULL`)
+- No hay UI para crear un segundo pago vinculado a esa FC
+
+Opciones posibles (sin decidir):
+1. Cambiar estado de la FC a 'pagar' y procesarla como pago directo (sin registrar como anticipo)
+2. Crear un segundo anticipo y vincular al mismo `factura_id` — la BD lo permite pero la UI no guía esto
+3. Habilitar en Vista Principal la vista "pagos parciales de esta FC" con botón "agregar pago"
+
+#### Gap D — Conciliación bancaria con dos pagos para la misma FC
+
+Si una FC se pagó en 2 transferencias, el extracto tiene 2 filas. El campo de referencia en el extracto es `comprobante_arca_id` (uno por fila). La arquitectura actual no tiene forma de decir "estas dos filas del extracto juntas cancelan la FC X":
+
+```
+extracto fila 1: comprobante_arca_id = NULL, template_cuota_id = NULL
+                 (conciliado contra anticipo — ¿cómo se guarda esta relación?)
+extracto fila 2: comprobante_arca_id = FC.id, estado = 'conciliado'
+```
+
+Falta: el extracto debería poder referenciar el anticipo directamente (`anticipo_id` en el extracto), o el anticipo debería poder referenciar la fila del extracto. Hoy no existe ninguno de los dos campos.
+
+#### Gap E — Alerta de anticipos sin vincular incompleta
+
+La alerta en Vista Principal filtra: `sicore IS NOT NULL AND factura_id IS NULL`. Esto significa que **anticipos sin SICORE y sin FC vinculada no generan alerta**. Un anticipo pagado sin retención puede quedar flotando indefinidamente sin aviso.
+
+Debería ser: todo anticipo con `estado_pago='pagado'` y `factura_id IS NULL` merece alerta, tenga o no SICORE.
+
+#### Gap F — Overpayment silencioso
+
+Si `anticipo.monto > FC.imp_total`, el cálculo hace `saldo = Math.max(0, FC.imp_total - anticipo.monto)` → saldo = 0. El exceso se ignora silenciosamente. No hay alerta, no hay crédito a favor, no hay registro del diferencial. En contexto de facturas USD con tipo de cambio variable esto puede ocurrir.
+
+### 28.4 — Lo que funciona bien y no debe tocarse
+
+#### SICORE en pagos múltiples — OK
+
+La verificación `yaRetuvo` busca en ambas tablas (`comprobantes_arca.sicore` y `anticipos_proveedores.sicore`) por mismo CUIT y quincena. Si el primer pago (anticipo) generó retención, el segundo pago lo detecta correctamente y aplica lógica de retención adicional o ninguna según corresponda. Este mecanismo funciona bien sin cambios.
+
+#### La BD soporta N pagos por FC
+
+No hay UNIQUE constraint sobre `factura_id` en `anticipos_proveedores`. La capa de datos admite múltiples pagos parciales para la misma FC. El problema es exclusivamente de UI y flujos, no de estructura de datos.
+
+### 28.5 — Propuesta conceptual de largo plazo
+
+Lo que la tabla necesita es ser reconocida como una tabla de **pagos a cuenta** donde cada fila es un pago parcial o total de una FC, con N filas posibles por `factura_id`. El anticipo (pago antes de la FC) es el subconjunto donde `factura_id = NULL` en el momento del pago y se completa después.
+
+```
+pagos_a_cuenta (renombre conceptual de anticipos_proveedores)
+├── tipo = 'pago'  → dinero sale
+│   ├── factura_id = NULL en creación → "anticipo verdadero" (antes de FC)
+│   └── factura_id = FC.id en creación → "pago a cuenta" (FC ya existe)
+└── tipo = 'cobro' → dinero entra (futuro: vinculado a sección Ventas)
+
+Por FC pueden existir:
+  pago_1 → cubre X% → factura.monto_a_abonar -= pago_1.monto_neto
+  pago_2 → cubre Y% → factura.monto_a_abonar -= pago_2.monto_neto
+  ...
+  pago_N → cubre saldo → factura.estado = 'pagado'
+```
+
+**Lo que faltaría para implementar esto:**
+1. Flujo UI para crear pagos a cuenta desde Vista ARCA (FC ya existe → "Registrar pago parcial")
+2. Indicador visual en FC mostrando pagos parciales existentes
+3. Campo `anticipo_id` (o equivalente) en el extracto para referenciar pagos desde el extracto
+4. Lógica en Caso A (vinculation total) que oculte el anticipo del Cash Flow en lugar de mostrar ambos
+5. Alerta ampliada: todo `estado_pago='pagado'` con `factura_id IS NULL` (no solo los que tienen SICORE)
+6. Manejo de overpayment (diferencial positivo a favor del proveedor)
+
+**Estado**: análisis completo documentado. Sin acción. Próximo paso: testeo con caso real para validar comportamiento actual antes de diseñar los cambios.
