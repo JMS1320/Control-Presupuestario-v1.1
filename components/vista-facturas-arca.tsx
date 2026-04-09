@@ -3082,6 +3082,42 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  // Solo Admin — Resetear anticipo a estado pendiente (limpia SICORE si existe)
+  const resetearAnticipo = async (anticipo: any) => {
+    const tieneSicore = anticipo.sicore || anticipo.monto_sicore
+    const msg = tieneSicore
+      ? `¿Resetear anticipo a estado pendiente?\n\nEsto borrará:\n- Retención SICORE (v1 y v2)\n- monto_restante\n- Estado → pendiente`
+      : `¿Volver anticipo a estado pendiente?`
+    if (!window.confirm(msg)) return
+    try {
+      if (tieneSicore) {
+        // Borrar registro v2 solo si aún no está vinculado a una FC
+        const { error: errDel } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .delete()
+          .eq('anticipo_id', anticipo.id)
+          .is('factura_id', null)
+        if (errDel) console.error('Error borrando sicore_retenciones anticipo:', errDel)
+      }
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({
+          estado_pago: 'pendiente',
+          sicore: null,
+          monto_sicore: null,
+          tipo_sicore: null,
+          monto_restante: null,
+        })
+        .eq('id', anticipo.id)
+      if (error) throw error
+      toast.success('Anticipo revertido a pendiente')
+      await recargarAnticiposPagos()
+    } catch (e: any) {
+      toast.error('Error al revertir: ' + (e.message ?? e))
+    }
+  }
+
   const finalizarProcesoSicore = async () => {
     if (!facturaEnProceso) return
     // Permitir continuar si hay descuento aunque no haya retención SICORE
@@ -7111,8 +7147,33 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             // Exponer al modal ECHEQ que vive fuera de este IIFE
             cambiarEstadoSeleccionadasRef.current = cambiarEstadoSeleccionadas
 
+            // ── Helpers revertir estado (solo Admin) ──────────────────────────
+            const revertirFacturaAPendiente = async (f: FacturaArca) => {
+              if (f.sicore || f.monto_sicore) {
+                await resetearFactura(f)
+              } else {
+                if (!window.confirm(`¿Volver FC de ${f.denominacion_emisor} a estado pendiente?`)) return
+                const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+                  .update({ estado: 'pendiente' })
+                  .eq('id', f.id)
+                if (error) { toast.error('Error: ' + error.message); return }
+                setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, estado: 'pendiente' } : x))
+                cargarFacturas()
+              }
+            }
+
+            const revertirTemplateAPendiente = async (t: any) => {
+              if (!window.confirm(`¿Volver "${t.nombre_referencia || t.descripcion || 'template'}" a estado pendiente?`)) return
+              const { error } = await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ estado: 'pendiente' })
+                .eq('id', t.id)
+              if (error) { toast.error('Error: ' + error.message); return }
+              setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, estado: 'pendiente' } : x))
+            }
+
             // Función para renderizar tabla de facturas
-            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => {
+            const renderTablaFacturas = (facturas: FacturaArca[], titulo: string, subtotal: number, estadoActual: string, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, onRevertir?: (f: FacturaArca) => void) => {
               // Colapsar facturas agrupadas: una sola fila por grupo
               type GrupoRow = {
                 esGrupo: true
@@ -7360,27 +7421,37 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   </TableCell>
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
-                                      <Button
-                                        size="sm" variant="ghost"
-                                        title="Generar PDF detalle de pago"
-                                        onClick={() => {
-                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-                                          generarPDFDetallePago(
-                                            'arca', f.denominacion_emisor, f.cuit,
-                                            [{
-                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                              fecha: f.fecha_emision || '',
-                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
-                                              imp_total: (f.imp_total || 0) * tc,
-                                              monto_sicore: f.monto_sicore,
-                                              descuento_aplicado: f.descuento_aplicado,
-                                              monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
-                                                ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                                : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
-                                            }]
-                                          )
-                                        }}
-                                      >📄</Button>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm" variant="ghost"
+                                          title="Generar PDF detalle de pago"
+                                          onClick={() => {
+                                            const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                            generarPDFDetallePago(
+                                              'arca', f.denominacion_emisor, f.cuit,
+                                              [{
+                                                comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                                fecha: f.fecha_emision || '',
+                                                fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
+                                                imp_total: (f.imp_total || 0) * tc,
+                                                monto_sicore: f.monto_sicore,
+                                                descuento_aplicado: f.descuento_aplicado,
+                                                monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                                  ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                                  : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                              }]
+                                            )
+                                          }}
+                                        >📄</Button>
+                                        {onRevertir && (
+                                          <Button
+                                            size="sm" variant="ghost"
+                                            title="Volver a Pendiente"
+                                            className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                            onClick={() => onRevertir(f)}
+                                          >↩</Button>
+                                        )}
+                                      </div>
                                     </TableCell>
                                   )}
                                 </TableRow>
@@ -7461,7 +7532,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             cambiarEstadoAnticiposRef.current = cambiarEstadoAnticiposSeleccionados
 
             // Función para renderizar tabla de templates
-            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente') => {
+            const renderTablaTemplates = (templates: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, estadoActual: string = 'pendiente', onRevertir?: (t: any) => void) => {
               // Colapsar templates agrupados: una sola fila por grupo
               type GrupoTRow = {
                 esGrupo: true; grupoPagoId: string; ids: string[]
@@ -7631,21 +7702,31 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   </TableCell>
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
-                                      <Button
-                                        size="sm" variant="ghost"
-                                        title="Generar PDF detalle de pago"
-                                        onClick={() => generarPDFDetallePago(
-                                          'template',
-                                          t.egreso?.nombre_quien_cobra || '-',
-                                          t.egreso?.cuit_quien_cobra || '',
-                                          [{
-                                            comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                            fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                            imp_total: t.monto || 0,
-                                            monto_a_abonar: t.monto || 0,
-                                          }]
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          size="sm" variant="ghost"
+                                          title="Generar PDF detalle de pago"
+                                          onClick={() => generarPDFDetallePago(
+                                            'template',
+                                            t.egreso?.nombre_quien_cobra || '-',
+                                            t.egreso?.cuit_quien_cobra || '',
+                                            [{
+                                              comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
+                                              fecha: t.fecha_vencimiento || t.fecha_estimada || '',
+                                              imp_total: t.monto || 0,
+                                              monto_a_abonar: t.monto || 0,
+                                            }]
+                                          )}
+                                        >📄</Button>
+                                        {onRevertir && (
+                                          <Button
+                                            size="sm" variant="ghost"
+                                            title="Volver a Pendiente"
+                                            className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
+                                            onClick={() => onRevertir(t)}
+                                          >↩</Button>
                                         )}
-                                      >📄</Button>
+                                      </div>
                                     </TableCell>
                                   )}
                                 </TableRow>
@@ -7716,7 +7797,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const subtotalAnticiposPreparado = anticiposPreparado.reduce((s, a) => s + montoNetoAnticipo(a), 0)
             const subtotalAnticiposPendiente = anticiposPendiente.reduce((s, a) => s + montoNetoAnticipo(a), 0)
 
-            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
+            const renderTablaAnticipos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }, onRevertir?: (a: any) => void) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -7814,13 +7895,23 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             </TableCell>
                             <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
                             <TableCell>
-                              <button
-                                onClick={() => eliminarAnticipo(a)}
-                                className="text-gray-300 hover:text-red-500 transition-colors"
-                                title="Eliminar anticipo"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => eliminarAnticipo(a)}
+                                  className="text-gray-300 hover:text-red-500 transition-colors"
+                                  title="Eliminar anticipo"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                                {onRevertir && (
+                                  <Button
+                                    size="sm" variant="ghost"
+                                    title="Volver a Pendiente"
+                                    className="text-orange-500 hover:text-orange-700 hover:bg-orange-50 h-6 w-6 p-0"
+                                    onClick={() => onRevertir(a)}
+                                  >↩</Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -7982,7 +8073,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             '📋 Pagar',
                             subtotalAnticiposPagar,
                             true,
-                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            (a) => resetearAnticipo(a)
                           )}
                           {filtroOrigenPagos.arca && facturasPagar.length > 0 && renderTablaFacturas(
                             facturasPagar,
@@ -7990,7 +8083,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             subtotalPagar,
                             'pagar',
                             true,
-                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            (f) => revertirFacturaAPendiente(f)
                           )}
                           {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
                             templatesPagar,
@@ -7999,7 +8094,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             true,
                             { label: 'Marcar como Preparado', estado: 'preparado' },
                             undefined,
-                            'pagar'
+                            'pagar',
+                            (t) => revertirTemplateAPendiente(t)
                           )}
                         </>
                       )

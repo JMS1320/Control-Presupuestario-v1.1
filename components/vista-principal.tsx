@@ -225,6 +225,16 @@ export function VistaPrincipal() {
         .eq('id', anticipoParaVincular.id)
       if (errAnticipo) throw errAnticipo
 
+      // Transferir sicore_retenciones: agregar factura_id al registro del anticipo
+      if (anticipoParaVincular.sicore || anticipoParaVincular.monto_sicore) {
+        await supabase
+          .schema('msa')
+          .from('sicore_retenciones')
+          .update({ factura_id: facturaElegida })
+          .eq('anticipo_id', anticipoParaVincular.id)
+          .is('factura_id', null)
+      }
+
       const msg = calculo.caso === 'A'
         ? `Vinculación completa. Factura marcada como pagada (${fmt(calculo.neto_pagado)} neto).`
         : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.`
