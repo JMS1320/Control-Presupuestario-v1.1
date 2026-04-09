@@ -8098,51 +8098,140 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ) : (
                   // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template
                   <>
-                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                      anticiposPagar,
-                      '📋 Pagar',
-                      subtotalAnticiposPagar,
-                      false
-                    )}
-                    {filtroOrigenPagos.arca && renderTablaFacturas(
-                      facturasPagar,
-                      '📋 ARCA Por Pagar',
-                      subtotalPagar,
-                      'pagar',
-                      true,
-                      { label: 'Marcar como Preparado', estado: 'preparado' }
-                    )}
-                    {filtroOrigenPagos.template && renderTablaTemplates(
-                      templatesPagar,
-                      '📋 Por Pagar',
-                      subtotalTemplatesPagar,
-                      true,
-                      { label: 'Marcar como Preparado', estado: 'preparado' },
-                      undefined,
-                      'pagar'
-                    )}
-                    {filtroOrigenPagos.anticipo && renderTablaAnticipos(
-                      anticiposPreparado,
-                      '✅ Preparado',
-                      subtotalAnticiposPreparado,
-                      false
-                    )}
-                    {filtroOrigenPagos.arca && renderTablaFacturas(
-                      facturasPreparado,
-                      '✅ ARCA Preparado',
-                      subtotalPreparado,
-                      'preparado',
-                      false
-                    )}
-                    {filtroOrigenPagos.template && renderTablaTemplates(
-                      templatesPreparado,
-                      '✅ Preparado',
-                      subtotalTemplatesPreparado,
-                      false,
-                      undefined,
-                      undefined,
-                      'preparado'
-                    )}
+                    {/* ── PAGAR ─────────────────────────────────────────────── */}
+                    {(() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPagar : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>📋 No hay pagos para pagar</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">📋 PAGAR</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Pagar: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPagar.length > 0 && renderTablaAnticipos(
+                            anticiposPagar,
+                            '📋 Pagar',
+                            subtotalAnticiposPagar,
+                            false
+                          )}
+                          {filtroOrigenPagos.arca && facturasPagar.length > 0 && renderTablaFacturas(
+                            facturasPagar,
+                            '📋 ARCA Por Pagar',
+                            subtotalPagar,
+                            'pagar',
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
+                          {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
+                            templatesPagar,
+                            '📋 Por Pagar',
+                            subtotalTemplatesPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            undefined,
+                            'pagar'
+                          )}
+                        </>
+                      )
+                    })()}
+
+                    {/* ── PREPARADO ─────────────────────────────────────────── */}
+                    {(() => {
+                      const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
+                        (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                      const totalVisible =
+                        (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
+                        (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                      const ocultos: { label: string; total: number }[] = [
+                        ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
+                        ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
+                        ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                      ]
+                      if (!tieneVisible) {
+                        return (
+                          <div className="py-2 px-3 text-sm text-muted-foreground border rounded-md bg-muted/30 flex items-center gap-3">
+                            <span>✅ No hay pagos preparados</span>
+                            {ocultos.length > 0 && (
+                              <span className="text-yellow-600 text-xs">
+                                ⚠️ ${ocultos.reduce((s, o) => s + o.total, 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {ocultos.map(o => o.label).join(', ')} ocultos por filtro
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center justify-between px-1 py-1 border-b mb-1">
+                            <span className="font-semibold text-sm">✅ PREPARADO</span>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Badge variant="outline" className="text-sm px-3 py-1">
+                                Total Preparado: ${totalVisible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                              </Badge>
+                              {ocultos.map(o => (
+                                <span key={o.label} className="text-xs text-yellow-600">
+                                  ⚠️ ${o.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })} en {o.label} ocultos por filtro
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 && renderTablaAnticipos(
+                            anticiposPreparado,
+                            '✅ Preparado',
+                            subtotalAnticiposPreparado,
+                            false
+                          )}
+                          {filtroOrigenPagos.arca && facturasPreparado.length > 0 && renderTablaFacturas(
+                            facturasPreparado,
+                            '✅ ARCA Preparado',
+                            subtotalPreparado,
+                            'preparado',
+                            false
+                          )}
+                          {filtroOrigenPagos.template && templatesPreparado.length > 0 && renderTablaTemplates(
+                            templatesPreparado,
+                            '✅ Preparado',
+                            subtotalTemplatesPreparado,
+                            false,
+                            undefined,
+                            undefined,
+                            'preparado'
+                          )}
+                        </>
+                      )
+                    })()}
                   </>
                 )}
 
