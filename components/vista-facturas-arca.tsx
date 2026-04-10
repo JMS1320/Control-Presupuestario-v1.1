@@ -3043,7 +3043,22 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (!window.confirm(msg)) return
 
     try {
-      // 1. Borrar registro v2
+      // 1. Verificar si la retención ya fue declarada (DDJJ confirmada)
+      if (factura.sicore || factura.monto_sicore) {
+        const { data: retRows } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('ddjj_confirmada')
+          .eq('factura_id', factura.id)
+          .eq('ddjj_confirmada', true)
+          .limit(1)
+        if (retRows && retRows.length > 0) {
+          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+          return
+        }
+      }
+
+      // 2. Borrar registro v2
       const { error: errDel } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
@@ -3084,6 +3099,43 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  // Confirmar DDJJ SICORE — bloquea modificaciones de la quincena
+  const confirmarDDJJSicore = async (quincena: string) => {
+    const registros = await buscarRetencionesV2(quincena)
+    if (registros.length === 0) return
+
+    const sinTXT = registros.some((r: any) => r.nro_comprobante == null)
+    if (sinTXT) {
+      alert('⚠️ Esta quincena aún no fue exportada (faltan números de comprobante). Generá el Export v2 antes de confirmar la DDJJ.')
+      return
+    }
+
+    const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
+    const ok = window.confirm(
+      `¿Confirmar DDJJ SICORE quincena ${quincena}?\n\n` +
+      `• ${registros.length} retenciones\n` +
+      `• Total: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n` +
+      `⚠️ Una vez confirmada, no se podrán modificar ni resetear las retenciones de esta quincena.`
+    )
+    if (!ok) return
+
+    const ids = registros.map((r: any) => r.id)
+    const { error } = await supabase
+      .schema(schemaName)
+      .from('sicore_retenciones')
+      .update({ ddjj_confirmada: true })
+      .in('id', ids)
+
+    if (error) {
+      alert('Error al confirmar DDJJ: ' + error.message)
+      return
+    }
+
+    // Actualizar estado local en registrosV2
+    setRegistrosV2(prev => prev.map((r: any) => ({ ...r, ddjj_confirmada: true })))
+    alert(`✅ DDJJ SICORE confirmada — quincena ${quincena}`)
+  }
+
   // Solo Admin — Resetear anticipo a estado pendiente (limpia SICORE si existe)
   const resetearAnticipo = async (anticipo: any) => {
     const tieneSicore = anticipo.sicore || anticipo.monto_sicore
@@ -3093,6 +3145,19 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (!window.confirm(msg)) return
     try {
       if (tieneSicore) {
+        // Verificar si la retención ya fue declarada (DDJJ confirmada)
+        const { data: retRows } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('ddjj_confirmada')
+          .eq('anticipo_id', anticipo.id)
+          .eq('ddjj_confirmada', true)
+          .limit(1)
+        if (retRows && retRows.length > 0) {
+          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+          return
+        }
+
         // Borrar registro v2 solo si aún no está vinculado a una FC
         const { error: errDel } = await supabase
           .schema(schemaName)
@@ -6763,6 +6828,36 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   ⚠️ Sin registros para esta quincena en sicore_retenciones
                 </div>
               )}
+
+              {/* Estado DDJJ */}
+              {registrosV2.length > 0 && (() => {
+                const ddjjConfirmada = registrosV2.every((r: any) => r.ddjj_confirmada)
+                const tieneTXT = registrosV2.some((r: any) => r.nro_comprobante != null)
+                if (ddjjConfirmada) {
+                  return (
+                    <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700">
+                      <span>🔒</span>
+                      <span className="font-medium">DDJJ Confirmada</span>
+                      <span className="text-gray-500">— esta quincena está declarada a AFIP</span>
+                    </div>
+                  )
+                }
+                if (tieneTXT) {
+                  return (
+                    <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                      <span className="text-sm text-orange-700 flex-1">⚠️ TXT generado pero DDJJ aún no confirmada</span>
+                      <Button
+                        size="sm"
+                        onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
+                        className="bg-orange-600 hover:bg-orange-700 text-white"
+                      >
+                        ✅ Confirmar DDJJ
+                      </Button>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {/* Botones acción */}
               <div className="flex gap-2">
