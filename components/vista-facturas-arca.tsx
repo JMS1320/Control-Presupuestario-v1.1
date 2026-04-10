@@ -3941,24 +3941,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     const q = partes[1]?.startsWith('1') ? '1' : '2'
     const anoCompleto = '20' + yy
 
-    // Obtener próximo nro_comprobante perpetuo (con overflow a 1 si supera 16 dígitos)
-    const MAX_NRO_COMP = 9999999999999999n
-    const { data: maxCompRow } = await supabase
-      .schema('msa').from('sicore_retenciones')
-      .select('nro_comprobante')
-      .not('nro_comprobante', 'is', null)
-      .order('nro_comprobante', { ascending: false })
-      .limit(1)
-      .single()
-    const maxComp = maxCompRow ? BigInt(maxCompRow.nro_comprobante) : 0n
-    let nextComp = maxComp >= MAX_NRO_COMP ? 1n : maxComp + 1n
-
-    // Obtener próximo secuencial de nro_certificado para el año actual
-    const { count: certCount } = await supabase
-      .schema('msa').from('sicore_retenciones')
-      .select('id', { count: 'exact', head: true })
-      .like('nro_certificado', `0000${anoCompleto}%`)
-    let nextCertSeq = (certCount ?? 0) + 1
+    // Verificar si esta quincena ya fue cerrada (guard idempotencia)
+    // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
+    const yaAsignados = registros.every((r: any) => r.nro_comprobante != null)
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
@@ -3971,48 +3956,108 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
     const CUIT_RETENEDOR = '30617786016'
     const lineas: string[] = []
-    // Para el UPDATE posterior: mapear ids → nro asignado
     const asignaciones: Array<{ ids: string[], nroComp: number, nroCert: string }> = []
 
-    for (const g of gruposOrdenados) {
-      const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
-      const nroCompNum = Number(nextComp)
-      const nroComp = padLeft(String(nroCompNum), 16)
-      const nroCert = '0000' + anoCompleto + String(nextCertSeq).padStart(6, '0')
-      const fecha   = formatFecha(g.fecha_pago)
+    if (yaAsignados) {
+      // Quincena ya cerrada: usar números guardados en BD, no sobreescribir
+      for (const g of gruposOrdenados) {
+        // Tomar nro_comprobante/nro_certificado del primer registro del grupo (todos iguales)
+        const primerReg = registros.find((r: any) => g.ids.includes(r.id))
+        const nroCompNum = Number(primerReg?.nro_comprobante ?? 0)
+        const nroCert    = primerReg?.nro_certificado ?? ''
+        const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
+        const nroComp = padLeft(String(nroCompNum), 16)
+        const fecha   = formatFecha(g.fecha_pago)
 
-      const linea =
-        '06'                              +  // 1-2:   código comprobante
-        fecha                             +  // 3-12:  fecha emisión comprobante
-        nroComp                           +  // 13-28: nro comprobante (16, right)
-        formatMonto(g.pago, 16)           +  // 29-44: importe comprobante (16, right)
-        '0217'                            +  // 45-48: código impuesto
-        codigoRegimen                     +  // 49-51: código régimen (3)
-        '1'                               +  // 52:    código operación
-        formatMonto(g.neto_gravado_pagado, 14) +  // 53-66: base de cálculo (14, right)
-        fecha                             +  // 67-76: fecha emisión retención
-        '01'                              +  // 77-78: código condición
-        '0'                               +  // 79:    ret. sujetos suspendidos
-        formatMonto(g.retencion, 14)      +  // 80-93: importe retención (14, right)
-        '      '                          +  // 94-99: porcentaje exclusión (6 blancos)
-        '          '                      +  // 100-109: fecha publicación (10 blancos)
-        '80'                              +  // 110-111: tipo doc
-        padRight(g.cuit_emisor, 20)       +  // 112-131: nro doc retenido (20, left)
-        nroCert                              // 132-145: nro certificado (14)
+        const linea =
+          '06'                              +
+          fecha                             +
+          nroComp                           +
+          formatMonto(g.pago, 16)           +
+          '0217'                            +
+          codigoRegimen                     +
+          '1'                               +
+          formatMonto(g.neto_gravado_pagado, 14) +
+          fecha                             +
+          '01'                              +
+          '0'                               +
+          formatMonto(g.retencion, 14)      +
+          '      '                          +
+          '          '                      +
+          '80'                              +
+          padRight(g.cuit_emisor, 20)       +
+          nroCert
 
-      lineas.push(linea)
-      asignaciones.push({ ids: g.ids, nroComp: nroCompNum, nroCert })
+        lineas.push(linea)
+      }
+    } else {
+      // Quincena nueva: calcular próximos números y guardar en BD
+      const MAX_NRO_COMP = 9999999999999999n
+      const { data: maxCompRow } = await supabase
+        .schema('msa').from('sicore_retenciones')
+        .select('nro_comprobante')
+        .not('nro_comprobante', 'is', null)
+        .order('nro_comprobante', { ascending: false })
+        .limit(1)
+        .single()
+      const maxComp = maxCompRow ? BigInt(maxCompRow.nro_comprobante) : 0n
+      let nextComp = maxComp >= MAX_NRO_COMP ? 1n : maxComp + 1n
 
-      nextComp = nextComp >= MAX_NRO_COMP ? 1n : nextComp + 1n
-      nextCertSeq++
-    }
+      // cert seq = mismo valor que nro_comprobante (siempre sincronizados)
+      // pero reinicia por año: buscar MAX del seq interno del año actual
+      const { data: maxCertRow } = await supabase
+        .schema('msa').from('sicore_retenciones')
+        .select('nro_certificado')
+        .like('nro_certificado', `0000${anoCompleto}%`)
+        .not('nro_certificado', 'is', null)
+        .order('nro_certificado', { ascending: false })
+        .limit(1)
+        .single()
+      const maxCertSeq = maxCertRow
+        ? parseInt(maxCertRow.nro_certificado.slice(-6), 10)
+        : 0
+      let nextCertSeq = maxCertSeq + 1
 
-    // Guardar nro_comprobante y nro_certificado en BD para cada registro
-    for (const asig of asignaciones) {
-      for (const id of asig.ids) {
-        await supabase.schema('msa').from('sicore_retenciones')
-          .update({ nro_comprobante: asig.nroComp, nro_certificado: asig.nroCert })
-          .eq('id', id)
+      for (const g of gruposOrdenados) {
+        const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
+        const nroCompNum = Number(nextComp)
+        const nroComp = padLeft(String(nroCompNum), 16)
+        const nroCert = '0000' + anoCompleto + String(nextCertSeq).padStart(6, '0')
+        const fecha   = formatFecha(g.fecha_pago)
+
+        const linea =
+          '06'                              +  // 1-2:   código comprobante
+          fecha                             +  // 3-12:  fecha emisión comprobante
+          nroComp                           +  // 13-28: nro comprobante (16, right)
+          formatMonto(g.pago, 16)           +  // 29-44: importe comprobante (16, right)
+          '0217'                            +  // 45-48: código impuesto
+          codigoRegimen                     +  // 49-51: código régimen (3)
+          '1'                               +  // 52:    código operación
+          formatMonto(g.neto_gravado_pagado, 14) +  // 53-66: base de cálculo (14, right)
+          fecha                             +  // 67-76: fecha emisión retención
+          '01'                              +  // 77-78: código condición
+          '0'                               +  // 79:    ret. sujetos suspendidos
+          formatMonto(g.retencion, 14)      +  // 80-93: importe retención (14, right)
+          '      '                          +  // 94-99: porcentaje exclusión (6 blancos)
+          '          '                      +  // 100-109: fecha publicación (10 blancos)
+          '80'                              +  // 110-111: tipo doc
+          padRight(g.cuit_emisor, 20)       +  // 112-131: nro doc retenido (20, left)
+          nroCert                              // 132-145: nro certificado (14)
+
+        lineas.push(linea)
+        asignaciones.push({ ids: g.ids, nroComp: nroCompNum, nroCert })
+
+        nextComp = nextComp >= MAX_NRO_COMP ? 1n : nextComp + 1n
+        nextCertSeq++
+      }
+
+      // Guardar en BD
+      for (const asig of asignaciones) {
+        for (const id of asig.ids) {
+          await supabase.schema('msa').from('sicore_retenciones')
+            .update({ nro_comprobante: asig.nroComp, nro_certificado: asig.nroCert })
+            .eq('id', id)
+        }
       }
     }
 
