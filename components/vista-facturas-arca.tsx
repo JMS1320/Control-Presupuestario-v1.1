@@ -2739,38 +2739,59 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       // Asignar nro_comprobante y nro_certificado al insertar (no esperar al cierre TXT)
       const anoActual = new Date().getFullYear()
 
-      // nro_comprobante: perpetuo, tomar MAX global + 1
-      const { data: maxComp } = await supabase
+      // Verificar si ya existe otro registro del mismo grupo (cuit+tipo+quincena)
+      // En ese caso reutilizar sus números (ej: Alcorta con múltiples facturas)
+      const { data: mismoGrupo } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .select('nro_comprobante')
+        .select('nro_comprobante, nro_certificado')
+        .eq('cuit_emisor', params.cuit_emisor ?? '')
+        .eq('tipo_sicore', params.tipo_sicore)
+        .eq('quincena', params.quincena)
         .not('nro_comprobante', 'is', null)
-        .order('nro_comprobante', { ascending: false })
         .limit(1)
         .maybeSingle()
-      const siguienteComp = ((maxComp?.nro_comprobante as number | null) ?? 0) + 1
 
-      // nro_certificado: reinicia por año — MAX del seq del año actual + 1
-      const prefijoCert = `0000${anoActual}`
-      const { data: maxCert } = await supabase
-        .schema(schemaName)
-        .from('sicore_retenciones')
-        .select('nro_certificado')
-        .like('nro_certificado', `${prefijoCert}%`)
-        .order('nro_certificado', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      const seqActual = maxCert?.nro_certificado
-        ? parseInt((maxCert.nro_certificado as string).slice(-6), 10)
-        : 0
-      const siguienteCert = `${prefijoCert}${String(seqActual + 1).padStart(6, '0')}`
+      let nroComp: number
+      let nroCert: string
+
+      if (mismoGrupo?.nro_comprobante) {
+        // Reutilizar números del grupo existente
+        nroComp = mismoGrupo.nro_comprobante as number
+        nroCert = mismoGrupo.nro_certificado as string
+      } else {
+        // Nuevo grupo — asignar siguiente número perpetuo
+        const { data: maxComp } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('nro_comprobante')
+          .not('nro_comprobante', 'is', null)
+          .order('nro_comprobante', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        nroComp = ((maxComp?.nro_comprobante as number | null) ?? 0) + 1
+
+        const prefijoCert = `0000${anoActual}`
+        const { data: maxCert } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('nro_certificado')
+          .like('nro_certificado', `${prefijoCert}%`)
+          .order('nro_certificado', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const seqActual = maxCert?.nro_certificado
+          ? parseInt((maxCert.nro_certificado as string).slice(-6), 10)
+          : 0
+        nroCert = `${prefijoCert}${String(seqActual + 1).padStart(6, '0')}`
+      }
 
       const { error } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .insert({ ...params, nro_comprobante: siguienteComp, nro_certificado: siguienteCert })
+        .insert({ ...params, nro_comprobante: nroComp, nro_certificado: nroCert })
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${siguienteComp} cert=${siguienteCert}`)
+      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert}`)
     } catch (err) {
       console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
     }
