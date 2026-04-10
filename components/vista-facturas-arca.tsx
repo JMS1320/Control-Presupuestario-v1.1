@@ -2736,12 +2736,41 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     pago: number
   }) => {
     try {
+      // Asignar nro_comprobante y nro_certificado al insertar (no esperar al cierre TXT)
+      const anoActual = new Date().getFullYear()
+
+      // nro_comprobante: perpetuo, tomar MAX global + 1
+      const { data: maxComp } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('nro_comprobante')
+        .not('nro_comprobante', 'is', null)
+        .order('nro_comprobante', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const siguienteComp = ((maxComp?.nro_comprobante as number | null) ?? 0) + 1
+
+      // nro_certificado: reinicia por año — MAX del seq del año actual + 1
+      const prefijoCert = `0000${anoActual}`
+      const { data: maxCert } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('nro_certificado')
+        .like('nro_certificado', `${prefijoCert}%`)
+        .order('nro_certificado', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const seqActual = maxCert?.nro_certificado
+        ? parseInt((maxCert.nro_certificado as string).slice(-6), 10)
+        : 0
+      const siguienteCert = `${prefijoCert}${String(seqActual + 1).padStart(6, '0')}`
+
       const { error } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .insert(params)
+        .insert({ ...params, nro_comprobante: siguienteComp, nro_certificado: siguienteCert })
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, params.origen)
+      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${siguienteComp} cert=${siguienteCert}`)
     } catch (err) {
       console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
     }
