@@ -99,6 +99,27 @@ npm test
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
 
+## 🚀 **AVANCES SESIÓN 2026-04-10 (continuación):**
+
+### ✅ **CERTIFICADO DE RETENCIÓN — 3 FIXES**
+- **Comprobante N°**: usa `nro_certificado` formateado como `YYYY-XXXXXX` (antes: UUID)
+- **Comprob. que origina**: `Orden de Pago Nro: XXXXXXXXXX` con `SUM(pago)` y `SUM(retencion)` del grupo
+- **Régimen Bienes**: `ADQUISICIÓN DE BIENES` (antes: `COMPRA DE BS. DE CAMBIO`)
+- `generarCertificadoRetencion` ahora acepta array de registros y agrega montos del grupo
+- `descargarTodosLosCertificados` agrupa por `nro_certificado` antes de iterar
+- `TablaRegistrosV2` botón individual pasa grupo completo (mismo `nro_certificado`) al handler
+
+### ✅ **nro_comprobante y nro_certificado SE ASIGNAN AL INSERTAR (no al cerrar TXT)**
+- `registrarEnSicoreRetenciones`: asigna números al crear el registro
+- Si ya existe registro del mismo grupo (cuit+tipo_sicore+quincena) → reutiliza sus números (caso Alcorta)
+- Si es nuevo grupo → asigna siguiente nro perpetuo (MAX+1)
+- TXT sigue funcionando igual gracias al guard de idempotencia
+- **BD manual**: 1ra quincena abril asignada (comp 11-14, cert 00002026000011-14)
+  - ALCORTA/Bienes → 11 (3 registros comparten)
+  - HERNANDEZ/Bienes → 12
+  - MASSAGLIA/Servicios → 13
+  - RIGO/Servicios → 14
+
 ## 🚀 **AVANCES SESIÓN 2026-04-10:**
 
 ### ✅ **FIX TEMPLATES — MONTO=0 NO REVERTÍA AL FILTRAR**
