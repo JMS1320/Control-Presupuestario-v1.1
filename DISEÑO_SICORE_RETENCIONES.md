@@ -35,6 +35,9 @@
 | **`nro_comprobante` perpetuo + `nro_certificado` por año en `sicore_retenciones`** | ✅ |
 | **Guard idempotencia al regenerar TXT (reutiliza nros guardados)** | ✅ |
 | **DDJJ SICORE — confirmación + bloqueo post-declaración** | ✅ |
+| **Certificado retención — nro_certificado, Orden de Pago global, régimen correcto** | ✅ |
+| **Nros asignados al insertar retención (no al cerrar TXT)** | ✅ |
+| **Reutilización nro de grupo (cuit+tipo+quincena) para casos multi-factura** | ✅ |
 
 ---
 
