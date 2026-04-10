@@ -3903,6 +3903,108 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  const generarTXTCierreV2 = async (registros: any[], quincena: string, directorio: any = null) => {
+    // Cargar codigos de regimen desde BD
+    const { data: tiposSicore } = await supabase.from('tipos_sicore_config').select('tipo, codigo_regimen')
+    const regimenesMap: Record<string, string> = {}
+    tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
+
+    // Agrupar por cuit_emisor + tipo_sicore
+    const grupos: Record<string, any> = {}
+    for (const r of registros) {
+      const key = `${r.cuit_emisor}||${r.tipo_sicore}`
+      if (!grupos[key]) {
+        grupos[key] = {
+          cuit_emisor: r.cuit_emisor,
+          tipo_sicore: r.tipo_sicore,
+          fecha_pago: r.fecha_pago,
+          pago: 0,
+          neto_gravado_pagado: 0,
+          retencion: 0,
+        }
+      }
+      grupos[key].pago += Number(r.pago) || 0
+      grupos[key].neto_gravado_pagado += Number(r.neto_gravado_pagado) || 0
+      grupos[key].retencion += Number(r.retencion) || 0
+      if (r.fecha_pago > grupos[key].fecha_pago) grupos[key].fecha_pago = r.fecha_pago
+    }
+
+    const gruposOrdenados = Object.values(grupos).sort((a: any, b: any) =>
+      a.cuit_emisor.localeCompare(b.cuit_emisor)
+    )
+
+    // Parsear quincena "26-03 - 1ra" → yy=26, mm=03, q=1
+    const partes = quincena.split(' - ')
+    const [yy, mm] = partes[0].split('-')
+    const q = partes[1]?.startsWith('1') ? '1' : '2'
+    const anoCompleto = '20' + yy
+
+    const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
+    const padRight = (s: string, n: number) => s.padEnd(n, ' ')
+    const formatMonto = (n: number, largo: number) =>
+      padLeft(n.toFixed(2).replace('.', ','), largo)
+    const formatFecha = (iso: string) => {
+      const [a, m, d] = iso.split('-')
+      return `${d}/${m}/${a}`
+    }
+
+    const CUIT_RETENEDOR = '30617786016'
+    const lineas: string[] = []
+    let seq = 1
+
+    for (const g of gruposOrdenados) {
+      const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
+      const nroComp = padLeft(String(seq), 16)
+      const nroCert = '0000' + anoCompleto + String(seq).padStart(6, '0')
+      const fecha   = formatFecha(g.fecha_pago)
+
+      const linea =
+        '06'                              +  // 1-2:   código comprobante
+        fecha                             +  // 3-12:  fecha emisión comprobante
+        nroComp                           +  // 13-28: nro comprobante (16, right)
+        formatMonto(g.pago, 16)           +  // 29-44: importe comprobante (16, right)
+        '0217'                            +  // 45-48: código impuesto
+        codigoRegimen                     +  // 49-51: código régimen (3)
+        '1'                               +  // 52:    código operación
+        formatMonto(g.neto_gravado_pagado, 14) +  // 53-66: base de cálculo (14, right)
+        fecha                             +  // 67-76: fecha emisión retención
+        '01'                              +  // 77-78: código condición
+        '0'                               +  // 79:    ret. sujetos suspendidos
+        formatMonto(g.retencion, 14)      +  // 80-93: importe retención (14, right)
+        '      '                          +  // 94-99: porcentaje exclusión (6 blancos)
+        '          '                      +  // 100-109: fecha publicación (10 blancos)
+        '80'                              +  // 110-111: tipo doc
+        padRight(g.cuit_emisor, 20)       +  // 112-131: nro doc retenido (20, left)
+        nroCert                              // 132-145: nro certificado (14)
+
+      lineas.push(linea)
+      seq++
+    }
+
+    const contenido = lineas.join('\r\n') + '\r\n'
+    const nombreArchivo = `GE_${yy}_${mm}${q}_${CUIT_RETENEDOR}.TXT`
+    const blob = new Blob([contenido], { type: 'text/plain' })
+
+    const descargarBlob = () => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = nombreArchivo; a.click()
+      URL.revokeObjectURL(url)
+    }
+
+    if (directorio) {
+      try {
+        const h = await directorio.getFileHandle(nombreArchivo, { create: true })
+        const w = await h.createWritable()
+        await w.write(blob); await w.close()
+      } catch { descargarBlob() }
+    } else {
+      descargarBlob()
+    }
+
+    return { nombreArchivo, grupos: gruposOrdenados.length }
+  }
+
   const procesarCierreV2 = async (quincena: string) => {
     try {
       setProcesandoCierreV2(true)
@@ -3922,9 +4024,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       }
       await generarExcelCierreV2(registros, quincena, subcarpeta)
       await generarPDFCierreV2(registros, quincena, subcarpeta)
+      const txtInfo = await generarTXTCierreV2(registros, quincena, subcarpeta)
       const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
-      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
     } catch (error) {
       console.error('Error cierre v2:', error)
       alert('Error: ' + (error as Error).message)
