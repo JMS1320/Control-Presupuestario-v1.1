@@ -3909,7 +3909,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     const regimenesMap: Record<string, string> = {}
     tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
 
-    // Agrupar por cuit_emisor + tipo_sicore
+    // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
     const grupos: Record<string, any> = {}
     for (const r of registros) {
       const key = `${r.cuit_emisor}||${r.tipo_sicore}`
@@ -3921,12 +3921,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           pago: 0,
           neto_gravado_pagado: 0,
           retencion: 0,
+          ids: [] as string[],
         }
       }
       grupos[key].pago += Number(r.pago) || 0
       grupos[key].neto_gravado_pagado += Number(r.neto_gravado_pagado) || 0
       grupos[key].retencion += Number(r.retencion) || 0
       if (r.fecha_pago > grupos[key].fecha_pago) grupos[key].fecha_pago = r.fecha_pago
+      grupos[key].ids.push(r.id)
     }
 
     const gruposOrdenados = Object.values(grupos).sort((a: any, b: any) =>
@@ -3939,6 +3941,25 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     const q = partes[1]?.startsWith('1') ? '1' : '2'
     const anoCompleto = '20' + yy
 
+    // Obtener próximo nro_comprobante perpetuo (con overflow a 1 si supera 16 dígitos)
+    const MAX_NRO_COMP = 9999999999999999n
+    const { data: maxCompRow } = await supabase
+      .schema('msa').from('sicore_retenciones')
+      .select('nro_comprobante')
+      .not('nro_comprobante', 'is', null)
+      .order('nro_comprobante', { ascending: false })
+      .limit(1)
+      .single()
+    const maxComp = maxCompRow ? BigInt(maxCompRow.nro_comprobante) : 0n
+    let nextComp = maxComp >= MAX_NRO_COMP ? 1n : maxComp + 1n
+
+    // Obtener próximo secuencial de nro_certificado para el año actual
+    const { count: certCount } = await supabase
+      .schema('msa').from('sicore_retenciones')
+      .select('id', { count: 'exact', head: true })
+      .like('nro_certificado', `0000${anoCompleto}%`)
+    let nextCertSeq = (certCount ?? 0) + 1
+
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
     const formatMonto = (n: number, largo: number) =>
@@ -3950,12 +3971,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
     const CUIT_RETENEDOR = '30617786016'
     const lineas: string[] = []
-    let seq = 1
+    // Para el UPDATE posterior: mapear ids → nro asignado
+    const asignaciones: Array<{ ids: string[], nroComp: number, nroCert: string }> = []
 
     for (const g of gruposOrdenados) {
       const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
-      const nroComp = padLeft(String(seq), 16)
-      const nroCert = '0000' + anoCompleto + String(seq).padStart(6, '0')
+      const nroCompNum = Number(nextComp)
+      const nroComp = padLeft(String(nroCompNum), 16)
+      const nroCert = '0000' + anoCompleto + String(nextCertSeq).padStart(6, '0')
       const fecha   = formatFecha(g.fecha_pago)
 
       const linea =
@@ -3978,7 +4001,19 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         nroCert                              // 132-145: nro certificado (14)
 
       lineas.push(linea)
-      seq++
+      asignaciones.push({ ids: g.ids, nroComp: nroCompNum, nroCert })
+
+      nextComp = nextComp >= MAX_NRO_COMP ? 1n : nextComp + 1n
+      nextCertSeq++
+    }
+
+    // Guardar nro_comprobante y nro_certificado en BD para cada registro
+    for (const asig of asignaciones) {
+      for (const id of asig.ids) {
+        await supabase.schema('msa').from('sicore_retenciones')
+          .update({ nro_comprobante: asig.nroComp, nro_certificado: asig.nroCert })
+          .eq('id', id)
+      }
     }
 
     const contenido = lineas.join('\r\n') + '\r\n'
