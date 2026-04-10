@@ -31,6 +31,10 @@
 | **Transferencia anticipo→FC en `confirmarVinculacion`** | ✅ |
 | **`resetearAnticipo` — limpia v2 + inline + estado** | ✅ |
 | **Botón ↩ revertir pagar→pendiente (Admin only, Vista Pagos)** | ✅ |
+| **Exportación TXT ARCA — formato posicional 145 chars (v9.0)** | ✅ |
+| **`nro_comprobante` perpetuo + `nro_certificado` por año en `sicore_retenciones`** | ✅ |
+| **Guard idempotencia al regenerar TXT (reutiliza nros guardados)** | ✅ |
+| **DDJJ SICORE — confirmación + bloqueo post-declaración** | ✅ |
 
 ---
 
@@ -45,16 +49,17 @@ CREATE TABLE tipos_sicore_config (
   emoji VARCHAR(10) NOT NULL,
   minimo_no_imponible DECIMAL(15,2) NOT NULL,
   porcentaje_retencion DECIMAL(5,4) NOT NULL,
-  activo BOOLEAN DEFAULT true
+  activo BOOLEAN DEFAULT true,
+  codigo_regimen VARCHAR(3)   -- código ARCA para TXT posicional
 );
 ```
 
-| id | tipo | emoji | mínimo | % |
-|----|------|-------|--------|---|
-| 1 | Arrendamiento | 🏠 | $134,400 | 6.00% |
-| 2 | Bienes | 📦 | $224,000 | 2.00% |
-| 3 | Servicios | 🔧 | $67,170 | 2.00% |
-| 4 | Transporte | 🚛 | $67,170 | 0.25% |
+| id | tipo | emoji | mínimo | % | codigo_regimen |
+|----|------|-------|--------|---|---------------|
+| 1 | Arrendamiento | 🏠 | $134,400 | 6.00% | 032 |
+| 2 | Bienes | 📦 | $224,000 | 2.00% | 078 |
+| 3 | Servicios | 🔧 | $67,170 | 2.00% | 094 |
+| 4 | Transporte | 🚛 | $67,170 | 0.25% | 095 |
 
 ### Campos agregados a `msa.comprobantes_arca`
 
@@ -220,10 +225,87 @@ Si el registro ya fue transferido (tiene `factura_id`), no se borra — queda li
 
 ---
 
+---
+
+## 📤 Exportación TXT ARCA (SICORE v9.0)
+
+### Formato
+
+Archivo de texto plano, **145 caracteres por línea**, `\r\n` como separador. Nombre: `GE_YY_MM{Q}_CUIT.TXT`
+
+| Pos | Largo | Campo | Valor |
+|-----|-------|-------|-------|
+| 1-2 | 2 | Código comprobante | `06` |
+| 3-12 | 10 | Fecha emisión | `DD/MM/YYYY` |
+| 13-28 | 16 | Nro comprobante | Right-justified, spaces |
+| 29-44 | 16 | Importe comprobante | `SUM(pago)`, coma decimal |
+| 45-48 | 4 | Código impuesto | `0217` |
+| 49-51 | 3 | Código régimen | De `tipos_sicore_config.codigo_regimen` |
+| 52 | 1 | Código operación | `1` |
+| 53-66 | 14 | Base de cálculo | `SUM(neto_gravado_pagado)` |
+| 67-76 | 10 | Fecha emisión retención | `DD/MM/YYYY` |
+| 77-78 | 2 | Código condición | `01` |
+| 79 | 1 | Ret. sujetos suspendidos | `0` |
+| 80-93 | 14 | Importe retención | `SUM(retencion)` |
+| 94-99 | 6 | Porcentaje exclusión | blancos |
+| 100-109 | 10 | Fecha publicación | blancos |
+| 110-111 | 2 | Tipo documento | `80` |
+| 112-131 | 20 | Nro documento retenido | CUIT left-justified |
+| 132-145 | 14 | Nro certificado | `0000YYYY{seq6}` |
+
+**Agrupación**: múltiples facturas del mismo `cuit_emisor + tipo_sicore` → **1 línea** con montos sumados.
+
+### Numeración
+
+- **`nro_comprobante`** (BIGINT en `sicore_retenciones`): perpetuo, nunca reinicia salvo overflow a 9,999,999,999,999,999
+- **`nro_certificado`** (VARCHAR 14): seq interno reinicia cada año calendario (`0000YYYY000001`), el año cambia automáticamente
+- Ambos se guardan en BD al generar el TXT → trazabilidad completa
+- **Guard idempotencia**: si todos los registros de la quincena ya tienen `nro_comprobante` → regenera TXT con los números guardados sin recalcular ni sobreescribir
+
+### Función principal
+
+`generarTXTCierreV2(registros, quincena, directorio)` — en `vista-facturas-arca.tsx`
+
+---
+
+## 🔒 DDJJ SICORE — Confirmación y Bloqueo
+
+### Flujo
+
+```
+TXT descargado (nro_comprobante asignado, ddjj_confirmada=FALSE)
+     ↓ usuario declara a AFIP manualmente
+     ↓ regresa a Cierre v2 → banner naranja → "Confirmar DDJJ"
+     ↓
+ddjj_confirmada=TRUE → 🔒 quincena bloqueada
+```
+
+### Campo BD
+
+```sql
+ALTER TABLE msa.sicore_retenciones
+  ADD COLUMN ddjj_confirmada BOOLEAN DEFAULT FALSE;
+```
+
+### Bloqueos activos
+
+- `resetearFactura()`: si algún registro tiene `ddjj_confirmada=TRUE` → alert bloqueante
+- `resetearAnticipo()`: ídem
+- Regenerar TXT: **permitido** (solo descarga, no modifica `ddjj_confirmada`)
+
+### UI
+
+- Banner **naranja** + botón "✅ Confirmar DDJJ" cuando quincena tiene TXT pero no confirmada
+- Banner **gris 🔒** cuando quincena ya declarada
+- Ubicación: tab **Cierre v2** del panel SICORE
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **PDF comprobante retención**: Formato AFIP oficial por proveedor
 - **Email automático**: Envío PDF al proveedor al confirmar
 - **Templates SICORE 60-61**: Llenado automático al cerrar quincena
 - **Gestión masiva + SICORE**: Modal unificado para múltiples facturas simultáneas
+- **Rectificación DDJJ**: Flujo para modificar quincena ya declarada (desbloquear + generar TXT rectificativo)
 - **Gap 28.5 / doble conteo**: Testear con caso real anticipo parcial + FC para validar comportamiento actual
