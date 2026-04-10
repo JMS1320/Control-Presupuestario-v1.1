@@ -99,6 +99,34 @@ npm test
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
 
+## 🚀 **AVANCES SESIÓN 2026-04-10:**
+
+### ✅ **FIX TEMPLATES — MONTO=0 NO REVERTÍA AL FILTRAR**
+- `actualizarCuotaLocal` solo actualizaba `cuotas` pero no `cuotasOriginales`
+- `aplicarFiltros()` lee de `cuotasOriginales` → el cambio se perdía al filtrar
+- Fix: `setCuotasOriginales` agregado en `actualizarCuotaLocal`
+
+### ✅ **EXPORTACIÓN TXT ARCA — SICORE v9.0**
+- `generarTXTCierreV2`: genera `GE_YY_MM{Q}_CUIT.TXT` con formato posicional 145 chars
+- Agrupa por `cuit_emisor + tipo_sicore` (múltiples facturas = 1 línea con montos sumados)
+- `codigo_regimen` agregado a `tipos_sicore_config`: Arr=032, Bienes=078, Serv=094, Transp=095
+
+### ✅ **SECUENCIAL PERSISTENTE — nro_comprobante + nro_certificado**
+- `nro_comprobante BIGINT`: perpetuo, nunca reinicia salvo overflow
+- `nro_certificado VARCHAR(14)`: seq interno reinicia cada año (`0000YYYY000001`)
+- Guarda en cada registro de `sicore_retenciones` al generar TXT
+- Guard idempotencia: si quincena ya tiene nros → regenera TXT sin sobreescribir ni incrementar
+
+### ✅ **DDJJ SICORE — CONFIRMACIÓN Y BLOQUEO**
+- Campo `ddjj_confirmada BOOLEAN DEFAULT FALSE` en `sicore_retenciones`
+- UI Cierre v2: banner naranja → "Confirmar DDJJ" → banner 🔒 post-confirmación
+- `resetearFactura` y `resetearAnticipo`: bloquean si `ddjj_confirmada=TRUE`
+- Regenerar TXT siempre permitido (no afecta `ddjj_confirmada`)
+
+### ✅ **DOCUMENTACIÓN**
+- `DISEÑO_SICORE_RETENCIONES.md`: tabla summary + secciones TXT + DDJJ + pendientes
+- `GUIA_RAPIDA_RECONSTRUCCION.md` Paso 6b: nuevas columnas + codigo_regimen
+
 ## 🚀 **AVANCES SESIÓN 2026-04-09:**
 
 ### ✅ **VISTA PAGOS — UX OCULTAR SECCIONES VACÍAS**

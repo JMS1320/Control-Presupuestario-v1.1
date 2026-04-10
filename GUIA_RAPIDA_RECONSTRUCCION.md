@@ -279,6 +279,20 @@ GRANT DELETE ON msa.sicore_retenciones TO anon;
 -- DEFAULT ddjj_iva debe ser 'No' (el backup puede traerlo como 'Pendiente')
 ALTER TABLE msa.comprobantes_arca ALTER COLUMN ddjj_iva SET DEFAULT 'No';
 UPDATE msa.comprobantes_arca SET ddjj_iva = 'No' WHERE ddjj_iva = 'Pendiente';
+
+-- Columnas TXT SICORE (secuencial exportación + DDJJ)
+ALTER TABLE msa.sicore_retenciones
+  ADD COLUMN IF NOT EXISTS nro_comprobante BIGINT,
+  ADD COLUMN IF NOT EXISTS nro_certificado VARCHAR(14),
+  ADD COLUMN IF NOT EXISTS ddjj_confirmada BOOLEAN DEFAULT FALSE;
+
+-- Código régimen ARCA por tipo SICORE
+ALTER TABLE public.tipos_sicore_config
+  ADD COLUMN IF NOT EXISTS codigo_regimen VARCHAR(3);
+UPDATE public.tipos_sicore_config SET codigo_regimen = '032' WHERE tipo = 'Arrendamiento';
+UPDATE public.tipos_sicore_config SET codigo_regimen = '078' WHERE tipo = 'Bienes';
+UPDATE public.tipos_sicore_config SET codigo_regimen = '094' WHERE tipo = 'Servicios';
+UPDATE public.tipos_sicore_config SET codigo_regimen = '095' WHERE tipo = 'Transporte';
 ```
 
 **✅ Verificación:**
@@ -286,6 +300,14 @@ UPDATE msa.comprobantes_arca SET ddjj_iva = 'No' WHERE ddjj_iva = 'Pendiente';
 SELECT column_default FROM information_schema.columns
 WHERE table_schema = 'msa' AND table_name = 'comprobantes_arca' AND column_name = 'ddjj_iva';
 -- Debe retornar: 'No'::character varying
+
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'msa' AND table_name = 'sicore_retenciones'
+  AND column_name IN ('nro_comprobante','nro_certificado','ddjj_confirmada');
+-- Debe retornar: 3 filas
+
+SELECT tipo, codigo_regimen FROM public.tipos_sicore_config ORDER BY id;
+-- Debe retornar 4 filas con códigos 032/078/094/095
 ```
 
 - [ ] GRANTs aplicados

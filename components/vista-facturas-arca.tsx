@@ -3043,7 +3043,22 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (!window.confirm(msg)) return
 
     try {
-      // 1. Borrar registro v2
+      // 1. Verificar si la retención ya fue declarada (DDJJ confirmada)
+      if (factura.sicore || factura.monto_sicore) {
+        const { data: retRows } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('ddjj_confirmada')
+          .eq('factura_id', factura.id)
+          .eq('ddjj_confirmada', true)
+          .limit(1)
+        if (retRows && retRows.length > 0) {
+          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+          return
+        }
+      }
+
+      // 2. Borrar registro v2
       const { error: errDel } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
@@ -3084,6 +3099,43 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  // Confirmar DDJJ SICORE — bloquea modificaciones de la quincena
+  const confirmarDDJJSicore = async (quincena: string) => {
+    const registros = await buscarRetencionesV2(quincena)
+    if (registros.length === 0) return
+
+    const sinTXT = registros.some((r: any) => r.nro_comprobante == null)
+    if (sinTXT) {
+      alert('⚠️ Esta quincena aún no fue exportada (faltan números de comprobante). Generá el Export v2 antes de confirmar la DDJJ.')
+      return
+    }
+
+    const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
+    const ok = window.confirm(
+      `¿Confirmar DDJJ SICORE quincena ${quincena}?\n\n` +
+      `• ${registros.length} retenciones\n` +
+      `• Total: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n` +
+      `⚠️ Una vez confirmada, no se podrán modificar ni resetear las retenciones de esta quincena.`
+    )
+    if (!ok) return
+
+    const ids = registros.map((r: any) => r.id)
+    const { error } = await supabase
+      .schema(schemaName)
+      .from('sicore_retenciones')
+      .update({ ddjj_confirmada: true })
+      .in('id', ids)
+
+    if (error) {
+      alert('Error al confirmar DDJJ: ' + error.message)
+      return
+    }
+
+    // Actualizar estado local en registrosV2
+    setRegistrosV2(prev => prev.map((r: any) => ({ ...r, ddjj_confirmada: true })))
+    alert(`✅ DDJJ SICORE confirmada — quincena ${quincena}`)
+  }
+
   // Solo Admin — Resetear anticipo a estado pendiente (limpia SICORE si existe)
   const resetearAnticipo = async (anticipo: any) => {
     const tieneSicore = anticipo.sicore || anticipo.monto_sicore
@@ -3093,6 +3145,19 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (!window.confirm(msg)) return
     try {
       if (tieneSicore) {
+        // Verificar si la retención ya fue declarada (DDJJ confirmada)
+        const { data: retRows } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .select('ddjj_confirmada')
+          .eq('anticipo_id', anticipo.id)
+          .eq('ddjj_confirmada', true)
+          .limit(1)
+        if (retRows && retRows.length > 0) {
+          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+          return
+        }
+
         // Borrar registro v2 solo si aún no está vinculado a una FC
         const { error: errDel } = await supabase
           .schema(schemaName)
@@ -3903,6 +3968,188 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  const generarTXTCierreV2 = async (registros: any[], quincena: string, directorio: any = null) => {
+    // Cargar codigos de regimen desde BD
+    const { data: tiposSicore } = await supabase.from('tipos_sicore_config').select('tipo, codigo_regimen')
+    const regimenesMap: Record<string, string> = {}
+    tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
+
+    // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
+    const grupos: Record<string, any> = {}
+    for (const r of registros) {
+      const key = `${r.cuit_emisor}||${r.tipo_sicore}`
+      if (!grupos[key]) {
+        grupos[key] = {
+          cuit_emisor: r.cuit_emisor,
+          tipo_sicore: r.tipo_sicore,
+          fecha_pago: r.fecha_pago,
+          pago: 0,
+          neto_gravado_pagado: 0,
+          retencion: 0,
+          ids: [] as string[],
+        }
+      }
+      grupos[key].pago += Number(r.pago) || 0
+      grupos[key].neto_gravado_pagado += Number(r.neto_gravado_pagado) || 0
+      grupos[key].retencion += Number(r.retencion) || 0
+      if (r.fecha_pago > grupos[key].fecha_pago) grupos[key].fecha_pago = r.fecha_pago
+      grupos[key].ids.push(r.id)
+    }
+
+    const gruposOrdenados = Object.values(grupos).sort((a: any, b: any) =>
+      a.cuit_emisor.localeCompare(b.cuit_emisor)
+    )
+
+    // Parsear quincena "26-03 - 1ra" → yy=26, mm=03, q=1
+    const partes = quincena.split(' - ')
+    const [yy, mm] = partes[0].split('-')
+    const q = partes[1]?.startsWith('1') ? '1' : '2'
+    const anoCompleto = '20' + yy
+
+    // Verificar si esta quincena ya fue cerrada (guard idempotencia)
+    // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
+    const yaAsignados = registros.every((r: any) => r.nro_comprobante != null)
+
+    const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
+    const padRight = (s: string, n: number) => s.padEnd(n, ' ')
+    const formatMonto = (n: number, largo: number) =>
+      padLeft(n.toFixed(2).replace('.', ','), largo)
+    const formatFecha = (iso: string) => {
+      const [a, m, d] = iso.split('-')
+      return `${d}/${m}/${a}`
+    }
+
+    const CUIT_RETENEDOR = '30617786016'
+    const lineas: string[] = []
+    const asignaciones: Array<{ ids: string[], nroComp: number, nroCert: string }> = []
+
+    if (yaAsignados) {
+      // Quincena ya cerrada: usar números guardados en BD, no sobreescribir
+      for (const g of gruposOrdenados) {
+        // Tomar nro_comprobante/nro_certificado del primer registro del grupo (todos iguales)
+        const primerReg = registros.find((r: any) => g.ids.includes(r.id))
+        const nroCompNum = Number(primerReg?.nro_comprobante ?? 0)
+        const nroCert    = primerReg?.nro_certificado ?? ''
+        const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
+        const nroComp = padLeft(String(nroCompNum), 16)
+        const fecha   = formatFecha(g.fecha_pago)
+
+        const linea =
+          '06'                              +
+          fecha                             +
+          nroComp                           +
+          formatMonto(g.pago, 16)           +
+          '0217'                            +
+          codigoRegimen                     +
+          '1'                               +
+          formatMonto(g.neto_gravado_pagado, 14) +
+          fecha                             +
+          '01'                              +
+          '0'                               +
+          formatMonto(g.retencion, 14)      +
+          '      '                          +
+          '          '                      +
+          '80'                              +
+          padRight(g.cuit_emisor, 20)       +
+          nroCert
+
+        lineas.push(linea)
+      }
+    } else {
+      // Quincena nueva: calcular próximos números y guardar en BD
+      const MAX_NRO_COMP = 9999999999999999n
+      const { data: maxCompRow } = await supabase
+        .schema('msa').from('sicore_retenciones')
+        .select('nro_comprobante')
+        .not('nro_comprobante', 'is', null)
+        .order('nro_comprobante', { ascending: false })
+        .limit(1)
+        .single()
+      const maxComp = maxCompRow ? BigInt(maxCompRow.nro_comprobante) : 0n
+      let nextComp = maxComp >= MAX_NRO_COMP ? 1n : maxComp + 1n
+
+      // cert seq = mismo valor que nro_comprobante (siempre sincronizados)
+      // pero reinicia por año: buscar MAX del seq interno del año actual
+      const { data: maxCertRow } = await supabase
+        .schema('msa').from('sicore_retenciones')
+        .select('nro_certificado')
+        .like('nro_certificado', `0000${anoCompleto}%`)
+        .not('nro_certificado', 'is', null)
+        .order('nro_certificado', { ascending: false })
+        .limit(1)
+        .single()
+      const maxCertSeq = maxCertRow
+        ? parseInt(maxCertRow.nro_certificado.slice(-6), 10)
+        : 0
+      let nextCertSeq = maxCertSeq + 1
+
+      for (const g of gruposOrdenados) {
+        const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
+        const nroCompNum = Number(nextComp)
+        const nroComp = padLeft(String(nroCompNum), 16)
+        const nroCert = '0000' + anoCompleto + String(nextCertSeq).padStart(6, '0')
+        const fecha   = formatFecha(g.fecha_pago)
+
+        const linea =
+          '06'                              +  // 1-2:   código comprobante
+          fecha                             +  // 3-12:  fecha emisión comprobante
+          nroComp                           +  // 13-28: nro comprobante (16, right)
+          formatMonto(g.pago, 16)           +  // 29-44: importe comprobante (16, right)
+          '0217'                            +  // 45-48: código impuesto
+          codigoRegimen                     +  // 49-51: código régimen (3)
+          '1'                               +  // 52:    código operación
+          formatMonto(g.neto_gravado_pagado, 14) +  // 53-66: base de cálculo (14, right)
+          fecha                             +  // 67-76: fecha emisión retención
+          '01'                              +  // 77-78: código condición
+          '0'                               +  // 79:    ret. sujetos suspendidos
+          formatMonto(g.retencion, 14)      +  // 80-93: importe retención (14, right)
+          '      '                          +  // 94-99: porcentaje exclusión (6 blancos)
+          '          '                      +  // 100-109: fecha publicación (10 blancos)
+          '80'                              +  // 110-111: tipo doc
+          padRight(g.cuit_emisor, 20)       +  // 112-131: nro doc retenido (20, left)
+          nroCert                              // 132-145: nro certificado (14)
+
+        lineas.push(linea)
+        asignaciones.push({ ids: g.ids, nroComp: nroCompNum, nroCert })
+
+        nextComp = nextComp >= MAX_NRO_COMP ? 1n : nextComp + 1n
+        nextCertSeq++
+      }
+
+      // Guardar en BD
+      for (const asig of asignaciones) {
+        for (const id of asig.ids) {
+          await supabase.schema('msa').from('sicore_retenciones')
+            .update({ nro_comprobante: asig.nroComp, nro_certificado: asig.nroCert })
+            .eq('id', id)
+        }
+      }
+    }
+
+    const contenido = lineas.join('\r\n') + '\r\n'
+    const nombreArchivo = `GE_${yy}_${mm}${q}_${CUIT_RETENEDOR}.TXT`
+    const blob = new Blob([contenido], { type: 'text/plain' })
+
+    const descargarBlob = () => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = nombreArchivo; a.click()
+      URL.revokeObjectURL(url)
+    }
+
+    if (directorio) {
+      try {
+        const h = await directorio.getFileHandle(nombreArchivo, { create: true })
+        const w = await h.createWritable()
+        await w.write(blob); await w.close()
+      } catch { descargarBlob() }
+    } else {
+      descargarBlob()
+    }
+
+    return { nombreArchivo, grupos: gruposOrdenados.length }
+  }
+
   const procesarCierreV2 = async (quincena: string) => {
     try {
       setProcesandoCierreV2(true)
@@ -3922,9 +4169,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       }
       await generarExcelCierreV2(registros, quincena, subcarpeta)
       await generarPDFCierreV2(registros, quincena, subcarpeta)
+      const txtInfo = await generarTXTCierreV2(registros, quincena, subcarpeta)
       const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
-      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
     } catch (error) {
       console.error('Error cierre v2:', error)
       alert('Error: ' + (error as Error).message)
@@ -6580,6 +6828,36 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   ⚠️ Sin registros para esta quincena en sicore_retenciones
                 </div>
               )}
+
+              {/* Estado DDJJ */}
+              {registrosV2.length > 0 && (() => {
+                const ddjjConfirmada = registrosV2.every((r: any) => r.ddjj_confirmada)
+                const tieneTXT = registrosV2.some((r: any) => r.nro_comprobante != null)
+                if (ddjjConfirmada) {
+                  return (
+                    <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700">
+                      <span>🔒</span>
+                      <span className="font-medium">DDJJ Confirmada</span>
+                      <span className="text-gray-500">— esta quincena está declarada a AFIP</span>
+                    </div>
+                  )
+                }
+                if (tieneTXT) {
+                  return (
+                    <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                      <span className="text-sm text-orange-700 flex-1">⚠️ TXT generado pero DDJJ aún no confirmada</span>
+                      <Button
+                        size="sm"
+                        onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
+                        className="bg-orange-600 hover:bg-orange-700 text-white"
+                      >
+                        ✅ Confirmar DDJJ
+                      </Button>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {/* Botones acción */}
               <div className="flex gap-2">
