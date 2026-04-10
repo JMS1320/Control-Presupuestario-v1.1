@@ -346,6 +346,9 @@ export function VistaTemplatesEgresos() {
     setCuotas(prev => prev.map(c =>
       c.id === filaId ? { ...c, [campo]: valor } : c
     ))
+    setCuotasOriginales(prev => prev.map(c =>
+      c.id === filaId ? { ...c, [campo]: valor } : c
+    ))
   }
 
   // Hook unificado (DESPUÉS de cargarCuotas para evitar error inicialización)
