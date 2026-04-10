@@ -137,7 +137,7 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
-function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCertificado?: (registro: any) => void }) {
+function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCertificado?: (registros: any[]) => void }) {
   const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
   const fmtFecha = (f: string | null) => {
     if (!f) return '-'
@@ -197,7 +197,14 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
               {onCertificado && (
                 <td className="border border-green-100 px-2 py-1 text-center">
                   <button
-                    onClick={() => onCertificado(r)}
+                    onClick={() => {
+                      // Agrupar todos los registros con el mismo nro_certificado
+                      const key = r.nro_certificado || r.id
+                      const grupo = r.nro_certificado
+                        ? registros.filter(x => x.nro_certificado === r.nro_certificado)
+                        : [r]
+                      onCertificado(grupo)
+                    }}
                     title="Descargar Certificado de Retención"
                     className="text-blue-600 hover:text-blue-800 transition-colors"
                   >
@@ -4671,24 +4678,28 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   }
 
   // ── Certificado de Retención Ganancias ────────────────────────────────────
-  const generarCertificadoRetencion = async (registro: {
+  const generarCertificadoRetencion = async (registros: Array<{
     id?: string | number
     cuit_emisor: string
     denominacion_emisor: string
     fecha_pago: string
-    fecha_emision?: string | null
-    tipo_comprobante?: number | null
-    punto_venta?: number | null
-    numero_desde?: number | null
     total_pagado: number
     retencion: number
     tipo_sicore: string
-  }, returnBytes = false): Promise<ArrayBuffer | null> => {
+    nro_comprobante?: number | null
+    nro_certificado?: string | null
+  }>, returnBytes = false): Promise<ArrayBuffer | null> => {
+    if (!registros.length) return null
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
       const pageH = doc.internal.pageSize.getHeight()
       const mL = 15
+
+      // Agregar montos del grupo
+      const totalPagado = registros.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+      const totalRetencion = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+      const registro = registros[0]
 
       const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
       const fmtFecha = (f: string | null) => {
@@ -4704,34 +4715,23 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       const regimen = (() => {
         const t = (registro.tipo_sicore || '').toLowerCase()
         if (t.includes('arrendamiento')) return 'ARRENDAMIENTO'
-        if (t.includes('bien')) return 'COMPRA DE BS. DE CAMBIO'
+        if (t.includes('bien')) return 'ADQUISICIÓN DE BIENES'
         if (t.includes('servicio')) return 'LOCACIÓN DE SERVICIOS'
         if (t.includes('transporte')) return 'TRANSPORTE'
         return (registro.tipo_sicore || '').toUpperCase()
       })()
 
-      // Letra según tipo AFIP
-      const letraComprobante = (tipo: number | null | undefined) => {
-        const mapa: Record<number, string> = {
-          1: 'A', 2: 'A', 3: 'A',
-          6: 'B', 7: 'B', 8: 'B',
-          11: 'C', 12: 'C', 13: 'C',
-          51: 'M', 52: 'M', 53: 'M',
-          201: 'A', 202: 'A', 203: 'A',
-          206: 'B', 207: 'B', 208: 'B',
-          211: 'C', 212: 'C', 213: 'C',
-        }
-        return tipo != null ? (mapa[tipo] || String(tipo)) : ''
-      }
-
-      // Comprobante que origina la retención
-      const letra = letraComprobante(registro.tipo_comprobante)
-      const pv = String(registro.punto_venta || 0).padStart(4, '0')
-      const nro = String(registro.numero_desde || 0).padStart(8, '0')
-      const fechaEmision = fmtFecha(registro.fecha_emision || null)
-      const comprobanteOrigen = letra
-        ? `Factura ${letra}  ${pv}-${nro}   (${fechaEmision})`
-        : `Factura — ${fechaEmision}`
+      // Nro comprobante (Orden de Pago) y Nro certificado
+      const nroOP = registro.nro_comprobante
+        ? String(registro.nro_comprobante).padStart(10, '0')
+        : '----------'
+      const nroCert = (() => {
+        const raw = registro.nro_certificado || ''
+        // formato BD: 0000YYYY000001 → mostrar YYYY-XXXXXX
+        if (raw.length === 14) return `${raw.slice(4, 8)}-${raw.slice(8)}`
+        return raw
+      })()
+      const comprobanteOrigen = `Orden de Pago Nro: ${nroOP}`
 
       // ── Borde exterior ────────────────────────────────────────────────────
       doc.setDrawColor(0)
@@ -4746,13 +4746,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       doc.line(8, 25, pageW - 8, 25)
 
       // ── N° comprobante y Fecha ────────────────────────────────────────────
-      const año = new Date(registro.fecha_pago + 'T12:00:00').getFullYear()
-      const nroComp = `${año}-${String(registro.id || '').replace(/-/g,'').substring(0, 8).toUpperCase()}`
       doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.text('Comprobante N°', mL, 33)
       doc.setFont('helvetica', 'italic')
-      doc.text(nroComp, mL + 38, 33)
+      doc.text(nroCert, mL + 38, 33)
       doc.setFont('helvetica', 'bold')
       doc.text('Fecha:', pageW - mL - 35, 33)
       doc.setFont('helvetica', 'normal')
@@ -4824,8 +4822,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         head: [['Comprob. que origina la retención', 'Monto del comprobante', 'Monto Ret. Practicada', 'Régimen']],
         body: [[
           comprobanteOrigen,
-          fmt(registro.total_pagado),
-          fmt(registro.retencion),
+          fmt(totalPagado),
+          fmt(totalRetencion),
           regimen,
         ]],
         theme: 'plain',
@@ -4840,7 +4838,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       doc.setFontSize(10)
       doc.setFont('helvetica', 'bold')
       doc.text('Total de la Retención en $', pageW - mL - 65, afterTable + 15)
-      doc.text(fmt(registro.retencion), pageW - mL, afterTable + 15, { align: 'right' })
+      doc.text(fmt(totalRetencion), pageW - mL, afterTable + 15, { align: 'right' })
 
       // ── Secciones firma ───────────────────────────────────────────────────
       const footerY = pageH - 48
@@ -4871,7 +4869,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       doc.text(lines, 10, pageH - 13)
 
       const cuitClean = (registro.cuit_emisor || '').replace(/\D/g, '')
-      const nombreArchivo = `CertRet_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}_${fmtFecha(registro.fecha_pago).replace(/\//g, '-')}.pdf`
+      const nombreArchivo = `CertRet_${nroCert}_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}.pdf`
 
       if (returnBytes) {
         return doc.output('arraybuffer')
@@ -4895,15 +4893,26 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       const dirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
       setDescargandoCerts(true)
       let count = 0
-      const fmtNombre = (f: string) => {
-        const d = new Date(f + 'T12:00:00')
-        return `${d.getDate().toString().padStart(2,'0')}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getFullYear()}`
+
+      // Agrupar por nro_certificado (mismo criterio de agrupación que el TXT)
+      const grupos = new Map<string, typeof registrosV2>()
+      for (const r of registrosV2) {
+        const key = r.nro_certificado || r.id || String(r.cuit_emisor)
+        if (!grupos.has(String(key))) grupos.set(String(key), [])
+        grupos.get(String(key))!.push(r)
       }
-      for (const registro of registrosV2) {
-        const bytes = await generarCertificadoRetencion(registro, true)
+
+      for (const grupo of grupos.values()) {
+        const bytes = await generarCertificadoRetencion(grupo, true)
         if (!bytes) continue
-        const cuitClean = (registro.cuit_emisor || '').replace(/\D/g, '')
-        const nombre = `CertRet_${cuitClean}_${(registro.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}_${fmtNombre(registro.fecha_pago)}.pdf`
+        const r0 = grupo[0]
+        const nroCertKey = r0.nro_certificado
+          ? (r0.nro_certificado.length === 14
+              ? `${r0.nro_certificado.slice(4,8)}-${r0.nro_certificado.slice(8)}`
+              : r0.nro_certificado)
+          : String(r0.id || '')
+        const cuitClean = (r0.cuit_emisor || '').replace(/\D/g, '')
+        const nombre = `CertRet_${nroCertKey}_${cuitClean}_${(r0.denominacion_emisor || '').replace(/\s+/g, '_').substring(0, 20)}.pdf`
         const fileHandle = await dirHandle.getFileHandle(nombre, { create: true })
         const writable = await fileHandle.createWritable()
         await writable.write(bytes)
