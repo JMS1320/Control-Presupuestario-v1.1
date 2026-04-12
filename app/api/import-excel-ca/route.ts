@@ -275,13 +275,11 @@ export async function POST(req: Request) {
       String(h ?? "").trim()
     )
 
-    // Datos: filas posteriores a cabeceras, en orden del archivo (newest→oldest)
-    const rawDataNewestFirst = allRows.slice(headerRowIndex + 1).filter(
+    // Datos: filas posteriores a cabeceras, en el orden que vienen en el archivo.
+    // CA Galicia ya viene ordenado oldest→newest — NO invertir.
+    const filas = allRows.slice(headerRowIndex + 1).filter(
       (row) => row.some((cell: any) => cell !== "" && cell !== null)
     )
-
-    // Invertir para procesar oldest→newest (necesario para control de saldo)
-    const filas = [...rawDataNewestFirst].reverse()
 
     console.log(`CA Import: archivo=${file.name}, filas=${filas.length}`)
     console.log(`CA Import: cabeceras detectadas:`, headers)
