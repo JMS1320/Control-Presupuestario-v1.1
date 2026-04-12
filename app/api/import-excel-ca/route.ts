@@ -393,7 +393,11 @@ export async function POST(req: Request) {
         if (movimientosUltimaFecha.has(clave)) continue
       }
 
-      const saldo = idxSaldo >= 0 ? parseNumberCA(row[idxSaldo]) : 0
+      // CA Galicia: "Saldo Parcial" = saldo ANTES de la transacción (no después).
+      // Calculamos el saldo post-transacción para guardar en BD y para la
+      // próxima iteración, de forma consistente con MSA CC.
+      const saldoAntes = idxSaldo >= 0 ? parseNumberCA(row[idxSaldo]) : 0
+      const saldoPostTx = saldoAntes + creditos - debitos
       const observacionesCliente =
         idxComentarios >= 0 ? cleanString(row[idxComentarios]) : ""
 
@@ -403,9 +407,8 @@ export async function POST(req: Request) {
       const descripcion =
         parsed["descripcion"] || rawMovimiento.substring(0, 200)
 
-      // Calcular control
-      const control =
-        saldo - (saldoAnterior + creditos - debitos) + controlAnterior
+      // Control: verifica que saldo_antes[n] == saldo_post[n-1]
+      const control = saldoAntes - saldoAnterior + controlAnterior
 
       if (Math.abs(control) > 0.5) {
         controlErrors.push({
@@ -433,7 +436,7 @@ export async function POST(req: Request) {
         descripcion,
         debitos,
         creditos,
-        saldo,
+        saldo: saldoPostTx,   // guardamos saldo post-tx (consistente con MSA CC)
         control,
         grupo_de_conceptos: parsed["grupo_de_conceptos"] ?? "",
         concepto: rawMovimiento,                // texto raw completo
@@ -458,7 +461,7 @@ export async function POST(req: Request) {
 
       rowsParaInsertar.push(filaInsert)
 
-      saldoAnterior = saldo
+      saldoAnterior = saldoPostTx   // para la próxima fila: usamos saldo post-tx
       controlAnterior = control
       nextOrden++
     }
