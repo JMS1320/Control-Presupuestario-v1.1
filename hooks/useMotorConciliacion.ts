@@ -12,7 +12,7 @@ export interface CuentaBancaria {
   nombre: string
   tabla_bd: string
   schema_bd?: string   // 'public' (default) | 'msa'
-  empresa: 'MSA' | 'PAM'
+  empresa: 'MSA' | 'PAM' | 'MA'
   activa: boolean
   tipo?: 'banco' | 'caja'
 }
@@ -39,6 +39,15 @@ export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
     nombre: 'PAM Galicia CC Pesos',
     tabla_bd: 'pam_galicia_cc',
     empresa: 'PAM',
+    activa: true,
+    tipo: 'banco'
+  },
+  {
+    id: 'ma_galicia',
+    nombre: 'MA Galicia CA Pesos',
+    tabla_bd: 'ma_galicia',
+    schema_bd: 'ma',
+    empresa: 'MA',
     activa: true,
     tipo: 'banco'
   },
@@ -134,8 +143,8 @@ export function useMotorConciliacion() {
     try {
       console.log(`🏦 Cargando movimientos de ${cuenta.tabla_bd}...`)
       
-      // Todas las tablas de extractos bancarios están en el schema public
-      let query = supabase.from(cuenta.tabla_bd).select('*').eq('estado', 'Pendiente')
+      const clientSchema = cuenta.schema_bd && cuenta.schema_bd !== 'public' ? supabase.schema(cuenta.schema_bd) : supabase
+      let query = clientSchema.from(cuenta.tabla_bd).select('*').eq('estado', 'Pendiente')
       
       const { data, error } = await query.order('fecha', { ascending: true })
 
@@ -568,8 +577,8 @@ export function useMotorConciliacion() {
   // Función para actualizar movimiento en BD
   const actualizarMovimientoBD = async (cuenta: CuentaBancaria, movimientoId: string, datos: any) => {
     try {
-      // Todas las tablas de extractos bancarios están en el schema public
-      let query = supabase.from(cuenta.tabla_bd).update(datos).eq('id', movimientoId)
+      const clientSchema = cuenta.schema_bd && cuenta.schema_bd !== 'public' ? supabase.schema(cuenta.schema_bd) : supabase
+      let query = clientSchema.from(cuenta.tabla_bd).update(datos).eq('id', movimientoId)
       
       const { error } = await query
 

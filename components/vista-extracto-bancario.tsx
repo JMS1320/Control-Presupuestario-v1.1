@@ -1838,6 +1838,7 @@ export function VistaExtractoBancario() {
               msa_galicia:     { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia_cc:  { endpoint: '/api/import-excel',    formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia:     { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+              ma_galicia:      { endpoint: '/api/import-excel-ca', formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
