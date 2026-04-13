@@ -99,6 +99,58 @@ npm test
 **Iniciado**: 2026-03-22
 **Contexto**: Unificación arquitectura contable extracto bancario + motor conciliación completo
 
+## 🚀 **AVANCES SESIÓN 2026-04-12 — IMPORTADOR CA GALICIA + FIXES EXTRACTO**
+
+### ✅ **IMPORTADOR CA GALICIA — `app/api/import-excel-ca/route.ts`**
+- Nuevo endpoint para Caja de Ahorro Galicia (PAM y futuro MA)
+- Formato 6 columnas: Fecha / Movimiento / Débito / Crédito / Saldo Parcial / Comentarios
+- Headers en fila ~5 (búsqueda dinámica por "Fecha"), Movimiento multilinea (`\r\n`)
+- Débitos con signo negativo en el archivo → `Math.abs()` al guardar
+- Saldo = post-transacción (igual que MSA CC)
+- Parseo configurable desde BD: tabla `config_parseo_extracto` por `cuenta_bancaria_id`
+- Deduplicación por `descripcion|debitos|creditos` en la fecha del último registro
+- Control: `saldo - (saldoAnterior + creditos - debitos)` — idéntico a MSA CC
+- **Orden**: archivo viene newest→oldest → `.reverse()` para procesar oldest→newest
+- Commits: `3ed397d` (creación), `fea87e8` (fix reverse + fórmula)
+
+### ✅ **IMPORTADOR DINÁMICO EN TAB EXTRACTO → IMPORTAR**
+- Tab "Importar" en `vista-extracto-bancario.tsx` ahora es dinámico según cuenta seleccionada
+- `CONFIG_IMPORTADORES` map: `msa_galicia → /api/import-excel`, `pam_galicia → /api/import-excel-ca`
+- Cuentas sin config muestran "Importador no disponible aún"
+- Saldo inicial: aparece solo si tabla vacía (verificación previa)
+- Resultado muestra: insertados, errores control, errores categoría, botón "Ver movimientos"
+
+### ✅ **FIX RACE CONDITION — CAMBIO DE CUENTA**
+- Bug: al cambiar directamente MSA → PAM CA, mostraba datos de MSA
+- Causa: `ejecutarConCuenta` llamaba `recargar()` antes de que `setCuentaSeleccionada` se procesara → fetch con tabla vieja ganaba la race
+- Fix: eliminar `recargar()` de `ejecutarConCuenta`; el `useEffect([tabla])` del hook recarga automáticamente
+- Commit: `f2626a4`
+
+### 📊 **ESTADO TABLAS BANCARIAS EN BD**
+- `public.msa_galicia` — MSA CC Pesos ✓ (con datos)
+- `public.pam_galicia` — PAM CA Pesos ✓ (9 registros importados)
+- `public.pam_galicia_cc` — PAM CC Pesos ✓ (vacía, sin importador aún)
+- `ma_galicia` — NO EXISTE AÚN (pendiente crear)
+
+### 🚨 **PENDIENTES PRÓXIMA SESIÓN**
+
+#### 🥇 **PAM CC Importador** — idéntico a MSA CC (`/api/import-excel`)
+- Solo necesita endpoint nuevo que apunte a `pam_galicia_cc`
+- O parametrizar el existente con `tabla` como query param
+- Registrar en `CONFIG_IMPORTADORES`: `pam_galicia_cc → /api/import-excel-pam-cc`
+
+#### 🥈 **Sistema MA — pasos necesarios**
+1. **BD**: Crear tabla `ma_galicia` (clonar estructura de `pam_galicia`)
+2. **`CUENTAS_BANCARIAS`** en `useMotorConciliacion.ts`: agregar entrada MA
+3. **`CONFIG_IMPORTADORES`**: registrar `ma_galicia → /api/import-excel-ca` (mismo importer, distinta tabla)
+4. **Endpoint**: parametrizar `import-excel-ca` para recibir `cuenta_bancaria_id` del form, o crear `import-excel-ma`
+5. **Reglas conciliación**: crear reglas PAM/MA equivalentes a las MSA (distintas leyendas bancarias)
+6. **Templates bancarios**: hoy son MSA/PAM combinados — separar por empresa cuando haya MA
+
+#### 🥉 **Consideración arquitectural**
+- El importer CA Galicia ya está listo para MA — solo falta la tabla BD y el registro en CUENTAS_BANCARIAS
+- MA no tiene CC, solo CA → arquitectura más simple que PAM
+
 ## 🚀 **AVANCES SESIÓN 2026-04-10 (continuación):**
 
 ### ✅ **CERTIFICADO DE RETENCIÓN — 3 FIXES**
