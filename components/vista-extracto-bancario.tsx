@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { 
+import {
   Banknote,
   Settings,
   Play,
@@ -35,8 +35,12 @@ import {
   Filter,
   RefreshCw,
   Plus,
-  Columns
+  Columns,
+  DollarSign,
+  Loader2,
+  Info
 } from "lucide-react"
+import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -250,6 +254,14 @@ export function VistaExtractoBancario() {
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
 
+  // Estados importador
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
+  const [importSaldoInicial, setImportSaldoInicial] = useState('')
+  const [importMostrarSaldo, setImportMostrarSaldo] = useState(false)
+  const [importVerificando, setImportVerificando] = useState(false)
+
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
@@ -305,20 +317,13 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación
-  const ejecutarConCuenta = async (cuentaId: string) => {
+  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación.
+  // El useEffect([tabla]) del hook dispara la recarga automáticamente al cambiar tablaActiva.
+  const ejecutarConCuenta = (cuentaId: string) => {
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaId)
     if (!cuenta) return
-
     setCuentaSeleccionada(cuentaId)
     setSelectorAbierto(false)
-
-    try {
-      // Solo recarga los movimientos de la cuenta seleccionada
-      recargar()
-    } catch (error) {
-      console.error('Error al cargar movimientos:', error)
-    }
   }
 
   // Aplicar filtros
@@ -1827,24 +1832,198 @@ export function VistaExtractoBancario() {
         </TabsContent>
 
         <TabsContent value="importar" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Importar Extracto Bancario</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center text-gray-500 py-8">
-                <Upload className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p className="text-lg mb-2">Importador de Extractos</p>
-                <p className="text-sm mb-4">
-                  Arrastra y suelta tu archivo CSV del extracto bancario MSA Galicia
-                </p>
-                <Button variant="outline">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Seleccionar Archivo
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {(() => {
+            // Configuración por cuenta
+            const CONFIG_IMPORTADORES: Record<string, { endpoint: string; formato: string; accept: string }> = {
+              msa_galicia:    { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia:    { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+            }
+
+            const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
+            const config = CONFIG_IMPORTADORES[tablaActiva]
+
+            if (!config) {
+              return (
+                <Card>
+                  <CardHeader><CardTitle>Importar Extracto Bancario</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="text-center text-gray-400 py-10">
+                      <Upload className="h-12 w-12 mx-auto mb-4 text-gray-200" />
+                      <p className="text-base font-medium mb-1">{cuenta?.nombre ?? tablaActiva}</p>
+                      <p className="text-sm">Importador no disponible aún para esta cuenta.</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            }
+
+            const verificarSaldo = async () => {
+              setImportVerificando(true)
+              try {
+                const { data } = await supabase.from(tablaActiva).select('id').limit(1).maybeSingle()
+                setImportMostrarSaldo(data === null)
+              } catch { setImportMostrarSaldo(false) }
+              finally { setImportVerificando(false) }
+            }
+
+            const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+              const f = e.target.files?.[0] ?? null
+              setImportFile(f)
+              setImportResult(null)
+              if (f) verificarSaldo()
+            }
+
+            const handleImport = async () => {
+              if (!importFile) return
+              setImportLoading(true)
+              setImportResult(null)
+              try {
+                const fd = new FormData()
+                fd.append('file', importFile)
+                if (importMostrarSaldo && importSaldoInicial.trim()) {
+                  fd.append('saldo_inicial', importSaldoInicial)
+                }
+                const res = await fetch(config.endpoint, { method: 'POST', body: fd })
+                const data = await res.json()
+                setImportResult({ ...data, ok: res.ok })
+              } catch {
+                setImportResult({ ok: false, message: 'Error de conexión al procesar el archivo' })
+              } finally {
+                setImportLoading(false)
+              }
+            }
+
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5" />
+                    Importar — {cuenta?.nombre ?? tablaActiva}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+
+                  {/* Selector archivo */}
+                  <div className="space-y-2">
+                    <Label htmlFor="import-file-input">{config.formato}</Label>
+                    <Input
+                      id="import-file-input"
+                      type="file"
+                      accept={config.accept}
+                      onChange={handleFileChange}
+                      disabled={importLoading}
+                    />
+                    {importFile && (
+                      <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
+                    )}
+                  </div>
+
+                  {/* Saldo inicial (solo primer import) */}
+                  {importVerificando && (
+                    <Alert><Loader2 className="h-4 w-4 animate-spin inline mr-2" /><AlertDescription>Verificando registros existentes…</AlertDescription></Alert>
+                  )}
+                  {importMostrarSaldo && !importVerificando && (
+                    <div className="space-y-2">
+                      <Label htmlFor="import-saldo" className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Saldo Inicial
+                      </Label>
+                      <Input
+                        id="import-saldo"
+                        type="text"
+                        placeholder="Ej: 1.234.567,89"
+                        value={importSaldoInicial}
+                        onChange={e => setImportSaldoInicial(e.target.value)}
+                        disabled={importLoading}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Primera importación detectada. Ingresá el saldo inicial de la cuenta (punto = miles, coma = decimal).
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Botón */}
+                  <Button onClick={handleImport} disabled={!importFile || importLoading} className="w-full">
+                    {importLoading
+                      ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando…</>
+                      : <><Upload className="mr-2 h-4 w-4" />Importar movimientos</>
+                    }
+                  </Button>
+
+                  {/* Resultado */}
+                  {importResult && (
+                    <div className="space-y-3">
+                      <Alert variant={importResult.ok ? 'default' : 'destructive'}>
+                        <div className="flex items-center gap-2">
+                          {importResult.ok ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                          <AlertDescription>{importResult.message}</AlertDescription>
+                        </div>
+                      </Alert>
+
+                      {importResult.summary && (
+                        <Alert>
+                          <Info className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>Total filas: <strong>{importResult.summary.totalFilas}</strong></div>
+                              <div>Insertadas: <strong>{importResult.summary.filasInsertadas}</strong></div>
+                              <div>Errores categoría: <strong>{importResult.summary.erroresCategoria}</strong></div>
+                              <div>Errores control: <strong>{importResult.summary.erroresControl}</strong></div>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {importResult.controlErrors?.length > 0 && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>
+                            <p className="font-semibold mb-1">Errores de control ({importResult.controlErrors.length} filas):</p>
+                            <div className="max-h-40 overflow-y-auto space-y-1">
+                              {importResult.controlErrors.map((e: any, i: number) => (
+                                <div key={i} className="text-xs bg-red-50 p-2 rounded">
+                                  <strong>Fila {e.fila}:</strong> {e.fecha} — {e.descripcion}
+                                  <br /><span className="text-red-700">Control: {e.control}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {importResult.errores?.length > 0 && (
+                        <Alert variant="destructive">
+                          <AlertTriangle className="h-4 w-4" />
+                          <AlertDescription>
+                            <p className="font-semibold mb-1">Errores de categoría ({importResult.errores.length} filas):</p>
+                            <div className="max-h-40 overflow-y-auto space-y-1">
+                              {importResult.errores.map((e: any, i: number) => (
+                                <div key={i} className="text-xs bg-red-50 p-2 rounded">
+                                  <strong>Fila {e.fila}:</strong> {e.descripcion}
+                                  <br /><span className="text-red-700">{e.error} — "{e.categ}"</span>
+                                </div>
+                              ))}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {importResult.ok && importResult.insertedCount > 0 && (
+                        <Button variant="outline" className="w-full" onClick={() => { recargar(); setImportFile(null); setImportResult(null) }}>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Ver movimientos importados
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  <p className="text-xs text-muted-foreground">
+                    Se filtran automáticamente movimientos de hoy y fechas futuras. Se calculan orden y control automáticamente.
+                  </p>
+                </CardContent>
+              </Card>
+            )
+          })()}
         </TabsContent>
 
         <TabsContent value="reportes" className="space-y-4">
