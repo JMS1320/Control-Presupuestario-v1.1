@@ -280,14 +280,15 @@ Filas de promedios al pie: ♂ Prom. / ♀ Prom. / 🐄 Prom.
 - **Rango pesos**: 63 kg (mínimo) — 268 kg (máximo)
 - **Caravanas sin vincular**: 4 pesadas con IDV no encontrado en BD
 
-### Archivos de test generados (pesos ficticios)
+### Archivos de test generados (pesos ficticios) — ⚠️ ELIMINADOS
 
-| Archivo | Fecha | Días desde anterior | Gain promedio |
-|---------|-------|-------------------|---------------|
-| `Pesadas_ficticias_25-03-2026.xlsx` | 25/03/2026 | 30 días | 0.488 kg/día (6 animales con baja) |
-| `Pesadas_ficticias_25-04-2026.xlsx` | 25/04/2026 | 31 días | 0.491 kg/día (5 animales distintos con baja) |
+| Archivo | Fecha | Estado |
+|---------|-------|--------|
+| `Pesadas_ficticias_25-03-2026.xlsx` | 25/03/2026 | ❌ Eliminado de BD (2026-04-13) |
+| `Pesadas_ficticias_25-04-2026.xlsx` | 25/04/2026 | ❌ Eliminado de BD (2026-04-13) |
 
-Estos archivos sirven para probar el flujo completo, la tabla de ganancias y los indicadores ▲▼.
+Las 370 pesadas ficticias (185 × 2 fechas) fueron eliminadas de `productivo.pesadas_terneros`.
+**Estado actual BD**: solo 185 pesadas reales del `2026-02-23`.
 
 ---
 
@@ -331,6 +332,18 @@ primer período → sin indicador
 | `app/api/import-terneros/route.ts` | API Flujo A — importar terneros desde Excel |
 | `app/api/import-pesadas/route.ts` | API Flujo B — analizar + confirmar pesadas |
 
+### Descarga Excel (2026-04-13)
+
+Botón "Descargar Excel" en el header del tab. Genera `Terneros_YYYY-MM-DD.xlsx` con:
+
+**Columnas fijas (siempre incluidas):**
+`Caravana Interna` · `Caravana Oficial` · `Sexo` · `Pelo` · `Torito` · `Fecha Destete` · `Observaciones` · `Caravana Duplicada`
+
+- `Caravana Duplicada` = "Sí" si `caravana_interna` u `oficial` aparece en >1 ternero en BD
+
+**Columnas opcionales (selector en modal):**
+Una columna `Pesada DD/MM/YY (kg)` por cada fecha de pesada que el usuario marque. El modal ofrece checkboxes con todas las fechas disponibles + botones "Seleccionar todas" / "Ninguna".
+
 ---
 
 ## 9. Pendientes / Mejoras futuras
@@ -363,4 +376,5 @@ primer período → sin indicador
 
 **📅 Diseño original:** 2026-02-28
 **📅 Implementado:** 2026-03-04
-**Estado actual:** Operativo con datos reales · Listo para segunda pesada real
+**📅 Última actualización:** 2026-04-13 — descarga Excel + limpieza pesadas ficticias
+**Estado actual:** Operativo con datos reales · 185 pesadas reales (2026-02-23) · Listo para segunda pesada real
