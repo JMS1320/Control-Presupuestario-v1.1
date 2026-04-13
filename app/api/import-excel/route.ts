@@ -82,6 +82,13 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File
     const saldoInicialInput = formData.get("saldo_inicial")
     const saldoInicial = saldoInicialInput ? parseNumber(saldoInicialInput) : 0
+    const tablaDestino = (formData.get("tabla") as string | null)?.trim() || "msa_galicia"
+
+    // Tablas CC permitidas (formato Galicia CC)
+    const TABLAS_CC_PERMITIDAS = ["msa_galicia", "pam_galicia_cc"]
+    if (!TABLAS_CC_PERMITIDAS.includes(tablaDestino)) {
+      return NextResponse.json({ error: `Tabla no permitida: ${tablaDestino}` }, { status: 400 })
+    }
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
@@ -118,7 +125,7 @@ export async function POST(req: Request) {
 
     // Traer última fila existente
     const { data: ultimaFila } = await supabase
-      .from("msa_galicia")
+      .from(tablaDestino)
       .select("fecha, saldo, orden, control")
       .order("orden", { ascending: false })
       .limit(1)
@@ -133,7 +140,7 @@ export async function POST(req: Request) {
     const movimientosUltimaFecha: Set<string> = new Set()
     if (ultimaFecha) {
       const { data: existentesUltimaFecha } = await supabase
-        .from("msa_galicia")
+        .from(tablaDestino)
         .select("descripcion, debitos, creditos")
         .eq("fecha", ultimaFecha)
       existentesUltimaFecha?.forEach((m: any) => {
@@ -234,7 +241,7 @@ export async function POST(req: Request) {
         contable: cleanString(fila["Contable"]),
         interno: cleanString(fila["Interno"]),
         centro_de_costo: cleanString(fila["Centro de Costo"]),
-        cuenta: cleanString(fila["Cuenta"]) || "MSA Galicia",
+        cuenta: cleanString(fila["Cuenta"]) || tablaDestino,
         orden: nextOrden,
         estado: "Pendiente", // Todos los movimientos importados inician como pendientes
       }
@@ -249,7 +256,7 @@ export async function POST(req: Request) {
 
     // Insertar datos si hay filas válidas
     if (rowsParaInsertar.length > 0) {
-      const { error } = await supabase.from("msa_galicia").insert(rowsParaInsertar)
+      const { error } = await supabase.from(tablaDestino).insert(rowsParaInsertar)
       if (error) {
         console.error("Error al insertar datos:", error)
         return NextResponse.json(

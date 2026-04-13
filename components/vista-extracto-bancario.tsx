@@ -1835,8 +1835,10 @@ export function VistaExtractoBancario() {
           {(() => {
             // Configuración por cuenta
             const CONFIG_IMPORTADORES: Record<string, { endpoint: string; formato: string; accept: string }> = {
-              msa_galicia:    { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia:    { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+              msa_galicia:     { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia_cc:  { endpoint: '/api/import-excel',    formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia:     { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+              ma_galicia:      { endpoint: '/api/import-excel-ca', formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
@@ -1880,6 +1882,7 @@ export function VistaExtractoBancario() {
               try {
                 const fd = new FormData()
                 fd.append('file', importFile)
+                fd.append('tabla', tablaActiva)
                 if (importMostrarSaldo && importSaldoInicial.trim()) {
                   fd.append('saldo_inicial', importSaldoInicial)
                 }

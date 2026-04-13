@@ -151,6 +151,113 @@ npm test
 - El importer CA Galicia ya está listo para MA — solo falta la tabla BD y el registro en CUENTAS_BANCARIAS
 - MA no tiene CC, solo CA → arquitectura más simple que PAM
 
+## 🚀 **AVANCES SESIÓN 2026-04-13 — SISTEMA MA + IMPORTADORES PARAMETRIZADOS**
+
+### ✅ **SISTEMA MA — COMPLETO**
+
+#### BD
+- Schema `ma` creado en Supabase
+- Tabla `ma.ma_galicia`: estructura idéntica a `public.pam_galicia` (32 columnas)
+- RLS policy `allow_all_ma_galicia` + GRANTs a `anon` y `authenticated`
+
+#### Código
+- `useMotorConciliacion.ts`: tipo empresa extendido a `'MSA' | 'PAM' | 'MA'`; entrada MA agregada a `CUENTAS_BANCARIAS` con `schema_bd: 'ma'`; motor ahora usa `cuenta.schema_bd` para construir el client Supabase (genérico, ya no hardcoded a `msa`)
+- `useMovimientosBancarios.ts`: condición de schema generalizada — `schema && schema !== 'public' ? supabase.schema(schema) : supabase` (antes solo manejaba `'msa'`)
+- `import-excel-ca/route.ts`: lee `tabla` del form (default `pam_galicia`), whitelist `pam_galicia | ma_galicia`, determina schema automáticamente
+- `vista-extracto-bancario.tsx`: `ma_galicia` registrado en `CONFIG_IMPORTADORES → /api/import-excel-ca`
+- Commit: `3feab4e`
+
+#### Pendiente MA
+- Reglas parseo `config_parseo_extracto` para `ma_galicia`: hacer cuando haya movimientos reales (copiar las 49 de `pam_galicia` como base y ajustar)
+- Reglas conciliación `reglas_conciliacion` para `ma_galicia`: crear cuando se configure el banco
+
+### ✅ **IMPORTADOR PAM CC**
+- `import-excel/route.ts` parametrizado: lee `tabla` del form (default `msa_galicia`), whitelist `msa_galicia | pam_galicia_cc`
+- `vista-extracto-bancario.tsx`: `pam_galicia_cc` registrado en `CONFIG_IMPORTADORES → /api/import-excel`
+- Frontend pasa `fd.append('tabla', tablaActiva)` al hacer submit
+- Commit: `2797ace`
+
+### ✅ **FIX RACE CONDITION CAMBIO DE CUENTA**
+- Commit: `f2626a4` — ver sesión 2026-04-12
+
+---
+
+### ⚠️ **PENDIENTE: REORGANIZACIÓN SCHEMAS MSA/PAM**
+
+#### Situación actual (inconsistente)
+```
+public.msa_galicia      → MSA CC  (extracto)
+public.pam_galicia      → PAM CA  (extracto)
+public.pam_galicia_cc   → PAM CC  (extracto)
+msa.caja_general        → MSA     (caja)
+msa.caja_ams            → MSA     (caja)
+msa.caja_sigot          → MSA     (caja)
+ma.ma_galicia           → MA CA   (extracto) ← nuevo, prolijo
+```
+
+#### Objetivo
+```
+public.*                → tablas compartidas (cuentas_contables, templates, etc.)
+msa.msa_galicia         → MSA CC
+msa.caja_*              → cajas MSA (ya están)
+pam.pam_galicia         → PAM CA
+pam.pam_galicia_cc      → PAM CC
+ma.ma_galicia           → MA CA (ya está)
+```
+
+#### Análisis de riesgo
+**Riesgo real: BAJO** — el código ya es schema-genérico post sesión 2026-04-13.
+
+Puntos de riesgo específicos:
+1. **Datos en vuelo**: las tablas PAM tienen movimientos importados. Moverlos requiere `INSERT INTO pam.pam_galicia SELECT * FROM public.pam_galicia` + `DROP TABLE public.pam_galicia`. Si falla a mitad → pérdida de datos. **Mitigación**: los datos son reimportables desde los Excel originales.
+2. **Referencias hardcodeadas no detectadas**: algún código que use `.from('pam_galicia')` sin pasar por `CUENTAS_BANCARIAS`. **Mitigación**: hacer grep exhaustivo antes.
+3. **RLS y GRANTs**: hay que recrearlos en el nuevo schema. **Mitigación**: documentar exactamente qué GRANTs existen antes de mover.
+4. **`config_parseo_extracto`**: tiene `cuenta_bancaria_id = 'pam_galicia'` como texto — no cambia al mover la tabla (es un ID lógico, no depende del schema).
+5. **`reglas_conciliacion`**: ídem, `cuenta_bancaria_id` es texto independiente del schema.
+
+#### Medidas de seguridad antes de ejecutar
+1. **Backup manual Supabase** (Dashboard → Database → Backups → Create backup)
+2. **Grep exhaustivo** en el código: `grep -r "pam_galicia\|msa_galicia" --include="*.ts" --include="*.tsx"` para detectar cualquier hardcoded restante
+3. **Ejecutar en transacción SQL**: todo el movimiento dentro de `BEGIN; ... COMMIT;` — si algo falla, `ROLLBACK` automático
+4. **Verificar counts** antes y después: `SELECT COUNT(*) FROM public.pam_galicia` vs `SELECT COUNT(*) FROM pam.pam_galicia`
+5. **Test de importador** inmediatamente después del movimiento con un archivo de prueba
+
+#### SQL de migración (borrador, NO ejecutar sin los pasos previos)
+```sql
+BEGIN;
+
+-- Crear schema pam
+CREATE SCHEMA IF NOT EXISTS pam;
+GRANT USAGE ON SCHEMA pam TO anon, authenticated;
+
+-- Mover datos
+CREATE TABLE pam.pam_galicia (LIKE public.pam_galicia INCLUDING ALL);
+CREATE TABLE pam.pam_galicia_cc (LIKE public.pam_galicia_cc INCLUDING ALL);
+INSERT INTO pam.pam_galicia SELECT * FROM public.pam_galicia;
+INSERT INTO pam.pam_galicia_cc SELECT * FROM public.pam_galicia_cc;
+
+-- RLS
+ALTER TABLE pam.pam_galicia ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pam.pam_galicia_cc ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "allow_all" ON pam.pam_galicia FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "allow_all" ON pam.pam_galicia_cc FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON pam.pam_galicia TO anon, authenticated;
+GRANT ALL ON pam.pam_galicia_cc TO anon, authenticated;
+
+-- Eliminar originales (SOLO después de verificar counts)
+DROP TABLE public.pam_galicia;
+DROP TABLE public.pam_galicia_cc;
+
+COMMIT;
+```
+
+#### Cambios de código necesarios (post-migración)
+- `CUENTAS_BANCARIAS`: agregar `schema_bd: 'pam'` a `pam_galicia` y `pam_galicia_cc`
+- `import-excel/route.ts`: agregar schema handling (igual que CA ya tiene)
+- `import-excel-ca/route.ts`: actualizar whitelist y schema mapping
+
+**Decisión**: postergar hasta tener más movimientos reales en PAM y confirmar que todo funciona correctamente. No hay urgencia funcional.
+
 ## 🚀 **AVANCES SESIÓN 2026-04-10 (continuación):**
 
 ### ✅ **CERTIFICADO DE RETENCIÓN — 3 FIXES**

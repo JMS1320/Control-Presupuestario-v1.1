@@ -229,9 +229,16 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const file = formData.get("file") as File
     const saldoInicialInput = formData.get("saldo_inicial")
-    const saldoInicial = saldoInicialInput
-      ? parseNumberCA(saldoInicialInput)
-      : 0
+    const saldoInicial = saldoInicialInput ? parseNumberCA(saldoInicialInput) : 0
+    const cuentaBancariaId = (formData.get("tabla") as string | null)?.trim() || "pam_galicia"
+
+    const TABLAS_CA_PERMITIDAS = ["pam_galicia", "ma_galicia"]
+    if (!TABLAS_CA_PERMITIDAS.includes(cuentaBancariaId)) {
+      return NextResponse.json({ error: `Tabla no permitida: ${cuentaBancariaId}` }, { status: 400 })
+    }
+
+    // Schema según tabla
+    const schemaCA = cuentaBancariaId === "ma_galicia" ? "ma" : "public"
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
@@ -288,14 +295,16 @@ export async function POST(req: Request) {
     // -----------------------------------------------------------------------
     // 2. Cargar reglas de parseo
     // -----------------------------------------------------------------------
-    const mapaReglas = await cargarReglasCA("pam_galicia")
+    const mapaReglas = await cargarReglasCA(cuentaBancariaId)
     console.log(`CA Import: reglas cargadas:`, Object.keys(mapaReglas).length, "tipos")
 
     // -----------------------------------------------------------------------
-    // 3. Estado actual de la tabla pam_galicia
+    // 3. Estado actual de la tabla destino
     // -----------------------------------------------------------------------
-    const { data: ultimaFila } = await supabase
-      .from("pam_galicia")
+    const clientCA = schemaCA !== "public" ? supabase.schema(schemaCA) : supabase
+
+    const { data: ultimaFila } = await clientCA
+      .from(cuentaBancariaId)
       .select("fecha, saldo, orden, control")
       .order("orden", { ascending: false })
       .limit(1)
@@ -309,8 +318,8 @@ export async function POST(req: Request) {
     // Movimientos ya existentes en la última fecha (para deduplicar)
     const movimientosUltimaFecha = new Set<string>()
     if (ultimaFecha) {
-      const { data: existentes } = await supabase
-        .from("pam_galicia")
+      const { data: existentes } = await clientCA
+        .from(cuentaBancariaId)
         .select("descripcion, debitos, creditos")
         .eq("fecha", ultimaFecha)
       existentes?.forEach((m: any) => {
@@ -447,7 +456,7 @@ export async function POST(req: Request) {
         numero_de_comprobante: parsed["numero_de_comprobante"] ?? "",
         observaciones_cliente: observacionesCliente,
         origen: "CA_GALICIA",
-        cuenta: "PAM Galicia CA",
+        cuenta: cuentaBancariaId,
         categ: categ || null,
         detalle: null,       // se llena en conciliación
         contable: null,
@@ -468,8 +477,8 @@ export async function POST(req: Request) {
     // 6. Insertar
     // -----------------------------------------------------------------------
     if (rowsParaInsertar.length > 0) {
-      const { error } = await supabase
-        .from("pam_galicia")
+      const { error } = await clientCA
+        .from(cuentaBancariaId)
         .insert(rowsParaInsertar)
       if (error) {
         console.error("Error insertando CA:", error)

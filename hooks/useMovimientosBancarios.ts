@@ -63,7 +63,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       setLoading(true)
       setError(null)
 
-      let query = (schema === 'msa' ? supabase.schema('msa') : supabase)
+      let query = (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
         .from(tabla)
         .select('*')
 
@@ -134,7 +134,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
   // Cargar estadísticas
   const cargarEstadisticas = async () => {
     try {
-      const { data, error } = await (schema === 'msa' ? supabase.schema('msa') : supabase)
+      const { data, error } = await (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
         .from(tabla)
         .select('estado, categ')
 
@@ -190,7 +190,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
 
       // Actualizar cada movimiento
       for (const id of ids) {
-        const { error } = await (schema === 'msa' ? supabase.schema('msa') : supabase)
+        const { error } = await (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
           .from(tabla)
           .update(camposLimpios)
           .eq('id', id)
