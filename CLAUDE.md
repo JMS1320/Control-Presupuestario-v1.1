@@ -151,6 +151,24 @@ npm test
 - El importer CA Galicia ya está listo para MA — solo falta la tabla BD y el registro en CUENTAS_BANCARIAS
 - MA no tiene CC, solo CA → arquitectura más simple que PAM
 
+## 🚀 **AVANCES SESIÓN 2026-04-13 (tarde) — DESCARGA EXCEL TERNEROS**
+
+### ✅ **DESCARGA EXCEL TERNEROS**
+- Botón "Descargar Excel" en header de sección Terneros (tab Productivo)
+- Modal con checkboxes para elegir qué pesadas incluir (ninguna, algunas, todas) — "Seleccionar todas" / "Ninguna"
+- Columnas fijas: caravana_interna, caravana_oficial, sexo, pelo, es_torito, fecha_destete, observaciones, caravana_duplicada
+- Una columna por cada pesada seleccionada: "Pesada DD/MM/YY (kg)"
+- "Caravana Duplicada" = "Sí" si el ternero tiene caravana_interna u oficial repetida en BD
+- Usa XLSX library ya existente en el proyecto
+- Commits: `0d0c424`, `d675e6d`
+
+### ✅ **BD: LIMPIEZA PESADAS DE PRUEBA**
+- Eliminadas 370 pesadas de prueba (185 del 2026-03-25 + 185 del 2026-04-25)
+- Quedan únicamente 185 pesadas reales del destete 2026-02-23
+- SQL directo en Supabase (no requiere migración)
+
+---
+
 ## 🚀 **AVANCES SESIÓN 2026-04-13 — SISTEMA MA + IMPORTADORES PARAMETRIZADOS**
 
 ### ✅ **SISTEMA MA — COMPLETO**
