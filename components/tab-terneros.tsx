@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft } from "lucide-react"
+import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft, Download } from "lucide-react"
+import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -194,6 +195,10 @@ export function TabTerneros() {
   // Historial
   const [modalHistorial, setModalHistorial] = useState(false)
 
+  // Descarga Excel
+  const [modalDescarga, setModalDescarga] = useState(false)
+  const [fechasSeleccionadas, setFechasSeleccionadas] = useState<Set<string>>(new Set())
+
   // ─── Carga de datos ──────────────────────────────────────────────────────
 
   const cargar = async () => {
@@ -225,6 +230,37 @@ export function TabTerneros() {
   }
 
   useEffect(() => { cargar() }, [])
+
+  // ─── Descarga Excel ──────────────────────────────────────────────────────
+
+  const descargarExcel = () => {
+    const fechasOrdenadas = [...fechasSeleccionadas].sort()
+
+    const filas = terneros.map(t => {
+      const fila: Record<string, any> = {
+        'Caravana Interna': t.caravana_interna ?? '',
+        'Caravana Oficial': t.caravana_oficial ?? '',
+        'Sexo': t.sexo ?? '',
+        'Pelo': t.pelo ?? '',
+        'Torito': t.es_torito ? 'Sí' : 'No',
+        'Fecha Destete': t.fecha_destete ? formatFecha(t.fecha_destete) : '',
+        'Observaciones': t.observaciones ?? '',
+      }
+      for (const fecha of fechasOrdenadas) {
+        const pesada = t.pesadas_terneros.find(p => p.fecha === fecha)
+        const label = `Pesada ${formatFecha(fecha)} (kg)`
+        fila[label] = pesada ? pesada.peso_kg : ''
+      }
+      return fila
+    })
+
+    const ws = XLSX.utils.json_to_sheet(filas)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Terneros')
+    const fecha = new Date().toISOString().split('T')[0]
+    XLSX.writeFile(wb, `Terneros_${fecha}.xlsx`)
+    setModalDescarga(false)
+  }
 
   // ─── Import terneros ─────────────────────────────────────────────────────
 
@@ -417,6 +453,20 @@ export function TabTerneros() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Botón descargar Excel */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFechasSeleccionadas(new Set())
+              setModalDescarga(true)
+            }}
+            className="flex items-center gap-1 border-emerald-400 text-emerald-700"
+          >
+            <Download className="h-4 w-4" />
+            Descargar Excel
+          </Button>
+
           {/* Botón historial global (solo si hay fechas de pesada) */}
           {todasFechas.length > 0 && (
             <Button
@@ -1019,6 +1069,83 @@ export function TabTerneros() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          Modal: Descargar Excel
+      ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={modalDescarga} onOpenChange={setModalDescarga}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              Descargar Excel
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Se exportarán <strong>{terneros.length}</strong> terneros con sus datos de trazabilidad.
+            </p>
+
+            {todasFechas.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Pesadas a incluir</Label>
+                <div className="space-y-2">
+                  {todasFechas.map(fecha => (
+                    <div key={fecha} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`fecha-${fecha}`}
+                        checked={fechasSeleccionadas.has(fecha)}
+                        onChange={e => {
+                          setFechasSeleccionadas(prev => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(fecha)
+                            else next.delete(fecha)
+                            return next
+                          })
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label htmlFor={`fecha-${fecha}`} className="text-sm cursor-pointer">
+                        {formatFecha(fecha)}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <button
+                    className="text-blue-600 hover:underline"
+                    onClick={() => setFechasSeleccionadas(new Set(todasFechas))}
+                  >
+                    Seleccionar todas
+                  </button>
+                  <span className="text-muted-foreground">·</span>
+                  <button
+                    className="text-blue-600 hover:underline"
+                    onClick={() => setFechasSeleccionadas(new Set())}
+                  >
+                    Ninguna
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setModalDescarga(false)}>
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={descargarExcel}
+                className="bg-emerald-700 hover:bg-emerald-800"
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Descargar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
