@@ -245,6 +245,7 @@ export function TabTerneros() {
         'Torito': t.es_torito ? 'Sí' : 'No',
         'Fecha Destete': t.fecha_destete ? formatFecha(t.fecha_destete) : '',
         'Observaciones': t.observaciones ?? '',
+        'Caravana Duplicada': idsConDuplicado.has(t.id) ? 'Sí' : '',
       }
       for (const fecha of fechasOrdenadas) {
         const pesada = t.pesadas_terneros.find(p => p.fecha === fecha)
