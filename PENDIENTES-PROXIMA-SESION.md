@@ -1,7 +1,25 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-03-26
-> **Sesión anterior**: Sistema Caja + fixes monetarios + preview import ARCA
+> **Última actualización**: 2026-04-13
+> **Sesión anterior**: Importadores CA/CC Galicia PAM + Sistema MA completo
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-04-12 / 2026-04-13
+
+| Feature | Commits |
+|---------|---------|
+| Importador CA Galicia — `app/api/import-excel-ca/route.ts` nuevo endpoint | `3ed397d` |
+| Fix control CA: restaurar `.reverse()` + fórmula post-tx igual que MSA CC | `fea87e8` |
+| Tab "Importar" en Extracto Bancario — dinámico por cuenta seleccionada | `f2626a4` |
+| Fix race condition cambio de cuenta (MSA → PAM CA mostraba MSA) | `f2626a4` |
+| Importador PAM CC — parametrizar `/api/import-excel` con `tabla` del form | `2797ace` |
+| `pam_galicia_cc` registrado en `CONFIG_IMPORTADORES` | `2797ace` |
+| BD: schema `ma` + tabla `ma.ma_galicia` + RLS + GRANTs | migration |
+| `CUENTAS_BANCARIAS`: entrada MA con `schema_bd: 'ma'`, tipo `'MA'` | `3feab4e` |
+| Motor y `useMovimientosBancarios`: schema genérico (antes solo `msa`) | `3feab4e` |
+| `import-excel-ca`: parametrizado — whitelist `pam_galicia \| ma_galicia` | `3feab4e` |
+| `ma_galicia` registrado en `CONFIG_IMPORTADORES` | `3feab4e` |
 
 ---
 
@@ -52,11 +70,12 @@
 
 ---
 
-### C2 — Propagación factura → extracto no cubre `pam_galicia_cc`
+### C2 — Propagación factura → extracto no cubre `pam_galicia_cc` ni `ma_galicia`
 
-**Situación actual**: En `vista-facturas-arca.tsx` línea 840, cuando se edita `cuenta_contable` en una factura, propaga a `msa_galicia` y `pam_galicia` pero **no a `pam_galicia_cc`**.
+**Situación actual**: En `vista-facturas-arca.tsx` línea 840, cuando se edita `cuenta_contable` en una factura, propaga a `msa_galicia` y `pam_galicia` pero **no a `pam_galicia_cc`** ni a `ma_galicia`.
 
-**Fix**: Agregar `pam_galicia_cc` al array `['msa_galicia', 'pam_galicia', 'pam_galicia_cc']`.
+**Fix**: Agregar las tablas faltantes al array: `['msa_galicia', 'pam_galicia', 'pam_galicia_cc', 'ma_galicia']`.
+Nota: `ma_galicia` está en schema `ma` — la query deberá usar `supabase.schema('ma').from('ma_galicia')`.
 
 ---
 
@@ -166,6 +185,66 @@ Una vez que v2 esté probada y estable, v1 queda obsoleta.
 | Ver Retenciones: muestra anticipos + facturas | `9bc5c1b` |
 | Fix columna fecha_pago en query anticipos | `a6ce543` |
 | BD: Rigo quincena corregida 26-03-2da → 26-03-1ra | SQL directo |
+
+---
+
+## 🏦 PENDIENTES — EXTRACTOS BANCARIOS
+
+### E1 — Reglas de parseo para MA Galicia CA
+
+**Situación actual**: `config_parseo_extracto` tiene 49 reglas para `pam_galicia` pero 0 para `ma_galicia`. Los movimientos de MA se importan con descripción genérica (solo línea 1 del campo Movimiento).
+
+**Pendiente**: Una vez importados los primeros extractos reales de MA, copiar las 49 reglas de `pam_galicia` a `ma_galicia` como base y ajustar las que difieran:
+```sql
+INSERT INTO public.config_parseo_extracto (cuenta_bancaria_id, tipo_movimiento, campo_destino, tipo_regla, numero_linea, grupo_de_conceptos, orden, activo)
+SELECT 'ma_galicia', tipo_movimiento, campo_destino, tipo_regla, numero_linea, grupo_de_conceptos, orden, activo
+FROM public.config_parseo_extracto
+WHERE cuenta_bancaria_id = 'pam_galicia';
+```
+
+---
+
+### E2 — Reglas de conciliación para PAM CA, PAM CC y MA
+
+**Situación actual**: `reglas_conciliacion` tiene 41 reglas solo para `msa_galicia`. PAM CA, PAM CC y MA tienen 0 reglas → el motor corre pero no matchea nada.
+
+**Pendiente**: Crear reglas para cada cuenta a medida que se identifiquen patrones en los movimientos reales. Las leyendas bancarias de PAM/MA pueden diferir de MSA (distintos formatos de descripción). Proceso:
+1. Importar varios meses de extractos
+2. Revisar descripciones más frecuentes
+3. Crear reglas en `reglas_conciliacion` con `cuenta_bancaria_id` correspondiente
+
+---
+
+### E3 — Reorganización schemas MSA/PAM (pendiente, baja urgencia)
+
+**Situación actual**: inconsistencia de schemas:
+```
+public.msa_galicia       ← debería estar en schema msa
+public.pam_galicia       ← debería estar en schema pam
+public.pam_galicia_cc    ← debería estar en schema pam
+ma.ma_galicia            ← ya prolijo ✓
+msa.caja_*               ← ya prolijo ✓
+```
+
+**Objetivo**: mover tablas MSA/PAM a sus schemas correctos.
+
+**Riesgo**: BAJO — el código ya es schema-genérico. El único riesgo real es la migración de datos en vuelo.
+
+**Medidas de seguridad antes de ejecutar**:
+1. Backup manual Supabase (Dashboard → Database → Backups → Create backup)
+2. Grep exhaustivo: `grep -r "pam_galicia\|msa_galicia" --include="*.ts" --include="*.tsx"` para detectar hardcoded restantes
+3. Ejecutar dentro de transacción SQL (`BEGIN; ... COMMIT;`)
+4. Verificar counts antes y después
+5. Test de importador inmediatamente post-migración
+
+**SQL de migración** (ver CLAUDE.md sección "PENDIENTE: REORGANIZACIÓN SCHEMAS" para el script completo).
+
+**Cambios de código post-migración**:
+- `CUENTAS_BANCARIAS`: agregar `schema_bd: 'pam'` a `pam_galicia` y `pam_galicia_cc`; `schema_bd: 'msa'` a `msa_galicia`
+- `import-excel/route.ts`: agregar schema handling igual que CA
+- `import-excel-ca/route.ts`: actualizar whitelist y schema mapping
+
+**Decisión**: postergar hasta confirmar que PAM/MA funcionan correctamente con datos reales.
 
 ---
 
