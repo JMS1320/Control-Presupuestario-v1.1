@@ -317,20 +317,13 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación
-  const ejecutarConCuenta = async (cuentaId: string) => {
+  // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación.
+  // El useEffect([tabla]) del hook dispara la recarga automáticamente al cambiar tablaActiva.
+  const ejecutarConCuenta = (cuentaId: string) => {
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaId)
     if (!cuenta) return
-
     setCuentaSeleccionada(cuentaId)
     setSelectorAbierto(false)
-
-    try {
-      // Solo recarga los movimientos de la cuenta seleccionada
-      recargar()
-    } catch (error) {
-      console.error('Error al cargar movimientos:', error)
-    }
   }
 
   // Aplicar filtros
