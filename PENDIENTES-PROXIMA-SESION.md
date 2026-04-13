@@ -1,7 +1,17 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-04-13
-> **Sesión anterior**: Importadores CA/CC Galicia PAM + Sistema MA completo
+> **Última actualización**: 2026-04-13 (tarde)
+> **Sesión anterior**: Importadores CA/CC Galicia PAM + Sistema MA completo + Descarga Excel Terneros
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-04-13 (tarde)
+
+| Feature | Commits |
+|---------|---------|
+| Botón "Descargar Excel" en sección Terneros — con selector de pesadas por fecha | `0d0c424` |
+| Columna "Caravana Duplicada" en el Excel exportado | `d675e6d` |
+| BD: eliminadas 370 pesadas de prueba (2026-03-25 y 2026-04-25) — quedan 185 del 2026-02-23 | SQL directo |
 
 ---
 
