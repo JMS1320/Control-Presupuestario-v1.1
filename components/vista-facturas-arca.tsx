@@ -330,6 +330,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   })
   const [conteoV2, setConteoV2] = useState<{ cantidad: number; totalRetencion: number; totalPago: number } | null>(null)
   const [registrosV2, setRegistrosV2] = useState<any[]>([])
+  const [modalAsignarCuotaSicore, setModalAsignarCuotaSicore] = useState<{
+    quincena: string
+    totalRet: number
+    cuotas: Array<{ id: string; label: string; template: string }>
+    cuotaIdSugerida: string
+    cuotaIdSeleccionada: string
+  } | null>(null)
   const [cargandoV2, setCargandoV2] = useState(false)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
@@ -4018,7 +4025,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (directorio) {
       const h = await directorio.getFileHandle(nombre, { create: true })
       const w = await h.createWritable()
-      await w.write(doc.output('blob'))
+      await w.write(doc.output('arraybuffer'))
       await w.close()
     } else {
       doc.save(nombre)
@@ -4235,34 +4242,49 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
-  const llenarCuotaSicore = async (quincena: string, totalRet: number) => {
-    const info = parsearCuotaSicore(quincena)
-    if (!info) { console.warn('No se pudo parsear quincena:', quincena); return }
-
-    const { data: cuotas, error } = await supabase
-      .from('cuotas_egresos_sin_factura')
-      .select('id, monto, estado')
-      .eq('egreso_id', info.templateId)
-      .eq('fecha_estimada', info.fechaEstimada)
-      .limit(1)
-
-    if (error || !cuotas || cuotas.length === 0) {
-      alert(`No se encontró cuota SICORE ${info.nombre} para ${info.fechaEstimada}`)
-      return
-    }
-
-    const cuota = cuotas[0]
-    const { error: errUpdate } = await supabase
+  const confirmarAsignacionCuotaSicore = async (cuotaId: string, totalRet: number) => {
+    const { error } = await supabase
       .from('cuotas_egresos_sin_factura')
       .update({ monto: totalRet })
-      .eq('id', cuota.id)
+      .eq('id', cuotaId)
+    if (error) { alert('Error actualizando cuota: ' + error.message); return }
+    setModalAsignarCuotaSicore(null)
+    alert(`✅ Cuota SICORE actualizada: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+  }
 
-    if (errUpdate) {
-      alert('Error actualizando cuota: ' + errUpdate.message)
-      return
-    }
+  const abrirModalAsignarCuota = async (quincena: string, totalRet: number) => {
+    // Traer todas las cuotas pendientes de ambos templates SICORE, ordenadas por fecha
+    const { data: cuotas } = await supabase
+      .from('cuotas_egresos_sin_factura')
+      .select('id, fecha_estimada, monto, estado, egreso_id')
+      .in('egreso_id', [TEMPLATE_SICORE_1RA, TEMPLATE_SICORE_2DA])
+      .neq('estado', 'conciliado')
+      .order('fecha_estimada', { ascending: true })
 
-    alert(`✅ Cuota SICORE ${info.nombre} actualizada: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+    const opciones = (cuotas ?? []).map((c: any) => {
+      const template = c.egreso_id === TEMPLATE_SICORE_1RA ? '1er Quincena' : '2da Quincena'
+      const fecha = c.fecha_estimada
+        ? new Date(c.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')
+        : 'sin fecha'
+      const monto = Number(c.monto) !== 0
+        ? ` — $${Number(c.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+        : ' — $0'
+      return { id: c.id, label: `${template} | ${fecha}${monto}`, template }
+    })
+
+    // Cuota sugerida según parseo de quincena
+    const info = parsearCuotaSicore(quincena)
+    const sugerida = info
+      ? (cuotas ?? []).find((c: any) => c.egreso_id === info.templateId && c.fecha_estimada === info.fechaEstimada)
+      : null
+
+    setModalAsignarCuotaSicore({
+      quincena,
+      totalRet,
+      cuotas: opciones,
+      cuotaIdSugerida: sugerida?.id ?? opciones[0]?.id ?? '',
+      cuotaIdSeleccionada: sugerida?.id ?? opciones[0]?.id ?? '',
+    })
   }
 
   const procesarCierreV2 = async (quincena: string) => {
@@ -4289,16 +4311,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
       alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
 
-      // Proponer actualizar cuota del template SICORE
-      const infoQuincena = parsearCuotaSicore(quincena)
-      if (infoQuincena) {
-        const confirmar = window.confirm(
-          `¿Actualizar cuota en template "SICORE ${infoQuincena.nombre}"?\n\nMonto: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\nFecha estimada: ${infoQuincena.fechaEstimada}`
-        )
-        if (confirmar) {
-          await llenarCuotaSicore(quincena, totalRet)
-        }
-      }
+      // Proponer actualizar cuota del template SICORE (abre modal con selector)
+      await abrirModalAsignarCuota(quincena, totalRet)
     } catch (error) {
       console.error('Error cierre v2:', error)
       alert('Error: ' + (error as Error).message)
@@ -6716,6 +6730,62 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Modal: Asignar cuota SICORE post-cierre quincena */}
+      {modalAsignarCuotaSicore && (
+        <Dialog open={true} onOpenChange={() => setModalAsignarCuotaSicore(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Actualizar cuota SICORE</DialogTitle>
+              <DialogDescription>
+                Quincena <strong>{modalAsignarCuotaSicore.quincena}</strong> — Total retenciones:{' '}
+                <strong>${modalAsignarCuotaSicore.totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong>
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Cuota a actualizar</label>
+                {modalAsignarCuotaSicore.cuotas.length === 0 ? (
+                  <p className="text-sm text-red-600">No hay cuotas pendientes en los templates SICORE.</p>
+                ) : (
+                  <select
+                    className="w-full border rounded px-2 py-1.5 text-sm"
+                    value={modalAsignarCuotaSicore.cuotaIdSeleccionada}
+                    onChange={e => setModalAsignarCuotaSicore(prev => prev ? { ...prev, cuotaIdSeleccionada: e.target.value } : null)}
+                  >
+                    {modalAsignarCuotaSicore.cuotas.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.id === modalAsignarCuotaSicore.cuotaIdSugerida ? '⭐ ' : ''}{c.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {modalAsignarCuotaSicore.cuotaIdSugerida && modalAsignarCuotaSicore.cuotaIdSeleccionada !== modalAsignarCuotaSicore.cuotaIdSugerida && (
+                  <p className="text-xs text-amber-600">⚠️ Estás seleccionando una cuota distinta a la sugerida</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setModalAsignarCuotaSicore(null)}>
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                disabled={!modalAsignarCuotaSicore.cuotaIdSeleccionada}
+                onClick={() => confirmarAsignacionCuotaSicore(
+                  modalAsignarCuotaSicore.cuotaIdSeleccionada,
+                  modalAsignarCuotaSicore.totalRet
+                )}
+                className="bg-green-700 hover:bg-green-800"
+              >
+                Actualizar cuota
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Panel SICORE - Modal combinado */}
       <Dialog open={mostrarModalPanelSicore} onOpenChange={setMostrarModalPanelSicore}>
