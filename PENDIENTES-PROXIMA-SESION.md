@@ -9,7 +9,9 @@
 
 | Feature | Commits |
 |---------|---------|
-| Auto-llenado cuota SICORE al cerrar quincena v2 — `parsearCuotaSicore` + `llenarCuotaSicore` en `procesarCierreV2` | `f3a004d` |
+| Auto-llenado cuota SICORE al cerrar quincena v2 — `parsearCuotaSicore` + funciones en `procesarCierreV2` | `f3a004d` |
+| Modal selector cuota SICORE: ⭐ pre-selecciona sugerida, permite elegir otra, avisa si difiere | `c1d56f3` |
+| Fix PDF cierre v2: `output('arraybuffer')` en File System API (antes iba a Descargas) | `c1d56f3` |
 | SICORE.md: sección 23 documentando el feature + pendientes actualizados | — |
 
 ---
