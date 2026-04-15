@@ -4207,6 +4207,64 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     return { nombreArchivo, grupos: gruposOrdenados.length }
   }
 
+  // IDs fijos de los templates SICORE en BD
+  const TEMPLATE_SICORE_1RA = '19b879c7-d8c1-4633-8910-55e567e7394d'
+  const TEMPLATE_SICORE_2DA = '2f0f8552-74ef-496a-9dbf-92ff97f6aca1'
+
+  // Devuelve el templateId y fecha_estimada de la cuota a actualizar para una quincena dada
+  const parsearCuotaSicore = (quincena: string): { templateId: string; fechaEstimada: string; nombre: string } | null => {
+    const match = quincena.match(/^(\d{2})-(\d{2}) - (1ra|2da)$/)
+    if (!match) return null
+    const [, yy, mm, tipo] = match
+    const year = 2000 + parseInt(yy)
+    const month = parseInt(mm)
+    if (tipo === '1ra') {
+      return {
+        templateId: TEMPLATE_SICORE_1RA,
+        fechaEstimada: `${year}-${String(month).padStart(2, '0')}-20`,
+        nombre: '1er Quincena',
+      }
+    } else {
+      const nextMonth = month === 12 ? 1 : month + 1
+      const nextYear = month === 12 ? year + 1 : year
+      return {
+        templateId: TEMPLATE_SICORE_2DA,
+        fechaEstimada: `${nextYear}-${String(nextMonth).padStart(2, '0')}-09`,
+        nombre: '2da Quincena',
+      }
+    }
+  }
+
+  const llenarCuotaSicore = async (quincena: string, totalRet: number) => {
+    const info = parsearCuotaSicore(quincena)
+    if (!info) { console.warn('No se pudo parsear quincena:', quincena); return }
+
+    const { data: cuotas, error } = await supabase
+      .from('cuotas_egresos_sin_factura')
+      .select('id, monto, estado')
+      .eq('egreso_id', info.templateId)
+      .eq('fecha_estimada', info.fechaEstimada)
+      .limit(1)
+
+    if (error || !cuotas || cuotas.length === 0) {
+      alert(`No se encontró cuota SICORE ${info.nombre} para ${info.fechaEstimada}`)
+      return
+    }
+
+    const cuota = cuotas[0]
+    const { error: errUpdate } = await supabase
+      .from('cuotas_egresos_sin_factura')
+      .update({ monto: totalRet })
+      .eq('id', cuota.id)
+
+    if (errUpdate) {
+      alert('Error actualizando cuota: ' + errUpdate.message)
+      return
+    }
+
+    alert(`✅ Cuota SICORE ${info.nombre} actualizada: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+  }
+
   const procesarCierreV2 = async (quincena: string) => {
     try {
       setProcesandoCierreV2(true)
@@ -4230,6 +4288,17 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
       alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
+
+      // Proponer actualizar cuota del template SICORE
+      const infoQuincena = parsearCuotaSicore(quincena)
+      if (infoQuincena) {
+        const confirmar = window.confirm(
+          `¿Actualizar cuota en template "SICORE ${infoQuincena.nombre}"?\n\nMonto: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\nFecha estimada: ${infoQuincena.fechaEstimada}`
+        )
+        if (confirmar) {
+          await llenarCuotaSicore(quincena, totalRet)
+        }
+      }
     } catch (error) {
       console.error('Error cierre v2:', error)
       alert('Error: ' + (error as Error).message)
