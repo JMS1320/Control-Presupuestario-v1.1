@@ -4218,27 +4218,20 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const TEMPLATE_SICORE_1RA = '19b879c7-d8c1-4633-8910-55e567e7394d'
   const TEMPLATE_SICORE_2DA = '2f0f8552-74ef-496a-9dbf-92ff97f6aca1'
 
-  // Devuelve el templateId y fecha_estimada de la cuota a actualizar para una quincena dada
-  const parsearCuotaSicore = (quincena: string): { templateId: string; fechaEstimada: string; nombre: string } | null => {
+  // Devuelve la fecha de corte para buscar la primera cuota venciente después de la quincena cerrada
+  // 1ra quincena de MM → primer vencimiento posterior al 15/MM
+  // 2da quincena de MM → primer vencimiento posterior al último día de MM
+  const parsearCuotaSicore = (quincena: string): { cutoffDate: string } | null => {
     const match = quincena.match(/^(\d{2})-(\d{2}) - (1ra|2da)$/)
     if (!match) return null
     const [, yy, mm, tipo] = match
     const year = 2000 + parseInt(yy)
     const month = parseInt(mm)
     if (tipo === '1ra') {
-      return {
-        templateId: TEMPLATE_SICORE_1RA,
-        fechaEstimada: `${year}-${String(month).padStart(2, '0')}-20`,
-        nombre: '1er Quincena',
-      }
+      return { cutoffDate: `${year}-${String(month).padStart(2, '0')}-15` }
     } else {
-      const nextMonth = month === 12 ? 1 : month + 1
-      const nextYear = month === 12 ? year + 1 : year
-      return {
-        templateId: TEMPLATE_SICORE_2DA,
-        fechaEstimada: `${nextYear}-${String(nextMonth).padStart(2, '0')}-09`,
-        nombre: '2da Quincena',
-      }
+      const ultimoDia = new Date(year, month, 0).getDate()
+      return { cutoffDate: `${year}-${String(month).padStart(2, '0')}-${ultimoDia}` }
     }
   }
 
@@ -4272,10 +4265,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       return { id: c.id, label: `${template} | ${fecha}${monto}`, template }
     })
 
-    // Cuota sugerida según parseo de quincena
+    // Cuota sugerida: primera cuota (cualquier template SICORE) con fecha_estimada posterior al cierre de la quincena
     const info = parsearCuotaSicore(quincena)
     const sugerida = info
-      ? (cuotas ?? []).find((c: any) => c.egreso_id === info.templateId && c.fecha_estimada === info.fechaEstimada)
+      ? (cuotas ?? []).find((c: any) => c.fecha_estimada > info.cutoffDate)
       : null
 
     setModalAsignarCuotaSicore({
