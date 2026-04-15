@@ -336,6 +336,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     cuotas: Array<{ id: string; label: string; template: string }>
     cuotaIdSugerida: string
     cuotaIdSeleccionada: string
+    estadoSeleccionado: string
   } | null>(null)
   const [cargandoV2, setCargandoV2] = useState(false)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
@@ -4235,14 +4236,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
-  const confirmarAsignacionCuotaSicore = async (cuotaId: string, totalRet: number) => {
+  const confirmarAsignacionCuotaSicore = async (cuotaId: string, totalRet: number, estado: string) => {
     const { error } = await supabase
       .from('cuotas_egresos_sin_factura')
-      .update({ monto: totalRet })
+      .update({ monto: totalRet, estado })
       .eq('id', cuotaId)
     if (error) { alert('Error actualizando cuota: ' + error.message); return }
     setModalAsignarCuotaSicore(null)
-    alert(`✅ Cuota SICORE actualizada: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`)
+    alert(`✅ Cuota SICORE actualizada: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — estado: ${estado}`)
   }
 
   const abrirModalAsignarCuota = async (quincena: string, totalRet: number) => {
@@ -4277,6 +4278,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       cuotas: opciones,
       cuotaIdSugerida: sugerida?.id ?? opciones[0]?.id ?? '',
       cuotaIdSeleccionada: sugerida?.id ?? opciones[0]?.id ?? '',
+      estadoSeleccionado: 'pagar',
     })
   }
 
@@ -4288,13 +4290,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         alert(`No hay registros en sicore_retenciones para la quincena ${quincena}`)
         return
       }
-      // Usar carpeta configurada (misma lógica que v1)
-      const carpetaGuardada = localStorage.getItem('sicore_carpeta_default')
-      let subcarpeta = null
-      if (carpetaGuardada) {
+      // Usar carpetaPorDefecto (mismo handle que usa el subdiario IVA)
+      let subcarpeta: any = (carpetaPorDefecto && !carpetaPorDefecto.isFromStorage) ? carpetaPorDefecto : null
+      if (!subcarpeta) {
         try {
-          const dirHandle = await (window as any).showDirectoryPicker({ id: 'sicore', mode: 'readwrite', startIn: 'documents' }).catch(() => null)
-          if (dirHandle) subcarpeta = dirHandle
+          const dirHandle = await (window as any).showDirectoryPicker({ startIn: 'downloads' }).catch(() => null)
+          if (dirHandle) {
+            setCarpetaPorDefecto(dirHandle)
+            subcarpeta = dirHandle
+          }
         } catch { /* sin carpeta, descarga directa */ }
       }
       await generarExcelCierreV2(registros, quincena, subcarpeta)
@@ -6758,18 +6762,31 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   <p className="text-xs text-amber-600">⚠️ Estás seleccionando una cuota distinta a la sugerida</p>
                 )}
               </div>
+
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Estado de la cuota</label>
+                <select
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  value={modalAsignarCuotaSicore.estadoSeleccionado}
+                  onChange={e => setModalAsignarCuotaSicore(prev => prev ? { ...prev, estadoSeleccionado: e.target.value } : null)}
+                >
+                  <option value="pagar">pagar</option>
+                  <option value="pendiente">pendiente</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setModalAsignarCuotaSicore(null)}>
-                Cancelar
+                Cancelar (no llenar template)
               </Button>
               <Button
                 size="sm"
                 disabled={!modalAsignarCuotaSicore.cuotaIdSeleccionada}
                 onClick={() => confirmarAsignacionCuotaSicore(
                   modalAsignarCuotaSicore.cuotaIdSeleccionada,
-                  modalAsignarCuotaSicore.totalRet
+                  modalAsignarCuotaSicore.totalRet,
+                  modalAsignarCuotaSicore.estadoSeleccionado
                 )}
                 className="bg-green-700 hover:bg-green-800"
               >
