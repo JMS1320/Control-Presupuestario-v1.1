@@ -2,7 +2,7 @@
 
 > Documentación técnica completa del módulo SICORE implementado en Control Presupuestario v1.1.
 >
-> **Última actualización**: 2026-03-19
+> **Última actualización**: 2026-04-15
 > **Commits sesión**: `c6abd32`, `44c8d62`, `6fd54ad`, `1768f31`
 
 ---
@@ -830,10 +830,37 @@ interface CalcVinculacion {
 
 ---
 
-## 23. Pendientes / TODO
+## 23. Llenado automático de cuota al cerrar quincena (2026-04-15)
+
+Al finalizar `procesarCierreV2` (después de generar Excel + PDF + TXT), el sistema propone automáticamente actualizar la cuota del template SICORE correspondiente.
+
+### Lógica
+
+- Quincena `YY-MM - 1ra` → template **"SICORE 1er Quincena"** (ID `19b879c7-d8c1-4633-8910-55e567e7394d`)
+  - `fecha_estimada` = día **20** del mismo mes → ej: `26-04 - 1ra` → `2026-04-20`
+- Quincena `YY-MM - 2da` → template **"SICORE 2da Quincena"** (ID `2f0f8552-74ef-496a-9dbf-92ff97f6aca1`)
+  - `fecha_estimada` = día **9** del mes siguiente → ej: `26-04 - 2da` → `2026-05-09`
+
+El sistema busca la cuota existente por `egreso_id + fecha_estimada` y hace un **UPDATE del monto** (las cuotas ya están pre-creadas con `monto = 0`).
+
+### Flujo UX
+
+1. Se genera cierre normalmente (Excel + PDF + TXT)
+2. Alert resumen con totales
+3. `window.confirm()`: *"¿Actualizar cuota en template 'SICORE 1er/2da Quincena'? Monto: $X.XXX,XX Fecha estimada: YYYY-MM-DD"*
+4. Si confirma → UPDATE → alert de confirmación
+
+### Funciones involucradas
+
+- `parsearCuotaSicore(quincena)` — determina templateId + fechaEstimada + nombre desde el string de quincena
+- `llenarCuotaSicore(quincena, totalRet)` — busca cuota y hace UPDATE
+- `procesarCierreV2` — llama a ambas al final del flujo
+
+---
+
+## 24. Pendientes / TODO
 
 - **Envío automático por email** del certificado de retención al proveedor.
-- **Llenado automático templates SICORE** (templates 60-61) al cerrar quincena.
 - **Gestión masiva con SICORE en Cash Flow**: actualmente el botón PAGOS en CF procesa una por una; podría implementarse similar al Modal Pagos de Egresos.
 - **Descuento adicional en Cash Flow**: la función existe en Egresos/Pagos pero no está implementada en CF.
 - **Vista dedicada quincenas**: listar, ver estado (abierta/cerrada), historial.
