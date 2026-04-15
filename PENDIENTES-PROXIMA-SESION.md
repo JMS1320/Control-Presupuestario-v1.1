@@ -1,7 +1,16 @@
 # 🎯 PENDIENTES PRÓXIMA SESIÓN
 
-> **Última actualización**: 2026-04-13 (tarde)
-> **Sesión anterior**: Importadores CA/CC Galicia PAM + Sistema MA completo + Descarga Excel Terneros
+> **Última actualización**: 2026-04-15
+> **Sesión anterior**: Importadores CA/CC Galicia PAM + Sistema MA completo + Descarga Excel Terneros + SICORE auto-llenado cuota
+
+---
+
+## ✅ COMPLETADO EN SESIÓN 2026-04-15
+
+| Feature | Commits |
+|---------|---------|
+| Auto-llenado cuota SICORE al cerrar quincena v2 — `parsearCuotaSicore` + `llenarCuotaSicore` en `procesarCierreV2` | `f3a004d` |
+| SICORE.md: sección 23 documentando el feature + pendientes actualizados | — |
 
 ---
 
