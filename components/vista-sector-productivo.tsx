@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -2364,6 +2364,10 @@ function SubTabOrdenesAplicacion() {
     totalCabezas: number, sumaKg: number, promedioKg: number, totalKgExtrapolado: number
   } | null>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
+  // Vincular ciclo post-ejecución
+  const [ordenVinculandoCiclo, setOrdenVinculandoCiclo] = useState<OrdenAplicacion | null>(null)
+  const [ordenesYaVinculadas, setOrdenesYaVinculadas] = useState<Set<string>>(new Set())
+  const [vinculandoCiclo, setVinculandoCiclo] = useState(false)
   // Retrospectiva
   const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
 
@@ -2561,6 +2565,73 @@ function SubTabOrdenesAplicacion() {
     }
   }
 
+  // === VINCULAR CICLO DE CRÍA POST-EJECUCIÓN ===
+  const esDesteteFin = (orden: OrdenAplicacion) =>
+    orden.estado === 'ejecutada' && (orden.labores || []).some(l => l === 'Destete Fin')
+
+  const abrirVincularCiclo = async (orden: OrdenAplicacion) => {
+    setOrdenVinculandoCiclo(orden)
+    setCiclosDestetadosSeleccionados([])
+    setTernerosDestetados('')
+    setPesadaSeleccionada('')
+    setPreviewPesada(null)
+    // Cargar ciclos disponibles (sin destete, con tacto) + pesadas
+    await cargarCiclosParaLabor('destete')
+  }
+
+  const cerrarVincularCiclo = () => {
+    setOrdenVinculandoCiclo(null)
+    setCiclosDestetadosSeleccionados([])
+    setTernerosDestetados('')
+    setPesadaSeleccionada('')
+    setPreviewPesada(null)
+  }
+
+  const confirmarVincularCiclo = async () => {
+    if (!ordenVinculandoCiclo) return
+    if (ciclosDestetadosSeleccionados.length === 0) {
+      toast.error('Seleccione al menos un ciclo de cría')
+      return
+    }
+    if (!ternerosDestetados || parseInt(ternerosDestetados) <= 0) {
+      toast.error('Ingrese la cantidad de terneros destetados')
+      return
+    }
+
+    setVinculandoCiclo(true)
+    try {
+      const updateData: any = {
+        fecha_destete: ordenVinculandoCiclo.fecha,
+        terneros_destetados: parseInt(ternerosDestetados) || 0,
+        orden_destete_id: ordenVinculandoCiclo.id
+      }
+      if (pesadaSeleccionada && pesadaSeleccionada !== 'none' && previewPesada) {
+        updateData.pesada_destete_fecha = pesadaSeleccionada
+        updateData.kg_totales = Math.round(previewPesada.totalKgExtrapolado * 100) / 100
+        updateData.kg_promedio = Math.round(previewPesada.promedioKg * 100) / 100
+        updateData.machos_destetados = previewPesada.machos
+        updateData.hembras_destetados = previewPesada.hembras
+      }
+
+      for (const cicloId of ciclosDestetadosSeleccionados) {
+        const { error } = await supabase.schema('productivo').from('ciclos_cria')
+          .update(updateData)
+          .eq('id', cicloId)
+        if (error) throw error
+      }
+
+      // Actualizar set de órdenes ya vinculadas
+      setOrdenesYaVinculadas(prev => new Set([...prev, ordenVinculandoCiclo.id]))
+      toast.success(`Destete vinculado: ${ternerosDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
+      cerrarVincularCiclo()
+    } catch (err) {
+      console.error('Error vinculando ciclo:', err)
+      toast.error('Error al vincular ciclo de cría')
+    } finally {
+      setVinculandoCiclo(false)
+    }
+  }
+
   const toggleRodeo = (catId: string) => {
     setRodeosSeleccionados(prev => ({ ...prev, [catId]: !prev[catId] }))
   }
@@ -2599,6 +2670,14 @@ function SubTabOrdenesAplicacion() {
       if (catHacRes.data) setCategoriasHacienda(catHacRes.data)
       if (insRes.data) setInsumosVet(insRes.data)
       if (laboresRes.data) setLaboresDisponibles(laboresRes.data)
+
+      // Cargar órdenes ya vinculadas a ciclos de cría (destete)
+      const { data: ciclosVinculados } = await supabase.schema('productivo').from('ciclos_cria')
+        .select('orden_destete_id')
+        .not('orden_destete_id', 'is', null)
+      if (ciclosVinculados) {
+        setOrdenesYaVinculadas(new Set(ciclosVinculados.map(c => c.orden_destete_id).filter(Boolean)))
+      }
 
       // Calcular stock hacienda desde movimientos
       if (movHacRes.data) {
@@ -3224,6 +3303,19 @@ function SubTabOrdenesAplicacion() {
                         </Button>
                       </>
                     )}
+                    {esDesteteFin(o) && !ordenesYaVinculadas.has(o.id) && (
+                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600 gap-1"
+                        title="Vincular Ciclo de Cría"
+                        onClick={() => abrirVincularCiclo(o)}>
+                        <Link2 className="h-3.5 w-3.5" />
+                        <span className="text-[10px]">Ciclo</span>
+                      </Button>
+                    )}
+                    {esDesteteFin(o) && ordenesYaVinculadas.has(o.id) && (
+                      <Badge variant="outline" className="text-[10px] text-green-600 border-green-300 px-1.5">
+                        <Link2 className="h-3 w-3 mr-0.5" /> Vinculado
+                      </Badge>
+                    )}
                     {o.estado === 'eliminada' ? (
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
                         title="Ver detalle"
@@ -3717,6 +3809,138 @@ function SubTabOrdenesAplicacion() {
             <Button variant="destructive" onClick={eliminarOrden} disabled={guardando}>
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Eliminar Orden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Vincular Ciclo de Cría */}
+      <Dialog open={!!ordenVinculandoCiclo} onOpenChange={(open) => { if (!open) cerrarVincularCiclo() }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vincular Ciclo de Cría</DialogTitle>
+            <DialogDescription>
+              {ordenVinculandoCiclo && (
+                <>Destete Fin del {formatoFecha(ordenVinculandoCiclo.fecha)} — {formatoNumero(ordenVinculandoCiclo.cantidad_cabezas)} cabezas</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Selector de ciclos (multi) */}
+            <div>
+              <Label className="text-sm">
+                Campaña / Ciclo a cerrar{' '}
+                <span className="text-xs font-normal text-muted-foreground">(puede seleccionar varios)</span>
+              </Label>
+              {ciclosAbiertos.length === 0 ? (
+                <p className="text-xs text-amber-600 mt-1">No hay ciclos disponibles (requieren tacto registrado sin destete)</p>
+              ) : (
+                <div className="space-y-1 mt-1 border rounded p-2 bg-white">
+                  {ciclosAbiertos.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={ciclosDestetadosSeleccionados.includes(c.id)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setCiclosDestetadosSeleccionados(prev => [...prev, c.id])
+                          } else {
+                            setCiclosDestetadosSeleccionados(prev => prev.filter(id => id !== c.id))
+                          }
+                        }}
+                      />
+                      <span>{c.anio_servicio} — {c.rodeo}</span>
+                      {c.cabezas_servicio && <span className="text-xs text-muted-foreground">({c.cabezas_servicio} cab.)</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Terneros destetados */}
+            <div>
+              <Label className="text-sm flex items-center gap-2">
+                Terneros Destetados (total)
+                {ordenVinculandoCiclo && ordenVinculandoCiclo.cantidad_cabezas > 0 && String(ordenVinculandoCiclo.cantidad_cabezas) !== ternerosDestetados && (
+                  <button
+                    type="button"
+                    onClick={() => setTernerosDestetados(String(ordenVinculandoCiclo.cantidad_cabezas))}
+                    className="text-xs text-blue-500 underline font-normal"
+                  >
+                    usar cabezas orden ({ordenVinculandoCiclo.cantidad_cabezas})
+                  </button>
+                )}
+              </Label>
+              <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
+                onChange={e => setTernerosDestetados(e.target.value)} />
+            </div>
+
+            {/* Vincular pesada (opcional) */}
+            <div className="border border-blue-200 bg-blue-50/50 rounded-md p-3 space-y-2">
+              <Label className="text-sm text-blue-800 font-medium">
+                Vincular Pesada al Destete <span className="text-xs font-normal text-muted-foreground">(opcional — deriva kg y machos/hembras)</span>
+              </Label>
+              {pesadasDisponibles.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No hay pesadas registradas en el sistema.</p>
+              ) : (
+                <>
+                  <Select value={pesadaSeleccionada} onValueChange={v => {
+                    setPesadaSeleccionada(v)
+                    if (v && v !== 'none') cargarPreviewPesada(v)
+                    else setPreviewPesada(null)
+                  }}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sin vincular pesada" /></SelectTrigger>
+                    <SelectContent position="popper" className="z-[9999]">
+                      <SelectItem value="none">Sin vincular pesada</SelectItem>
+                      {pesadasDisponibles.map(p => (
+                        <SelectItem key={p.fecha} value={p.fecha}>
+                          {p.fecha.split('-').reverse().join('/')} — {p.total} pesadas
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {cargandoPreview && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Calculando...
+                    </div>
+                  )}
+
+                  {previewPesada && !cargandoPreview && (
+                    <div className="bg-white border border-blue-200 rounded p-3 space-y-2">
+                      <p className="text-xs font-semibold text-blue-800">Preview datos que se guardaran en el ciclo:</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <span className="text-gray-500">Machos:</span>
+                        <span className="font-medium text-sky-700">♂ {previewPesada.machos}</span>
+                        <span className="text-gray-500">Hembras:</span>
+                        <span className="font-medium text-pink-700">♀ {previewPesada.hembras}</span>
+                        <span className="text-gray-500">Con pesada:</span>
+                        <span className="font-medium">{previewPesada.conPesada} / {previewPesada.totalCabezas}</span>
+                        {previewPesada.sinPesada > 0 && (
+                          <>
+                            <span className="text-gray-500">Sin pesada:</span>
+                            <span className="font-medium text-amber-600">{previewPesada.sinPesada} (asumen promedio)</span>
+                          </>
+                        )}
+                        <span className="text-gray-500">Suma kg pesados:</span>
+                        <span className="font-medium">{previewPesada.sumaKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
+                        <span className="text-gray-500">Promedio kg:</span>
+                        <span className="font-semibold">{previewPesada.promedioKg.toFixed(1).replace('.', ',')} kg</span>
+                        <span className="text-gray-500">Total kg extrapolado:</span>
+                        <span className="font-bold text-green-700">{previewPesada.totalKgExtrapolado.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cerrarVincularCiclo}>Cancelar</Button>
+            <Button onClick={confirmarVincularCiclo} disabled={vinculandoCiclo || ciclosDestetadosSeleccionados.length === 0}>
+              {vinculandoCiclo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar Vinculación
             </Button>
           </DialogFooter>
         </DialogContent>
