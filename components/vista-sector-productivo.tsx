@@ -2346,7 +2346,7 @@ function SubTabOrdenesAplicacion() {
   const [añoServicio, setAñoServicio] = useState(String(new Date().getFullYear()))
   const [cabezasServicioPorRodeo, setCabezasServicioPorRodeo] = useState<Record<string, string>>({})
   // Tacto
-  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, anio_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
+  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, anio_servicio: number, rodeo: string, cabezas_servicio: number | null, cabezas_prenadas: number | null }[]>([])
   const [cicloSeleccionado, setCicloSeleccionado] = useState('')
   const [cabezasPrenadas, setCabezasPrenadas] = useState('')
   const [cabezasVacias, setCabezasVacias] = useState('')
@@ -2368,6 +2368,8 @@ function SubTabOrdenesAplicacion() {
   const [ordenVinculandoCiclo, setOrdenVinculandoCiclo] = useState<OrdenAplicacion | null>(null)
   const [ordenesYaVinculadas, setOrdenesYaVinculadas] = useState<Set<string>>(new Set())
   const [vinculandoCiclo, setVinculandoCiclo] = useState(false)
+  const [modoDesglose, setModoDesglose] = useState(false) // false=total, true=por ciclo
+  const [destetadosPorCiclo, setDestetadosPorCiclo] = useState<Record<string, string>>({})
   // Retrospectiva
   const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
 
@@ -2479,7 +2481,7 @@ function SubTabOrdenesAplicacion() {
 
   const cargarCiclosParaLabor = async (tipo: string, ordenIdEdicion?: string) => {
     let query = supabase.schema('productivo').from('ciclos_cria')
-      .select('id, anio_servicio, rodeo, cabezas_servicio')
+      .select('id, anio_servicio, rodeo, cabezas_servicio, cabezas_prenadas')
 
     if (tipo === 'tacto') {
       query = query.is('fecha_tacto', null).not('fecha_servicio', 'is', null)
@@ -2501,7 +2503,7 @@ function SubTabOrdenesAplicacion() {
         : tipo === 'servicio' ? 'orden_servicio_id' : null
       if (campo) {
         const { data: vinculado } = await supabase.schema('productivo').from('ciclos_cria')
-          .select('id, anio_servicio, rodeo, cabezas_servicio')
+          .select('id, anio_servicio, rodeo, cabezas_servicio, cabezas_prenadas')
           .eq(campo, ordenIdEdicion)
         if (vinculado) {
           const idsExistentes = new Set(ciclos.map(c => c.id))
@@ -2575,6 +2577,8 @@ function SubTabOrdenesAplicacion() {
     setTernerosDestetados('')
     setPesadaSeleccionada('')
     setPreviewPesada(null)
+    setModoDesglose(false)
+    setDestetadosPorCiclo({})
     // Cargar ciclos disponibles (sin destete, con tacto) + pesadas
     await cargarCiclosParaLabor('destete')
   }
@@ -2585,6 +2589,33 @@ function SubTabOrdenesAplicacion() {
     setTernerosDestetados('')
     setPesadaSeleccionada('')
     setPreviewPesada(null)
+    setModoDesglose(false)
+    setDestetadosPorCiclo({})
+  }
+
+  // Calcular prorrateo por cabezas_prenadas
+  const calcularProrrateo = (total: number) => {
+    const ciclosSel = ciclosAbiertos.filter(c => ciclosDestetadosSeleccionados.includes(c.id))
+    const totalPrenadas = ciclosSel.reduce((s, c) => s + (c.cabezas_prenadas || 0), 0)
+    if (totalPrenadas === 0) {
+      // Sin preñadas, repartir equitativo
+      const porCiclo = Math.round(total / ciclosSel.length)
+      return Object.fromEntries(ciclosSel.map((c, i) =>
+        [c.id, i === ciclosSel.length - 1 ? total - porCiclo * (ciclosSel.length - 1) : porCiclo]
+      ))
+    }
+    const result: Record<string, number> = {}
+    let acum = 0
+    ciclosSel.forEach((c, i) => {
+      if (i === ciclosSel.length - 1) {
+        result[c.id] = total - acum // último se lleva el residuo
+      } else {
+        const prop = Math.round(total * (c.cabezas_prenadas || 0) / totalPrenadas)
+        result[c.id] = prop
+        acum += prop
+      }
+    })
+    return result
   }
 
   const confirmarVincularCiclo = async () => {
@@ -2593,36 +2624,62 @@ function SubTabOrdenesAplicacion() {
       toast.error('Seleccione al menos un ciclo de cría')
       return
     }
-    if (!ternerosDestetados || parseInt(ternerosDestetados) <= 0) {
-      toast.error('Ingrese la cantidad de terneros destetados')
-      return
+
+    // Determinar terneros por ciclo
+    let destetadosMap: Record<string, number> = {}
+    if (ciclosDestetadosSeleccionados.length === 1) {
+      // Un solo ciclo: directo
+      const val = parseInt(ternerosDestetados) || 0
+      if (val <= 0) { toast.error('Ingrese la cantidad de terneros destetados'); return }
+      destetadosMap[ciclosDestetadosSeleccionados[0]] = val
+    } else if (modoDesglose) {
+      // Desglosado: validar cada uno
+      for (const cicloId of ciclosDestetadosSeleccionados) {
+        const val = parseInt(destetadosPorCiclo[cicloId]) || 0
+        if (val <= 0) {
+          const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+          toast.error(`Ingrese terneros para ${ciclo?.rodeo || 'ciclo'}`)
+          return
+        }
+        destetadosMap[cicloId] = val
+      }
+    } else {
+      // Total con prorrateo
+      const totalVal = parseInt(ternerosDestetados) || 0
+      if (totalVal <= 0) { toast.error('Ingrese la cantidad total de terneros destetados'); return }
+      destetadosMap = calcularProrrateo(totalVal)
     }
+
+    const totalDestetados = Object.values(destetadosMap).reduce((s, v) => s + v, 0)
+    const tienePesada = pesadaSeleccionada && pesadaSeleccionada !== 'none' && previewPesada
 
     setVinculandoCiclo(true)
     try {
-      const updateData: any = {
-        fecha_destete: ordenVinculandoCiclo.fecha,
-        terneros_destetados: parseInt(ternerosDestetados) || 0,
-        orden_destete_id: ordenVinculandoCiclo.id
-      }
-      if (pesadaSeleccionada && pesadaSeleccionada !== 'none' && previewPesada) {
-        updateData.pesada_destete_fecha = pesadaSeleccionada
-        updateData.kg_totales = Math.round(previewPesada.totalKgExtrapolado * 100) / 100
-        updateData.kg_promedio = Math.round(previewPesada.promedioKg * 100) / 100
-        updateData.machos_destetados = previewPesada.machos
-        updateData.hembras_destetados = previewPesada.hembras
-      }
-
       for (const cicloId of ciclosDestetadosSeleccionados) {
+        const cantCiclo = destetadosMap[cicloId]
+        const proporcion = totalDestetados > 0 ? cantCiclo / totalDestetados : 0
+
+        const updateData: any = {
+          fecha_destete: ordenVinculandoCiclo.fecha,
+          terneros_destetados: cantCiclo,
+          orden_destete_id: ordenVinculandoCiclo.id
+        }
+        if (tienePesada && previewPesada) {
+          updateData.pesada_destete_fecha = pesadaSeleccionada
+          updateData.kg_totales = Math.round(previewPesada.totalKgExtrapolado * proporcion * 100) / 100
+          updateData.kg_promedio = Math.round(previewPesada.promedioKg * 100) / 100 // promedio es el mismo para todos
+          updateData.machos_destetados = Math.round(previewPesada.machos * proporcion)
+          updateData.hembras_destetados = Math.round(previewPesada.hembras * proporcion)
+        }
+
         const { error } = await supabase.schema('productivo').from('ciclos_cria')
           .update(updateData)
           .eq('id', cicloId)
         if (error) throw error
       }
 
-      // Actualizar set de órdenes ya vinculadas
       setOrdenesYaVinculadas(prev => new Set([...prev, ordenVinculandoCiclo.id]))
-      toast.success(`Destete vinculado: ${ternerosDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
+      toast.success(`Destete vinculado: ${totalDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
       cerrarVincularCiclo()
     } catch (err) {
       console.error('Error vinculando ciclo:', err)
@@ -3859,21 +3916,74 @@ function SubTabOrdenesAplicacion() {
             </div>
 
             {/* Terneros destetados */}
-            <div>
-              <Label className="text-sm flex items-center gap-2">
-                Terneros Destetados (total)
-                {ordenVinculandoCiclo && ordenVinculandoCiclo.cantidad_cabezas > 0 && String(ordenVinculandoCiclo.cantidad_cabezas) !== ternerosDestetados && (
-                  <button
-                    type="button"
-                    onClick={() => setTernerosDestetados(String(ordenVinculandoCiclo.cantidad_cabezas))}
-                    className="text-xs text-blue-500 underline font-normal"
-                  >
-                    usar cabezas orden ({ordenVinculandoCiclo.cantidad_cabezas})
+            <div className="space-y-2">
+              {ciclosDestetadosSeleccionados.length > 1 && (
+                <div className="flex gap-2 text-xs">
+                  <button type="button"
+                    className={`px-2 py-1 rounded border ${!modoDesglose ? 'bg-blue-100 border-blue-300 font-medium' : 'border-gray-200'}`}
+                    onClick={() => setModoDesglose(false)}>
+                    Total (prorrateo)
                   </button>
-                )}
-              </Label>
-              <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
-                onChange={e => setTernerosDestetados(e.target.value)} />
+                  <button type="button"
+                    className={`px-2 py-1 rounded border ${modoDesglose ? 'bg-blue-100 border-blue-300 font-medium' : 'border-gray-200'}`}
+                    onClick={() => setModoDesglose(true)}>
+                    Por ciclo
+                  </button>
+                </div>
+              )}
+
+              {(!modoDesglose || ciclosDestetadosSeleccionados.length <= 1) ? (
+                <div>
+                  <Label className="text-sm flex items-center gap-2">
+                    Terneros Destetados (total)
+                    {ordenVinculandoCiclo && ordenVinculandoCiclo.cantidad_cabezas > 0 && String(ordenVinculandoCiclo.cantidad_cabezas) !== ternerosDestetados && (
+                      <button type="button"
+                        onClick={() => setTernerosDestetados(String(ordenVinculandoCiclo.cantidad_cabezas))}
+                        className="text-xs text-blue-500 underline font-normal">
+                        usar cabezas orden ({ordenVinculandoCiclo.cantidad_cabezas})
+                      </button>
+                    )}
+                  </Label>
+                  <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
+                    onChange={e => setTernerosDestetados(e.target.value)} />
+                  {/* Preview prorrateo cuando hay >1 ciclo y total ingresado */}
+                  {ciclosDestetadosSeleccionados.length > 1 && parseInt(ternerosDestetados) > 0 && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
+                      <p className="text-xs font-medium text-amber-800">Prorrateo por preñadas:</p>
+                      {(() => {
+                        const prorrateo = calcularProrrateo(parseInt(ternerosDestetados))
+                        return ciclosDestetadosSeleccionados.map(cicloId => {
+                          const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+                          return (
+                            <div key={cicloId} className="flex justify-between text-xs">
+                              <span>{ciclo?.rodeo} ({ciclo?.cabezas_prenadas || 0}P)</span>
+                              <span className="font-semibold">{prorrateo[cicloId]} terneros</span>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="text-sm">Terneros Destetados por Ciclo</Label>
+                  {ciclosDestetadosSeleccionados.map(cicloId => {
+                    const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+                    return (
+                      <div key={cicloId} className="flex items-center gap-2">
+                        <span className="text-sm min-w-[120px]">{ciclo?.rodeo} ({ciclo?.cabezas_prenadas || 0}P):</span>
+                        <Input type="number" className="h-8 text-sm w-24"
+                          value={destetadosPorCiclo[cicloId] || ''}
+                          onChange={e => setDestetadosPorCiclo(prev => ({ ...prev, [cicloId]: e.target.value }))} />
+                      </div>
+                    )
+                  })}
+                  <p className="text-xs text-muted-foreground">
+                    Total: {ciclosDestetadosSeleccionados.reduce((s, id) => s + (parseInt(destetadosPorCiclo[id]) || 0), 0)}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Vincular pesada (opcional) */}
