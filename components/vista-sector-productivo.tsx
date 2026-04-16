@@ -3090,27 +3090,7 @@ function SubTabOrdenesAplicacion() {
           toast.success(`Paricion registrada: ${ternerosNacidos} terneros nacidos`)
         }
 
-        if (laborEspecial === 'destete' && ciclosDestetadosSeleccionados.length > 0) {
-          const updateData: any = {
-            fecha_destete: fecha,
-            terneros_destetados: parseInt(ternerosDestetados) || 0,
-            orden_destete_id: ordenId
-          }
-          // Si hay pesada vinculada, agregar datos de kg
-          if (pesadaSeleccionada && previewPesada) {
-            updateData.pesada_destete_fecha = pesadaSeleccionada
-            updateData.kg_totales = Math.round(previewPesada.totalKgExtrapolado * 100) / 100
-            updateData.kg_promedio = Math.round(previewPesada.promedioKg * 100) / 100
-            updateData.machos_destetados = previewPesada.machos
-            updateData.hembras_destetados = previewPesada.hembras
-          }
-          for (const cicloId of ciclosDestetadosSeleccionados) {
-            await supabase.schema('productivo').from('ciclos_cria')
-              .update(updateData)
-              .eq('id', cicloId)
-          }
-          toast.success(`Destete registrado: ${ternerosDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
-        }
+        // Destete: vinculación a ciclos de cría se hace a posterior desde botón dedicado
       }
 
       toast.success(ordenEditandoId ? 'Orden actualizada' : 'Orden de aplicacion creada')
@@ -3482,112 +3462,10 @@ function SubTabOrdenesAplicacion() {
               )}
 
               {laborEspecial === 'destete' && (
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-sm">
-                      Campaña / Ciclo{' '}
-                      <span className="text-xs font-normal text-muted-foreground">(puede seleccionar varios)</span>
-                    </Label>
-                    {ciclosAbiertos.length === 0 ? (
-                      <p className="text-xs text-amber-600 mt-1">No hay ciclos disponibles (requieren tacto registrado sin destete)</p>
-                    ) : (
-                      <div className="space-y-1 mt-1 border rounded p-2 bg-white">
-                        {ciclosAbiertos.map(c => (
-                          <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5">
-                            <input
-                              type="checkbox"
-                              className="rounded"
-                              checked={ciclosDestetadosSeleccionados.includes(c.id)}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setCiclosDestetadosSeleccionados(prev => [...prev, c.id])
-                                } else {
-                                  setCiclosDestetadosSeleccionados(prev => prev.filter(id => id !== c.id))
-                                }
-                              }}
-                            />
-                            <span>{c.anio_servicio} — {c.rodeo}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <Label className="text-sm flex items-center gap-2">
-                      Terneros Destetados (total)
-                      {totalCabezas > 0 && String(totalCabezas) !== ternerosDestetados && (
-                        <button
-                          type="button"
-                          onClick={() => setTernerosDestetados(String(totalCabezas))}
-                          className="text-xs text-blue-500 underline font-normal"
-                        >
-                          usar total cabezas ({totalCabezas})
-                        </button>
-                      )}
-                    </Label>
-                    <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
-                      onChange={e => setTernerosDestetados(e.target.value)} />
-                  </div>
-
-                  {/* Vincular pesada al destete */}
-                  <div className="border border-blue-200 bg-blue-50/50 rounded-md p-3 space-y-2">
-                    <Label className="text-sm text-blue-800 font-medium">
-                      Vincular Pesada al Destete <span className="text-xs font-normal text-muted-foreground">(opcional — deriva kg y machos/hembras)</span>
-                    </Label>
-                    {pesadasDisponibles.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No hay pesadas registradas en el sistema.</p>
-                    ) : (
-                      <>
-                        <Select value={pesadaSeleccionada} onValueChange={v => {
-                          setPesadaSeleccionada(v)
-                          if (v && v !== 'none') cargarPreviewPesada(v)
-                          else setPreviewPesada(null)
-                        }}>
-                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sin vincular pesada" /></SelectTrigger>
-                          <SelectContent position="popper" className="z-[9999]">
-                            <SelectItem value="none">Sin vincular pesada</SelectItem>
-                            {pesadasDisponibles.map(p => (
-                              <SelectItem key={p.fecha} value={p.fecha}>
-                                {p.fecha.split('-').reverse().join('/')} — {p.total} pesadas
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-
-                        {cargandoPreview && (
-                          <div className="flex items-center gap-2 text-xs text-blue-600">
-                            <Loader2 className="h-3 w-3 animate-spin" /> Calculando...
-                          </div>
-                        )}
-
-                        {previewPesada && !cargandoPreview && (
-                          <div className="bg-white border border-blue-200 rounded p-3 space-y-2">
-                            <p className="text-xs font-semibold text-blue-800">Preview datos que se guardaran en el ciclo:</p>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                              <span className="text-gray-500">Machos:</span>
-                              <span className="font-medium text-sky-700">♂ {previewPesada.machos}</span>
-                              <span className="text-gray-500">Hembras:</span>
-                              <span className="font-medium text-pink-700">♀ {previewPesada.hembras}</span>
-                              <span className="text-gray-500">Con pesada:</span>
-                              <span className="font-medium">{previewPesada.conPesada} / {previewPesada.totalCabezas}</span>
-                              {previewPesada.sinPesada > 0 && (
-                                <>
-                                  <span className="text-gray-500">Sin pesada:</span>
-                                  <span className="font-medium text-amber-600">{previewPesada.sinPesada} (asumen promedio)</span>
-                                </>
-                              )}
-                              <span className="text-gray-500">Suma kg pesados:</span>
-                              <span className="font-medium">{previewPesada.sumaKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
-                              <span className="text-gray-500">Promedio kg:</span>
-                              <span className="font-semibold">{previewPesada.promedioKg.toFixed(1).replace('.', ',')} kg</span>
-                              <span className="text-gray-500">Total kg extrapolado:</span>
-                              <span className="font-bold text-green-700">{previewPesada.totalKgExtrapolado.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <p className="text-sm text-blue-800">
+                    La vinculacion a Ciclo de Cria y Pesada se realiza despues de confirmar la orden, desde el boton dedicado en la tarjeta de la orden ejecutada.
+                  </p>
                 </div>
               )}
 
