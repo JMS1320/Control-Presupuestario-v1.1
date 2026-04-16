@@ -22,6 +22,11 @@ interface CicloCria {
   terneros_nacidos: number | null
   fecha_destete: string | null
   terneros_destetados: number | null
+  pesada_destete_fecha: string | null
+  kg_totales: number | null
+  kg_promedio: number | null
+  machos_destetados: number | null
+  hembras_destetados: number | null
   observaciones: string | null
 }
 
@@ -84,6 +89,11 @@ export default function CiclosCriaPanel() {
     const vacias = lista.reduce((s, c) => s + (c.cabezas_vacias || 0), 0)
     const nacidos = lista.reduce((s, c) => s + (c.terneros_nacidos || 0), 0)
     const destetados = lista.reduce((s, c) => s + (c.terneros_destetados || 0), 0)
+    const kgTotales = lista.reduce((s, c) => s + (c.kg_totales || 0), 0)
+    const conKg = lista.filter(c => c.kg_promedio != null)
+    const kgPromedio = conKg.length > 0 ? conKg.reduce((s, c) => s + (c.kg_promedio || 0), 0) / conKg.length : null
+    const machosDestetados = lista.reduce((s, c) => s + (c.machos_destetados || 0), 0)
+    const hembrasDestetados = lista.reduce((s, c) => s + (c.hembras_destetados || 0), 0)
 
     return {
       servicio,
@@ -95,6 +105,10 @@ export default function CiclosCriaPanel() {
       destetados,
       pctDesteteNac: nacidos > 0 ? (destetados / nacidos) * 100 : null,
       pctDesteteEnt: servicio > 0 ? (destetados / servicio) * 100 : null,
+      kgTotales,
+      kgPromedio,
+      machosDestetados,
+      hembrasDestetados,
     }
   }
 
@@ -167,6 +181,10 @@ export default function CiclosCriaPanel() {
               <TableHead className="text-right">Destetados</TableHead>
               <TableHead className="text-right">% Dest s/Nac</TableHead>
               <TableHead className="text-right">% Dest s/Ent</TableHead>
+              <TableHead className="text-right">♂</TableHead>
+              <TableHead className="text-right">♀</TableHead>
+              <TableHead className="text-right">Kg Prom.</TableHead>
+              <TableHead className="text-right">Kg Total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -182,6 +200,10 @@ export default function CiclosCriaPanel() {
                 <TableCell className="text-right">{k.destetados || '-'}</TableCell>
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteNac)}</TableCell>
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteEnt)}</TableCell>
+                <TableCell className="text-right text-sky-700">{k.machosDestetados || '-'}</TableCell>
+                <TableCell className="text-right text-pink-700">{k.hembrasDestetados || '-'}</TableCell>
+                <TableCell className="text-right">{k.kgPromedio != null ? `${k.kgPromedio.toFixed(1).replace('.', ',')}` : '-'}</TableCell>
+                <TableCell className="text-right font-semibold text-green-700">{k.kgTotales ? k.kgTotales.toLocaleString('es-AR', { maximumFractionDigits: 0 }) : '-'}</TableCell>
               </TableRow>
             ))}
             {kpisPorRodeo.length > 1 && (
@@ -196,6 +218,10 @@ export default function CiclosCriaPanel() {
                 <TableCell className="text-right">{kpiTotal.destetados || '-'}</TableCell>
                 <TableCell className="text-right">{formatoPct(kpiTotal.pctDesteteNac)}</TableCell>
                 <TableCell className="text-right">{formatoPct(kpiTotal.pctDesteteEnt)}</TableCell>
+                <TableCell className="text-right text-sky-700">{kpiTotal.machosDestetados || '-'}</TableCell>
+                <TableCell className="text-right text-pink-700">{kpiTotal.hembrasDestetados || '-'}</TableCell>
+                <TableCell className="text-right">{kpiTotal.kgPromedio != null ? `${kpiTotal.kgPromedio.toFixed(1).replace('.', ',')}` : '-'}</TableCell>
+                <TableCell className="text-right font-semibold text-green-700">{kpiTotal.kgTotales ? kpiTotal.kgTotales.toLocaleString('es-AR', { maximumFractionDigits: 0 }) : '-'}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -213,6 +239,7 @@ export default function CiclosCriaPanel() {
                 <TableHead>Tacto</TableHead>
                 <TableHead>Paricion</TableHead>
                 <TableHead>Destete</TableHead>
+                <TableHead>Kg Destete</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -235,6 +262,14 @@ export default function CiclosCriaPanel() {
                     </TableCell>
                     <TableCell className="text-xs">
                       {c.fecha_destete ? `${formatoFecha(c.fecha_destete)} - ${c.terneros_destetados} dest.` : '-'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {c.kg_totales ? (
+                        <span className="text-green-700 font-medium">
+                          {c.kg_totales.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg
+                          <span className="text-gray-400 font-normal"> (prom {c.kg_promedio?.toFixed(1).replace('.', ',')})</span>
+                        </span>
+                      ) : '-'}
                     </TableCell>
                   </TableRow>
                 )
