@@ -959,6 +959,10 @@ function TabHacienda() {
   const [cargandoCUT, setCargandoCUT] = useState(false)
   const [caravanasActivasCUT, setCaravanasActivasCUT] = useState<{ id: string, caravana: string }[]>([])
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
+  // Mortandad terneros — selector caravana opcional
+  const [ternerosParaBaja, setTernerosParaBaja] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null }[]>([])
+  const [terneroSeleccionadoId, setTerneroSeleccionadoId] = useState<string>('')
+  const [motivoBajaTernero, setMotivoBajaTernero] = useState('')
 
   const cargarDetalleCUT = async (stockActual: number, categoriaId?: string) => {
     if (detalleCUT) return // ya cargado
@@ -1125,6 +1129,24 @@ function TabHacienda() {
     })
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
+    setTernerosParaBaja([])
+    setTerneroSeleccionadoId('')
+    setMotivoBajaTernero('')
+  }
+
+  // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
+  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito']
+  const esCatTernero = (catId: string) => {
+    const cat = categorias.find(c => String(c.id) === catId)
+    return cat ? CATEGORIAS_TERNERO.includes(cat.nombre.toLowerCase()) : false
+  }
+
+  const cargarTernerosParaBaja = async () => {
+    const { data } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo')
+      .eq('activo', true)
+      .order('caravana_oficial', { ascending: true })
+    setTernerosParaBaja(data ?? [])
   }
 
   const guardarMovimiento = async () => {
@@ -1204,6 +1226,17 @@ function TabHacienda() {
       await supabase.schema('productivo').from('detalle_descarte')
         .update({ estado: 'baja' })
         .in('id', caravanasSeleccionadas)
+    }
+
+    // Si es mortandad de ternero y se seleccionó caravana → marcar ternero como inactivo
+    if (nuevoMov.tipo === 'mortandad' && terneroSeleccionadoId && terneroSeleccionadoId !== 'none') {
+      await supabase.schema('productivo').from('terneros')
+        .update({
+          activo: false,
+          fecha_baja: nuevoMov.fecha,
+          motivo_baja: motivoBajaTernero || nuevoMov.observaciones || 'Mortandad'
+        })
+        .eq('id', terneroSeleccionadoId)
     }
 
     toast.success('Movimiento registrado')
@@ -1531,6 +1564,7 @@ function TabHacienda() {
                     <Select value={nuevoMov.categoria_id} onValueChange={v => {
                       setNuevoMov(p => ({ ...p, categoria_id: v }))
                       if (nuevoMov.tipo === 'venta') cargarCaravanasParaBaja(v)
+                      if (nuevoMov.tipo === 'mortandad' && esCatTernero(v)) cargarTernerosParaBaja()
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
@@ -1603,6 +1637,41 @@ function TabHacienda() {
                         </label>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Selector de caravana ternero — solo Mortandad + categoría ternero */}
+                {nuevoMov.tipo === 'mortandad' && esCatTernero(nuevoMov.categoria_id) && (
+                  <div className="space-y-2 border border-red-200 bg-red-50/50 rounded-md p-3">
+                    <Label className="text-red-700 font-medium">Vincular baja de caravana en Terneros <span className="text-muted-foreground text-xs font-normal">(opcional)</span></Label>
+                    {ternerosParaBaja.length === 0 ? (
+                      <Button variant="outline" size="sm" onClick={cargarTernerosParaBaja} className="text-xs">
+                        Cargar caravanas disponibles
+                      </Button>
+                    ) : (
+                      <>
+                        <Select value={terneroSeleccionadoId} onValueChange={setTerneroSeleccionadoId}>
+                          <SelectTrigger><SelectValue placeholder="Sin asignar (baja sin caravana)" /></SelectTrigger>
+                          <SelectContent position="popper" className="z-[9999] max-h-60">
+                            <SelectItem value="none">Sin asignar</SelectItem>
+                            {ternerosParaBaja.map(t => (
+                              <SelectItem key={t.id} value={t.id}>
+                                {t.caravana_interna || '—'} / {t.caravana_oficial || '—'} ({t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : '?'})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div>
+                          <Label className="text-xs text-red-600">Motivo de baja</Label>
+                          <Input
+                            placeholder="Ej: enfermedad, accidente..."
+                            value={motivoBajaTernero}
+                            onChange={e => setMotivoBajaTernero(e.target.value)}
+                            className="text-sm"
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </>

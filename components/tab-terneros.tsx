@@ -31,6 +31,8 @@ interface Ternero {
   es_torito: boolean
   observaciones: string | null
   activo: boolean
+  fecha_baja: string | null
+  motivo_baja: string | null
   created_at: string
   pesadas_terneros: Pesada[]
 }
@@ -199,6 +201,9 @@ export function TabTerneros() {
   const [modalDescarga, setModalDescarga] = useState(false)
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState<Set<string>>(new Set())
 
+  // Bajas sin asignar (mortandad en hacienda sin caravana vinculada)
+  const [bajasSinAsignar, setBajasSinAsignar] = useState(0)
+
   // ─── Carga de datos ──────────────────────────────────────────────────────
 
   const cargar = async () => {
@@ -209,7 +214,6 @@ export function TabTerneros() {
           .schema('productivo')
           .from('terneros')
           .select('*, pesadas_terneros(id, fecha, peso_kg)')
-          .eq('activo', true)
           .order('caravana_oficial', { ascending: true }),
         supabase
           .schema('productivo')
@@ -220,8 +224,25 @@ export function TabTerneros() {
       ])
 
       if (resTerneros.error) throw resTerneros.error
-      setTerneros(resTerneros.data ?? [])
+      const todosLosTerneros = resTerneros.data ?? []
+      setTerneros(todosLosTerneros)
       setPesadasSinVincular(resSinVincular.data ?? [])
+
+      // Calcular bajas sin asignar: mortandad en hacienda (categorías ternero) vs terneros inactivos
+      try {
+        const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito']
+        const { data: catData } = await supabase.schema('productivo').from('categorias_hacienda')
+          .select('id, nombre').eq('activo', true)
+        const catTernerosIds = (catData ?? []).filter(c => CATS_TERNERO.includes(c.nombre.toLowerCase())).map(c => c.id)
+
+        if (catTernerosIds.length > 0) {
+          const { data: movData } = await supabase.schema('productivo').from('movimientos_hacienda')
+            .select('cantidad').eq('tipo', 'mortandad').in('categoria_id', catTernerosIds)
+          const totalMortandadHacienda = (movData ?? []).reduce((sum, m) => sum + m.cantidad, 0)
+          const totalBajasEnTerneros = todosLosTerneros.filter(t => !t.activo).length
+          setBajasSinAsignar(Math.max(0, totalMortandadHacienda - totalBajasEnTerneros))
+        }
+      } catch { /* no bloquear si falla consulta auxiliar */ }
     } catch (err: any) {
       toast.error('Error cargando terneros: ' + err.message)
     } finally {
@@ -246,6 +267,9 @@ export function TabTerneros() {
         'Fecha Destete': t.fecha_destete ? formatFecha(t.fecha_destete) : '',
         'Observaciones': t.observaciones ?? '',
         'Caravana Duplicada': idsConDuplicado.has(t.id) ? 'Sí' : '',
+        'Estado': t.activo ? 'Activo' : 'Baja',
+        'Fecha Baja': t.fecha_baja ? formatFecha(t.fecha_baja) : '',
+        'Motivo Baja': t.motivo_baja ?? '',
       }
       for (const fecha of fechasOrdenadas) {
         const pesada = t.pesadas_terneros.find(p => p.fecha === fecha)
@@ -366,10 +390,12 @@ export function TabTerneros() {
 
   // ─── Computados ──────────────────────────────────────────────────────────
 
-  const machos = terneros.filter(t => t.sexo === 'Macho')
-  const hembras = terneros.filter(t => t.sexo === 'Hembra')
-  const toritos = terneros.filter(t => t.es_torito)
-  const conPesadas = terneros.filter(t => t.pesadas_terneros.length > 0)
+  const ternerosActivos = terneros.filter(t => t.activo)
+  const ternerosInactivos = terneros.filter(t => !t.activo)
+  const machos = ternerosActivos.filter(t => t.sexo === 'Macho')
+  const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
+  const toritos = ternerosActivos.filter(t => t.es_torito)
+  const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
   // Detección de caravanas duplicadas en BD
   const idsConDuplicado = new Set<string>()
@@ -402,8 +428,12 @@ export function TabTerneros() {
     dias: Math.round((new Date(f).getTime() - new Date(todasFechas[i]).getTime()) / 86400000),
   }))
 
-  // Terneros ordenados por ganancia últ. 2 pesadas desc (nulls al final)
+  // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   const ternerosOrdenados = [...terneros].sort((a, b) => {
+    // Inactivos siempre al final
+    if (a.activo && !b.activo) return -1
+    if (!a.activo && b.activo) return 1
+    if (!a.activo && !b.activo) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
     const ga = getGananciaUlt2(a.pesadas_terneros)
     const gb = getGananciaUlt2(b.pesadas_terneros)
     if (ga === null && gb === null) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
@@ -427,7 +457,7 @@ export function TabTerneros() {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">
             <Baby className="h-3 w-3 mr-1" />
-            {terneros.length} terneros
+            {ternerosActivos.length} terneros
           </Badge>
           <Badge variant="outline" className="text-sky-700 border-sky-300 bg-sky-50">
             ♂ {machos.length} machos
@@ -444,6 +474,11 @@ export function TabTerneros() {
             <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
               <Scale className="h-3 w-3 mr-1" />
               {conPesadas.length} con pesada
+            </Badge>
+          )}
+          {ternerosInactivos.length > 0 && (
+            <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
+              💀 {ternerosInactivos.length} baja{ternerosInactivos.length > 1 ? 's' : ''}
             </Badge>
           )}
           {idsConDuplicado.size > 0 && (
@@ -506,6 +541,21 @@ export function TabTerneros() {
         </div>
       </div>
 
+      {/* ── Alerta bajas sin asignar ── */}
+      {bajasSinAsignar > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-semibold text-red-700">
+              {bajasSinAsignar} mortandad{bajasSinAsignar > 1 ? 'es' : ''} sin caravana asignada
+            </span>
+            <span className="text-red-600 ml-1">
+              — Hay bajas registradas en Hacienda que no tienen caravana vinculada. Los conteos y kg se ajustan restando {bajasSinAsignar} x promedio.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Input ganancia estimada ── */}
       {conPesadas.length > 0 && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
@@ -528,11 +578,18 @@ export function TabTerneros() {
       {conPesadas.length > 0 && (() => {
         const statsMachos = calcSummary(machos, gananciaDiaria)
         const statsHembras = calcSummary(hembras, gananciaDiaria)
-        const statsTotal = calcSummary(terneros, gananciaDiaria)
+        const statsTotal = calcSummary(ternerosActivos, gananciaDiaria)
+        // Ajustar total por bajas sin asignar (descuenta cabezas × promedio)
+        const ajusteTotal = bajasSinAsignar > 0 ? {
+          ...statsTotal,
+          total: statsTotal.total - bajasSinAsignar,
+          totalKg: statsTotal.totalKg - (bajasSinAsignar * statsTotal.promedioKg),
+          totalEstimadoKg: statsTotal.totalEstimadoKg - (bajasSinAsignar * statsTotal.promedioEstimadoKg),
+        } : statsTotal
         const grupos = [
           { key: 'M', label: '♂ Machos',     stats: statsMachos,  bg: 'bg-sky-50',   border: 'border-sky-200',   title: 'text-sky-800',   est: 'text-sky-700'  },
           { key: 'H', label: '♀ Hembras',    stats: statsHembras, bg: 'bg-pink-50',  border: 'border-pink-200',  title: 'text-pink-800',  est: 'text-pink-700' },
-          { key: 'T', label: 'Total Rodeo',  stats: statsTotal,   bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', est: 'text-green-700'},
+          { key: 'T', label: `Total Rodeo${bajasSinAsignar > 0 ? ' (ajustado)' : ''}`,  stats: ajusteTotal,   bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', est: 'text-green-700'},
         ]
         return (
           <div className="grid grid-cols-3 gap-3">
@@ -605,65 +662,81 @@ export function TabTerneros() {
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. p→p</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
+                    <TableHead className="text-xs">Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {ternerosOrdenados.map(t => {
                     const esDup = idsConDuplicado.has(t.id)
+                    const inactivo = !t.activo
                     const ultima = getUltimaPesada(t.pesadas_terneros)
-                    const pesoHoy = getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
+                    const pesoHoy = inactivo ? null : getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
                     const ganUlt2 = getGananciaUlt2(t.pesadas_terneros)
                     const ganPaP = getGananciaPuntaAPunta(t.pesadas_terneros)
                     const acelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 > ganPaP
                     const desacelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 < ganPaP
+                    // Estilo tachado rojo para inactivos
+                    const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
+                      <TableRow key={t.id} className={`text-sm ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`}>
                         <TableCell className="w-6 pr-0">
-                          {esDup && <span title="Caravana duplicada">⚠️</span>}
+                          {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_interna ?? <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={cellStrike}>
                           {t.sexo === 'Macho'
-                            ? <span className="text-sky-700 font-medium">♂ M</span>
+                            ? <span className={inactivo ? 'text-red-400 font-medium' : 'text-sky-700 font-medium'}>♂ M</span>
                             : t.sexo === 'Hembra'
-                            ? <span className="text-pink-700 font-medium">♀ H</span>
+                            ? <span className={inactivo ? 'text-red-400 font-medium' : 'text-pink-700 font-medium'}>♀ H</span>
                             : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className={`text-xs ${cellStrike}`}>
                           {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={cellStrike}>
                           {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className={`text-xs ${cellStrike}`}>
                           {ultima
-                            ? <span className="text-green-700">{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
+                            ? <span className={inactivo ? 'text-red-400' : 'text-green-700'}>{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
                             : <span className="text-gray-400">sin pesada</span>}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {pesoHoy !== null
+                        <TableCell className={`text-xs ${cellStrike}`}>
+                          {inactivo
+                            ? <span className="text-red-300">—</span>
+                            : pesoHoy !== null
                             ? <span className="text-blue-700 font-medium">{formatPeso(pesoHoy)}</span>
                             : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-center">
+                        <TableCell className={`text-xs text-center ${cellStrike}`}>
                           {ganUlt2 !== null
-                            ? <span className={`font-medium ${acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
-                                {acelerando ? '▲ ' : desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2).replace(".", ",")}
+                            ? <span className={`font-medium ${inactivo ? 'text-red-400' : acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
+                                {!inactivo && acelerando ? '▲ ' : !inactivo && desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2).replace(".", ",")}
                               </span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-center">
+                        <TableCell className={`text-xs text-center ${cellStrike}`}>
                           {ganPaP !== null
-                            ? <span className="text-gray-500">{ganPaP.toFixed(2).replace(".", ",")}</span>
+                            ? <span className={inactivo ? 'text-red-400' : 'text-gray-500'}>{ganPaP.toFixed(2).replace(".", ",")}</span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-gray-500 max-w-[160px] truncate">
+                        <TableCell className={`text-xs max-w-[160px] truncate ${inactivo ? 'text-red-400 line-through' : 'text-gray-500'}`}>
                           {t.observaciones ?? ''}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {inactivo ? (
+                            <span className="text-red-600 font-medium" title={t.motivo_baja ?? 'Mortandad'}>
+                              💀 {t.fecha_baja ? formatFecha(t.fecha_baja) : 'Baja'}
+                              {t.motivo_baja && <span className="block text-[10px] text-red-400 truncate max-w-[100px]">{t.motivo_baja}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-green-600 text-[10px]">Activo</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
