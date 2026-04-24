@@ -113,6 +113,15 @@ export default function CiclosCriaPanel() {
     }
   }
 
+  // Detectar ciclos con datos prorrateados (comparten orden_destete_id)
+  const ordenDesteteCount = new Map<string, number>()
+  ciclos.forEach(c => {
+    if (c.orden_destete_id) ordenDesteteCount.set(c.orden_destete_id, (ordenDesteteCount.get(c.orden_destete_id) || 0) + 1)
+  })
+  const esProrrateado = (c: CicloCria) =>
+    c.orden_destete_id != null && (ordenDesteteCount.get(c.orden_destete_id) || 0) > 1
+  const hayProrrateados = ciclos.some(esProrrateado)
+
   // Agrupar por rodeo
   const rodeos = [...new Set(ciclos.map(c => c.rodeo))]
   const kpisPorRodeo = rodeos.map(rodeo => {
@@ -124,15 +133,6 @@ export default function CiclosCriaPanel() {
     }
   })
   const kpiTotal = calcularKPIs(ciclos)
-
-  // Detectar ciclos con datos prorrateados (comparten orden_destete_id)
-  const ordenDesteteCount = new Map<string, number>()
-  ciclos.forEach(c => {
-    if (c.orden_destete_id) ordenDesteteCount.set(c.orden_destete_id, (ordenDesteteCount.get(c.orden_destete_id) || 0) + 1)
-  })
-  const esProrrateado = (c: CicloCria) =>
-    c.orden_destete_id != null && (ordenDesteteCount.get(c.orden_destete_id) || 0) > 1
-  const hayProrrateados = ciclos.some(esProrrateado)
 
   if (loading) {
     return (
