@@ -27,6 +27,7 @@ interface CicloCria {
   kg_promedio: number | null
   machos_destetados: number | null
   hembras_destetados: number | null
+  orden_destete_id: string | null
   observaciones: string | null
 }
 
@@ -114,11 +115,24 @@ export default function CiclosCriaPanel() {
 
   // Agrupar por rodeo
   const rodeos = [...new Set(ciclos.map(c => c.rodeo))]
-  const kpisPorRodeo = rodeos.map(rodeo => ({
-    rodeo,
-    ...calcularKPIs(ciclos.filter(c => c.rodeo === rodeo))
-  }))
+  const kpisPorRodeo = rodeos.map(rodeo => {
+    const ciclosRodeo = ciclos.filter(c => c.rodeo === rodeo)
+    return {
+      rodeo,
+      prorrateado: ciclosRodeo.some(esProrrateado),
+      ...calcularKPIs(ciclosRodeo)
+    }
+  })
   const kpiTotal = calcularKPIs(ciclos)
+
+  // Detectar ciclos con datos prorrateados (comparten orden_destete_id)
+  const ordenDesteteCount = new Map<string, number>()
+  ciclos.forEach(c => {
+    if (c.orden_destete_id) ordenDesteteCount.set(c.orden_destete_id, (ordenDesteteCount.get(c.orden_destete_id) || 0) + 1)
+  })
+  const esProrrateado = (c: CicloCria) =>
+    c.orden_destete_id != null && (ordenDesteteCount.get(c.orden_destete_id) || 0) > 1
+  const hayProrrateados = ciclos.some(esProrrateado)
 
   if (loading) {
     return (
@@ -200,10 +214,10 @@ export default function CiclosCriaPanel() {
                 <TableCell className="text-right">{k.destetados || '-'}</TableCell>
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteNac)}</TableCell>
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteEnt)}</TableCell>
-                <TableCell className="text-right text-sky-700">{k.machosDestetados || '-'}</TableCell>
-                <TableCell className="text-right text-pink-700">{k.hembrasDestetados || '-'}</TableCell>
+                <TableCell className="text-right text-sky-700">{k.machosDestetados || '-'}{k.prorrateado && k.machosDestetados ? '*' : ''}</TableCell>
+                <TableCell className="text-right text-pink-700">{k.hembrasDestetados || '-'}{k.prorrateado && k.hembrasDestetados ? '*' : ''}</TableCell>
                 <TableCell className="text-right">{k.kgPromedio != null ? `${k.kgPromedio.toFixed(1).replace('.', ',')}` : '-'}</TableCell>
-                <TableCell className="text-right font-semibold text-green-700">{k.kgTotales ? k.kgTotales.toLocaleString('es-AR', { maximumFractionDigits: 0 }) : '-'}</TableCell>
+                <TableCell className="text-right font-semibold text-green-700">{k.kgTotales ? `${k.kgTotales.toLocaleString('es-AR', { maximumFractionDigits: 0 })}${k.prorrateado ? '*' : ''}` : '-'}</TableCell>
               </TableRow>
             ))}
             {kpisPorRodeo.length > 1 && (
@@ -268,6 +282,7 @@ export default function CiclosCriaPanel() {
                         <span className="text-green-700 font-medium">
                           {c.kg_totales.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg
                           <span className="text-gray-400 font-normal"> (prom {c.kg_promedio?.toFixed(1).replace('.', ',')})</span>
+                          {esProrrateado(c) && <span className="text-amber-500">*</span>}
                         </span>
                       ) : '-'}
                     </TableCell>
@@ -277,6 +292,9 @@ export default function CiclosCriaPanel() {
             </TableBody>
           </Table>
         </div>
+        {hayProrrateados && (
+          <p className="text-xs text-amber-600 mt-1">* Datos prorrateados del total general (machos, hembras, kg). Los valores reales corresponden a la fila TOTAL.</p>
+        )}
       </CardContent>
     </Card>
   )
