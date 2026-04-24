@@ -211,12 +211,12 @@ export default function CiclosCriaPanel() {
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctPrenez)}</TableCell>
                 <TableCell className="text-right">{k.nacidos || '-'}</TableCell>
                 <TableCell className="text-right font-semibold">{formatoPct(k.pctParicion)}</TableCell>
-                <TableCell className="text-right">{k.destetados || '-'}</TableCell>
-                <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteNac)}</TableCell>
-                <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteEnt)}</TableCell>
+                <TableCell className="text-right">{k.destetados || '-'}{k.prorrateado && k.destetados ? '*' : ''}</TableCell>
+                <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteNac)}{k.prorrateado && k.pctDesteteNac != null ? '*' : ''}</TableCell>
+                <TableCell className="text-right font-semibold">{formatoPct(k.pctDesteteEnt)}{k.prorrateado && k.pctDesteteEnt != null ? '*' : ''}</TableCell>
                 <TableCell className="text-right text-sky-700">{k.machosDestetados || '-'}{k.prorrateado && k.machosDestetados ? '*' : ''}</TableCell>
                 <TableCell className="text-right text-pink-700">{k.hembrasDestetados || '-'}{k.prorrateado && k.hembrasDestetados ? '*' : ''}</TableCell>
-                <TableCell className="text-right">{k.kgPromedio != null ? `${k.kgPromedio.toFixed(1).replace('.', ',')}` : '-'}</TableCell>
+                <TableCell className="text-right">{k.kgPromedio != null ? `${k.kgPromedio.toFixed(1).replace('.', ',')}${k.prorrateado ? '*' : ''}` : '-'}</TableCell>
                 <TableCell className="text-right font-semibold text-green-700">{k.kgTotales ? `${k.kgTotales.toLocaleString('es-AR', { maximumFractionDigits: 0 })}${k.prorrateado ? '*' : ''}` : '-'}</TableCell>
               </TableRow>
             ))}
