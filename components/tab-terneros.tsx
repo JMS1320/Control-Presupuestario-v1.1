@@ -230,7 +230,7 @@ export function TabTerneros() {
 
       // Calcular bajas sin asignar: mortandad en hacienda (categorías ternero) vs terneros inactivos
       try {
-        const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito']
+        const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
         const { data: catData } = await supabase.schema('productivo').from('categorias_hacienda')
           .select('id, nombre').eq('activo', true)
         const catTernerosIds = (catData ?? []).filter(c => CATS_TERNERO.includes(c.nombre.toLowerCase())).map(c => c.id)

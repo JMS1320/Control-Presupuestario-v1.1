@@ -1135,7 +1135,7 @@ function TabHacienda() {
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
-  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito']
+  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
   const esCatTernero = (catId: string) => {
     const cat = categorias.find(c => String(c.id) === catId)
     return cat ? CATEGORIAS_TERNERO.includes(cat.nombre.toLowerCase()) : false
@@ -2373,6 +2373,29 @@ function SubTabOrdenesAplicacion() {
   // Retrospectiva
   const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
 
+  // === ASIGNACIÓN CATEGORÍA POST-DESTETE ===
+  interface TerneroAsignar {
+    id: string
+    caravana_interna: string | null
+    caravana_oficial: string | null
+    sexo: string
+    es_torito: boolean
+    categoria_propuesta: string // categoria_id destino
+    seleccionado: boolean
+  }
+  const [mostrarModalAsignacion, setMostrarModalAsignacion] = useState(false)
+  const [ternerosParaAsignar, setTernerosParaAsignar] = useState<TerneroAsignar[]>([])
+  const [fechaIngresoRecria, setFechaIngresoRecria] = useState('')
+  const [pesoIngresoRecria, setPesoIngresoRecria] = useState('')
+  const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
+  const [ordenEjecutadaParaAsignacion, setOrdenEjecutadaParaAsignacion] = useState<OrdenAplicacion | null>(null)
+  const [pesadasDisponiblesAsignacion, setPesadasDisponiblesAsignacion] = useState<{ fecha: string, total: number }[]>([])
+  const [pesadaSeleccionadaAsignacion, setPesadaSeleccionadaAsignacion] = useState('')
+  const [pesadaAsignacionSummary, setPesadaAsignacionSummary] = useState<{
+    conPesada: number, sinPesada: number, totalKg: number, promedioKg: number
+  } | null>(null)
+  const [cargandoPesadaAsignacion, setCargandoPesadaAsignacion] = useState(false)
+
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
 
@@ -2983,13 +3006,237 @@ function SubTabOrdenesAplicacion() {
 
       toast.success('Orden confirmada como ejecutada')
       setMostrarModalConfirmar(false)
-      setOrdenConfirmando(null)
+
+      // Detectar si es Destete Fin → abrir modal asignación categorías
+      const esDestete = (ordenConfirmando.labores || []).some(l => l === 'Destete Fin')
+      if (esDestete) {
+        await abrirModalAsignacion(ordenConfirmando)
+      } else {
+        setOrdenConfirmando(null)
+      }
       cargarDatos()
     } catch (err: any) {
       console.error('Error ejecutando orden:', err)
       toast.error(err.message || 'Error al ejecutar orden')
     } finally {
       setGuardando(false)
+    }
+  }
+
+  // === ASIGNACIÓN CATEGORÍA POST-DESTETE — funciones ===
+
+  const abrirModalAsignacion = async (orden: OrdenAplicacion) => {
+    // Cargar terneros activos "al pie" (Ternera al Pie + Ternero al Pie)
+    const { data: ternerosAlPie } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo, es_torito')
+      .eq('activo', true)
+      .in('categoria_id', categoriasAlPieIds())
+      .order('caravana_oficial', { ascending: true })
+
+    if (!ternerosAlPie || ternerosAlPie.length === 0) {
+      toast.info('No hay terneros "al pie" para asignar categoría')
+      setOrdenConfirmando(null)
+      return
+    }
+
+    // Cargar fechas de pesadas disponibles para estos terneros
+    const terneroIds = ternerosAlPie.map(t => t.id)
+    const { data: pesData } = await supabase.schema('productivo').from('pesadas_terneros')
+      .select('fecha')
+      .in('ternero_id', terneroIds)
+    if (pesData) {
+      const conteo = new Map<string, number>()
+      pesData.forEach(p => conteo.set(p.fecha, (conteo.get(p.fecha) || 0) + 1))
+      setPesadasDisponiblesAsignacion(
+        [...conteo.entries()].map(([fecha, total]) => ({ fecha, total })).sort((a, b) => b.fecha.localeCompare(a.fecha))
+      )
+    } else {
+      setPesadasDisponiblesAsignacion([])
+    }
+    setPesadaSeleccionadaAsignacion('')
+    setPesadaAsignacionSummary(null)
+    setPesoIngresoRecria('')
+
+    // Proponer categoría por sexo/es_torito
+    const asignaciones: TerneroAsignar[] = ternerosAlPie.map(t => ({
+      id: t.id,
+      caravana_interna: t.caravana_interna,
+      caravana_oficial: t.caravana_oficial,
+      sexo: t.sexo,
+      es_torito: t.es_torito || false,
+      categoria_propuesta: categoriaPropuesta(t.sexo, t.es_torito),
+      seleccionado: true,
+    }))
+
+    setTernerosParaAsignar(asignaciones)
+    setOrdenEjecutadaParaAsignacion(orden)
+    setFechaIngresoRecria(orden.fecha)
+    setMostrarModalAsignacion(true)
+    setOrdenConfirmando(null)
+  }
+
+  const cargarPesadaAsignacion = async (fechaPesada: string) => {
+    if (!fechaPesada || fechaPesada === 'none') {
+      setPesadaAsignacionSummary(null)
+      setPesoIngresoRecria('')
+      return
+    }
+    setCargandoPesadaAsignacion(true)
+    try {
+      const alPieIds = categoriasAlPieIds()
+      // Terneros al pie con pesada en esa fecha
+      const { data: conPesadaData } = await supabase.schema('productivo').from('terneros')
+        .select('id, pesadas_terneros!inner(peso_kg)')
+        .eq('activo', true)
+        .in('categoria_id', alPieIds)
+        .eq('pesadas_terneros.fecha', fechaPesada)
+
+      const totalTerneros = ternerosParaAsignar.length
+      const conPesada = conPesadaData ?? []
+      const sumaKg = conPesada.reduce((sum, t) => sum + ((t.pesadas_terneros as any)?.[0]?.peso_kg || 0), 0)
+      const promedioKg = conPesada.length > 0 ? sumaKg / conPesada.length : 0
+
+      setPesadaAsignacionSummary({
+        conPesada: conPesada.length,
+        sinPesada: totalTerneros - conPesada.length,
+        totalKg: sumaKg,
+        promedioKg
+      })
+      setPesoIngresoRecria(promedioKg > 0 ? promedioKg.toFixed(1).replace('.', ',') : '')
+    } catch (err) {
+      console.error('Error cargando pesada asignación:', err)
+      setPesadaAsignacionSummary(null)
+    } finally {
+      setCargandoPesadaAsignacion(false)
+    }
+  }
+
+  const categoriasAlPieIds = () => {
+    return categoriasHacienda
+      .filter(c => c.nombre.toLowerCase().includes('al pie'))
+      .map(c => c.id)
+  }
+
+  const categoriaPropuesta = (sexo: string, es_torito: boolean | null): string => {
+    if (es_torito) {
+      const torito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
+      return torito?.id || ''
+    }
+    if (sexo === 'M') {
+      const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
+      return rec?.id || ''
+    }
+    // Hembra: default Ternera Recria
+    const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
+    return rec?.id || ''
+  }
+
+  const categoriasDestinoRecria = () => {
+    // Solo mostrar categorías válidas como destino de recría
+    const nombresValidos = ['ternera recria', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
+    return categoriasHacienda.filter(c => nombresValidos.includes(c.nombre.toLowerCase()))
+  }
+
+  const toggleSeleccionTernero = (id: string) => {
+    setTernerosParaAsignar(prev => prev.map(t =>
+      t.id === id ? { ...t, seleccionado: !t.seleccionado } : t
+    ))
+  }
+
+  const cambiarCategoriaTernero = (id: string, catId: string) => {
+    setTernerosParaAsignar(prev => prev.map(t =>
+      t.id === id ? { ...t, categoria_propuesta: catId } : t
+    ))
+  }
+
+  const confirmarAsignacionCategorias = async () => {
+    const seleccionados = ternerosParaAsignar.filter(t => t.seleccionado && t.categoria_propuesta)
+    if (seleccionados.length === 0) {
+      toast.error('Seleccione al menos un ternero para asignar')
+      return
+    }
+
+    if (!fechaIngresoRecria) {
+      toast.error('Ingrese la fecha de ingreso a recría')
+      return
+    }
+
+    setGuardandoAsignacion(true)
+    try {
+      // Agrupar por categoría origen y destino para generar movimientos
+      const grupos = new Map<string, { origenId: string, destinoId: string, cantidad: number, origenNombre: string, destinoNombre: string }>()
+      for (const t of seleccionados) {
+        // Determinar categoría origen (al pie según sexo)
+        const catOrigenAlPie = t.sexo === 'M'
+          ? categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero al pie')
+          : categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera al pie')
+        if (!catOrigenAlPie) continue
+        const catDestino = categoriasHacienda.find(c => c.id === t.categoria_propuesta)
+        if (!catDestino) continue
+
+        const key = `${catOrigenAlPie.id}→${t.categoria_propuesta}`
+        const existing = grupos.get(key)
+        if (existing) {
+          existing.cantidad++
+        } else {
+          grupos.set(key, {
+            origenId: catOrigenAlPie.id,
+            destinoId: t.categoria_propuesta,
+            cantidad: 1,
+            origenNombre: catOrigenAlPie.nombre,
+            destinoNombre: catDestino.nombre
+          })
+        }
+      }
+
+      // Insertar movimientos cambio_categoria por cada grupo
+      for (const [, g] of grupos) {
+        // Egreso
+        const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+          fecha: fechaIngresoRecria,
+          categoria_id: g.origenId,
+          tipo: 'cambio_categoria',
+          cantidad: -g.cantidad,
+          observaciones: `Destete → ${g.destinoNombre} (${g.cantidad} cab.)`
+        })
+        if (e1) throw e1
+
+        // Ingreso
+        const { error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+          fecha: fechaIngresoRecria,
+          categoria_id: g.destinoId,
+          tipo: 'cambio_categoria',
+          cantidad: g.cantidad,
+          observaciones: `Destete ← ${g.origenNombre} (${g.cantidad} cab.)`
+        })
+        if (e2) throw e2
+      }
+
+      // Actualizar terneros: categoria_id + fecha_ingreso_recria + peso_ingreso_recria
+      const pesoRecria = pesoIngresoRecria ? parseFloat(String(pesoIngresoRecria).replace(/\./g, '').replace(',', '.')) || null : null
+      for (const t of seleccionados) {
+        const { error } = await supabase.schema('productivo').from('terneros')
+          .update({
+            categoria_id: t.categoria_propuesta,
+            fecha_ingreso_recria: fechaIngresoRecria,
+            peso_ingreso_recria: pesoRecria
+          })
+          .eq('id', t.id)
+        if (error) throw error
+      }
+
+      const totalAsignados = seleccionados.length
+      const omitidos = ternerosParaAsignar.length - totalAsignados
+      toast.success(`${totalAsignados} terneros asignados a recría${omitidos > 0 ? ` (${omitidos} omitidos)` : ''}`)
+      setMostrarModalAsignacion(false)
+      setTernerosParaAsignar([])
+      setOrdenEjecutadaParaAsignacion(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error asignando categorías:', err)
+      toast.error(err.message || 'Error al asignar categorías')
+    } finally {
+      setGuardandoAsignacion(false)
     }
   }
 
@@ -3372,6 +3619,14 @@ function SubTabOrdenesAplicacion() {
                       <Badge variant="outline" className="text-[10px] text-green-600 border-green-300 px-1.5">
                         <Link2 className="h-3 w-3 mr-0.5" /> Vinculado
                       </Badge>
+                    )}
+                    {esDesteteFin(o) && (
+                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-blue-600 gap-1"
+                        title="Asignar categorías (Destete → Recría)"
+                        onClick={() => abrirModalAsignacion(o)}>
+                        <ChevronsUpDown className="h-3.5 w-3.5" />
+                        <span className="text-[10px]">Categ.</span>
+                      </Button>
                     )}
                     {o.estado === 'eliminada' ? (
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
@@ -4051,6 +4306,174 @@ function SubTabOrdenesAplicacion() {
             <Button onClick={confirmarVincularCiclo} disabled={vinculandoCiclo || ciclosDestetadosSeleccionados.length === 0}>
               {vinculandoCiclo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmar Vinculación
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Asignación Categoría Post-Destete */}
+      <Dialog open={mostrarModalAsignacion} onOpenChange={(open) => {
+        if (!open) {
+          setMostrarModalAsignacion(false)
+          setTernerosParaAsignar([])
+          setOrdenEjecutadaParaAsignacion(null)
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Asignación de Categoría — Destete Fin</DialogTitle>
+            <DialogDescription>
+              {ordenEjecutadaParaAsignacion && (
+                <>Orden del {formatoFecha(ordenEjecutadaParaAsignacion.fecha)} — {ternerosParaAsignar.length} terneros al pie disponibles</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Datos de ingreso a recría */}
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 space-y-3">
+              <p className="text-sm font-semibold text-blue-800">Datos de ingreso a Recría</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Fecha ingreso recría *</Label>
+                  <Input type="date" className="h-8 text-sm" value={fechaIngresoRecria}
+                    onChange={e => setFechaIngresoRecria(e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs">Pesada de referencia</Label>
+                  {pesadasDisponiblesAsignacion.length === 0 ? (
+                    <p className="text-xs text-muted-foreground pt-1">Sin pesadas registradas</p>
+                  ) : (
+                    <Select value={pesadaSeleccionadaAsignacion} onValueChange={v => {
+                      setPesadaSeleccionadaAsignacion(v)
+                      cargarPesadaAsignacion(v)
+                    }}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sin pesada" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        <SelectItem value="none">Sin pesada</SelectItem>
+                        {pesadasDisponiblesAsignacion.map(p => (
+                          <SelectItem key={p.fecha} value={p.fecha}>
+                            {p.fecha.split('-').reverse().join('/')} — {p.total} pesadas
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs">Peso promedio ingreso (kg)</Label>
+                  <Input type="text" placeholder="0,00" className="h-8 text-sm" value={pesoIngresoRecria}
+                    onChange={e => setPesoIngresoRecria(e.target.value)} />
+                </div>
+              </div>
+              {cargandoPesadaAsignacion && (
+                <div className="flex items-center gap-2 text-xs text-blue-600">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Calculando...
+                </div>
+              )}
+              {pesadaAsignacionSummary && !cargandoPesadaAsignacion && (
+                <div className="bg-white border border-blue-100 rounded p-2 text-xs space-y-1">
+                  <p className="font-medium text-blue-700">Datos de la pesada seleccionada:</p>
+                  <div className="flex gap-4 text-gray-600">
+                    <span>Con pesada: <strong className="text-gray-800">{pesadaAsignacionSummary.conPesada}</strong></span>
+                    {pesadaAsignacionSummary.sinPesada > 0 && (
+                      <span className="text-amber-600">Sin pesada: <strong>{pesadaAsignacionSummary.sinPesada}</strong></span>
+                    )}
+                    <span>Kg totales: <strong className="text-green-700">{pesadaAsignacionSummary.totalKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></span>
+                    <span>Promedio: <strong className="text-green-700">{pesadaAsignacionSummary.promedioKg.toFixed(1).replace('.', ',')} kg</strong></span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Resumen rápido */}
+            <div className="flex gap-4 text-xs">
+              <span className="bg-sky-50 text-sky-700 px-2 py-1 rounded">
+                ♂ Machos: {ternerosParaAsignar.filter(t => t.sexo === 'M' && !t.es_torito).length}
+              </span>
+              <span className="bg-pink-50 text-pink-700 px-2 py-1 rounded">
+                ♀ Hembras: {ternerosParaAsignar.filter(t => t.sexo === 'H').length}
+              </span>
+              <span className="bg-amber-50 text-amber-700 px-2 py-1 rounded">
+                🐂 Toritos: {ternerosParaAsignar.filter(t => t.es_torito).length}
+              </span>
+              <span className="bg-green-50 text-green-700 px-2 py-1 rounded font-medium">
+                Seleccionados: {ternerosParaAsignar.filter(t => t.seleccionado).length} / {ternerosParaAsignar.length}
+              </span>
+            </div>
+
+            {/* Botones seleccionar/deseleccionar todos */}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs"
+                onClick={() => setTernerosParaAsignar(prev => prev.map(t => ({ ...t, seleccionado: true })))}>
+                Seleccionar todos
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs"
+                onClick={() => setTernerosParaAsignar(prev => prev.map(t => ({ ...t, seleccionado: false })))}>
+                Ninguno
+              </Button>
+            </div>
+
+            {/* Tabla de terneros */}
+            <div className="max-h-[45vh] overflow-y-auto border rounded">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[40px] sticky top-0 bg-white">✓</TableHead>
+                    <TableHead className="sticky top-0 bg-white text-xs">Caravana</TableHead>
+                    <TableHead className="sticky top-0 bg-white text-xs">Sexo</TableHead>
+                    <TableHead className="sticky top-0 bg-white text-xs">Categoría Destino</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ternerosParaAsignar.map(t => (
+                    <TableRow key={t.id} className={!t.seleccionado ? 'opacity-40' : ''}>
+                      <TableCell>
+                        <Checkbox checked={t.seleccionado} onCheckedChange={() => toggleSeleccionTernero(t.id)} />
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">
+                        {t.caravana_oficial || t.caravana_interna || '—'}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {t.es_torito ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 text-xs">Torito</Badge>
+                        ) : t.sexo === 'M' ? (
+                          <span className="text-sky-700">♂ Macho</span>
+                        ) : (
+                          <span className="text-pink-700">♀ Hembra</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Select value={t.categoria_propuesta} onValueChange={v => cambiarCategoriaTernero(t.id, v)}>
+                          <SelectTrigger className="h-7 text-xs w-[200px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent position="popper" className="z-[9999]">
+                            {categoriasDestinoRecria().map(c => (
+                              <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setMostrarModalAsignacion(false)
+              setTernerosParaAsignar([])
+              setOrdenEjecutadaParaAsignacion(null)
+            }}>
+              Omitir (asignar después)
+            </Button>
+            <Button onClick={confirmarAsignacionCategorias} disabled={guardandoAsignacion || ternerosParaAsignar.filter(t => t.seleccionado).length === 0}
+              className="bg-green-600 hover:bg-green-700">
+              {guardandoAsignacion && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Asignar Categorías ({ternerosParaAsignar.filter(t => t.seleccionado).length})
             </Button>
           </DialogFooter>
         </DialogContent>
