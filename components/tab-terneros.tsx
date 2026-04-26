@@ -801,6 +801,14 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Torito</TableHead>
                     <TableHead className="text-xs">Categoría</TableHead>
+                    {subTab === 'torito_toro' && <>
+                      <TableHead className="text-xs">Hijo de</TableHead>
+                      <TableHead className="text-xs">Carav. Madre</TableHead>
+                      <TableHead className="text-xs">Pelo Madre</TableHead>
+                      <TableHead className="text-xs">Padre</TableHead>
+                      <TableHead className="text-xs">Nacimiento</TableHead>
+                      <TableHead className="text-xs">Peso Nac.</TableHead>
+                    </>}
                     <TableHead className="text-xs">Últ. Pesada</TableHead>
                     <TableHead className="text-xs">Peso hoy est.</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
@@ -848,6 +856,26 @@ export function TabTerneros() {
                         <TableCell className={`text-[10px] ${cellStrike}`}>
                           {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
                         </TableCell>
+                        {subTab === 'torito_toro' && <>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.hijo_de || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`font-mono text-[10px] ${cellStrike}`}>
+                            {t.madre || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.pelo_madre ? (PELO_LABEL[t.pelo_madre] ?? t.pelo_madre) : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.padre || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.fecha_nacimiento ? formatFecha(t.fecha_nacimiento) : t.anio_nacimiento ? t.anio_nacimiento : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.peso_nacimiento ? `${t.peso_nacimiento.toLocaleString('es-AR', { maximumFractionDigits: 1 })} kg` : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                        </>}
                         <TableCell className={`text-xs ${cellStrike}`}>
                           {ultima
                             ? <span className={inactivo ? 'text-red-400' : 'text-green-700'}>{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
