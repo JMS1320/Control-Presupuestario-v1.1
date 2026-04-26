@@ -897,10 +897,18 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
+              </TabsTrigger>
+              <TabsTrigger value="cria" className="flex items-center gap-2">
+                🐮
+                Cría
+              </TabsTrigger>
+              <TabsTrigger value="recria" className="flex items-center gap-2">
+                🐄
+                Recría / Engorde
               </TabsTrigger>
               <TabsTrigger value="insumos" className="flex items-center gap-2">
                 <Package className="h-4 w-4" />
@@ -908,25 +916,24 @@ export function VistaSectorProductivo() {
               </TabsTrigger>
               <TabsTrigger value="lotes" className="flex items-center gap-2">
                 <Wheat className="h-4 w-4" />
-                Lotes Agricolas
-              </TabsTrigger>
-              <TabsTrigger value="terneros" className="flex items-center gap-2">
-                🐄
-                Terneros
+                Lotes Agrícolas
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="hacienda">
               <TabHacienda />
             </TabsContent>
+            <TabsContent value="cria">
+              <CiclosCriaPanel />
+            </TabsContent>
+            <TabsContent value="recria">
+              <TabTerneros />
+            </TabsContent>
             <TabsContent value="insumos">
               <TabInsumos />
             </TabsContent>
             <TabsContent value="lotes">
               <TabLotesAgricolas />
-            </TabsContent>
-            <TabsContent value="terneros">
-              <TabTerneros />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -1135,7 +1142,7 @@ function TabHacienda() {
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
-  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
+  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'toro', 'novillo', 'vaquillona de reposicion', 'vaquillona engorde']
   const esCatTernero = (catId: string) => {
     const cat = categorias.find(c => String(c.id) === catId)
     return cat ? CATEGORIAS_TERNERO.includes(cat.nombre.toLowerCase()) : false
@@ -1476,9 +1483,6 @@ function TabHacienda() {
           </TableBody>
         </Table>
       )}
-
-      {/* Panel Ciclos de Cria */}
-      <CiclosCriaPanel />
 
       {/* Modal Nuevo Movimiento Hacienda */}
       <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>
