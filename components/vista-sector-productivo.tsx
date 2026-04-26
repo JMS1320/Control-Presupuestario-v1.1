@@ -972,6 +972,25 @@ function TabHacienda() {
   const [terneroSeleccionadoId, setTerneroSeleccionadoId] = useState<string>('')
   const [motivoBajaTernero, setMotivoBajaTernero] = useState('')
 
+  // Cambio categoría — selector de terneros individuales
+  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null }[]>([])
+  const [ternerosSeleccionadosCambio, setTernerosSeleccionadosCambio] = useState<Set<string>>(new Set())
+
+  const cargarTernerosParaCambio = async (categoriaId: string) => {
+    const { data } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo')
+      .eq('activo', true)
+      .eq('categoria_id', categoriaId)
+      .order('caravana_oficial', { ascending: true })
+    setTernerosParaCambio(data ?? [])
+    // Pre-seleccionar todos
+    setTernerosSeleccionadosCambio(new Set((data ?? []).map(t => t.id)))
+    // Auto-llenar cantidad
+    if (data && data.length > 0) {
+      setNuevoMov(p => ({ ...p, cantidad: String(data.length) }))
+    }
+  }
+
   const cargarDetalleCUT = async (stockActual: number, categoriaId?: string) => {
     if (detalleCUT) return // ya cargado
     setCargandoCUT(true)
@@ -1140,6 +1159,8 @@ function TabHacienda() {
     setTernerosParaBaja([])
     setTerneroSeleccionadoId('')
     setMotivoBajaTernero('')
+    setTernerosParaCambio([])
+    setTernerosSeleccionadosCambio(new Set())
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
@@ -1189,6 +1210,17 @@ function TabHacienda() {
       }).select().single()
       if (e2) { toast.error('Error al guardar ingreso: ' + e2.message); return }
 
+      // Actualizar terneros individuales si hay seleccionados
+      if (ternerosSeleccionadosCambio.size > 0) {
+        const ids = [...ternerosSeleccionadosCambio]
+        const { error: eT } = await supabase.schema('productivo').from('terneros')
+          .update({ categoria_id: nuevoMov.categoria_destino_id })
+          .in('id', ids)
+        if (eT) {
+          toast.error('Movimiento OK pero error al actualizar terneros: ' + eT.message)
+        }
+      }
+
       // Caravanas (solo si destino es CUT/Descarte)
       const esDestinosCUT = catDestino?.nombre.toLowerCase().includes('cut') || catDestino?.nombre.toLowerCase().includes('descarte')
       if (esDestinosCUT && nuevoMov.caravanas.trim() && movDestino) {
@@ -1203,7 +1235,7 @@ function TabHacienda() {
         }
       }
 
-      toast.success('Cambio de categoría registrado')
+      toast.success(`Cambio de categoría registrado${ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
       setMostrarModalMov(false)
       resetNuevoMov()
       cargarDatos()
@@ -1525,7 +1557,12 @@ function TabHacienda() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Categoría Origen *</Label>
-                    <Select value={nuevoMov.categoria_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_id: v }))}>
+                    <Select value={nuevoMov.categoria_id} onValueChange={v => {
+                      setNuevoMov(p => ({ ...p, categoria_id: v }))
+                      setTernerosParaCambio([])
+                      setTernerosSeleccionadosCambio(new Set())
+                      if (esCatTernero(v)) cargarTernerosParaCambio(v)
+                    }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
                         {categorias.map(c => (
@@ -1546,19 +1583,55 @@ function TabHacienda() {
                     </Select>
                   </div>
                 </div>
-                <div>
-                  <Label>Cantidad *</Label>
-                  <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
-                </div>
-                <div>
-                  <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
-                  <textarea
-                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
-                    placeholder={"032 010012326425\n032 010012326426\n..."}
-                    value={nuevoMov.caravanas}
-                    onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
-                  />
-                </div>
+                {ternerosParaCambio.length > 0 ? (
+                  <div className="space-y-2 border rounded-md p-3 bg-blue-50/50">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-blue-700 font-medium">Seleccionar individuos ({ternerosSeleccionadosCambio.size} de {ternerosParaCambio.length})</Label>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" className="h-6 text-xs"
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
+                          Todos
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-6 text-xs"
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
+                          Ninguno
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto space-y-1">
+                      {ternerosParaCambio.map(t => (
+                        <label key={t.id} className="flex items-center gap-2 text-sm hover:bg-blue-100 rounded px-2 py-0.5 cursor-pointer">
+                          <input type="checkbox" checked={ternerosSeleccionadosCambio.has(t.id)}
+                            onChange={e => {
+                              const next = new Set(ternerosSeleccionadosCambio)
+                              e.target.checked ? next.add(t.id) : next.delete(t.id)
+                              setTernerosSeleccionadosCambio(next)
+                              setNuevoMov(p => ({ ...p, cantidad: String(next.size) }))
+                            }} />
+                          <span className="font-mono text-xs">{t.caravana_oficial || t.caravana_interna || '(sin caravana)'}</span>
+                          <span className="text-xs text-gray-500">{t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : ''}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-blue-600">Cantidad: {ternerosSeleccionadosCambio.size}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <Label>Cantidad *</Label>
+                      <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
+                      <textarea
+                        className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+                        placeholder={"032 010012326425\n032 010012326426\n..."}
+                        value={nuevoMov.caravanas}
+                        onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <Label>Observaciones</Label>
                   <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
