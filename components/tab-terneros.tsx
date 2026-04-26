@@ -36,6 +36,10 @@ interface Ternero {
   categoria_id: string | null
   fecha_ingreso_recria: string | null
   peso_ingreso_recria: number | null
+  anio_nacimiento: number | null
+  padre: string | null
+  madre: string | null
+  peso_nacimiento: number | null
   created_at: string
   pesadas_terneros: Pesada[]
   categorias_hacienda?: { nombre: string } | null
@@ -233,6 +237,58 @@ export function TabTerneros() {
 
   // Sub-tab recría
   const [subTab, setSubTab] = useState<SubTabRecria>('todos')
+
+  // Edición ternero
+  const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
+  const [editForm, setEditForm] = useState({
+    caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
+    es_torito: false, observaciones: '',
+    anio_nacimiento: '', padre: '', madre: '', peso_nacimiento: '',
+  })
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
+
+  const abrirEdicion = (t: Ternero) => {
+    setTerneroEditando(t)
+    setEditForm({
+      caravana_oficial: t.caravana_oficial ?? '',
+      caravana_interna: t.caravana_interna ?? '',
+      sexo: t.sexo ?? '',
+      pelo: t.pelo ?? '',
+      es_torito: t.es_torito ?? false,
+      observaciones: t.observaciones ?? '',
+      anio_nacimiento: t.anio_nacimiento?.toString() ?? '',
+      padre: t.padre ?? '',
+      madre: t.madre ?? '',
+      peso_nacimiento: t.peso_nacimiento?.toString() ?? '',
+    })
+  }
+
+  const guardarEdicion = async () => {
+    if (!terneroEditando) return
+    setGuardandoEdit(true)
+    const { error } = await supabase.schema('productivo').from('terneros')
+      .update({
+        caravana_oficial: editForm.caravana_oficial || null,
+        caravana_interna: editForm.caravana_interna || null,
+        sexo: editForm.sexo || null,
+        pelo: editForm.pelo || null,
+        es_torito: editForm.es_torito,
+        observaciones: editForm.observaciones || null,
+        anio_nacimiento: editForm.anio_nacimiento ? parseInt(editForm.anio_nacimiento) : null,
+        padre: editForm.padre || null,
+        madre: editForm.madre || null,
+        peso_nacimiento: editForm.peso_nacimiento ? parseFloat(editForm.peso_nacimiento.replace(/\./g, '').replace(',', '.')) : null,
+      })
+      .eq('id', terneroEditando.id)
+    setGuardandoEdit(false)
+    if (error) {
+      toast.error('Error al guardar: ' + error.message)
+    } else {
+      toast.success('Ternero actualizado')
+      setTerneroEditando(null)
+      cargar()
+    }
+  }
 
   // ─── Carga de datos ──────────────────────────────────────────────────────
 
@@ -745,7 +801,7 @@ export function TabTerneros() {
                     // Estilo tachado rojo para inactivos
                     const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`}>
+                      <TableRow key={t.id} className={`text-sm cursor-pointer hover:bg-gray-50 ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => abrirEdicion(t)}>
                         <TableCell className="w-6 pr-0">
                           {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
@@ -1508,6 +1564,91 @@ export function TabTerneros() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal edición ternero ── */}
+      <Dialog open={!!terneroEditando} onOpenChange={open => { if (!open) setTerneroEditando(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Editar Ternero {terneroEditando?.caravana_oficial || terneroEditando?.caravana_interna || '(sin caravana)'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Caravana Oficial</Label>
+              <Input className="h-8 text-sm" value={editForm.caravana_oficial}
+                onChange={e => setEditForm(p => ({ ...p, caravana_oficial: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Caravana Interna</Label>
+              <Input className="h-8 text-sm" value={editForm.caravana_interna}
+                onChange={e => setEditForm(p => ({ ...p, caravana_interna: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Sexo</Label>
+              <select className="w-full h-8 text-sm border rounded px-2"
+                value={editForm.sexo} onChange={e => setEditForm(p => ({ ...p, sexo: e.target.value }))}>
+                <option value="">—</option>
+                <option value="Macho">Macho</option>
+                <option value="Hembra">Hembra</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Pelo</Label>
+              <select className="w-full h-8 text-sm border rounded px-2"
+                value={editForm.pelo} onChange={e => setEditForm(p => ({ ...p, pelo: e.target.value }))}>
+                <option value="">—</option>
+                {Object.keys(PELO_LABEL).map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 col-span-2">
+              <input type="checkbox" id="edit-torito" checked={editForm.es_torito}
+                onChange={e => setEditForm(p => ({ ...p, es_torito: e.target.checked }))} />
+              <Label htmlFor="edit-torito" className="text-xs cursor-pointer">Es Torito 🐂</Label>
+            </div>
+            <div className="col-span-2">
+              <Label className="text-xs">Observaciones</Label>
+              <Input className="h-8 text-sm" value={editForm.observaciones}
+                onChange={e => setEditForm(p => ({ ...p, observaciones: e.target.value }))} />
+            </div>
+
+            {/* Campos extra toritos/toros */}
+            {editForm.es_torito && (
+              <>
+                <div className="col-span-2 border-t pt-2 mt-1">
+                  <span className="text-xs font-semibold text-amber-700">Datos Torito / Toro</span>
+                </div>
+                <div>
+                  <Label className="text-xs">Año Nacimiento</Label>
+                  <Input className="h-8 text-sm" type="number" value={editForm.anio_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, anio_nacimiento: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Peso Nacimiento (kg)</Label>
+                  <Input className="h-8 text-sm" type="text" placeholder="0,00" value={editForm.peso_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, peso_nacimiento: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Padre</Label>
+                  <Input className="h-8 text-sm" value={editForm.padre}
+                    onChange={e => setEditForm(p => ({ ...p, padre: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Madre</Label>
+                  <Input className="h-8 text-sm" value={editForm.madre}
+                    onChange={e => setEditForm(p => ({ ...p, madre: e.target.value }))} />
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setTerneroEditando(null)}>Cancelar</Button>
+            <Button size="sm" onClick={guardarEdicion} disabled={guardandoEdit}>
+              {guardandoEdit ? 'Guardando...' : 'Guardar'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
