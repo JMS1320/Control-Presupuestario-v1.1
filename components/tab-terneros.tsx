@@ -37,6 +37,9 @@ interface Ternero {
   fecha_ingreso_recria: string | null
   peso_ingreso_recria: number | null
   anio_nacimiento: number | null
+  fecha_nacimiento: string | null
+  hijo_de: string | null
+  pelo_madre: string | null
   padre: string | null
   madre: string | null
   peso_nacimiento: number | null
@@ -244,7 +247,8 @@ export function TabTerneros() {
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
     es_torito: false, observaciones: '',
-    anio_nacimiento: '', padre: '', madre: '', peso_nacimiento: '',
+    anio_nacimiento: '', fecha_nacimiento: '', hijo_de: '', pelo_madre: '',
+    padre: '', madre: '', peso_nacimiento: '',
   })
   const [guardandoEdit, setGuardandoEdit] = useState(false)
 
@@ -258,6 +262,9 @@ export function TabTerneros() {
       es_torito: t.es_torito ?? false,
       observaciones: t.observaciones ?? '',
       anio_nacimiento: t.anio_nacimiento?.toString() ?? '',
+      fecha_nacimiento: t.fecha_nacimiento ?? '',
+      hijo_de: t.hijo_de ?? '',
+      pelo_madre: t.pelo_madre ?? '',
       padre: t.padre ?? '',
       madre: t.madre ?? '',
       peso_nacimiento: t.peso_nacimiento?.toString() ?? '',
@@ -276,6 +283,9 @@ export function TabTerneros() {
         es_torito: editForm.es_torito,
         observaciones: editForm.observaciones || null,
         anio_nacimiento: editForm.anio_nacimiento ? parseInt(editForm.anio_nacimiento) : null,
+        fecha_nacimiento: editForm.fecha_nacimiento || null,
+        hijo_de: editForm.hijo_de || null,
+        pelo_madre: editForm.pelo_madre || null,
         padre: editForm.padre || null,
         madre: editForm.madre || null,
         peso_nacimiento: editForm.peso_nacimiento ? parseFloat(editForm.peso_nacimiento.replace(/\./g, '').replace(',', '.')) : null,
@@ -1632,6 +1642,28 @@ export function TabTerneros() {
                   <span className="text-xs font-semibold text-amber-700">Datos Torito / Toro</span>
                 </div>
                 <div>
+                  <Label className="text-xs">Hijo de</Label>
+                  <select className="w-full h-8 text-sm border rounded px-2"
+                    value={editForm.hijo_de} onChange={e => setEditForm(p => ({ ...p, hijo_de: e.target.value }))}>
+                    <option value="">—</option>
+                    <option value="Vaca">Vaca</option>
+                    <option value="Vaquillona">Vaquillona</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Pelo Madre</Label>
+                  <select className="w-full h-8 text-sm border rounded px-2"
+                    value={editForm.pelo_madre} onChange={e => setEditForm(p => ({ ...p, pelo_madre: e.target.value }))}>
+                    <option value="">—</option>
+                    {Object.keys(PELO_LABEL).map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Fecha Nacimiento</Label>
+                  <Input className="h-8 text-sm" type="date" value={editForm.fecha_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, fecha_nacimiento: e.target.value }))} />
+                </div>
+                <div>
                   <Label className="text-xs">Año Nacimiento</Label>
                   <Input className="h-8 text-sm" type="number" value={editForm.anio_nacimiento}
                     onChange={e => setEditForm(p => ({ ...p, anio_nacimiento: e.target.value }))} />
@@ -1647,7 +1679,7 @@ export function TabTerneros() {
                     onChange={e => setEditForm(p => ({ ...p, padre: e.target.value }))} />
                 </div>
                 <div>
-                  <Label className="text-xs">Madre</Label>
+                  <Label className="text-xs">Caravana Madre</Label>
                   <Input className="h-8 text-sm" value={editForm.madre}
                     onChange={e => setEditForm(p => ({ ...p, madre: e.target.value }))} />
                 </div>
