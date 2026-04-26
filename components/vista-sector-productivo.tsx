@@ -924,6 +924,7 @@ export function VistaSectorProductivo() {
               <TabHacienda />
             </TabsContent>
             <TabsContent value="cria">
+              <TabTerneros modo="cria" />
               <CiclosCriaPanel />
             </TabsContent>
             <TabsContent value="recria">

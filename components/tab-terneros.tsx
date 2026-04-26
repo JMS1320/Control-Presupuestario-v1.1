@@ -53,22 +53,35 @@ interface CategoriaHacienda {
   nombre: string
 }
 
-type SubTabRecria = 'todos' | 'al_pie' | 'recria' | 'novillo_vaq' | 'torito_toro'
+type SubTab = string
 
-const FILTRO_CATEGORIAS: Record<SubTabRecria, string[]> = {
-  todos: [],
-  al_pie: ['ternera al pie', 'ternero al pie'],
-  recria: ['ternera recria', 'ternero recria'],
-  novillo_vaq: ['novillo', 'vaquillona engorde', 'vaquillona de reposicion'],
-  torito_toro: ['torito', 'toro'],
+interface ModoConfig {
+  tabs: Record<string, { label: string; categorias: string[] }>
+  allCats: string[]
+  showExtraTorito: string  // qué sub-tab muestra columnas extra toritos
 }
 
-const SUBTAB_LABELS: Record<SubTabRecria, string> = {
-  todos: 'Todos',
-  al_pie: 'Al Pie',
-  recria: 'Recría',
-  novillo_vaq: 'Novillo / Vaquillona',
-  torito_toro: 'Torito / Toro',
+const MODO_RECRIA: ModoConfig = {
+  tabs: {
+    todos: { label: 'Todos', categorias: [] },
+    recria: { label: 'Recría', categorias: ['ternera recria', 'ternero recria'] },
+    novillo_vaq: { label: 'Novillo / Vaquillona', categorias: ['novillo', 'vaquillona engorde', 'vaquillona de reposicion'] },
+    torito: { label: 'Torito', categorias: ['torito'] },
+  },
+  allCats: ['ternera recria', 'ternero recria', 'novillo', 'vaquillona engorde', 'vaquillona de reposicion', 'torito'],
+  showExtraTorito: 'torito',
+}
+
+const MODO_CRIA: ModoConfig = {
+  tabs: {
+    todos: { label: 'Todos', categorias: [] },
+    al_pie: { label: 'Al Pie', categorias: ['ternera al pie', 'ternero al pie'] },
+    vacas: { label: 'Vacas', categorias: ['vaca', 'vaquillona preñada'] },
+    toros: { label: 'Toros', categorias: ['toro'] },
+    cut: { label: 'CUT / Descarte', categorias: ['vaca cut/descarte'] },
+  },
+  allCats: ['ternera al pie', 'ternero al pie', 'vaca', 'vaquillona preñada', 'toro', 'vaca cut/descarte'],
+  showExtraTorito: 'toros',
 }
 
 interface PesadaSinVincular {
@@ -203,7 +216,9 @@ function getGananciaPuntaAPunta(pesadas: Pesada[]): number | null {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function TabTerneros() {
+export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = {}) {
+  const config = modo === 'cria' ? MODO_CRIA : MODO_RECRIA
+  const tabKeys = Object.keys(config.tabs)
   // Datos
   const [terneros, setTerneros] = useState<Ternero[]>([])
   const [pesadasSinVincular, setPesadasSinVincular] = useState<PesadaSinVincular[]>([])
@@ -488,9 +503,12 @@ export function TabTerneros() {
   // ─── Computados ──────────────────────────────────────────────────────────
 
   // Filtro por sub-tab
-  const filtrosCat = FILTRO_CATEGORIAS[subTab]
+  const filtrosCat = config.tabs[subTab]?.categorias || []
   const ternerosFiltrados = filtrosCat.length === 0
-    ? terneros
+    ? terneros.filter(t => {
+        const catNombre = t.categorias_hacienda?.nombre?.toLowerCase() || ''
+        return config.allCats.includes(catNombre)
+      })
     : terneros.filter(t => {
         const catNombre = t.categorias_hacienda?.nombre?.toLowerCase() || ''
         return filtrosCat.includes(catNombre)
@@ -504,9 +522,9 @@ export function TabTerneros() {
   const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
   // Conteo por sub-tab para badges
-  const conteoSubTab = (tab: SubTabRecria): number => {
-    if (tab === 'todos') return terneros.filter(t => t.activo).length
-    const cats = FILTRO_CATEGORIAS[tab]
+  const conteoSubTab = (tab: string): number => {
+    const cats = config.tabs[tab]?.categorias || []
+    if (cats.length === 0) return terneros.filter(t => t.activo && config.allCats.includes(t.categorias_hacienda?.nombre?.toLowerCase() || '')).length
     return terneros.filter(t => t.activo && cats.includes(t.categorias_hacienda?.nombre?.toLowerCase() || '')).length
   }
 
@@ -666,7 +684,7 @@ export function TabTerneros() {
 
       {/* ── Sub-tabs por categoría ── */}
       <div className="flex gap-1 border-b pb-1">
-        {(Object.keys(SUBTAB_LABELS) as SubTabRecria[]).map(tab => {
+        {tabKeys.map(tab => {
           const cnt = conteoSubTab(tab)
           const isActive = subTab === tab
           return (
@@ -677,7 +695,7 @@ export function TabTerneros() {
                   ? 'bg-white border border-b-white -mb-px text-green-700 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}>
-              {SUBTAB_LABELS[tab]}
+              {config.tabs[tab].label}
               {cnt > 0 && <span className={`ml-1 text-[10px] ${isActive ? 'text-green-600' : 'text-gray-400'}`}>({cnt})</span>}
             </button>
           )
@@ -801,7 +819,7 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Torito</TableHead>
                     <TableHead className="text-xs">Categoría</TableHead>
-                    {subTab === 'torito_toro' && <>
+                    {subTab === config.showExtraTorito && <>
                       <TableHead className="text-xs">Hijo de</TableHead>
                       <TableHead className="text-xs">Carav. Madre</TableHead>
                       <TableHead className="text-xs">Pelo Madre</TableHead>
@@ -856,7 +874,7 @@ export function TabTerneros() {
                         <TableCell className={`text-[10px] ${cellStrike}`}>
                           {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
                         </TableCell>
-                        {subTab === 'torito_toro' && <>
+                        {subTab === config.showExtraTorito && <>
                           <TableCell className={`text-xs ${cellStrike}`}>
                             {t.hijo_de || <span className="text-gray-400">—</span>}
                           </TableCell>
