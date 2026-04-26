@@ -33,8 +33,35 @@ interface Ternero {
   activo: boolean
   fecha_baja: string | null
   motivo_baja: string | null
+  categoria_id: string | null
+  fecha_ingreso_recria: string | null
+  peso_ingreso_recria: number | null
   created_at: string
   pesadas_terneros: Pesada[]
+  categorias_hacienda?: { nombre: string } | null
+}
+
+interface CategoriaHacienda {
+  id: string
+  nombre: string
+}
+
+type SubTabRecria = 'todos' | 'al_pie' | 'recria' | 'novillo_vaq' | 'torito_toro'
+
+const FILTRO_CATEGORIAS: Record<SubTabRecria, string[]> = {
+  todos: [],
+  al_pie: ['ternera al pie', 'ternero al pie'],
+  recria: ['ternera recria', 'ternero recria'],
+  novillo_vaq: ['novillo', 'vaquillona engorde', 'vaquillona de reposicion'],
+  torito_toro: ['torito', 'toro'],
+}
+
+const SUBTAB_LABELS: Record<SubTabRecria, string> = {
+  todos: 'Todos',
+  al_pie: 'Al Pie',
+  recria: 'Recría',
+  novillo_vaq: 'Novillo / Vaquillona',
+  torito_toro: 'Torito / Toro',
 }
 
 interface PesadaSinVincular {
@@ -204,6 +231,9 @@ export function TabTerneros() {
   // Bajas sin asignar (mortandad en hacienda sin caravana vinculada)
   const [bajasSinAsignar, setBajasSinAsignar] = useState(0)
 
+  // Sub-tab recría
+  const [subTab, setSubTab] = useState<SubTabRecria>('todos')
+
   // ─── Carga de datos ──────────────────────────────────────────────────────
 
   const cargar = async () => {
@@ -213,7 +243,7 @@ export function TabTerneros() {
         supabase
           .schema('productivo')
           .from('terneros')
-          .select('*, pesadas_terneros(id, fecha, peso_kg)')
+          .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
           .order('caravana_oficial', { ascending: true }),
         supabase
           .schema('productivo')
@@ -390,18 +420,34 @@ export function TabTerneros() {
 
   // ─── Computados ──────────────────────────────────────────────────────────
 
-  const ternerosActivos = terneros.filter(t => t.activo)
-  const ternerosInactivos = terneros.filter(t => !t.activo)
+  // Filtro por sub-tab
+  const filtrosCat = FILTRO_CATEGORIAS[subTab]
+  const ternerosFiltrados = filtrosCat.length === 0
+    ? terneros
+    : terneros.filter(t => {
+        const catNombre = t.categorias_hacienda?.nombre?.toLowerCase() || ''
+        return filtrosCat.includes(catNombre)
+      })
+
+  const ternerosActivos = ternerosFiltrados.filter(t => t.activo)
+  const ternerosInactivos = ternerosFiltrados.filter(t => !t.activo)
   const machos = ternerosActivos.filter(t => t.sexo === 'Macho')
   const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
   const toritos = ternerosActivos.filter(t => t.es_torito)
   const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
+  // Conteo por sub-tab para badges
+  const conteoSubTab = (tab: SubTabRecria): number => {
+    if (tab === 'todos') return terneros.filter(t => t.activo).length
+    const cats = FILTRO_CATEGORIAS[tab]
+    return terneros.filter(t => t.activo && cats.includes(t.categorias_hacienda?.nombre?.toLowerCase() || '')).length
+  }
+
   // Detección de caravanas duplicadas en BD
   const idsConDuplicado = new Set<string>()
   const conteoInternas = new Map<string, string[]>()
   const conteoOficiales = new Map<string, string[]>()
-  terneros.forEach(t => {
+  ternerosFiltrados.forEach(t => {
     if (t.caravana_interna) {
       const lista = conteoInternas.get(t.caravana_interna) ?? []
       lista.push(t.id)
@@ -418,7 +464,7 @@ export function TabTerneros() {
 
   // Pivot table para historial: fechas únicas ordenadas
   const todasFechas = [...new Set(
-    terneros.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
+    ternerosFiltrados.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
   )].sort()
 
   // Pares de fechas consecutivas para la tabla de ganancias del historial
@@ -429,7 +475,7 @@ export function TabTerneros() {
   }))
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
-  const ternerosOrdenados = [...terneros].sort((a, b) => {
+  const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
     // Inactivos siempre al final
     if (a.activo && !b.activo) return -1
     if (!a.activo && b.activo) return 1
@@ -539,6 +585,26 @@ export function TabTerneros() {
             {importandoTerneros ? 'Importando...' : 'Importar Terneros'}
           </Button>
         </div>
+      </div>
+
+      {/* ── Sub-tabs por categoría ── */}
+      <div className="flex gap-1 border-b pb-1">
+        {(Object.keys(SUBTAB_LABELS) as SubTabRecria[]).map(tab => {
+          const cnt = conteoSubTab(tab)
+          const isActive = subTab === tab
+          return (
+            <button key={tab}
+              onClick={() => setSubTab(tab)}
+              className={`px-3 py-1.5 text-xs rounded-t font-medium transition-colors ${
+                isActive
+                  ? 'bg-white border border-b-white -mb-px text-green-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}>
+              {SUBTAB_LABELS[tab]}
+              {cnt > 0 && <span className={`ml-1 text-[10px] ${isActive ? 'text-green-600' : 'text-gray-400'}`}>({cnt})</span>}
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Alerta bajas sin asignar ── */}
@@ -657,6 +723,7 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Sexo</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Torito</TableHead>
+                    <TableHead className="text-xs">Categoría</TableHead>
                     <TableHead className="text-xs">Últ. Pesada</TableHead>
                     <TableHead className="text-xs">Peso hoy est.</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
@@ -700,6 +767,9 @@ export function TabTerneros() {
                         </TableCell>
                         <TableCell className={cellStrike}>
                           {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
+                        </TableCell>
+                        <TableCell className={`text-[10px] ${cellStrike}`}>
+                          {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
                         </TableCell>
                         <TableCell className={`text-xs ${cellStrike}`}>
                           {ultima

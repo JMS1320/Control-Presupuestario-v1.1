@@ -1141,11 +1141,15 @@ function TabHacienda() {
     return cat ? CATEGORIAS_TERNERO.includes(cat.nombre.toLowerCase()) : false
   }
 
-  const cargarTernerosParaBaja = async () => {
-    const { data } = await supabase.schema('productivo').from('terneros')
+  const cargarTernerosParaBaja = async (categoriaId?: string) => {
+    // Buscar qué categoria_id de terneros corresponde a la categoría de hacienda seleccionada
+    let query = supabase.schema('productivo').from('terneros')
       .select('id, caravana_interna, caravana_oficial, sexo')
       .eq('activo', true)
-      .order('caravana_oficial', { ascending: true })
+    if (categoriaId) {
+      query = query.eq('categoria_id', categoriaId)
+    }
+    const { data } = await query.order('caravana_oficial', { ascending: true })
     setTernerosParaBaja(data ?? [])
   }
 
@@ -1564,7 +1568,7 @@ function TabHacienda() {
                     <Select value={nuevoMov.categoria_id} onValueChange={v => {
                       setNuevoMov(p => ({ ...p, categoria_id: v }))
                       if (nuevoMov.tipo === 'venta') cargarCaravanasParaBaja(v)
-                      if (nuevoMov.tipo === 'mortandad' && esCatTernero(v)) cargarTernerosParaBaja()
+                      if (nuevoMov.tipo === 'mortandad' && esCatTernero(v)) cargarTernerosParaBaja(v)
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
@@ -1645,7 +1649,7 @@ function TabHacienda() {
                   <div className="space-y-2 border border-red-200 bg-red-50/50 rounded-md p-3">
                     <Label className="text-red-700 font-medium">Vincular baja de caravana en Terneros <span className="text-muted-foreground text-xs font-normal">(opcional)</span></Label>
                     {ternerosParaBaja.length === 0 ? (
-                      <Button variant="outline" size="sm" onClick={cargarTernerosParaBaja} className="text-xs">
+                      <Button variant="outline" size="sm" onClick={() => cargarTernerosParaBaja(nuevoMov.categoria_id)} className="text-xs">
                         Cargar caravanas disponibles
                       </Button>
                     ) : (
