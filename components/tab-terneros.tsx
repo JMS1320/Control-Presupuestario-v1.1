@@ -239,6 +239,7 @@ export function TabTerneros() {
   const [subTab, setSubTab] = useState<SubTabRecria>('todos')
 
   // Edición ternero
+  const [modoEdicion, setModoEdicion] = useState(false)
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
@@ -591,6 +592,16 @@ export function TabTerneros() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Botón modo edición */}
+          <Button
+            variant={modoEdicion ? "default" : "outline"}
+            size="sm"
+            onClick={() => setModoEdicion(p => !p)}
+            className={modoEdicion ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700"}
+          >
+            ✏️ {modoEdicion ? 'Editando...' : 'Editar'}
+          </Button>
+
           {/* Botón descargar Excel */}
           <Button
             variant="outline"
@@ -801,7 +812,7 @@ export function TabTerneros() {
                     // Estilo tachado rojo para inactivos
                     const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm cursor-pointer hover:bg-gray-50 ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => abrirEdicion(t)}>
+                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => modoEdicion && abrirEdicion(t)}>
                         <TableCell className="w-6 pr-0">
                           {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
