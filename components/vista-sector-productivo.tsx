@@ -362,9 +362,14 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
     if (data && data.length > 0) {
       let caravanas: string[] = []
       if (tipo === 'tacto') {
-        const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-          .select('caravana').eq('ciclo_id', data[0].id)
-        if (desc) caravanas = desc.map(d => d.caravana).filter(Boolean)
+        const catCUTid = categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+        if (catCUTid) {
+          const { data: desc } = await supabase.schema('productivo').from('terneros')
+            .select('caravana_oficial, pelo, observaciones')
+            .eq('categoria_id', catCUTid)
+            .ilike('observaciones', '%Tacto%')
+          if (desc) caravanas = desc.map(d => [d.caravana_oficial, d.pelo].filter(Boolean).join(' - ')).filter(Boolean)
+        }
       }
       datosCiclo = { tipo, ciclo: data[0], caravanas }
       break
@@ -998,48 +1003,33 @@ function TabHacienda() {
     try {
       const detalles: { rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[], tipo_origen: 'tacto' | 'cambio_categoria' }[] = []
 
-      // ── Entradas desde tactos (ciclos_cria) con FIFO ──────────────────────
-      const { data: ciclos } = await supabase.schema('productivo').from('ciclos_cria')
-        .select('id, rodeo, cabezas_vacias, fecha_tacto, anio_servicio')
-        .gt('cabezas_vacias', 0)
-        .order('fecha_tacto', { ascending: true })
-      if (ciclos) {
-        const totalIngresado = ciclos.reduce((s, c) => s + c.cabezas_vacias, 0)
-        let vendidas = Math.max(0, totalIngresado - stockActual)
-        for (const c of ciclos) {
-          if (vendidas >= c.cabezas_vacias) { vendidas -= c.cabezas_vacias; continue }
-          const restantes = c.cabezas_vacias - vendidas
-          vendidas = 0
-          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-            .select('caravana').eq('ciclo_id', c.id).eq('estado', 'activa')
-          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
+      // ── Leer individuos CUT activos desde tabla terneros ──────────────────
+      const catCUTid = categoriaId || categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+      if (catCUTid) {
+        const { data: individuos } = await supabase.schema('productivo').from('terneros')
+          .select('caravana_oficial, pelo, observaciones, categoria_previa')
+          .eq('categoria_id', catCUTid).eq('activo', true)
+          .order('created_at', { ascending: true })
+
+        // Separar por origen según observaciones
+        const deTacto = (individuos || []).filter(i => i.observaciones?.includes('Tacto'))
+        const deCambio = (individuos || []).filter(i => !i.observaciones?.includes('Tacto'))
+
+        if (deTacto.length > 0) {
           detalles.push({
-            rodeo: c.rodeo, vacias: restantes, vaciasTotales: c.cabezas_vacias,
-            fecha: c.fecha_tacto,
-            caravanas: restantes < c.cabezas_vacias ? caravanas.slice(-restantes) : caravanas,
+            rodeo: 'Vacías Tacto',
+            vacias: deTacto.length, vaciasTotales: deTacto.length,
+            fecha: '',
+            caravanas: deTacto.map(d => [d.caravana_oficial, d.pelo, d.categoria_previa !== 'Vaca' ? d.categoria_previa : ''].filter(Boolean).join(' - ')),
             tipo_origen: 'tacto'
           })
         }
-        detalles.reverse()
-      }
-
-      // ── Entradas desde Cambio de Categoría ───────────────────────────────
-      if (categoriaId) {
-        const { data: movsDirectos } = await supabase.schema('productivo').from('movimientos_hacienda')
-          .select('id, fecha, cantidad, observaciones')
-          .eq('categoria_id', categoriaId)
-          .eq('tipo', 'cambio_categoria')
-          .gt('cantidad', 0)
-          .order('fecha', { ascending: false })
-        for (const m of movsDirectos || []) {
-          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-            .select('caravana').eq('movimiento_id', m.id).eq('estado', 'activa')
-          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
-          detalles.unshift({
-            rodeo: m.observaciones || 'Cambio de Categoría',
-            vacias: caravanas.length > 0 ? caravanas.length : m.cantidad,
-            vaciasTotales: m.cantidad,
-            fecha: m.fecha, caravanas,
+        if (deCambio.length > 0) {
+          detalles.push({
+            rodeo: 'Cambio de Categoría',
+            vacias: deCambio.length, vaciasTotales: deCambio.length,
+            fecha: '',
+            caravanas: deCambio.map(d => [d.caravana_oficial, d.pelo, d.observaciones].filter(Boolean).join(' - ')),
             tipo_origen: 'cambio_categoria'
           })
         }
@@ -1057,9 +1047,9 @@ function TabHacienda() {
     const cat = categorias.find(c => c.id === categoriaId)
     const esCUT = cat?.nombre.toLowerCase().includes('cut') || cat?.nombre.toLowerCase().includes('descarte')
     if (!esCUT) { setCaravanasActivasCUT([]); setCaravanasSeleccionadas([]); return }
-    const { data } = await supabase.schema('productivo').from('detalle_descarte')
-      .select('id, caravana').eq('estado', 'activa').order('caravana')
-    setCaravanasActivasCUT((data || []).filter(d => d.caravana) as { id: string, caravana: string }[])
+    const { data } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_oficial, pelo').eq('categoria_id', categoriaId).eq('activo', true).order('caravana_oficial')
+    setCaravanasActivasCUT((data || []).filter(d => d.caravana_oficial).map(d => ({ id: d.id, caravana: `${d.caravana_oficial}${d.pelo ? ' - ' + d.pelo : ''}` })))
     setCaravanasSeleccionadas([])
   }
 
@@ -1224,16 +1214,26 @@ function TabHacienda() {
         }
       }
 
-      // Caravanas (solo si destino es CUT/Descarte)
+      // Caravanas (solo si destino es CUT/Descarte) → registrar en terneros
       const esDestinosCUT = catDestino?.nombre.toLowerCase().includes('cut') || catDestino?.nombre.toLowerCase().includes('descarte')
-      if (esDestinosCUT && nuevoMov.caravanas.trim() && movDestino) {
+      if (esDestinosCUT && nuevoMov.caravanas.trim()) {
         const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
         if (lineas.length > 0) {
-          await supabase.schema('productivo').from('detalle_descarte').insert(
-            lineas.map(caravana => ({
-              movimiento_id: movDestino.id, caravana,
-              categoria_origen: catOrigen?.nombre || '', estado: 'activa'
-            }))
+          await supabase.schema('productivo').from('terneros').insert(
+            lineas.map(texto => {
+              // Parsear formato "caravana - pelo - motivo" o solo "caravana"
+              const partes = texto.split(/\s*-\s*/)
+              return {
+                caravana_oficial: partes[0]?.trim() || texto,
+                pelo: partes[1]?.trim() || null,
+                observaciones: partes.slice(2).join(' - ').trim() || null,
+                sexo: 'Hembra',
+                categoria_id: catDestino!.id,
+                categoria_previa: catOrigen?.nombre || '',
+                activo: true,
+                es_torito: false,
+              }
+            })
           )
         }
       }
@@ -1268,10 +1268,10 @@ function TabHacienda() {
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
     if (error) { toast.error('Error al guardar movimiento'); return }
 
-    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja
+    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja en terneros
     if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
-      await supabase.schema('productivo').from('detalle_descarte')
-        .update({ estado: 'baja' })
+      await supabase.schema('productivo').from('terneros')
+        .update({ activo: false, fecha_baja: nuevoMov.fecha, motivo_baja: 'Vendido' })
         .in('id', caravanasSeleccionadas)
     }
 
@@ -3705,17 +3705,29 @@ function SubTabOrdenesAplicacion() {
               ])
             }
 
-            // Registrar caravanas en detalle_descarte
+            // Registrar caravanas vacías en terneros como CUT/Descarte
             if (caravanasVacias.trim()) {
-              const caravanas = caravanasVacias.split('\n').map(c => c.trim()).filter(Boolean)
-              if (caravanas.length > 0) {
-                await supabase.schema('productivo').from('detalle_descarte').insert(
-                  caravanas.map(caravana => ({
-                    ciclo_id: cicloSeleccionado,
-                    caravana,
-                    categoria_origen: ciclo?.rodeo || '-'
-                  }))
-                )
+              const lineas = caravanasVacias.split('\n').map(c => c.trim()).filter(Boolean)
+              if (lineas.length > 0) {
+                const catCUTid = categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+                if (catCUTid) {
+                  const cicloInfo = ciclo ? `Vacía Tacto ${ciclo.anio_servicio}` : 'Vacía Tacto'
+                  await supabase.schema('productivo').from('terneros').insert(
+                    lineas.map(texto => {
+                      const partes = texto.split(/\s*-\s*/)
+                      return {
+                        caravana_oficial: partes[0]?.trim() || texto,
+                        pelo: partes[1]?.trim() || null,
+                        observaciones: partes.length > 2 ? partes.slice(2).join(' - ').trim() : cicloInfo,
+                        sexo: 'Hembra',
+                        categoria_id: catCUTid,
+                        categoria_previa: ciclo?.rodeo || 'Vaca',
+                        activo: true,
+                        es_torito: false,
+                      }
+                    })
+                  )
+                }
               }
             }
           }
