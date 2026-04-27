@@ -2465,8 +2465,24 @@ function SubTabOrdenesAplicacion() {
     categoria_propuesta: string // categoria_id destino
     seleccionado: boolean
   }
+
+  // Grupo para la UI resumida de asignación post-destete
+  interface GrupoAsignacion {
+    key: string // 'hembras' | 'machos' | 'toritos'
+    label: string
+    emoji: string
+    color: string
+    total: number
+    cantidad: number // editable — default = total
+    categoriaDestinoId: string
+    categoriaDestinoNombre: string
+    seleccionIndividual: boolean // true cuando cantidad < total
+    individuosSeleccionados: string[] // ternero ids seleccionados
+  }
+
   const [mostrarModalAsignacion, setMostrarModalAsignacion] = useState(false)
   const [ternerosParaAsignar, setTernerosParaAsignar] = useState<TerneroAsignar[]>([])
+  const [gruposAsignacion, setGruposAsignacion] = useState<GrupoAsignacion[]>([])
   const [fechaIngresoRecria, setFechaIngresoRecria] = useState('')
   const [pesoIngresoRecria, setPesoIngresoRecria] = useState('')
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
@@ -3150,6 +3166,40 @@ function SubTabOrdenesAplicacion() {
       seleccionado: true,
     }))
 
+    // Construir grupos resumidos
+    const hembras = asignaciones.filter(t => t.sexo === 'Hembra')
+    const machos = asignaciones.filter(t => t.sexo === 'Macho' && !t.es_torito)
+    const toritos = asignaciones.filter(t => t.es_torito)
+
+    const catTerneraRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
+    const catTerneroRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
+    const catTorito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
+
+    const gruposInit: GrupoAsignacion[] = [
+      {
+        key: 'hembras', label: 'Hembras', emoji: '♀', color: 'pink',
+        total: hembras.length, cantidad: hembras.length,
+        categoriaDestinoId: catTerneraRecria?.id || '',
+        categoriaDestinoNombre: catTerneraRecria?.nombre || 'Ternera Recría',
+        seleccionIndividual: false, individuosSeleccionados: hembras.map(t => t.id),
+      },
+      {
+        key: 'machos', label: 'Machos', emoji: '♂', color: 'sky',
+        total: machos.length, cantidad: machos.length,
+        categoriaDestinoId: catTerneroRecria?.id || '',
+        categoriaDestinoNombre: catTerneroRecria?.nombre || 'Ternero Recría',
+        seleccionIndividual: false, individuosSeleccionados: machos.map(t => t.id),
+      },
+      {
+        key: 'toritos', label: 'Toritos', emoji: '🐂', color: 'amber',
+        total: toritos.length, cantidad: toritos.length,
+        categoriaDestinoId: catTorito?.id || '',
+        categoriaDestinoNombre: catTorito?.nombre || 'Torito',
+        seleccionIndividual: false, individuosSeleccionados: toritos.map(t => t.id),
+      },
+    ].filter(g => g.total > 0)
+
+    setGruposAsignacion(gruposInit)
     setTernerosParaAsignar(asignaciones)
     setOrdenEjecutadaParaAsignacion(orden)
     setFechaIngresoRecria(orden.fecha)
@@ -3204,7 +3254,7 @@ function SubTabOrdenesAplicacion() {
       const torito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
       return torito?.id || ''
     }
-    if (sexo === 'M') {
+    if (sexo === 'Macho') {
       const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
       return rec?.id || ''
     }
@@ -3219,22 +3269,70 @@ function SubTabOrdenesAplicacion() {
     return categoriasHacienda.filter(c => nombresValidos.includes(c.nombre.toLowerCase()))
   }
 
-  const toggleSeleccionTernero = (id: string) => {
-    setTernerosParaAsignar(prev => prev.map(t =>
-      t.id === id ? { ...t, seleccionado: !t.seleccionado } : t
+  // Cambiar cantidad de un grupo — si baja del total, activar selección individual
+  const cambiarCantidadGrupo = (key: string, nuevaCantidad: number) => {
+    setGruposAsignacion(prev => prev.map(g => {
+      if (g.key !== key) return g
+      const cant = Math.max(0, Math.min(nuevaCantidad, g.total))
+      if (cant < g.total) {
+        // Necesita selección individual — deseleccionar todos para que elija
+        return { ...g, cantidad: cant, seleccionIndividual: true, individuosSeleccionados: [] }
+      }
+      // Cantidad = total → seleccionar todos automáticamente
+      const todos = ternerosParaAsignar.filter(t => {
+        if (key === 'hembras') return t.sexo === 'Hembra'
+        if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
+        if (key === 'toritos') return t.es_torito
+        return false
+      }).map(t => t.id)
+      return { ...g, cantidad: cant, seleccionIndividual: false, individuosSeleccionados: todos }
+    }))
+  }
+
+  // Toggle individual dentro de un grupo
+  const toggleIndividuoGrupo = (key: string, terneroId: string) => {
+    setGruposAsignacion(prev => prev.map(g => {
+      if (g.key !== key) return g
+      const sel = g.individuosSeleccionados.includes(terneroId)
+        ? g.individuosSeleccionados.filter(id => id !== terneroId)
+        : g.individuosSeleccionados.length < g.cantidad
+          ? [...g.individuosSeleccionados, terneroId]
+          : g.individuosSeleccionados // ya tiene el máximo
+      return { ...g, individuosSeleccionados: sel }
+    }))
+  }
+
+  // Cambiar categoría destino de un grupo
+  const cambiarCategoriaGrupo = (key: string, catId: string) => {
+    const cat = categoriasHacienda.find(c => c.id === catId)
+    setGruposAsignacion(prev => prev.map(g =>
+      g.key === key ? { ...g, categoriaDestinoId: catId, categoriaDestinoNombre: cat?.nombre || '' } : g
     ))
   }
 
-  const cambiarCategoriaTernero = (id: string, catId: string) => {
-    setTernerosParaAsignar(prev => prev.map(t =>
-      t.id === id ? { ...t, categoria_propuesta: catId } : t
-    ))
+  // Obtener terneros de un grupo
+  const ternerosDelGrupo = (key: string) => {
+    return ternerosParaAsignar.filter(t => {
+      if (key === 'hembras') return t.sexo === 'Hembra'
+      if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
+      if (key === 'toritos') return t.es_torito
+      return false
+    })
   }
 
   const confirmarAsignacionCategorias = async () => {
-    const seleccionados = ternerosParaAsignar.filter(t => t.seleccionado && t.categoria_propuesta)
-    if (seleccionados.length === 0) {
-      toast.error('Seleccione al menos un ternero para asignar')
+    // Validar que grupos con selección individual tengan la cantidad correcta
+    for (const g of gruposAsignacion) {
+      if (g.cantidad === 0) continue
+      if (g.seleccionIndividual && g.individuosSeleccionados.length !== g.cantidad) {
+        toast.error(`${g.label}: seleccione exactamente ${g.cantidad} individuo(s) (tiene ${g.individuosSeleccionados.length})`)
+        return
+      }
+    }
+
+    const totalAsignar = gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)
+    if (totalAsignar === 0) {
+      toast.error('No hay terneros para asignar')
       return
     }
 
@@ -3245,25 +3343,34 @@ function SubTabOrdenesAplicacion() {
 
     setGuardandoAsignacion(true)
     try {
+      // Construir lista de terneros seleccionados con su categoría destino
+      const seleccionados: { id: string, sexo: string, categoriaDestinoId: string }[] = []
+      for (const g of gruposAsignacion) {
+        if (g.cantidad === 0) continue
+        for (const tId of g.individuosSeleccionados) {
+          const t = ternerosParaAsignar.find(x => x.id === tId)
+          if (t) seleccionados.push({ id: t.id, sexo: t.sexo, categoriaDestinoId: g.categoriaDestinoId })
+        }
+      }
+
       // Agrupar por categoría origen y destino para generar movimientos
-      const grupos = new Map<string, { origenId: string, destinoId: string, cantidad: number, origenNombre: string, destinoNombre: string }>()
-      for (const t of seleccionados) {
-        // Determinar categoría origen (al pie según sexo)
-        const catOrigenAlPie = t.sexo === 'M'
+      const movGrupos = new Map<string, { origenId: string, destinoId: string, cantidad: number, origenNombre: string, destinoNombre: string }>()
+      for (const s of seleccionados) {
+        const catOrigenAlPie = s.sexo === 'Macho'
           ? categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero al pie')
           : categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera al pie')
         if (!catOrigenAlPie) continue
-        const catDestino = categoriasHacienda.find(c => c.id === t.categoria_propuesta)
+        const catDestino = categoriasHacienda.find(c => c.id === s.categoriaDestinoId)
         if (!catDestino) continue
 
-        const key = `${catOrigenAlPie.id}→${t.categoria_propuesta}`
-        const existing = grupos.get(key)
+        const key = `${catOrigenAlPie.id}→${s.categoriaDestinoId}`
+        const existing = movGrupos.get(key)
         if (existing) {
           existing.cantidad++
         } else {
-          grupos.set(key, {
+          movGrupos.set(key, {
             origenId: catOrigenAlPie.id,
-            destinoId: t.categoria_propuesta,
+            destinoId: s.categoriaDestinoId,
             cantidad: 1,
             origenNombre: catOrigenAlPie.nombre,
             destinoNombre: catDestino.nombre
@@ -3272,8 +3379,7 @@ function SubTabOrdenesAplicacion() {
       }
 
       // Insertar movimientos cambio_categoria por cada grupo
-      for (const [, g] of grupos) {
-        // Egreso
+      for (const [, g] of movGrupos) {
         const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
           fecha: fechaIngresoRecria,
           categoria_id: g.origenId,
@@ -3283,7 +3389,6 @@ function SubTabOrdenesAplicacion() {
         })
         if (e1) throw e1
 
-        // Ingreso
         const { error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
           fecha: fechaIngresoRecria,
           categoria_id: g.destinoId,
@@ -3296,22 +3401,22 @@ function SubTabOrdenesAplicacion() {
 
       // Actualizar terneros: categoria_id + fecha_ingreso_recria + peso_ingreso_recria
       const pesoRecria = pesoIngresoRecria ? parseFloat(String(pesoIngresoRecria).replace(/\./g, '').replace(',', '.')) || null : null
-      for (const t of seleccionados) {
+      for (const s of seleccionados) {
         const { error } = await supabase.schema('productivo').from('terneros')
           .update({
-            categoria_id: t.categoria_propuesta,
+            categoria_id: s.categoriaDestinoId,
             fecha_ingreso_recria: fechaIngresoRecria,
             peso_ingreso_recria: pesoRecria
           })
-          .eq('id', t.id)
+          .eq('id', s.id)
         if (error) throw error
       }
 
-      const totalAsignados = seleccionados.length
-      const omitidos = ternerosParaAsignar.length - totalAsignados
-      toast.success(`${totalAsignados} terneros asignados a recría${omitidos > 0 ? ` (${omitidos} omitidos)` : ''}`)
+      const omitidos = ternerosParaAsignar.length - seleccionados.length
+      toast.success(`${seleccionados.length} terneros asignados a recría${omitidos > 0 ? ` (${omitidos} omitidos)` : ''}`)
       setMostrarModalAsignacion(false)
       setTernerosParaAsignar([])
+      setGruposAsignacion([])
       setOrdenEjecutadaParaAsignacion(null)
       cargarDatos()
     } catch (err: any) {
@@ -4398,6 +4503,7 @@ function SubTabOrdenesAplicacion() {
         if (!open) {
           setMostrarModalAsignacion(false)
           setTernerosParaAsignar([])
+          setGruposAsignacion([])
           setOrdenEjecutadaParaAsignacion(null)
         }
       }}>
@@ -4461,86 +4567,83 @@ function SubTabOrdenesAplicacion() {
                     {pesadaAsignacionSummary.sinPesada > 0 && (
                       <span className="text-amber-600">Sin pesada: <strong>{pesadaAsignacionSummary.sinPesada}</strong></span>
                     )}
-                    <span>Kg totales: <strong className="text-green-700">{pesadaAsignacionSummary.totalKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></span>
+                    <span>Kg pesados: <strong className="text-green-700">{pesadaAsignacionSummary.totalKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></span>
+                    {pesadaAsignacionSummary.sinPesada > 0 && pesadaAsignacionSummary.promedioKg > 0 && (
+                      <span>Kg est. total: <strong className="text-green-700">
+                        {Math.round(pesadaAsignacionSummary.promedioKg * ternerosParaAsignar.length).toLocaleString('es-AR')}
+                      </strong> <span className="text-gray-400">(prom × {ternerosParaAsignar.length})</span></span>
+                    )}
                     <span>Promedio: <strong className="text-green-700">{pesadaAsignacionSummary.promedioKg.toFixed(1).replace('.', ',')} kg</strong></span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Resumen rápido */}
-            <div className="flex gap-4 text-xs">
-              <span className="bg-sky-50 text-sky-700 px-2 py-1 rounded">
-                ♂ Machos: {ternerosParaAsignar.filter(t => t.sexo === 'M' && !t.es_torito).length}
-              </span>
-              <span className="bg-pink-50 text-pink-700 px-2 py-1 rounded">
-                ♀ Hembras: {ternerosParaAsignar.filter(t => t.sexo === 'H').length}
-              </span>
-              <span className="bg-amber-50 text-amber-700 px-2 py-1 rounded">
-                🐂 Toritos: {ternerosParaAsignar.filter(t => t.es_torito).length}
-              </span>
-              <span className="bg-green-50 text-green-700 px-2 py-1 rounded font-medium">
-                Seleccionados: {ternerosParaAsignar.filter(t => t.seleccionado).length} / {ternerosParaAsignar.length}
-              </span>
+            {/* Resumen por grupo */}
+            <div className="space-y-3">
+              {gruposAsignacion.map(g => {
+                const bgColor = g.color === 'pink' ? 'bg-pink-50 border-pink-200' : g.color === 'sky' ? 'bg-sky-50 border-sky-200' : 'bg-amber-50 border-amber-200'
+                const textColor = g.color === 'pink' ? 'text-pink-800' : g.color === 'sky' ? 'text-sky-800' : 'text-amber-800'
+                return (
+                  <div key={g.key} className={`border rounded-lg p-3 space-y-2 ${bgColor}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-lg font-bold ${textColor}`}>{g.emoji} {g.total} {g.label}</span>
+                      <span className="text-xs text-gray-500">→</span>
+                      <Select value={g.categoriaDestinoId} onValueChange={v => cambiarCategoriaGrupo(g.key, v)}>
+                        <SelectTrigger className="h-7 text-xs w-[200px] bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent position="popper" className="z-[9999]">
+                          {categoriasDestinoRecria().map(c => (
+                            <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-1 ml-auto">
+                        <Label className="text-xs text-gray-600">Cantidad:</Label>
+                        <Input type="number" min={0} max={g.total}
+                          className="h-7 w-[70px] text-sm text-center bg-white"
+                          value={g.cantidad}
+                          onChange={e => cambiarCantidadGrupo(g.key, parseInt(e.target.value) || 0)}
+                        />
+                        <span className="text-xs text-gray-500">/ {g.total}</span>
+                      </div>
+                    </div>
+
+                    {/* Selector individual — solo si cantidad < total */}
+                    {g.seleccionIndividual && g.cantidad > 0 && (
+                      <div className="bg-white border rounded p-2 space-y-1">
+                        <p className="text-xs font-medium text-gray-700">
+                          Seleccione {g.cantidad} de {g.total} — ({g.individuosSeleccionados.length} seleccionados)
+                        </p>
+                        <div className="max-h-[150px] overflow-y-auto space-y-1">
+                          {ternerosDelGrupo(g.key).map(t => {
+                            const sel = g.individuosSeleccionados.includes(t.id)
+                            const disabled = !sel && g.individuosSeleccionados.length >= g.cantidad
+                            return (
+                              <label key={t.id} className={`flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-gray-50 cursor-pointer ${disabled ? 'opacity-40' : ''}`}>
+                                <Checkbox checked={sel} disabled={disabled}
+                                  onCheckedChange={() => toggleIndividuoGrupo(g.key, t.id)} />
+                                <span className="font-mono">{t.caravana_oficial || t.caravana_interna || '—'}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Botones seleccionar/deseleccionar todos */}
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="h-7 text-xs"
-                onClick={() => setTernerosParaAsignar(prev => prev.map(t => ({ ...t, seleccionado: true })))}>
-                Seleccionar todos
-              </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs"
-                onClick={() => setTernerosParaAsignar(prev => prev.map(t => ({ ...t, seleccionado: false })))}>
-                Ninguno
-              </Button>
-            </div>
-
-            {/* Tabla de terneros */}
-            <div className="max-h-[45vh] overflow-y-auto border rounded">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px] sticky top-0 bg-white">✓</TableHead>
-                    <TableHead className="sticky top-0 bg-white text-xs">Caravana</TableHead>
-                    <TableHead className="sticky top-0 bg-white text-xs">Sexo</TableHead>
-                    <TableHead className="sticky top-0 bg-white text-xs">Categoría Destino</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ternerosParaAsignar.map(t => (
-                    <TableRow key={t.id} className={!t.seleccionado ? 'opacity-40' : ''}>
-                      <TableCell>
-                        <Checkbox checked={t.seleccionado} onCheckedChange={() => toggleSeleccionTernero(t.id)} />
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {t.caravana_oficial || t.caravana_interna || '—'}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {t.es_torito ? (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 text-xs">Torito</Badge>
-                        ) : t.sexo === 'M' ? (
-                          <span className="text-sky-700">♂ Macho</span>
-                        ) : (
-                          <span className="text-pink-700">♀ Hembra</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Select value={t.categoria_propuesta} onValueChange={v => cambiarCategoriaTernero(t.id, v)}>
-                          <SelectTrigger className="h-7 text-xs w-[200px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent position="popper" className="z-[9999]">
-                            {categoriasDestinoRecria().map(c => (
-                              <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            {/* Total */}
+            <div className="bg-green-50 border border-green-200 rounded p-2 text-sm font-medium text-green-800 text-center">
+              Total a asignar: {gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)} / {ternerosParaAsignar.length}
+              {gruposAsignacion.reduce((s, g) => s + g.cantidad, 0) < ternerosParaAsignar.length && (
+                <span className="text-gray-500 font-normal ml-2">
+                  ({ternerosParaAsignar.length - gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)} quedan al pie)
+                </span>
+              )}
             </div>
           </div>
 
@@ -4548,14 +4651,15 @@ function SubTabOrdenesAplicacion() {
             <Button variant="outline" onClick={() => {
               setMostrarModalAsignacion(false)
               setTernerosParaAsignar([])
+              setGruposAsignacion([])
               setOrdenEjecutadaParaAsignacion(null)
             }}>
               Omitir (asignar después)
             </Button>
-            <Button onClick={confirmarAsignacionCategorias} disabled={guardandoAsignacion || ternerosParaAsignar.filter(t => t.seleccionado).length === 0}
+            <Button onClick={confirmarAsignacionCategorias} disabled={guardandoAsignacion || gruposAsignacion.reduce((s, g) => s + g.cantidad, 0) === 0}
               className="bg-green-600 hover:bg-green-700">
               {guardandoAsignacion && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Asignar Categorías ({ternerosParaAsignar.filter(t => t.seleccionado).length})
+              Asignar Categorías ({gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)})
             </Button>
           </DialogFooter>
         </DialogContent>
