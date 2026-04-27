@@ -253,6 +253,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   // Bajas sin asignar (mortandad en hacienda sin caravana vinculada)
   const [bajasSinAsignar, setBajasSinAsignar] = useState(0)
 
+  // Stock por categoría (de movimientos_hacienda) para filas fantasma
+  const [stockPorCategoria, setStockPorCategoria] = useState<Record<string, number>>({})
+  const [categoriasMap, setCategoriasMap] = useState<Record<string, CategoriaHacienda>>({}) // id→{id,nombre}
+  const [creandoFantasma, setCreandoFantasma] = useState(false)
+
   // Sub-tab recría
   const [subTab, setSubTab] = useState<SubTabRecria>('todos')
 
@@ -266,6 +271,25 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     padre: '', madre: '', peso_nacimiento: '',
   })
   const [guardandoEdit, setGuardandoEdit] = useState(false)
+
+  // Crear registro mínimo para fila fantasma y abrir edición
+  const identificarFantasma = async (categoriaId: string) => {
+    setCreandoFantasma(true)
+    try {
+      const { data, error } = await supabase.schema('productivo').from('terneros')
+        .insert({ categoria_id: categoriaId, activo: true })
+        .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
+        .single()
+      if (error) throw error
+      toast.success('Registro creado — completá los datos')
+      await cargar()
+      if (data) abrirEdicion(data as Ternero)
+    } catch (err: any) {
+      toast.error('Error al crear registro: ' + err.message)
+    } finally {
+      setCreandoFantasma(false)
+    }
+  }
 
   const abrirEdicion = (t: Ternero) => {
     setTerneroEditando(t)
@@ -340,19 +364,38 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       setTerneros(todosLosTerneros)
       setPesadasSinVincular(resSinVincular.data ?? [])
 
-      // Calcular bajas sin asignar: mortandad en hacienda (categorías ternero) vs terneros inactivos
+      // Calcular stock por categoría + bajas sin asignar
       try {
-        const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
         const { data: catData } = await supabase.schema('productivo').from('categorias_hacienda')
           .select('id, nombre').eq('activo', true)
-        const catTernerosIds = (catData ?? []).filter(c => CATS_TERNERO.includes(c.nombre.toLowerCase())).map(c => c.id)
+        const allCats = catData ?? []
+        const catMap: Record<string, CategoriaHacienda> = {}
+        allCats.forEach(c => { catMap[c.id] = c })
+        setCategoriasMap(catMap)
 
-        if (catTernerosIds.length > 0) {
+        // Todas las categorías relevantes para este modo
+        const catIds = allCats.filter(c => config.allCats.includes(c.nombre.toLowerCase())).map(c => c.id)
+
+        if (catIds.length > 0) {
+          // Stock de hacienda por categoría (suma de todos los movimientos)
           const { data: movData } = await supabase.schema('productivo').from('movimientos_hacienda')
-            .select('cantidad').eq('tipo', 'mortandad').in('categoria_id', catTernerosIds)
-          const totalMortandadHacienda = (movData ?? []).reduce((sum, m) => sum + m.cantidad, 0)
-          const totalBajasEnTerneros = todosLosTerneros.filter(t => !t.activo).length
-          setBajasSinAsignar(Math.max(0, totalMortandadHacienda - totalBajasEnTerneros))
+            .select('categoria_id, cantidad').in('categoria_id', catIds)
+          const stockMap: Record<string, number> = {}
+          ;(movData ?? []).forEach(m => {
+            stockMap[m.categoria_id] = (stockMap[m.categoria_id] || 0) + m.cantidad
+          })
+          setStockPorCategoria(stockMap)
+
+          // Bajas sin asignar (mortandad)
+          const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
+          const catTernerosIds = allCats.filter(c => CATS_TERNERO.includes(c.nombre.toLowerCase())).map(c => c.id)
+          if (catTernerosIds.length > 0) {
+            const { data: mortData } = await supabase.schema('productivo').from('movimientos_hacienda')
+              .select('cantidad').eq('tipo', 'mortandad').in('categoria_id', catTernerosIds)
+            const totalMortandadHacienda = (mortData ?? []).reduce((sum, m) => sum + m.cantidad, 0)
+            const totalBajasEnTerneros = todosLosTerneros.filter(t => !t.activo).length
+            setBajasSinAsignar(Math.max(0, totalMortandadHacienda - totalBajasEnTerneros))
+          }
         }
       } catch { /* no bloquear si falla consulta auxiliar */ }
     } catch (err: any) {
@@ -547,6 +590,25 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   conteoInternas.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
   conteoOficiales.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
 
+  // Filas fantasma: diferencia stock (movimientos_hacienda) vs individuos activos en terneros
+  const fantasmasPorCategoria: { categoriaId: string, categoriaNombre: string, cantidad: number }[] = []
+  const stockNegativoCategorias: { nombre: string, stock: number }[] = []
+
+  // Calcular para las categorías del sub-tab actual (o todas si "todos")
+  const catsParaFantasmas = filtrosCat.length === 0 ? config.allCats : filtrosCat
+  Object.entries(categoriasMap).forEach(([catId, cat]) => {
+    if (!catsParaFantasmas.includes(cat.nombre.toLowerCase())) return
+    const stock = stockPorCategoria[catId] || 0
+    const individuos = terneros.filter(t => t.activo && t.categoria_id === catId).length
+    const diff = stock - individuos
+    if (diff > 0) {
+      fantasmasPorCategoria.push({ categoriaId: catId, categoriaNombre: cat.nombre, cantidad: diff })
+    } else if (stock < 0) {
+      stockNegativoCategorias.push({ nombre: cat.nombre, stock })
+    }
+  })
+  const totalFantasmas = fantasmasPorCategoria.reduce((s, f) => s + f.cantidad, 0)
+
   // Pivot table para historial: fechas únicas ordenadas
   const todasFechas = [...new Set(
     ternerosFiltrados.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
@@ -610,6 +672,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           {ternerosInactivos.length > 0 && (
             <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
               💀 {ternerosInactivos.length} baja{ternerosInactivos.length > 1 ? 's' : ''}
+            </Badge>
+          )}
+          {totalFantasmas > 0 && (
+            <Badge variant="outline" className="text-gray-600 border-gray-300 bg-gray-50">
+              👤 {totalFantasmas} sin identificar
             </Badge>
           )}
           {idsConDuplicado.size > 0 && (
@@ -712,6 +779,19 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </span>
             <span className="text-red-600 ml-1">
               — Hay bajas registradas en Hacienda que no tienen caravana vinculada. Los conteos y kg se ajustan restando {bajasSinAsignar} x promedio.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Alerta stock negativo ── */}
+      {stockNegativoCategorias.length > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-semibold text-amber-700">Auditoría: stock negativo</span>
+            <span className="text-amber-600 ml-1">
+              — {stockNegativoCategorias.map(c => `${c.nombre} (${c.stock})`).join(', ')}. Revisar movimientos de hacienda.
             </span>
           </div>
         </div>
@@ -934,6 +1014,32 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       </TableRow>
                     )
                   })}
+                  {/* Filas fantasma — sin identificar */}
+                  {fantasmasPorCategoria.map(f =>
+                    Array.from({ length: f.cantidad }, (_, i) => {
+                      const colCount = 12 + (subTab === config.showExtraTorito ? 6 : 0)
+                      return (
+                        <TableRow key={`fantasma-${f.categoriaId}-${i}`} className="bg-gray-50/80 hover:bg-blue-50/50">
+                          <TableCell className="w-6 pr-0">
+                            <span className="text-gray-400" title="Sin identificar">👤</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-gray-400 italic" colSpan={2}>
+                            Sin identificar #{i + 1}
+                          </TableCell>
+                          <TableCell className="text-gray-400 text-xs" colSpan={colCount - 5}>
+                            <span className="text-[10px]">{f.categoriaNombre}</span>
+                          </TableCell>
+                          <TableCell className="text-xs" colSpan={2}>
+                            <Button variant="outline" size="sm" className="h-6 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                              disabled={creandoFantasma}
+                              onClick={(e) => { e.stopPropagation(); identificarFantasma(f.categoriaId) }}>
+                              + Identificar
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
