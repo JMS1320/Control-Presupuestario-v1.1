@@ -43,6 +43,7 @@ interface Ternero {
   padre: string | null
   madre: string | null
   peso_nacimiento: number | null
+  categoria_previa: string | null
   created_at: string
   pesadas_terneros: Pesada[]
   categorias_hacienda?: { nombre: string } | null
@@ -266,18 +267,25 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
-    es_torito: false, observaciones: '',
+    es_torito: false, observaciones: '', categoria_previa: '',
     anio_nacimiento: '', fecha_nacimiento: '', hijo_de: '', pelo_madre: '',
     padre: '', madre: '', peso_nacimiento: '',
   })
   const [guardandoEdit, setGuardandoEdit] = useState(false)
 
   // Crear registro mínimo para fila fantasma y abrir edición
-  const identificarFantasma = async (categoriaId: string) => {
+  const identificarFantasma = async (categoriaId: string, categoriaNombre?: string) => {
     setCreandoFantasma(true)
     try {
+      // Pre-llenar datos según la categoría
+      const esCUT = categoriaNombre?.toLowerCase().includes('cut') || categoriaNombre?.toLowerCase().includes('descarte')
+      const insertData: Record<string, any> = { categoria_id: categoriaId, activo: true }
+      if (esCUT) {
+        insertData.sexo = 'Hembra'
+        insertData.es_torito = false
+      }
       const { data, error } = await supabase.schema('productivo').from('terneros')
-        .insert({ categoria_id: categoriaId, activo: true })
+        .insert(insertData)
         .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
         .single()
       if (error) throw error
@@ -300,6 +308,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       pelo: t.pelo ?? '',
       es_torito: t.es_torito ?? false,
       observaciones: t.observaciones ?? '',
+      categoria_previa: t.categoria_previa ?? '',
       anio_nacimiento: t.anio_nacimiento?.toString() ?? '',
       fecha_nacimiento: t.fecha_nacimiento ?? '',
       hijo_de: t.hijo_de ?? '',
@@ -321,6 +330,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
         pelo: editForm.pelo || null,
         es_torito: editForm.es_torito,
         observaciones: editForm.observaciones || null,
+        categoria_previa: editForm.categoria_previa || null,
         anio_nacimiento: editForm.anio_nacimiento ? parseInt(editForm.anio_nacimiento) : null,
         fecha_nacimiento: editForm.fecha_nacimiento || null,
         hijo_de: editForm.hijo_de || null,
@@ -1032,7 +1042,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           <TableCell className="text-xs" colSpan={2}>
                             <Button variant="outline" size="sm" className="h-6 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
                               disabled={creandoFantasma}
-                              onClick={(e) => { e.stopPropagation(); identificarFantasma(f.categoriaId) }}>
+                              onClick={(e) => { e.stopPropagation(); identificarFantasma(f.categoriaId, f.categoriaNombre) }}>
                               + Identificar
                             </Button>
                           </TableCell>
@@ -1786,6 +1796,20 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               <Input className="h-8 text-sm" value={editForm.observaciones}
                 onChange={e => setEditForm(p => ({ ...p, observaciones: e.target.value }))} />
             </div>
+
+            {/* Campo categoria_previa — solo para CUT/Descarte */}
+            {terneroEditando?.categorias_hacienda?.nombre?.toLowerCase().includes('cut') && (
+              <div>
+                <Label className="text-xs">Categoría previa</Label>
+                <select className="w-full h-8 text-sm border rounded px-2"
+                  value={editForm.categoria_previa} onChange={e => setEditForm(p => ({ ...p, categoria_previa: e.target.value }))}>
+                  <option value="">—</option>
+                  <option value="Vaca">Vaca</option>
+                  <option value="Vaquillona Preñada">Vaquillona Preñada</option>
+                  <option value="Vaquillona Engorde">Vaquillona Engorde</option>
+                </select>
+              </div>
+            )}
 
             {/* Campos extra toritos/toros */}
             {editForm.es_torito && (
