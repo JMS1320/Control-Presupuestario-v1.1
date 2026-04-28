@@ -1436,14 +1436,22 @@ function TabHacienda() {
         return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
       }
 
-      // Cargar CUT/Descarte detail de terneros
+      // Cargar CUT/Descarte detail de terneros — a la fecha fin del período
       const cutCatId = catIdMap['vaca cut/descarte']
-      let detalleCutData: { caravana_oficial: string | null, caravana_interna: string | null, categoria_previa: string | null, pelo: string | null, observaciones: string | null, activo: boolean }[] = []
+      let detalleCutData: { caravana_oficial: string | null, caravana_interna: string | null, categoria_previa: string | null, pelo: string | null, observaciones: string | null, estadoAlCorte: string }[] = []
       if (cutCatId) {
         const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
-          .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, activo')
+          .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, created_at')
           .eq('categoria_id', cutCatId)
-        detalleCutData = cutTerneros || []
+          .lte('created_at', `${hasta}T23:59:59`) // solo las que ingresaron antes del fin del período
+        detalleCutData = (cutTerneros || []).map(d => ({
+          caravana_oficial: d.caravana_oficial,
+          caravana_interna: d.caravana_interna,
+          categoria_previa: d.categoria_previa,
+          pelo: d.pelo,
+          observaciones: d.observaciones,
+          estadoAlCorte: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
+        }))
       }
 
       // ═══ CONSTRUIR HOJA 1: PLANILLA (Excel) ═══
@@ -1541,7 +1549,7 @@ function TabHacienda() {
             d.categoria_previa || '-',
             d.pelo || '-',
             d.observaciones || '-',
-            d.activo ? 'Activa' : 'Baja',
+            d.estadoAlCorte,
           ])
         }
       }
@@ -1727,7 +1735,7 @@ function TabHacienda() {
           d.categoria_previa || '-',
           d.pelo || '-',
           d.observaciones || '-',
-          d.activo ? 'Activa' : 'Baja',
+          d.estadoAlCorte,
         ])
 
         autoTable(doc, {
