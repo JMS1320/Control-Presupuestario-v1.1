@@ -1312,7 +1312,7 @@ function TabHacienda() {
     gruposRecria: number
     rows: { label: string; vals: (string | number)[]; highlight?: boolean }[]
     totalVientres: string
-    cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+    cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
   } | null>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
 
@@ -1423,18 +1423,18 @@ function TabHacienda() {
       return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
     }
 
-    // CUT detail — traer todos y filtrar en JS por fecha de creación
+    // CUT detail — filtrar por fecha_alta <= hasta (fecha real de ingreso a la categoría)
     const cutCatId = catIdMap['vaca cut/descarte']
-    let cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
+    let cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
     if (cutCatId) {
       const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
-        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja')
+        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, fecha_alta')
         .eq('categoria_id', cutCatId)
-      // No filtrar por created_at (es fecha de inserción en BD, no fecha real del movimiento)
-      // El estado Activa/Baja se determina con fecha_baja vs fecha fin período
+        .lte('fecha_alta', hasta)
       cutData = (cutTerneros || [])
         .map(d => ({
           caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+          fechaAlta: d.fecha_alta ? d.fecha_alta.split('-').reverse().join('/') : '-',
           tipo: d.categoria_previa || '-',
           pelo: d.pelo || '-',
           motivo: d.observaciones || '-',
@@ -1595,9 +1595,9 @@ function TabHacienda() {
       if (cutData.length > 0) {
         detalleAoa.push([])
         detalleAoa.push(['DETALLE CUT/DESCARTE'])
-        detalleAoa.push(['Caravana', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
+        detalleAoa.push(['Caravana', 'Fecha Alta', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
         for (const d of cutData) {
-          detalleAoa.push([d.caravana, d.tipo, d.pelo, d.motivo, d.estado])
+          detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
         }
       }
 
@@ -1745,19 +1745,7 @@ function TabHacienda() {
       doc.setFont('helvetica', 'bold')
       doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(existenciaFinal[1])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
 
-      // ═══ PÁGINA 2: DETALLE MOVIMIENTOS ═══
-      doc.addPage('a4', 'landscape')
-      doc.setFontSize(13)
-      doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...sepia)
-      doc.text('DETALLE DE MOVIMIENTOS', pageW / 2, 15, { align: 'center' })
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
-      doc.setDrawColor(...sepiaClaro)
-      doc.line(15, 24, pageW - 15, 24)
-
-      const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+      // ═══ PÁGINA 2: DETALLE MOVIMIENTOS (solo si hay) ═══
       // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
       const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, '-').replace(/[^\x00-\xFF]/g, '')
       const detalleBody = (movsDetalle || []).map(m => {
@@ -1777,46 +1765,61 @@ function TabHacienda() {
         ]
       })
 
-      autoTable(doc, {
-        startY: 28,
-        head: [detalleHeaders],
-        body: detalleBody,
-        theme: 'grid',
-        styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
-        headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7 },
-        columnStyles: {
-          3: { halign: 'right' },
-          4: { halign: 'right' },
-          5: { halign: 'right' },
-          6: { halign: 'right' },
-        },
-      })
-
-      // ═══ DETALLE CUT/DESCARTE ═══
-      if (cutData.length > 0) {
-        const cutY = (doc as any).lastAutoTable?.finalY || 28
-        const spaceLeft = doc.internal.pageSize.getHeight() - cutY
-        if (spaceLeft < 40) doc.addPage('a4', 'landscape')
-        const cutStartY = spaceLeft < 40 ? 15 : cutY + 10
-
-        doc.setFontSize(11)
+      if (detalleBody.length > 0) {
+        doc.addPage('a4', 'landscape')
+        doc.setFontSize(13)
         doc.setFont('helvetica', 'bold')
         doc.setTextColor(...sepia)
-        doc.text('DETALLE CUT / DESCARTE', pageW / 2, cutStartY, { align: 'center' })
+        doc.text('DETALLE DE MOVIMIENTOS', pageW / 2, 15, { align: 'center' })
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
+        doc.setDrawColor(...sepiaClaro)
+        doc.line(15, 24, pageW - 15, 24)
 
-        const cutHeaders = ['Caravana', 'Tipo (Categoría Previa)', 'Pelo', 'Motivo', 'Estado']
-        const cutBody = cutData.map(d => [d.caravana, d.tipo, d.pelo, d.motivo, d.estado])
+        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+        autoTable(doc, {
+          startY: 28,
+          head: [detalleHeaders],
+          body: detalleBody,
+          theme: 'grid',
+          styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+          columnStyles: {
+            3: { halign: 'right' },
+            4: { halign: 'right' },
+            5: { halign: 'right' },
+            6: { halign: 'right' },
+          },
+        })
+      }
+
+      // ═══ DETALLE CUT/DESCARTE — página separada ═══
+      if (cutData.length > 0) {
+        doc.addPage('a4', 'landscape')
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...sepia)
+        doc.text('DETALLE CUT / DESCARTE', pageW / 2, 15, { align: 'center' })
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
+        doc.setDrawColor(...sepiaClaro)
+        doc.line(15, 24, pageW - 15, 24)
+
+        const cutHeaders = ['Caravana', 'Fecha Alta', 'Tipo (Cat. Previa)', 'Pelo', 'Motivo', 'Estado']
+        const cutBody = cutData.map(d => [d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
 
         autoTable(doc, {
-          startY: cutStartY + 4,
+          startY: 28,
           head: [cutHeaders],
           body: cutBody,
           theme: 'grid',
           styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
           headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center' },
-          columnStyles: { 4: { halign: 'center' } },
+          columnStyles: { 5: { halign: 'center' } },
           didParseCell: (data: any) => {
-            if (data.section === 'body' && data.column.index === 4) {
+            if (data.section === 'body' && data.column.index === 5) {
               if (data.cell.raw === 'Baja') data.cell.styles.textColor = [160, 60, 60]
             }
           },
@@ -2504,6 +2507,7 @@ function TabHacienda() {
                       <thead>
                         <tr className="bg-stone-100">
                           <th className="border px-2 py-1">Caravana</th>
+                          <th className="border px-2 py-1">Fecha Alta</th>
                           <th className="border px-2 py-1">Tipo</th>
                           <th className="border px-2 py-1">Pelo</th>
                           <th className="border px-2 py-1">Motivo</th>
@@ -2514,6 +2518,7 @@ function TabHacienda() {
                         {previewPlanilla.cutData.map((d, i) => (
                           <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
                             <td className="border px-2 py-0.5">{d.caravana}</td>
+                            <td className="border px-2 py-0.5">{d.fechaAlta}</td>
                             <td className="border px-2 py-0.5">{d.tipo}</td>
                             <td className="border px-2 py-0.5">{d.pelo}</td>
                             <td className="border px-2 py-0.5">{d.motivo}</td>
