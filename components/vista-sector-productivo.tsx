@@ -1572,7 +1572,36 @@ function TabHacienda() {
       const baseNombre = planillaModo === 'mes'
         ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}`
         : `Planilla_Hacienda_${desde}_${hasta}`
-      XLSX.writeFile(wb, `${baseNombre}.xlsx`)
+
+      // ═══ SELECCIÓN DE CARPETA ═══
+      let directorioDestino: any = null
+      let ubicacionFinal = 'carpeta Descargas'
+      if ('showDirectoryPicker' in window) {
+        try {
+          directorioDestino = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
+          ubicacionFinal = `carpeta "${directorioDestino.name}"`
+        } catch {
+          // Usuario canceló → descargar en Descargas por defecto
+        }
+      }
+
+      // Helper: guardar archivo en carpeta seleccionada o descarga normal
+      const guardarEnCarpeta = async (nombre: string, contenido: ArrayBuffer | Uint8Array) => {
+        if (directorioDestino) {
+          const h = await directorioDestino.getFileHandle(nombre, { create: true })
+          const w = await h.createWritable()
+          await w.write(contenido)
+          await w.close()
+        }
+      }
+
+      // ═══ GUARDAR EXCEL ═══
+      if (directorioDestino) {
+        const excelBuf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+        await guardarEnCarpeta(`${baseNombre}.xlsx`, excelBuf)
+      } else {
+        XLSX.writeFile(wb, `${baseNombre}.xlsx`)
+      }
 
       // ═══ GENERAR PDF ═══
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -1764,8 +1793,15 @@ function TabHacienda() {
         doc.text(`Pág. ${p}/${totalPages}`, pageW - 15, doc.internal.pageSize.getHeight() - 5, { align: 'right' })
       }
 
-      doc.save(`${baseNombre}.pdf`)
-      toast.success('Planilla exportada (Excel + PDF)')
+      // ═══ GUARDAR PDF ═══
+      if (directorioDestino) {
+        const pdfBuf = doc.output('arraybuffer')
+        await guardarEnCarpeta(`${baseNombre}.pdf`, pdfBuf)
+      } else {
+        doc.save(`${baseNombre}.pdf`)
+      }
+
+      toast.success(`Planilla exportada (Excel + PDF) en ${ubicacionFinal}`)
       setMostrarModalPlanilla(false)
     } catch (err: any) {
       toast.error('Error: ' + err.message)
