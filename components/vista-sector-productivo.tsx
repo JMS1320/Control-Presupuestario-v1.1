@@ -15,6 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -1293,6 +1294,260 @@ function TabHacienda() {
     cargarDatos()
   }
 
+  // ─── Planilla de Hacienda ─────────────────────────────────────────────
+  const [mostrarModalPlanilla, setMostrarModalPlanilla] = useState(false)
+  const [planillaModo, setPlanillaModo] = useState<'mes' | 'rango'>('mes')
+  const hoy = new Date()
+  const [planillaMes, setPlanillaMes] = useState(String(hoy.getMonth())) // 0-11
+  const [planillaAnio, setPlanillaAnio] = useState(String(hoy.getFullYear()))
+  const [planillaDesde, setPlanillaDesde] = useState('')
+  const [planillaHasta, setPlanillaHasta] = useState('')
+  const [exportandoPlanilla, setExportandoPlanilla] = useState(false)
+
+  const CATS_PLANILLA = [
+    { db: 'Vaca', label: 'Vaca', grupo: 'cria' },
+    { db: 'Vaquillona Preñada', label: 'Vaquillona Preñada', grupo: 'cria' },
+    { db: 'Vaca CUT/Descarte', label: 'Vaca CUT/Descarte', grupo: 'cria' },
+    { db: 'Toro', label: 'Toro', grupo: 'recria' },
+    { db: 'Ternero Recria', label: 'Ternero', grupo: 'recria' },
+    { db: 'Ternera Recria', label: 'Ternera', grupo: 'recria' },
+    { db: 'Torito', label: 'Torito', grupo: 'recria' },
+    { db: 'Vaquillona de Reposicion', label: 'Vaq. de Reposición', grupo: 'recria' },
+    { db: 'Novillo', label: 'Novillo', grupo: 'recria' },
+    { db: 'Vaquillona Engorde', label: 'Vaq. Engorde', grupo: 'recria' },
+  ]
+  const CATS_TERNEROS = [
+    { db: 'Ternero al Pie', label: 'Terneros al pie Macho', grupo: 'terneros' },
+    { db: 'Ternera al Pie', label: 'Terneros al pie Hembra', grupo: 'terneros' },
+  ]
+
+  const exportarPlanillaHacienda = async () => {
+    setExportandoPlanilla(true)
+    try {
+      // Determinar rango de fechas
+      let desde: string, hasta: string, periodoLabel: string
+      if (planillaModo === 'mes') {
+        const m = parseInt(planillaMes)
+        const a = parseInt(planillaAnio)
+        desde = `${a}-${String(m + 1).padStart(2, '0')}-01`
+        const ultimoDia = new Date(a, m + 1, 0).getDate()
+        hasta = `${a}-${String(m + 1).padStart(2, '0')}-${ultimoDia}`
+        const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+        periodoLabel = `${meses[m]} ${a}`
+      } else {
+        desde = planillaDesde
+        hasta = planillaHasta
+        if (!desde || !hasta) { toast.error('Ingrese ambas fechas'); setExportandoPlanilla(false); return }
+        periodoLabel = `${desde.split('-').reverse().join('/')} al ${hasta.split('-').reverse().join('/')}`
+      }
+
+      // Cargar todas las categorías con sus IDs
+      const { data: allCats } = await supabase.schema('productivo').from('categorias_hacienda').select('id, nombre')
+      if (!allCats) throw new Error('Error cargando categorías')
+      const catIdMap: Record<string, string> = {} // nombre.lower → id
+      const catNameMap: Record<string, string> = {} // id → nombre
+      allCats.forEach(c => { catIdMap[c.nombre.toLowerCase()] = c.id; catNameMap[c.id] = c.nombre })
+
+      // Cargar TODOS los movimientos hasta la fecha "hasta"
+      const { data: todosMovs } = await supabase.schema('productivo').from('movimientos_hacienda')
+        .select('tipo, cantidad, categoria_id, fecha')
+        .lte('fecha', hasta)
+        .order('fecha')
+      if (!todosMovs) throw new Error('Error cargando movimientos')
+
+      // Separar: stock anterior (antes de "desde") y movimientos del período
+      const movsAnteriores = todosMovs.filter(m => m.fecha < desde)
+      const movsPeriodo = todosMovs.filter(m => m.fecha >= desde && m.fecha <= hasta)
+
+      // Mapear categoría nombre → columna index
+      const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
+      const catToCol: Record<string, number> = {}
+      todasCats.forEach((c, i) => {
+        const id = catIdMap[c.db.toLowerCase()]
+        if (id) catToCol[id] = i
+      })
+      const nCols = todasCats.length
+
+      // Calcular stock anterior por categoría
+      const stockAnterior = new Array(nCols).fill(0)
+      movsAnteriores.forEach(m => {
+        const col = catToCol[m.categoria_id]
+        if (col !== undefined) stockAnterior[col] += m.cantidad
+      })
+
+      // Calcular movimientos del período por tipo y categoría
+      const filas: Record<string, number[]> = {
+        compras: new Array(nCols).fill(0),
+        nacimientos: new Array(nCols).fill(0),
+        reclasPos: new Array(nCols).fill(0),
+        ventas: new Array(nCols).fill(0),
+        mortandad: new Array(nCols).fill(0),
+        reclasNeg: new Array(nCols).fill(0),
+      }
+
+      movsPeriodo.forEach(m => {
+        const col = catToCol[m.categoria_id]
+        if (col === undefined) return
+        switch (m.tipo) {
+          case 'compra': filas.compras[col] += m.cantidad; break
+          case 'nacimiento': filas.nacimientos[col] += m.cantidad; break
+          case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
+          case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
+          case 'cambio_categoria':
+          case 'ajuste_stock':
+            if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
+            else filas.reclasNeg[col] += Math.abs(m.cantidad)
+            break
+        }
+      })
+
+      // Ingresos y Egresos
+      const ingresos = new Array(nCols).fill(0)
+      const egresos = new Array(nCols).fill(0)
+      const existenciaFinal = new Array(nCols).fill(0)
+      for (let i = 0; i < nCols; i++) {
+        ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
+        egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
+        existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
+      }
+
+      // Helper: sumar rango de columnas
+      const sumar = (arr: number[], desde: number, hasta: number) => arr.slice(desde, hasta + 1).reduce((s, v) => s + v, 0)
+      const nAdultos = CATS_PLANILLA.length // 10
+      const nTern = CATS_TERNEROS.length // 2
+
+      // Helper: construir fila con subtotales
+      const buildRow = (label: string, vals: number[]) => {
+        const subAdultos = sumar(vals, 0, nAdultos - 1)
+        const subTern = sumar(vals, nAdultos, nAdultos + nTern - 1)
+        return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
+      }
+
+      // ═══ CONSTRUIR HOJA 1: PLANILLA ═══
+      const aoa: any[][] = []
+
+      // Headers
+      aoa.push(['Ea. Nazarenas'])
+      aoa.push(['de Martinez Sobrado'])
+      aoa.push(['PLANILLA DE HACIENDA'])
+      aoa.push([`Período: ${periodoLabel}`])
+      aoa.push([]) // fila vacía
+
+      // Grupos
+      const grupoRow = ['']
+      for (let i = 0; i < 3; i++) grupoRow.push(i === 0 ? 'Cría' : '')
+      grupoRow.push('') // toro (fuera de grupo visual pero en recria)
+      for (let i = 0; i < 6; i++) grupoRow.push(i === 0 ? 'Recría/Engorde' : '')
+      grupoRow.push('') // subtotal adultos
+      grupoRow.push('') // tern macho
+      grupoRow.push('') // tern hembra
+      grupoRow.push('') // subtotal tern
+      grupoRow.push('') // total general
+      aoa.push(grupoRow)
+
+      // Categorías header
+      const catRow = ['', ...CATS_PLANILLA.map(c => c.label), 'Subtotal Adultos',
+        ...CATS_TERNEROS.map(c => c.label), 'Subtotal Terneros', 'Total General']
+      aoa.push(catRow)
+
+      // Filas de datos
+      aoa.push(buildRow('Stock Anterior', stockAnterior))
+      aoa.push(buildRow('Compras', filas.compras))
+      aoa.push(buildRow('Nacimientos', filas.nacimientos))
+      aoa.push(buildRow('Reclas +', filas.reclasPos))
+      aoa.push(buildRow('Ingresos', ingresos))
+      aoa.push(buildRow('Ventas', filas.ventas))
+      aoa.push(buildRow('Mortandad', filas.mortandad))
+      aoa.push(buildRow('Reclas -', filas.reclasNeg))
+      aoa.push(buildRow('Egresos', egresos))
+      aoa.push(buildRow('Existencia Final', existenciaFinal))
+
+      // Total Vientres
+      aoa.push([])
+      const idxVaca = 0, idxVaq = 1
+      const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
+      aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+      // Anchos de columna
+      ws['!cols'] = [
+        { wch: 18 }, // labels
+        ...Array(nAdultos).fill({ wch: 14 }),
+        { wch: 16 }, // subtotal adultos
+        ...Array(nTern).fill({ wch: 18 }),
+        { wch: 16 }, // subtotal terneros
+        { wch: 14 }, // total general
+      ]
+
+      // Merges para header
+      const lastCol = 1 + nAdultos + 1 + nTern + 1 + 1 - 1
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }, // Ea. Nazarenas
+        { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } }, // de Martinez Sobrado
+        { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } }, // PLANILLA DE HACIENDA
+        { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } }, // Período
+        { s: { r: 5, c: 1 }, e: { r: 5, c: 3 } },       // Cría
+        { s: { r: 5, c: 5 }, e: { r: 5, c: 10 } },      // Recría/Engorde
+      ]
+
+      // ═══ CONSTRUIR HOJA 2: DETALLE ═══
+      const detalleAoa: any[][] = []
+      detalleAoa.push(['DETALLE DE MOVIMIENTOS'])
+      detalleAoa.push([`Período: ${periodoLabel}`])
+      detalleAoa.push([])
+      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Peso Total (kg)', 'Precio/kg', 'Monto Total', 'Proveedor/Cliente', 'Observaciones'])
+
+      // Cargar movimientos con más detalle
+      const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
+        .select('tipo, cantidad, categoria_id, fecha, peso_total_kg, precio_por_kg, monto_total, proveedor_cliente, observaciones')
+        .gte('fecha', desde).lte('fecha', hasta)
+        .order('fecha')
+
+      for (const m of movsDetalle || []) {
+        detalleAoa.push([
+          m.fecha ? m.fecha.split('-').reverse().join('/') : '',
+          m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas +' : 'Reclas -') :
+            m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
+            m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1),
+          catNameMap[m.categoria_id] || '',
+          m.cantidad,
+          m.peso_total_kg || '',
+          m.precio_por_kg || '',
+          m.monto_total || '',
+          m.proveedor_cliente || '',
+          m.observaciones || '',
+        ])
+      }
+
+      const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
+      ws2['!cols'] = [
+        { wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 10 },
+        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 30 },
+      ]
+      ws2['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      ]
+
+      // ═══ GENERAR ARCHIVO ═══
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Planilla')
+      XLSX.utils.book_append_sheet(wb, ws2, 'Detalle')
+
+      const nombreArchivo = planillaModo === 'mes'
+        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}.xlsx`
+        : `Planilla_Hacienda_${desde}_${hasta}.xlsx`
+      XLSX.writeFile(wb, nombreArchivo)
+      toast.success('Planilla exportada')
+      setMostrarModalPlanilla(false)
+    } catch (err: any) {
+      toast.error('Error: ' + err.message)
+    } finally {
+      setExportandoPlanilla(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1309,6 +1564,10 @@ function TabHacienda() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
+            <Download className="mr-1 h-4 w-4" />
+            Planilla
           </Button>
           <Button size="sm" onClick={() => setMostrarModalMov(true)}>
             <Plus className="mr-1 h-4 w-4" />
@@ -1835,6 +2094,63 @@ function TabHacienda() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setMostrarModalMov(false)}>Cancelar</Button>
             <Button onClick={guardarMovimiento}>Guardar Movimiento</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Planilla de Hacienda */}
+      <Dialog open={mostrarModalPlanilla} onOpenChange={setMostrarModalPlanilla}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Planilla de Hacienda</DialogTitle>
+            <DialogDescription>Exportar planilla con stock, movimientos y existencia final.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button variant={planillaModo === 'mes' ? 'default' : 'outline'} size="sm"
+                onClick={() => setPlanillaModo('mes')}>Por Mes</Button>
+              <Button variant={planillaModo === 'rango' ? 'default' : 'outline'} size="sm"
+                onClick={() => setPlanillaModo('rango')}>Rango Personalizado</Button>
+            </div>
+
+            {planillaModo === 'mes' ? (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs">Mes</Label>
+                  <select className="w-full h-9 text-sm border rounded px-2"
+                    value={planillaMes} onChange={e => setPlanillaMes(e.target.value)}>
+                    {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
+                      <option key={i} value={String(i)}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-24">
+                  <Label className="text-xs">Año</Label>
+                  <Input className="h-9 text-sm" type="number" value={planillaAnio}
+                    onChange={e => setPlanillaAnio(e.target.value)} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs">Desde</Label>
+                  <Input className="h-9 text-sm" type="date" value={planillaDesde}
+                    onChange={e => setPlanillaDesde(e.target.value)} />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Hasta</Label>
+                  <Input className="h-9 text-sm" type="date" value={planillaHasta}
+                    onChange={e => setPlanillaHasta(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarModalPlanilla(false)}>Cancelar</Button>
+            <Button onClick={exportarPlanillaHacienda} disabled={exportandoPlanilla}>
+              {exportandoPlanilla ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
+              Exportar Excel
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
