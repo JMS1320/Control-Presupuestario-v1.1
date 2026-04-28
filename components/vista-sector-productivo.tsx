@@ -1305,154 +1305,211 @@ function TabHacienda() {
   const [planillaDesde, setPlanillaDesde] = useState('')
   const [planillaHasta, setPlanillaHasta] = useState('')
   const [exportandoPlanilla, setExportandoPlanilla] = useState(false)
+  const [previewPlanilla, setPreviewPlanilla] = useState<{
+    periodoLabel: string
+    headers: string[]
+    gruposCria: number
+    gruposRecria: number
+    rows: { label: string; vals: (string | number)[]; highlight?: boolean }[]
+    totalVientres: string
+    cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+  } | null>(null)
+  const [cargandoPreview, setCargandoPreview] = useState(false)
 
   const CATS_PLANILLA = [
     { db: 'Vaca', label: 'Vaca', grupo: 'cria' },
-    { db: 'Vaquillona Preñada', label: 'Vaquillona Preñada', grupo: 'cria' },
-    { db: 'Vaca CUT/Descarte', label: 'Vaca CUT/Descarte', grupo: 'cria' },
-    { db: 'Toro', label: 'Toro', grupo: 'recria' },
+    { db: 'Vaquillona Preñada', label: 'Vaq. Preñada', grupo: 'cria' },
+    { db: 'Vaca CUT/Descarte', label: 'CUT/Descarte', grupo: 'cria' },
+    { db: 'Toro', label: 'Toro', grupo: 'cria' },
     { db: 'Ternero Recria', label: 'Ternero', grupo: 'recria' },
     { db: 'Ternera Recria', label: 'Ternera', grupo: 'recria' },
     { db: 'Torito', label: 'Torito', grupo: 'recria' },
-    { db: 'Vaquillona de Reposicion', label: 'Vaq. de Reposición', grupo: 'recria' },
+    { db: 'Vaquillona de Reposicion', label: 'Vaq. Reposición', grupo: 'recria' },
     { db: 'Novillo', label: 'Novillo', grupo: 'recria' },
     { db: 'Vaquillona Engorde', label: 'Vaq. Engorde', grupo: 'recria' },
   ]
   const CATS_TERNEROS = [
-    { db: 'Ternero al Pie', label: 'Terneros al pie Macho', grupo: 'terneros' },
-    { db: 'Ternera al Pie', label: 'Terneros al pie Hembra', grupo: 'terneros' },
+    { db: 'Ternero al Pie', label: 'Ternero al Pie', grupo: 'terneros' },
+    { db: 'Ternera al Pie', label: 'Ternera al Pie', grupo: 'terneros' },
   ]
 
+  // Helper: resolver rango de fechas desde estado del modal
+  const resolverRangoFechas = () => {
+    let desde: string, hasta: string, periodoLabel: string
+    if (planillaModo === 'mes') {
+      const m = parseInt(planillaMes)
+      const a = parseInt(planillaAnio)
+      desde = `${a}-${String(m + 1).padStart(2, '0')}-01`
+      const ultimoDia = new Date(a, m + 1, 0).getDate()
+      hasta = `${a}-${String(m + 1).padStart(2, '0')}-${ultimoDia}`
+      const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      periodoLabel = `${meses[m]} ${a}`
+    } else {
+      desde = planillaDesde
+      hasta = planillaHasta
+      periodoLabel = `${desde.split('-').reverse().join('/')} al ${hasta.split('-').reverse().join('/')}`
+    }
+    return { desde, hasta, periodoLabel }
+  }
+
+  // Formato argentino
+  const fmtNum = (n: number) => n === 0 ? '-' : n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+  // Cargar datos de planilla (compartido entre preview y export)
+  const calcularDatosPlanilla = async (desde: string, hasta: string) => {
+    const { data: allCats } = await supabase.schema('productivo').from('categorias_hacienda').select('id, nombre')
+    if (!allCats) throw new Error('Error cargando categorías')
+    const catIdMap: Record<string, string> = {}
+    const catNameMap: Record<string, string> = {}
+    allCats.forEach(c => { catIdMap[c.nombre.toLowerCase()] = c.id; catNameMap[c.id] = c.nombre })
+
+    const { data: todosMovs } = await supabase.schema('productivo').from('movimientos_hacienda')
+      .select('tipo, cantidad, categoria_id, fecha')
+      .lte('fecha', hasta).order('fecha')
+    if (!todosMovs) throw new Error('Error cargando movimientos')
+
+    const movsAnteriores = todosMovs.filter(m => m.fecha < desde)
+    const movsPeriodo = todosMovs.filter(m => m.fecha >= desde && m.fecha <= hasta)
+
+    const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
+    const catToCol: Record<string, number> = {}
+    todasCats.forEach((c, i) => {
+      const id = catIdMap[c.db.toLowerCase()]
+      if (id) catToCol[id] = i
+    })
+    const nCols = todasCats.length
+    const nAdultos = CATS_PLANILLA.length
+    const nTern = CATS_TERNEROS.length
+
+    const stockAnterior = new Array(nCols).fill(0)
+    movsAnteriores.forEach(m => { const col = catToCol[m.categoria_id]; if (col !== undefined) stockAnterior[col] += m.cantidad })
+
+    const filas: Record<string, number[]> = {
+      compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),
+      reclasPos: new Array(nCols).fill(0), ventas: new Array(nCols).fill(0),
+      mortandad: new Array(nCols).fill(0), reclasNeg: new Array(nCols).fill(0),
+    }
+    movsPeriodo.forEach(m => {
+      const col = catToCol[m.categoria_id]; if (col === undefined) return
+      switch (m.tipo) {
+        case 'compra': filas.compras[col] += m.cantidad; break
+        case 'nacimiento': filas.nacimientos[col] += m.cantidad; break
+        case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
+        case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
+        case 'ajuste_stock':
+          if (m.cantidad > 0) filas.compras[col] += m.cantidad
+          else filas.mortandad[col] += Math.abs(m.cantidad)
+          break
+        case 'cambio_categoria':
+          if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
+          else filas.reclasNeg[col] += Math.abs(m.cantidad)
+          break
+      }
+    })
+
+    const ingresos = new Array(nCols).fill(0)
+    const egresos = new Array(nCols).fill(0)
+    const existenciaFinal = new Array(nCols).fill(0)
+    for (let i = 0; i < nCols; i++) {
+      ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
+      egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
+      existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
+    }
+
+    const sumar = (arr: number[], d: number, h: number) => arr.slice(d, h + 1).reduce((s, v) => s + v, 0)
+    const buildRow = (label: string, vals: number[]) => {
+      const subAdultos = sumar(vals, 0, nAdultos - 1)
+      const subTern = sumar(vals, nAdultos, nAdultos + nTern - 1)
+      return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
+    }
+
+    // CUT detail
+    const cutCatId = catIdMap['vaca cut/descarte']
+    let cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
+    if (cutCatId) {
+      const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
+        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, created_at')
+        .eq('categoria_id', cutCatId)
+        .lte('created_at', `${hasta}T23:59:59+00:00`)
+      cutData = (cutTerneros || []).map(d => ({
+        caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+        tipo: d.categoria_previa || '-',
+        pelo: d.pelo || '-',
+        motivo: d.observaciones || '-',
+        estado: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
+      }))
+    }
+
+    const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
+      { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
+      { label: 'Compras', vals: filas.compras },
+      { label: 'Nacimientos', vals: filas.nacimientos },
+      { label: 'Reclas. +', vals: filas.reclasPos },
+      { label: 'Ingresos', vals: ingresos, highlight: true },
+      { label: 'Ventas', vals: filas.ventas },
+      { label: 'Mortandad', vals: filas.mortandad },
+      { label: 'Reclas. -', vals: filas.reclasNeg },
+      { label: 'Egresos', vals: egresos, highlight: true },
+      { label: 'Existencia Final', vals: existenciaFinal, highlight: true },
+    ]
+
+    const headers = ['', ...todasCats.slice(0, nAdultos).map(c => c.label), 'Subt. Adultos',
+      ...todasCats.slice(nAdultos).map(c => c.label), 'Subt. Tern.', 'Total Gral.']
+
+    const builtRows = rowDefs.map(r => ({
+      label: r.label,
+      vals: buildRow(r.label, r.vals),
+      highlight: r.highlight,
+    }))
+
+    const idxVaca = 0, idxVaq = 1
+    const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
+
+    return {
+      headers, builtRows, cutData, totalVientres,
+      filas, stockAnterior, ingresos, egresos, existenciaFinal,
+      catIdMap, catNameMap, catToCol, nAdultos, nTern, nCols, buildRow, sumar,
+      rowDefs,
+    }
+  }
+
+  // Preview: cargar datos y mostrar en modal
+  const cargarPreviewPlanilla = async () => {
+    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
+    setCargandoPreview(true)
+    try {
+      const { desde, hasta, periodoLabel } = resolverRangoFechas()
+      const datos = await calcularDatosPlanilla(desde, hasta)
+      const nCria = CATS_PLANILLA.filter(c => c.grupo === 'cria').length
+      const nRecria = CATS_PLANILLA.filter(c => c.grupo === 'recria').length
+      setPreviewPlanilla({
+        periodoLabel,
+        headers: datos.headers,
+        gruposCria: nCria,
+        gruposRecria: nRecria,
+        rows: datos.builtRows,
+        totalVientres: `Vaca (${fmtNum(datos.existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(datos.existenciaFinal[1])}) = ${fmtNum(datos.totalVientres)}`,
+        cutData: datos.cutData,
+      })
+    } catch (err: any) {
+      toast.error('Error: ' + err.message)
+    } finally {
+      setCargandoPreview(false)
+    }
+  }
+
   const exportarPlanillaHacienda = async () => {
+    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
     setExportandoPlanilla(true)
     try {
-      // Determinar rango de fechas
-      let desde: string, hasta: string, periodoLabel: string
-      if (planillaModo === 'mes') {
-        const m = parseInt(planillaMes)
-        const a = parseInt(planillaAnio)
-        desde = `${a}-${String(m + 1).padStart(2, '0')}-01`
-        const ultimoDia = new Date(a, m + 1, 0).getDate()
-        hasta = `${a}-${String(m + 1).padStart(2, '0')}-${ultimoDia}`
-        const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-        periodoLabel = `${meses[m]} ${a}`
-      } else {
-        desde = planillaDesde
-        hasta = planillaHasta
-        if (!desde || !hasta) { toast.error('Ingrese ambas fechas'); setExportandoPlanilla(false); return }
-        periodoLabel = `${desde.split('-').reverse().join('/')} al ${hasta.split('-').reverse().join('/')}`
-      }
-
-      // Formato argentino: punto miles, coma decimales
-      const fmtNum = (n: number) => {
-        if (n === 0) return '-'
-        return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-      }
-
-      // Cargar todas las categorías con sus IDs
-      const { data: allCats } = await supabase.schema('productivo').from('categorias_hacienda').select('id, nombre')
-      if (!allCats) throw new Error('Error cargando categorías')
-      const catIdMap: Record<string, string> = {} // nombre.lower → id
-      const catNameMap: Record<string, string> = {} // id → nombre
-      allCats.forEach(c => { catIdMap[c.nombre.toLowerCase()] = c.id; catNameMap[c.id] = c.nombre })
-
-      // Cargar TODOS los movimientos hasta la fecha "hasta"
-      const { data: todosMovs } = await supabase.schema('productivo').from('movimientos_hacienda')
-        .select('tipo, cantidad, categoria_id, fecha')
-        .lte('fecha', hasta)
-        .order('fecha')
-      if (!todosMovs) throw new Error('Error cargando movimientos')
-
-      // Separar: stock anterior (antes de "desde") y movimientos del período
-      const movsAnteriores = todosMovs.filter(m => m.fecha < desde)
-      const movsPeriodo = todosMovs.filter(m => m.fecha >= desde && m.fecha <= hasta)
-
-      // Mapear categoría nombre → columna index
+      const { desde, hasta, periodoLabel } = resolverRangoFechas()
+      const datos = await calcularDatosPlanilla(desde, hasta)
+      const { headers, builtRows, cutData, totalVientres, catNameMap,
+        filas, stockAnterior, ingresos, egresos, existenciaFinal,
+        nAdultos, nTern, buildRow, rowDefs } = datos
       const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
-      const catToCol: Record<string, number> = {}
-      todasCats.forEach((c, i) => {
-        const id = catIdMap[c.db.toLowerCase()]
-        if (id) catToCol[id] = i
-      })
-      const nCols = todasCats.length
-
-      // Calcular stock anterior por categoría
-      const stockAnterior = new Array(nCols).fill(0)
-      movsAnteriores.forEach(m => {
-        const col = catToCol[m.categoria_id]
-        if (col !== undefined) stockAnterior[col] += m.cantidad
-      })
-
-      // Calcular movimientos del período por tipo y categoría
-      // ajuste_stock positivo → integrado en compras; negativo → integrado en mortandad
-      const filas: Record<string, number[]> = {
-        compras: new Array(nCols).fill(0),
-        nacimientos: new Array(nCols).fill(0),
-        reclasPos: new Array(nCols).fill(0),
-        ventas: new Array(nCols).fill(0),
-        mortandad: new Array(nCols).fill(0),
-        reclasNeg: new Array(nCols).fill(0),
-      }
-
-      movsPeriodo.forEach(m => {
-        const col = catToCol[m.categoria_id]
-        if (col === undefined) return
-        switch (m.tipo) {
-          case 'compra': filas.compras[col] += m.cantidad; break
-          case 'nacimiento': filas.nacimientos[col] += m.cantidad; break
-          case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
-          case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
-          case 'ajuste_stock':
-            // Ajuste positivo se integra en compras, negativo en mortandad
-            if (m.cantidad > 0) filas.compras[col] += m.cantidad
-            else filas.mortandad[col] += Math.abs(m.cantidad)
-            break
-          case 'cambio_categoria':
-            if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
-            else filas.reclasNeg[col] += Math.abs(m.cantidad)
-            break
-        }
-      })
-
-      // Ingresos y Egresos
-      const ingresos = new Array(nCols).fill(0)
-      const egresos = new Array(nCols).fill(0)
-      const existenciaFinal = new Array(nCols).fill(0)
-      for (let i = 0; i < nCols; i++) {
-        ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
-        egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
-        existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
-      }
-
-      // Helper: sumar rango de columnas
-      const sumar = (arr: number[], desde: number, hasta: number) => arr.slice(desde, hasta + 1).reduce((s, v) => s + v, 0)
-      const nAdultos = CATS_PLANILLA.length // 10
-      const nTern = CATS_TERNEROS.length // 2
-
-      // Helper: construir fila con subtotales
-      const buildRow = (label: string, vals: number[]) => {
-        const subAdultos = sumar(vals, 0, nAdultos - 1)
-        const subTern = sumar(vals, nAdultos, nAdultos + nTern - 1)
-        return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
-      }
-
-      // Cargar CUT/Descarte detail de terneros — a la fecha fin del período
-      const cutCatId = catIdMap['vaca cut/descarte']
-      let detalleCutData: { caravana_oficial: string | null, caravana_interna: string | null, categoria_previa: string | null, pelo: string | null, observaciones: string | null, estadoAlCorte: string }[] = []
-      if (cutCatId) {
-        const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
-          .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, created_at')
-          .eq('categoria_id', cutCatId)
-          .lte('created_at', `${hasta}T23:59:59`) // solo las que ingresaron antes del fin del período
-        detalleCutData = (cutTerneros || []).map(d => ({
-          caravana_oficial: d.caravana_oficial,
-          caravana_interna: d.caravana_interna,
-          categoria_previa: d.categoria_previa,
-          pelo: d.pelo,
-          observaciones: d.observaciones,
-          estadoAlCorte: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
-        }))
-      }
+      const nCria = CATS_PLANILLA.filter(c => c.grupo === 'cria').length
+      const nRecria = CATS_PLANILLA.filter(c => c.grupo === 'recria').length
 
       // ═══ CONSTRUIR HOJA 1: PLANILLA (Excel) ═══
       const aoa: any[][] = []
@@ -1462,32 +1519,26 @@ function TabHacienda() {
       aoa.push([`Período: ${periodoLabel}`])
       aoa.push([])
 
-      // Grupos
-      const grupoRow = ['']
-      for (let i = 0; i < 3; i++) grupoRow.push(i === 0 ? 'Cría' : '')
-      grupoRow.push('')
-      for (let i = 0; i < 6; i++) grupoRow.push(i === 0 ? 'Recría/Engorde' : '')
-      grupoRow.push(''); grupoRow.push(''); grupoRow.push(''); grupoRow.push(''); grupoRow.push('')
+      // Grupos: CRÍA = cols 1-4, RECRÍA = cols 5-10
+      const grupoRow: string[] = ['']
+      grupoRow.push('CRÍA')
+      for (let i = 1; i < nCria; i++) grupoRow.push('')
+      grupoRow.push('RECRÍA / ENGORDE')
+      for (let i = 1; i < nRecria; i++) grupoRow.push('')
+      grupoRow.push('') // subtotal adultos
+      grupoRow.push('') // tern macho
+      grupoRow.push('') // tern hembra
+      grupoRow.push('') // subtotal tern
+      grupoRow.push('') // total general
       aoa.push(grupoRow)
 
       const catRow = ['', ...CATS_PLANILLA.map(c => c.label), 'Subtotal Adultos',
         ...CATS_TERNEROS.map(c => c.label), 'Subtotal Terneros', 'Total General']
       aoa.push(catRow)
 
-      aoa.push(buildRow('Stock Anterior', stockAnterior))
-      aoa.push(buildRow('Compras', filas.compras))
-      aoa.push(buildRow('Nacimientos', filas.nacimientos))
-      aoa.push(buildRow('Reclas. +', filas.reclasPos))
-      aoa.push(buildRow('Ingresos', ingresos))
-      aoa.push(buildRow('Ventas', filas.ventas))
-      aoa.push(buildRow('Mortandad', filas.mortandad))
-      aoa.push(buildRow('Reclas. -', filas.reclasNeg))
-      aoa.push(buildRow('Egresos', egresos))
-      aoa.push(buildRow('Existencia Final', existenciaFinal))
+      builtRows.forEach(r => aoa.push(r.vals))
 
       aoa.push([])
-      const idxVaca = 0, idxVaq = 1
-      const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
       aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
 
       const ws = XLSX.utils.aoa_to_sheet(aoa)
@@ -1505,8 +1556,8 @@ function TabHacienda() {
         { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
         { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
-        { s: { r: 5, c: 1 }, e: { r: 5, c: 3 } },
-        { s: { r: 5, c: 5 }, e: { r: 5, c: 10 } },
+        { s: { r: 5, c: 1 }, e: { r: 5, c: nCria } },                          // CRÍA
+        { s: { r: 5, c: nCria + 1 }, e: { r: 5, c: nCria + nRecria } },        // RECRÍA/ENGORDE
       ]
 
       // ═══ CONSTRUIR HOJA 2: DETALLE ═══
@@ -1539,18 +1590,12 @@ function TabHacienda() {
       }
 
       // Hoja 2 parte 2: Detalle CUT/Descarte
-      if (detalleCutData.length > 0) {
+      if (cutData.length > 0) {
         detalleAoa.push([])
         detalleAoa.push(['DETALLE CUT/DESCARTE'])
         detalleAoa.push(['Caravana', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
-        for (const d of detalleCutData) {
-          detalleAoa.push([
-            d.caravana_oficial || d.caravana_interna || 'Sin identificar',
-            d.categoria_previa || '-',
-            d.pelo || '-',
-            d.observaciones || '-',
-            d.estadoAlCorte,
-          ])
+        for (const d of cutData) {
+          detalleAoa.push([d.caravana, d.tipo, d.pelo, d.motivo, d.estado])
         }
       }
 
@@ -1635,22 +1680,8 @@ function TabHacienda() {
       const colLabels = todasCats.map(c => c.label)
       const pdfHeaders = ['', ...colLabels.slice(0, nAdultos), 'Subt.\nAdultos', ...colLabels.slice(nAdultos), 'Subt.\nTern.', 'Total\nGral.']
 
-      const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
-        { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
-        { label: 'Compras', vals: filas.compras },
-        { label: 'Nacimientos', vals: filas.nacimientos },
-        { label: 'Reclas. +', vals: filas.reclasPos },
-        { label: 'Ingresos', vals: ingresos, highlight: true },
-        { label: 'Ventas', vals: filas.ventas },
-        { label: 'Mortandad', vals: filas.mortandad },
-        { label: 'Reclas. -', vals: filas.reclasNeg },
-        { label: 'Egresos', vals: egresos, highlight: true },
-        { label: 'Existencia Final', vals: existenciaFinal, highlight: true },
-      ]
-
-      const pdfBody = rowDefs.map(r => {
-        const row = buildRow(r.label, r.vals)
-        return row.map((v, i) => i === 0 ? v : fmtNum(v as number))
+      const pdfBody = builtRows.map(r => {
+        return (r.vals as (string | number)[]).map((v, i) => i === 0 ? v : fmtNum(v as number))
       })
 
       autoTable(doc, {
@@ -1699,7 +1730,7 @@ function TabHacienda() {
       doc.setFontSize(9)
       doc.setTextColor(...sepia)
       doc.setFont('helvetica', 'bold')
-      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[idxVaca])}) + Vaquillona (${fmtNum(existenciaFinal[idxVaq])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
+      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(existenciaFinal[1])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
 
       // ═══ PÁGINA 2: DETALLE MOVIMIENTOS ═══
       doc.addPage('a4', 'landscape')
@@ -1747,7 +1778,7 @@ function TabHacienda() {
       })
 
       // ═══ DETALLE CUT/DESCARTE ═══
-      if (detalleCutData.length > 0) {
+      if (cutData.length > 0) {
         const cutY = (doc as any).lastAutoTable?.finalY || 28
         const spaceLeft = doc.internal.pageSize.getHeight() - cutY
         if (spaceLeft < 40) doc.addPage('a4', 'landscape')
@@ -1759,13 +1790,7 @@ function TabHacienda() {
         doc.text('DETALLE CUT / DESCARTE', pageW / 2, cutStartY, { align: 'center' })
 
         const cutHeaders = ['Caravana', 'Tipo (Categoría Previa)', 'Pelo', 'Motivo', 'Estado']
-        const cutBody = detalleCutData.map(d => [
-          d.caravana_oficial || d.caravana_interna || 'Sin identificar',
-          d.categoria_previa || '-',
-          d.pelo || '-',
-          d.observaciones || '-',
-          d.estadoAlCorte,
-        ])
+        const cutBody = cutData.map(d => [d.caravana, d.tipo, d.pelo, d.motivo, d.estado])
 
         autoTable(doc, {
           startY: cutStartY + 4,
@@ -2361,59 +2386,139 @@ function TabHacienda() {
       </Dialog>
 
       {/* Modal Planilla de Hacienda */}
-      <Dialog open={mostrarModalPlanilla} onOpenChange={setMostrarModalPlanilla}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={mostrarModalPlanilla} onOpenChange={(open) => { setMostrarModalPlanilla(open); if (!open) setPreviewPlanilla(null) }}>
+        <DialogContent className={previewPlanilla ? 'sm:max-w-[95vw] max-h-[90vh] overflow-y-auto' : 'sm:max-w-md'}>
           <DialogHeader>
             <DialogTitle>Planilla de Hacienda</DialogTitle>
-            <DialogDescription>Exportar planilla con stock, movimientos y existencia final.</DialogDescription>
+            <DialogDescription>{previewPlanilla ? `Período: ${previewPlanilla.periodoLabel}` : 'Seleccione período para ver preview o exportar.'}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Button variant={planillaModo === 'mes' ? 'default' : 'outline'} size="sm"
-                onClick={() => setPlanillaModo('mes')}>Por Mes</Button>
-              <Button variant={planillaModo === 'rango' ? 'default' : 'outline'} size="sm"
-                onClick={() => setPlanillaModo('rango')}>Rango Personalizado</Button>
-            </div>
 
-            {planillaModo === 'mes' ? (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs">Mes</Label>
-                  <select className="w-full h-9 text-sm border rounded px-2"
-                    value={planillaMes} onChange={e => setPlanillaMes(e.target.value)}>
-                    {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
-                      <option key={i} value={String(i)}>{m}</option>
+          {!previewPlanilla ? (
+            <>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Button variant={planillaModo === 'mes' ? 'default' : 'outline'} size="sm"
+                    onClick={() => setPlanillaModo('mes')}>Por Mes</Button>
+                  <Button variant={planillaModo === 'rango' ? 'default' : 'outline'} size="sm"
+                    onClick={() => setPlanillaModo('rango')}>Rango Personalizado</Button>
+                </div>
+                {planillaModo === 'mes' ? (
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs">Mes</Label>
+                      <select className="w-full h-9 text-sm border rounded px-2"
+                        value={planillaMes} onChange={e => setPlanillaMes(e.target.value)}>
+                        {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
+                          <option key={i} value={String(i)}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="w-24">
+                      <Label className="text-xs">Año</Label>
+                      <Input className="h-9 text-sm" type="number" value={planillaAnio}
+                        onChange={e => setPlanillaAnio(e.target.value)} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs">Desde</Label>
+                      <Input className="h-9 text-sm" type="date" value={planillaDesde}
+                        onChange={e => setPlanillaDesde(e.target.value)} />
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs">Hasta</Label>
+                      <Input className="h-9 text-sm" type="date" value={planillaHasta}
+                        onChange={e => setPlanillaHasta(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMostrarModalPlanilla(false)}>Cancelar</Button>
+                <Button onClick={cargarPreviewPlanilla} disabled={cargandoPreview}>
+                  {cargandoPreview ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />}
+                  Ver Planilla
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              {/* PREVIEW */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    {/* Fila de grupos */}
+                    <tr className="bg-amber-50">
+                      <th className="border px-1 py-0.5" />
+                      <th className="border px-1 py-0.5 text-center font-bold text-amber-900" colSpan={previewPlanilla.gruposCria}>CRÍA</th>
+                      <th className="border px-1 py-0.5 text-center font-bold text-amber-900" colSpan={previewPlanilla.gruposRecria}>RECRÍA / ENGORDE</th>
+                      <th className="border px-1 py-0.5" /> {/* subt adultos */}
+                      <th className="border px-1 py-0.5" colSpan={2} /> {/* terneros */}
+                      <th className="border px-1 py-0.5" /> {/* subt tern */}
+                      <th className="border px-1 py-0.5" /> {/* total */}
+                    </tr>
+                    {/* Fila de categorías */}
+                    <tr className="bg-stone-100">
+                      {previewPlanilla.headers.map((h, i) => (
+                        <th key={i} className={`border px-1 py-1 text-center whitespace-nowrap ${i === 0 ? 'text-left' : ''} ${h.includes('Subt') || h.includes('Total') ? 'font-bold bg-stone-200' : ''}`}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewPlanilla.rows.map((r, ri) => (
+                      <tr key={ri} className={r.highlight ? 'bg-amber-50 font-semibold' : ri % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                        {(r.vals as (string | number)[]).map((v, ci) => (
+                          <td key={ci} className={`border px-1 py-0.5 ${ci === 0 ? 'text-left font-medium' : 'text-right'} ${ci > 0 && (ci === previewPlanilla.gruposCria + previewPlanilla.gruposRecria + 1 || ci === previewPlanilla.headers.length - 2 || ci === previewPlanilla.headers.length - 1) ? 'font-bold' : ''}`}>
+                            {ci === 0 ? v : fmtNum(v as number)}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </select>
-                </div>
-                <div className="w-24">
-                  <Label className="text-xs">Año</Label>
-                  <Input className="h-9 text-sm" type="number" value={planillaAnio}
-                    onChange={e => setPlanillaAnio(e.target.value)} />
-                </div>
+                  </tbody>
+                </table>
+                <p className="text-xs text-stone-600 mt-2 font-medium">Total Vientres: {previewPlanilla.totalVientres}</p>
+
+                {/* CUT Detail */}
+                {previewPlanilla.cutData.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-semibold text-stone-700 mb-1">Detalle CUT / Descarte</h4>
+                    <table className="text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-stone-100">
+                          <th className="border px-2 py-1">Caravana</th>
+                          <th className="border px-2 py-1">Tipo</th>
+                          <th className="border px-2 py-1">Pelo</th>
+                          <th className="border px-2 py-1">Motivo</th>
+                          <th className="border px-2 py-1">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewPlanilla.cutData.map((d, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                            <td className="border px-2 py-0.5">{d.caravana}</td>
+                            <td className="border px-2 py-0.5">{d.tipo}</td>
+                            <td className="border px-2 py-0.5">{d.pelo}</td>
+                            <td className="border px-2 py-0.5">{d.motivo}</td>
+                            <td className={`border px-2 py-0.5 text-center ${d.estado === 'Baja' ? 'text-red-600' : ''}`}>{d.estado}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Label className="text-xs">Desde</Label>
-                  <Input className="h-9 text-sm" type="date" value={planillaDesde}
-                    onChange={e => setPlanillaDesde(e.target.value)} />
-                </div>
-                <div className="flex-1">
-                  <Label className="text-xs">Hasta</Label>
-                  <Input className="h-9 text-sm" type="date" value={planillaHasta}
-                    onChange={e => setPlanillaHasta(e.target.value)} />
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMostrarModalPlanilla(false)}>Cancelar</Button>
-            <Button onClick={exportarPlanillaHacienda} disabled={exportandoPlanilla}>
-              {exportandoPlanilla ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
-              Exportar Excel
-            </Button>
-          </DialogFooter>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setPreviewPlanilla(null)}>Volver</Button>
+                <Button onClick={exportarPlanillaHacienda} disabled={exportandoPlanilla}>
+                  {exportandoPlanilla ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
+                  Descargar Excel + PDF
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
