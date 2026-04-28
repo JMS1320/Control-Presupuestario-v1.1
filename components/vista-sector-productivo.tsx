@@ -1423,21 +1423,23 @@ function TabHacienda() {
       return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
     }
 
-    // CUT detail
+    // CUT detail — traer todos y filtrar en JS por fecha de creación
     const cutCatId = catIdMap['vaca cut/descarte']
     let cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
     if (cutCatId) {
       const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
         .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, created_at')
         .eq('categoria_id', cutCatId)
-        .lte('created_at', `${hasta}T23:59:59+00:00`)
-      cutData = (cutTerneros || []).map(d => ({
-        caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
-        tipo: d.categoria_previa || '-',
-        pelo: d.pelo || '-',
-        motivo: d.observaciones || '-',
-        estado: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
-      }))
+      const hastaDate = new Date(`${hasta}T23:59:59`)
+      cutData = (cutTerneros || [])
+        .filter(d => !d.created_at || new Date(d.created_at) <= hastaDate)
+        .map(d => ({
+          caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+          tipo: d.categoria_previa || '-',
+          pelo: d.pelo || '-',
+          motivo: d.observaciones || '-',
+          estado: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
+        }))
     }
 
     const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
@@ -1676,9 +1678,25 @@ function TabHacienda() {
       doc.setLineWidth(0.5)
       doc.line(15, 38, pageW - 15, 38)
 
-      // Tabla principal
+      // Tabla principal con doble header (grupos + categorías)
       const colLabels = todasCats.map(c => c.label)
-      const pdfHeaders = ['', ...colLabels.slice(0, nAdultos), 'Subt.\nAdultos', ...colLabels.slice(nAdultos), 'Subt.\nTern.', 'Total\nGral.']
+      // Fila de grupos: CRÍA sobre primeras nCria cols, RECRÍA sobre las siguientes nRecria
+      const grupoHeaderRow: any[] = new Array(1 + nAdultos + 1 + nTern + 1 + 1).fill('')
+      grupoHeaderRow[0] = ''
+      grupoHeaderRow[1] = { content: 'CRÍA', colSpan: nCria, styles: { halign: 'center', fontStyle: 'bold', fontSize: 7 } }
+      grupoHeaderRow[1 + nCria] = { content: 'RECRÍA / ENGORDE', colSpan: nRecria, styles: { halign: 'center', fontStyle: 'bold', fontSize: 7 } }
+      // Limpiar celdas cubiertas por colSpan (autoTable las ignora pero no deben tener contenido)
+      const grupoRow2: any[] = [grupoHeaderRow[0], grupoHeaderRow[1]]
+      for (let i = 2; i <= nCria; i++) grupoRow2.push('')
+      grupoRow2.push(grupoHeaderRow[1 + nCria])
+      for (let i = 1; i < nRecria; i++) grupoRow2.push('')
+      grupoRow2.push('') // subt adultos
+      grupoRow2.push('') // tern 1
+      grupoRow2.push('') // tern 2
+      grupoRow2.push('') // subt tern
+      grupoRow2.push('') // total gral
+
+      const pdfCatHeaders = ['', ...colLabels.slice(0, nAdultos), 'Subt.\nAdultos', ...colLabels.slice(nAdultos), 'Subt.\nTern.', 'Total\nGral.']
 
       const pdfBody = builtRows.map(r => {
         return (r.vals as (string | number)[]).map((v, i) => i === 0 ? v : fmtNum(v as number))
@@ -1686,7 +1704,7 @@ function TabHacienda() {
 
       autoTable(doc, {
         startY: 42,
-        head: [pdfHeaders],
+        head: [grupoRow2, pdfCatHeaders],
         body: pdfBody,
         theme: 'grid',
         styles: {
