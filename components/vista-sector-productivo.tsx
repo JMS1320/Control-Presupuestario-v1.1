@@ -1428,11 +1428,11 @@ function TabHacienda() {
     let cutData: { caravana: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
     if (cutCatId) {
       const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
-        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, created_at')
+        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja')
         .eq('categoria_id', cutCatId)
-      const hastaDate = new Date(`${hasta}T23:59:59`)
+      // No filtrar por created_at (es fecha de inserción en BD, no fecha real del movimiento)
+      // El estado Activa/Baja se determina con fecha_baja vs fecha fin período
       cutData = (cutTerneros || [])
-        .filter(d => !d.created_at || new Date(d.created_at) <= hastaDate)
         .map(d => ({
           caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
           tipo: d.categoria_previa || '-',
@@ -1758,6 +1758,8 @@ function TabHacienda() {
       doc.line(15, 24, pageW - 15, 24)
 
       const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+      // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
+      const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, '-').replace(/[^\x00-\xFF]/g, '')
       const detalleBody = (movsDetalle || []).map(m => {
         const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
           m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
@@ -1770,8 +1772,8 @@ function TabHacienda() {
           m.peso_total_kg ? fmtNum(m.peso_total_kg) : '-',
           m.precio_por_kg ? m.precio_por_kg.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
           m.monto_total ? m.monto_total.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
-          m.proveedor_cliente || '',
-          m.observaciones || '',
+          sanitizarPDF(m.proveedor_cliente || ''),
+          sanitizarPDF(m.observaciones || ''),
         ]
       })
 
