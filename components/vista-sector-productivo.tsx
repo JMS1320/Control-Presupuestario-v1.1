@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import * as XLSX from "xlsx"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -1341,6 +1343,12 @@ function TabHacienda() {
         periodoLabel = `${desde.split('-').reverse().join('/')} al ${hasta.split('-').reverse().join('/')}`
       }
 
+      // Formato argentino: punto miles, coma decimales
+      const fmtNum = (n: number) => {
+        if (n === 0) return '-'
+        return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      }
+
       // Cargar todas las categorías con sus IDs
       const { data: allCats } = await supabase.schema('productivo').from('categorias_hacienda').select('id, nombre')
       if (!allCats) throw new Error('Error cargando categorías')
@@ -1376,6 +1384,7 @@ function TabHacienda() {
       })
 
       // Calcular movimientos del período por tipo y categoría
+      // ajuste_stock positivo → integrado en compras; negativo → integrado en mortandad
       const filas: Record<string, number[]> = {
         compras: new Array(nCols).fill(0),
         nacimientos: new Array(nCols).fill(0),
@@ -1393,8 +1402,12 @@ function TabHacienda() {
           case 'nacimiento': filas.nacimientos[col] += m.cantidad; break
           case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
           case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
-          case 'cambio_categoria':
           case 'ajuste_stock':
+            // Ajuste positivo se integra en compras, negativo en mortandad
+            if (m.cantidad > 0) filas.compras[col] += m.cantidad
+            else filas.mortandad[col] += Math.abs(m.cantidad)
+            break
+          case 'cambio_categoria':
             if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
             else filas.reclasNeg[col] += Math.abs(m.cantidad)
             break
@@ -1423,72 +1436,69 @@ function TabHacienda() {
         return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
       }
 
-      // ═══ CONSTRUIR HOJA 1: PLANILLA ═══
-      const aoa: any[][] = []
+      // Cargar CUT/Descarte detail de terneros
+      const cutCatId = catIdMap['vaca cut/descarte']
+      let detalleCutData: { caravana_oficial: string | null, caravana_interna: string | null, categoria_previa: string | null, pelo: string | null, observaciones: string | null, activo: boolean }[] = []
+      if (cutCatId) {
+        const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
+          .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, activo')
+          .eq('categoria_id', cutCatId)
+        detalleCutData = cutTerneros || []
+      }
 
-      // Headers
+      // ═══ CONSTRUIR HOJA 1: PLANILLA (Excel) ═══
+      const aoa: any[][] = []
       aoa.push(['Ea. Nazarenas'])
       aoa.push(['de Martinez Sobrado'])
       aoa.push(['PLANILLA DE HACIENDA'])
       aoa.push([`Período: ${periodoLabel}`])
-      aoa.push([]) // fila vacía
+      aoa.push([])
 
       // Grupos
       const grupoRow = ['']
       for (let i = 0; i < 3; i++) grupoRow.push(i === 0 ? 'Cría' : '')
-      grupoRow.push('') // toro (fuera de grupo visual pero en recria)
+      grupoRow.push('')
       for (let i = 0; i < 6; i++) grupoRow.push(i === 0 ? 'Recría/Engorde' : '')
-      grupoRow.push('') // subtotal adultos
-      grupoRow.push('') // tern macho
-      grupoRow.push('') // tern hembra
-      grupoRow.push('') // subtotal tern
-      grupoRow.push('') // total general
+      grupoRow.push(''); grupoRow.push(''); grupoRow.push(''); grupoRow.push(''); grupoRow.push('')
       aoa.push(grupoRow)
 
-      // Categorías header
       const catRow = ['', ...CATS_PLANILLA.map(c => c.label), 'Subtotal Adultos',
         ...CATS_TERNEROS.map(c => c.label), 'Subtotal Terneros', 'Total General']
       aoa.push(catRow)
 
-      // Filas de datos
       aoa.push(buildRow('Stock Anterior', stockAnterior))
       aoa.push(buildRow('Compras', filas.compras))
       aoa.push(buildRow('Nacimientos', filas.nacimientos))
-      aoa.push(buildRow('Reclas +', filas.reclasPos))
+      aoa.push(buildRow('Reclas. +', filas.reclasPos))
       aoa.push(buildRow('Ingresos', ingresos))
       aoa.push(buildRow('Ventas', filas.ventas))
       aoa.push(buildRow('Mortandad', filas.mortandad))
-      aoa.push(buildRow('Reclas -', filas.reclasNeg))
+      aoa.push(buildRow('Reclas. -', filas.reclasNeg))
       aoa.push(buildRow('Egresos', egresos))
       aoa.push(buildRow('Existencia Final', existenciaFinal))
 
-      // Total Vientres
       aoa.push([])
       const idxVaca = 0, idxVaq = 1
       const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
       aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
 
       const ws = XLSX.utils.aoa_to_sheet(aoa)
-
-      // Anchos de columna
       ws['!cols'] = [
-        { wch: 18 }, // labels
+        { wch: 18 },
         ...Array(nAdultos).fill({ wch: 14 }),
-        { wch: 16 }, // subtotal adultos
+        { wch: 16 },
         ...Array(nTern).fill({ wch: 18 }),
-        { wch: 16 }, // subtotal terneros
-        { wch: 14 }, // total general
+        { wch: 16 },
+        { wch: 14 },
       ]
-
-      // Merges para header
       const lastCol = 1 + nAdultos + 1 + nTern + 1 + 1 - 1
       ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }, // Ea. Nazarenas
-        { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } }, // de Martinez Sobrado
-        { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } }, // PLANILLA DE HACIENDA
-        { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } }, // Período
-        { s: { r: 5, c: 1 }, e: { r: 5, c: 3 } },       // Cría
-        { s: { r: 5, c: 5 }, e: { r: 5, c: 10 } },      // Recría/Engorde
+        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
+        { s: { r: 5, c: 1 }, e: { r: 5, c: 3 } },
+        { s: { r: 5, c: 5 }, e: { r: 5, c: 10 } },
       ]
 
       // ═══ CONSTRUIR HOJA 2: DETALLE ═══
@@ -1498,18 +1508,18 @@ function TabHacienda() {
       detalleAoa.push([])
       detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Peso Total (kg)', 'Precio/kg', 'Monto Total', 'Proveedor/Cliente', 'Observaciones'])
 
-      // Cargar movimientos con más detalle
       const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
         .select('tipo, cantidad, categoria_id, fecha, peso_total_kg, precio_por_kg, monto_total, proveedor_cliente, observaciones')
         .gte('fecha', desde).lte('fecha', hasta)
         .order('fecha')
 
       for (const m of movsDetalle || []) {
+        const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
+          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste + (en Compras)' : 'Ajuste - (en Mortandad)') :
+          m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
         detalleAoa.push([
           m.fecha ? m.fecha.split('-').reverse().join('/') : '',
-          m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas +' : 'Reclas -') :
-            m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
-            m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1),
+          tipoLabel,
           catNameMap[m.categoria_id] || '',
           m.cantidad,
           m.peso_total_kg || '',
@@ -1520,9 +1530,25 @@ function TabHacienda() {
         ])
       }
 
+      // Hoja 2 parte 2: Detalle CUT/Descarte
+      if (detalleCutData.length > 0) {
+        detalleAoa.push([])
+        detalleAoa.push(['DETALLE CUT/DESCARTE'])
+        detalleAoa.push(['Caravana', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
+        for (const d of detalleCutData) {
+          detalleAoa.push([
+            d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+            d.categoria_previa || '-',
+            d.pelo || '-',
+            d.observaciones || '-',
+            d.activo ? 'Activa' : 'Baja',
+          ])
+        }
+      }
+
       const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
       ws2['!cols'] = [
-        { wch: 12 }, { wch: 14 }, { wch: 22 }, { wch: 10 },
+        { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 10 },
         { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 30 },
       ]
       ws2['!merges'] = [
@@ -1530,16 +1556,208 @@ function TabHacienda() {
         { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
       ]
 
-      // ═══ GENERAR ARCHIVO ═══
+      // ═══ GENERAR EXCEL ═══
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Planilla')
       XLSX.utils.book_append_sheet(wb, ws2, 'Detalle')
 
-      const nombreArchivo = planillaModo === 'mes'
-        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}.xlsx`
-        : `Planilla_Hacienda_${desde}_${hasta}.xlsx`
-      XLSX.writeFile(wb, nombreArchivo)
-      toast.success('Planilla exportada')
+      const baseNombre = planillaModo === 'mes'
+        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}`
+        : `Planilla_Hacienda_${desde}_${hasta}`
+      XLSX.writeFile(wb, `${baseNombre}.xlsx`)
+
+      // ═══ GENERAR PDF ═══
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+
+      // Colores sobrios
+      const sepia = [101, 67, 33] as [number, number, number]
+      const sepiaClaro = [180, 150, 110] as [number, number, number]
+      const fondoHeader = [245, 240, 230] as [number, number, number]
+      const fondoResaltado = [235, 228, 215] as [number, number, number]
+
+      // Header
+      doc.setFontSize(16)
+      doc.setTextColor(...sepia)
+      doc.text('Ea. Nazarenas', pageW / 2, 15, { align: 'center' })
+      doc.setFontSize(11)
+      doc.text('de Martinez Sobrado', pageW / 2, 21, { align: 'center' })
+      doc.setFontSize(13)
+      doc.setFont('helvetica', 'bold')
+      doc.text('PLANILLA DE HACIENDA', pageW / 2, 29, { align: 'center' })
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Período: ${periodoLabel}`, pageW / 2, 35, { align: 'center' })
+
+      // Línea decorativa
+      doc.setDrawColor(...sepiaClaro)
+      doc.setLineWidth(0.5)
+      doc.line(15, 38, pageW - 15, 38)
+
+      // Tabla principal
+      const colLabels = todasCats.map(c => c.label)
+      const pdfHeaders = ['', ...colLabels.slice(0, nAdultos), 'Subt.\nAdultos', ...colLabels.slice(nAdultos), 'Subt.\nTern.', 'Total\nGral.']
+
+      const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
+        { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
+        { label: 'Compras', vals: filas.compras },
+        { label: 'Nacimientos', vals: filas.nacimientos },
+        { label: 'Reclas. +', vals: filas.reclasPos },
+        { label: 'Ingresos', vals: ingresos, highlight: true },
+        { label: 'Ventas', vals: filas.ventas },
+        { label: 'Mortandad', vals: filas.mortandad },
+        { label: 'Reclas. -', vals: filas.reclasNeg },
+        { label: 'Egresos', vals: egresos, highlight: true },
+        { label: 'Existencia Final', vals: existenciaFinal, highlight: true },
+      ]
+
+      const pdfBody = rowDefs.map(r => {
+        const row = buildRow(r.label, r.vals)
+        return row.map((v, i) => i === 0 ? v : fmtNum(v as number))
+      })
+
+      autoTable(doc, {
+        startY: 42,
+        head: [pdfHeaders],
+        body: pdfBody,
+        theme: 'grid',
+        styles: {
+          fontSize: 6.5,
+          cellPadding: 1.5,
+          textColor: [40, 30, 20],
+          lineColor: [180, 160, 130],
+          lineWidth: 0.2,
+        },
+        headStyles: {
+          fillColor: fondoHeader,
+          textColor: sepia,
+          fontStyle: 'bold',
+          halign: 'center',
+          fontSize: 6,
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', halign: 'left', cellWidth: 22 },
+        },
+        didParseCell: (data: any) => {
+          // Columna 0 = label, resto = números alineados derecha
+          if (data.section === 'body' && data.column.index > 0) {
+            data.cell.styles.halign = 'right'
+          }
+          // Filas resaltadas (Stock Anterior, Ingresos, Egresos, Existencia Final)
+          const highlightRows = [0, 4, 8, 9]
+          if (data.section === 'body' && highlightRows.includes(data.row.index)) {
+            data.cell.styles.fillColor = fondoResaltado
+            data.cell.styles.fontStyle = 'bold'
+          }
+          // Subtotales y total general en negrita
+          const subtotalCols = [nAdultos + 1, nAdultos + 1 + nTern + 1, nAdultos + 1 + nTern + 2]
+          if (data.section === 'body' && subtotalCols.includes(data.column.index)) {
+            data.cell.styles.fontStyle = 'bold'
+          }
+        },
+      })
+
+      // Total Vientres debajo de tabla
+      const finalY = (doc as any).lastAutoTable?.finalY || 150
+      doc.setFontSize(9)
+      doc.setTextColor(...sepia)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[idxVaca])}) + Vaquillona (${fmtNum(existenciaFinal[idxVaq])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
+
+      // ═══ PÁGINA 2: DETALLE MOVIMIENTOS ═══
+      doc.addPage('a4', 'landscape')
+      doc.setFontSize(13)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...sepia)
+      doc.text('DETALLE DE MOVIMIENTOS', pageW / 2, 15, { align: 'center' })
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
+      doc.setDrawColor(...sepiaClaro)
+      doc.line(15, 24, pageW - 15, 24)
+
+      const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+      const detalleBody = (movsDetalle || []).map(m => {
+        const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
+          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
+          m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
+        return [
+          m.fecha ? m.fecha.split('-').reverse().join('/') : '',
+          tipoLabel,
+          catNameMap[m.categoria_id] || '',
+          String(m.cantidad),
+          m.peso_total_kg ? fmtNum(m.peso_total_kg) : '-',
+          m.precio_por_kg ? m.precio_por_kg.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
+          m.monto_total ? m.monto_total.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
+          m.proveedor_cliente || '',
+          m.observaciones || '',
+        ]
+      })
+
+      autoTable(doc, {
+        startY: 28,
+        head: [detalleHeaders],
+        body: detalleBody,
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+        headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+        columnStyles: {
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+        },
+      })
+
+      // ═══ DETALLE CUT/DESCARTE ═══
+      if (detalleCutData.length > 0) {
+        const cutY = (doc as any).lastAutoTable?.finalY || 28
+        const spaceLeft = doc.internal.pageSize.getHeight() - cutY
+        if (spaceLeft < 40) doc.addPage('a4', 'landscape')
+        const cutStartY = spaceLeft < 40 ? 15 : cutY + 10
+
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...sepia)
+        doc.text('DETALLE CUT / DESCARTE', pageW / 2, cutStartY, { align: 'center' })
+
+        const cutHeaders = ['Caravana', 'Tipo (Categoría Previa)', 'Pelo', 'Motivo', 'Estado']
+        const cutBody = detalleCutData.map(d => [
+          d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+          d.categoria_previa || '-',
+          d.pelo || '-',
+          d.observaciones || '-',
+          d.activo ? 'Activa' : 'Baja',
+        ])
+
+        autoTable(doc, {
+          startY: cutStartY + 4,
+          head: [cutHeaders],
+          body: cutBody,
+          theme: 'grid',
+          styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center' },
+          columnStyles: { 4: { halign: 'center' } },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.column.index === 4) {
+              if (data.cell.raw === 'Baja') data.cell.styles.textColor = [160, 60, 60]
+            }
+          },
+        })
+      }
+
+      // Footer en todas las páginas
+      const totalPages = doc.getNumberOfPages()
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p)
+        doc.setFontSize(7)
+        doc.setTextColor(150, 140, 130)
+        doc.text(`Ea. Nazarenas — Planilla de Hacienda — ${periodoLabel}`, 15, doc.internal.pageSize.getHeight() - 5)
+        doc.text(`Pág. ${p}/${totalPages}`, pageW - 15, doc.internal.pageSize.getHeight() - 5, { align: 'right' })
+      }
+
+      doc.save(`${baseNombre}.pdf`)
+      toast.success('Planilla exportada (Excel + PDF)')
       setMostrarModalPlanilla(false)
     } catch (err: any) {
       toast.error('Error: ' + err.message)
