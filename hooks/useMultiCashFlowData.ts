@@ -495,6 +495,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: 0,
         saldo_cta_cte: 0,
         estado: a.estado ?? 'pagar',
+        medio_pago: a.medio_pago || 'banco',
       }))
 
       // 7. Combinar y ordenar por fecha_estimada
