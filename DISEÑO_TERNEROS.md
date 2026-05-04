@@ -346,7 +346,46 @@ Una columna `Pesada DD/MM/YY (kg)` por cada fecha de pesada que el usuario marqu
 
 ---
 
-## 9. Pendientes / Mejoras futuras
+## 9. Mortandad de terneros — vinculación a caravana
+
+**Commit**: `03ccbef` (2026-04-16)
+**Archivos**: `tab-terneros.tsx`, `vista-sector-productivo.tsx`
+
+### Registro de baja
+
+Cuando se registra un movimiento de **mortandad** en Hacienda para una categoría de ternero (`ternera al pie`, `ternera recria`, `ternero al pie`, `ternero recria`, `torito`):
+
+- Aparece un selector de caravana (terneros activos) con opción "Sin asignar"
+- Campo motivo de baja (texto libre)
+- Al guardar: `UPDATE productivo.terneros SET activo=false, fecha_baja, motivo_baja WHERE id=X`
+
+### Migración BD aplicada
+
+```sql
+ALTER TABLE productivo.terneros ADD COLUMN IF NOT EXISTS fecha_baja DATE;
+ALTER TABLE productivo.terneros ADD COLUMN IF NOT EXISTS motivo_baja TEXT;
+```
+
+### Visual en tab Terneros
+
+- Terneros inactivos **no se ocultan** — aparecen al fondo de la tabla con texto rojo tachado (`line-through text-red-400`)
+- Nueva columna "Estado": muestra `Activo` o `fecha baja + motivo`
+- Badges del header usan solo `ternerosActivos` para conteo machos/hembras/total
+- Tarjeta "Total Rodeo" ajusta por `bajasSinAsignar` (mortandad registrada en hacienda pero sin caravana asignada)
+
+### Alertas de bajas sin asignar
+
+- `bajasSinAsignar = totalMortandadTerneros - ternerosInactivos.length`
+- Si >0: banner amarillo "Hay X baja(s) de mortandad sin caravana asignada"
+- La mortandad se cuenta desde `movimientos_hacienda` filtrando por categorías de ternero
+
+### Descarga Excel
+
+Columnas agregadas: `Estado`, `Fecha Baja`, `Motivo Baja`.
+
+---
+
+## 10. Pendientes / Mejoras futuras
 
 | Feature | Prioridad | Notas |
 |---------|-----------|-------|
@@ -361,7 +400,7 @@ Una columna `Pesada DD/MM/YY (kg)` por cada fecha de pesada que el usuario marqu
 
 ---
 
-## 10. Verificaciones de integridad
+## 11. Verificaciones de integridad
 
 1. ✅ `npm run build` sin errores TypeScript
 2. ✅ Import terneros: CSV destete 189 animales importados correctamente
@@ -376,5 +415,5 @@ Una columna `Pesada DD/MM/YY (kg)` por cada fecha de pesada que el usuario marqu
 
 **📅 Diseño original:** 2026-02-28
 **📅 Implementado:** 2026-03-04
-**📅 Última actualización:** 2026-04-13 — descarga Excel + limpieza pesadas ficticias
-**Estado actual:** Operativo con datos reales · 185 pesadas reales (2026-02-23) · Listo para segunda pesada real
+**📅 Última actualización:** 2026-04-16 — mortandad de terneros con vinculación a caravana
+**Estado actual:** Operativo con datos reales · 185 pesadas reales (2026-02-23) · Mortandad con baja individual implementada

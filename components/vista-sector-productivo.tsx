@@ -10,11 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import * as XLSX from "xlsx"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
@@ -362,9 +365,14 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
     if (data && data.length > 0) {
       let caravanas: string[] = []
       if (tipo === 'tacto') {
-        const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-          .select('caravana').eq('ciclo_id', data[0].id)
-        if (desc) caravanas = desc.map(d => d.caravana).filter(Boolean)
+        const catCUTid = categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+        if (catCUTid) {
+          const { data: desc } = await supabase.schema('productivo').from('terneros')
+            .select('caravana_oficial, pelo, observaciones')
+            .eq('categoria_id', catCUTid)
+            .ilike('observaciones', '%Tacto%')
+          if (desc) caravanas = desc.map(d => [d.caravana_oficial, d.pelo].filter(Boolean).join(' - ')).filter(Boolean)
+        }
       }
       datosCiclo = { tipo, ciclo: data[0], caravanas }
       break
@@ -897,10 +905,18 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
+              </TabsTrigger>
+              <TabsTrigger value="cria" className="flex items-center gap-2">
+                🐮
+                Cría
+              </TabsTrigger>
+              <TabsTrigger value="recria" className="flex items-center gap-2">
+                🐄
+                Recría / Engorde
               </TabsTrigger>
               <TabsTrigger value="insumos" className="flex items-center gap-2">
                 <Package className="h-4 w-4" />
@@ -908,25 +924,25 @@ export function VistaSectorProductivo() {
               </TabsTrigger>
               <TabsTrigger value="lotes" className="flex items-center gap-2">
                 <Wheat className="h-4 w-4" />
-                Lotes Agricolas
-              </TabsTrigger>
-              <TabsTrigger value="terneros" className="flex items-center gap-2">
-                🐄
-                Terneros
+                Lotes Agrícolas
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="hacienda">
               <TabHacienda />
             </TabsContent>
+            <TabsContent value="cria">
+              <TabTerneros modo="cria" />
+              <CiclosCriaPanel />
+            </TabsContent>
+            <TabsContent value="recria">
+              <TabTerneros />
+            </TabsContent>
             <TabsContent value="insumos">
               <TabInsumos />
             </TabsContent>
             <TabsContent value="lotes">
               <TabLotesAgricolas />
-            </TabsContent>
-            <TabsContent value="terneros">
-              <TabTerneros />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -959,6 +975,30 @@ function TabHacienda() {
   const [cargandoCUT, setCargandoCUT] = useState(false)
   const [caravanasActivasCUT, setCaravanasActivasCUT] = useState<{ id: string, caravana: string }[]>([])
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
+  // Mortandad terneros — selector caravanas múltiples
+  const [ternerosParaBaja, setTernerosParaBaja] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, pelo: string | null }[]>([])
+  const [ternerosSeleccionadosBaja, setTernerosSeleccionadosBaja] = useState<Set<string>>(new Set())
+  const [motivoBajaTernero, setMotivoBajaTernero] = useState('')
+  const [busquedaTernero, setBusquedaTernero] = useState('')
+
+  // Cambio categoría — selector de terneros individuales
+  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null }[]>([])
+  const [ternerosSeleccionadosCambio, setTernerosSeleccionadosCambio] = useState<Set<string>>(new Set())
+
+  const cargarTernerosParaCambio = async (categoriaId: string) => {
+    const { data } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo')
+      .eq('activo', true)
+      .eq('categoria_id', categoriaId)
+      .order('caravana_oficial', { ascending: true })
+    setTernerosParaCambio(data ?? [])
+    // Pre-seleccionar todos
+    setTernerosSeleccionadosCambio(new Set((data ?? []).map(t => t.id)))
+    // Auto-llenar cantidad
+    if (data && data.length > 0) {
+      setNuevoMov(p => ({ ...p, cantidad: String(data.length) }))
+    }
+  }
 
   const cargarDetalleCUT = async (stockActual: number, categoriaId?: string) => {
     if (detalleCUT) return // ya cargado
@@ -966,48 +1006,33 @@ function TabHacienda() {
     try {
       const detalles: { rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[], tipo_origen: 'tacto' | 'cambio_categoria' }[] = []
 
-      // ── Entradas desde tactos (ciclos_cria) con FIFO ──────────────────────
-      const { data: ciclos } = await supabase.schema('productivo').from('ciclos_cria')
-        .select('id, rodeo, cabezas_vacias, fecha_tacto, anio_servicio')
-        .gt('cabezas_vacias', 0)
-        .order('fecha_tacto', { ascending: true })
-      if (ciclos) {
-        const totalIngresado = ciclos.reduce((s, c) => s + c.cabezas_vacias, 0)
-        let vendidas = Math.max(0, totalIngresado - stockActual)
-        for (const c of ciclos) {
-          if (vendidas >= c.cabezas_vacias) { vendidas -= c.cabezas_vacias; continue }
-          const restantes = c.cabezas_vacias - vendidas
-          vendidas = 0
-          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-            .select('caravana').eq('ciclo_id', c.id).eq('estado', 'activa')
-          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
+      // ── Leer individuos CUT activos desde tabla terneros ──────────────────
+      const catCUTid = categoriaId || categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+      if (catCUTid) {
+        const { data: individuos } = await supabase.schema('productivo').from('terneros')
+          .select('caravana_oficial, pelo, observaciones, categoria_previa')
+          .eq('categoria_id', catCUTid).eq('activo', true)
+          .order('created_at', { ascending: true })
+
+        // Separar por origen según observaciones
+        const deTacto = (individuos || []).filter(i => i.observaciones?.includes('Tacto'))
+        const deCambio = (individuos || []).filter(i => !i.observaciones?.includes('Tacto'))
+
+        if (deTacto.length > 0) {
           detalles.push({
-            rodeo: c.rodeo, vacias: restantes, vaciasTotales: c.cabezas_vacias,
-            fecha: c.fecha_tacto,
-            caravanas: restantes < c.cabezas_vacias ? caravanas.slice(-restantes) : caravanas,
+            rodeo: 'Vacías Tacto',
+            vacias: deTacto.length, vaciasTotales: deTacto.length,
+            fecha: '',
+            caravanas: deTacto.map(d => [d.caravana_oficial, d.pelo, d.categoria_previa !== 'Vaca' ? d.categoria_previa : ''].filter(Boolean).join(' - ')),
             tipo_origen: 'tacto'
           })
         }
-        detalles.reverse()
-      }
-
-      // ── Entradas desde Cambio de Categoría ───────────────────────────────
-      if (categoriaId) {
-        const { data: movsDirectos } = await supabase.schema('productivo').from('movimientos_hacienda')
-          .select('id, fecha, cantidad, observaciones')
-          .eq('categoria_id', categoriaId)
-          .eq('tipo', 'cambio_categoria')
-          .gt('cantidad', 0)
-          .order('fecha', { ascending: false })
-        for (const m of movsDirectos || []) {
-          const { data: desc } = await supabase.schema('productivo').from('detalle_descarte')
-            .select('caravana').eq('movimiento_id', m.id).eq('estado', 'activa')
-          const caravanas = desc?.map(d => d.caravana).filter(Boolean) || []
-          detalles.unshift({
-            rodeo: m.observaciones || 'Cambio de Categoría',
-            vacias: caravanas.length > 0 ? caravanas.length : m.cantidad,
-            vaciasTotales: m.cantidad,
-            fecha: m.fecha, caravanas,
+        if (deCambio.length > 0) {
+          detalles.push({
+            rodeo: 'Cambio de Categoría',
+            vacias: deCambio.length, vaciasTotales: deCambio.length,
+            fecha: '',
+            caravanas: deCambio.map(d => [d.caravana_oficial, d.pelo, d.observaciones].filter(Boolean).join(' - ')),
             tipo_origen: 'cambio_categoria'
           })
         }
@@ -1025,9 +1050,9 @@ function TabHacienda() {
     const cat = categorias.find(c => c.id === categoriaId)
     const esCUT = cat?.nombre.toLowerCase().includes('cut') || cat?.nombre.toLowerCase().includes('descarte')
     if (!esCUT) { setCaravanasActivasCUT([]); setCaravanasSeleccionadas([]); return }
-    const { data } = await supabase.schema('productivo').from('detalle_descarte')
-      .select('id, caravana').eq('estado', 'activa').order('caravana')
-    setCaravanasActivasCUT((data || []).filter(d => d.caravana) as { id: string, caravana: string }[])
+    const { data } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_oficial, pelo').eq('categoria_id', categoriaId).eq('activo', true).order('caravana_oficial')
+    setCaravanasActivasCUT((data || []).filter(d => d.caravana_oficial).map(d => ({ id: d.id, caravana: `${d.caravana_oficial}${d.pelo ? ' - ' + d.pelo : ''}` })))
     setCaravanasSeleccionadas([])
   }
 
@@ -1125,6 +1150,32 @@ function TabHacienda() {
     })
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
+    setTernerosParaBaja([])
+    setTernerosSeleccionadosBaja(new Set())
+    setMotivoBajaTernero('')
+    setBusquedaTernero('')
+    setTernerosParaCambio([])
+    setTernerosSeleccionadosCambio(new Set())
+  }
+
+  // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
+  const CATEGORIAS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'toro', 'novillo', 'vaquillona de reposicion', 'vaquillona engorde']
+  const esCatTernero = (catId: string) => {
+    const cat = categorias.find(c => String(c.id) === catId)
+    return cat ? CATEGORIAS_TERNERO.includes(cat.nombre.toLowerCase()) : false
+  }
+
+  const cargarTernerosParaBaja = async (categoriaId?: string) => {
+    let query = supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo, pelo')
+      .eq('activo', true)
+    if (categoriaId) {
+      query = query.eq('categoria_id', categoriaId)
+    }
+    const { data } = await query.order('caravana_oficial', { ascending: true })
+    setTernerosParaBaja(data ?? [])
+    setTernerosSeleccionadosBaja(new Set())
+    setBusquedaTernero('')
   }
 
   const guardarMovimiento = async () => {
@@ -1155,21 +1206,42 @@ function TabHacienda() {
       }).select().single()
       if (e2) { toast.error('Error al guardar ingreso: ' + e2.message); return }
 
-      // Caravanas (solo si destino es CUT/Descarte)
+      // Actualizar terneros individuales si hay seleccionados
+      if (ternerosSeleccionadosCambio.size > 0) {
+        const ids = [...ternerosSeleccionadosCambio]
+        const { error: eT } = await supabase.schema('productivo').from('terneros')
+          .update({ categoria_id: nuevoMov.categoria_destino_id })
+          .in('id', ids)
+        if (eT) {
+          toast.error('Movimiento OK pero error al actualizar terneros: ' + eT.message)
+        }
+      }
+
+      // Caravanas (solo si destino es CUT/Descarte) → registrar en terneros
       const esDestinosCUT = catDestino?.nombre.toLowerCase().includes('cut') || catDestino?.nombre.toLowerCase().includes('descarte')
-      if (esDestinosCUT && nuevoMov.caravanas.trim() && movDestino) {
+      if (esDestinosCUT && nuevoMov.caravanas.trim()) {
         const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
         if (lineas.length > 0) {
-          await supabase.schema('productivo').from('detalle_descarte').insert(
-            lineas.map(caravana => ({
-              movimiento_id: movDestino.id, caravana,
-              categoria_origen: catOrigen?.nombre || '', estado: 'activa'
-            }))
+          await supabase.schema('productivo').from('terneros').insert(
+            lineas.map(texto => {
+              // Parsear formato "caravana - pelo - motivo" o solo "caravana"
+              const partes = texto.split(/\s*-\s*/)
+              return {
+                caravana_oficial: partes[0]?.trim() || texto,
+                pelo: partes[1]?.trim() || null,
+                observaciones: partes.slice(2).join(' - ').trim() || null,
+                sexo: 'Hembra',
+                categoria_id: catDestino!.id,
+                categoria_previa: catOrigen?.nombre || '',
+                activo: true,
+                es_torito: false,
+              }
+            })
           )
         }
       }
 
-      toast.success('Cambio de categoría registrado')
+      toast.success(`Cambio de categoría registrado${ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
       setMostrarModalMov(false)
       resetNuevoMov()
       cargarDatos()
@@ -1199,17 +1271,586 @@ function TabHacienda() {
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
     if (error) { toast.error('Error al guardar movimiento'); return }
 
-    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja
+    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja en terneros
     if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
-      await supabase.schema('productivo').from('detalle_descarte')
-        .update({ estado: 'baja' })
+      await supabase.schema('productivo').from('terneros')
+        .update({ activo: false, fecha_baja: nuevoMov.fecha, motivo_baja: 'Vendido' })
         .in('id', caravanasSeleccionadas)
+    }
+
+    // Si es mortandad de ternero y se seleccionaron caravanas → marcar terneros como inactivos
+    if (nuevoMov.tipo === 'mortandad' && ternerosSeleccionadosBaja.size > 0) {
+      const ids = [...ternerosSeleccionadosBaja]
+      await supabase.schema('productivo').from('terneros')
+        .update({
+          activo: false,
+          fecha_baja: nuevoMov.fecha,
+          motivo_baja: motivoBajaTernero || nuevoMov.observaciones || 'Mortandad'
+        })
+        .in('id', ids)
     }
 
     toast.success('Movimiento registrado')
     setMostrarModalMov(false)
     resetNuevoMov()
     cargarDatos()
+  }
+
+  // ─── Planilla de Hacienda ─────────────────────────────────────────────
+  const [mostrarModalPlanilla, setMostrarModalPlanilla] = useState(false)
+  const [planillaModo, setPlanillaModo] = useState<'mes' | 'rango'>('mes')
+  const hoy = new Date()
+  const [planillaMes, setPlanillaMes] = useState(String(hoy.getMonth())) // 0-11
+  const [planillaAnio, setPlanillaAnio] = useState(String(hoy.getFullYear()))
+  const [planillaDesde, setPlanillaDesde] = useState('')
+  const [planillaHasta, setPlanillaHasta] = useState('')
+  const [exportandoPlanilla, setExportandoPlanilla] = useState(false)
+  const [previewPlanilla, setPreviewPlanilla] = useState<{
+    periodoLabel: string
+    headers: string[]
+    gruposCria: number
+    gruposRecria: number
+    rows: { label: string; vals: (string | number)[]; highlight?: boolean }[]
+    totalVientres: string
+    cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+  } | null>(null)
+  const [cargandoPreview, setCargandoPreview] = useState(false)
+
+  const CATS_PLANILLA = [
+    { db: 'Vaca', label: 'Vaca', grupo: 'cria' },
+    { db: 'Vaquillona Preñada', label: 'Vaq. Preñada', grupo: 'cria' },
+    { db: 'Vaca CUT/Descarte', label: 'CUT/Descarte', grupo: 'cria' },
+    { db: 'Toro', label: 'Toro', grupo: 'cria' },
+    { db: 'Ternero Recria', label: 'Ternero', grupo: 'recria' },
+    { db: 'Ternera Recria', label: 'Ternera', grupo: 'recria' },
+    { db: 'Torito', label: 'Torito', grupo: 'recria' },
+    { db: 'Vaquillona de Reposicion', label: 'Vaq. Reposición', grupo: 'recria' },
+    { db: 'Novillo', label: 'Novillo', grupo: 'recria' },
+    { db: 'Vaquillona Engorde', label: 'Vaq. Engorde', grupo: 'recria' },
+  ]
+  const CATS_TERNEROS = [
+    { db: 'Ternero al Pie', label: 'Ternero al Pie', grupo: 'terneros' },
+    { db: 'Ternera al Pie', label: 'Ternera al Pie', grupo: 'terneros' },
+  ]
+
+  // Helper: resolver rango de fechas desde estado del modal
+  const resolverRangoFechas = () => {
+    let desde: string, hasta: string, periodoLabel: string
+    if (planillaModo === 'mes') {
+      const m = parseInt(planillaMes)
+      const a = parseInt(planillaAnio)
+      desde = `${a}-${String(m + 1).padStart(2, '0')}-01`
+      const ultimoDia = new Date(a, m + 1, 0).getDate()
+      hasta = `${a}-${String(m + 1).padStart(2, '0')}-${ultimoDia}`
+      const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      periodoLabel = `${meses[m]} ${a}`
+    } else {
+      desde = planillaDesde
+      hasta = planillaHasta
+      periodoLabel = `${desde.split('-').reverse().join('/')} al ${hasta.split('-').reverse().join('/')}`
+    }
+    return { desde, hasta, periodoLabel }
+  }
+
+  // Formato argentino
+  const fmtNum = (n: number) => n === 0 ? '-' : n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+
+  // Cargar datos de planilla (compartido entre preview y export)
+  const calcularDatosPlanilla = async (desde: string, hasta: string) => {
+    const { data: allCats } = await supabase.schema('productivo').from('categorias_hacienda').select('id, nombre')
+    if (!allCats) throw new Error('Error cargando categorías')
+    const catIdMap: Record<string, string> = {}
+    const catNameMap: Record<string, string> = {}
+    allCats.forEach(c => { catIdMap[c.nombre.toLowerCase()] = c.id; catNameMap[c.id] = c.nombre })
+
+    const { data: todosMovs } = await supabase.schema('productivo').from('movimientos_hacienda')
+      .select('tipo, cantidad, categoria_id, fecha')
+      .lte('fecha', hasta).order('fecha')
+    if (!todosMovs) throw new Error('Error cargando movimientos')
+
+    const movsAnteriores = todosMovs.filter(m => m.fecha < desde)
+    const movsPeriodo = todosMovs.filter(m => m.fecha >= desde && m.fecha <= hasta)
+
+    const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
+    const catToCol: Record<string, number> = {}
+    todasCats.forEach((c, i) => {
+      const id = catIdMap[c.db.toLowerCase()]
+      if (id) catToCol[id] = i
+    })
+    const nCols = todasCats.length
+    const nAdultos = CATS_PLANILLA.length
+    const nTern = CATS_TERNEROS.length
+
+    const stockAnterior = new Array(nCols).fill(0)
+    movsAnteriores.forEach(m => { const col = catToCol[m.categoria_id]; if (col !== undefined) stockAnterior[col] += m.cantidad })
+
+    const filas: Record<string, number[]> = {
+      compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),
+      reclasPos: new Array(nCols).fill(0), ventas: new Array(nCols).fill(0),
+      mortandad: new Array(nCols).fill(0), reclasNeg: new Array(nCols).fill(0),
+    }
+    movsPeriodo.forEach(m => {
+      const col = catToCol[m.categoria_id]; if (col === undefined) return
+      switch (m.tipo) {
+        case 'compra': filas.compras[col] += m.cantidad; break
+        case 'nacimiento': filas.nacimientos[col] += m.cantidad; break
+        case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
+        case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
+        case 'ajuste_stock':
+          if (m.cantidad > 0) filas.compras[col] += m.cantidad
+          else filas.mortandad[col] += Math.abs(m.cantidad)
+          break
+        case 'cambio_categoria':
+          if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
+          else filas.reclasNeg[col] += Math.abs(m.cantidad)
+          break
+      }
+    })
+
+    const ingresos = new Array(nCols).fill(0)
+    const egresos = new Array(nCols).fill(0)
+    const existenciaFinal = new Array(nCols).fill(0)
+    for (let i = 0; i < nCols; i++) {
+      ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
+      egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
+      existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
+    }
+
+    const sumar = (arr: number[], d: number, h: number) => arr.slice(d, h + 1).reduce((s, v) => s + v, 0)
+    const buildRow = (label: string, vals: number[]) => {
+      const subAdultos = sumar(vals, 0, nAdultos - 1)
+      const subTern = sumar(vals, nAdultos, nAdultos + nTern - 1)
+      return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
+    }
+
+    // CUT detail — filtrar por fecha_alta <= hasta (fecha real de ingreso a la categoría)
+    const cutCatId = catIdMap['vaca cut/descarte']
+    let cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
+    if (cutCatId) {
+      const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
+        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, fecha_alta')
+        .eq('categoria_id', cutCatId)
+        .lte('fecha_alta', hasta)
+      cutData = (cutTerneros || [])
+        .map(d => ({
+          caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+          fechaAlta: d.fecha_alta ? d.fecha_alta.split('-').reverse().join('/') : '-',
+          tipo: d.categoria_previa || '-',
+          pelo: d.pelo || '-',
+          motivo: d.observaciones || '-',
+          estado: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
+        }))
+    }
+
+    const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
+      { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
+      { label: 'Compras', vals: filas.compras },
+      { label: 'Nacimientos', vals: filas.nacimientos },
+      { label: 'Reclas. +', vals: filas.reclasPos },
+      { label: 'Ingresos', vals: ingresos, highlight: true },
+      { label: 'Ventas', vals: filas.ventas },
+      { label: 'Mortandad', vals: filas.mortandad },
+      { label: 'Reclas. -', vals: filas.reclasNeg },
+      { label: 'Egresos', vals: egresos, highlight: true },
+      { label: 'Existencia Final', vals: existenciaFinal, highlight: true },
+    ]
+
+    const headers = ['', ...todasCats.slice(0, nAdultos).map(c => c.label), 'Subt. Adultos',
+      ...todasCats.slice(nAdultos).map(c => c.label), 'Subt. Tern.', 'Total Gral.']
+
+    const builtRows = rowDefs.map(r => ({
+      label: r.label,
+      vals: buildRow(r.label, r.vals),
+      highlight: r.highlight,
+    }))
+
+    const idxVaca = 0, idxVaq = 1
+    const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
+
+    return {
+      headers, builtRows, cutData, totalVientres,
+      filas, stockAnterior, ingresos, egresos, existenciaFinal,
+      catIdMap, catNameMap, catToCol, nAdultos, nTern, nCols, buildRow, sumar,
+      rowDefs,
+    }
+  }
+
+  // Preview: cargar datos y mostrar en modal
+  const cargarPreviewPlanilla = async () => {
+    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
+    setCargandoPreview(true)
+    try {
+      const { desde, hasta, periodoLabel } = resolverRangoFechas()
+      const datos = await calcularDatosPlanilla(desde, hasta)
+      const nCria = CATS_PLANILLA.filter(c => c.grupo === 'cria').length
+      const nRecria = CATS_PLANILLA.filter(c => c.grupo === 'recria').length
+      setPreviewPlanilla({
+        periodoLabel,
+        headers: datos.headers,
+        gruposCria: nCria,
+        gruposRecria: nRecria,
+        rows: datos.builtRows,
+        totalVientres: `Vaca (${fmtNum(datos.existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(datos.existenciaFinal[1])}) = ${fmtNum(datos.totalVientres)}`,
+        cutData: datos.cutData,
+      })
+    } catch (err: any) {
+      toast.error('Error: ' + err.message)
+    } finally {
+      setCargandoPreview(false)
+    }
+  }
+
+  const exportarPlanillaHacienda = async () => {
+    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
+    setExportandoPlanilla(true)
+    try {
+      const { desde, hasta, periodoLabel } = resolverRangoFechas()
+      const datos = await calcularDatosPlanilla(desde, hasta)
+      const { headers, builtRows, cutData, totalVientres, catNameMap,
+        filas, stockAnterior, ingresos, egresos, existenciaFinal,
+        nAdultos, nTern, buildRow, rowDefs } = datos
+      const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
+      const nCria = CATS_PLANILLA.filter(c => c.grupo === 'cria').length
+      const nRecria = CATS_PLANILLA.filter(c => c.grupo === 'recria').length
+
+      // ═══ CONSTRUIR HOJA 1: PLANILLA (Excel) ═══
+      const aoa: any[][] = []
+      aoa.push(['Ea. Nazarenas'])
+      aoa.push(['de Martinez Sobrado'])
+      aoa.push(['PLANILLA DE HACIENDA'])
+      aoa.push([`Período: ${periodoLabel}`])
+      aoa.push([])
+
+      // Grupos: CRÍA = cols 1-4, RECRÍA = cols 5-10
+      const grupoRow: string[] = ['']
+      grupoRow.push('CRÍA')
+      for (let i = 1; i < nCria; i++) grupoRow.push('')
+      grupoRow.push('RECRÍA / ENGORDE')
+      for (let i = 1; i < nRecria; i++) grupoRow.push('')
+      grupoRow.push('') // subtotal adultos
+      grupoRow.push('') // tern macho
+      grupoRow.push('') // tern hembra
+      grupoRow.push('') // subtotal tern
+      grupoRow.push('') // total general
+      aoa.push(grupoRow)
+
+      const catRow = ['', ...CATS_PLANILLA.map(c => c.label), 'Subtotal Adultos',
+        ...CATS_TERNEROS.map(c => c.label), 'Subtotal Terneros', 'Total General']
+      aoa.push(catRow)
+
+      builtRows.forEach(r => aoa.push(r.vals))
+
+      aoa.push([])
+      aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa)
+      ws['!cols'] = [
+        { wch: 18 },
+        ...Array(nAdultos).fill({ wch: 14 }),
+        { wch: 16 },
+        ...Array(nTern).fill({ wch: 18 }),
+        { wch: 16 },
+        { wch: 14 },
+      ]
+      const lastCol = 1 + nAdultos + 1 + nTern + 1 + 1 - 1
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
+        { s: { r: 5, c: 1 }, e: { r: 5, c: nCria } },                          // CRÍA
+        { s: { r: 5, c: nCria + 1 }, e: { r: 5, c: nCria + nRecria } },        // RECRÍA/ENGORDE
+      ]
+
+      // ═══ CONSTRUIR HOJA 2: DETALLE ═══
+      const detalleAoa: any[][] = []
+      detalleAoa.push(['DETALLE DE MOVIMIENTOS'])
+      detalleAoa.push([`Período: ${periodoLabel}`])
+      detalleAoa.push([])
+      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Peso Total (kg)', 'Precio/kg', 'Monto Total', 'Proveedor/Cliente', 'Observaciones'])
+
+      const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
+        .select('tipo, cantidad, categoria_id, fecha, peso_total_kg, precio_por_kg, monto_total, proveedor_cliente, observaciones')
+        .gte('fecha', desde).lte('fecha', hasta)
+        .order('fecha')
+
+      for (const m of movsDetalle || []) {
+        const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
+          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste + (en Compras)' : 'Ajuste - (en Mortandad)') :
+          m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
+        detalleAoa.push([
+          m.fecha ? m.fecha.split('-').reverse().join('/') : '',
+          tipoLabel,
+          catNameMap[m.categoria_id] || '',
+          m.cantidad,
+          m.peso_total_kg || '',
+          m.precio_por_kg || '',
+          m.monto_total || '',
+          m.proveedor_cliente || '',
+          m.observaciones || '',
+        ])
+      }
+
+      // Hoja 2 parte 2: Detalle CUT/Descarte
+      if (cutData.length > 0) {
+        detalleAoa.push([])
+        detalleAoa.push(['DETALLE CUT/DESCARTE'])
+        detalleAoa.push(['Caravana', 'Fecha Alta', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
+        for (const d of cutData) {
+          detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+        }
+      }
+
+      const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
+      ws2['!cols'] = [
+        { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 10 },
+        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 30 },
+      ]
+      ws2['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      ]
+
+      // ═══ GENERAR EXCEL ═══
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Planilla')
+      XLSX.utils.book_append_sheet(wb, ws2, 'Detalle')
+
+      const baseNombre = planillaModo === 'mes'
+        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}`
+        : `Planilla_Hacienda_${desde}_${hasta}`
+
+      // ═══ SELECCIÓN DE CARPETA ═══
+      let directorioDestino: any = null
+      let ubicacionFinal = 'carpeta Descargas'
+      if ('showDirectoryPicker' in window) {
+        try {
+          directorioDestino = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
+          ubicacionFinal = `carpeta "${directorioDestino.name}"`
+        } catch {
+          // Usuario canceló → descargar en Descargas por defecto
+        }
+      }
+
+      // Helper: guardar archivo en carpeta seleccionada o descarga normal
+      const guardarEnCarpeta = async (nombre: string, contenido: ArrayBuffer | Uint8Array) => {
+        if (directorioDestino) {
+          const h = await directorioDestino.getFileHandle(nombre, { create: true })
+          const w = await h.createWritable()
+          await w.write(contenido)
+          await w.close()
+        }
+      }
+
+      // ═══ GUARDAR EXCEL ═══
+      if (directorioDestino) {
+        const excelBuf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+        await guardarEnCarpeta(`${baseNombre}.xlsx`, excelBuf)
+      } else {
+        XLSX.writeFile(wb, `${baseNombre}.xlsx`)
+      }
+
+      // ═══ GENERAR PDF ═══
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = doc.internal.pageSize.getWidth()
+
+      // Colores sobrios
+      const sepia = [101, 67, 33] as [number, number, number]
+      const sepiaClaro = [180, 150, 110] as [number, number, number]
+      const fondoHeader = [245, 240, 230] as [number, number, number]
+      const fondoResaltado = [235, 228, 215] as [number, number, number]
+
+      // Header
+      doc.setFontSize(16)
+      doc.setTextColor(...sepia)
+      doc.text('Ea. Nazarenas', pageW / 2, 15, { align: 'center' })
+      doc.setFontSize(11)
+      doc.text('de Martinez Sobrado', pageW / 2, 21, { align: 'center' })
+      doc.setFontSize(13)
+      doc.setFont('helvetica', 'bold')
+      doc.text('PLANILLA DE HACIENDA', pageW / 2, 29, { align: 'center' })
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Período: ${periodoLabel}`, pageW / 2, 35, { align: 'center' })
+
+      // Línea decorativa
+      doc.setDrawColor(...sepiaClaro)
+      doc.setLineWidth(0.5)
+      doc.line(15, 38, pageW - 15, 38)
+
+      // Tabla principal — sin doble header (colSpan problemático con autoTable)
+      // En su lugar: una sola fila de headers con prefijo de grupo
+      const criaLabels = CATS_PLANILLA.filter(c => c.grupo === 'cria').map(c => c.label)
+      const recriaLabels = CATS_PLANILLA.filter(c => c.grupo === 'recria').map(c => c.label)
+      const ternLabels = CATS_TERNEROS.map(c => c.label)
+      const pdfCatHeaders = [
+        '',
+        ...criaLabels.map((l, i) => i === 0 ? `CRÍA\n${l}` : l),
+        ...recriaLabels.map((l, i) => i === 0 ? `RECRÍA\n${l}` : l),
+        'Subt.\nAdultos',
+        ...ternLabels,
+        'Subt.\nTern.',
+        'Total\nGral.',
+      ]
+
+      const pdfBody = builtRows.map(r => {
+        return (r.vals as (string | number)[]).map((v, i) => i === 0 ? v : fmtNum(v as number))
+      })
+
+      autoTable(doc, {
+        startY: 42,
+        head: [pdfCatHeaders],
+        body: pdfBody,
+        theme: 'grid',
+        styles: {
+          fontSize: 6.5,
+          cellPadding: 1.5,
+          textColor: [40, 30, 20],
+          lineColor: [180, 160, 130],
+          lineWidth: 0.2,
+        },
+        headStyles: {
+          fillColor: fondoHeader,
+          textColor: sepia,
+          fontStyle: 'bold',
+          halign: 'center',
+          fontSize: 6,
+        },
+        columnStyles: {
+          0: { fontStyle: 'bold', halign: 'left', cellWidth: 22 },
+        },
+        didParseCell: (data: any) => {
+          // Columna 0 = label, resto = números alineados derecha
+          if (data.section === 'body' && data.column.index > 0) {
+            data.cell.styles.halign = 'right'
+          }
+          // Filas resaltadas (Stock Anterior, Ingresos, Egresos, Existencia Final)
+          const highlightRows = [0, 4, 8, 9]
+          if (data.section === 'body' && highlightRows.includes(data.row.index)) {
+            data.cell.styles.fillColor = fondoResaltado
+            data.cell.styles.fontStyle = 'bold'
+          }
+          // Subtotales y total general en negrita
+          const subtotalCols = [nAdultos + 1, nAdultos + 1 + nTern + 1, nAdultos + 1 + nTern + 2]
+          if (data.section === 'body' && subtotalCols.includes(data.column.index)) {
+            data.cell.styles.fontStyle = 'bold'
+          }
+        },
+      })
+
+      // Total Vientres debajo de tabla
+      const finalY = (doc as any).lastAutoTable?.finalY || 150
+      doc.setFontSize(9)
+      doc.setTextColor(...sepia)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(existenciaFinal[1])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
+
+      // ═══ PÁGINA 2: DETALLE MOVIMIENTOS (solo si hay) ═══
+      // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
+      const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, '-').replace(/[^\x00-\xFF]/g, '')
+      const detalleBody = (movsDetalle || []).map(m => {
+        const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
+          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
+          m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
+        return [
+          m.fecha ? m.fecha.split('-').reverse().join('/') : '',
+          tipoLabel,
+          catNameMap[m.categoria_id] || '',
+          String(m.cantidad),
+          m.peso_total_kg ? fmtNum(m.peso_total_kg) : '-',
+          m.precio_por_kg ? m.precio_por_kg.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
+          m.monto_total ? m.monto_total.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
+          sanitizarPDF(m.proveedor_cliente || ''),
+          sanitizarPDF(m.observaciones || ''),
+        ]
+      })
+
+      if (detalleBody.length > 0) {
+        doc.addPage('a4', 'landscape')
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...sepia)
+        doc.text('DETALLE DE MOVIMIENTOS', pageW / 2, 15, { align: 'center' })
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
+        doc.setDrawColor(...sepiaClaro)
+        doc.line(15, 24, pageW - 15, 24)
+
+        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+        autoTable(doc, {
+          startY: 28,
+          head: [detalleHeaders],
+          body: detalleBody,
+          theme: 'grid',
+          styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+          columnStyles: {
+            3: { halign: 'right' },
+            4: { halign: 'right' },
+            5: { halign: 'right' },
+            6: { halign: 'right' },
+          },
+        })
+      }
+
+      // ═══ DETALLE CUT/DESCARTE — página separada ═══
+      if (cutData.length > 0) {
+        doc.addPage('a4', 'landscape')
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...sepia)
+        doc.text('DETALLE CUT / DESCARTE', pageW / 2, 15, { align: 'center' })
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text(`Período: ${periodoLabel}`, pageW / 2, 21, { align: 'center' })
+        doc.setDrawColor(...sepiaClaro)
+        doc.line(15, 24, pageW - 15, 24)
+
+        const cutHeaders = ['Caravana', 'Fecha Alta', 'Tipo (Cat. Previa)', 'Pelo', 'Motivo', 'Estado']
+        const cutBody = cutData.map(d => [d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+
+        autoTable(doc, {
+          startY: 28,
+          head: [cutHeaders],
+          body: cutBody,
+          theme: 'grid',
+          styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center' },
+          columnStyles: { 5: { halign: 'center' } },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.column.index === 5) {
+              if (data.cell.raw === 'Baja') data.cell.styles.textColor = [160, 60, 60]
+            }
+          },
+        })
+      }
+
+      // Footer en todas las páginas
+      const totalPages = doc.getNumberOfPages()
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p)
+        doc.setFontSize(7)
+        doc.setTextColor(150, 140, 130)
+        doc.text(`Ea. Nazarenas — Planilla de Hacienda — ${periodoLabel}`, 15, doc.internal.pageSize.getHeight() - 5)
+        doc.text(`Pág. ${p}/${totalPages}`, pageW - 15, doc.internal.pageSize.getHeight() - 5, { align: 'right' })
+      }
+
+      // ═══ GUARDAR PDF ═══
+      if (directorioDestino) {
+        const pdfBuf = doc.output('arraybuffer')
+        await guardarEnCarpeta(`${baseNombre}.pdf`, pdfBuf)
+      } else {
+        doc.save(`${baseNombre}.pdf`)
+      }
+
+      toast.success(`Planilla exportada (Excel + PDF) en ${ubicacionFinal}`)
+      setMostrarModalPlanilla(false)
+    } catch (err: any) {
+      toast.error('Error: ' + err.message)
+    } finally {
+      setExportandoPlanilla(false)
+    }
   }
 
   if (loading) {
@@ -1228,6 +1869,10 @@ function TabHacienda() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
+            <Download className="mr-1 h-4 w-4" />
+            Planilla
           </Button>
           <Button size="sm" onClick={() => setMostrarModalMov(true)}>
             <Plus className="mr-1 h-4 w-4" />
@@ -1440,9 +2085,6 @@ function TabHacienda() {
         </Table>
       )}
 
-      {/* Panel Ciclos de Cria */}
-      <CiclosCriaPanel />
-
       {/* Modal Nuevo Movimiento Hacienda */}
       <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>
         <DialogContent className="max-w-lg">
@@ -1483,7 +2125,12 @@ function TabHacienda() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Categoría Origen *</Label>
-                    <Select value={nuevoMov.categoria_id} onValueChange={v => setNuevoMov(p => ({ ...p, categoria_id: v }))}>
+                    <Select value={nuevoMov.categoria_id} onValueChange={v => {
+                      setNuevoMov(p => ({ ...p, categoria_id: v }))
+                      setTernerosParaCambio([])
+                      setTernerosSeleccionadosCambio(new Set())
+                      if (esCatTernero(v)) cargarTernerosParaCambio(v)
+                    }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
                         {categorias.map(c => (
@@ -1504,26 +2151,167 @@ function TabHacienda() {
                     </Select>
                   </div>
                 </div>
+                {ternerosParaCambio.length > 0 ? (
+                  <div className="space-y-2 border rounded-md p-3 bg-blue-50/50">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-blue-700 font-medium">Seleccionar individuos ({ternerosSeleccionadosCambio.size} de {ternerosParaCambio.length})</Label>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" className="h-6 text-xs"
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
+                          Todos
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-6 text-xs"
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
+                          Ninguno
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto space-y-1">
+                      {ternerosParaCambio.map(t => (
+                        <label key={t.id} className="flex items-center gap-2 text-sm hover:bg-blue-100 rounded px-2 py-0.5 cursor-pointer">
+                          <input type="checkbox" checked={ternerosSeleccionadosCambio.has(t.id)}
+                            onChange={e => {
+                              const next = new Set(ternerosSeleccionadosCambio)
+                              e.target.checked ? next.add(t.id) : next.delete(t.id)
+                              setTernerosSeleccionadosCambio(next)
+                              setNuevoMov(p => ({ ...p, cantidad: String(next.size) }))
+                            }} />
+                          <span className="font-mono text-xs">{t.caravana_oficial || t.caravana_interna || '(sin caravana)'}</span>
+                          <span className="text-xs text-gray-500">{t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : ''}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-blue-600">Cantidad: {ternerosSeleccionadosCambio.size}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <Label>Cantidad *</Label>
+                      <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
+                      <textarea
+                        className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+                        placeholder={"032 010012326425\n032 010012326426\n..."}
+                        value={nuevoMov.caravanas}
+                        onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
-                  <Label>Cantidad *</Label>
-                  <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                  <Label>Observaciones</Label>
+                  <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
                 </div>
-                <div>
-                  <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
-                  <textarea
-                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
-                    placeholder={"032 010012326425\n032 010012326426\n..."}
-                    value={nuevoMov.caravanas}
-                    onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
-                  />
+              </>
+            ) : nuevoMov.tipo === 'mortandad' ? (
+              /* ── MORTANDAD ────────────────────────────────────────────────── */
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Categoría *</Label>
+                    <Select value={nuevoMov.categoria_id} onValueChange={v => {
+                      setNuevoMov(p => ({ ...p, categoria_id: v, cantidad: '' }))
+                      setTernerosParaBaja([])
+                      setTernerosSeleccionadosBaja(new Set())
+                      setBusquedaTernero('')
+                      if (esCatTernero(v)) cargarTernerosParaBaja(v)
+                    }}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        {categorias.map(c => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.nombre}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Cantidad *</Label>
+                    <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                  </div>
                 </div>
+
+                {/* Selector de caravanas — múltiple con buscador */}
+                {esCatTernero(nuevoMov.categoria_id) && (
+                  <div className="space-y-2 border border-red-200 bg-red-50/50 rounded-md p-3">
+                    <Label className="text-red-700 font-medium">
+                      Vincular baja de caravana{parseInt(nuevoMov.cantidad) > 1 ? 's' : ''} en Terneros
+                      <span className="text-muted-foreground text-xs font-normal ml-1">(opcional)</span>
+                    </Label>
+                    {ternerosParaBaja.length === 0 ? (
+                      <Button variant="outline" size="sm" onClick={() => cargarTernerosParaBaja(nuevoMov.categoria_id)} className="text-xs">
+                        Cargar caravanas disponibles
+                      </Button>
+                    ) : (
+                      <>
+                        {/* Buscador */}
+                        <Input
+                          placeholder="Buscar caravana interna u oficial..."
+                          value={busquedaTernero}
+                          onChange={e => setBusquedaTernero(e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                        {/* Lista filtrada */}
+                        {(() => {
+                          const maxSel = parseInt(nuevoMov.cantidad) || 1
+                          const filtrados = ternerosParaBaja.filter(t => {
+                            if (!busquedaTernero) return true
+                            const q = busquedaTernero.toLowerCase()
+                            return (t.caravana_interna?.toLowerCase().includes(q)) ||
+                                   (t.caravana_oficial?.toLowerCase().includes(q))
+                          })
+                          return (
+                            <div className="max-h-[200px] overflow-y-auto border rounded bg-white space-y-0.5 p-1">
+                              {filtrados.length === 0 ? (
+                                <p className="text-xs text-gray-500 p-2 text-center">Sin resultados</p>
+                              ) : filtrados.map(t => {
+                                const sel = ternerosSeleccionadosBaja.has(t.id)
+                                const disabled = !sel && ternerosSeleccionadosBaja.size >= maxSel
+                                return (
+                                  <label key={t.id} className={`flex items-center gap-2 text-sm px-2 py-1 rounded cursor-pointer ${sel ? 'bg-red-100' : 'hover:bg-gray-50'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                                    <input type="checkbox" checked={sel} disabled={disabled}
+                                      onChange={e => {
+                                        const next = new Set(ternerosSeleccionadosBaja)
+                                        e.target.checked ? next.add(t.id) : next.delete(t.id)
+                                        setTernerosSeleccionadosBaja(next)
+                                      }}
+                                      className="rounded" />
+                                    <span className="font-mono text-xs">{t.caravana_interna || '—'}</span>
+                                    <span className="text-gray-400 text-xs">/</span>
+                                    <span className="font-mono text-xs">{t.caravana_oficial || '—'}</span>
+                                    <span className="text-xs text-gray-500">{t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : ''}</span>
+                                    {t.pelo && <span className="text-xs text-amber-700">• {t.pelo}</span>}
+                                  </label>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                        <p className="text-xs text-red-600">
+                          {ternerosSeleccionadosBaja.size} de {parseInt(nuevoMov.cantidad) || 1} seleccionado{ternerosSeleccionadosBaja.size !== 1 ? 's' : ''}
+                        </p>
+                      </>
+                    )}
+                    <div>
+                      <Label className="text-xs text-red-600">Motivo de baja</Label>
+                      <Input
+                        placeholder="Ej: enfermedad, accidente..."
+                        value={motivoBajaTernero}
+                        onChange={e => setMotivoBajaTernero(e.target.value)}
+                        className="text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <Label>Observaciones</Label>
                   <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
                 </div>
               </>
             ) : (
-              /* ── OTROS TIPOS ──────────────────────────────────────────────── */
+              /* ── OTROS TIPOS (compra, venta, nacimiento, ajuste) ──────────── */
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -1612,6 +2400,145 @@ function TabHacienda() {
             <Button variant="outline" onClick={() => setMostrarModalMov(false)}>Cancelar</Button>
             <Button onClick={guardarMovimiento}>Guardar Movimiento</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Planilla de Hacienda */}
+      <Dialog open={mostrarModalPlanilla} onOpenChange={(open) => { setMostrarModalPlanilla(open); if (!open) setPreviewPlanilla(null) }}>
+        <DialogContent className={previewPlanilla ? 'sm:max-w-[95vw] max-h-[90vh] overflow-y-auto' : 'sm:max-w-md'}>
+          <DialogHeader>
+            <DialogTitle>Planilla de Hacienda</DialogTitle>
+            <DialogDescription>{previewPlanilla ? `Período: ${previewPlanilla.periodoLabel}` : 'Seleccione período para ver preview o exportar.'}</DialogDescription>
+          </DialogHeader>
+
+          {!previewPlanilla ? (
+            <>
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Button variant={planillaModo === 'mes' ? 'default' : 'outline'} size="sm"
+                    onClick={() => setPlanillaModo('mes')}>Por Mes</Button>
+                  <Button variant={planillaModo === 'rango' ? 'default' : 'outline'} size="sm"
+                    onClick={() => setPlanillaModo('rango')}>Rango Personalizado</Button>
+                </div>
+                {planillaModo === 'mes' ? (
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs">Mes</Label>
+                      <select className="w-full h-9 text-sm border rounded px-2"
+                        value={planillaMes} onChange={e => setPlanillaMes(e.target.value)}>
+                        {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
+                          <option key={i} value={String(i)}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="w-24">
+                      <Label className="text-xs">Año</Label>
+                      <Input className="h-9 text-sm" type="number" value={planillaAnio}
+                        onChange={e => setPlanillaAnio(e.target.value)} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs">Desde</Label>
+                      <Input className="h-9 text-sm" type="date" value={planillaDesde}
+                        onChange={e => setPlanillaDesde(e.target.value)} />
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs">Hasta</Label>
+                      <Input className="h-9 text-sm" type="date" value={planillaHasta}
+                        onChange={e => setPlanillaHasta(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMostrarModalPlanilla(false)}>Cancelar</Button>
+                <Button onClick={cargarPreviewPlanilla} disabled={cargandoPreview}>
+                  {cargandoPreview ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />}
+                  Ver Planilla
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              {/* PREVIEW */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    {/* Fila de grupos */}
+                    <tr className="bg-amber-50">
+                      <th className="border px-1 py-0.5" />
+                      <th className="border px-1 py-0.5 text-center font-bold text-amber-900" colSpan={previewPlanilla.gruposCria}>CRÍA</th>
+                      <th className="border px-1 py-0.5 text-center font-bold text-amber-900" colSpan={previewPlanilla.gruposRecria}>RECRÍA / ENGORDE</th>
+                      <th className="border px-1 py-0.5" /> {/* subt adultos */}
+                      <th className="border px-1 py-0.5" colSpan={2} /> {/* terneros */}
+                      <th className="border px-1 py-0.5" /> {/* subt tern */}
+                      <th className="border px-1 py-0.5" /> {/* total */}
+                    </tr>
+                    {/* Fila de categorías */}
+                    <tr className="bg-stone-100">
+                      {previewPlanilla.headers.map((h, i) => (
+                        <th key={i} className={`border px-1 py-1 text-center whitespace-nowrap ${i === 0 ? 'text-left' : ''} ${h.includes('Subt') || h.includes('Total') ? 'font-bold bg-stone-200' : ''}`}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewPlanilla.rows.map((r, ri) => (
+                      <tr key={ri} className={r.highlight ? 'bg-amber-50 font-semibold' : ri % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                        {(r.vals as (string | number)[]).map((v, ci) => (
+                          <td key={ci} className={`border px-1 py-0.5 ${ci === 0 ? 'text-left font-medium' : 'text-right'} ${ci > 0 && (ci === previewPlanilla.gruposCria + previewPlanilla.gruposRecria + 1 || ci === previewPlanilla.headers.length - 2 || ci === previewPlanilla.headers.length - 1) ? 'font-bold' : ''}`}>
+                            {ci === 0 ? v : fmtNum(v as number)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-stone-600 mt-2 font-medium">Total Vientres: {previewPlanilla.totalVientres}</p>
+
+                {/* CUT Detail */}
+                {previewPlanilla.cutData.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-semibold text-stone-700 mb-1">Detalle CUT / Descarte</h4>
+                    <table className="text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-stone-100">
+                          <th className="border px-2 py-1">Caravana</th>
+                          <th className="border px-2 py-1">Fecha Alta</th>
+                          <th className="border px-2 py-1">Tipo</th>
+                          <th className="border px-2 py-1">Pelo</th>
+                          <th className="border px-2 py-1">Motivo</th>
+                          <th className="border px-2 py-1">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewPlanilla.cutData.map((d, i) => (
+                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                            <td className="border px-2 py-0.5">{d.caravana}</td>
+                            <td className="border px-2 py-0.5">{d.fechaAlta}</td>
+                            <td className="border px-2 py-0.5">{d.tipo}</td>
+                            <td className="border px-2 py-0.5">{d.pelo}</td>
+                            <td className="border px-2 py-0.5">{d.motivo}</td>
+                            <td className={`border px-2 py-0.5 text-center ${d.estado === 'Baja' ? 'text-red-600' : ''}`}>{d.estado}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setPreviewPlanilla(null)}>Volver</Button>
+                <Button onClick={exportarPlanillaHacienda} disabled={exportandoPlanilla}>
+                  {exportandoPlanilla ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
+                  Descargar Excel + PDF
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -2277,7 +3204,7 @@ function SubTabOrdenesAplicacion() {
   const [añoServicio, setAñoServicio] = useState(String(new Date().getFullYear()))
   const [cabezasServicioPorRodeo, setCabezasServicioPorRodeo] = useState<Record<string, string>>({})
   // Tacto
-  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, anio_servicio: number, rodeo: string, cabezas_servicio: number | null }[]>([])
+  const [ciclosAbiertos, setCiclosAbiertos] = useState<{ id: string, anio_servicio: number, rodeo: string, cabezas_servicio: number | null, cabezas_prenadas: number | null }[]>([])
   const [cicloSeleccionado, setCicloSeleccionado] = useState('')
   const [cabezasPrenadas, setCabezasPrenadas] = useState('')
   const [cabezasVacias, setCabezasVacias] = useState('')
@@ -2287,8 +3214,61 @@ function SubTabOrdenesAplicacion() {
   // Destete
   const [ternerosDestetados, setTernerosDestetados] = useState('')
   const [ciclosDestetadosSeleccionados, setCiclosDestetadosSeleccionados] = useState<string[]>([])
+  // Destete — vinculación pesada
+  const [pesadasDisponibles, setPesadasDisponibles] = useState<{ fecha: string, total: number }[]>([])
+  const [pesadaSeleccionada, setPesadaSeleccionada] = useState('')
+  const [previewPesada, setPreviewPesada] = useState<{
+    machos: number, hembras: number, conPesada: number, sinPesada: number,
+    totalCabezas: number, sumaKg: number, promedioKg: number, totalKgExtrapolado: number
+  } | null>(null)
+  const [cargandoPreview, setCargandoPreview] = useState(false)
+  // Vincular ciclo post-ejecución
+  const [ordenVinculandoCiclo, setOrdenVinculandoCiclo] = useState<OrdenAplicacion | null>(null)
+  const [ordenesYaVinculadas, setOrdenesYaVinculadas] = useState<Set<string>>(new Set())
+  const [vinculandoCiclo, setVinculandoCiclo] = useState(false)
+  const [modoDesglose, setModoDesglose] = useState(false) // false=total, true=por ciclo
+  const [destetadosPorCiclo, setDestetadosPorCiclo] = useState<Record<string, string>>({})
   // Retrospectiva
   const [cargaRetrospectiva, setCargaRetrospectiva] = useState(false)
+
+  // === ASIGNACIÓN CATEGORÍA POST-DESTETE ===
+  interface TerneroAsignar {
+    id: string
+    caravana_interna: string | null
+    caravana_oficial: string | null
+    sexo: string
+    es_torito: boolean
+    categoria_propuesta: string // categoria_id destino
+    seleccionado: boolean
+  }
+
+  // Grupo para la UI resumida de asignación post-destete
+  interface GrupoAsignacion {
+    key: string // 'hembras' | 'machos' | 'toritos'
+    label: string
+    emoji: string
+    color: string
+    total: number
+    cantidad: number // editable — default = total
+    categoriaDestinoId: string
+    categoriaDestinoNombre: string
+    seleccionIndividual: boolean // true cuando cantidad < total
+    individuosSeleccionados: string[] // ternero ids seleccionados
+  }
+
+  const [mostrarModalAsignacion, setMostrarModalAsignacion] = useState(false)
+  const [ternerosParaAsignar, setTernerosParaAsignar] = useState<TerneroAsignar[]>([])
+  const [gruposAsignacion, setGruposAsignacion] = useState<GrupoAsignacion[]>([])
+  const [fechaIngresoRecria, setFechaIngresoRecria] = useState('')
+  const [pesoIngresoRecria, setPesoIngresoRecria] = useState('')
+  const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
+  const [ordenEjecutadaParaAsignacion, setOrdenEjecutadaParaAsignacion] = useState<OrdenAplicacion | null>(null)
+  const [pesadasDisponiblesAsignacion, setPesadasDisponiblesAsignacion] = useState<{ fecha: string, total: number }[]>([])
+  const [pesadaSeleccionadaAsignacion, setPesadaSeleccionadaAsignacion] = useState('')
+  const [pesadaAsignacionSummary, setPesadaAsignacionSummary] = useState<{
+    conPesada: number, sinPesada: number, totalKg: number, promedioKg: number
+  } | null>(null)
+  const [cargandoPesadaAsignacion, setCargandoPesadaAsignacion] = useState(false)
 
   // Lineas de la orden
   const [lineas, setLineas] = useState<LineaFormulario[]>([])
@@ -2390,12 +3370,15 @@ function SubTabOrdenesAplicacion() {
     setTernerosNacidos('')
     setTernerosDestetados('')
     setCiclosDestetadosSeleccionados([])
+    setPesadaSeleccionada('')
+    setPreviewPesada(null)
+    setPesadasDisponibles([])
     setCargaRetrospectiva(false)
   }
 
   const cargarCiclosParaLabor = async (tipo: string, ordenIdEdicion?: string) => {
     let query = supabase.schema('productivo').from('ciclos_cria')
-      .select('id, anio_servicio, rodeo, cabezas_servicio')
+      .select('id, anio_servicio, rodeo, cabezas_servicio, cabezas_prenadas')
 
     if (tipo === 'tacto') {
       query = query.is('fecha_tacto', null).not('fecha_servicio', 'is', null)
@@ -2417,7 +3400,7 @@ function SubTabOrdenesAplicacion() {
         : tipo === 'servicio' ? 'orden_servicio_id' : null
       if (campo) {
         const { data: vinculado } = await supabase.schema('productivo').from('ciclos_cria')
-          .select('id, anio_servicio, rodeo, cabezas_servicio')
+          .select('id, anio_servicio, rodeo, cabezas_servicio, cabezas_prenadas')
           .eq(campo, ordenIdEdicion)
         if (vinculado) {
           const idsExistentes = new Set(ciclos.map(c => c.id))
@@ -2429,6 +3412,178 @@ function SubTabOrdenesAplicacion() {
     }
 
     setCiclosAbiertos(ciclos)
+
+    // Si es destete, cargar pesadas disponibles
+    if (tipo === 'destete') {
+      const { data: pesData } = await supabase.schema('productivo').from('pesadas_terneros')
+        .select('fecha')
+      if (pesData) {
+        const conteo = new Map<string, number>()
+        pesData.forEach(p => conteo.set(p.fecha, (conteo.get(p.fecha) || 0) + 1))
+        setPesadasDisponibles(
+          [...conteo.entries()].map(([fecha, total]) => ({ fecha, total })).sort((a, b) => b.fecha.localeCompare(a.fecha))
+        )
+      }
+      setPesadaSeleccionada('')
+      setPreviewPesada(null)
+    }
+  }
+
+  const cargarPreviewPesada = async (fechaPesada: string) => {
+    setCargandoPreview(true)
+    try {
+      // Cargar terneros activos con sus pesadas de esa fecha
+      const { data: ternerosData } = await supabase.schema('productivo').from('terneros')
+        .select('id, sexo, activo, pesadas_terneros!inner(peso_kg)')
+        .eq('pesadas_terneros.fecha', fechaPesada)
+
+      // También cargar terneros sin pesada en esa fecha para el conteo total
+      const { data: todosData } = await supabase.schema('productivo').from('terneros')
+        .select('id, sexo, activo')
+        .eq('activo', true)
+
+      const todos = todosData ?? []
+      const conPesada = ternerosData ?? []
+      const totalCabezas = todos.length
+      const machos = todos.filter(t => t.sexo === 'Macho').length
+      const hembras = todos.filter(t => t.sexo === 'Hembra').length
+      const sumaKg = conPesada.reduce((sum, t) => sum + ((t.pesadas_terneros as any)?.[0]?.peso_kg || 0), 0)
+      const promedioKg = conPesada.length > 0 ? sumaKg / conPesada.length : 0
+      // Extrapolado: promedio × total cabezas (misma lógica que tab-terneros calcSummary)
+      const totalKgExtrapolado = promedioKg * totalCabezas
+
+      setPreviewPesada({
+        machos, hembras, conPesada: conPesada.length, sinPesada: totalCabezas - conPesada.length,
+        totalCabezas, sumaKg, promedioKg, totalKgExtrapolado
+      })
+    } catch (err) {
+      console.error('Error cargando preview pesada:', err)
+      setPreviewPesada(null)
+    } finally {
+      setCargandoPreview(false)
+    }
+  }
+
+  // === VINCULAR CICLO DE CRÍA POST-EJECUCIÓN ===
+  const esDesteteFin = (orden: OrdenAplicacion) =>
+    orden.estado === 'ejecutada' && (orden.labores || []).some(l => l === 'Destete Fin')
+
+  const abrirVincularCiclo = async (orden: OrdenAplicacion) => {
+    setOrdenVinculandoCiclo(orden)
+    setCiclosDestetadosSeleccionados([])
+    setTernerosDestetados('')
+    setPesadaSeleccionada('')
+    setPreviewPesada(null)
+    setModoDesglose(false)
+    setDestetadosPorCiclo({})
+    // Cargar ciclos disponibles (sin destete, con tacto) + pesadas
+    await cargarCiclosParaLabor('destete')
+  }
+
+  const cerrarVincularCiclo = () => {
+    setOrdenVinculandoCiclo(null)
+    setCiclosDestetadosSeleccionados([])
+    setTernerosDestetados('')
+    setPesadaSeleccionada('')
+    setPreviewPesada(null)
+    setModoDesglose(false)
+    setDestetadosPorCiclo({})
+  }
+
+  // Calcular prorrateo por cabezas_prenadas
+  const calcularProrrateo = (total: number) => {
+    const ciclosSel = ciclosAbiertos.filter(c => ciclosDestetadosSeleccionados.includes(c.id))
+    const totalPrenadas = ciclosSel.reduce((s, c) => s + (c.cabezas_prenadas || 0), 0)
+    if (totalPrenadas === 0) {
+      // Sin preñadas, repartir equitativo
+      const porCiclo = Math.round(total / ciclosSel.length)
+      return Object.fromEntries(ciclosSel.map((c, i) =>
+        [c.id, i === ciclosSel.length - 1 ? total - porCiclo * (ciclosSel.length - 1) : porCiclo]
+      ))
+    }
+    const result: Record<string, number> = {}
+    let acum = 0
+    ciclosSel.forEach((c, i) => {
+      if (i === ciclosSel.length - 1) {
+        result[c.id] = total - acum // último se lleva el residuo
+      } else {
+        const prop = Math.round(total * (c.cabezas_prenadas || 0) / totalPrenadas)
+        result[c.id] = prop
+        acum += prop
+      }
+    })
+    return result
+  }
+
+  const confirmarVincularCiclo = async () => {
+    if (!ordenVinculandoCiclo) return
+    if (ciclosDestetadosSeleccionados.length === 0) {
+      toast.error('Seleccione al menos un ciclo de cría')
+      return
+    }
+
+    // Determinar terneros por ciclo
+    let destetadosMap: Record<string, number> = {}
+    if (ciclosDestetadosSeleccionados.length === 1) {
+      // Un solo ciclo: directo
+      const val = parseInt(ternerosDestetados) || 0
+      if (val <= 0) { toast.error('Ingrese la cantidad de terneros destetados'); return }
+      destetadosMap[ciclosDestetadosSeleccionados[0]] = val
+    } else if (modoDesglose) {
+      // Desglosado: validar cada uno
+      for (const cicloId of ciclosDestetadosSeleccionados) {
+        const val = parseInt(destetadosPorCiclo[cicloId]) || 0
+        if (val <= 0) {
+          const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+          toast.error(`Ingrese terneros para ${ciclo?.rodeo || 'ciclo'}`)
+          return
+        }
+        destetadosMap[cicloId] = val
+      }
+    } else {
+      // Total con prorrateo
+      const totalVal = parseInt(ternerosDestetados) || 0
+      if (totalVal <= 0) { toast.error('Ingrese la cantidad total de terneros destetados'); return }
+      destetadosMap = calcularProrrateo(totalVal)
+    }
+
+    const totalDestetados = Object.values(destetadosMap).reduce((s, v) => s + v, 0)
+    const tienePesada = pesadaSeleccionada && pesadaSeleccionada !== 'none' && previewPesada
+
+    setVinculandoCiclo(true)
+    try {
+      for (const cicloId of ciclosDestetadosSeleccionados) {
+        const cantCiclo = destetadosMap[cicloId]
+        const proporcion = totalDestetados > 0 ? cantCiclo / totalDestetados : 0
+
+        const updateData: any = {
+          fecha_destete: ordenVinculandoCiclo.fecha,
+          terneros_destetados: cantCiclo,
+          orden_destete_id: ordenVinculandoCiclo.id
+        }
+        if (tienePesada && previewPesada) {
+          updateData.pesada_destete_fecha = pesadaSeleccionada
+          updateData.kg_totales = Math.round(previewPesada.totalKgExtrapolado * proporcion * 100) / 100
+          updateData.kg_promedio = Math.round(previewPesada.promedioKg * 100) / 100 // promedio es el mismo para todos
+          updateData.machos_destetados = Math.round(previewPesada.machos * proporcion)
+          updateData.hembras_destetados = Math.round(previewPesada.hembras * proporcion)
+        }
+
+        const { error } = await supabase.schema('productivo').from('ciclos_cria')
+          .update(updateData)
+          .eq('id', cicloId)
+        if (error) throw error
+      }
+
+      setOrdenesYaVinculadas(prev => new Set([...prev, ordenVinculandoCiclo.id]))
+      toast.success(`Destete vinculado: ${totalDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
+      cerrarVincularCiclo()
+    } catch (err) {
+      console.error('Error vinculando ciclo:', err)
+      toast.error('Error al vincular ciclo de cría')
+    } finally {
+      setVinculandoCiclo(false)
+    }
   }
 
   const toggleRodeo = (catId: string) => {
@@ -2469,6 +3624,14 @@ function SubTabOrdenesAplicacion() {
       if (catHacRes.data) setCategoriasHacienda(catHacRes.data)
       if (insRes.data) setInsumosVet(insRes.data)
       if (laboresRes.data) setLaboresDisponibles(laboresRes.data)
+
+      // Cargar órdenes ya vinculadas a ciclos de cría (destete)
+      const { data: ciclosVinculados } = await supabase.schema('productivo').from('ciclos_cria')
+        .select('orden_destete_id')
+        .not('orden_destete_id', 'is', null)
+      if (ciclosVinculados) {
+        setOrdenesYaVinculadas(new Set(ciclosVinculados.map(c => c.orden_destete_id).filter(Boolean)))
+      }
 
       // Calcular stock hacienda desde movimientos
       if (movHacRes.data) {
@@ -2717,13 +3880,326 @@ function SubTabOrdenesAplicacion() {
 
       toast.success('Orden confirmada como ejecutada')
       setMostrarModalConfirmar(false)
-      setOrdenConfirmando(null)
+
+      // Detectar si es Destete Fin → abrir modal asignación categorías
+      const esDestete = (ordenConfirmando.labores || []).some(l => l === 'Destete Fin')
+      if (esDestete) {
+        await abrirModalAsignacion(ordenConfirmando)
+      } else {
+        setOrdenConfirmando(null)
+      }
       cargarDatos()
     } catch (err: any) {
       console.error('Error ejecutando orden:', err)
       toast.error(err.message || 'Error al ejecutar orden')
     } finally {
       setGuardando(false)
+    }
+  }
+
+  // === ASIGNACIÓN CATEGORÍA POST-DESTETE — funciones ===
+
+  const abrirModalAsignacion = async (orden: OrdenAplicacion) => {
+    // Cargar terneros activos "al pie" (Ternera al Pie + Ternero al Pie)
+    const { data: ternerosAlPie } = await supabase.schema('productivo').from('terneros')
+      .select('id, caravana_interna, caravana_oficial, sexo, es_torito')
+      .eq('activo', true)
+      .in('categoria_id', categoriasAlPieIds())
+      .order('caravana_oficial', { ascending: true })
+
+    if (!ternerosAlPie || ternerosAlPie.length === 0) {
+      toast.info('No hay terneros "al pie" para asignar categoría')
+      setOrdenConfirmando(null)
+      return
+    }
+
+    // Cargar fechas de pesadas disponibles para estos terneros
+    const terneroIds = ternerosAlPie.map(t => t.id)
+    const { data: pesData } = await supabase.schema('productivo').from('pesadas_terneros')
+      .select('fecha')
+      .in('ternero_id', terneroIds)
+    if (pesData) {
+      const conteo = new Map<string, number>()
+      pesData.forEach(p => conteo.set(p.fecha, (conteo.get(p.fecha) || 0) + 1))
+      setPesadasDisponiblesAsignacion(
+        [...conteo.entries()].map(([fecha, total]) => ({ fecha, total })).sort((a, b) => b.fecha.localeCompare(a.fecha))
+      )
+    } else {
+      setPesadasDisponiblesAsignacion([])
+    }
+    setPesadaSeleccionadaAsignacion('')
+    setPesadaAsignacionSummary(null)
+    setPesoIngresoRecria('')
+
+    // Proponer categoría por sexo/es_torito
+    const asignaciones: TerneroAsignar[] = ternerosAlPie.map(t => ({
+      id: t.id,
+      caravana_interna: t.caravana_interna,
+      caravana_oficial: t.caravana_oficial,
+      sexo: t.sexo,
+      es_torito: t.es_torito || false,
+      categoria_propuesta: categoriaPropuesta(t.sexo, t.es_torito),
+      seleccionado: true,
+    }))
+
+    // Construir grupos resumidos
+    const hembras = asignaciones.filter(t => t.sexo === 'Hembra')
+    const machos = asignaciones.filter(t => t.sexo === 'Macho' && !t.es_torito)
+    const toritos = asignaciones.filter(t => t.es_torito)
+
+    const catTerneraRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
+    const catTerneroRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
+    const catTorito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
+
+    const gruposInit: GrupoAsignacion[] = [
+      {
+        key: 'hembras', label: 'Hembras', emoji: '♀', color: 'pink',
+        total: hembras.length, cantidad: hembras.length,
+        categoriaDestinoId: catTerneraRecria?.id || '',
+        categoriaDestinoNombre: catTerneraRecria?.nombre || 'Ternera Recría',
+        seleccionIndividual: false, individuosSeleccionados: hembras.map(t => t.id),
+      },
+      {
+        key: 'machos', label: 'Machos', emoji: '♂', color: 'sky',
+        total: machos.length, cantidad: machos.length,
+        categoriaDestinoId: catTerneroRecria?.id || '',
+        categoriaDestinoNombre: catTerneroRecria?.nombre || 'Ternero Recría',
+        seleccionIndividual: false, individuosSeleccionados: machos.map(t => t.id),
+      },
+      {
+        key: 'toritos', label: 'Toritos', emoji: '🐂', color: 'amber',
+        total: toritos.length, cantidad: toritos.length,
+        categoriaDestinoId: catTorito?.id || '',
+        categoriaDestinoNombre: catTorito?.nombre || 'Torito',
+        seleccionIndividual: false, individuosSeleccionados: toritos.map(t => t.id),
+      },
+    ].filter(g => g.total > 0)
+
+    setGruposAsignacion(gruposInit)
+    setTernerosParaAsignar(asignaciones)
+    setOrdenEjecutadaParaAsignacion(orden)
+    setFechaIngresoRecria(orden.fecha)
+    setMostrarModalAsignacion(true)
+    setOrdenConfirmando(null)
+  }
+
+  const cargarPesadaAsignacion = async (fechaPesada: string) => {
+    if (!fechaPesada || fechaPesada === 'none') {
+      setPesadaAsignacionSummary(null)
+      setPesoIngresoRecria('')
+      return
+    }
+    setCargandoPesadaAsignacion(true)
+    try {
+      const alPieIds = categoriasAlPieIds()
+      // Terneros al pie con pesada en esa fecha
+      const { data: conPesadaData } = await supabase.schema('productivo').from('terneros')
+        .select('id, pesadas_terneros!inner(peso_kg)')
+        .eq('activo', true)
+        .in('categoria_id', alPieIds)
+        .eq('pesadas_terneros.fecha', fechaPesada)
+
+      const totalTerneros = ternerosParaAsignar.length
+      const conPesada = conPesadaData ?? []
+      const sumaKg = conPesada.reduce((sum, t) => sum + ((t.pesadas_terneros as any)?.[0]?.peso_kg || 0), 0)
+      const promedioKg = conPesada.length > 0 ? sumaKg / conPesada.length : 0
+
+      setPesadaAsignacionSummary({
+        conPesada: conPesada.length,
+        sinPesada: totalTerneros - conPesada.length,
+        totalKg: sumaKg,
+        promedioKg
+      })
+      setPesoIngresoRecria(promedioKg > 0 ? promedioKg.toFixed(1).replace('.', ',') : '')
+    } catch (err) {
+      console.error('Error cargando pesada asignación:', err)
+      setPesadaAsignacionSummary(null)
+    } finally {
+      setCargandoPesadaAsignacion(false)
+    }
+  }
+
+  const categoriasAlPieIds = () => {
+    return categoriasHacienda
+      .filter(c => c.nombre.toLowerCase().includes('al pie'))
+      .map(c => c.id)
+  }
+
+  const categoriaPropuesta = (sexo: string, es_torito: boolean | null): string => {
+    if (es_torito) {
+      const torito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
+      return torito?.id || ''
+    }
+    if (sexo === 'Macho') {
+      const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
+      return rec?.id || ''
+    }
+    // Hembra: default Ternera Recria
+    const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
+    return rec?.id || ''
+  }
+
+  const categoriasDestinoRecria = () => {
+    // Solo mostrar categorías válidas como destino de recría
+    const nombresValidos = ['ternera recria', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
+    return categoriasHacienda.filter(c => nombresValidos.includes(c.nombre.toLowerCase()))
+  }
+
+  // Cambiar cantidad de un grupo — si baja del total, activar selección individual
+  const cambiarCantidadGrupo = (key: string, nuevaCantidad: number) => {
+    setGruposAsignacion(prev => prev.map(g => {
+      if (g.key !== key) return g
+      const cant = Math.max(0, Math.min(nuevaCantidad, g.total))
+      if (cant < g.total) {
+        // Necesita selección individual — deseleccionar todos para que elija
+        return { ...g, cantidad: cant, seleccionIndividual: true, individuosSeleccionados: [] }
+      }
+      // Cantidad = total → seleccionar todos automáticamente
+      const todos = ternerosParaAsignar.filter(t => {
+        if (key === 'hembras') return t.sexo === 'Hembra'
+        if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
+        if (key === 'toritos') return t.es_torito
+        return false
+      }).map(t => t.id)
+      return { ...g, cantidad: cant, seleccionIndividual: false, individuosSeleccionados: todos }
+    }))
+  }
+
+  // Toggle individual dentro de un grupo
+  const toggleIndividuoGrupo = (key: string, terneroId: string) => {
+    setGruposAsignacion(prev => prev.map(g => {
+      if (g.key !== key) return g
+      const sel = g.individuosSeleccionados.includes(terneroId)
+        ? g.individuosSeleccionados.filter(id => id !== terneroId)
+        : g.individuosSeleccionados.length < g.cantidad
+          ? [...g.individuosSeleccionados, terneroId]
+          : g.individuosSeleccionados // ya tiene el máximo
+      return { ...g, individuosSeleccionados: sel }
+    }))
+  }
+
+  // Cambiar categoría destino de un grupo
+  const cambiarCategoriaGrupo = (key: string, catId: string) => {
+    const cat = categoriasHacienda.find(c => c.id === catId)
+    setGruposAsignacion(prev => prev.map(g =>
+      g.key === key ? { ...g, categoriaDestinoId: catId, categoriaDestinoNombre: cat?.nombre || '' } : g
+    ))
+  }
+
+  // Obtener terneros de un grupo
+  const ternerosDelGrupo = (key: string) => {
+    return ternerosParaAsignar.filter(t => {
+      if (key === 'hembras') return t.sexo === 'Hembra'
+      if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
+      if (key === 'toritos') return t.es_torito
+      return false
+    })
+  }
+
+  const confirmarAsignacionCategorias = async () => {
+    // Validar que grupos con selección individual tengan la cantidad correcta
+    for (const g of gruposAsignacion) {
+      if (g.cantidad === 0) continue
+      if (g.seleccionIndividual && g.individuosSeleccionados.length !== g.cantidad) {
+        toast.error(`${g.label}: seleccione exactamente ${g.cantidad} individuo(s) (tiene ${g.individuosSeleccionados.length})`)
+        return
+      }
+    }
+
+    const totalAsignar = gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)
+    if (totalAsignar === 0) {
+      toast.error('No hay terneros para asignar')
+      return
+    }
+
+    if (!fechaIngresoRecria) {
+      toast.error('Ingrese la fecha de ingreso a recría')
+      return
+    }
+
+    setGuardandoAsignacion(true)
+    try {
+      // Construir lista de terneros seleccionados con su categoría destino
+      const seleccionados: { id: string, sexo: string, categoriaDestinoId: string }[] = []
+      for (const g of gruposAsignacion) {
+        if (g.cantidad === 0) continue
+        for (const tId of g.individuosSeleccionados) {
+          const t = ternerosParaAsignar.find(x => x.id === tId)
+          if (t) seleccionados.push({ id: t.id, sexo: t.sexo, categoriaDestinoId: g.categoriaDestinoId })
+        }
+      }
+
+      // Agrupar por categoría origen y destino para generar movimientos
+      const movGrupos = new Map<string, { origenId: string, destinoId: string, cantidad: number, origenNombre: string, destinoNombre: string }>()
+      for (const s of seleccionados) {
+        const catOrigenAlPie = s.sexo === 'Macho'
+          ? categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero al pie')
+          : categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera al pie')
+        if (!catOrigenAlPie) continue
+        const catDestino = categoriasHacienda.find(c => c.id === s.categoriaDestinoId)
+        if (!catDestino) continue
+
+        const key = `${catOrigenAlPie.id}→${s.categoriaDestinoId}`
+        const existing = movGrupos.get(key)
+        if (existing) {
+          existing.cantidad++
+        } else {
+          movGrupos.set(key, {
+            origenId: catOrigenAlPie.id,
+            destinoId: s.categoriaDestinoId,
+            cantidad: 1,
+            origenNombre: catOrigenAlPie.nombre,
+            destinoNombre: catDestino.nombre
+          })
+        }
+      }
+
+      // Insertar movimientos cambio_categoria por cada grupo
+      for (const [, g] of movGrupos) {
+        const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+          fecha: fechaIngresoRecria,
+          categoria_id: g.origenId,
+          tipo: 'cambio_categoria',
+          cantidad: -g.cantidad,
+          observaciones: `Destete → ${g.destinoNombre} (${g.cantidad} cab.)`
+        })
+        if (e1) throw e1
+
+        const { error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
+          fecha: fechaIngresoRecria,
+          categoria_id: g.destinoId,
+          tipo: 'cambio_categoria',
+          cantidad: g.cantidad,
+          observaciones: `Destete ← ${g.origenNombre} (${g.cantidad} cab.)`
+        })
+        if (e2) throw e2
+      }
+
+      // Actualizar terneros: categoria_id + fecha_ingreso_recria + peso_ingreso_recria
+      const pesoRecria = pesoIngresoRecria ? parseFloat(String(pesoIngresoRecria).replace(/\./g, '').replace(',', '.')) || null : null
+      for (const s of seleccionados) {
+        const { error } = await supabase.schema('productivo').from('terneros')
+          .update({
+            categoria_id: s.categoriaDestinoId,
+            fecha_ingreso_recria: fechaIngresoRecria,
+            peso_ingreso_recria: pesoRecria
+          })
+          .eq('id', s.id)
+        if (error) throw error
+      }
+
+      const omitidos = ternerosParaAsignar.length - seleccionados.length
+      toast.success(`${seleccionados.length} terneros asignados a recría${omitidos > 0 ? ` (${omitidos} omitidos)` : ''}`)
+      setMostrarModalAsignacion(false)
+      setTernerosParaAsignar([])
+      setGruposAsignacion([])
+      setOrdenEjecutadaParaAsignacion(null)
+      cargarDatos()
+    } catch (err: any) {
+      console.error('Error asignando categorías:', err)
+      toast.error(err.message || 'Error al asignar categorías')
+    } finally {
+      setGuardandoAsignacion(false)
     }
   }
 
@@ -2932,17 +4408,29 @@ function SubTabOrdenesAplicacion() {
               ])
             }
 
-            // Registrar caravanas en detalle_descarte
+            // Registrar caravanas vacías en terneros como CUT/Descarte
             if (caravanasVacias.trim()) {
-              const caravanas = caravanasVacias.split('\n').map(c => c.trim()).filter(Boolean)
-              if (caravanas.length > 0) {
-                await supabase.schema('productivo').from('detalle_descarte').insert(
-                  caravanas.map(caravana => ({
-                    ciclo_id: cicloSeleccionado,
-                    caravana,
-                    categoria_origen: ciclo?.rodeo || '-'
-                  }))
-                )
+              const lineas = caravanasVacias.split('\n').map(c => c.trim()).filter(Boolean)
+              if (lineas.length > 0) {
+                const catCUTid = categorias.find(c => c.nombre.toLowerCase().includes('cut'))?.id
+                if (catCUTid) {
+                  const cicloInfo = ciclo ? `Vacía Tacto ${ciclo.anio_servicio}` : 'Vacía Tacto'
+                  await supabase.schema('productivo').from('terneros').insert(
+                    lineas.map(texto => {
+                      const partes = texto.split(/\s*-\s*/)
+                      return {
+                        caravana_oficial: partes[0]?.trim() || texto,
+                        pelo: partes[1]?.trim() || null,
+                        observaciones: partes.length > 2 ? partes.slice(2).join(' - ').trim() : cicloInfo,
+                        sexo: 'Hembra',
+                        categoria_id: catCUTid,
+                        categoria_previa: ciclo?.rodeo || 'Vaca',
+                        activo: true,
+                        es_torito: false,
+                      }
+                    })
+                  )
+                }
               }
             }
           }
@@ -2960,18 +4448,7 @@ function SubTabOrdenesAplicacion() {
           toast.success(`Paricion registrada: ${ternerosNacidos} terneros nacidos`)
         }
 
-        if (laborEspecial === 'destete' && ciclosDestetadosSeleccionados.length > 0) {
-          for (const cicloId of ciclosDestetadosSeleccionados) {
-            await supabase.schema('productivo').from('ciclos_cria')
-              .update({
-                fecha_destete: fecha,
-                terneros_destetados: parseInt(ternerosDestetados) || 0,
-                orden_destete_id: ordenId
-              })
-              .eq('id', cicloId)
-          }
-          toast.success(`Destete registrado: ${ternerosDestetados} terneros en ${ciclosDestetadosSeleccionados.length} ciclo(s)`)
-        }
+        // Destete: vinculación a ciclos de cría se hace a posterior desde botón dedicado
       }
 
       toast.success(ordenEditandoId ? 'Orden actualizada' : 'Orden de aplicacion creada')
@@ -3104,6 +4581,27 @@ function SubTabOrdenesAplicacion() {
                           <CheckCircle2 className="h-3.5 w-3.5" />
                         </Button>
                       </>
+                    )}
+                    {esDesteteFin(o) && !ordenesYaVinculadas.has(o.id) && (
+                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600 gap-1"
+                        title="Vincular Ciclo de Cría"
+                        onClick={() => abrirVincularCiclo(o)}>
+                        <Link2 className="h-3.5 w-3.5" />
+                        <span className="text-[10px]">Ciclo</span>
+                      </Button>
+                    )}
+                    {esDesteteFin(o) && ordenesYaVinculadas.has(o.id) && (
+                      <Badge variant="outline" className="text-[10px] text-green-600 border-green-300 px-1.5">
+                        <Link2 className="h-3 w-3 mr-0.5" /> Vinculado
+                      </Badge>
+                    )}
+                    {esDesteteFin(o) && (
+                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-blue-600 gap-1"
+                        title="Asignar categorías (Destete → Recría)"
+                        onClick={() => abrirModalAsignacion(o)}>
+                        <ChevronsUpDown className="h-3.5 w-3.5" />
+                        <span className="text-[10px]">Categ.</span>
+                      </Button>
                     )}
                     {o.estado === 'eliminada' ? (
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
@@ -3343,52 +4841,10 @@ function SubTabOrdenesAplicacion() {
               )}
 
               {laborEspecial === 'destete' && (
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-sm">
-                      Campaña / Ciclo{' '}
-                      <span className="text-xs font-normal text-muted-foreground">(puede seleccionar varios)</span>
-                    </Label>
-                    {ciclosAbiertos.length === 0 ? (
-                      <p className="text-xs text-amber-600 mt-1">No hay ciclos disponibles (requieren tacto registrado sin destete)</p>
-                    ) : (
-                      <div className="space-y-1 mt-1 border rounded p-2 bg-white">
-                        {ciclosAbiertos.map(c => (
-                          <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5">
-                            <input
-                              type="checkbox"
-                              className="rounded"
-                              checked={ciclosDestetadosSeleccionados.includes(c.id)}
-                              onChange={e => {
-                                if (e.target.checked) {
-                                  setCiclosDestetadosSeleccionados(prev => [...prev, c.id])
-                                } else {
-                                  setCiclosDestetadosSeleccionados(prev => prev.filter(id => id !== c.id))
-                                }
-                              }}
-                            />
-                            <span>{c.anio_servicio} — {c.rodeo}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <Label className="text-sm flex items-center gap-2">
-                      Terneros Destetados (total)
-                      {totalCabezas > 0 && String(totalCabezas) !== ternerosDestetados && (
-                        <button
-                          type="button"
-                          onClick={() => setTernerosDestetados(String(totalCabezas))}
-                          className="text-xs text-blue-500 underline font-normal"
-                        >
-                          usar total cabezas ({totalCabezas})
-                        </button>
-                      )}
-                    </Label>
-                    <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
-                      onChange={e => setTernerosDestetados(e.target.value)} />
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                  <p className="text-sm text-blue-800">
+                    La vinculacion a Ciclo de Cria y Pesada se realiza despues de confirmar la orden, desde el boton dedicado en la tarjeta de la orden ejecutada.
+                  </p>
                 </div>
               )}
 
@@ -3640,6 +5096,358 @@ function SubTabOrdenesAplicacion() {
             <Button variant="destructive" onClick={eliminarOrden} disabled={guardando}>
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Eliminar Orden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Vincular Ciclo de Cría */}
+      <Dialog open={!!ordenVinculandoCiclo} onOpenChange={(open) => { if (!open) cerrarVincularCiclo() }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vincular Ciclo de Cría</DialogTitle>
+            <DialogDescription>
+              {ordenVinculandoCiclo && (
+                <>Destete Fin del {formatoFecha(ordenVinculandoCiclo.fecha)} — {formatoNumero(ordenVinculandoCiclo.cantidad_cabezas)} cabezas</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Selector de ciclos (multi) */}
+            <div>
+              <Label className="text-sm">
+                Campaña / Ciclo a cerrar{' '}
+                <span className="text-xs font-normal text-muted-foreground">(puede seleccionar varios)</span>
+              </Label>
+              {ciclosAbiertos.length === 0 ? (
+                <p className="text-xs text-amber-600 mt-1">No hay ciclos disponibles (requieren tacto registrado sin destete)</p>
+              ) : (
+                <div className="space-y-1 mt-1 border rounded p-2 bg-white">
+                  {ciclosAbiertos.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer py-0.5">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={ciclosDestetadosSeleccionados.includes(c.id)}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setCiclosDestetadosSeleccionados(prev => [...prev, c.id])
+                          } else {
+                            setCiclosDestetadosSeleccionados(prev => prev.filter(id => id !== c.id))
+                          }
+                        }}
+                      />
+                      <span>{c.anio_servicio} — {c.rodeo}</span>
+                      {c.cabezas_servicio && <span className="text-xs text-muted-foreground">({c.cabezas_servicio} cab.)</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Terneros destetados */}
+            <div className="space-y-2">
+              {ciclosDestetadosSeleccionados.length > 1 && (
+                <div className="flex gap-2 text-xs">
+                  <button type="button"
+                    className={`px-2 py-1 rounded border ${!modoDesglose ? 'bg-blue-100 border-blue-300 font-medium' : 'border-gray-200'}`}
+                    onClick={() => setModoDesglose(false)}>
+                    Total (prorrateo)
+                  </button>
+                  <button type="button"
+                    className={`px-2 py-1 rounded border ${modoDesglose ? 'bg-blue-100 border-blue-300 font-medium' : 'border-gray-200'}`}
+                    onClick={() => setModoDesglose(true)}>
+                    Por ciclo
+                  </button>
+                </div>
+              )}
+
+              {(!modoDesglose || ciclosDestetadosSeleccionados.length <= 1) ? (
+                <div>
+                  <Label className="text-sm flex items-center gap-2">
+                    Terneros Destetados (total)
+                    {ordenVinculandoCiclo && ordenVinculandoCiclo.cantidad_cabezas > 0 && String(ordenVinculandoCiclo.cantidad_cabezas) !== ternerosDestetados && (
+                      <button type="button"
+                        onClick={() => setTernerosDestetados(String(ordenVinculandoCiclo.cantidad_cabezas))}
+                        className="text-xs text-blue-500 underline font-normal">
+                        usar cabezas orden ({ordenVinculandoCiclo.cantidad_cabezas})
+                      </button>
+                    )}
+                  </Label>
+                  <Input type="number" className="h-8 text-sm" value={ternerosDestetados}
+                    onChange={e => setTernerosDestetados(e.target.value)} />
+                  {/* Preview prorrateo cuando hay >1 ciclo y total ingresado */}
+                  {ciclosDestetadosSeleccionados.length > 1 && parseInt(ternerosDestetados) > 0 && (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded p-2 space-y-1">
+                      <p className="text-xs font-medium text-amber-800">Prorrateo por preñadas:</p>
+                      {(() => {
+                        const prorrateo = calcularProrrateo(parseInt(ternerosDestetados))
+                        return ciclosDestetadosSeleccionados.map(cicloId => {
+                          const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+                          return (
+                            <div key={cicloId} className="flex justify-between text-xs">
+                              <span>{ciclo?.rodeo} ({ciclo?.cabezas_prenadas || 0}P)</span>
+                              <span className="font-semibold">{prorrateo[cicloId]} terneros</span>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="text-sm">Terneros Destetados por Ciclo</Label>
+                  {ciclosDestetadosSeleccionados.map(cicloId => {
+                    const ciclo = ciclosAbiertos.find(c => c.id === cicloId)
+                    return (
+                      <div key={cicloId} className="flex items-center gap-2">
+                        <span className="text-sm min-w-[120px]">{ciclo?.rodeo} ({ciclo?.cabezas_prenadas || 0}P):</span>
+                        <Input type="number" className="h-8 text-sm w-24"
+                          value={destetadosPorCiclo[cicloId] || ''}
+                          onChange={e => setDestetadosPorCiclo(prev => ({ ...prev, [cicloId]: e.target.value }))} />
+                      </div>
+                    )
+                  })}
+                  <p className="text-xs text-muted-foreground">
+                    Total: {ciclosDestetadosSeleccionados.reduce((s, id) => s + (parseInt(destetadosPorCiclo[id]) || 0), 0)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Vincular pesada (opcional) */}
+            <div className="border border-blue-200 bg-blue-50/50 rounded-md p-3 space-y-2">
+              <Label className="text-sm text-blue-800 font-medium">
+                Vincular Pesada al Destete <span className="text-xs font-normal text-muted-foreground">(opcional — deriva kg y machos/hembras)</span>
+              </Label>
+              {pesadasDisponibles.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No hay pesadas registradas en el sistema.</p>
+              ) : (
+                <>
+                  <Select value={pesadaSeleccionada} onValueChange={v => {
+                    setPesadaSeleccionada(v)
+                    if (v && v !== 'none') cargarPreviewPesada(v)
+                    else setPreviewPesada(null)
+                  }}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sin vincular pesada" /></SelectTrigger>
+                    <SelectContent position="popper" className="z-[9999]">
+                      <SelectItem value="none">Sin vincular pesada</SelectItem>
+                      {pesadasDisponibles.map(p => (
+                        <SelectItem key={p.fecha} value={p.fecha}>
+                          {p.fecha.split('-').reverse().join('/')} — {p.total} pesadas
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {cargandoPreview && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Calculando...
+                    </div>
+                  )}
+
+                  {previewPesada && !cargandoPreview && (
+                    <div className="bg-white border border-blue-200 rounded p-3 space-y-2">
+                      <p className="text-xs font-semibold text-blue-800">Preview datos que se guardaran en el ciclo:</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <span className="text-gray-500">Machos:</span>
+                        <span className="font-medium text-sky-700">♂ {previewPesada.machos}</span>
+                        <span className="text-gray-500">Hembras:</span>
+                        <span className="font-medium text-pink-700">♀ {previewPesada.hembras}</span>
+                        <span className="text-gray-500">Con pesada:</span>
+                        <span className="font-medium">{previewPesada.conPesada} / {previewPesada.totalCabezas}</span>
+                        {previewPesada.sinPesada > 0 && (
+                          <>
+                            <span className="text-gray-500">Sin pesada:</span>
+                            <span className="font-medium text-amber-600">{previewPesada.sinPesada} (asumen promedio)</span>
+                          </>
+                        )}
+                        <span className="text-gray-500">Suma kg pesados:</span>
+                        <span className="font-medium">{previewPesada.sumaKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
+                        <span className="text-gray-500">Promedio kg:</span>
+                        <span className="font-semibold">{previewPesada.promedioKg.toFixed(1).replace('.', ',')} kg</span>
+                        <span className="text-gray-500">Total kg extrapolado:</span>
+                        <span className="font-bold text-green-700">{previewPesada.totalKgExtrapolado.toLocaleString('es-AR', { maximumFractionDigits: 0 })} kg</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cerrarVincularCiclo}>Cancelar</Button>
+            <Button onClick={confirmarVincularCiclo} disabled={vinculandoCiclo || ciclosDestetadosSeleccionados.length === 0}>
+              {vinculandoCiclo && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar Vinculación
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Asignación Categoría Post-Destete */}
+      <Dialog open={mostrarModalAsignacion} onOpenChange={(open) => {
+        if (!open) {
+          setMostrarModalAsignacion(false)
+          setTernerosParaAsignar([])
+          setGruposAsignacion([])
+          setOrdenEjecutadaParaAsignacion(null)
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Asignación de Categoría — Destete Fin</DialogTitle>
+            <DialogDescription>
+              {ordenEjecutadaParaAsignacion && (
+                <>Orden del {formatoFecha(ordenEjecutadaParaAsignacion.fecha)} — {ternerosParaAsignar.length} terneros al pie disponibles</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Datos de ingreso a recría */}
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 space-y-3">
+              <p className="text-sm font-semibold text-blue-800">Datos de ingreso a Recría</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-xs">Fecha ingreso recría *</Label>
+                  <Input type="date" className="h-8 text-sm" value={fechaIngresoRecria}
+                    onChange={e => setFechaIngresoRecria(e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-xs">Pesada de referencia</Label>
+                  {pesadasDisponiblesAsignacion.length === 0 ? (
+                    <p className="text-xs text-muted-foreground pt-1">Sin pesadas registradas</p>
+                  ) : (
+                    <Select value={pesadaSeleccionadaAsignacion} onValueChange={v => {
+                      setPesadaSeleccionadaAsignacion(v)
+                      cargarPesadaAsignacion(v)
+                    }}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Sin pesada" /></SelectTrigger>
+                      <SelectContent position="popper" className="z-[9999]">
+                        <SelectItem value="none">Sin pesada</SelectItem>
+                        {pesadasDisponiblesAsignacion.map(p => (
+                          <SelectItem key={p.fecha} value={p.fecha}>
+                            {p.fecha.split('-').reverse().join('/')} — {p.total} pesadas
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs">Peso promedio ingreso (kg)</Label>
+                  <Input type="text" placeholder="0,00" className="h-8 text-sm" value={pesoIngresoRecria}
+                    onChange={e => setPesoIngresoRecria(e.target.value)} />
+                </div>
+              </div>
+              {cargandoPesadaAsignacion && (
+                <div className="flex items-center gap-2 text-xs text-blue-600">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Calculando...
+                </div>
+              )}
+              {pesadaAsignacionSummary && !cargandoPesadaAsignacion && (
+                <div className="bg-white border border-blue-100 rounded p-2 text-xs space-y-1">
+                  <p className="font-medium text-blue-700">Datos de la pesada seleccionada:</p>
+                  <div className="flex gap-4 text-gray-600">
+                    <span>Con pesada: <strong className="text-gray-800">{pesadaAsignacionSummary.conPesada}</strong></span>
+                    {pesadaAsignacionSummary.sinPesada > 0 && (
+                      <span className="text-amber-600">Sin pesada: <strong>{pesadaAsignacionSummary.sinPesada}</strong></span>
+                    )}
+                    <span>Kg pesados: <strong className="text-green-700">{pesadaAsignacionSummary.totalKg.toLocaleString('es-AR', { maximumFractionDigits: 0 })}</strong></span>
+                    {pesadaAsignacionSummary.sinPesada > 0 && pesadaAsignacionSummary.promedioKg > 0 && (
+                      <span>Kg est. total: <strong className="text-green-700">
+                        {Math.round(pesadaAsignacionSummary.promedioKg * ternerosParaAsignar.length).toLocaleString('es-AR')}
+                      </strong> <span className="text-gray-400">(prom × {ternerosParaAsignar.length})</span></span>
+                    )}
+                    <span>Promedio: <strong className="text-green-700">{pesadaAsignacionSummary.promedioKg.toFixed(1).replace('.', ',')} kg</strong></span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Resumen por grupo */}
+            <div className="space-y-3">
+              {gruposAsignacion.map(g => {
+                const bgColor = g.color === 'pink' ? 'bg-pink-50 border-pink-200' : g.color === 'sky' ? 'bg-sky-50 border-sky-200' : 'bg-amber-50 border-amber-200'
+                const textColor = g.color === 'pink' ? 'text-pink-800' : g.color === 'sky' ? 'text-sky-800' : 'text-amber-800'
+                return (
+                  <div key={g.key} className={`border rounded-lg p-3 space-y-2 ${bgColor}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-lg font-bold ${textColor}`}>{g.emoji} {g.total} {g.label}</span>
+                      <span className="text-xs text-gray-500">→</span>
+                      <Select value={g.categoriaDestinoId} onValueChange={v => cambiarCategoriaGrupo(g.key, v)}>
+                        <SelectTrigger className="h-7 text-xs w-[200px] bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent position="popper" className="z-[9999]">
+                          {categoriasDestinoRecria().map(c => (
+                            <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-1 ml-auto">
+                        <Label className="text-xs text-gray-600">Cantidad:</Label>
+                        <Input type="number" min={0} max={g.total}
+                          className="h-7 w-[70px] text-sm text-center bg-white"
+                          value={g.cantidad}
+                          onChange={e => cambiarCantidadGrupo(g.key, parseInt(e.target.value) || 0)}
+                        />
+                        <span className="text-xs text-gray-500">/ {g.total}</span>
+                      </div>
+                    </div>
+
+                    {/* Selector individual — solo si cantidad < total */}
+                    {g.seleccionIndividual && g.cantidad > 0 && (
+                      <div className="bg-white border rounded p-2 space-y-1">
+                        <p className="text-xs font-medium text-gray-700">
+                          Seleccione {g.cantidad} de {g.total} — ({g.individuosSeleccionados.length} seleccionados)
+                        </p>
+                        <div className="max-h-[150px] overflow-y-auto space-y-1">
+                          {ternerosDelGrupo(g.key).map(t => {
+                            const sel = g.individuosSeleccionados.includes(t.id)
+                            const disabled = !sel && g.individuosSeleccionados.length >= g.cantidad
+                            return (
+                              <label key={t.id} className={`flex items-center gap-2 text-xs px-1 py-0.5 rounded hover:bg-gray-50 cursor-pointer ${disabled ? 'opacity-40' : ''}`}>
+                                <Checkbox checked={sel} disabled={disabled}
+                                  onCheckedChange={() => toggleIndividuoGrupo(g.key, t.id)} />
+                                <span className="font-mono">{t.caravana_oficial || t.caravana_interna || '—'}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Total */}
+            <div className="bg-green-50 border border-green-200 rounded p-2 text-sm font-medium text-green-800 text-center">
+              Total a asignar: {gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)} / {ternerosParaAsignar.length}
+              {gruposAsignacion.reduce((s, g) => s + g.cantidad, 0) < ternerosParaAsignar.length && (
+                <span className="text-gray-500 font-normal ml-2">
+                  ({ternerosParaAsignar.length - gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)} quedan al pie)
+                </span>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setMostrarModalAsignacion(false)
+              setTernerosParaAsignar([])
+              setGruposAsignacion([])
+              setOrdenEjecutadaParaAsignacion(null)
+            }}>
+              Omitir (asignar después)
+            </Button>
+            <Button onClick={confirmarAsignacionCategorias} disabled={guardandoAsignacion || gruposAsignacion.reduce((s, g) => s + g.cantidad, 0) === 0}
+              className="bg-green-600 hover:bg-green-700">
+              {guardandoAsignacion && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Asignar Categorías ({gruposAsignacion.reduce((s, g) => s + g.cantidad, 0)})
             </Button>
           </DialogFooter>
         </DialogContent>

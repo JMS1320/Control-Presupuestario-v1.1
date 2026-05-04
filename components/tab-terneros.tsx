@@ -31,8 +31,58 @@ interface Ternero {
   es_torito: boolean
   observaciones: string | null
   activo: boolean
+  fecha_baja: string | null
+  motivo_baja: string | null
+  categoria_id: string | null
+  fecha_ingreso_recria: string | null
+  peso_ingreso_recria: number | null
+  anio_nacimiento: number | null
+  fecha_nacimiento: string | null
+  hijo_de: string | null
+  pelo_madre: string | null
+  padre: string | null
+  madre: string | null
+  peso_nacimiento: number | null
+  categoria_previa: string | null
   created_at: string
   pesadas_terneros: Pesada[]
+  categorias_hacienda?: { nombre: string } | null
+}
+
+interface CategoriaHacienda {
+  id: string
+  nombre: string
+}
+
+type SubTab = string
+
+interface ModoConfig {
+  tabs: Record<string, { label: string; categorias: string[] }>
+  allCats: string[]
+  showExtraTorito: string  // qué sub-tab muestra columnas extra toritos
+}
+
+const MODO_RECRIA: ModoConfig = {
+  tabs: {
+    todos: { label: 'Todos', categorias: [] },
+    recria: { label: 'Recría', categorias: ['ternera recria', 'ternero recria'] },
+    novillo_vaq: { label: 'Novillo / Vaquillona', categorias: ['novillo', 'vaquillona engorde', 'vaquillona de reposicion'] },
+    torito: { label: 'Torito', categorias: ['torito'] },
+  },
+  allCats: ['ternera recria', 'ternero recria', 'novillo', 'vaquillona engorde', 'vaquillona de reposicion', 'torito'],
+  showExtraTorito: 'torito',
+}
+
+const MODO_CRIA: ModoConfig = {
+  tabs: {
+    todos: { label: 'Todos', categorias: [] },
+    al_pie: { label: 'Al Pie', categorias: ['ternera al pie', 'ternero al pie'] },
+    vacas: { label: 'Vacas', categorias: ['vaca', 'vaquillona preñada'] },
+    toros: { label: 'Toros', categorias: ['toro'] },
+    cut: { label: 'CUT / Descarte', categorias: ['vaca cut/descarte'] },
+  },
+  allCats: ['ternera al pie', 'ternero al pie', 'vaca', 'vaquillona preñada', 'toro', 'vaca cut/descarte'],
+  showExtraTorito: 'toros',
 }
 
 interface PesadaSinVincular {
@@ -167,7 +217,9 @@ function getGananciaPuntaAPunta(pesadas: Pesada[]): number | null {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function TabTerneros() {
+export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = {}) {
+  const config = modo === 'cria' ? MODO_CRIA : MODO_RECRIA
+  const tabKeys = Object.keys(config.tabs)
   // Datos
   const [terneros, setTerneros] = useState<Ternero[]>([])
   const [pesadasSinVincular, setPesadasSinVincular] = useState<PesadaSinVincular[]>([])
@@ -199,6 +251,105 @@ export function TabTerneros() {
   const [modalDescarga, setModalDescarga] = useState(false)
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState<Set<string>>(new Set())
 
+  // Bajas sin asignar (mortandad en hacienda sin caravana vinculada)
+  const [bajasSinAsignar, setBajasSinAsignar] = useState(0)
+
+  // Stock por categoría (de movimientos_hacienda) para filas fantasma
+  const [stockPorCategoria, setStockPorCategoria] = useState<Record<string, number>>({})
+  const [categoriasMap, setCategoriasMap] = useState<Record<string, CategoriaHacienda>>({}) // id→{id,nombre}
+  const [creandoFantasma, setCreandoFantasma] = useState(false)
+
+  // Sub-tab recría
+  const [subTab, setSubTab] = useState<SubTabRecria>('todos')
+
+  // Edición ternero
+  const [modoEdicion, setModoEdicion] = useState(false)
+  const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
+  const [editForm, setEditForm] = useState({
+    caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
+    es_torito: false, observaciones: '', categoria_previa: '',
+    anio_nacimiento: '', fecha_nacimiento: '', hijo_de: '', pelo_madre: '',
+    padre: '', madre: '', peso_nacimiento: '',
+  })
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
+
+  // Crear registro mínimo para fila fantasma y abrir edición
+  const identificarFantasma = async (categoriaId: string, categoriaNombre?: string) => {
+    setCreandoFantasma(true)
+    try {
+      // Pre-llenar datos según la categoría
+      const esCUT = categoriaNombre?.toLowerCase().includes('cut') || categoriaNombre?.toLowerCase().includes('descarte')
+      const insertData: Record<string, any> = { categoria_id: categoriaId, activo: true }
+      if (esCUT) {
+        insertData.sexo = 'Hembra'
+        insertData.es_torito = false
+      }
+      const { data, error } = await supabase.schema('productivo').from('terneros')
+        .insert(insertData)
+        .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
+        .single()
+      if (error) throw error
+      toast.success('Registro creado — completá los datos')
+      await cargar()
+      if (data) abrirEdicion(data as Ternero)
+    } catch (err: any) {
+      toast.error('Error al crear registro: ' + err.message)
+    } finally {
+      setCreandoFantasma(false)
+    }
+  }
+
+  const abrirEdicion = (t: Ternero) => {
+    setTerneroEditando(t)
+    setEditForm({
+      caravana_oficial: t.caravana_oficial ?? '',
+      caravana_interna: t.caravana_interna ?? '',
+      sexo: t.sexo ?? '',
+      pelo: t.pelo ?? '',
+      es_torito: t.es_torito ?? false,
+      observaciones: t.observaciones ?? '',
+      categoria_previa: t.categoria_previa ?? '',
+      anio_nacimiento: t.anio_nacimiento?.toString() ?? '',
+      fecha_nacimiento: t.fecha_nacimiento ?? '',
+      hijo_de: t.hijo_de ?? '',
+      pelo_madre: t.pelo_madre ?? '',
+      padre: t.padre ?? '',
+      madre: t.madre ?? '',
+      peso_nacimiento: t.peso_nacimiento?.toString() ?? '',
+    })
+  }
+
+  const guardarEdicion = async () => {
+    if (!terneroEditando) return
+    setGuardandoEdit(true)
+    const { error } = await supabase.schema('productivo').from('terneros')
+      .update({
+        caravana_oficial: editForm.caravana_oficial || null,
+        caravana_interna: editForm.caravana_interna || null,
+        sexo: editForm.sexo || null,
+        pelo: editForm.pelo || null,
+        es_torito: editForm.es_torito,
+        observaciones: editForm.observaciones || null,
+        categoria_previa: editForm.categoria_previa || null,
+        anio_nacimiento: editForm.anio_nacimiento ? parseInt(editForm.anio_nacimiento) : null,
+        fecha_nacimiento: editForm.fecha_nacimiento || null,
+        hijo_de: editForm.hijo_de || null,
+        pelo_madre: editForm.pelo_madre || null,
+        padre: editForm.padre || null,
+        madre: editForm.madre || null,
+        peso_nacimiento: editForm.peso_nacimiento ? parseFloat(editForm.peso_nacimiento.replace(/\./g, '').replace(',', '.')) : null,
+      })
+      .eq('id', terneroEditando.id)
+    setGuardandoEdit(false)
+    if (error) {
+      toast.error('Error al guardar: ' + error.message)
+    } else {
+      toast.success('Ternero actualizado')
+      setTerneroEditando(null)
+      cargar()
+    }
+  }
+
   // ─── Carga de datos ──────────────────────────────────────────────────────
 
   const cargar = async () => {
@@ -208,8 +359,7 @@ export function TabTerneros() {
         supabase
           .schema('productivo')
           .from('terneros')
-          .select('*, pesadas_terneros(id, fecha, peso_kg)')
-          .eq('activo', true)
+          .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
           .order('caravana_oficial', { ascending: true }),
         supabase
           .schema('productivo')
@@ -220,8 +370,44 @@ export function TabTerneros() {
       ])
 
       if (resTerneros.error) throw resTerneros.error
-      setTerneros(resTerneros.data ?? [])
+      const todosLosTerneros = resTerneros.data ?? []
+      setTerneros(todosLosTerneros)
       setPesadasSinVincular(resSinVincular.data ?? [])
+
+      // Calcular stock por categoría + bajas sin asignar
+      try {
+        const { data: catData } = await supabase.schema('productivo').from('categorias_hacienda')
+          .select('id, nombre').eq('activo', true)
+        const allCats = catData ?? []
+        const catMap: Record<string, CategoriaHacienda> = {}
+        allCats.forEach(c => { catMap[c.id] = c })
+        setCategoriasMap(catMap)
+
+        // Todas las categorías relevantes para este modo
+        const catIds = allCats.filter(c => config.allCats.includes(c.nombre.toLowerCase())).map(c => c.id)
+
+        if (catIds.length > 0) {
+          // Stock de hacienda por categoría (suma de todos los movimientos)
+          const { data: movData } = await supabase.schema('productivo').from('movimientos_hacienda')
+            .select('categoria_id, cantidad').in('categoria_id', catIds)
+          const stockMap: Record<string, number> = {}
+          ;(movData ?? []).forEach(m => {
+            stockMap[m.categoria_id] = (stockMap[m.categoria_id] || 0) + m.cantidad
+          })
+          setStockPorCategoria(stockMap)
+
+          // Bajas sin asignar (mortandad)
+          const CATS_TERNERO = ['ternera al pie', 'ternera recria', 'ternero al pie', 'ternero recria', 'torito', 'vaquillona de reposicion', 'vaquillona engorde']
+          const catTernerosIds = allCats.filter(c => CATS_TERNERO.includes(c.nombre.toLowerCase())).map(c => c.id)
+          if (catTernerosIds.length > 0) {
+            const { data: mortData } = await supabase.schema('productivo').from('movimientos_hacienda')
+              .select('cantidad').eq('tipo', 'mortandad').in('categoria_id', catTernerosIds)
+            const totalMortandadHacienda = (mortData ?? []).reduce((sum, m) => sum + m.cantidad, 0)
+            const totalBajasEnTerneros = todosLosTerneros.filter(t => !t.activo).length
+            setBajasSinAsignar(Math.max(0, totalMortandadHacienda - totalBajasEnTerneros))
+          }
+        }
+      } catch { /* no bloquear si falla consulta auxiliar */ }
     } catch (err: any) {
       toast.error('Error cargando terneros: ' + err.message)
     } finally {
@@ -246,6 +432,9 @@ export function TabTerneros() {
         'Fecha Destete': t.fecha_destete ? formatFecha(t.fecha_destete) : '',
         'Observaciones': t.observaciones ?? '',
         'Caravana Duplicada': idsConDuplicado.has(t.id) ? 'Sí' : '',
+        'Estado': t.activo ? 'Activo' : 'Baja',
+        'Fecha Baja': t.fecha_baja ? formatFecha(t.fecha_baja) : '',
+        'Motivo Baja': t.motivo_baja ?? '',
       }
       for (const fecha of fechasOrdenadas) {
         const pesada = t.pesadas_terneros.find(p => p.fecha === fecha)
@@ -366,16 +555,37 @@ export function TabTerneros() {
 
   // ─── Computados ──────────────────────────────────────────────────────────
 
-  const machos = terneros.filter(t => t.sexo === 'Macho')
-  const hembras = terneros.filter(t => t.sexo === 'Hembra')
-  const toritos = terneros.filter(t => t.es_torito)
-  const conPesadas = terneros.filter(t => t.pesadas_terneros.length > 0)
+  // Filtro por sub-tab
+  const filtrosCat = config.tabs[subTab]?.categorias || []
+  const ternerosFiltrados = filtrosCat.length === 0
+    ? terneros.filter(t => {
+        const catNombre = t.categorias_hacienda?.nombre?.toLowerCase() || ''
+        return config.allCats.includes(catNombre)
+      })
+    : terneros.filter(t => {
+        const catNombre = t.categorias_hacienda?.nombre?.toLowerCase() || ''
+        return filtrosCat.includes(catNombre)
+      })
+
+  const ternerosActivos = ternerosFiltrados.filter(t => t.activo)
+  const ternerosInactivos = ternerosFiltrados.filter(t => !t.activo)
+  const machos = ternerosActivos.filter(t => t.sexo === 'Macho')
+  const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
+  const toritos = ternerosActivos.filter(t => t.es_torito)
+  const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
+
+  // Conteo por sub-tab para badges
+  const conteoSubTab = (tab: string): number => {
+    const cats = config.tabs[tab]?.categorias || []
+    if (cats.length === 0) return terneros.filter(t => t.activo && config.allCats.includes(t.categorias_hacienda?.nombre?.toLowerCase() || '')).length
+    return terneros.filter(t => t.activo && cats.includes(t.categorias_hacienda?.nombre?.toLowerCase() || '')).length
+  }
 
   // Detección de caravanas duplicadas en BD
   const idsConDuplicado = new Set<string>()
   const conteoInternas = new Map<string, string[]>()
   const conteoOficiales = new Map<string, string[]>()
-  terneros.forEach(t => {
+  ternerosFiltrados.forEach(t => {
     if (t.caravana_interna) {
       const lista = conteoInternas.get(t.caravana_interna) ?? []
       lista.push(t.id)
@@ -390,9 +600,28 @@ export function TabTerneros() {
   conteoInternas.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
   conteoOficiales.forEach(ids => { if (ids.length > 1) ids.forEach(id => idsConDuplicado.add(id)) })
 
+  // Filas fantasma: diferencia stock (movimientos_hacienda) vs individuos activos en terneros
+  const fantasmasPorCategoria: { categoriaId: string, categoriaNombre: string, cantidad: number }[] = []
+  const stockNegativoCategorias: { nombre: string, stock: number }[] = []
+
+  // Calcular para las categorías del sub-tab actual (o todas si "todos")
+  const catsParaFantasmas = filtrosCat.length === 0 ? config.allCats : filtrosCat
+  Object.entries(categoriasMap).forEach(([catId, cat]) => {
+    if (!catsParaFantasmas.includes(cat.nombre.toLowerCase())) return
+    const stock = stockPorCategoria[catId] || 0
+    const individuos = terneros.filter(t => t.activo && t.categoria_id === catId).length
+    const diff = stock - individuos
+    if (diff > 0) {
+      fantasmasPorCategoria.push({ categoriaId: catId, categoriaNombre: cat.nombre, cantidad: diff })
+    } else if (stock < 0) {
+      stockNegativoCategorias.push({ nombre: cat.nombre, stock })
+    }
+  })
+  const totalFantasmas = fantasmasPorCategoria.reduce((s, f) => s + f.cantidad, 0)
+
   // Pivot table para historial: fechas únicas ordenadas
   const todasFechas = [...new Set(
-    terneros.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
+    ternerosFiltrados.flatMap(t => t.pesadas_terneros.map(p => p.fecha))
   )].sort()
 
   // Pares de fechas consecutivas para la tabla de ganancias del historial
@@ -402,8 +631,12 @@ export function TabTerneros() {
     dias: Math.round((new Date(f).getTime() - new Date(todasFechas[i]).getTime()) / 86400000),
   }))
 
-  // Terneros ordenados por ganancia últ. 2 pesadas desc (nulls al final)
-  const ternerosOrdenados = [...terneros].sort((a, b) => {
+  // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
+  const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
+    // Inactivos siempre al final
+    if (a.activo && !b.activo) return -1
+    if (!a.activo && b.activo) return 1
+    if (!a.activo && !b.activo) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
     const ga = getGananciaUlt2(a.pesadas_terneros)
     const gb = getGananciaUlt2(b.pesadas_terneros)
     if (ga === null && gb === null) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
@@ -427,7 +660,7 @@ export function TabTerneros() {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50">
             <Baby className="h-3 w-3 mr-1" />
-            {terneros.length} terneros
+            {ternerosActivos.length} terneros
           </Badge>
           <Badge variant="outline" className="text-sky-700 border-sky-300 bg-sky-50">
             ♂ {machos.length} machos
@@ -446,6 +679,16 @@ export function TabTerneros() {
               {conPesadas.length} con pesada
             </Badge>
           )}
+          {ternerosInactivos.length > 0 && (
+            <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
+              💀 {ternerosInactivos.length} baja{ternerosInactivos.length > 1 ? 's' : ''}
+            </Badge>
+          )}
+          {totalFantasmas > 0 && (
+            <Badge variant="outline" className="text-gray-600 border-gray-300 bg-gray-50">
+              👤 {totalFantasmas} sin identificar
+            </Badge>
+          )}
           {idsConDuplicado.size > 0 && (
             <Badge variant="outline" className="text-red-700 border-red-300 bg-red-50">
               ⚠️ {idsConDuplicado.size} caravana dup.
@@ -454,6 +697,16 @@ export function TabTerneros() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Botón modo edición */}
+          <Button
+            variant={modoEdicion ? "default" : "outline"}
+            size="sm"
+            onClick={() => setModoEdicion(p => !p)}
+            className={modoEdicion ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700"}
+          >
+            ✏️ {modoEdicion ? 'Editando...' : 'Editar'}
+          </Button>
+
           {/* Botón descargar Excel */}
           <Button
             variant="outline"
@@ -506,6 +759,54 @@ export function TabTerneros() {
         </div>
       </div>
 
+      {/* ── Sub-tabs por categoría ── */}
+      <div className="flex gap-1 border-b pb-1">
+        {tabKeys.map(tab => {
+          const cnt = conteoSubTab(tab)
+          const isActive = subTab === tab
+          return (
+            <button key={tab}
+              onClick={() => setSubTab(tab)}
+              className={`px-3 py-1.5 text-xs rounded-t font-medium transition-colors ${
+                isActive
+                  ? 'bg-white border border-b-white -mb-px text-green-700 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}>
+              {config.tabs[tab].label}
+              {cnt > 0 && <span className={`ml-1 text-[10px] ${isActive ? 'text-green-600' : 'text-gray-400'}`}>({cnt})</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ── Alerta bajas sin asignar ── */}
+      {bajasSinAsignar > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-semibold text-red-700">
+              {bajasSinAsignar} mortandad{bajasSinAsignar > 1 ? 'es' : ''} sin caravana asignada
+            </span>
+            <span className="text-red-600 ml-1">
+              — Hay bajas registradas en Hacienda que no tienen caravana vinculada. Los conteos y kg se ajustan restando {bajasSinAsignar} x promedio.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Alerta stock negativo ── */}
+      {stockNegativoCategorias.length > 0 && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="text-sm">
+            <span className="font-semibold text-amber-700">Auditoría: stock negativo</span>
+            <span className="text-amber-600 ml-1">
+              — {stockNegativoCategorias.map(c => `${c.nombre} (${c.stock})`).join(', ')}. Revisar movimientos de hacienda.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Input ganancia estimada ── */}
       {conPesadas.length > 0 && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
@@ -528,11 +829,18 @@ export function TabTerneros() {
       {conPesadas.length > 0 && (() => {
         const statsMachos = calcSummary(machos, gananciaDiaria)
         const statsHembras = calcSummary(hembras, gananciaDiaria)
-        const statsTotal = calcSummary(terneros, gananciaDiaria)
+        const statsTotal = calcSummary(ternerosActivos, gananciaDiaria)
+        // Ajustar total por bajas sin asignar (descuenta cabezas × promedio)
+        const ajusteTotal = bajasSinAsignar > 0 ? {
+          ...statsTotal,
+          total: statsTotal.total - bajasSinAsignar,
+          totalKg: statsTotal.totalKg - (bajasSinAsignar * statsTotal.promedioKg),
+          totalEstimadoKg: statsTotal.totalEstimadoKg - (bajasSinAsignar * statsTotal.promedioEstimadoKg),
+        } : statsTotal
         const grupos = [
           { key: 'M', label: '♂ Machos',     stats: statsMachos,  bg: 'bg-sky-50',   border: 'border-sky-200',   title: 'text-sky-800',   est: 'text-sky-700'  },
           { key: 'H', label: '♀ Hembras',    stats: statsHembras, bg: 'bg-pink-50',  border: 'border-pink-200',  title: 'text-pink-800',  est: 'text-pink-700' },
-          { key: 'T', label: 'Total Rodeo',  stats: statsTotal,   bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', est: 'text-green-700'},
+          { key: 'T', label: `Total Rodeo${bajasSinAsignar > 0 ? ' (ajustado)' : ''}`,  stats: ajusteTotal,   bg: 'bg-green-50', border: 'border-green-200', title: 'text-green-800', est: 'text-green-700'},
         ]
         return (
           <div className="grid grid-cols-3 gap-3">
@@ -600,74 +908,148 @@ export function TabTerneros() {
                     <TableHead className="text-xs">Sexo</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Torito</TableHead>
+                    <TableHead className="text-xs">Categoría</TableHead>
+                    {subTab === config.showExtraTorito && <>
+                      <TableHead className="text-xs">Hijo de</TableHead>
+                      <TableHead className="text-xs">Carav. Madre</TableHead>
+                      <TableHead className="text-xs">Pelo Madre</TableHead>
+                      <TableHead className="text-xs">Padre</TableHead>
+                      <TableHead className="text-xs">Nacimiento</TableHead>
+                      <TableHead className="text-xs">Peso Nac.</TableHead>
+                    </>}
                     <TableHead className="text-xs">Últ. Pesada</TableHead>
                     <TableHead className="text-xs">Peso hoy est.</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap">Gan. p→p</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
+                    <TableHead className="text-xs">Estado</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {ternerosOrdenados.map(t => {
                     const esDup = idsConDuplicado.has(t.id)
+                    const inactivo = !t.activo
                     const ultima = getUltimaPesada(t.pesadas_terneros)
-                    const pesoHoy = getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
+                    const pesoHoy = inactivo ? null : getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)
                     const ganUlt2 = getGananciaUlt2(t.pesadas_terneros)
                     const ganPaP = getGananciaPuntaAPunta(t.pesadas_terneros)
                     const acelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 > ganPaP
                     const desacelerando = ganUlt2 !== null && ganPaP !== null && ganUlt2 < ganPaP
+                    // Estilo tachado rojo para inactivos
+                    const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm ${esDup ? 'bg-red-50' : ''}`}>
+                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => modoEdicion && abrirEdicion(t)}>
                         <TableCell className="w-6 pr-0">
-                          {esDup && <span title="Caravana duplicada">⚠️</span>}
+                          {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_interna ?? <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={cellStrike}>
                           {t.sexo === 'Macho'
-                            ? <span className="text-sky-700 font-medium">♂ M</span>
+                            ? <span className={inactivo ? 'text-red-400 font-medium' : 'text-sky-700 font-medium'}>♂ M</span>
                             : t.sexo === 'Hembra'
-                            ? <span className="text-pink-700 font-medium">♀ H</span>
+                            ? <span className={inactivo ? 'text-red-400 font-medium' : 'text-pink-700 font-medium'}>♀ H</span>
                             : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className={`text-xs ${cellStrike}`}>
                           {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={cellStrike}>
                           {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell className={`text-[10px] ${cellStrike}`}>
+                          {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
+                        </TableCell>
+                        {subTab === config.showExtraTorito && <>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.hijo_de || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`font-mono text-[10px] ${cellStrike}`}>
+                            {t.madre || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.pelo_madre ? (PELO_LABEL[t.pelo_madre] ?? t.pelo_madre) : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.padre || <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.fecha_nacimiento ? formatFecha(t.fecha_nacimiento) : t.anio_nacimiento ? t.anio_nacimiento : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-xs ${cellStrike}`}>
+                            {t.peso_nacimiento ? `${t.peso_nacimiento.toLocaleString('es-AR', { maximumFractionDigits: 1 })} kg` : <span className="text-gray-400">—</span>}
+                          </TableCell>
+                        </>}
+                        <TableCell className={`text-xs ${cellStrike}`}>
                           {ultima
-                            ? <span className="text-green-700">{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
+                            ? <span className={inactivo ? 'text-red-400' : 'text-green-700'}>{formatFecha(ultima.fecha)} — {formatPeso(ultima.peso_kg)}</span>
                             : <span className="text-gray-400">sin pesada</span>}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {pesoHoy !== null
+                        <TableCell className={`text-xs ${cellStrike}`}>
+                          {inactivo
+                            ? <span className="text-red-300">—</span>
+                            : pesoHoy !== null
                             ? <span className="text-blue-700 font-medium">{formatPeso(pesoHoy)}</span>
                             : <span className="text-gray-400">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-center">
+                        <TableCell className={`text-xs text-center ${cellStrike}`}>
                           {ganUlt2 !== null
-                            ? <span className={`font-medium ${acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
-                                {acelerando ? '▲ ' : desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2).replace(".", ",")}
+                            ? <span className={`font-medium ${inactivo ? 'text-red-400' : acelerando ? 'text-green-600' : desacelerando ? 'text-red-600' : 'text-gray-600'}`}>
+                                {!inactivo && acelerando ? '▲ ' : !inactivo && desacelerando ? '▼ ' : ''}{ganUlt2.toFixed(2).replace(".", ",")}
                               </span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-center">
+                        <TableCell className={`text-xs text-center ${cellStrike}`}>
                           {ganPaP !== null
-                            ? <span className="text-gray-500">{ganPaP.toFixed(2).replace(".", ",")}</span>
+                            ? <span className={inactivo ? 'text-red-400' : 'text-gray-500'}>{ganPaP.toFixed(2).replace(".", ",")}</span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className="text-xs text-gray-500 max-w-[160px] truncate">
+                        <TableCell className={`text-xs max-w-[160px] truncate ${inactivo ? 'text-red-400 line-through' : 'text-gray-500'}`}>
                           {t.observaciones ?? ''}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {inactivo ? (
+                            <span className="text-red-600 font-medium" title={t.motivo_baja ?? 'Mortandad'}>
+                              💀 {t.fecha_baja ? formatFecha(t.fecha_baja) : 'Baja'}
+                              {t.motivo_baja && <span className="block text-[10px] text-red-400 truncate max-w-[100px]">{t.motivo_baja}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-green-600 text-[10px]">Activo</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     )
                   })}
+                  {/* Filas fantasma — sin identificar */}
+                  {fantasmasPorCategoria.map(f =>
+                    Array.from({ length: f.cantidad }, (_, i) => {
+                      const colCount = 12 + (subTab === config.showExtraTorito ? 6 : 0)
+                      return (
+                        <TableRow key={`fantasma-${f.categoriaId}-${i}`} className="bg-gray-50/80 hover:bg-blue-50/50">
+                          <TableCell className="w-6 pr-0">
+                            <span className="text-gray-400" title="Sin identificar">👤</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-gray-400 italic" colSpan={2}>
+                            Sin identificar #{i + 1}
+                          </TableCell>
+                          <TableCell className="text-gray-400 text-xs" colSpan={colCount - 5}>
+                            <span className="text-[10px]">{f.categoriaNombre}</span>
+                          </TableCell>
+                          <TableCell className="text-xs" colSpan={2}>
+                            <Button variant="outline" size="sm" className="h-6 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                              disabled={creandoFantasma}
+                              onClick={(e) => { e.stopPropagation(); identificarFantasma(f.categoriaId, f.categoriaNombre) }}>
+                              + Identificar
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -1365,6 +1747,127 @@ export function TabTerneros() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal edición ternero ── */}
+      <Dialog open={!!terneroEditando} onOpenChange={open => { if (!open) setTerneroEditando(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Editar Ternero {terneroEditando?.caravana_oficial || terneroEditando?.caravana_interna || '(sin caravana)'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Caravana Oficial</Label>
+              <Input className="h-8 text-sm" value={editForm.caravana_oficial}
+                onChange={e => setEditForm(p => ({ ...p, caravana_oficial: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Caravana Interna</Label>
+              <Input className="h-8 text-sm" value={editForm.caravana_interna}
+                onChange={e => setEditForm(p => ({ ...p, caravana_interna: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Sexo</Label>
+              <select className="w-full h-8 text-sm border rounded px-2"
+                value={editForm.sexo} onChange={e => setEditForm(p => ({ ...p, sexo: e.target.value }))}>
+                <option value="">—</option>
+                <option value="Macho">Macho</option>
+                <option value="Hembra">Hembra</option>
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Pelo</Label>
+              <select className="w-full h-8 text-sm border rounded px-2"
+                value={editForm.pelo} onChange={e => setEditForm(p => ({ ...p, pelo: e.target.value }))}>
+                <option value="">—</option>
+                {Object.keys(PELO_LABEL).map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 col-span-2">
+              <input type="checkbox" id="edit-torito" checked={editForm.es_torito}
+                onChange={e => setEditForm(p => ({ ...p, es_torito: e.target.checked }))} />
+              <Label htmlFor="edit-torito" className="text-xs cursor-pointer">Es Torito 🐂</Label>
+            </div>
+            <div className="col-span-2">
+              <Label className="text-xs">Observaciones</Label>
+              <Input className="h-8 text-sm" value={editForm.observaciones}
+                onChange={e => setEditForm(p => ({ ...p, observaciones: e.target.value }))} />
+            </div>
+
+            {/* Campo categoria_previa — solo para CUT/Descarte */}
+            {terneroEditando?.categorias_hacienda?.nombre?.toLowerCase().includes('cut') && (
+              <div>
+                <Label className="text-xs">Categoría previa</Label>
+                <select className="w-full h-8 text-sm border rounded px-2"
+                  value={editForm.categoria_previa} onChange={e => setEditForm(p => ({ ...p, categoria_previa: e.target.value }))}>
+                  <option value="">—</option>
+                  <option value="Vaca">Vaca</option>
+                  <option value="Vaquillona Preñada">Vaquillona Preñada</option>
+                  <option value="Vaquillona Engorde">Vaquillona Engorde</option>
+                </select>
+              </div>
+            )}
+
+            {/* Campos extra toritos/toros */}
+            {editForm.es_torito && (
+              <>
+                <div className="col-span-2 border-t pt-2 mt-1">
+                  <span className="text-xs font-semibold text-amber-700">Datos Torito / Toro</span>
+                </div>
+                <div>
+                  <Label className="text-xs">Hijo de</Label>
+                  <select className="w-full h-8 text-sm border rounded px-2"
+                    value={editForm.hijo_de} onChange={e => setEditForm(p => ({ ...p, hijo_de: e.target.value }))}>
+                    <option value="">—</option>
+                    <option value="Vaca">Vaca</option>
+                    <option value="Vaquillona">Vaquillona</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Pelo Madre</Label>
+                  <select className="w-full h-8 text-sm border rounded px-2"
+                    value={editForm.pelo_madre} onChange={e => setEditForm(p => ({ ...p, pelo_madre: e.target.value }))}>
+                    <option value="">—</option>
+                    {Object.keys(PELO_LABEL).map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs">Fecha Nacimiento</Label>
+                  <Input className="h-8 text-sm" type="date" value={editForm.fecha_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, fecha_nacimiento: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Año Nacimiento</Label>
+                  <Input className="h-8 text-sm" type="number" value={editForm.anio_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, anio_nacimiento: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Peso Nacimiento (kg)</Label>
+                  <Input className="h-8 text-sm" type="text" placeholder="0,00" value={editForm.peso_nacimiento}
+                    onChange={e => setEditForm(p => ({ ...p, peso_nacimiento: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Padre</Label>
+                  <Input className="h-8 text-sm" value={editForm.padre}
+                    onChange={e => setEditForm(p => ({ ...p, padre: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Caravana Madre</Label>
+                  <Input className="h-8 text-sm" value={editForm.madre}
+                    onChange={e => setEditForm(p => ({ ...p, madre: e.target.value }))} />
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setTerneroEditando(null)}>Cancelar</Button>
+            <Button size="sm" onClick={guardarEdicion} disabled={guardandoEdit}>
+              {guardandoEdit ? 'Guardando...' : 'Guardar'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
