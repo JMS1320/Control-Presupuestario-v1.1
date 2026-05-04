@@ -337,9 +337,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Empresa no válida" }, { status: 400 })
     }
 
+    const origenFactura = formData.get("origen_factura") as string | null  // 'ARCA' | 'No Informada'
+    const imputacionRaw = formData.get("imputacion") as string | null
+    const imputacionMap = new Map<number, { fc: string | null, cuenta_contable: string | null }>()
+    if (imputacionRaw) {
+      try {
+        const arr = JSON.parse(imputacionRaw) as Array<{ fila: number, fc: string, cuenta_contable: string | null }>
+        arr.forEach(item => imputacionMap.set(item.fila, { fc: item.fc || null, cuenta_contable: item.cuenta_contable }))
+      } catch { /* ignore parse errors */ }
+    }
+
     console.log(`🏢 Iniciando importación de facturas para empresa: ${empresa}`)
     console.log(`📄 Archivo: ${file.name}`)
-    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v1.3-NULL-AÑO - ${new Date().toISOString()}`)
+    console.log(`🏷️ Origen: ${origenFactura || 'no especificado'}, Imputación: ${imputacionMap.size} filas`)
+    console.log(`🚀 VERSIÓN CÓDIGO: EXCEL-SUPPORT-v2.0-IMPORT-FLOW - ${new Date().toISOString()}`)
 
     // Detectar formato del archivo
     const esExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
@@ -470,11 +481,13 @@ export async function POST(req: Request) {
               fila: indice + 2,
               fecha_emision: f.fecha_emision,
               razon_social: f.denominacion_emisor || f.cuit || '—',
+              cuit: f.cuit || '',
               imp_total: f.imp_total,
+              cuenta_contable_sugerida: f.cuenta_contable || null,
               estado: sinDatos ? 'error' : duplicado ? 'duplicado' : 'nueva',
             }
           } catch {
-            return { fila: indice + 2, fecha_emision: null, razon_social: '—', imp_total: 0, estado: 'error' }
+            return { fila: indice + 2, fecha_emision: null, razon_social: '—', cuit: '', imp_total: 0, cuenta_contable_sugerida: null, estado: 'error' }
           }
         })
       )
@@ -541,10 +554,21 @@ export async function POST(req: Request) {
           continue
         }
 
+        // Aplicar datos de imputación del frontend (fc + cuenta_contable + origen_factura)
+        const filaNum = indice + 2
+        const imputacion = imputacionMap.get(filaNum)
+        if (imputacion) {
+          if (imputacion.fc) filaParaBBDD.fc = imputacion.fc
+          if (imputacion.cuenta_contable) filaParaBBDD.cuenta_contable = imputacion.cuenta_contable
+        }
+        if (origenFactura) {
+          (filaParaBBDD as any).origen_factura = origenFactura
+        }
+
         // Debug: Mostrar datos antes de insertar
-        console.log(`🔍 Intentando insertar fila ${indice + 2}:`, JSON.stringify(filaParaBBDD, null, 2))
+        console.log(`🔍 Intentando insertar fila ${filaNum}:`, JSON.stringify(filaParaBBDD, null, 2))
         console.log(`📊 Esquema usado: ${esquema}`)
-        
+
         // Insertar nueva factura
         const { data, error: errorInsercion } = await supabase
           .schema(esquema)

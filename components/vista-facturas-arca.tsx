@@ -86,6 +86,8 @@ interface FacturaArca {
   grupo_pago_id: string | null
   // TC de pago (editable, solo USD)
   tc_pago: number | null
+  // Origen de la factura
+  origen_factura: string | null
 }
 
 // Interface para configuración tipos SICORE
@@ -120,6 +122,7 @@ const COLUMNAS_CONFIG = {
   campana: { label: "Campaña", visible: true, width: "120px" },
   año_contable: { label: "Año Contable", visible: true, width: "120px" },
   mes_contable: { label: "Mes Contable", visible: true, width: "120px" },
+  origen_factura: { label: "Origen", visible: false, width: "120px" },
   fc: { label: "FC", visible: true, width: "80px" },
   cuenta_contable: { label: "Cuenta Contable", visible: true, width: "150px" },
   centro_costo: { label: "Centro Costo", visible: true, width: "120px" },
@@ -256,7 +259,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
-  
+  const [filtroFcPendiente, setFiltroFcPendiente] = useState(false)
+  const [mostrarModalMarcarFC, setMostrarModalMarcarFC] = useState(false)
+  const [facturasSeleccionadasFC, setFacturasSeleccionadasFC] = useState<Set<string>>(new Set())
+
   // Estados para tabs de navegación
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
   
@@ -474,6 +480,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
   const [previewData, setPreviewData] = useState<any>(null)
+  const [origenFactura, setOrigenFactura] = useState<string>('')  // 'ARCA' | 'No Informada'
+  const [pasoImportacion, setPasoImportacion] = useState<'origen' | 'archivo' | 'imputacion'>('origen')
+  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null }>>([])
+  const [cuentasContablesImport, setCuentasContablesImport] = useState<any[]>([])
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -645,6 +655,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     cargarFacturas()
   }, [])
 
+  // Re-aplicar filtros cuando cambia el filtro FC
+  useEffect(() => {
+    aplicarFiltros()
+  }, [filtroFcPendiente])
+
   // Auto-cargar facturas cuando cambia el período de imputación
   useEffect(() => {
     if (periodoImputacion) {
@@ -732,11 +747,16 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     // Filtro por cuenta contable (CATEG)
     if (busquedaCateg.trim()) {
       const busqueda = busquedaCateg.toLowerCase()
-      facturasFiltradas = facturasFiltradas.filter(f => 
+      facturasFiltradas = facturasFiltradas.filter(f =>
         f.cuenta_contable && f.cuenta_contable.toLowerCase().includes(busqueda)
       )
     }
-    
+
+    // Filtro por FC pendiente
+    if (filtroFcPendiente) {
+      facturasFiltradas = facturasFiltradas.filter(f => f.fc === 'No')
+    }
+
     setFacturas(facturasFiltradas)
   }
   
@@ -1346,6 +1366,32 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     }
   }
 
+  // Cargar cuentas contables para el paso de imputación
+  const cargarCuentasParaImport = async () => {
+    const { data } = await supabase
+      .from('cuentas_contables')
+      .select('nro_cuenta, nombre_referencia, nombre_totalizadora, tipo, imputable')
+      .eq('imputable', true)
+      .order('nombre_totalizadora')
+      .order('nombre_referencia')
+    setCuentasContablesImport(data || [])
+  }
+
+  // Avanzar al paso de imputación después del preview
+  const avanzarAImputacion = async () => {
+    if (!previewData?.facturas) return
+    // Cargar cuentas contables si no están cargadas
+    if (cuentasContablesImport.length === 0) await cargarCuentasParaImport()
+    // Inicializar datos de imputación para cada factura nueva
+    const nuevas = (previewData.facturas as any[]).filter((f: any) => f.estado === 'nueva')
+    setImputacionData(nuevas.map((f: any) => ({
+      fila: f.fila,
+      fc: '',   // Sin valor por defecto
+      cuenta_contable: f.cuenta_contable_sugerida || null,
+    })))
+    setPasoImportacion('imputacion')
+  }
+
   const manejarImportacionExcel = async () => {
     if (!archivoImportacion) return
 
@@ -1356,6 +1402,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       const formData = new FormData()
       formData.append('file', archivoImportacion)
       formData.append('empresa', empresa)
+      formData.append('origen_factura', origenFactura)
+      // Enviar datos de imputación (fc + cuenta_contable por fila)
+      formData.append('imputacion', JSON.stringify(imputacionData))
 
       const response = await fetch('/api/import-facturas-arca', {
         method: 'POST',
@@ -1366,10 +1415,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       setResultadoImportacion(resultado)
 
       if (resultado.success) {
-        // Recargar las facturas después de una importación exitosa
         cargarFacturas()
         setMostrarImportador(false)
         setArchivoImportacion(null)
+        setOrigenFactura('')
+        setPasoImportacion('origen')
+        setImputacionData([])
       }
     } catch (error) {
       console.error('Error en importación:', error)
@@ -5832,6 +5883,45 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         </Alert>
       )}
 
+      {/* Alert FC pendientes */}
+      {!loading && !error && (() => {
+        const fcPendientes = facturasOriginales.filter(f => f.fc === 'No')
+        if (fcPendientes.length === 0) return null
+        return (
+          <Alert className="border-amber-300 bg-amber-50">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-amber-800 font-medium">
+                    {fcPendientes.length} factura{fcPendientes.length !== 1 ? 's' : ''} pendiente{fcPendientes.length !== 1 ? 's' : ''} de recibir comprobante
+                  </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                    <Checkbox
+                      checked={filtroFcPendiente}
+                      onCheckedChange={(checked) => setFiltroFcPendiente(!!checked)}
+                    />
+                    <span>Mostrar solo FC pendientes</span>
+                  </label>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                  onClick={() => {
+                    setFacturasSeleccionadasFC(new Set())
+                    setMostrarModalMarcarFC(true)
+                  }}
+                >
+                  <Check className="mr-1 h-3 w-3" />
+                  Marcar como recibidas
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )
+      })()}
+
       {/* Tabla de facturas */}
       {!loading && !error && (
         <Card>
@@ -6098,151 +6188,422 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         </DialogContent>
       </Dialog>
 
-      {/* Modal para importación de Excel */}
+      {/* Modal para importación de Excel — 3 pasos */}
       <Dialog open={mostrarImportador} onOpenChange={(v) => {
         setMostrarImportador(v)
-        if (!v) { setArchivoImportacion(null); setPreviewData(null); setResultadoImportacion(null) }
+        if (!v) {
+          setArchivoImportacion(null); setPreviewData(null); setResultadoImportacion(null)
+          setOrigenFactura(''); setPasoImportacion('origen'); setImputacionData([])
+        }
       }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className={`${pasoImportacion === 'imputacion' ? 'max-w-5xl' : 'max-w-3xl'} max-h-[85vh] flex flex-col`}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
-              Importar Facturas ARCA desde Excel
+              Importar Facturas — {pasoImportacion === 'origen' ? 'Paso 1: Tipo' : pasoImportacion === 'archivo' ? 'Paso 2: Archivo' : 'Paso 3: Imputación'}
             </DialogTitle>
             <DialogDescription>
-              Seleccioná el archivo Excel de ARCA. El sistema mostrará un preview antes de importar.
+              {pasoImportacion === 'origen' && 'Seleccioná el origen de las facturas a importar.'}
+              {pasoImportacion === 'archivo' && `Subí el archivo Excel (${origenFactura}). El sistema mostrará un preview.`}
+              {pasoImportacion === 'imputacion' && 'Asigná FC y cuenta contable a cada factura antes de importar.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 overflow-y-auto flex-1">
-            {/* Selector de archivo */}
-            <div className="space-y-2">
-              <Label>Archivo Excel de ARCA (.xlsx / .xls)</Label>
-              <Input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null
-                  setArchivoImportacion(file)
-                  setPreviewData(null)
-                  setResultadoImportacion(null)
-                  if (file) previsualizarImportacion(file)
-                }}
-              />
-            </div>
-
-            {/* Cargando preview */}
-            {cargandoPreview && (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Analizando archivo...
+            {/* ── PASO 1: Selector de origen ──────────────────── */}
+            {pasoImportacion === 'origen' && (
+              <div className="space-y-4 py-4">
+                <Label className="text-sm font-medium">Origen de las facturas *</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => { setOrigenFactura('ARCA'); setPasoImportacion('archivo') }}
+                    className="border-2 rounded-lg p-6 text-center hover:border-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
+                  >
+                    <div className="text-2xl mb-2">🏛️</div>
+                    <div className="font-semibold">ARCA</div>
+                    <div className="text-xs text-gray-500 mt-1">Descargado de Mis Comprobantes</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOrigenFactura('No Informada'); setPasoImportacion('archivo') }}
+                    className="border-2 rounded-lg p-6 text-center hover:border-orange-500 hover:bg-orange-50 transition-colors cursor-pointer"
+                  >
+                    <div className="text-2xl mb-2">📄</div>
+                    <div className="font-semibold">No Informada</div>
+                    <div className="text-xs text-gray-500 mt-1">Factura no registrada en ARCA</div>
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Preview de facturas */}
-            {previewData && !previewData.error && !resultadoImportacion && (
-              <div className="space-y-3">
-                {/* Resumen */}
-                <div className="flex gap-4 text-sm">
-                  <span className="font-medium">Total en archivo: <strong>{previewData.total}</strong></span>
-                  <span className="text-green-700">✅ Nuevas: <strong>{previewData.nuevas}</strong></span>
-                  {previewData.duplicadas > 0 && (
-                    <span className="text-amber-600">⚠️ Ya existen: <strong>{previewData.duplicadas}</strong></span>
-                  )}
-                  {previewData.errores_parse > 0 && (
-                    <span className="text-red-600">❌ Sin datos: <strong>{previewData.errores_parse}</strong></span>
-                  )}
+            {/* ── PASO 2: Archivo + Preview ──────────────────── */}
+            {pasoImportacion === 'archivo' && (
+              <>
+                <div className="flex items-center gap-2 text-sm">
+                  <Badge variant="outline" className={origenFactura === 'ARCA' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}>
+                    {origenFactura === 'ARCA' ? '🏛️ ARCA' : '📄 No Informada'}
+                  </Badge>
+                  <button type="button" onClick={() => { setPasoImportacion('origen'); setArchivoImportacion(null); setPreviewData(null) }} className="text-xs text-blue-600 hover:underline">Cambiar</button>
                 </div>
 
-                {/* Tabla */}
-                <div className="border rounded-md overflow-hidden">
+                <div className="space-y-2">
+                  <Label>Archivo Excel (.xlsx / .xls)</Label>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null
+                      setArchivoImportacion(file)
+                      setPreviewData(null)
+                      setResultadoImportacion(null)
+                      if (file) previsualizarImportacion(file)
+                    }}
+                  />
+                </div>
+
+                {cargandoPreview && (
+                  <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analizando archivo...
+                  </div>
+                )}
+
+                {previewData && !previewData.error && (
+                  <div className="space-y-3">
+                    <div className="flex gap-4 text-sm">
+                      <span className="font-medium">Total: <strong>{previewData.total}</strong></span>
+                      <span className="text-green-700">✅ Nuevas: <strong>{previewData.nuevas}</strong></span>
+                      {previewData.duplicadas > 0 && (
+                        <span className="text-amber-600">⚠️ Ya existen: <strong>{previewData.duplicadas}</strong></span>
+                      )}
+                      {previewData.errores_parse > 0 && (
+                        <span className="text-red-600">❌ Sin datos: <strong>{previewData.errores_parse}</strong></span>
+                      )}
+                    </div>
+
+                    <div className="border rounded-md overflow-hidden max-h-[300px] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 border-b sticky top-0">
+                          <tr>
+                            <th className="text-left p-2 font-medium text-gray-600">Estado</th>
+                            <th className="text-left p-2 font-medium text-gray-600">Fecha</th>
+                            <th className="text-left p-2 font-medium text-gray-600">Proveedor</th>
+                            <th className="text-right p-2 font-medium text-gray-600">Monto Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {(previewData.facturas as any[]).map((f: any) => (
+                            <tr key={f.fila} className={
+                              f.estado === 'nueva' ? 'bg-white' :
+                              f.estado === 'duplicado' ? 'bg-amber-50' : 'bg-red-50'
+                            }>
+                              <td className="p-2">
+                                {f.estado === 'nueva'     && <span className="text-green-700 font-medium">✅ Nueva</span>}
+                                {f.estado === 'duplicado' && <span className="text-amber-600">⚠️ Ya existe</span>}
+                                {f.estado === 'error'     && <span className="text-red-600">❌ Sin datos</span>}
+                              </td>
+                              <td className="p-2 text-gray-700">{f.fecha_emision ?? '—'}</td>
+                              <td className="p-2 text-gray-700 max-w-[200px] truncate" title={f.razon_social}>{f.razon_social}</td>
+                              <td className="p-2 text-right text-gray-700">
+                                {f.imp_total ? `$${Number(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {previewData?.error && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                    <AlertDescription className="text-red-700">{previewData.error}</AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+
+            {/* ── PASO 3: Imputación FC + Cuenta Contable ──── */}
+            {pasoImportacion === 'imputacion' && (
+              <>
+                <div className="flex items-center gap-2 text-sm mb-1">
+                  <Badge variant="outline" className={origenFactura === 'ARCA' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}>
+                    {origenFactura === 'ARCA' ? '🏛️ ARCA' : '📄 No Informada'}
+                  </Badge>
+                  <span className="text-gray-500">|</span>
+                  <span className="text-gray-600">{previewData?.nuevas} facturas nuevas</span>
+                </div>
+
+                {/* Acciones masivas */}
+                <div className="flex items-center gap-3 p-2 bg-gray-50 rounded border text-xs">
+                  <span className="font-medium">Asignar a todas:</span>
+                  <div className="flex items-center gap-1">
+                    <span>FC:</span>
+                    {['Sí', 'No', 'Portal'].map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, fc: val })))}
+                        className="px-2 py-0.5 border rounded hover:bg-blue-50 text-xs"
+                      >
+                        {val}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 ml-4">
+                    <span>Cuenta:</span>
+                    <select
+                      className="border rounded px-1 py-0.5 text-xs max-w-[250px]"
+                      value=""
+                      onChange={(e) => {
+                        const val = e.target.value || null
+                        setImputacionData(prev => prev.map(d => ({ ...d, cuenta_contable: val })))
+                      }}
+                    >
+                      <option value="">— Asignar a todas —</option>
+                      {(() => {
+                        const grupos = new Map<string, typeof cuentasContablesImport>()
+                        cuentasContablesImport.forEach(c => {
+                          const g = c.nombre_totalizadora || 'Sin grupo'
+                          if (!grupos.has(g)) grupos.set(g, [])
+                          grupos.get(g)!.push(c)
+                        })
+                        return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
+                          <optgroup key={grupo} label={grupo}>
+                            {cuentas.map((c: any) => (
+                              <option key={c.nro_cuenta} value={c.nro_cuenta}>
+                                {c.nro_cuenta} — {c.nombre_referencia}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))
+                      })()}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="border rounded-md overflow-hidden max-h-[400px] overflow-y-auto">
                   <table className="w-full text-xs">
-                    <thead className="bg-gray-50 border-b">
+                    <thead className="bg-gray-50 border-b sticky top-0 z-10">
                       <tr>
-                        <th className="text-left p-2 font-medium text-gray-600">Estado</th>
                         <th className="text-left p-2 font-medium text-gray-600">Fecha</th>
                         <th className="text-left p-2 font-medium text-gray-600">Proveedor</th>
-                        <th className="text-right p-2 font-medium text-gray-600">Monto Total</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[100px]">CUIT</th>
+                        <th className="text-right p-2 font-medium text-gray-600 w-[100px]">Monto</th>
+                        <th className="text-center p-2 font-medium text-gray-600 w-[90px]">FC</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[250px]">Cuenta Contable</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {(previewData.facturas as any[]).map((f: any) => (
-                        <tr key={f.fila} className={
-                          f.estado === 'nueva' ? 'bg-white' :
-                          f.estado === 'duplicado' ? 'bg-amber-50' : 'bg-red-50'
-                        }>
-                          <td className="p-2">
-                            {f.estado === 'nueva'     && <span className="text-green-700 font-medium">✅ Nueva</span>}
-                            {f.estado === 'duplicado' && <span className="text-amber-600">⚠️ Ya existe</span>}
-                            {f.estado === 'error'     && <span className="text-red-600">❌ Sin datos</span>}
-                          </td>
-                          <td className="p-2 text-gray-700">{f.fecha_emision ?? '—'}</td>
-                          <td className="p-2 text-gray-700 max-w-[200px] truncate" title={f.razon_social}>{f.razon_social}</td>
-                          <td className="p-2 text-right text-gray-700">
-                            {f.imp_total ? `$${Number(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '—'}
-                          </td>
-                        </tr>
-                      ))}
+                      {(previewData?.facturas as any[] || [])
+                        .filter((f: any) => f.estado === 'nueva')
+                        .map((f: any, idx: number) => {
+                          const imp = imputacionData.find(d => d.fila === f.fila)
+                          return (
+                            <tr key={f.fila} className="hover:bg-gray-50">
+                              <td className="p-2 text-gray-700">{f.fecha_emision ?? '—'}</td>
+                              <td className="p-2 text-gray-700 max-w-[180px] truncate" title={f.razon_social}>{f.razon_social}</td>
+                              <td className="p-2 text-gray-500">{f.cuit || '—'}</td>
+                              <td className="p-2 text-right text-gray-700">
+                                {f.imp_total ? `$${Number(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : '—'}
+                              </td>
+                              <td className="p-2">
+                                <select
+                                  className="border rounded px-1 py-0.5 text-xs w-full"
+                                  value={imp?.fc || ''}
+                                  onChange={(e) => {
+                                    setImputacionData(prev => prev.map(d =>
+                                      d.fila === f.fila ? { ...d, fc: e.target.value } : d
+                                    ))
+                                  }}
+                                >
+                                  <option value="">—</option>
+                                  <option value="Sí">Sí</option>
+                                  <option value="No">No</option>
+                                  <option value="Portal">Portal</option>
+                                </select>
+                              </td>
+                              <td className="p-2">
+                                <select
+                                  className="border rounded px-1 py-0.5 text-xs w-full"
+                                  value={imp?.cuenta_contable || ''}
+                                  onChange={(e) => {
+                                    setImputacionData(prev => prev.map(d =>
+                                      d.fila === f.fila ? { ...d, cuenta_contable: e.target.value || null } : d
+                                    ))
+                                  }}
+                                >
+                                  <option value="">— Sin asignar —</option>
+                                  {(() => {
+                                    const grupos = new Map<string, typeof cuentasContablesImport>()
+                                    cuentasContablesImport.forEach(c => {
+                                      const g = c.nombre_totalizadora || 'Sin grupo'
+                                      if (!grupos.has(g)) grupos.set(g, [])
+                                      grupos.get(g)!.push(c)
+                                    })
+                                    return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
+                                      <optgroup key={grupo} label={grupo}>
+                                        {cuentas.map((c: any) => (
+                                          <option key={c.nro_cuenta} value={c.nro_cuenta}>
+                                            {c.nro_cuenta} — {c.nombre_referencia}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    ))
+                                  })()}
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        })}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
 
-            {/* Error de preview */}
-            {previewData?.error && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-                <AlertDescription className="text-red-700">{previewData.error}</AlertDescription>
-              </Alert>
-            )}
-
-            {/* Resultado de importación */}
-            {resultadoImportacion && (
-              <Alert className={resultadoImportacion.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
-                <div className="flex items-center gap-2">
-                  {resultadoImportacion.success
-                    ? <CheckCircle className="h-4 w-4 text-green-600" />
-                    : <AlertTriangle className="h-4 w-4 text-red-600" />}
-                </div>
-                <AlertDescription>
-                  <div className="space-y-1">
-                    <p className="font-medium">
-                      {resultadoImportacion.success ? 'Importación exitosa' : 'Error en importación'}
-                    </p>
-                    <p className="text-sm">{resultadoImportacion.message || resultadoImportacion.error}</p>
-                    {resultadoImportacion.summary && (
-                      <div className="text-xs mt-1 space-y-0.5">
-                        <div>Importadas: <strong>{resultadoImportacion.insertedCount}</strong></div>
-                        <div>Ya existían: <strong>{resultadoImportacion.ignoredCount || 0}</strong></div>
-                        {resultadoImportacion.errores?.length > 0 && (
-                          <div className="text-red-600">Errores: {resultadoImportacion.errores.length}</div>
+                {/* Resultado de importación */}
+                {resultadoImportacion && (
+                  <Alert className={resultadoImportacion.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}>
+                    <div className="flex items-center gap-2">
+                      {resultadoImportacion.success
+                        ? <CheckCircle className="h-4 w-4 text-green-600" />
+                        : <AlertTriangle className="h-4 w-4 text-red-600" />}
+                    </div>
+                    <AlertDescription>
+                      <div className="space-y-1">
+                        <p className="font-medium">
+                          {resultadoImportacion.success ? 'Importación exitosa' : 'Error en importación'}
+                        </p>
+                        <p className="text-sm">{resultadoImportacion.message || resultadoImportacion.error}</p>
+                        {resultadoImportacion.summary && (
+                          <div className="text-xs mt-1 space-y-0.5">
+                            <div>Importadas: <strong>{resultadoImportacion.insertedCount}</strong></div>
+                            <div>Ya existían: <strong>{resultadoImportacion.ignoredCount || 0}</strong></div>
+                            {resultadoImportacion.errores?.length > 0 && (
+                              <div className="text-red-600">Errores: {resultadoImportacion.errores.length}</div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
             )}
           </div>
 
           <DialogFooter className="pt-2 border-t">
+            {pasoImportacion !== 'origen' && (
+              <Button variant="outline" onClick={() => {
+                if (pasoImportacion === 'imputacion') setPasoImportacion('archivo')
+                else { setPasoImportacion('origen'); setArchivoImportacion(null); setPreviewData(null) }
+              }}>
+                Atrás
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setMostrarImportador(false)}>
               Cancelar
             </Button>
+            {pasoImportacion === 'archivo' && previewData && !previewData.error && previewData.nuevas > 0 && (
+              <Button onClick={avanzarAImputacion}>
+                Siguiente: Imputación
+              </Button>
+            )}
+            {pasoImportacion === 'imputacion' && (
+              <Button
+                onClick={manejarImportacionExcel}
+                disabled={importandoExcel}
+              >
+                {importandoExcel ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importando...</>
+                ) : (
+                  <><Upload className="mr-2 h-4 w-4" />
+                    Importar {previewData?.nuevas} factura{previewData?.nuevas !== 1 ? 's' : ''}
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para marcar FC como recibidas */}
+      <Dialog open={mostrarModalMarcarFC} onOpenChange={setMostrarModalMarcarFC}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Marcar comprobantes como recibidos</DialogTitle>
+            <DialogDescription>
+              Seleccioná las facturas que ya tenés el comprobante físico
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1">
+            <div className="flex items-center gap-2 mb-3">
+              <Button size="sm" variant="outline" onClick={() => {
+                const fcNo = facturasOriginales.filter(f => f.fc === 'No')
+                setFacturasSeleccionadasFC(new Set(fcNo.map(f => f.id)))
+              }}>Seleccionar todas</Button>
+              <Button size="sm" variant="outline" onClick={() => setFacturasSeleccionadasFC(new Set())}>Ninguna</Button>
+            </div>
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="p-2 w-8"></th>
+                  <th className="text-left p-2">Fecha</th>
+                  <th className="text-left p-2">Proveedor</th>
+                  <th className="text-left p-2">CUIT</th>
+                  <th className="text-right p-2">Monto</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {facturasOriginales.filter(f => f.fc === 'No').map(f => (
+                  <tr key={f.id} className="hover:bg-gray-50">
+                    <td className="p-2">
+                      <Checkbox
+                        checked={facturasSeleccionadasFC.has(f.id)}
+                        onCheckedChange={(checked) => {
+                          setFacturasSeleccionadasFC(prev => {
+                            const next = new Set(prev)
+                            if (checked) next.add(f.id); else next.delete(f.id)
+                            return next
+                          })
+                        }}
+                      />
+                    </td>
+                    <td className="p-2">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
+                    <td className="p-2 max-w-[200px] truncate">{f.denominacion_emisor}</td>
+                    <td className="p-2 text-gray-500">{f.cuit}</td>
+                    <td className="p-2 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter className="pt-2 border-t">
+            <Button variant="outline" onClick={() => setMostrarModalMarcarFC(false)}>Cancelar</Button>
             <Button
-              onClick={manejarImportacionExcel}
-              disabled={!archivoImportacion || importandoExcel || cargandoPreview || !previewData || !!previewData?.error || (previewData?.nuevas === 0)}
+              disabled={facturasSeleccionadasFC.size === 0}
+              onClick={async () => {
+                const ids = Array.from(facturasSeleccionadasFC)
+                const { error } = await supabase
+                  .schema(schemaName)
+                  .from('comprobantes_arca')
+                  .update({ fc: 'Sí' })
+                  .in('id', ids)
+                if (error) { alert('Error al actualizar: ' + error.message); return }
+                // Actualizar estado local
+                setFacturasOriginales(prev => prev.map(f =>
+                  ids.includes(f.id) ? { ...f, fc: 'Sí' } : f
+                ))
+                setFacturas(prev => prev.map(f =>
+                  ids.includes(f.id) ? { ...f, fc: 'Sí' } : f
+                ))
+                setMostrarModalMarcarFC(false)
+                setFacturasSeleccionadasFC(new Set())
+              }}
             >
-              {importandoExcel ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Importando...</>
-              ) : (
-                <><Upload className="mr-2 h-4 w-4" />
-                  {previewData?.nuevas > 0
-                    ? `Importar ${previewData.nuevas} factura${previewData.nuevas !== 1 ? 's' : ''}`
-                    : 'Importar'}
-                </>
-              )}
+              <Check className="mr-1 h-4 w-4" />
+              Marcar {facturasSeleccionadasFC.size} como recibida{facturasSeleccionadasFC.size !== 1 ? 's' : ''}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -7803,6 +8164,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         <TableHeader className="sticky top-0 z-10 bg-white border-b">
                           <TableRow>
                             {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                            <TableHead className="w-[30px]">FC</TableHead>
+                            <TableHead>F. Emisión</TableHead>
                             <TableHead>Fecha Vto.</TableHead>
                             <TableHead>Proveedor</TableHead>
                             <TableHead>CUIT</TableHead>
@@ -7825,6 +8188,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                       />
                                     </TableCell>
                                   )}
+                                  <TableCell></TableCell>
+                                  <TableCell></TableCell>
                                   <TableCell>{row.fecha || '-'}</TableCell>
                                   <TableCell className="max-w-[200px] truncate">
                                     <span className="font-medium">{row.proveedor}</span>
@@ -7881,6 +8246,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                       />
                                     </TableCell>
                                   )}
+                                  <TableCell>
+                                    {f.fc === 'Sí' ? <Badge className="bg-green-100 text-green-700 text-[10px] px-1">Sí</Badge>
+                                      : f.fc === 'No' ? <Badge className="bg-red-100 text-red-700 text-[10px] px-1">No</Badge>
+                                      : f.fc === 'Portal' ? <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1">P</Badge>
+                                      : <span className="text-gray-300 text-xs">—</span>}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-gray-500">{f.fecha_emision?.split('-').reverse().join('/') || '-'}</TableCell>
                                   <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
                                   <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
                                   <TableCell>{f.cuit}</TableCell>
