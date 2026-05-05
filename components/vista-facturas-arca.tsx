@@ -2479,22 +2479,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return
       }
 
-      // ADMIN: confirmación estricta
-      const detalles = []
-      if (cambiaEstado) detalles.push(`Estado DDJJ: "DDJJ OK" → "${nuevoEstadoDDJJ}"`)
-      if (cambiaPeriodo) detalles.push(`Período contable: cambio a ${nuevoPeriodo}`)
-
-      const textoConfirmacion = prompt(
-        `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
-        `${facturasDDJJOK.length} factura(s) con "DDJJ OK" serán modificadas:\n` +
-        `${detalles.join('\n')}\n\n` +
-        `⚠️ RIESGO: Estas facturas ya fueron declaradas fiscalmente.\n` +
-        `Cambiarlas puede afectar declaraciones oficiales presentadas.\n\n` +
-        `Si entiendes el riesgo, tipea exactamente: CONTINUAR`
-      )
-
-      if (textoConfirmacion !== 'CONTINUAR') {
-        alert('❌ Operación cancelada. No se modificaron las facturas.')
+      // ADMIN: confirmación simple
+      if (!window.confirm(`Período ya declarado. ${facturasDDJJOK.length} factura(s) con DDJJ presentada.\n\n¿Seguro querés modificar?`)) {
         return
       }
     }
@@ -5286,12 +5272,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                       <TableHead className="w-12">
                         <Checkbox
                           checked={(() => {
-                            const modificables = facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
-                            return modificables.length > 0 && facturasSeleccionadasGestion.size === modificables.length
+                            const esAdminGestion = typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320'
+                            const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
+                            return seleccionables.length > 0 && facturasSeleccionadasGestion.size === seleccionables.length
                           })()}
                           onCheckedChange={(checked) => {
+                            const esAdminGestion = typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320'
                             if (checked) {
-                              setFacturasSeleccionadasGestion(new Set(facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK').map(f => f.id)))
+                              const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
+                              setFacturasSeleccionadasGestion(new Set(seleccionables.map(f => f.id)))
                             } else {
                               setFacturasSeleccionadasGestion(new Set())
                             }
@@ -5343,15 +5332,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
                     return (
-                    <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${factura.ddjj_iva === 'DDJJ OK' && mostrarGestionMasiva ? 'opacity-60' : ''}`}>
+                    <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${factura.ddjj_iva === 'DDJJ OK' && mostrarGestionMasiva ? 'opacity-50' : ''}`}>
                       {mostrarGestionMasiva && (
                         <TableCell>
-                          {factura.ddjj_iva === 'DDJJ OK' ? (
-                            <span title="DDJJ confirmada — no modificable" className="text-xs">🔒</span>
+                          {factura.ddjj_iva === 'DDJJ OK' && !(typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320') ? (
+                            <span title="DDJJ confirmada — solo admin puede modificar" className="text-xs">🔒</span>
                           ) : (
                             <Checkbox
                               checked={facturasSeleccionadasGestion.has(factura.id)}
                               onCheckedChange={(checked) => {
+                                if (factura.ddjj_iva === 'DDJJ OK' && checked) {
+                                  toast.warning('DDJJ ya presentada — edición solo disponible para admin', { duration: 3000 })
+                                }
                                 const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
                                 if (checked) {
                                   nuevaSeleccion.add(factura.id)
