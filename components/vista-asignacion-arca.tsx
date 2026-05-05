@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, AlertTriangle, CheckCircle, Search, AlertCircle, X, RefreshCw } from "lucide-react"
+import { Loader2, AlertTriangle, CheckCircle, Search, AlertCircle, X, RefreshCw, FileCheck } from "lucide-react"
+import { toast } from "sonner"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,8 @@ interface ComprobanteArca {
   nro_cuenta: string | null        // asignado manualmente
   año_contable: number | null
   mes_contable: number | null
+  fc: string | null
+  ddjj_iva: string | null
 }
 
 type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match"
@@ -132,6 +135,12 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
   const [cuentaElegida, setCuentaElegida] = useState<CuentaSistema | null>(null)
   const [guardando, setGuardando] = useState(false)
 
+  // Modal Actualizar Archivo Facturas
+  const [modalArchivoAbierto, setModalArchivoAbierto] = useState(false)
+  const [archivoPeriodo, setArchivoPeriodo] = useState("")
+  const [archivoFacturas, setArchivoFacturas] = useState<Array<ComprobanteArca & { fcLocal: string }>>([])
+  const [archivoGuardando, setArchivoGuardando] = useState(false)
+
   // ── Carga de datos ────────────────────────────────────────────────────────
 
   const cargar = useCallback(async () => {
@@ -140,7 +149,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
         supabase.schema(schemaName).from("comprobantes_arca")
-          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable")
+          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
           .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
@@ -417,6 +426,43 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
       .slice(0, 30)
   }, [busquedaModal, sugerencias, cuentasSistema])
 
+  // ── Actualizar Archivo Facturas ────────────────────────────────────────────
+
+  async function cargarFacturasArchivo(periodo: string) {
+    const [año, mes] = periodo.split("-").map(Number)
+    const { data, error } = await supabase.schema(schemaName).from("comprobantes_arca")
+      .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva")
+      .eq("año_contable", año)
+      .eq("mes_contable", mes)
+      .order("denominacion_emisor")
+    if (error) { toast.error("Error cargando facturas: " + error.message); return }
+    setArchivoFacturas((data ?? []).map((f: any) => ({ ...f, fcLocal: f.fc || '' })))
+  }
+
+  async function guardarArchivoFC() {
+    setArchivoGuardando(true)
+    try {
+      let actualizadas = 0
+      for (const f of archivoFacturas) {
+        const fcFinal = f.fcLocal || 'Sí'
+        if (fcFinal !== (f.fc || '')) {
+          const { error } = await supabase.schema(schemaName).from("comprobantes_arca")
+            .update({ fc: fcFinal }).eq("id", f.id)
+          if (error) throw new Error(error.message)
+          actualizadas++
+        }
+      }
+      toast.success(`${actualizadas} factura(s) actualizadas`)
+      setModalArchivoAbierto(false)
+      setArchivoFacturas([])
+      await cargar()
+    } catch (err: any) {
+      toast.error("Error: " + err.message)
+    } finally {
+      setArchivoGuardando(false)
+    }
+  }
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   if (loading) return (
@@ -451,6 +497,9 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
             Auto-asignar {resumen.unico} con match único
           </Button>
         )}
+        <Button size="sm" variant="outline" onClick={() => setModalArchivoAbierto(true)} className="text-gray-700">
+          <FileCheck className="h-4 w-4 mr-1" />Actualizar Archivo Facturas
+        </Button>
         <Button size="sm" variant="ghost" onClick={cargar}><RefreshCw className="h-4 w-4" /></Button>
       </div>
 
@@ -676,6 +725,95 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
               Confirmar asignación
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Actualizar Archivo Facturas ── */}
+      <Dialog open={modalArchivoAbierto} onOpenChange={(open) => { setModalArchivoAbierto(open); if (!open) { setArchivoFacturas([]); setArchivoPeriodo("") } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Actualizar Archivo Facturas</DialogTitle>
+            <p className="text-xs text-gray-500">Marcar si se recibió el comprobante físico (FC) para cada factura del período</p>
+          </DialogHeader>
+
+          {/* Selector de período */}
+          <div className="flex items-center gap-3">
+            <Select value={archivoPeriodo} onValueChange={(val) => { setArchivoPeriodo(val); cargarFacturasArchivo(val) }}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Seleccionar período..." />
+              </SelectTrigger>
+              <SelectContent>
+                {periodos.map(p => {
+                  const [a, m] = p.split("-")
+                  return <SelectItem key={p} value={p}>{MESES[parseInt(m) - 1]} {a}</SelectItem>
+                })}
+              </SelectContent>
+            </Select>
+            {archivoFacturas.length > 0 && (
+              <span className="text-xs text-gray-400">{archivoFacturas.length} factura(s)</span>
+            )}
+          </div>
+
+          {/* Tabla facturas */}
+          {archivoFacturas.length > 0 && (
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-100 text-gray-600 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Fecha</th>
+                    <th className="px-3 py-2 text-left">Proveedor</th>
+                    <th className="px-3 py-2 text-right">Imp. Total</th>
+                    <th className="px-3 py-2 text-center w-[120px]">FC</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {archivoFacturas.map((f, idx) => (
+                    <tr key={f.id} className={f.fcLocal ? '' : 'bg-amber-50'}>
+                      <td className="px-3 py-1.5 whitespace-nowrap text-gray-500">
+                        {f.fecha_emision ? new Date(f.fecha_emision + "T00:00:00").toLocaleDateString("es-AR") : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 max-w-[200px] truncate" title={f.denominacion_emisor ?? ""}>
+                        {f.denominacion_emisor ?? "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium">${fmt(f.imp_total)}</td>
+                      <td className="px-3 py-1.5 text-center">
+                        <select
+                          className={`border rounded px-2 py-1 text-xs w-[100px] ${!f.fcLocal ? 'border-amber-300 bg-amber-50' : ''}`}
+                          value={f.fcLocal}
+                          onChange={(e) => {
+                            setArchivoFacturas(prev => prev.map((x, i) => i === idx ? { ...x, fcLocal: e.target.value } : x))
+                          }}
+                        >
+                          <option value="">— vacío —</option>
+                          <option value="Sí">Sí</option>
+                          <option value="No">No</option>
+                          <option value="Portal">Portal</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {archivoPeriodo && archivoFacturas.length === 0 && (
+            <p className="py-8 text-center text-sm text-gray-400">No hay facturas imputadas a este período</p>
+          )}
+
+          {/* Footer */}
+          {archivoFacturas.length > 0 && (
+            <div className="flex items-center gap-3 border-t pt-3">
+              <p className="flex-1 text-xs text-gray-500">
+                Las que queden vacías se guardarán como <strong>Sí</strong> por defecto
+              </p>
+              <Button variant="ghost" onClick={() => setModalArchivoAbierto(false)}>Cancelar</Button>
+              <Button disabled={archivoGuardando} onClick={guardarArchivoFC}>
+                {archivoGuardando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirmar
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
