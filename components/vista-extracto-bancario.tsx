@@ -178,11 +178,16 @@ export function VistaExtractoBancario() {
     centro_de_costo: '',
     estado: '',
     contable: '',
-    interno: ''
+    interno: '',
+    detalle: ''
   })
   const [facturasDisponibles, setFacturasDisponibles] = useState<any[]>([])
   const [vinculaciones, setVinculaciones] = useState<{[key: string]: string}>({}) // movimiento_id -> factura_id
   
+  // Edición inline detalle
+  const [editandoDetalleId, setEditandoDetalleId] = useState<string | null>(null)
+  const [editandoDetalleVal, setEditandoDetalleVal] = useState('')
+
   // Estados para Combobox avanzado
   const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
   const [busquedaCombobox, setBusquedaCombobox] = useState<{[key: string]: string}>({})
@@ -1445,7 +1450,15 @@ export function VistaExtractoBancario() {
                     />
                   </div>
                 </div>
-                
+                <div className="mb-4">
+                  <label className="text-sm font-medium mb-2 block">Detalle</label>
+                  <Input
+                    placeholder="Agregar o modificar detalle del movimiento"
+                    value={editData.detalle}
+                    onChange={(e) => setEditData({...editData, detalle: e.target.value})}
+                  />
+                </div>
+
                 {/* Sección de Vinculación con Facturas */}
                 {editData.estado === 'conciliado' && (
                   <div className="border-t pt-4 mt-4">
@@ -1742,8 +1755,41 @@ export function VistaExtractoBancario() {
                             </Badge>
                           </TableCell>
                           {col('detalle') && (
-                            <TableCell className="max-w-xs truncate text-sm text-gray-600">
-                              {movimiento.detalle || '-'}
+                            <TableCell className="max-w-xs text-sm text-gray-600">
+                              {editandoDetalleId === movimiento.id ? (
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  className="border rounded px-1 py-0.5 text-xs w-full"
+                                  value={editandoDetalleVal}
+                                  onChange={(e) => setEditandoDetalleVal(e.target.value)}
+                                  onKeyDown={async (e) => {
+                                    if (e.key === 'Enter') {
+                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
+                                      recargar()
+                                      setEditandoDetalleId(null)
+                                    }
+                                    if (e.key === 'Escape') setEditandoDetalleId(null)
+                                  }}
+                                  onBlur={async () => {
+                                    if (editandoDetalleVal !== (movimiento.detalle || '')) {
+                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
+                                      recargar()
+                                    }
+                                    setEditandoDetalleId(null)
+                                  }}
+                                />
+                              ) : (
+                                <span
+                                  className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
+                                  title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
+                                  onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || '') }}
+                                >
+                                  {movimiento.detalle || <span className="text-gray-300">—</span>}
+                                </span>
+                              )}
                             </TableCell>
                           )}
                           {col('motivo_revision') && (

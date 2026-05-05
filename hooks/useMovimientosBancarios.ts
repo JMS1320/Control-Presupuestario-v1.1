@@ -173,6 +173,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       estado?: string
       contable?: string
       interno?: string
+      detalle?: string
     }
   ): Promise<boolean> => {
     try {
