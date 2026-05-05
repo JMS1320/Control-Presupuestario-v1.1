@@ -400,6 +400,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [colaSicore, setColaSicore] = useState<FacturaArca[]>([])
   const [procesandoColaSicore, setProcesandoColaSicore] = useState(false)
 
+  // Edición cuenta contable inline — Vista Pagos
+  const [editandoCuentaPagosId, setEditandoCuentaPagosId] = useState<string | null>(null)
+  const [editandoCuentaPagosVal, setEditandoCuentaPagosVal] = useState<string>('')
+  const [cuentasContablesPagos, setCuentasContablesPagos] = useState<any[]>([])
+
   // TC de pago modal - Vista Pagos
   const [modalTcPagoPagos, setModalTcPagoPagos] = useState<{ factura: FacturaArca } | null>(null)
   const [tcPagoInputPagos, setTcPagoInputPagos] = useState('')
@@ -5597,8 +5602,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               setFacturasSeleccionadasPagos(new Set())
               setTemplatesSeleccionadosPagos(new Set())
 
-              // Cargar en paralelo las 3 fuentes
-              const [arcaResult, templatesResult, anticiposResult] = await Promise.all([
+              // Cargar en paralelo las 3 fuentes + cuentas contables
+              const [arcaResult, templatesResult, anticiposResult, cuentasResult] = await Promise.all([
                 supabase.schema(schemaName).from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
@@ -5609,12 +5614,16 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 supabase.from('anticipos_proveedores').select('*')
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .neq('estado', 'conciliado')
-                  .order('fecha_pago', { ascending: true })
+                  .order('fecha_pago', { ascending: true }),
+                supabase.from('cuentas_contables').select('nro_cuenta, nombre_referencia, nombre_totalizadora, tipo, imputable')
+                  .eq('imputable', true)
+                  .order('nombre_totalizadora').order('nombre_referencia')
               ])
 
               if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
               if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
               if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
+              if (!cuentasResult.error && cuentasResult.data) setCuentasContablesPagos(cuentasResult.data)
 
               setCargandoPagos(false)
             }}
@@ -8256,7 +8265,56 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
                                   <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
                                   <TableCell>{f.cuit}</TableCell>
-                                  <TableCell className="max-w-[150px] truncate">{f.cuenta_contable || '-'}</TableCell>
+                                  <TableCell className="max-w-[180px]">
+                                    {editandoCuentaPagosId === f.id ? (
+                                      <select
+                                        autoFocus
+                                        className="border rounded px-1 py-0.5 text-xs w-full"
+                                        value={editandoCuentaPagosVal}
+                                        onChange={async (e) => {
+                                          const val = e.target.value || null
+                                          setEditandoCuentaPagosVal(e.target.value)
+                                          // Guardar en BD
+                                          await supabase.schema(schemaName).from('comprobantes_arca')
+                                            .update({ cuenta_contable: val }).eq('id', f.id)
+                                          // Actualizar estado local
+                                          setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: val } : x))
+                                          setEditandoCuentaPagosId(null)
+                                        }}
+                                        onBlur={() => setEditandoCuentaPagosId(null)}
+                                      >
+                                        <option value="">— Sin asignar —</option>
+                                        {(() => {
+                                          const grupos = new Map<string, any[]>()
+                                          cuentasContablesPagos.forEach((c: any) => {
+                                            const g = c.nombre_totalizadora || 'Sin grupo'
+                                            if (!grupos.has(g)) grupos.set(g, [])
+                                            grupos.get(g)!.push(c)
+                                          })
+                                          return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
+                                            <optgroup key={grupo} label={grupo}>
+                                              {cuentas.map((c: any) => (
+                                                <option key={c.nro_cuenta} value={c.nro_cuenta}>
+                                                  {c.nro_cuenta} — {c.nombre_referencia}
+                                                </option>
+                                              ))}
+                                            </optgroup>
+                                          ))
+                                        })()}
+                                      </select>
+                                    ) : (
+                                      <span
+                                        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block ${f.cuenta_contable ? '' : 'text-gray-400 italic'}`}
+                                        title={f.cuenta_contable ? `${f.cuenta_contable} — click para editar` : 'Click para asignar cuenta'}
+                                        onClick={() => {
+                                          setEditandoCuentaPagosId(f.id)
+                                          setEditandoCuentaPagosVal(f.cuenta_contable || '')
+                                        }}
+                                      >
+                                        {f.cuenta_contable || 'Sin cuenta'}
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-right font-medium">
                                     {(() => {
                                       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
