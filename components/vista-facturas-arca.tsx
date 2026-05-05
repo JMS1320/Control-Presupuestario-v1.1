@@ -404,6 +404,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   // Edición cuenta contable inline — Vista Pagos
   const [editandoCuentaPagosId, setEditandoCuentaPagosId] = useState<string | null>(null)
   const [editandoCuentaPagosVal, setEditandoCuentaPagosVal] = useState<string>('')
+  const [editandoCuentaBusqueda, setEditandoCuentaBusqueda] = useState('')
   const [cuentasContablesPagos, setCuentasContablesPagos] = useState<any[]>([])
 
   // TC de pago modal - Vista Pagos
@@ -1376,10 +1377,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const cargarCuentasParaImport = async () => {
     const { data } = await supabase
       .from('cuentas_contables')
-      .select('nro_cuenta, nombre_referencia, nombre_totalizadora, tipo, imputable')
+      .select('categ, nro_cuenta, cuenta_contable, nombre_totalizadora')
       .eq('imputable', true)
       .order('nombre_totalizadora')
-      .order('nombre_referencia')
+      .order('categ')
     setCuentasContablesImport(data || [])
   }
 
@@ -6380,8 +6381,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
                           <optgroup key={grupo} label={grupo}>
                             {cuentas.map((c: any) => (
-                              <option key={c.nro_cuenta} value={c.nro_cuenta}>
-                                {c.nro_cuenta} — {c.nombre_referencia}
+                              <option key={c.nro_cuenta} value={c.categ}>
+                                {c.categ}
                               </option>
                             ))}
                           </optgroup>
@@ -6453,8 +6454,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                     return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
                                       <optgroup key={grupo} label={grupo}>
                                         {cuentas.map((c: any) => (
-                                          <option key={c.nro_cuenta} value={c.nro_cuenta}>
-                                            {c.nro_cuenta} — {c.nombre_referencia}
+                                          <option key={c.nro_cuenta} value={c.categ}>
+                                            {c.categ}
                                           </option>
                                         ))}
                                       </optgroup>
@@ -8273,41 +8274,67 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   <TableCell>{f.cuit}</TableCell>
                                   <TableCell className="max-w-[180px]">
                                     {editandoCuentaPagosId === f.id ? (
-                                      <select
-                                        autoFocus
-                                        className="border rounded px-1 py-0.5 text-xs w-full"
-                                        value={editandoCuentaPagosVal}
-                                        onChange={async (e) => {
-                                          const val = e.target.value || null
-                                          setEditandoCuentaPagosVal(e.target.value)
-                                          // Guardar en BD
-                                          await supabase.schema(schemaName).from('comprobantes_arca')
-                                            .update({ cuenta_contable: val }).eq('id', f.id)
-                                          // Actualizar estado local
-                                          setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: val } : x))
-                                          setEditandoCuentaPagosId(null)
-                                        }}
-                                        onBlur={() => setEditandoCuentaPagosId(null)}
-                                      >
-                                        <option value="">— Sin asignar —</option>
-                                        {(() => {
-                                          const grupos = new Map<string, any[]>()
-                                          cuentasContablesPagos.forEach((c: any) => {
-                                            const g = c.nombre_totalizadora || 'Sin grupo'
-                                            if (!grupos.has(g)) grupos.set(g, [])
-                                            grupos.get(g)!.push(c)
-                                          })
-                                          return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
-                                            <optgroup key={grupo} label={grupo}>
-                                              {cuentas.map((c: any) => (
-                                                <option key={c.nro_cuenta} value={c.nro_cuenta}>
-                                                  {c.nro_cuenta} — {c.cuenta_contable}
-                                                </option>
-                                              ))}
-                                            </optgroup>
-                                          ))
-                                        })()}
-                                      </select>
+                                      <div className="relative">
+                                        <input
+                                          autoFocus
+                                          type="text"
+                                          className="border rounded px-1 py-0.5 text-xs w-full"
+                                          placeholder="Buscar cuenta..."
+                                          value={editandoCuentaBusqueda}
+                                          onChange={(e) => setEditandoCuentaBusqueda(e.target.value)}
+                                          onBlur={() => setTimeout(() => setEditandoCuentaPagosId(null), 150)}
+                                          onKeyDown={(e) => { if (e.key === 'Escape') setEditandoCuentaPagosId(null) }}
+                                        />
+                                        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border rounded shadow-lg max-h-[250px] overflow-y-auto text-xs">
+                                          <button
+                                            className="w-full text-left px-2 py-1 hover:bg-gray-100 text-gray-400 italic"
+                                            onMouseDown={async (e) => {
+                                              e.preventDefault()
+                                              await supabase.schema(schemaName).from('comprobantes_arca')
+                                                .update({ cuenta_contable: null, nro_cuenta: null }).eq('id', f.id)
+                                              setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: null, nro_cuenta: null } : x))
+                                              setEditandoCuentaPagosId(null)
+                                            }}
+                                          >— Sin asignar —</button>
+                                          {(() => {
+                                            const q = editandoCuentaBusqueda.toLowerCase()
+                                            const filtradas = q
+                                              ? cuentasContablesPagos.filter((c: any) =>
+                                                  (c.categ || '').toLowerCase().includes(q) ||
+                                                  (c.nombre_totalizadora || '').toLowerCase().includes(q) ||
+                                                  (c.nro_cuenta || '').includes(editandoCuentaBusqueda)
+                                                )
+                                              : cuentasContablesPagos
+                                            const grupos = new Map<string, any[]>()
+                                            filtradas.forEach((c: any) => {
+                                              const g = c.nombre_totalizadora || 'Sin grupo'
+                                              if (!grupos.has(g)) grupos.set(g, [])
+                                              grupos.get(g)!.push(c)
+                                            })
+                                            if (filtradas.length === 0) return <div className="px-2 py-2 text-gray-400">Sin resultados</div>
+                                            return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
+                                              <div key={grupo}>
+                                                <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0">{grupo}</div>
+                                                {cuentas.map((c: any) => (
+                                                  <button
+                                                    key={c.nro_cuenta}
+                                                    className={`w-full text-left px-2 py-1 hover:bg-blue-50 ${f.cuenta_contable === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
+                                                    onMouseDown={async (e) => {
+                                                      e.preventDefault()
+                                                      await supabase.schema(schemaName).from('comprobantes_arca')
+                                                        .update({ cuenta_contable: c.categ, nro_cuenta: c.nro_cuenta }).eq('id', f.id)
+                                                      setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: c.categ, nro_cuenta: c.nro_cuenta } : x))
+                                                      setEditandoCuentaPagosId(null)
+                                                    }}
+                                                  >
+                                                    {c.categ}
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            ))
+                                          })()}
+                                        </div>
+                                      </div>
                                     ) : (
                                       <span
                                         className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block ${f.cuenta_contable ? '' : 'text-gray-400 italic'}`}
@@ -8315,6 +8342,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                         onClick={() => {
                                           setEditandoCuentaPagosId(f.id)
                                           setEditandoCuentaPagosVal(f.cuenta_contable || '')
+                                          setEditandoCuentaBusqueda('')
                                         }}
                                       >
                                         {f.cuenta_contable || 'Sin cuenta'}
