@@ -3,6 +3,26 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 
+// Abreviatura tipo comprobante AFIP → FC/ND/NC
+const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
+  if (!tipo) return 'FC'
+  const codFC = [1, 6, 11, 51, 201, 206, 211]
+  const codND = [2, 7, 12, 52, 202, 207, 212]
+  const codNC = [3, 8, 13, 53, 203, 208, 213]
+  if (codFC.includes(tipo)) return 'FC'
+  if (codND.includes(tipo)) return 'ND'
+  if (codNC.includes(tipo)) return 'NC'
+  return 'FC'
+}
+
+// Genera detalle base de factura: "FC 00001234 - Proveedor"
+const generarDetalleBase = (f: any): string => {
+  const abrev = tipoComprobanteAbrev(f.tipo_comprobante)
+  const numero = f.numero_desde || ''
+  const proveedor = f.denominacion_emisor || ''
+  return proveedor ? `${abrev} ${numero} - ${proveedor}` : `${abrev} ${numero}`
+}
+
 // Extrae el prefijo común (a nivel de palabras) de un array de strings
 const extraerPrefijoComun = (nombres: string[]): string => {
   if (nombres.length === 0) return ''
@@ -113,7 +133,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         centro_costo: f.centro_costo || 'SIN_CC',
         cuit_proveedor: f.cuit || '',
         nombre_proveedor: f.denominacion_emisor || '',
-        detalle: f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`,
+        detalle: f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f),
         debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -153,8 +173,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       }, 0)
       // Detalle: lista de los detalles individuales separados por " · "
       const detallesCombinados = fs
-        .map(f => f.detalle || `Factura ${f.tipo_comprobante}-${f.numero_desde}`)
-        .join(' · ')
+        .map(f => f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f))
+        .join(' | ')
       const primera = fs[0]
 
       return {

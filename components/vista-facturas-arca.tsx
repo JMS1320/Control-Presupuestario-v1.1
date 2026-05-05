@@ -407,6 +407,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [editandoCuentaBusqueda, setEditandoCuentaBusqueda] = useState('')
   const [cuentasContablesPagos, setCuentasContablesPagos] = useState<any[]>([])
 
+  // Edición detalle inline — Vista Pagos
+  const [editandoDetallePagosId, setEditandoDetallePagosId] = useState<string | null>(null)
+  const [editandoDetallePagosVal, setEditandoDetallePagosVal] = useState('')
+
   // TC de pago modal - Vista Pagos
   const [modalTcPagoPagos, setModalTcPagoPagos] = useState<{ factura: FacturaArca } | null>(null)
   const [tcPagoInputPagos, setTcPagoInputPagos] = useState('')
@@ -8186,6 +8190,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             <TableHead>Proveedor</TableHead>
                             <TableHead>CUIT</TableHead>
                             <TableHead>Cuenta</TableHead>
+                            <TableHead className="max-w-[200px]">Detalle</TableHead>
                             <TableHead className="text-right">Monto</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -8215,6 +8220,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   </TableCell>
                                   <TableCell>{row.cuit}</TableCell>
                                   <TableCell className="max-w-[150px] truncate">{row.cuentaContable}</TableCell>
+                                  <TableCell className="text-xs text-gray-400">—</TableCell>
                                   <TableCell className="text-right font-bold text-purple-700">
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
@@ -8346,6 +8352,41 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                         }}
                                       >
                                         {f.cuenta_contable || 'Sin cuenta'}
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="max-w-[200px]">
+                                    {editandoDetallePagosId === f.id ? (
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        className="border rounded px-1 py-0.5 text-xs w-full"
+                                        value={editandoDetallePagosVal}
+                                        onChange={(e) => setEditandoDetallePagosVal(e.target.value)}
+                                        onBlur={async () => {
+                                          const val = editandoDetallePagosVal.trim() || null
+                                          if (val !== (f.detalle || null)) {
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ detalle: val }).eq('id', f.id)
+                                            setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, detalle: val } : x))
+                                          }
+                                          setEditandoDetallePagosId(null)
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                          if (e.key === 'Escape') setEditandoDetallePagosId(null)
+                                        }}
+                                      />
+                                    ) : (
+                                      <span
+                                        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block text-xs ${f.detalle ? '' : 'text-gray-400 italic'}`}
+                                        title={f.detalle ? `${f.detalle} — click para editar` : 'Click para agregar detalle'}
+                                        onClick={() => {
+                                          setEditandoDetallePagosId(f.id)
+                                          setEditandoDetallePagosVal(f.detalle || '')
+                                        }}
+                                      >
+                                        {f.detalle || 'Sin detalle'}
                                       </span>
                                     )}
                                   </TableCell>
