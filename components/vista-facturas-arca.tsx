@@ -2462,42 +2462,40 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     // Validar permisos según rol y cambios de estado
     const facturasArray = Array.from(facturasSeleccionadasGestion)
     
-    // SOLO ADMIN puede revertir desde "DDJJ OK" hacia otros estados
-    if (rolUsuario !== 'admin' && nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') {
-      const facturasProhibidas = facturasPeriodo.filter(f => 
-        facturasArray.includes(f.id) && 
-        f.ddjj_iva === 'DDJJ OK' && 
-        nuevoEstadoDDJJ !== 'DDJJ OK' // Intentando cambiar DESDE "DDJJ OK" hacia otro estado
-      )
+    // Detectar facturas DDJJ OK seleccionadas
+    const facturasDDJJOK = facturasPeriodo.filter(f =>
+      facturasArray.includes(f.id) && f.ddjj_iva === 'DDJJ OK'
+    )
 
-      if (facturasProhibidas.length > 0) {
-        alert(`❌ Sin permisos: Solo administrador puede revertir el estado "DDJJ OK". ${facturasProhibidas.length} facturas requieren permisos de administrador.`)
+    // Verificar si se intenta modificar algo en facturas DDJJ OK
+    const cambiaEstado = nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
+    const cambiaPeriodo = nuevoPeriodo && nuevoPeriodo !== 'sin-cambios'
+    const intentaModificarDDJJOK = facturasDDJJOK.length > 0 && (cambiaEstado || cambiaPeriodo)
+
+    if (intentaModificarDDJJOK) {
+      // NON-ADMIN: bloqueo total para facturas DDJJ OK
+      if (rolUsuario !== 'admin') {
+        alert(`❌ Sin permisos: No se pueden modificar facturas con "DDJJ OK" (ya declaradas fiscalmente).\n\n${facturasDDJJOK.length} factura(s) seleccionada(s) tienen DDJJ confirmada.\n\nDeseleccioná esas facturas o consultá al administrador.`)
         return
       }
-    }
 
-    // Validación especial para ADMIN que intenta cambiar facturas DDJJ OK
-    if (rolUsuario === 'admin') {
-      const facturasDDJJOK = facturasPeriodo.filter(f => 
-        facturasArray.includes(f.id) && 
-        f.ddjj_iva === 'DDJJ OK' &&
-        nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
+      // ADMIN: confirmación estricta
+      const detalles = []
+      if (cambiaEstado) detalles.push(`Estado DDJJ: "DDJJ OK" → "${nuevoEstadoDDJJ}"`)
+      if (cambiaPeriodo) detalles.push(`Período contable: cambio a ${nuevoPeriodo}`)
+
+      const textoConfirmacion = prompt(
+        `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
+        `${facturasDDJJOK.length} factura(s) con "DDJJ OK" serán modificadas:\n` +
+        `${detalles.join('\n')}\n\n` +
+        `⚠️ RIESGO: Estas facturas ya fueron declaradas fiscalmente.\n` +
+        `Cambiarlas puede afectar declaraciones oficiales presentadas.\n\n` +
+        `Si entiendes el riesgo, tipea exactamente: CONTINUAR`
       )
 
-      if (facturasDDJJOK.length > 0) {
-        const textoConfirmacion = prompt(
-          `🚨 ADVERTENCIA CRÍTICA: MODIFICACIÓN DDJJ FISCAL\n\n` +
-          `Estás intentando cambiar ${facturasDDJJOK.length} facturas desde estado "DDJJ OK" a "${nuevoEstadoDDJJ}".\n\n` +
-          `⚠️ RIESGO: Las facturas con "DDJJ OK" ya fueron declaradas fiscalmente.\n` +
-          `Cambiar su estado puede afectar declaraciones oficiales presentadas.\n\n` +
-          `Si entiendes el riesgo y quieres continuar, tipea exactamente: CONTINUAR\n` +
-          `Cualquier otro texto cancelará la operación.`
-        )
-
-        if (textoConfirmacion !== 'CONTINUAR') {
-          alert('❌ Operación cancelada. No se modificaron las facturas.')
-          return
-        }
+      if (textoConfirmacion !== 'CONTINUAR') {
+        alert('❌ Operación cancelada. No se modificaron las facturas.')
+        return
       }
     }
 
@@ -5287,10 +5285,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {mostrarGestionMasiva && (
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={facturasSeleccionadasGestion.size === facturasPeriodo.length && facturasPeriodo.length > 0}
+                          checked={(() => {
+                            const modificables = facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
+                            return modificables.length > 0 && facturasSeleccionadasGestion.size === modificables.length
+                          })()}
                           onCheckedChange={(checked) => {
                             if (checked) {
-                              setFacturasSeleccionadasGestion(new Set(facturasPeriodo.map(f => f.id)))
+                              setFacturasSeleccionadasGestion(new Set(facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK').map(f => f.id)))
                             } else {
                               setFacturasSeleccionadasGestion(new Set())
                             }
@@ -5342,21 +5343,25 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
                     return (
-                    <TableRow key={factura.id} className={esUSD ? 'bg-amber-50' : ''}>
+                    <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${factura.ddjj_iva === 'DDJJ OK' && mostrarGestionMasiva ? 'opacity-60' : ''}`}>
                       {mostrarGestionMasiva && (
                         <TableCell>
-                          <Checkbox
-                            checked={facturasSeleccionadasGestion.has(factura.id)}
-                            onCheckedChange={(checked) => {
-                              const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
-                              if (checked) {
-                                nuevaSeleccion.add(factura.id)
-                              } else {
-                                nuevaSeleccion.delete(factura.id)
-                              }
-                              setFacturasSeleccionadasGestion(nuevaSeleccion)
-                            }}
-                          />
+                          {factura.ddjj_iva === 'DDJJ OK' ? (
+                            <span title="DDJJ confirmada — no modificable" className="text-xs">🔒</span>
+                          ) : (
+                            <Checkbox
+                              checked={facturasSeleccionadasGestion.has(factura.id)}
+                              onCheckedChange={(checked) => {
+                                const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
+                                if (checked) {
+                                  nuevaSeleccion.add(factura.id)
+                                } else {
+                                  nuevaSeleccion.delete(factura.id)
+                                }
+                                setFacturasSeleccionadasGestion(nuevaSeleccion)
+                              }}
+                            />
+                          )}
                         </TableCell>
                       )}
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
@@ -5616,9 +5621,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .neq('estado', 'conciliado')
                   .order('fecha_pago', { ascending: true }),
-                supabase.from('cuentas_contables').select('nro_cuenta, nombre_referencia, nombre_totalizadora, tipo, imputable')
+                supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
                   .eq('imputable', true)
-                  .order('nombre_totalizadora').order('nombre_referencia')
+                  .order('nombre_totalizadora').order('nro_cuenta')
               ])
 
               if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
@@ -8304,7 +8309,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             <optgroup key={grupo} label={grupo}>
                                               {cuentas.map((c: any) => (
                                                 <option key={c.nro_cuenta} value={c.nro_cuenta}>
-                                                  {c.nro_cuenta} — {c.nombre_referencia}
+                                                  {c.nro_cuenta} — {c.cuenta_contable}
                                                 </option>
                                               ))}
                                             </optgroup>
