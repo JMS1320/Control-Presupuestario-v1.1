@@ -23,6 +23,7 @@ import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
+import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
@@ -7819,6 +7820,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
               const ids = Array.from(facturasSeleccionadasPagos)
               const facturasACambiar = facturasPagos.filter(f => ids.includes(f.id))
+
+              // Warning FC: avisar si se paga sin comprobante físico recibido
+              if (nuevoEstado === 'pagar' || nuevoEstado === 'preparado') {
+                const sinFC = facturasACambiar.filter(f => f.fc !== 'Sí')
+                if (sinFC.length > 0) {
+                  toast.warning(`${sinFC.length} factura(s) sin comprobante físico recibido (FC ≠ Sí)`, { duration: 5000 })
+                }
+              }
 
               // Para ECHEQ: echeqFecha sobreescribe fechaPagoSeleccionada (evita stale closure)
               const fechaEfectiva = echeqFecha || fechaPagoSeleccionada
