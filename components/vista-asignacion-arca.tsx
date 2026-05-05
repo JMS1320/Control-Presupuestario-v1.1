@@ -36,6 +36,8 @@ interface ComprobanteArca {
   mes_contable: number | null
   fc: string | null
   ddjj_iva: string | null
+  numero_desde: string | null
+  tipo_comprobante: number | null
 }
 
 type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match"
@@ -149,7 +151,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
         supabase.schema(schemaName).from("comprobantes_arca")
-          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva")
+          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
           .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
@@ -581,6 +583,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                     <Checkbox checked={todosVisible} onCheckedChange={toggleTodos} />
                   </th>
                   <th className="px-3 py-2 text-left">Fecha</th>
+                  <th className="px-3 py-2 text-left">Nro. Factura</th>
                   <th className="px-3 py-2 text-left">Emisor</th>
                   <th className="px-3 py-2 text-left">CUIT</th>
                   <th className="px-3 py-2 text-left">Cuenta Contable</th>
@@ -593,7 +596,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtrados.length === 0 ? (
-                  <tr><td colSpan={10} className="py-8 text-center text-gray-400">Sin resultados</td></tr>
+                  <tr><td colSpan={11} className="py-8 text-center text-gray-400">Sin resultados</td></tr>
                 ) : filtrados.map(c => (
                   <tr key={c.id} className={`${ESTADO_CONFIG[c._estado].rowBg} hover:brightness-95 transition-all`}>
                     <td className="px-2 py-1.5 text-center">
@@ -601,6 +604,9 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap text-gray-500">
                       {c.fecha_emision ? new Date(c.fecha_emision+"T00:00:00").toLocaleDateString("es-AR") : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap text-gray-400 font-mono text-[11px]">
+                      {c.numero_desde ?? "—"}
                     </td>
                     <td className="px-3 py-1.5 max-w-[150px] truncate" title={c.denominacion_emisor ?? ""}>
                       {c.denominacion_emisor ?? "—"}

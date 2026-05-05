@@ -11,6 +11,8 @@ const supabase = createClient(
  * Asigna nro_cuenta + cuenta_contable a uno o varios comprobantes ARCA actuales.
  * Body: { ids: string[], nro_cuenta: string | null, cuenta_contable: string | null }
  * Para desasignar: pasar nro_cuenta: null (cuenta_contable se mantiene)
+ *
+ * Propaga categ a extractos bancarios vinculados (msa_galicia, pam_galicia, pam_galicia_cc).
  */
 export async function PATCH(request: Request) {
   try {
@@ -38,6 +40,20 @@ export async function PATCH(request: Request) {
       .in("id", ids)
 
     if (error) throw new Error(error.message)
+
+    // Propagar categ a extractos bancarios vinculados via comprobante_arca_id
+    if (cuenta_contable) {
+      const tablas = ["msa_galicia", "pam_galicia", "pam_galicia_cc"]
+      for (const tabla of tablas) {
+        const { error: errProp } = await supabase
+          .from(tabla)
+          .update({ categ: cuenta_contable, nro_cuenta })
+          .in("comprobante_arca_id", ids)
+        if (errProp) {
+          console.error(`Error propagando cuenta a ${tabla}:`, errProp.message)
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
