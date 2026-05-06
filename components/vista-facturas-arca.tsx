@@ -412,6 +412,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [editandoDetallePagosId, setEditandoDetallePagosId] = useState<string | null>(null)
   const [editandoDetallePagosVal, setEditandoDetallePagosVal] = useState('')
 
+  // Edición fecha pago inline — Vista Pagos
+  const [editandoFechaPagosId, setEditandoFechaPagosId] = useState<string | null>(null)
+  const [editandoFechaPagosVal, setEditandoFechaPagosVal] = useState('')
+
   // TC de pago modal - Vista Pagos
   const [modalTcPagoPagos, setModalTcPagoPagos] = useState<{ factura: FacturaArca } | null>(null)
   const [tcPagoInputPagos, setTcPagoInputPagos] = useState('')
@@ -8276,7 +8280,47 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                       : <span className="text-gray-300 text-xs">—</span>}
                                   </TableCell>
                                   <TableCell className="text-xs text-gray-500">{f.fecha_emision?.split('-').reverse().join('/') || '-'}</TableCell>
-                                  <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
+                                  <TableCell className="min-w-[110px]">
+                                    {editandoFechaPagosId === f.id ? (
+                                      <Input
+                                        type="date"
+                                        value={editandoFechaPagosVal}
+                                        onChange={e => setEditandoFechaPagosVal(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter' && editandoFechaPagosVal) {
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .eq('id', f.id)
+                                            setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setEditandoFechaPagosId(null)
+                                          }
+                                          if (e.key === 'Escape') setEditandoFechaPagosId(null)
+                                        }}
+                                        onBlur={async () => {
+                                          if (editandoFechaPagosVal) {
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .eq('id', f.id)
+                                            setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                          }
+                                          setEditandoFechaPagosId(null)
+                                        }}
+                                        className="h-7 text-xs w-[120px]"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span
+                                        className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded text-xs"
+                                        title="Click para cambiar fecha de pago"
+                                        onClick={() => {
+                                          setEditandoFechaPagosId(f.id)
+                                          setEditandoFechaPagosVal(f.fecha_estimada || f.fecha_vencimiento || '')
+                                        }}
+                                      >
+                                        {(f.fecha_vencimiento || f.fecha_estimada || '-')}
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
                                   <TableCell>{f.cuit}</TableCell>
                                   <TableCell className="max-w-[220px]">
@@ -8655,7 +8699,47 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                       />
                                     </TableCell>
                                   )}
-                                  <TableCell>{t.fecha_vencimiento || t.fecha_estimada || '-'}</TableCell>
+                                  <TableCell className="min-w-[110px]">
+                                    {editandoFechaPagosId === t.id ? (
+                                      <Input
+                                        type="date"
+                                        value={editandoFechaPagosVal}
+                                        onChange={e => setEditandoFechaPagosVal(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter' && editandoFechaPagosVal) {
+                                            await supabase.from('cuotas_egresos_sin_factura')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .eq('id', t.id)
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setEditandoFechaPagosId(null)
+                                          }
+                                          if (e.key === 'Escape') setEditandoFechaPagosId(null)
+                                        }}
+                                        onBlur={async () => {
+                                          if (editandoFechaPagosVal) {
+                                            await supabase.from('cuotas_egresos_sin_factura')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .eq('id', t.id)
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                          }
+                                          setEditandoFechaPagosId(null)
+                                        }}
+                                        className="h-7 text-xs w-[120px]"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span
+                                        className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded text-xs"
+                                        title="Click para cambiar fecha de pago"
+                                        onClick={() => {
+                                          setEditandoFechaPagosId(t.id)
+                                          setEditandoFechaPagosVal(t.fecha_estimada || t.fecha_vencimiento || '')
+                                        }}
+                                      >
+                                        {t.fecha_vencimiento || t.fecha_estimada || '-'}
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_referencia || t.descripcion || '-'}</TableCell>
                                   <TableCell className="max-w-[150px] truncate">{t.egreso?.nombre_quien_cobra || '-'}</TableCell>
                                   <TableCell className="max-w-[100px] truncate">{t.egreso?.categ || '-'}</TableCell>

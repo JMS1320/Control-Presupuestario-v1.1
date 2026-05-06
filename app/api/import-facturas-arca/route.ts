@@ -3,6 +3,18 @@ import { createClient } from "@supabase/supabase-js"
 import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
 
+// Abreviatura tipo comprobante AFIP → FC/ND/NC
+const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
+  if (!tipo) return 'FC'
+  const codFC = [1, 6, 11, 51, 201, 206, 211]
+  const codND = [2, 7, 12, 52, 202, 207, 212]
+  const codNC = [3, 8, 13, 53, 203, 208, 213]
+  if (codFC.includes(tipo)) return 'FC'
+  if (codND.includes(tipo)) return 'ND'
+  if (codNC.includes(tipo)) return 'NC'
+  return `T${tipo}`
+}
+
 // Cliente Supabase con permisos de administrador para insertar datos
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -309,7 +321,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     centro_costo: null,
     estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
     observaciones_pago: null,
-    detalle: `Factura ${datosBasicos.tipo_comprobante}-${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
+    detalle: `${tipoComprobanteAbrev(datosBasicos.tipo_comprobante)} ${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
     archivo_origen: nombreArchivo
   }
 

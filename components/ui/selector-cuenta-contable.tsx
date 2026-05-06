@@ -39,7 +39,49 @@ interface SelectorCuentaContableProps {
 // Cache global para evitar queries repetidos
 let cuentasCache: CuentaContableItem[] | null = null
 let cuentasCacheTimestamp = 0
+let jerarquiaCache: Map<string, string> | null = null
 const CACHE_TTL = 60_000 // 1 minuto
+
+/** Construye mapa categ (lowercase) → nombre_totalizadora para TODA la tabla */
+async function cargarJerarquia(): Promise<Map<string, string>> {
+  if (jerarquiaCache) return jerarquiaCache
+
+  const { data, error } = await supabase
+    .from('cuentas_contables')
+    .select('categ, nombre_totalizadora')
+
+  if (error) {
+    console.error('Error cargando jerarquía:', error)
+    return new Map()
+  }
+
+  const mapa = new Map<string, string>()
+  for (const row of (data ?? [])) {
+    if (row.nombre_totalizadora) {
+      mapa.set(row.categ.toLowerCase(), row.nombre_totalizadora)
+    }
+  }
+  jerarquiaCache = mapa
+  return mapa
+}
+
+/** Construye la ruta completa de jerarquía: "RESULTADOS > EGRESOS > EGRESOS POR GANADERIA > GASTOS DE ALIMENTACION" */
+function construirRutaJerarquia(nombreTotalizadora: string | null, jerarquia: Map<string, string>): string {
+  if (!nombreTotalizadora) return ''
+  const partes: string[] = [nombreTotalizadora]
+  let actual = nombreTotalizadora
+  const visitados = new Set<string>()
+  while (true) {
+    const key = actual.toLowerCase()
+    if (visitados.has(key)) break
+    visitados.add(key)
+    const padre = jerarquia.get(key)
+    if (!padre) break
+    partes.unshift(padre)
+    actual = padre
+  }
+  return partes.join(' > ')
+}
 
 async function cargarCuentas(): Promise<CuentaContableItem[]> {
   const now = Date.now()
@@ -116,6 +158,7 @@ export function SelectorCuentaContable({
 }: SelectorCuentaContableProps) {
   const [cuentas, setCuentas] = useState<CuentaContableItem[]>(cuentasPrecargadas ?? [])
   const [historial, setHistorial] = useState<Map<string, number>>(new Map())
+  const [jerarquia, setJerarquia] = useState<Map<string, string>>(new Map())
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -123,9 +166,10 @@ export function SelectorCuentaContable({
   useEffect(() => {
     if (cuentasPrecargadas) {
       setCuentas(cuentasPrecargadas)
-      return
+    } else {
+      cargarCuentas().then(setCuentas)
     }
-    cargarCuentas().then(setCuentas)
+    cargarJerarquia().then(setJerarquia)
   }, [cuentasPrecargadas])
 
   useEffect(() => {
@@ -140,18 +184,32 @@ export function SelectorCuentaContable({
     }
   }, [autoFocus])
 
+  // Mapa de ruta completa por nombre_totalizadora (memoizado)
+  const rutasMap = useMemo(() => {
+    const mapa = new Map<string, string>()
+    for (const c of cuentas) {
+      const key = c.nombre_totalizadora || 'Sin grupo'
+      if (!mapa.has(key)) {
+        mapa.set(key, construirRutaJerarquia(c.nombre_totalizadora, jerarquia))
+      }
+    }
+    return mapa
+  }, [cuentas, jerarquia])
+
   // Filtrar y agrupar
   const { sugeridas, agrupadas, totalResultados } = useMemo(() => {
     const q = busqueda.toLowerCase().trim()
 
-    // Filtrar por búsqueda
+    // Filtrar por búsqueda (incluye ruta completa de jerarquía)
     const filtradas = q
-      ? cuentas.filter(c =>
-          c.categ.toLowerCase().includes(q) ||
-          (c.cuenta_contable || '').toLowerCase().includes(q) ||
-          (c.nro_cuenta || '').includes(busqueda) ||
-          (c.nombre_totalizadora || '').toLowerCase().includes(q)
-        )
+      ? cuentas.filter(c => {
+          const ruta = rutasMap.get(c.nombre_totalizadora || 'Sin grupo') || ''
+          return c.categ.toLowerCase().includes(q) ||
+            (c.cuenta_contable || '').toLowerCase().includes(q) ||
+            (c.nro_cuenta || '').includes(busqueda) ||
+            (c.nombre_totalizadora || '').toLowerCase().includes(q) ||
+            ruta.toLowerCase().includes(q)
+        })
       : cuentas
 
     // Separar sugeridas (historial proveedor) de todas
@@ -184,7 +242,7 @@ export function SelectorCuentaContable({
       agrupadas: grupos,
       totalResultados: sugeridas.length + restantes.length
     }
-  }, [cuentas, busqueda, historial])
+  }, [cuentas, busqueda, historial, rutasMap])
 
   const handleSelect = (cuenta: CuentaContableItem | null) => {
     onSelect(cuenta)
@@ -234,47 +292,53 @@ export function SelectorCuentaContable({
             <div className="px-2 py-1 text-[10px] font-semibold text-green-700 bg-green-50 sticky top-0 z-10 border-b">
               Usadas para este proveedor
             </div>
-            {sugeridas.map(c => (
-              <button
-                key={`sug-${c.categ}`}
-                className={`w-full text-left px-2 py-1.5 hover:bg-green-50 text-xs flex items-center gap-2
-                  ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
-              >
-                <span className="flex-1 min-w-0">
-                  {c.nombre_totalizadora && (
-                    <span className="text-[9px] text-gray-400 block truncate">{c.nombre_totalizadora}</span>
-                  )}
-                  <span className="font-medium">{c.categ}</span>
-                  <span className="ml-1.5 text-gray-400 font-mono text-[10px]">{c.nro_cuenta}</span>
-                </span>
-                <span className="shrink-0 text-[10px] bg-green-100 text-green-700 rounded px-1.5 py-0.5">
-                  {c.usos}x
-                </span>
-              </button>
-            ))}
+            {sugeridas.map(c => {
+              const ruta = rutasMap.get(c.nombre_totalizadora || 'Sin grupo') || c.nombre_totalizadora || ''
+              return (
+                <button
+                  key={`sug-${c.categ}`}
+                  className={`w-full text-left px-2 py-1.5 hover:bg-green-50 text-xs flex items-center gap-2
+                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
+                  onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
+                >
+                  <span className="flex-1 min-w-0">
+                    {ruta && (
+                      <span className="text-[9px] text-gray-400 block truncate">{ruta}</span>
+                    )}
+                    <span className="font-medium">{c.categ}</span>
+                    <span className="ml-1.5 text-gray-400 font-mono text-[10px]">{c.nro_cuenta}</span>
+                  </span>
+                  <span className="shrink-0 text-[10px] bg-green-100 text-green-700 rounded px-1.5 py-0.5">
+                    {c.usos}x
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
         {/* Todas las cuentas agrupadas */}
-        {Array.from(agrupadas.entries()).map(([grupo, cuentasGrupo]) => (
-          <div key={grupo}>
-            <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0 z-10">
-              {grupo}
+        {Array.from(agrupadas.entries()).map(([grupo, cuentasGrupo]) => {
+          const ruta = rutasMap.get(grupo) || grupo
+          return (
+            <div key={grupo}>
+              <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0 z-10 truncate" title={ruta}>
+                {ruta}
+              </div>
+              {cuentasGrupo.map(c => (
+                <button
+                  key={c.nro_cuenta}
+                  className={`w-full text-left px-2 py-1.5 hover:bg-blue-50 text-xs
+                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
+                  onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
+                >
+                  <span className="font-medium">{c.categ}</span>
+                  <span className="ml-1.5 text-gray-400 font-mono text-[10px]">{c.nro_cuenta}</span>
+                </button>
+              ))}
             </div>
-            {cuentasGrupo.map(c => (
-              <button
-                key={c.nro_cuenta}
-                className={`w-full text-left px-2 py-1.5 hover:bg-blue-50 text-xs
-                  ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
-              >
-                <span className="font-medium">{c.categ}</span>
-                <span className="ml-1.5 text-gray-400 font-mono text-[10px]">{c.nro_cuenta}</span>
-              </button>
-            ))}
-          </div>
-        ))}
+          )
+        })}
 
         {totalResultados === 0 && (
           <div className="px-2 py-3 text-center text-xs text-gray-400">Sin resultados</div>
@@ -290,4 +354,5 @@ export function SelectorCuentaContable({
 export function invalidarCacheCuentas() {
   cuentasCache = null
   cuentasCacheTimestamp = 0
+  jerarquiaCache = null
 }
