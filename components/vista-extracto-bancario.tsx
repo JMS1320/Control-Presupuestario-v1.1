@@ -203,6 +203,9 @@ export function VistaExtractoBancario() {
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
   const [filtroCategEspecial, setFiltroCategEspecial] = useState<'invalida' | 'sin_categ' | null>(null)
+  const [soloSinRevisar, setSoloSinRevisar] = useState(false)
+  const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
+  const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
   // Columnas opcionales — selector
   const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
@@ -341,7 +344,8 @@ export function VistaExtractoBancario() {
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
       limite: limiteRegistros,
-      categEspecial: filtroCategEspecial || undefined
+      categEspecial: filtroCategEspecial || undefined,
+      soloSinRevisar: soloSinRevisar || undefined
     })
   }
 
@@ -958,6 +962,65 @@ export function VistaExtractoBancario() {
     return { color: 'text-red-600', mensaje: 'Carga pesada - usar filtros' }
   }
 
+  // Marcar movimientos como revisados
+  const marcarComoRevisado = async (ids: string[], valor: boolean = true) => {
+    try {
+      for (const id of ids) {
+        const { error: err } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+          .from(tablaActiva)
+          .update({ revisado: valor })
+          .eq('id', id)
+        if (err) throw err
+      }
+      recargar()
+    } catch (err) {
+      console.error('Error marcando revisado:', err)
+      alert('Error al marcar como revisado')
+    }
+  }
+
+  // Marcar visibles como revisados (excepto seleccionados si hay selección)
+  const marcarVisiblesComoRevisados = async () => {
+    const sinRevisar = movimientos.filter(m => !m.revisado)
+    if (sinRevisar.length === 0) return
+
+    let idsAMarcar: string[]
+    if (seleccionados.size > 0) {
+      // Si hay selección, el usuario eligió cuáles EXCLUIR
+      idsAMarcar = sinRevisar.filter(m => !seleccionados.has(m.id)).map(m => m.id)
+    } else {
+      idsAMarcar = sinRevisar.map(m => m.id)
+    }
+
+    if (idsAMarcar.length === 0) return
+
+    const msg = seleccionados.size > 0
+      ? `¿Marcar ${idsAMarcar.length} movimientos como revisados? (${seleccionados.size} excluidos)`
+      : `¿Marcar ${idsAMarcar.length} movimientos como revisados?`
+
+    if (!window.confirm(msg)) return
+
+    await marcarComoRevisado(idsAMarcar, true)
+    setSeleccionados(new Set())
+  }
+
+  // Guardar nota operador
+  const guardarNotaOperador = async (id: string, nota: string) => {
+    try {
+      const { error: err } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+        .from(tablaActiva)
+        .update({ nota_operador: nota.trim() || null })
+        .eq('id', id)
+      if (err) throw err
+      recargar()
+      setEditandoNotaId(null)
+      setEditandoNotaVal('')
+    } catch (err) {
+      console.error('Error guardando nota:', err)
+      alert('Error al guardar nota')
+    }
+  }
+
   // Aplicar filtros avanzados extracto bancario
   const aplicarFiltrosAvanzados = () => {
     const filtros: any = {
@@ -974,6 +1037,7 @@ export function VistaExtractoBancario() {
     if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
     else if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
+    if (soloSinRevisar) filtros.soloSinRevisar = true
 
     cargarMovimientos(filtros)
   }
@@ -989,7 +1053,8 @@ export function VistaExtractoBancario() {
     setBusqueda('')
     setFiltroEstado('Todos')
     setFiltroCategEspecial(null)
-    
+    setSoloSinRevisar(false)
+
     cargarMovimientos({
       estado: 'Todos',
       limite: limiteRegistros
@@ -1350,7 +1415,20 @@ export function VistaExtractoBancario() {
                 >
                   Conciliados ({estadisticas.conciliados})
                 </Button>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial) && (
+                <span className="text-gray-300">|</span>
+                <Button
+                  variant={soloSinRevisar ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${soloSinRevisar ? 'bg-rose-600 hover:bg-rose-700' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
+                  onClick={() => {
+                    const nuevo = !soloSinRevisar
+                    setSoloSinRevisar(nuevo)
+                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, soloSinRevisar: nuevo || undefined })
+                  }}
+                >
+                  Sin revisar ({estadisticas.sin_revisar})
+                </Button>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || soloSinRevisar) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1358,6 +1436,7 @@ export function VistaExtractoBancario() {
                     onClick={() => {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
+                      setSoloSinRevisar(false)
                       cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
                     }}
                   >
@@ -1365,10 +1444,24 @@ export function VistaExtractoBancario() {
                     Limpiar
                   </Button>
                 )}
-                <span className="text-xs text-gray-400 ml-auto">
-                  {movimientos.length} movimientos
-                  {movimientos.length === limiteRegistros && ' (límite alcanzado)'}
-                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  {movimientos.some(m => !m.revisado) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs px-2 border-green-400 text-green-700 hover:bg-green-50"
+                      onClick={marcarVisiblesComoRevisados}
+                    >
+                      ✓ {seleccionados.size > 0
+                        ? `Revisar visibles excepto ${seleccionados.size} seleccionados`
+                        : `Marcar ${movimientos.filter(m => !m.revisado).length} como revisados`}
+                    </Button>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {movimientos.length} mov.
+                    {movimientos.length === limiteRegistros && ' (límite)'}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1812,12 +1905,13 @@ export function VistaExtractoBancario() {
                         {col('origen') && <TableHead>Origen</TableHead>}
                         {col('control') && <TableHead className="text-right">Control</TableHead>}
                         {col('orden') && <TableHead className="text-right">Orden</TableHead>}
-                        <TableHead></TableHead>
+                        <TableHead className="w-8 text-center">📝</TableHead>
+                        <TableHead className="w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {movimientos.map((movimiento) => (
-                        <TableRow key={movimiento.id}>
+                        <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
                           {modoEdicion && (
                             <TableCell>
                               <Checkbox
@@ -1996,6 +2090,48 @@ export function VistaExtractoBancario() {
                                 </Button>
                               )
                             })()}
+                          </TableCell>
+                          {/* Nota operador */}
+                          <TableCell className="text-center px-1">
+                            {editandoNotaId === movimiento.id ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={editandoNotaVal}
+                                  onChange={e => setEditandoNotaVal(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') guardarNotaOperador(movimiento.id, editandoNotaVal)
+                                    if (e.key === 'Escape') { setEditandoNotaId(null); setEditandoNotaVal('') }
+                                  }}
+                                  className="h-6 text-xs w-40"
+                                  autoFocus
+                                  placeholder="Escribir nota..."
+                                />
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => guardarNotaOperador(movimiento.id, editandoNotaVal)}>
+                                  <Check className="h-3 w-3 text-green-600" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setEditandoNotaId(null); setEditandoNotaVal('') }}>
+                                  <X className="h-3 w-3 text-gray-400" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                className={`text-sm cursor-pointer hover:scale-110 transition-transform ${movimiento.nota_operador ? '' : 'opacity-30 hover:opacity-70'}`}
+                                title={movimiento.nota_operador || 'Agregar nota'}
+                                onClick={() => { setEditandoNotaId(movimiento.id); setEditandoNotaVal(movimiento.nota_operador || '') }}
+                              >
+                                {movimiento.nota_operador ? '📝' : '💬'}
+                              </button>
+                            )}
+                          </TableCell>
+                          {/* Revisado toggle */}
+                          <TableCell className="text-center px-1">
+                            <button
+                              className={`text-sm cursor-pointer hover:scale-110 transition-transform ${movimiento.revisado ? 'opacity-70' : ''}`}
+                              title={movimiento.revisado ? 'Marcado como revisado — click para desmarcar' : 'Sin revisar — click para marcar'}
+                              onClick={() => marcarComoRevisado([movimiento.id], !movimiento.revisado)}
+                            >
+                              {movimiento.revisado ? '✅' : '⬜'}
+                            </button>
                           </TableCell>
                         </TableRow>
                       ))}
