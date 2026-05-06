@@ -18,6 +18,7 @@ import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -1024,7 +1025,7 @@ export function VistaCashFlow() {
       setModalPagoManual(false)
       setTemplateSeleccionado(null)
       setTipoMovimiento('egreso')
-      setNuevaCuota({ fecha: '', monto: '', descripcion: '' })
+      setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '' })
       await cargarDatos()
     } catch (error) {
       console.error('Error guardando pago manual:', error)
@@ -2576,19 +2577,12 @@ export function VistaCashFlow() {
                         Cuenta contable
                         <span className="ml-1 text-xs text-gray-400">(opcional — se puede asignar después)</span>
                       </Label>
-                      <select
-                        id="categ-pago-cf"
+                      <SelectorCuentaContable
                         value={nuevaCuota.categ}
-                        onChange={(e) => setNuevaCuota(prev => ({ ...prev, categ: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      >
-                        <option value="">— Sin asignar —</option>
-                        {cuentasContablesOpciones.map(c => (
-                          <option key={c.categ} value={c.categ}>
-                            {c.nombre_totalizadora ? `${c.nombre_totalizadora} · ` : ''}{c.categ}
-                          </option>
-                        ))}
-                      </select>
+                        onSelect={(cuenta) => setNuevaCuota(prev => ({ ...prev, categ: cuenta?.categ || '' }))}
+                        autoFocus={false}
+                        mostrarSinAsignar={true}
+                      />
                     </div>
                   )
                 }

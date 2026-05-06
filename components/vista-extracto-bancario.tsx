@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -568,10 +569,12 @@ export function VistaExtractoBancario() {
         setVinculaciones({})
         setEditData({
           categ: '',
+          nro_cuenta: '',
           centro_de_costo: '',
           estado: '',
           contable: '',
-          interno: ''
+          interno: '',
+          detalle: ''
         })
         // Propagar categ a facturas ARCA vinculadas (para movimientos ya conciliados, edición posterior de categ)
         // Solo cuando NO se está cambiando estado a 'conciliado' (ese caso ya lo maneja el bloque anterior)
@@ -1404,11 +1407,11 @@ export function VistaExtractoBancario() {
                 <div className="grid grid-cols-5 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">CATEG</label>
-                    <CategCombobox
+                    <SelectorCuentaContable
                       value={editData.categ}
-                      onValueChange={(value) => setEditData({...editData, categ: value})}
-                      onSelectFull={(categ, nro_cuenta) => setEditData({...editData, categ, nro_cuenta})}
-                      placeholder="Seleccionar cuenta contable..."
+                      onSelect={(cuenta) => setEditData({...editData, categ: cuenta?.categ || '', nro_cuenta: cuenta?.nro_cuenta || ''})}
+                      autoFocus={false}
+                      mostrarSinAsignar={false}
                       className="w-full"
                     />
                   </div>

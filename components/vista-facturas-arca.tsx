@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
@@ -8278,77 +8279,42 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   <TableCell>{f.fecha_vencimiento || f.fecha_estimada || '-'}</TableCell>
                                   <TableCell className="max-w-[200px] truncate">{f.denominacion_emisor}</TableCell>
                                   <TableCell>{f.cuit}</TableCell>
-                                  <TableCell className="max-w-[180px]">
+                                  <TableCell className="max-w-[220px]">
                                     {editandoCuentaPagosId === f.id ? (
-                                      <div className="relative">
-                                        <input
-                                          autoFocus
-                                          type="text"
-                                          className="border rounded px-1 py-0.5 text-xs w-full"
-                                          placeholder="Buscar cuenta..."
-                                          value={editandoCuentaBusqueda}
-                                          onChange={(e) => setEditandoCuentaBusqueda(e.target.value)}
-                                          onBlur={() => setTimeout(() => setEditandoCuentaPagosId(null), 150)}
-                                          onKeyDown={(e) => { if (e.key === 'Escape') setEditandoCuentaPagosId(null) }}
+                                      <div className="relative" onBlur={(e) => {
+                                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                          setTimeout(() => setEditandoCuentaPagosId(null), 100)
+                                        }
+                                      }}>
+                                        <SelectorCuentaContable
+                                          value={f.cuenta_contable}
+                                          cuitProveedor={f.cuit}
+                                          schemaName={schemaName}
+                                          onSelect={async (cuenta) => {
+                                            const categ = cuenta?.categ ?? null
+                                            const nroCta = cuenta?.nro_cuenta ?? null
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ cuenta_contable: categ, nro_cuenta: nroCta }).eq('id', f.id)
+                                            // Propagar a extractos bancarios vinculados
+                                            if (categ) {
+                                              for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
+                                                await supabase.from(tabla)
+                                                  .update({ categ, nro_cuenta: nroCta })
+                                                  .eq('comprobante_arca_id', f.id)
+                                              }
+                                            }
+                                            setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: categ, nro_cuenta: nroCta } : x))
+                                            setEditandoCuentaPagosId(null)
+                                          }}
+                                          onCancel={() => setEditandoCuentaPagosId(null)}
                                         />
-                                        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border rounded shadow-lg max-h-[250px] overflow-y-auto text-xs">
-                                          <button
-                                            className="w-full text-left px-2 py-1 hover:bg-gray-100 text-gray-400 italic"
-                                            onMouseDown={async (e) => {
-                                              e.preventDefault()
-                                              await supabase.schema(schemaName).from('comprobantes_arca')
-                                                .update({ cuenta_contable: null, nro_cuenta: null }).eq('id', f.id)
-                                              setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: null, nro_cuenta: null } : x))
-                                              setEditandoCuentaPagosId(null)
-                                            }}
-                                          >— Sin asignar —</button>
-                                          {(() => {
-                                            const q = editandoCuentaBusqueda.toLowerCase()
-                                            const filtradas = q
-                                              ? cuentasContablesPagos.filter((c: any) =>
-                                                  (c.categ || '').toLowerCase().includes(q) ||
-                                                  (c.nombre_totalizadora || '').toLowerCase().includes(q) ||
-                                                  (c.nro_cuenta || '').includes(editandoCuentaBusqueda)
-                                                )
-                                              : cuentasContablesPagos
-                                            const grupos = new Map<string, any[]>()
-                                            filtradas.forEach((c: any) => {
-                                              const g = c.nombre_totalizadora || 'Sin grupo'
-                                              if (!grupos.has(g)) grupos.set(g, [])
-                                              grupos.get(g)!.push(c)
-                                            })
-                                            if (filtradas.length === 0) return <div className="px-2 py-2 text-gray-400">Sin resultados</div>
-                                            return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
-                                              <div key={grupo}>
-                                                <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0">{grupo}</div>
-                                                {cuentas.map((c: any) => (
-                                                  <button
-                                                    key={c.nro_cuenta}
-                                                    className={`w-full text-left px-2 py-1 hover:bg-blue-50 ${f.cuenta_contable === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
-                                                    onMouseDown={async (e) => {
-                                                      e.preventDefault()
-                                                      await supabase.schema(schemaName).from('comprobantes_arca')
-                                                        .update({ cuenta_contable: c.categ, nro_cuenta: c.nro_cuenta }).eq('id', f.id)
-                                                      setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: c.categ, nro_cuenta: c.nro_cuenta } : x))
-                                                      setEditandoCuentaPagosId(null)
-                                                    }}
-                                                  >
-                                                    {c.categ}
-                                                  </button>
-                                                ))}
-                                              </div>
-                                            ))
-                                          })()}
-                                        </div>
                                       </div>
                                     ) : (
                                       <span
-                                        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block ${f.cuenta_contable ? '' : 'text-gray-400 italic'}`}
+                                        className={`cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block text-xs ${f.cuenta_contable ? '' : 'text-gray-400 italic'}`}
                                         title={f.cuenta_contable ? `${f.cuenta_contable} — click para editar` : 'Click para asignar cuenta'}
                                         onClick={() => {
                                           setEditandoCuentaPagosId(f.id)
-                                          setEditandoCuentaPagosVal(f.cuenta_contable || '')
-                                          setEditandoCuentaBusqueda('')
                                         }}
                                       >
                                         {f.cuenta_contable || 'Sin cuenta'}
