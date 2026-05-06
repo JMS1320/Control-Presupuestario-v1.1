@@ -259,6 +259,7 @@ export function VistaExtractoBancario() {
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
+  const [categManualAsignar, setCategManualAsignar] = useState('')
 
   // Estados importador
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -711,11 +712,12 @@ export function VistaExtractoBancario() {
     setTabAsignar('template')
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
+    setCategManualAsignar('')
 
     // Cargar templates abiertos para asignación
     const { data } = await supabase
       .from('egresos_sin_factura')
-      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
       .eq('activo', true)
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
@@ -767,13 +769,22 @@ export function VistaExtractoBancario() {
       }
 
       if (tabAsignar === 'template' && templateElegido) {
+        // Si es re-asignación, limpiar cuota anterior
+        if (movimientoAsignando.template_cuota_id) {
+          await supabase.from('cuotas_egresos_sin_factura')
+            .delete().eq('id', movimientoAsignando.template_cuota_id)
+        }
+        // Limpiar vínculo ARCA anterior si existía
+        if (movimientoAsignando.comprobante_arca_id) {
+          await supabase.from(tablaActiva)
+            .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
+        }
+
         // Buscar códigos contable/interno: Tipo A (template específico) → Tipo B (responsable)
         const codigos = await buscarCodigos(templateElegido.id, templateElegido.responsable)
 
         // Crear cuota nueva en el template
-        const { data: cuota, error: errCuota } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .insert({
+        const cuotaInsert: Record<string, any> = {
             egreso_id: templateElegido.id,
             fecha_vencimiento: movimientoAsignando.fecha,
             fecha_estimada: movimientoAsignando.fecha,
@@ -781,7 +792,14 @@ export function VistaExtractoBancario() {
             estado: 'conciliado',
             tipo_movimiento: tipoMovimiento,
             descripcion: templateElegido.nombre_referencia
-          })
+        }
+        // Multi-cuenta: guardar categ en la cuota
+        if (templateElegido.es_multi_cuenta && categManualAsignar) {
+          cuotaInsert.categ = categManualAsignar
+        }
+        const { data: cuota, error: errCuota } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert(cuotaInsert)
           .select('id')
           .single()
 
@@ -789,10 +807,12 @@ export function VistaExtractoBancario() {
 
         // Actualizar extracto con todos los campos incluyendo contable/interno
         // Manual tiene prioridad sobre auto-detectado por reglas
+        // Multi-cuenta: usar categ específico si fue seleccionado
+        const categFinal = (templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
           template_cuota_id: cuota.id,
-          categ: templateElegido.categ,
+          categ: categFinal,
           detalle: templateElegido.nombre_referencia,
           estado: 'conciliado'
         }
@@ -1854,9 +1874,30 @@ export function VistaExtractoBancario() {
                             {(() => {
                               const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
                               const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
-                              const mostrar = movimiento.estado !== 'conciliado' || sinVincular || categInvalida
+                              const esConciliado = movimiento.estado === 'conciliado'
+                              const mostrar = !esConciliado || sinVincular || categInvalida
+                              const label = categInvalida && esConciliado ? 'Re-asignar'
+                                : esConciliado && !sinVincular ? 'Re-asignar'
+                                : esConciliado ? 'Vincular' : 'Asignar'
+                              // Conciliados con vínculo: mostrar botón discreto de re-asignar
+                              if (esConciliado && !sinVincular && !categInvalida) {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 text-[10px] text-gray-400 hover:text-gray-700 gap-0.5 px-1"
+                                    onClick={() => {
+                                      if (window.confirm('Este movimiento ya está conciliado. ¿Desea re-asignarlo a otro template/factura?')) {
+                                        abrirModalAsignar(movimiento)
+                                      }
+                                    }}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                    Re-asignar
+                                  </Button>
+                                )
+                              }
                               if (!mostrar) return null
-                              const label = categInvalida && movimiento.estado === 'conciliado' ? 'Re-asignar' : movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'
                               return (
                                 <Button
                                   size="sm"
@@ -2249,8 +2290,25 @@ export function VistaExtractoBancario() {
                   ))}
               </div>
               {templateElegido && (
-                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                <div className="space-y-2">
+                  {templateElegido.es_multi_cuenta && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Cuenta contable (sub-categoría)</label>
+                      <SelectorCuentaContable
+                        value={categManualAsignar}
+                        onSelect={(cuenta) => setCategManualAsignar(cuenta?.categ || '')}
+                        autoFocus={false}
+                        mostrarSinAsignar={true}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                    Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                    {templateElegido.es_multi_cuenta && categManualAsignar && (
+                      <span className="block mt-1 text-blue-600">Categoría: <strong>{categManualAsignar}</strong></span>
+                    )}
+                  </div>
                 </div>
               )}
             </TabsContent>
