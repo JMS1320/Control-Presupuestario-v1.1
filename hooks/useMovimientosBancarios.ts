@@ -57,6 +57,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     montoDesde?: number
     montoHasta?: number
     categ?: string
+    categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
   }) => {
     try {
@@ -98,8 +99,12 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.lte('debitos', filtros.montoHasta)
       }
 
-      // Aplicar filtro de CATEG
-      if (filtros?.categ) {
+      // Aplicar filtro especial de CATEG (invalida / sin_categ)
+      if (filtros?.categEspecial === 'invalida') {
+        query = query.ilike('categ', 'INVALIDA:%')
+      } else if (filtros?.categEspecial === 'sin_categ') {
+        query = query.is('categ', null)
+      } else if (filtros?.categ) {
         query = query.ilike('categ', `%${filtros.categ}%`)
       }
 

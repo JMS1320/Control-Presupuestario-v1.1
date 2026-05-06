@@ -202,6 +202,7 @@ export function VistaExtractoBancario() {
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
+  const [filtroCategEspecial, setFiltroCategEspecial] = useState<'invalida' | 'sin_categ' | null>(null)
 
   // Columnas opcionales — selector
   const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
@@ -339,7 +340,8 @@ export function VistaExtractoBancario() {
     cargarMovimientos({
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros
+      limite: limiteRegistros,
+      categEspecial: filtroCategEspecial || undefined
     })
   }
 
@@ -969,7 +971,8 @@ export function VistaExtractoBancario() {
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
     if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
-    if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
+    if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
+    else if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
 
     cargarMovimientos(filtros)
@@ -985,6 +988,7 @@ export function VistaExtractoBancario() {
     setBusquedaDetalleExtracto('')
     setBusqueda('')
     setFiltroEstado('Todos')
+    setFiltroCategEspecial(null)
     
     cargarMovimientos({
       estado: 'Todos',
@@ -1208,18 +1212,20 @@ export function VistaExtractoBancario() {
 
           {/* Filtros */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex gap-4 items-center">
+            <CardContent className="pt-4 pb-3">
+              {/* Fila 1: Búsqueda + Estado + Límite + Acciones */}
+              <div className="flex gap-3 items-center mb-3">
                 <div className="flex-1">
                   <Input
-                    placeholder="Buscar por descripción..."
+                    placeholder="Buscar en descripción, categ, detalle, contable, proveedor..."
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
+                    className="h-9 text-sm"
                   />
                 </div>
                 <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-44 h-9 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1229,35 +1235,30 @@ export function VistaExtractoBancario() {
                     <SelectItem value="auditar">Para Auditar</SelectItem>
                   </SelectContent>
                 </Select>
-                
-                {/* Selector de límite de registros */}
-                <div className="flex flex-col gap-1">
-                  <Select value={limiteRegistros.toString()} onValueChange={(value) => setLimiteRegistros(parseInt(value))}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="200">200</SelectItem>
-                      <SelectItem value="500">500</SelectItem>
-                      <SelectItem value="1000">1,000</SelectItem>
-                      <SelectItem value="2000">2,000</SelectItem>
-                      <SelectItem value="5000">5,000</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className={`text-xs ${obtenerInfoLimite(limiteRegistros).color}`}>
-                    {obtenerInfoLimite(limiteRegistros).mensaje}
-                  </span>
-                </div>
-                
-                <Button onClick={aplicarFiltros} variant="outline">
+
+                <Select value={limiteRegistros.toString()} onValueChange={(value) => setLimiteRegistros(parseInt(value))}>
+                  <SelectTrigger className="w-24 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="200">200</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
+                    <SelectItem value="1000">1.000</SelectItem>
+                    <SelectItem value="2000">2.000</SelectItem>
+                    <SelectItem value="5000">5.000</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button onClick={aplicarFiltros} size="sm">
                   Filtrar
                 </Button>
-                <Button 
+                <Button
                   onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
                   variant={mostrarFiltrosAvanzados ? "default" : "outline"}
+                  size="sm"
                 >
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filtros Avanzados
+                  <Filter className="h-4 w-4 mr-1" />
+                  Avanzados
                 </Button>
                 <Button
                   variant="outline"
@@ -1284,6 +1285,90 @@ export function VistaExtractoBancario() {
                     </>
                   )}
                 </Button>
+              </div>
+
+              {/* Fila 2: Filtros rápidos (chips) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-500 mr-1">Filtros rápidos:</span>
+                <Button
+                  variant={filtroEstado === 'pendiente' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('pendiente')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'pendiente', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Pendientes ({estadisticas.pendientes})
+                </Button>
+                <Button
+                  variant={filtroEstado === 'auditar' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('auditar')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'auditar', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Auditar ({estadisticas.auditar})
+                </Button>
+                <Button
+                  variant={filtroCategEspecial === 'invalida' ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${filtroCategEspecial === 'invalida' ? 'bg-red-600 hover:bg-red-700' : 'border-red-300 text-red-600 hover:bg-red-50'}`}
+                  onClick={() => {
+                    setFiltroCategEspecial(filtroCategEspecial === 'invalida' ? null : 'invalida')
+                    setFiltroEstado('Todos')
+                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  CATEG Inválida
+                </Button>
+                <Button
+                  variant={filtroCategEspecial === 'sin_categ' ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${filtroCategEspecial === 'sin_categ' ? 'bg-orange-600 hover:bg-orange-700' : 'border-orange-300 text-orange-600 hover:bg-orange-50'}`}
+                  onClick={() => {
+                    setFiltroCategEspecial(filtroCategEspecial === 'sin_categ' ? null : 'sin_categ')
+                    setFiltroEstado('Todos')
+                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Sin CATEG ({estadisticas.sin_categ})
+                </Button>
+                <Button
+                  variant={filtroEstado === 'conciliado' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('conciliado')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'conciliado', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Conciliados ({estadisticas.conciliados})
+                </Button>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs px-2 text-gray-500"
+                    onClick={() => {
+                      setFiltroEstado('Todos')
+                      setFiltroCategEspecial(null)
+                      cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    }}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Limpiar
+                  </Button>
+                )}
+                <span className="text-xs text-gray-400 ml-auto">
+                  {movimientos.length} movimientos
+                  {movimientos.length === limiteRegistros && ' (límite alcanzado)'}
+                </span>
               </div>
             </CardContent>
           </Card>
