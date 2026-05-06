@@ -10,6 +10,8 @@ export type ResumenFinanciero = {
   egresos: { [cuenta: string]: number }
   financieros: { [cuenta: string]: number }
   distribuciones: { [cuenta: string]: number }
+  /** Sub-categorías de templates multi-cuenta: { "Otros Gastos": { "MAIZ": -335800, "GASOIL": -120000 } } */
+  subCategorias: { [parentCuenta: string]: { [subCateg: string]: number } }
   totalIngresos: number
   totalEgresos: number
   totalFinancieros: number
@@ -49,6 +51,15 @@ export function useFinancialData(año: number, semestre?: number) {
           fechaInicio = `${año}-07-01`
         }
 
+        // Obtener TODOS los templates activos (para agrupar por nombre de template en dashboard)
+        const { data: allTemplates } = await supabase
+          .from("egresos_sin_factura")
+          .select("id, nombre_referencia, es_multi_cuenta")
+          .eq("activo", true)
+
+        const templateMap = new Map<string, { nombre: string, esMulti: boolean }>()
+        ;(allTemplates || []).forEach((t: any) => templateMap.set(t.id, { nombre: t.nombre_referencia, esMulti: !!t.es_multi_cuenta }))
+
         // Obtener movimientos SIN JOIN (relación se resuelve en el cliente)
         const { data: movimientosData, error: movimientosError } = await supabase
           .from("msa_galicia")
@@ -64,13 +75,10 @@ export function useFinancialData(año: number, semestre?: number) {
         }
 
         if (movimientosData) {
-          console.log("Movimientos obtenidos:", movimientosData.length)
-          console.log("Primer movimiento:", movimientosData[0])
-
           setMovimientos(movimientosData)
 
           // Procesar resumen financiero
-          const resumenPorMes = procesarResumenFinanciero(movimientosData, cuentasData || [])
+          const resumenPorMes = procesarResumenFinanciero(movimientosData, cuentasData || [], templateMap)
           setResumen(resumenPorMes)
         }
       } catch (error) {
@@ -86,18 +94,14 @@ export function useFinancialData(año: number, semestre?: number) {
   return { cuentas, movimientos, resumen, loading }
 }
 
-function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]): ResumenFinanciero[] {
+function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[], templateMap: Map<string, { nombre: string, esMulti: boolean }> = new Map()): ResumenFinanciero[] {
   const cuentasMap = new Map(cuentas.map((c) => [c.categ, c]))
   const resumenPorMes = new Map<string, ResumenFinanciero>()
 
-  console.log("Procesando", movimientos.length, "movimientos")
-
   movimientos.forEach((mov) => {
-    // FIX: Parsing de fecha sin problemas de zona horaria
-    // Extraer año, mes, día directamente del string YYYY-MM-DD
     const fechaParts = mov.fecha.split("-")
     const año = Number.parseInt(fechaParts[0])
-    const mes = Number.parseInt(fechaParts[1]) // Ya viene en formato 1-12
+    const mes = Number.parseInt(fechaParts[1])
     const key = `${año}-${mes}`
 
     const cuentaInfo = cuentasMap.get(mov.categ)
@@ -115,6 +119,7 @@ function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]
         egresos: {},
         financieros: {},
         distribuciones: {},
+        subCategorias: {},
         totalIngresos: 0,
         totalEgresos: 0,
         totalFinancieros: 0,
@@ -124,34 +129,41 @@ function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]
     }
 
     const resumen = resumenPorMes.get(key)!
-    // Calcular monto real: créditos - débitos (puede ser positivo o negativo)
     const monto = (mov.creditos || 0) - (mov.debitos || 0)
     const nombreCuenta = cuentaInfo.cuenta_contable || cuentaInfo.categ
 
+    // Detectar si el movimiento tiene template vinculado
+    const templateInfo = mov.template_id ? templateMap.get(mov.template_id) : null
+
+    // Determinar el nombre de agrupación:
+    // - Con template → nombre del template
+    // - Sin template → nombre de la cuenta contable
+    const nombreAgrupacion = templateInfo ? templateInfo.nombre : nombreCuenta
+
     switch (cuentaInfo.tipo) {
       case "ingreso":
-        resumen.ingresos[nombreCuenta] = (resumen.ingresos[nombreCuenta] || 0) + monto
+        resumen.ingresos[nombreAgrupacion] = (resumen.ingresos[nombreAgrupacion] || 0) + monto
         resumen.totalIngresos += monto
         break
       case "egreso":
-        // Para egresos, mantener el signo real (negativos se muestran en rojo)
-        resumen.egresos[nombreCuenta] = (resumen.egresos[nombreCuenta] || 0) + monto
+        resumen.egresos[nombreAgrupacion] = (resumen.egresos[nombreAgrupacion] || 0) + monto
+        // Si es multi-cuenta, guardar detalle por sub-categoría
+        if (templateInfo?.esMulti) {
+          if (!resumen.subCategorias[nombreAgrupacion]) resumen.subCategorias[nombreAgrupacion] = {}
+          resumen.subCategorias[nombreAgrupacion][nombreCuenta] = (resumen.subCategorias[nombreAgrupacion][nombreCuenta] || 0) + monto
+        }
         resumen.totalEgresos += monto
         break
       case "financiero":
-        // Para financieros, mantener el signo real
-        resumen.financieros[nombreCuenta] = (resumen.financieros[nombreCuenta] || 0) + monto
+        resumen.financieros[nombreAgrupacion] = (resumen.financieros[nombreAgrupacion] || 0) + monto
         resumen.totalFinancieros += monto
         break
       case "distribucion":
-        // Para distribuciones, mantener el signo real
-        resumen.distribuciones[nombreCuenta] = (resumen.distribuciones[nombreCuenta] || 0) + monto
+        resumen.distribuciones[nombreAgrupacion] = (resumen.distribuciones[nombreAgrupacion] || 0) + monto
         resumen.totalDistribuciones += monto
         break
     }
 
-    // FIX: Saldo total es simplemente la suma de todos los subtotales
-    // Ya que cada uno viene con su signo correcto
     resumen.saldoMensual =
       resumen.totalIngresos + resumen.totalEgresos + resumen.totalFinancieros + resumen.totalDistribuciones
   })

@@ -166,6 +166,7 @@ export function VistaCashFlow() {
   const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '' })
   const [cuentasContablesOpciones, setCuentasContablesOpciones] = useState<{categ: string, nombre_totalizadora: string | null}[]>([])
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
+  const [subcategsDisponiblesCF, setSubcategsDisponiblesCF] = useState<string[]>([])
 
   // Estado para modal Anticipos (crear + ver existentes)
   const [modalAnticipo, setModalAnticipo] = useState(false)
@@ -2425,7 +2426,20 @@ export function VistaCashFlow() {
                     {templatesUso.map(template => (
                       <div
                         key={template.id}
-                        onClick={() => setTemplateSeleccionado(template.id)}
+                        onClick={async () => {
+                          setTemplateSeleccionado(template.id)
+                          if (template.es_multi_cuenta) {
+                            const { data } = await supabase
+                              .from('cuotas_egresos_sin_factura')
+                              .select('categ')
+                              .eq('egreso_id', template.id)
+                              .not('categ', 'is', null)
+                            const unicas = [...new Set((data || []).map((r: any) => r.categ).filter(Boolean))]
+                            setSubcategsDisponiblesCF(unicas as string[])
+                          } else {
+                            setSubcategsDisponiblesCF([])
+                          }
+                        }}
                         className={`p-3 border rounded-lg cursor-pointer transition-colors relative group ${
                           templateSeleccionado === template.id
                             ? 'border-purple-500 bg-purple-50'
@@ -2574,14 +2588,76 @@ export function VistaCashFlow() {
                   return (
                     <div className="space-y-2">
                       <Label htmlFor="categ-pago-cf">
-                        Cuenta contable
+                        Sub-categoría
                         <span className="ml-1 text-xs text-gray-400">(opcional — se puede asignar después)</span>
                       </Label>
+                      {/* Texto libre */}
+                      <input
+                        type="text"
+                        className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-purple-400 mb-1"
+                        placeholder="Escribir nombre o elegir abajo..."
+                        value={nuevaCuota.categ}
+                        onChange={(e) => setNuevaCuota(prev => ({ ...prev, categ: e.target.value }))}
+                      />
+                      {/* Sub-categorías ya usadas */}
+                      {subcategsDisponiblesCF.length > 0 && (
+                        <div className="mb-1">
+                          <div className="text-[10px] text-green-700 font-semibold mb-0.5">Usadas en este template:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {subcategsDisponiblesCF.map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                className={`text-[10px] px-1.5 py-0.5 rounded border ${nuevaCuota.categ === s ? 'bg-green-100 border-green-400 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                                onClick={() => setNuevaCuota(prev => ({ ...prev, categ: s }))}
+                              >{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* Templates existentes agrupados por cuenta_agrupadora */}
+                      {(() => {
+                        const filtrados = templatesAbiertos
+                          .filter(t => t.id !== templateSeleccionado && t.nombre_referencia)
+                          .filter(t => !nuevaCuota.categ.trim() || t.nombre_referencia.toLowerCase().includes(nuevaCuota.categ.toLowerCase()) || (t.cuenta_agrupadora || '').toLowerCase().includes(nuevaCuota.categ.toLowerCase()))
+                        if (filtrados.length === 0) return null
+                        const grupos = new Map<string, typeof filtrados>()
+                        filtrados.forEach(t => {
+                          const g = t.cuenta_agrupadora || 'Sin grupo'
+                          if (!grupos.has(g)) grupos.set(g, [])
+                          grupos.get(g)!.push(t)
+                        })
+                        return (
+                          <div className="mb-1">
+                            <div className="text-[10px] text-blue-600 font-semibold mb-0.5">Templates:</div>
+                            <div className="max-h-40 overflow-y-auto border rounded bg-white">
+                              {Array.from(grupos.entries()).map(([grupo, items]) => (
+                                <div key={grupo}>
+                                  <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0">{grupo}</div>
+                                  {items.map(t => (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      className={`w-full text-left px-2 py-1 text-xs hover:bg-blue-50 ${nuevaCuota.categ === t.nombre_referencia ? 'bg-blue-50 font-semibold text-blue-700' : ''}`}
+                                      onClick={() => setNuevaCuota(prev => ({ ...prev, categ: t.nombre_referencia }))}
+                                    >
+                                      {t.nombre_referencia}
+                                      {t.responsable && <span className="ml-1 text-[10px] text-gray-400">· {t.responsable}</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                      {/* Plan de cuentas contables */}
+                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">Cuentas contables:</div>
                       <SelectorCuentaContable
                         value={nuevaCuota.categ}
                         onSelect={(cuenta) => setNuevaCuota(prev => ({ ...prev, categ: cuenta?.categ || '' }))}
                         autoFocus={false}
-                        mostrarSinAsignar={true}
+                        mostrarSinAsignar={false}
                       />
                     </div>
                   )

@@ -72,9 +72,10 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.eq('estado', filtros.estado)
       }
 
-      // Aplicar búsqueda en descripción
+      // Aplicar búsqueda multi-columna
       if (filtros?.busqueda) {
-        query = query.ilike('descripcion', `%${filtros.busqueda}%`)
+        const b = filtros.busqueda
+        query = query.or(`descripcion.ilike.%${b}%,categ.ilike.%${b}%,detalle.ilike.%${b}%,contable.ilike.%${b}%,interno.ilike.%${b}%,origen.ilike.%${b}%,observaciones_cliente.ilike.%${b}%,numero_de_comprobante.ilike.%${b}%`)
       }
 
       // Aplicar filtro de fecha desde
