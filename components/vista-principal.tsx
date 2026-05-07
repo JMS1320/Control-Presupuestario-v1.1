@@ -152,30 +152,53 @@ export function VistaPrincipal() {
     setPasoWizard('seleccion')
     setModalVinculacion(true)
 
-    // Buscar si este anticipo ya tiene movimiento en extracto (por anticipo_id o por monto+fecha)
-    const tablasBancarias = ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']
-    for (const tabla of tablasBancarias) {
+    // Buscar si este anticipo ya tiene movimiento en extracto (por anticipo_id o por categ/detalle/monto)
+    const tablasBancarias: { tabla: string, schema?: string }[] = [
+      { tabla: 'msa_galicia' },
+      { tabla: 'pam_galicia' },
+      { tabla: 'pam_galicia_cc' },
+      { tabla: 'ma_galicia', schema: 'ma' },
+    ]
+    const netoAnticipo = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
+
+    for (const { tabla, schema } of tablasBancarias) {
+      const client = schema ? supabase.schema(schema) : supabase
       // Primero por anticipo_id (si el motor ya lo guardó)
-      let { data: movs } = await supabase
+      let { data: movs } = await client
         .from(tabla)
         .select('id, fecha, debitos, creditos, estado')
         .eq('anticipo_id', anticipo.id)
         .limit(1)
 
-      // Si no hay match por anticipo_id, buscar por monto+fecha aproximada
+      // Si no hay match por anticipo_id, buscar por categ ANTICIPO o detalle que contenga ANTICIPO
       if (!movs || movs.length === 0) {
-        const { data: movsFecha } = await supabase
+        // Buscar por categ = ANTICIPO en fecha del anticipo
+        const { data: movsCateg } = await client
           .from(tabla)
-          .select('id, fecha, debitos, creditos, estado, descripcion')
+          .select('id, fecha, debitos, creditos, estado, categ, detalle')
           .eq('fecha', anticipo.fecha_pago)
-          .ilike('descripcion', '%anticipo%')
-          .limit(5)
+          .eq('categ', 'ANTICIPO')
+          .limit(10)
 
-        if (movsFecha) {
-          const match = movsFecha.find((m: any) => {
+        // También buscar por detalle que contenga ANTICIPO
+        const { data: movsDetalle } = await client
+          .from(tabla)
+          .select('id, fecha, debitos, creditos, estado, categ, detalle')
+          .eq('fecha', anticipo.fecha_pago)
+          .ilike('detalle', '%anticipo%')
+          .limit(10)
+
+        // Combinar y deduplicar
+        const todosMovs = [...(movsCateg || []), ...(movsDetalle || [])]
+        const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
+
+        if (unicos.length > 0) {
+          // Buscar match por monto: monto bruto o monto neto (sin SICORE)
+          const match = unicos.find((m: any) => {
             const montoMov = m.debitos || m.creditos || 0
-            const diff = Math.abs(montoMov - anticipo.monto)
-            return diff < anticipo.monto * 0.01 || diff < 1
+            const diffBruto = Math.abs(montoMov - anticipo.monto)
+            const diffNeto = Math.abs(montoMov - netoAnticipo)
+            return diffBruto < anticipo.monto * 0.03 || diffNeto < netoAnticipo * 0.01 || diffBruto < 1 || diffNeto < 1
           })
           if (match) movs = [match]
         }
@@ -246,13 +269,16 @@ export function VistaPrincipal() {
       }
 
       if (calculo.caso === 'A') {
-        // Factura completamente cubierta → marcar como pagada
+        // Factura completamente cubierta
+        // Si el extracto ya está conciliado → FC = conciliado (pago ya pasó por banco)
+        // Si no → FC = pagado
+        const estadoFC = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'pagado'
         const { error: errFac } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
           .update({
             ...herenciaComun,
-            estado: 'pagado',
+            estado: estadoFC,
             monto_a_abonar: calculo.neto_pagado,
             fecha_vencimiento: anticipoParaVincular.fecha_pago,
             fecha_estimada: anticipoParaVincular.fecha_pago,
@@ -293,9 +319,14 @@ export function VistaPrincipal() {
       }
 
       // Propagar datos de FC al extracto bancario (si el anticipo ya estaba conciliado)
-      // Buscar movimiento en extracto que tenga anticipo_id = este anticipo
+      // Buscar movimiento en extracto: por anticipo_id, o fallback por categ/detalle ANTICIPO + monto
       let extractoActualizado = false
-      const tablasBancarias = ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']
+      const tablasBanc: { tabla: string, schema?: string }[] = [
+        { tabla: 'msa_galicia' },
+        { tabla: 'pam_galicia' },
+        { tabla: 'pam_galicia_cc' },
+        { tabla: 'ma_galicia', schema: 'ma' },
+      ]
       const { data: fcCompleta } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
@@ -304,12 +335,44 @@ export function VistaPrincipal() {
         .single()
 
       if (fcCompleta) {
-        for (const tabla of tablasBancarias) {
-          const { data: movExtracto } = await supabase
+        const netoAnt = anticipoParaVincular.monto - (anticipoParaVincular.monto_sicore || 0) - (anticipoParaVincular.descuento_aplicado || 0)
+        for (const { tabla, schema } of tablasBanc) {
+          const client = schema ? supabase.schema(schema) : supabase
+
+          // Primero por anticipo_id
+          let { data: movExtracto } = await client
             .from(tabla)
             .select('id, estado')
             .eq('anticipo_id', anticipoParaVincular.id)
             .limit(1)
+
+          // Fallback: buscar por categ ANTICIPO + fecha
+          if (!movExtracto || movExtracto.length === 0) {
+            const { data: movsCateg } = await client
+              .from(tabla)
+              .select('id, estado, debitos, creditos, categ, detalle')
+              .eq('fecha', anticipoParaVincular.fecha_pago)
+              .eq('categ', 'ANTICIPO')
+              .limit(10)
+
+            const { data: movsDetalle } = await client
+              .from(tabla)
+              .select('id, estado, debitos, creditos, categ, detalle')
+              .eq('fecha', anticipoParaVincular.fecha_pago)
+              .ilike('detalle', '%anticipo%')
+              .limit(10)
+
+            const todosMovs = [...(movsCateg || []), ...(movsDetalle || [])]
+            const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
+
+            const match = unicos.find((m: any) => {
+              const montoMov = m.debitos || m.creditos || 0
+              const diffBruto = Math.abs(montoMov - anticipoParaVincular.monto)
+              const diffNeto = Math.abs(montoMov - netoAnt)
+              return diffBruto < anticipoParaVincular.monto * 0.03 || diffNeto < netoAnt * 0.01 || diffBruto < 1 || diffNeto < 1
+            })
+            if (match) movExtracto = [match]
+          }
 
           if (movExtracto && movExtracto.length > 0) {
             const mov = movExtracto[0]
@@ -317,10 +380,12 @@ export function VistaPrincipal() {
               ? `Pago total vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
               : `Pago parcial vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
 
-            await supabase
+            // Guardar anticipo_id en extracto para trazabilidad
+            await client
               .from(tabla)
               .update({
                 comprobante_arca_id: fcCompleta.id,
+                anticipo_id: anticipoParaVincular.id,
                 categ: fcCompleta.categ,
                 nro_cuenta: fcCompleta.nro_cuenta,
                 detalle: detalleExtracto,
@@ -336,8 +401,9 @@ export function VistaPrincipal() {
       }
 
       const msgExtracto = extractoActualizado ? ' Extracto bancario actualizado.' : ''
+      const estadoFinal = extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'
       const msg = calculo.caso === 'A'
-        ? `Vinculación completa. Factura marcada como pagada (${fmt(calculo.neto_pagado)} neto).${msgExtracto}`
+        ? `Vinculación completa. Factura marcada como ${estadoFinal} (${fmt(calculo.neto_pagado)} neto).${msgExtracto}`
         : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.${msgExtracto}`
       toast.success(msg)
       setModalVinculacion(false)
@@ -648,7 +714,9 @@ export function VistaPrincipal() {
                   <>
                     <div className={`rounded-lg p-4 text-sm space-y-2 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
                       <div className="font-semibold text-base mb-3">
-                        {calculo.caso === 'A' ? '✅ Factura cubierta — se marcará como PAGADA' : '📋 Pago parcial — quedará saldo pendiente'}
+                        {calculo.caso === 'A'
+                          ? (extractoInfo?.estado === 'conciliado' ? '✅ Factura cubierta — se marcará como CONCILIADA (pago ya en banco)' : '✅ Factura cubierta — se marcará como PAGADA')
+                          : '📋 Pago parcial — quedará saldo pendiente'}
                       </div>
 
                       <div className="text-xs space-y-1">
@@ -667,7 +735,7 @@ export function VistaPrincipal() {
                         <div className="font-semibold text-gray-700">Lo que va a suceder:</div>
                         {calculo.caso === 'A' ? (
                           <>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>pagada</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
+                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>{extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'}</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
                             <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Anticipo → <strong>vinculado</strong> (desaparece del cash flow)</div>
                             <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE, retención y descripción heredados a la factura</div>
                           </>
