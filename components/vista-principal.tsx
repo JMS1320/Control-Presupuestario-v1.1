@@ -64,6 +64,7 @@ export function VistaPrincipal() {
   const [pasoWizard, setPasoWizard] = useState<'seleccion' | 'confirmacion'>('seleccion')
   const [calculo, setCalculo] = useState<CalcVinculacion | null>(null)
   const [vinculando, setVinculando] = useState(false)
+  const [extractoInfo, setExtractoInfo] = useState<{ tabla: string, fecha: string, monto: number, estado: string } | null>(null)
 
   const meses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -143,12 +144,54 @@ export function VistaPrincipal() {
     cargarAlertasSicore()
   }, [cargarAlertasSicore])
 
-  const abrirVinculacion = (anticipo: AnticipoSicore) => {
+  const abrirVinculacion = async (anticipo: AnticipoSicore) => {
     setAnticipoParaVincular(anticipo)
     setFacturaElegida('')
     setCalculo(null)
+    setExtractoInfo(null)
     setPasoWizard('seleccion')
     setModalVinculacion(true)
+
+    // Buscar si este anticipo ya tiene movimiento en extracto (por anticipo_id o por monto+fecha)
+    const tablasBancarias = ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']
+    for (const tabla of tablasBancarias) {
+      // Primero por anticipo_id (si el motor ya lo guardó)
+      let { data: movs } = await supabase
+        .from(tabla)
+        .select('id, fecha, debitos, creditos, estado')
+        .eq('anticipo_id', anticipo.id)
+        .limit(1)
+
+      // Si no hay match por anticipo_id, buscar por monto+fecha aproximada
+      if (!movs || movs.length === 0) {
+        const { data: movsFecha } = await supabase
+          .from(tabla)
+          .select('id, fecha, debitos, creditos, estado, descripcion')
+          .eq('fecha', anticipo.fecha_pago)
+          .ilike('descripcion', '%anticipo%')
+          .limit(5)
+
+        if (movsFecha) {
+          const match = movsFecha.find((m: any) => {
+            const montoMov = m.debitos || m.creditos || 0
+            const diff = Math.abs(montoMov - anticipo.monto)
+            return diff < anticipo.monto * 0.01 || diff < 1
+          })
+          if (match) movs = [match]
+        }
+      }
+
+      if (movs && movs.length > 0) {
+        const m = movs[0]
+        setExtractoInfo({
+          tabla,
+          fecha: m.fecha,
+          monto: m.debitos || m.creditos || 0,
+          estado: m.estado
+        })
+        break
+      }
+    }
   }
 
   // Calcular cuando se selecciona una factura
@@ -249,9 +292,53 @@ export function VistaPrincipal() {
           .is('factura_id', null)
       }
 
+      // Propagar datos de FC al extracto bancario (si el anticipo ya estaba conciliado)
+      // Buscar movimiento en extracto que tenga anticipo_id = este anticipo
+      let extractoActualizado = false
+      const tablasBancarias = ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']
+      const { data: fcCompleta } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, categ, nro_cuenta, denominacion_emisor')
+        .eq('id', facturaElegida)
+        .single()
+
+      if (fcCompleta) {
+        for (const tabla of tablasBancarias) {
+          const { data: movExtracto } = await supabase
+            .from(tabla)
+            .select('id, estado')
+            .eq('anticipo_id', anticipoParaVincular.id)
+            .limit(1)
+
+          if (movExtracto && movExtracto.length > 0) {
+            const mov = movExtracto[0]
+            const detalleExtracto = calculo.caso === 'A'
+              ? `Pago total vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
+              : `Pago parcial vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
+
+            await supabase
+              .from(tabla)
+              .update({
+                comprobante_arca_id: fcCompleta.id,
+                categ: fcCompleta.categ,
+                nro_cuenta: fcCompleta.nro_cuenta,
+                detalle: detalleExtracto,
+                estado: 'conciliado',
+                motivo_revision: null,
+              })
+              .eq('id', mov.id)
+
+            extractoActualizado = true
+            break
+          }
+        }
+      }
+
+      const msgExtracto = extractoActualizado ? ' Extracto bancario actualizado.' : ''
       const msg = calculo.caso === 'A'
-        ? `Vinculación completa. Factura marcada como pagada (${fmt(calculo.neto_pagado)} neto).`
-        : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.`
+        ? `Vinculación completa. Factura marcada como pagada (${fmt(calculo.neto_pagado)} neto).${msgExtracto}`
+        : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.${msgExtracto}`
       toast.success(msg)
       setModalVinculacion(false)
       setAnticipoParaVincular(null)
@@ -590,6 +677,21 @@ export function VistaPrincipal() {
                             <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Anticipo → <strong>parcial</strong> (permanece en cash flow hasta conciliar en banco)</div>
                             <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE, retención y descripción copiados a la factura</div>
                           </>
+                        )}
+                        {/* Info extracto bancario */}
+                        {extractoInfo ? (
+                          <div className="mt-2 pt-2 border-t border-dashed">
+                            <div className="font-semibold text-gray-700 mb-1">Extracto bancario ({extractoInfo.tabla}):</div>
+                            <div className="flex items-start gap-1">
+                              <span className="text-purple-600">✓</span>
+                              Movimiento del {fmtFecha(extractoInfo.fecha)} por {fmt(extractoInfo.monto)} ({extractoInfo.estado})
+                              → se actualizará con datos de la FC (categ, cuenta contable, factura_id)
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 pt-2 border-t border-dashed text-gray-400">
+                            Sin movimiento bancario detectado para este anticipo
+                          </div>
                         )}
                       </div>
                     </div>
