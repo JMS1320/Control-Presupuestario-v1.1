@@ -329,7 +329,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // monto neto = monto original - retención SICORE (si aplica)
       const monto = (a.monto || 0) - (a.monto_sicore || 0)
       const tipoLabel = esCobro ? 'ANTICIPO COBRO' : 'ANTICIPO'
-      const esVinculado = a.estado === 'vinculado'
+      const esParcial = a.estado === 'parcial'
 
       // ECHEQ: usar fecha_cobro_echeq para Cash Flow (cuando el cheque se deposita)
       const fechaAnticipo = (a.metodo_pago === 'echeq' && a.fecha_cobro_echeq)
@@ -345,7 +345,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         centro_costo: '',
         cuit_proveedor: a.cuit_proveedor || '',
         nombre_proveedor: a.nombre_proveedor || '',
-        detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${esVinculado ? ' (vinculado - pend. conciliar)' : ''}`,
+        detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${esParcial ? ' (parcial - pend. conciliar)' : ''}`,
         debitos: esCobro ? 0 : monto,   // Pago = débito (dinero sale)
         creditos: esCobro ? monto : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
@@ -457,11 +457,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         throw new Error(`Error templates: ${errorTemplates.message}`)
       }
 
-      // 3. Cargar anticipos pendientes de conciliar (excluir solo conciliados)
+      // 3. Cargar anticipos pendientes (excluir vinculados y conciliados en banco)
       const { data: anticipos, error: errorAnticipos } = await supabase
         .from('anticipos_proveedores')
         .select('*')
-        .neq('estado', 'conciliado') // Desaparece solo al conciliar con banco
+        .neq('estado', 'vinculado')           // Vinculado = FC lo reemplaza, desaparece del CF
+        .neq('estado_pago', 'conciliado')     // Conciliado en banco = desaparece del CF
         .order('fecha_pago', { ascending: true })
 
       if (errorAnticipos) {
