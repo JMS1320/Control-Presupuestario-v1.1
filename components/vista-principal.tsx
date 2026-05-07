@@ -330,9 +330,20 @@ export function VistaPrincipal() {
       const { data: fcCompleta } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
-        .select('id, categ, nro_cuenta, denominacion_emisor')
+        .select('id, nro_cuenta, denominacion_emisor')
         .eq('id', facturaElegida)
         .single()
+
+      // Obtener categ de cuentas_contables vía nro_cuenta de la FC
+      let categFC: string | null = null
+      if (fcCompleta?.nro_cuenta) {
+        const { data: cta } = await supabase
+          .from('cuentas_contables')
+          .select('categ')
+          .eq('nro_cuenta', fcCompleta.nro_cuenta)
+          .single()
+        categFC = cta?.categ || null
+      }
 
       if (fcCompleta) {
         const netoAnt = anticipoParaVincular.monto - (anticipoParaVincular.monto_sicore || 0) - (anticipoParaVincular.descuento_aplicado || 0)
@@ -386,7 +397,7 @@ export function VistaPrincipal() {
               .update({
                 comprobante_arca_id: fcCompleta.id,
                 anticipo_id: anticipoParaVincular.id,
-                categ: fcCompleta.categ,
+                categ: categFC,
                 nro_cuenta: fcCompleta.nro_cuenta,
                 detalle: detalleExtracto,
                 estado: 'conciliado',
