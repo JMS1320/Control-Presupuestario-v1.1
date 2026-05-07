@@ -170,9 +170,17 @@ export function VistaPrincipal() {
         .eq('anticipo_id', anticipo.id)
         .limit(1)
 
-      // Si no hay match por anticipo_id, buscar por categ ANTICIPO o detalle que contenga ANTICIPO
+      // Si no hay match por anticipo_id, buscar por CUIT en leyendas_adicionales_2 + monto
       if (!movs || movs.length === 0) {
-        // Buscar por categ = ANTICIPO en fecha del anticipo
+        // Estrategia 1: CUIT del proveedor en leyendas_adicionales_2 (más confiable)
+        const { data: movsCuit } = await client
+          .from(tabla)
+          .select('id, fecha, debitos, creditos, estado, categ, detalle, leyendas_adicionales_2')
+          .eq('fecha', anticipo.fecha_pago)
+          .eq('leyendas_adicionales_2', anticipo.cuit_proveedor)
+          .limit(10)
+
+        // Estrategia 2: categ ANTICIPO o detalle con ANTICIPO (fallback)
         const { data: movsCateg } = await client
           .from(tabla)
           .select('id, fecha, debitos, creditos, estado, categ, detalle')
@@ -180,20 +188,12 @@ export function VistaPrincipal() {
           .eq('categ', 'ANTICIPO')
           .limit(10)
 
-        // También buscar por detalle que contenga ANTICIPO
-        const { data: movsDetalle } = await client
-          .from(tabla)
-          .select('id, fecha, debitos, creditos, estado, categ, detalle')
-          .eq('fecha', anticipo.fecha_pago)
-          .ilike('detalle', '%anticipo%')
-          .limit(10)
-
         // Combinar y deduplicar
-        const todosMovs = [...(movsCateg || []), ...(movsDetalle || [])]
+        const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
         const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
 
         if (unicos.length > 0) {
-          // Buscar match por monto: monto bruto o monto neto (sin SICORE)
+          // Buscar match por monto: bruto, neto (sin SICORE), o tolerancia 3%
           const match = unicos.find((m: any) => {
             const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
             const diffBruto = Math.abs(montoMov - anticipo.monto)
@@ -357,8 +357,17 @@ export function VistaPrincipal() {
             .eq('anticipo_id', anticipoParaVincular.id)
             .limit(1)
 
-          // Fallback: buscar por categ ANTICIPO + fecha
+          // Fallback: CUIT en leyendas_adicionales_2 + categ ANTICIPO
           if (!movExtracto || movExtracto.length === 0) {
+            // Estrategia 1: CUIT del proveedor
+            const { data: movsCuit } = await client
+              .from(tabla)
+              .select('id, estado, debitos, creditos, categ, detalle, leyendas_adicionales_2')
+              .eq('fecha', anticipoParaVincular.fecha_pago)
+              .eq('leyendas_adicionales_2', anticipoParaVincular.cuit_proveedor)
+              .limit(10)
+
+            // Estrategia 2: categ ANTICIPO
             const { data: movsCateg } = await client
               .from(tabla)
               .select('id, estado, debitos, creditos, categ, detalle')
@@ -366,14 +375,7 @@ export function VistaPrincipal() {
               .eq('categ', 'ANTICIPO')
               .limit(10)
 
-            const { data: movsDetalle } = await client
-              .from(tabla)
-              .select('id, estado, debitos, creditos, categ, detalle')
-              .eq('fecha', anticipoParaVincular.fecha_pago)
-              .ilike('detalle', '%anticipo%')
-              .limit(10)
-
-            const todosMovs = [...(movsCateg || []), ...(movsDetalle || [])]
+            const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
             const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
 
             const match = unicos.find((m: any) => {
