@@ -195,7 +195,7 @@ export function VistaPrincipal() {
         if (unicos.length > 0) {
           // Buscar match por monto: monto bruto o monto neto (sin SICORE)
           const match = unicos.find((m: any) => {
-            const montoMov = m.debitos || m.creditos || 0
+            const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
             const diffBruto = Math.abs(montoMov - anticipo.monto)
             const diffNeto = Math.abs(montoMov - netoAnticipo)
             return diffBruto < anticipo.monto * 0.03 || diffNeto < netoAnticipo * 0.01 || diffBruto < 1 || diffNeto < 1
@@ -209,7 +209,7 @@ export function VistaPrincipal() {
         setExtractoInfo({
           tabla,
           fecha: m.fecha,
-          monto: m.debitos || m.creditos || 0,
+          monto: parseFloat(m.debitos) || parseFloat(m.creditos) || 0,
           estado: m.estado
         })
         break
@@ -366,7 +366,7 @@ export function VistaPrincipal() {
             const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
 
             const match = unicos.find((m: any) => {
-              const montoMov = m.debitos || m.creditos || 0
+              const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
               const diffBruto = Math.abs(montoMov - anticipoParaVincular.monto)
               const diffNeto = Math.abs(montoMov - netoAnt)
               return diffBruto < anticipoParaVincular.monto * 0.03 || diffNeto < netoAnt * 0.01 || diffBruto < 1 || diffNeto < 1
