@@ -94,9 +94,9 @@ export function VistaPrincipal() {
     try {
       const { data: anticipos } = await supabase
         .from('anticipos_proveedores')
-        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion')
-        .not('sicore', 'is', null)
+        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado')
         .is('factura_id', null)
+        .neq('estado', 'vinculado')
         .eq('tipo', 'pago')
         .order('fecha_pago', { ascending: false })
 
@@ -117,9 +117,9 @@ export function VistaPrincipal() {
           const { data: facturas } = await supabase
             .schema('msa')
             .from('comprobantes_arca')
-            .select('id, denominacion_emisor, cuit, imp_total, fecha_emision')
+            .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado')
             .eq('cuit', cuit)
-            .eq('estado', 'pendiente')
+            .not('estado', 'in', '("pagado","conciliado")')
             .order('fecha_emision', { ascending: false })
             .limit(10)
 
