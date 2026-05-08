@@ -25,6 +25,8 @@ export interface MovimientoBancario {
   comprobante_arca_id: string | null
   leyendas_adicionales_1: string | null
   leyendas_adicionales_2: string | null
+  revisado: boolean
+  nota_operador: string | null
 }
 
 export interface EstadisticasMovimientos {
@@ -33,6 +35,7 @@ export interface EstadisticasMovimientos {
   pendientes: number
   auditar: number
   sin_categ: number
+  sin_revisar: number
 }
 
 export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: string = 'public') {
@@ -42,7 +45,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     conciliados: 0,
     pendientes: 0,
     auditar: 0,
-    sin_categ: 0
+    sin_categ: 0,
+    sin_revisar: 0
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -57,7 +61,9 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     montoDesde?: number
     montoHasta?: number
     categ?: string
+    categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
+    soloSinRevisar?: boolean
   }) => {
     try {
       setLoading(true)
@@ -72,9 +78,10 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.eq('estado', filtros.estado)
       }
 
-      // Aplicar búsqueda en descripción
+      // Aplicar búsqueda multi-columna
       if (filtros?.busqueda) {
-        query = query.ilike('descripcion', `%${filtros.busqueda}%`)
+        const b = filtros.busqueda
+        query = query.or(`descripcion.ilike.%${b}%,categ.ilike.%${b}%,detalle.ilike.%${b}%,contable.ilike.%${b}%,interno.ilike.%${b}%,origen.ilike.%${b}%,observaciones_cliente.ilike.%${b}%,numero_de_comprobante.ilike.%${b}%,nota_operador.ilike.%${b}%`)
       }
 
       // Aplicar filtro de fecha desde
@@ -97,14 +104,23 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.lte('debitos', filtros.montoHasta)
       }
 
-      // Aplicar filtro de CATEG
-      if (filtros?.categ) {
+      // Aplicar filtro especial de CATEG (invalida / sin_categ)
+      if (filtros?.categEspecial === 'invalida') {
+        query = query.ilike('categ', 'INVALIDA:%')
+      } else if (filtros?.categEspecial === 'sin_categ') {
+        query = query.is('categ', null)
+      } else if (filtros?.categ) {
         query = query.ilike('categ', `%${filtros.categ}%`)
       }
 
       // Aplicar filtro de detalle
       if (filtros?.detalle) {
         query = query.ilike('detalle', `%${filtros.detalle}%`)
+      }
+
+      // Aplicar filtro solo sin revisar
+      if (filtros?.soloSinRevisar) {
+        query = query.eq('revisado', false)
       }
 
       // Ordenar por orden descendente — respeta el orden del extracto bancario original
@@ -136,7 +152,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     try {
       const { data, error } = await (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
         .from(tabla)
-        .select('estado, categ')
+        .select('estado, categ, revisado')
 
       if (error) {
         throw new Error(`Error cargando estadísticas: ${error.message}`)
@@ -147,7 +163,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         conciliados: data?.filter(m => m.estado === 'conciliado').length || 0,
         pendientes: data?.filter(m => m.estado === 'pendiente').length || 0,
         auditar: data?.filter(m => m.estado === 'auditar').length || 0,
-        sin_categ: data?.filter(m => !m.categ || m.categ.startsWith('INVALIDA:')).length || 0
+        sin_categ: data?.filter(m => !m.categ || m.categ.startsWith('INVALIDA:')).length || 0,
+        sin_revisar: data?.filter(m => !m.revisado).length || 0
       }
 
       setEstadisticas(stats)
@@ -173,6 +190,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       estado?: string
       contable?: string
       interno?: string
+      detalle?: string
     }
   ): Promise<boolean> => {
     try {

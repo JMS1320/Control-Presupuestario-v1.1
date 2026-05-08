@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -178,11 +179,16 @@ export function VistaExtractoBancario() {
     centro_de_costo: '',
     estado: '',
     contable: '',
-    interno: ''
+    interno: '',
+    detalle: ''
   })
   const [facturasDisponibles, setFacturasDisponibles] = useState<any[]>([])
   const [vinculaciones, setVinculaciones] = useState<{[key: string]: string}>({}) // movimiento_id -> factura_id
   
+  // Edición inline detalle
+  const [editandoDetalleId, setEditandoDetalleId] = useState<string | null>(null)
+  const [editandoDetalleVal, setEditandoDetalleVal] = useState('')
+
   // Estados para Combobox avanzado
   const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
   const [busquedaCombobox, setBusquedaCombobox] = useState<{[key: string]: string}>({})
@@ -196,6 +202,10 @@ export function VistaExtractoBancario() {
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
+  const [filtroCategEspecial, setFiltroCategEspecial] = useState<'invalida' | 'sin_categ' | null>(null)
+  const [soloSinRevisar, setSoloSinRevisar] = useState(false)
+  const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
+  const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
   // Columnas opcionales — selector
   const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
@@ -253,6 +263,8 @@ export function VistaExtractoBancario() {
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
+  const [categManualAsignar, setCategManualAsignar] = useState('')
+  const [subcategsDisponibles, setSubcategsDisponibles] = useState<string[]>([])
 
   // Estados importador
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -331,7 +343,9 @@ export function VistaExtractoBancario() {
     cargarMovimientos({
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros
+      limite: limiteRegistros,
+      categEspecial: filtroCategEspecial || undefined,
+      soloSinRevisar: soloSinRevisar || undefined
     })
   }
 
@@ -563,10 +577,12 @@ export function VistaExtractoBancario() {
         setVinculaciones({})
         setEditData({
           categ: '',
+          nro_cuenta: '',
           centro_de_costo: '',
           estado: '',
           contable: '',
-          interno: ''
+          interno: '',
+          detalle: ''
         })
         // Propagar categ a facturas ARCA vinculadas (para movimientos ya conciliados, edición posterior de categ)
         // Solo cuando NO se está cambiando estado a 'conciliado' (ese caso ya lo maneja el bloque anterior)
@@ -703,11 +719,12 @@ export function VistaExtractoBancario() {
     setTabAsignar('template')
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
+    setCategManualAsignar('')
 
     // Cargar templates abiertos para asignación
     const { data } = await supabase
       .from('egresos_sin_factura')
-      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
       .eq('activo', true)
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
@@ -759,13 +776,22 @@ export function VistaExtractoBancario() {
       }
 
       if (tabAsignar === 'template' && templateElegido) {
+        // Si es re-asignación, limpiar cuota anterior
+        if (movimientoAsignando.template_cuota_id) {
+          await supabase.from('cuotas_egresos_sin_factura')
+            .delete().eq('id', movimientoAsignando.template_cuota_id)
+        }
+        // Limpiar vínculo ARCA anterior si existía
+        if (movimientoAsignando.comprobante_arca_id) {
+          await supabase.from(tablaActiva)
+            .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
+        }
+
         // Buscar códigos contable/interno: Tipo A (template específico) → Tipo B (responsable)
         const codigos = await buscarCodigos(templateElegido.id, templateElegido.responsable)
 
         // Crear cuota nueva en el template
-        const { data: cuota, error: errCuota } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .insert({
+        const cuotaInsert: Record<string, any> = {
             egreso_id: templateElegido.id,
             fecha_vencimiento: movimientoAsignando.fecha,
             fecha_estimada: movimientoAsignando.fecha,
@@ -773,7 +799,14 @@ export function VistaExtractoBancario() {
             estado: 'conciliado',
             tipo_movimiento: tipoMovimiento,
             descripcion: templateElegido.nombre_referencia
-          })
+        }
+        // Multi-cuenta: guardar categ en la cuota
+        if (templateElegido.es_multi_cuenta && categManualAsignar) {
+          cuotaInsert.categ = categManualAsignar
+        }
+        const { data: cuota, error: errCuota } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .insert(cuotaInsert)
           .select('id')
           .single()
 
@@ -781,10 +814,12 @@ export function VistaExtractoBancario() {
 
         // Actualizar extracto con todos los campos incluyendo contable/interno
         // Manual tiene prioridad sobre auto-detectado por reglas
+        // Multi-cuenta: usar categ específico si fue seleccionado
+        const categFinal = (templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
           template_cuota_id: cuota.id,
-          categ: templateElegido.categ,
+          categ: categFinal,
           detalle: templateElegido.nombre_referencia,
           estado: 'conciliado'
         }
@@ -927,6 +962,65 @@ export function VistaExtractoBancario() {
     return { color: 'text-red-600', mensaje: 'Carga pesada - usar filtros' }
   }
 
+  // Marcar movimientos como revisados
+  const marcarComoRevisado = async (ids: string[], valor: boolean = true) => {
+    try {
+      for (const id of ids) {
+        const { error: err } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+          .from(tablaActiva)
+          .update({ revisado: valor })
+          .eq('id', id)
+        if (err) throw err
+      }
+      recargar()
+    } catch (err) {
+      console.error('Error marcando revisado:', err)
+      alert('Error al marcar como revisado')
+    }
+  }
+
+  // Marcar visibles como revisados (excepto seleccionados si hay selección)
+  const marcarVisiblesComoRevisados = async () => {
+    const sinRevisar = movimientos.filter(m => !m.revisado)
+    if (sinRevisar.length === 0) return
+
+    let idsAMarcar: string[]
+    if (seleccionados.size > 0) {
+      // Si hay selección, el usuario eligió cuáles EXCLUIR
+      idsAMarcar = sinRevisar.filter(m => !seleccionados.has(m.id)).map(m => m.id)
+    } else {
+      idsAMarcar = sinRevisar.map(m => m.id)
+    }
+
+    if (idsAMarcar.length === 0) return
+
+    const msg = seleccionados.size > 0
+      ? `¿Marcar ${idsAMarcar.length} movimientos como revisados? (${seleccionados.size} excluidos)`
+      : `¿Marcar ${idsAMarcar.length} movimientos como revisados?`
+
+    if (!window.confirm(msg)) return
+
+    await marcarComoRevisado(idsAMarcar, true)
+    setSeleccionados(new Set())
+  }
+
+  // Guardar nota operador
+  const guardarNotaOperador = async (id: string, nota: string) => {
+    try {
+      const { error: err } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+        .from(tablaActiva)
+        .update({ nota_operador: nota.trim() || null })
+        .eq('id', id)
+      if (err) throw err
+      recargar()
+      setEditandoNotaId(null)
+      setEditandoNotaVal('')
+    } catch (err) {
+      console.error('Error guardando nota:', err)
+      alert('Error al guardar nota')
+    }
+  }
+
   // Aplicar filtros avanzados extracto bancario
   const aplicarFiltrosAvanzados = () => {
     const filtros: any = {
@@ -940,8 +1034,10 @@ export function VistaExtractoBancario() {
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
     if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
-    if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
+    if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
+    else if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
+    if (soloSinRevisar) filtros.soloSinRevisar = true
 
     cargarMovimientos(filtros)
   }
@@ -956,7 +1052,9 @@ export function VistaExtractoBancario() {
     setBusquedaDetalleExtracto('')
     setBusqueda('')
     setFiltroEstado('Todos')
-    
+    setFiltroCategEspecial(null)
+    setSoloSinRevisar(false)
+
     cargarMovimientos({
       estado: 'Todos',
       limite: limiteRegistros
@@ -1179,18 +1277,20 @@ export function VistaExtractoBancario() {
 
           {/* Filtros */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex gap-4 items-center">
+            <CardContent className="pt-4 pb-3">
+              {/* Fila 1: Búsqueda + Estado + Límite + Acciones */}
+              <div className="flex gap-3 items-center mb-3">
                 <div className="flex-1">
                   <Input
-                    placeholder="Buscar por descripción..."
+                    placeholder="Buscar en descripción, categ, detalle, contable, proveedor..."
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
+                    className="h-9 text-sm"
                   />
                 </div>
                 <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-44 h-9 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1200,35 +1300,30 @@ export function VistaExtractoBancario() {
                     <SelectItem value="auditar">Para Auditar</SelectItem>
                   </SelectContent>
                 </Select>
-                
-                {/* Selector de límite de registros */}
-                <div className="flex flex-col gap-1">
-                  <Select value={limiteRegistros.toString()} onValueChange={(value) => setLimiteRegistros(parseInt(value))}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="200">200</SelectItem>
-                      <SelectItem value="500">500</SelectItem>
-                      <SelectItem value="1000">1,000</SelectItem>
-                      <SelectItem value="2000">2,000</SelectItem>
-                      <SelectItem value="5000">5,000</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className={`text-xs ${obtenerInfoLimite(limiteRegistros).color}`}>
-                    {obtenerInfoLimite(limiteRegistros).mensaje}
-                  </span>
-                </div>
-                
-                <Button onClick={aplicarFiltros} variant="outline">
+
+                <Select value={limiteRegistros.toString()} onValueChange={(value) => setLimiteRegistros(parseInt(value))}>
+                  <SelectTrigger className="w-24 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="200">200</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
+                    <SelectItem value="1000">1.000</SelectItem>
+                    <SelectItem value="2000">2.000</SelectItem>
+                    <SelectItem value="5000">5.000</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button onClick={aplicarFiltros} size="sm">
                   Filtrar
                 </Button>
-                <Button 
+                <Button
                   onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
                   variant={mostrarFiltrosAvanzados ? "default" : "outline"}
+                  size="sm"
                 >
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filtros Avanzados
+                  <Filter className="h-4 w-4 mr-1" />
+                  Avanzados
                 </Button>
                 <Button
                   variant="outline"
@@ -1255,6 +1350,118 @@ export function VistaExtractoBancario() {
                     </>
                   )}
                 </Button>
+              </div>
+
+              {/* Fila 2: Filtros rápidos (chips) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-500 mr-1">Filtros rápidos:</span>
+                <Button
+                  variant={filtroEstado === 'pendiente' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('pendiente')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'pendiente', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Pendientes ({estadisticas.pendientes})
+                </Button>
+                <Button
+                  variant={filtroEstado === 'auditar' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('auditar')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'auditar', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Auditar ({estadisticas.auditar})
+                </Button>
+                <Button
+                  variant={filtroCategEspecial === 'invalida' ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${filtroCategEspecial === 'invalida' ? 'bg-red-600 hover:bg-red-700' : 'border-red-300 text-red-600 hover:bg-red-50'}`}
+                  onClick={() => {
+                    setFiltroCategEspecial(filtroCategEspecial === 'invalida' ? null : 'invalida')
+                    setFiltroEstado('Todos')
+                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  CATEG Inválida
+                </Button>
+                <Button
+                  variant={filtroCategEspecial === 'sin_categ' ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${filtroCategEspecial === 'sin_categ' ? 'bg-orange-600 hover:bg-orange-700' : 'border-orange-300 text-orange-600 hover:bg-orange-50'}`}
+                  onClick={() => {
+                    setFiltroCategEspecial(filtroCategEspecial === 'sin_categ' ? null : 'sin_categ')
+                    setFiltroEstado('Todos')
+                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Sin CATEG ({estadisticas.sin_categ})
+                </Button>
+                <Button
+                  variant={filtroEstado === 'conciliado' && !filtroCategEspecial ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  onClick={() => {
+                    setFiltroEstado('conciliado')
+                    setFiltroCategEspecial(null)
+                    cargarMovimientos({ estado: 'conciliado', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                  }}
+                >
+                  Conciliados ({estadisticas.conciliados})
+                </Button>
+                <span className="text-gray-300">|</span>
+                <Button
+                  variant={soloSinRevisar ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${soloSinRevisar ? 'bg-rose-600 hover:bg-rose-700' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
+                  onClick={() => {
+                    const nuevo = !soloSinRevisar
+                    setSoloSinRevisar(nuevo)
+                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, soloSinRevisar: nuevo || undefined })
+                  }}
+                >
+                  Sin revisar ({estadisticas.sin_revisar})
+                </Button>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || soloSinRevisar) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs px-2 text-gray-500"
+                    onClick={() => {
+                      setFiltroEstado('Todos')
+                      setFiltroCategEspecial(null)
+                      setSoloSinRevisar(false)
+                      cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    }}
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Limpiar
+                  </Button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  {movimientos.some(m => !m.revisado) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs px-2 border-green-400 text-green-700 hover:bg-green-50"
+                      onClick={marcarVisiblesComoRevisados}
+                    >
+                      ✓ {seleccionados.size > 0
+                        ? `Revisar visibles excepto ${seleccionados.size} seleccionados`
+                        : `Marcar ${movimientos.filter(m => !m.revisado).length} como revisados`}
+                    </Button>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {movimientos.length} mov.
+                    {movimientos.length === limiteRegistros && ' (límite)'}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1399,11 +1606,11 @@ export function VistaExtractoBancario() {
                 <div className="grid grid-cols-5 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">CATEG</label>
-                    <CategCombobox
+                    <SelectorCuentaContable
                       value={editData.categ}
-                      onValueChange={(value) => setEditData({...editData, categ: value})}
-                      onSelectFull={(categ, nro_cuenta) => setEditData({...editData, categ, nro_cuenta})}
-                      placeholder="Seleccionar cuenta contable..."
+                      onSelect={(cuenta) => setEditData({...editData, categ: cuenta?.categ || '', nro_cuenta: cuenta?.nro_cuenta || ''})}
+                      autoFocus={false}
+                      mostrarSinAsignar={false}
                       className="w-full"
                     />
                   </div>
@@ -1445,7 +1652,15 @@ export function VistaExtractoBancario() {
                     />
                   </div>
                 </div>
-                
+                <div className="mb-4">
+                  <label className="text-sm font-medium mb-2 block">Detalle</label>
+                  <Input
+                    placeholder="Agregar o modificar detalle del movimiento"
+                    value={editData.detalle}
+                    onChange={(e) => setEditData({...editData, detalle: e.target.value})}
+                  />
+                </div>
+
                 {/* Sección de Vinculación con Facturas */}
                 {editData.estado === 'conciliado' && (
                   <div className="border-t pt-4 mt-4">
@@ -1690,12 +1905,13 @@ export function VistaExtractoBancario() {
                         {col('origen') && <TableHead>Origen</TableHead>}
                         {col('control') && <TableHead className="text-right">Control</TableHead>}
                         {col('orden') && <TableHead className="text-right">Orden</TableHead>}
-                        <TableHead></TableHead>
+                        <TableHead className="w-8 text-center">📝</TableHead>
+                        <TableHead className="w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {movimientos.map((movimiento) => (
-                        <TableRow key={movimiento.id}>
+                        <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
                           {modoEdicion && (
                             <TableCell>
                               <Checkbox
@@ -1742,8 +1958,41 @@ export function VistaExtractoBancario() {
                             </Badge>
                           </TableCell>
                           {col('detalle') && (
-                            <TableCell className="max-w-xs truncate text-sm text-gray-600">
-                              {movimiento.detalle || '-'}
+                            <TableCell className="max-w-xs text-sm text-gray-600">
+                              {editandoDetalleId === movimiento.id ? (
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  className="border rounded px-1 py-0.5 text-xs w-full"
+                                  value={editandoDetalleVal}
+                                  onChange={(e) => setEditandoDetalleVal(e.target.value)}
+                                  onKeyDown={async (e) => {
+                                    if (e.key === 'Enter') {
+                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
+                                      recargar()
+                                      setEditandoDetalleId(null)
+                                    }
+                                    if (e.key === 'Escape') setEditandoDetalleId(null)
+                                  }}
+                                  onBlur={async () => {
+                                    if (editandoDetalleVal !== (movimiento.detalle || '')) {
+                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
+                                      recargar()
+                                    }
+                                    setEditandoDetalleId(null)
+                                  }}
+                                />
+                              ) : (
+                                <span
+                                  className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
+                                  title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
+                                  onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || '') }}
+                                >
+                                  {movimiento.detalle || <span className="text-gray-300">—</span>}
+                                </span>
+                              )}
                             </TableCell>
                           )}
                           {col('motivo_revision') && (
@@ -1805,9 +2054,30 @@ export function VistaExtractoBancario() {
                             {(() => {
                               const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
                               const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
-                              const mostrar = movimiento.estado !== 'conciliado' || sinVincular || categInvalida
+                              const esConciliado = movimiento.estado === 'conciliado'
+                              const mostrar = !esConciliado || sinVincular || categInvalida
+                              const label = categInvalida && esConciliado ? 'Re-asignar'
+                                : esConciliado && !sinVincular ? 'Re-asignar'
+                                : esConciliado ? 'Vincular' : 'Asignar'
+                              // Conciliados con vínculo: mostrar botón discreto de re-asignar
+                              if (esConciliado && !sinVincular && !categInvalida) {
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 text-[10px] text-gray-400 hover:text-gray-700 gap-0.5 px-1"
+                                    onClick={() => {
+                                      if (window.confirm('Este movimiento ya está conciliado. ¿Desea re-asignarlo a otro template/factura?')) {
+                                        abrirModalAsignar(movimiento)
+                                      }
+                                    }}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                    Re-asignar
+                                  </Button>
+                                )
+                              }
                               if (!mostrar) return null
-                              const label = categInvalida && movimiento.estado === 'conciliado' ? 'Re-asignar' : movimiento.estado === 'conciliado' ? 'Vincular' : 'Asignar'
                               return (
                                 <Button
                                   size="sm"
@@ -1820,6 +2090,48 @@ export function VistaExtractoBancario() {
                                 </Button>
                               )
                             })()}
+                          </TableCell>
+                          {/* Nota operador */}
+                          <TableCell className="text-center px-1">
+                            {editandoNotaId === movimiento.id ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  value={editandoNotaVal}
+                                  onChange={e => setEditandoNotaVal(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') guardarNotaOperador(movimiento.id, editandoNotaVal)
+                                    if (e.key === 'Escape') { setEditandoNotaId(null); setEditandoNotaVal('') }
+                                  }}
+                                  className="h-6 text-xs w-40"
+                                  autoFocus
+                                  placeholder="Escribir nota..."
+                                />
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => guardarNotaOperador(movimiento.id, editandoNotaVal)}>
+                                  <Check className="h-3 w-3 text-green-600" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setEditandoNotaId(null); setEditandoNotaVal('') }}>
+                                  <X className="h-3 w-3 text-gray-400" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                className={`text-sm cursor-pointer hover:scale-110 transition-transform ${movimiento.nota_operador ? '' : 'opacity-30 hover:opacity-70'}`}
+                                title={movimiento.nota_operador || 'Agregar nota'}
+                                onClick={() => { setEditandoNotaId(movimiento.id); setEditandoNotaVal(movimiento.nota_operador || '') }}
+                              >
+                                {movimiento.nota_operador ? '📝' : '💬'}
+                              </button>
+                            )}
+                          </TableCell>
+                          {/* Revisado toggle */}
+                          <TableCell className="text-center px-1">
+                            <button
+                              className={`text-sm cursor-pointer hover:scale-110 transition-transform ${movimiento.revisado ? 'opacity-70' : ''}`}
+                              title={movimiento.revisado ? 'Marcado como revisado — click para desmarcar' : 'Sin revisar — click para marcar'}
+                              onClick={() => marcarComoRevisado([movimiento.id], !movimiento.revisado)}
+                            >
+                              {movimiento.revisado ? '✅' : '⬜'}
+                            </button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -2181,7 +2493,22 @@ export function VistaExtractoBancario() {
                   .map(t => (
                     <div
                       key={t.id}
-                      onClick={() => setTemplateElegido(templateElegido?.id === t.id ? null : t)}
+                      onClick={async () => {
+                        const nuevo = templateElegido?.id === t.id ? null : t
+                        setTemplateElegido(nuevo)
+                        setCategManualAsignar('')
+                        if (nuevo?.es_multi_cuenta) {
+                          const { data } = await supabase
+                            .from('cuotas_egresos_sin_factura')
+                            .select('categ')
+                            .eq('egreso_id', nuevo.id)
+                            .not('categ', 'is', null)
+                          const unicas = [...new Set((data || []).map((r: any) => r.categ).filter(Boolean))]
+                          setSubcategsDisponibles(unicas as string[])
+                        } else {
+                          setSubcategsDisponibles([])
+                        }
+                      }}
                       className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
                         templateElegido?.id === t.id
                           ? 'border-blue-500 bg-blue-50'
@@ -2200,8 +2527,87 @@ export function VistaExtractoBancario() {
                   ))}
               </div>
               {templateElegido && (
-                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                <div className="space-y-2">
+                  {templateElegido.es_multi_cuenta && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Sub-categoría</label>
+                      {/* Texto libre */}
+                      <input
+                        type="text"
+                        className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mb-1"
+                        placeholder="Escribir nombre o elegir abajo..."
+                        value={categManualAsignar}
+                        onChange={(e) => setCategManualAsignar(e.target.value)}
+                      />
+                      {/* Sub-categorías ya usadas en este template */}
+                      {subcategsDisponibles.length > 0 && (
+                        <div className="mb-1">
+                          <div className="text-[10px] text-green-700 font-semibold mb-0.5">Usadas en este template:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {subcategsDisponibles.map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                className={`text-[10px] px-1.5 py-0.5 rounded border ${categManualAsignar === s ? 'bg-green-100 border-green-400 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                                onClick={() => setCategManualAsignar(s)}
+                              >{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* Templates existentes agrupados por cuenta_agrupadora */}
+                      {(() => {
+                        const filtrados = templatesParaAsignar
+                          .filter(t => t.id !== templateElegido.id && t.nombre_referencia)
+                          .filter(t => !categManualAsignar.trim() || t.nombre_referencia.toLowerCase().includes(categManualAsignar.toLowerCase()) || (t.cuenta_agrupadora || '').toLowerCase().includes(categManualAsignar.toLowerCase()))
+                        if (filtrados.length === 0) return null
+                        const grupos = new Map<string, typeof filtrados>()
+                        filtrados.forEach(t => {
+                          const g = t.cuenta_agrupadora || 'Sin grupo'
+                          if (!grupos.has(g)) grupos.set(g, [])
+                          grupos.get(g)!.push(t)
+                        })
+                        return (
+                          <div className="mb-1">
+                            <div className="text-[10px] text-blue-600 font-semibold mb-0.5">Templates:</div>
+                            <div className="max-h-40 overflow-y-auto border rounded bg-white">
+                              {Array.from(grupos.entries()).map(([grupo, items]) => (
+                                <div key={grupo}>
+                                  <div className="px-2 py-0.5 text-[10px] font-semibold text-gray-400 bg-gray-50 sticky top-0">{grupo}</div>
+                                  {items.map(t => (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      className={`w-full text-left px-2 py-1 text-xs hover:bg-blue-50 ${categManualAsignar === t.nombre_referencia ? 'bg-blue-50 font-semibold text-blue-700' : ''}`}
+                                      onClick={() => setCategManualAsignar(t.nombre_referencia)}
+                                    >
+                                      {t.nombre_referencia}
+                                      {t.responsable && <span className="ml-1 text-[10px] text-gray-400">· {t.responsable}</span>}
+                                    </button>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                      {/* Plan de cuentas contables completo */}
+                      <div className="text-[10px] text-gray-500 font-semibold mb-0.5">Cuentas contables:</div>
+                      <SelectorCuentaContable
+                        value={categManualAsignar}
+                        onSelect={(cuenta) => setCategManualAsignar(cuenta?.categ || '')}
+                        autoFocus={false}
+                        mostrarSinAsignar={false}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                    Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                    {templateElegido.es_multi_cuenta && categManualAsignar && (
+                      <span className="block mt-1 text-blue-600">Categoría: <strong>{categManualAsignar}</strong></span>
+                    )}
+                  </div>
                 </div>
               )}
             </TabsContent>

@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check, RefreshCw } from "lucide-react"
+import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check, RefreshCw, Search } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -99,6 +99,7 @@ export function VistaTemplatesEgresos() {
   const { procesando: procesandoCuotas, ejecutarPagoCuotas, confirmarPagoCuotas } = usePagoCuotas()
   
   // Estados para filtros
+  const [busquedaRapida, setBusquedaRapida] = useState('')
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
@@ -388,7 +389,27 @@ export function VistaTemplatesEgresos() {
   // Funciones para filtros
   const aplicarFiltros = () => {
     let cuotasFiltradas = [...cuotasOriginales]
-    
+
+    // Búsqueda rápida multi-campo
+    if (busquedaRapida.trim()) {
+      const q = busquedaRapida.toLowerCase()
+      cuotasFiltradas = cuotasFiltradas.filter(c => {
+        const campos = [
+          c.egreso?.nombre_referencia || '',
+          c.egreso?.responsable || '',
+          c.egreso?.categ || '',
+          c.egreso?.cuenta_agrupadora || '',
+          c.egreso?.nombre_quien_cobra || '',
+          c.egreso?.cuit_quien_cobra || '',
+          c.descripcion || '',
+          c.estado || '',
+          c.monto?.toLocaleString('es-AR') || '',
+          c.categ || '',
+        ]
+        return campos.some(f => f.toLowerCase().includes(q))
+      })
+    }
+
     // Filtro por fecha estimada
     if (fechaDesde) {
       cuotasFiltradas = cuotasFiltradas.filter(c => c.fecha_estimada >= fechaDesde)
@@ -469,6 +490,7 @@ export function VistaTemplatesEgresos() {
   }
   
   const limpiarFiltros = () => {
+    setBusquedaRapida('')
     setFechaDesde('')
     setFechaHasta('')
     setBusquedaResponsable('')
@@ -484,6 +506,13 @@ export function VistaTemplatesEgresos() {
     setCuotas(cuotasOriginales)
   }
   
+  // Búsqueda rápida reactiva — filtra al escribir
+  useEffect(() => {
+    if (cuotasOriginales.length > 0) {
+      aplicarFiltros()
+    }
+  }, [busquedaRapida])
+
   // Obtener valores únicos para los selectores
   const estadosUnicos = [...new Set(cuotasOriginales.map(c => c.estado))].filter(Boolean).sort()
   const tiposRecurrenciaUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.tipo_recurrencia))].filter(Boolean).sort()
@@ -1204,8 +1233,18 @@ export function VistaTemplatesEgresos() {
           )}
         </div>
         
-        {/* Controles */}
+        {/* Búsqueda rápida + Controles */}
         <div className="flex items-center gap-2">
+          {/* Búsqueda rápida general */}
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Buscar template, proveedor, CATEG..."
+              value={busquedaRapida}
+              onChange={e => setBusquedaRapida(e.target.value)}
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
           {/* Botón de modo edición */}
           <Button
             variant={modoEdicion ? "default" : "outline"}

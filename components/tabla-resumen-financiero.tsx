@@ -1,5 +1,6 @@
 "use client"
 
+import React, { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatNumber, getMonthName } from "@/lib/format"
@@ -12,6 +13,23 @@ interface TablaResumenFinancieroProps {
 }
 
 export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResumenFinancieroProps) {
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
+
+  const toggleExpand = (cuenta: string) => {
+    setExpandidos(prev => {
+      const next = new Set(prev)
+      if (next.has(cuenta)) next.delete(cuenta)
+      else next.add(cuenta)
+      return next
+    })
+  }
+
+  // Detectar qué cuentas de egresos tienen sub-categorías
+  const cuentasConSubCateg = new Set<string>()
+  resumen?.forEach(mes => {
+    Object.keys(mes.subCategorias || {}).forEach(c => cuentasConSubCateg.add(c))
+  })
+
   if (!resumen || resumen.length === 0) {
     return (
       <Card>
@@ -164,38 +182,95 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
 
               {Array.from(todasLasCuentas)
                 .filter((cuenta) => resumen.some((mes) => mes.egresos[cuenta] !== undefined))
-                .map((cuenta) => (
-                  <TableRow suppressHydrationWarning key={`egreso-${cuenta}`}>
-                    <TableCell className="pl-4">{cuenta}</TableCell>
-                    {resumen.map((mes) => {
-                      const valor = mes.egresos[cuenta]
-                      return (
-                        <TableCell key={`${cuenta}-${mes.año}-${mes.mes}`} className="text-center">
-                          {valor !== undefined ? (
-                            <span className={getColorClass(valor)}>{formatNumber(valor, mostrarDecimales)}</span>
-                          ) : (
-                            "-"
+                .map((cuenta) => {
+                  const tieneSubCateg = cuentasConSubCateg.has(cuenta)
+                  const estaExpandido = expandidos.has(cuenta)
+
+                  // Recopilar sub-categorías únicas
+                  const subCategsSet = new Set<string>()
+                  if (tieneSubCateg) {
+                    resumen.forEach(mes => {
+                      Object.keys(mes.subCategorias?.[cuenta] || {}).forEach(s => subCategsSet.add(s))
+                    })
+                  }
+
+                  return (
+                    <React.Fragment key={`egreso-${cuenta}`}>
+                      {/* Fila principal */}
+                      <TableRow suppressHydrationWarning>
+                        <TableCell
+                          className={`pl-4 ${tieneSubCateg ? 'cursor-pointer select-none' : ''}`}
+                          onClick={tieneSubCateg ? () => toggleExpand(cuenta) : undefined}
+                        >
+                          {tieneSubCateg && (
+                            <span className="mr-1 text-gray-400 text-[10px]">{estaExpandido ? '▼' : '▶'}</span>
+                          )}
+                          {cuenta}
+                          {tieneSubCateg && (
+                            <span className="ml-1 text-[10px] text-orange-500">({subCategsSet.size})</span>
                           )}
                         </TableCell>
-                      )
-                    })}
-                    <TableCell className="text-center bg-blue-50">
-                      {(() => {
-                        const total = resumen.reduce((sum, mes) => sum + (mes.egresos[cuenta] || 0), 0)
-                        return <span className={getColorClass(total)}>{formatNumber(total, mostrarDecimales)}</span>
-                      })()}
-                    </TableCell>
-                    <TableCell className="text-center bg-green-50">
-                      {(() => {
-                        const promedio =
-                          resumen.reduce((sum, mes) => sum + (mes.egresos[cuenta] || 0), 0) / resumen.length
-                        return (
-                          <span className={getColorClass(promedio)}>{formatNumber(promedio, mostrarDecimales)}</span>
-                        )
-                      })()}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        {resumen.map((mes) => {
+                          const valor = mes.egresos[cuenta]
+                          return (
+                            <TableCell key={`${cuenta}-${mes.año}-${mes.mes}`} className="text-center">
+                              {valor !== undefined ? (
+                                <span className={getColorClass(valor)}>{formatNumber(valor, mostrarDecimales)}</span>
+                              ) : (
+                                "-"
+                              )}
+                            </TableCell>
+                          )
+                        })}
+                        <TableCell className="text-center bg-blue-50">
+                          {(() => {
+                            const total = resumen.reduce((sum, mes) => sum + (mes.egresos[cuenta] || 0), 0)
+                            return <span className={getColorClass(total)}>{formatNumber(total, mostrarDecimales)}</span>
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-center bg-green-50">
+                          {(() => {
+                            const promedio =
+                              resumen.reduce((sum, mes) => sum + (mes.egresos[cuenta] || 0), 0) / resumen.length
+                            return (
+                              <span className={getColorClass(promedio)}>{formatNumber(promedio, mostrarDecimales)}</span>
+                            )
+                          })()}
+                        </TableCell>
+                      </TableRow>
+                      {/* Sub-categorías expandidas */}
+                      {tieneSubCateg && estaExpandido && Array.from(subCategsSet).sort().map(sub => (
+                        <TableRow suppressHydrationWarning key={`egreso-sub-${cuenta}-${sub}`} className="bg-orange-50/40">
+                          <TableCell className="pl-8 text-xs text-gray-500 italic">↳ {sub}</TableCell>
+                          {resumen.map((mes) => {
+                            const valor = mes.subCategorias?.[cuenta]?.[sub]
+                            return (
+                              <TableCell key={`${sub}-${mes.año}-${mes.mes}`} className="text-center text-xs">
+                                {valor !== undefined ? (
+                                  <span className={getColorClass(valor)}>{formatNumber(valor, mostrarDecimales)}</span>
+                                ) : (
+                                  "-"
+                                )}
+                              </TableCell>
+                            )
+                          })}
+                          <TableCell className="text-center bg-blue-50 text-xs">
+                            {(() => {
+                              const total = resumen.reduce((sum, mes) => sum + (mes.subCategorias?.[cuenta]?.[sub] || 0), 0)
+                              return <span className={getColorClass(total)}>{formatNumber(total, mostrarDecimales)}</span>
+                            })()}
+                          </TableCell>
+                          <TableCell className="text-center bg-green-50 text-xs">
+                            {(() => {
+                              const promedio = resumen.reduce((sum, mes) => sum + (mes.subCategorias?.[cuenta]?.[sub] || 0), 0) / resumen.length
+                              return <span className={getColorClass(promedio)}>{formatNumber(promedio, mostrarDecimales)}</span>
+                            })()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  )
+                })}
 
               <TableRow suppressHydrationWarning className="font-semibold bg-red-100">
                 <TableCell>Subtotal Egresos</TableCell>

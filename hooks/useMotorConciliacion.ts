@@ -439,19 +439,85 @@ export function useMotorConciliacion() {
               if (esValorContableValido(regla.codigo_contable)) codigosRegla.contable = regla.codigo_contable
               if (esValorContableValido(regla.codigo_interno)) codigosRegla.interno = regla.codigo_interno
 
-              // Anticipos: si la descripción contiene "anticipo", marcar como auditar
-              // para que el usuario lo vincule manualmente a la factura ARCA correcta
+              // Anticipos: si la descripción contiene "anticipo", buscar registro y guardar anticipo_id
               const esAnticipo = /anticipo/i.test(movimiento.descripcion || '')
-              const estadoRegla = esAnticipo ? 'auditar' : 'conciliado'
-              const motivoRegla = esAnticipo ? 'Anticipo: requiere vinculación con factura ARCA' : null
+              let estadoRegla: string = 'conciliado'
+              let motivoRegla: string | null = null
+              let extraAnticipo: any = {}
 
-              // Actualizar extracto con categ/detalle/estado y códigos de la regla (si tiene)
+              if (esAnticipo) {
+                const montoMov = movimiento.debitos || movimiento.creditos || 0
+
+                // Buscar anticipo por monto (cualquier estado no vinculado) para guardar anticipo_id
+                const { data: anticiposMatch } = await supabase
+                  .from('anticipos_proveedores')
+                  .select('id, factura_id, descripcion, monto, nombre_proveedor, estado, estado_pago')
+                  .in('estado', ['pendiente_vincular', 'parcial'])
+                  .order('fecha_pago', { ascending: true })
+
+                // Match por monto (tolerancia 1% o $1)
+                const match = (anticiposMatch || []).find((a: any) => {
+                  const diff = Math.abs(a.monto - montoMov)
+                  return diff < montoMov * 0.01 || diff < 1
+                })
+
+                if (match) {
+                  // Siempre guardar anticipo_id para trazabilidad
+                  extraAnticipo.anticipo_id = match.id
+
+                  if (match.factura_id) {
+                    // Anticipo ya vinculado a FC → conciliar con datos de la FC
+                    const { data: fc } = await supabase
+                      .schema('msa')
+                      .from('comprobantes_arca')
+                      .select('id, categ, nro_cuenta, denominacion_emisor')
+                      .eq('id', match.factura_id)
+                      .single()
+
+                    if (fc) {
+                      const esParcial = match.estado === 'parcial'
+                      estadoRegla = 'conciliado'
+                      extraAnticipo.comprobante_arca_id = fc.id
+                      extraAnticipo.categ = fc.categ || regla.categ
+                      if (fc.nro_cuenta) extraAnticipo.nro_cuenta = fc.nro_cuenta
+                      extraAnticipo.detalle = esParcial
+                        ? `Pago parcial vía anticipo: ${match.descripcion || match.nombre_proveedor}`
+                        : `Pago total vía anticipo: ${match.descripcion || match.nombre_proveedor}`
+
+                      // Anticipo → vinculado + conciliado en banco
+                      await supabase
+                        .from('anticipos_proveedores')
+                        .update({ estado: 'vinculado', estado_pago: 'conciliado' })
+                        .eq('id', match.id)
+                    }
+                  } else {
+                    // Anticipo sin FC → auditar, pero guardamos anticipo_id para cuando se vincule
+                    estadoRegla = 'auditar'
+                    motivoRegla = 'Anticipo: requiere vinculación con factura ARCA'
+                    extraAnticipo.detalle = `Anticipo: ${match.descripcion || match.nombre_proveedor}`
+                    // Marcar anticipo como conciliado en banco (ya salió el dinero)
+                    await supabase
+                      .from('anticipos_proveedores')
+                      .update({ estado_pago: 'conciliado' })
+                      .eq('id', match.id)
+                  }
+                } else {
+                  // No encontró anticipo en BD → auditar para revisión manual
+                  estadoRegla = 'auditar'
+                  motivoRegla = 'Anticipo detectado sin registro en BD'
+                }
+              }
+
+              // Actualizar extracto con categ/detalle/estado y códigos de la regla
               await actualizarMovimientoBD(cuenta, movimiento.id, {
-                categ: regla.categ,
+                categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: regla.detalle,
+                detalle: extraAnticipo.detalle || regla.detalle,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
+                comprobante_arca_id: extraAnticipo.comprobante_arca_id || null,
+                anticipo_id: extraAnticipo.anticipo_id || null,
+                nro_cuenta: extraAnticipo.nro_cuenta || null,
                 ...codigosRegla
               })
 

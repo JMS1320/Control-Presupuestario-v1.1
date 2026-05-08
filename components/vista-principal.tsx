@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2 } from "lucide-react"
+import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
 import { toast } from "sonner"
@@ -28,6 +28,7 @@ interface AnticipoSicore {
   tipo_sicore: string
   fecha_pago: string
   factura_id: string | null
+  descripcion: string | null
 }
 
 interface FacturaCandidato {
@@ -63,6 +64,7 @@ export function VistaPrincipal() {
   const [pasoWizard, setPasoWizard] = useState<'seleccion' | 'confirmacion'>('seleccion')
   const [calculo, setCalculo] = useState<CalcVinculacion | null>(null)
   const [vinculando, setVinculando] = useState(false)
+  const [extractoInfo, setExtractoInfo] = useState<{ tabla: string, fecha: string, monto: number, estado: string } | null>(null)
 
   const meses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -92,9 +94,9 @@ export function VistaPrincipal() {
     try {
       const { data: anticipos } = await supabase
         .from('anticipos_proveedores')
-        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id')
-        .not('sicore', 'is', null)
+        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado')
         .is('factura_id', null)
+        .neq('estado', 'vinculado')
         .eq('tipo', 'pago')
         .order('fecha_pago', { ascending: false })
 
@@ -115,9 +117,9 @@ export function VistaPrincipal() {
           const { data: facturas } = await supabase
             .schema('msa')
             .from('comprobantes_arca')
-            .select('id, denominacion_emisor, cuit, imp_total, fecha_emision')
+            .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado')
             .eq('cuit', cuit)
-            .eq('estado', 'pendiente')
+            .not('estado', 'in', '("pagado","conciliado")')
             .order('fecha_emision', { ascending: false })
             .limit(10)
 
@@ -142,12 +144,77 @@ export function VistaPrincipal() {
     cargarAlertasSicore()
   }, [cargarAlertasSicore])
 
-  const abrirVinculacion = (anticipo: AnticipoSicore) => {
+  const abrirVinculacion = async (anticipo: AnticipoSicore) => {
     setAnticipoParaVincular(anticipo)
     setFacturaElegida('')
     setCalculo(null)
+    setExtractoInfo(null)
     setPasoWizard('seleccion')
     setModalVinculacion(true)
+
+    // Buscar si este anticipo ya tiene movimiento en extracto (por anticipo_id o por categ/detalle/monto)
+    const tablasBancarias: { tabla: string, schema?: string }[] = [
+      { tabla: 'msa_galicia' },
+      { tabla: 'pam_galicia' },
+      { tabla: 'pam_galicia_cc' },
+      { tabla: 'ma_galicia', schema: 'ma' },
+    ]
+    const netoAnticipo = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
+
+    for (const { tabla, schema } of tablasBancarias) {
+      const client = schema ? supabase.schema(schema) : supabase
+      // Primero por anticipo_id (si el motor ya lo guardó)
+      let { data: movs } = await client
+        .from(tabla)
+        .select('id, fecha, debitos, creditos, estado')
+        .eq('anticipo_id', anticipo.id)
+        .limit(1)
+
+      // Si no hay match por anticipo_id, buscar por CUIT en leyendas_adicionales_2 + monto
+      if (!movs || movs.length === 0) {
+        // Estrategia 1: CUIT del proveedor en leyendas_adicionales_2 (más confiable)
+        const { data: movsCuit } = await client
+          .from(tabla)
+          .select('id, fecha, debitos, creditos, estado, categ, detalle, leyendas_adicionales_2')
+          .eq('fecha', anticipo.fecha_pago)
+          .eq('leyendas_adicionales_2', anticipo.cuit_proveedor)
+          .limit(10)
+
+        // Estrategia 2: categ ANTICIPO o detalle con ANTICIPO (fallback)
+        const { data: movsCateg } = await client
+          .from(tabla)
+          .select('id, fecha, debitos, creditos, estado, categ, detalle')
+          .eq('fecha', anticipo.fecha_pago)
+          .eq('categ', 'ANTICIPO')
+          .limit(10)
+
+        // Combinar y deduplicar
+        const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
+        const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
+
+        if (unicos.length > 0) {
+          // Buscar match por monto: bruto, neto (sin SICORE), o tolerancia 3%
+          const match = unicos.find((m: any) => {
+            const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
+            const diffBruto = Math.abs(montoMov - anticipo.monto)
+            const diffNeto = Math.abs(montoMov - netoAnticipo)
+            return diffBruto < anticipo.monto * 0.03 || diffNeto < netoAnticipo * 0.01 || diffBruto < 1 || diffNeto < 1
+          })
+          if (match) movs = [match]
+        }
+      }
+
+      if (movs && movs.length > 0) {
+        const m = movs[0]
+        setExtractoInfo({
+          tabla,
+          fecha: m.fecha,
+          monto: parseFloat(m.debitos) || parseFloat(m.creditos) || 0,
+          estado: m.estado
+        })
+        break
+      }
+    }
   }
 
   // Calcular cuando se selecciona una factura
@@ -160,11 +227,14 @@ export function VistaPrincipal() {
 
     const sicore = anticipoParaVincular.monto_sicore || 0
     const descuento = anticipoParaVincular.descuento_aplicado || 0
-    const saldo = fac.imp_total - anticipoParaVincular.monto
+    // Caso A: anticipo >= imp_total → FC cubierta completamente
+    // Caso B: anticipo < imp_total → saldo pendiente = imp_total - anticipo - sicore - descuento
+    const cubierto = anticipoParaVincular.monto >= fac.imp_total - 0.01
+    const saldo = cubierto ? 0 : fac.imp_total - anticipoParaVincular.monto - sicore - descuento
     const neto_pagado = anticipoParaVincular.monto - sicore - descuento
 
     setCalculo({
-      caso: saldo <= 0.01 ? 'A' : 'B',
+      caso: cubierto ? 'A' : 'B',
       saldo: Math.max(0, saldo),
       neto_pagado,
       descuento,
@@ -187,16 +257,28 @@ export function VistaPrincipal() {
       const fac = candidatos.find(f => f.id === facturaElegida)
       if (!fac) throw new Error('Factura no encontrada')
 
+      // Datos comunes que la FC hereda del anticipo
+      const herenciaComun: Record<string, any> = {
+        sicore: anticipoParaVincular.sicore,
+        monto_sicore: anticipoParaVincular.monto_sicore,
+        tipo_sicore: anticipoParaVincular.tipo_sicore,
+      }
+      // Heredar descripcion del anticipo a la FC (si tiene)
+      if (anticipoParaVincular.descripcion) {
+        herenciaComun.detalle = anticipoParaVincular.descripcion
+      }
+
       if (calculo.caso === 'A') {
-        // Factura completamente cubierta → marcar como pagada
+        // Factura completamente cubierta
+        // Si el extracto ya está conciliado → FC = conciliado (pago ya pasó por banco)
+        // Si no → FC = pagado
+        const estadoFC = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'pagado'
         const { error: errFac } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
           .update({
-            estado: 'pagado',
-            sicore: anticipoParaVincular.sicore,
-            monto_sicore: anticipoParaVincular.monto_sicore,
-            tipo_sicore: anticipoParaVincular.tipo_sicore,
+            ...herenciaComun,
+            estado: estadoFC,
             monto_a_abonar: calculo.neto_pagado,
             fecha_vencimiento: anticipoParaVincular.fecha_pago,
             fecha_estimada: anticipoParaVincular.fecha_pago,
@@ -204,24 +286,25 @@ export function VistaPrincipal() {
           .eq('id', facturaElegida)
         if (errFac) throw errFac
       } else {
-        // Caso B: saldo pendiente
+        // Caso B: saldo pendiente — FC mantiene su estado, anticipo queda parcial
         const { error: errFac } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
           .update({
-            sicore: anticipoParaVincular.sicore,
-            monto_sicore: anticipoParaVincular.monto_sicore,
-            tipo_sicore: anticipoParaVincular.tipo_sicore,
+            ...herenciaComun,
             monto_a_abonar: calculo.saldo,
           })
           .eq('id', facturaElegida)
         if (errFac) throw errFac
       }
 
-      // Vincular anticipo
+      // Vincular anticipo: Caso A → vinculado (desaparece), Caso B → parcial (permanece)
       const { error: errAnticipo } = await supabase
         .from('anticipos_proveedores')
-        .update({ factura_id: facturaElegida, estado: 'vinculado' })
+        .update({
+          factura_id: facturaElegida,
+          estado: calculo.caso === 'A' ? 'vinculado' : 'parcial',
+        })
         .eq('id', anticipoParaVincular.id)
       if (errAnticipo) throw errAnticipo
 
@@ -235,9 +318,106 @@ export function VistaPrincipal() {
           .is('factura_id', null)
       }
 
+      // Propagar datos de FC al extracto bancario (si el anticipo ya estaba conciliado)
+      // Buscar movimiento en extracto: por anticipo_id, o fallback por categ/detalle ANTICIPO + monto
+      let extractoActualizado = false
+      const tablasBanc: { tabla: string, schema?: string }[] = [
+        { tabla: 'msa_galicia' },
+        { tabla: 'pam_galicia' },
+        { tabla: 'pam_galicia_cc' },
+        { tabla: 'ma_galicia', schema: 'ma' },
+      ]
+      const { data: fcCompleta } = await supabase
+        .schema('msa')
+        .from('comprobantes_arca')
+        .select('id, nro_cuenta, denominacion_emisor')
+        .eq('id', facturaElegida)
+        .single()
+
+      // Obtener categ de cuentas_contables vía nro_cuenta de la FC
+      let categFC: string | null = null
+      if (fcCompleta?.nro_cuenta) {
+        const { data: cta } = await supabase
+          .from('cuentas_contables')
+          .select('categ')
+          .eq('nro_cuenta', fcCompleta.nro_cuenta)
+          .single()
+        categFC = cta?.categ || null
+      }
+
+      if (fcCompleta) {
+        const netoAnt = anticipoParaVincular.monto - (anticipoParaVincular.monto_sicore || 0) - (anticipoParaVincular.descuento_aplicado || 0)
+        for (const { tabla, schema } of tablasBanc) {
+          const client = schema ? supabase.schema(schema) : supabase
+
+          // Primero por anticipo_id
+          let { data: movExtracto } = await client
+            .from(tabla)
+            .select('id, estado')
+            .eq('anticipo_id', anticipoParaVincular.id)
+            .limit(1)
+
+          // Fallback: CUIT en leyendas_adicionales_2 + categ ANTICIPO
+          if (!movExtracto || movExtracto.length === 0) {
+            // Estrategia 1: CUIT del proveedor
+            const { data: movsCuit } = await client
+              .from(tabla)
+              .select('id, estado, debitos, creditos, categ, detalle, leyendas_adicionales_2')
+              .eq('fecha', anticipoParaVincular.fecha_pago)
+              .eq('leyendas_adicionales_2', anticipoParaVincular.cuit_proveedor)
+              .limit(10)
+
+            // Estrategia 2: categ ANTICIPO
+            const { data: movsCateg } = await client
+              .from(tabla)
+              .select('id, estado, debitos, creditos, categ, detalle')
+              .eq('fecha', anticipoParaVincular.fecha_pago)
+              .eq('categ', 'ANTICIPO')
+              .limit(10)
+
+            const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
+            const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
+
+            const match = unicos.find((m: any) => {
+              const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
+              const diffBruto = Math.abs(montoMov - anticipoParaVincular.monto)
+              const diffNeto = Math.abs(montoMov - netoAnt)
+              return diffBruto < anticipoParaVincular.monto * 0.03 || diffNeto < netoAnt * 0.01 || diffBruto < 1 || diffNeto < 1
+            })
+            if (match) movExtracto = [match]
+          }
+
+          if (movExtracto && movExtracto.length > 0) {
+            const mov = movExtracto[0]
+            const detalleExtracto = calculo.caso === 'A'
+              ? `Pago total vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
+              : `Pago parcial vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
+
+            // Guardar anticipo_id en extracto para trazabilidad
+            await client
+              .from(tabla)
+              .update({
+                comprobante_arca_id: fcCompleta.id,
+                anticipo_id: anticipoParaVincular.id,
+                categ: categFC,
+                nro_cuenta: fcCompleta.nro_cuenta,
+                detalle: detalleExtracto,
+                estado: 'conciliado',
+                motivo_revision: null,
+              })
+              .eq('id', mov.id)
+
+            extractoActualizado = true
+            break
+          }
+        }
+      }
+
+      const msgExtracto = extractoActualizado ? ' Extracto bancario actualizado.' : ''
+      const estadoFinal = extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'
       const msg = calculo.caso === 'A'
-        ? `Vinculación completa. Factura marcada como pagada (${fmt(calculo.neto_pagado)} neto).`
-        : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.`
+        ? `Vinculación completa. Factura marcada como ${estadoFinal} (${fmt(calculo.neto_pagado)} neto).${msgExtracto}`
+        : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.${msgExtracto}`
       toast.success(msg)
       setModalVinculacion(false)
       setAnticipoParaVincular(null)
@@ -246,6 +426,22 @@ export function VistaPrincipal() {
       toast.error('Error al vincular: ' + (err as Error).message)
     } finally {
       setVinculando(false)
+    }
+  }
+
+  // Eliminar anticipo (solo si no está conciliado en banco)
+  const eliminarAnticipo = async (anticipo: AnticipoSicore) => {
+    if (!window.confirm(`¿Eliminar anticipo de ${anticipo.nombre_proveedor} por ${fmt(anticipo.monto)}?\n\nEsta acción no se puede deshacer.`)) return
+    try {
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .delete()
+        .eq('id', anticipo.id)
+      if (error) throw error
+      toast.success('Anticipo eliminado')
+      await cargarAlertasSicore()
+    } catch (err) {
+      toast.error('Error al eliminar: ' + (err as Error).message)
     }
   }
 
@@ -313,11 +509,18 @@ export function VistaPrincipal() {
           <CardTitle className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-blue-600" />
             Alertas de Pagos
-            {anticiposSinVincular.length > 0 && (
-              <span className="ml-2 bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                {anticiposSinVincular.length}
-              </span>
-            )}
+            {(() => {
+              const conFC = anticiposSinVincular.filter(a => (facturasCandidatos[a.id] || []).length > 0).length
+              return conFC > 0 ? (
+                <span className="ml-2 bg-red-100 text-red-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                  {conFC}
+                </span>
+              ) : anticiposSinVincular.length > 0 ? (
+                <span className="ml-2 bg-gray-100 text-gray-500 text-xs font-semibold px-2 py-0.5 rounded-full">
+                  {anticiposSinVincular.length}
+                </span>
+              ) : null
+            })()}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -331,54 +534,89 @@ export function VistaPrincipal() {
               <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-300" />
               <p className="text-sm">Sin alertas pendientes</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {anticiposSinVincular.map(anticipo => {
-                const candidatos = facturasCandidatos[anticipo.id] || []
-                return (
-                  <div key={anticipo.id}
-                    className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 gap-4"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-gray-900">{anticipo.nombre_proveedor}</span>
-                        <span className="text-xs text-gray-500">{anticipo.cuit_proveedor}</span>
-                        <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
-                          💰 {fmt(anticipo.monto)} pagado
-                        </span>
-                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
-                          🏛️ Ret. {anticipo.sicore} — {fmt(anticipo.monto_sicore || 0)}
-                        </span>
-                        {anticipo.descuento_aplicado ? (
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                            Desc. {fmt(anticipo.descuento_aplicado)}
+          ) : (() => {
+            const conFC = anticiposSinVincular.filter(a => (facturasCandidatos[a.id] || []).length > 0)
+            const sinFC = anticiposSinVincular.filter(a => (facturasCandidatos[a.id] || []).length === 0)
+            return (
+              <div className="space-y-3">
+                {/* Anticipos CON facturas candidatas — alerta activa */}
+                {conFC.map(anticipo => {
+                  const candidatos = facturasCandidatos[anticipo.id] || []
+                  return (
+                    <div key={anticipo.id}
+                      className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 gap-4"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-gray-900">{anticipo.nombre_proveedor}</span>
+                          <span className="text-xs text-gray-500">{anticipo.cuit_proveedor}</span>
+                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                            {fmt(anticipo.monto)} pagado
                           </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-500">
-                        Pagado: {fmtFecha(anticipo.fecha_pago)}
-                        {candidatos.length > 0 && (
+                          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
+                            Ret. {anticipo.sicore} — {fmt(anticipo.monto_sicore || 0)}
+                          </span>
+                          {anticipo.descuento_aplicado ? (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                              Desc. {fmt(anticipo.descuento_aplicado)}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Pagado: {fmtFecha(anticipo.fecha_pago)}
                           <span className="ml-2 text-blue-600">
                             <Link2 className="h-3 w-3 inline mr-0.5" />
                             {candidatos.length} factura{candidatos.length > 1 ? 's' : ''} pendiente{candidatos.length > 1 ? 's' : ''}
                           </span>
-                        )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => abrirVinculacion(anticipo)}>
+                          <Link2 className="h-3 w-3 mr-1" />Vincular
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2" onClick={() => eliminarAnticipo(anticipo)} title="Eliminar anticipo">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={candidatos.length > 0 ? 'default' : 'outline'}
-                      className={candidatos.length > 0 ? 'bg-blue-600 hover:bg-blue-700 shrink-0' : 'shrink-0'}
-                      onClick={() => abrirVinculacion(anticipo)}
-                    >
-                      <Link2 className="h-3 w-3 mr-1" />
-                      Vincular
-                    </Button>
+                  )
+                })}
+
+                {/* Anticipos SIN facturas candidatas — esperando FC */}
+                {sinFC.length > 0 && (
+                  <div className="space-y-2">
+                    {conFC.length > 0 && <div className="text-xs text-gray-400 pt-1">Esperando factura del proveedor:</div>}
+                    {sinFC.map(anticipo => (
+                      <div key={anticipo.id}
+                        className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 gap-4"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm text-gray-600">{anticipo.nombre_proveedor}</span>
+                            <span className="text-xs text-gray-400">{anticipo.cuit_proveedor}</span>
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                              {fmt(anticipo.monto)} pagado
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-xs text-gray-400">
+                            Pagado: {fmtFecha(anticipo.fecha_pago)} — sin factura pendiente aún
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button size="sm" variant="outline" className="text-xs" onClick={() => abrirVinculacion(anticipo)}>
+                            <Link2 className="h-3 w-3 mr-1" />Vincular
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2" onClick={() => eliminarAnticipo(anticipo)} title="Eliminar anticipo">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                )}
+              </div>
+            )
+          })()}
         </CardContent>
       </Card>
 
@@ -489,7 +727,9 @@ export function VistaPrincipal() {
                   <>
                     <div className={`rounded-lg p-4 text-sm space-y-2 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
                       <div className="font-semibold text-base mb-3">
-                        {calculo.caso === 'A' ? '✅ Factura cubierta — se marcará como PAGADA' : '📋 Pago parcial — quedará saldo pendiente'}
+                        {calculo.caso === 'A'
+                          ? (extractoInfo?.estado === 'conciliado' ? '✅ Factura cubierta — se marcará como CONCILIADA (pago ya en banco)' : '✅ Factura cubierta — se marcará como PAGADA')
+                          : '📋 Pago parcial — quedará saldo pendiente'}
                       </div>
 
                       <div className="text-xs space-y-1">
@@ -508,16 +748,31 @@ export function VistaPrincipal() {
                         <div className="font-semibold text-gray-700">Lo que va a suceder:</div>
                         {calculo.caso === 'A' ? (
                           <>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>pagada</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
+                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>{extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'}</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
                             <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Anticipo → <strong>vinculado</strong> (desaparece del cash flow)</div>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE <strong>{fmt(calculo.sicore)}</strong> registrado en la factura</div>
+                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE, retención y descripción heredados a la factura</div>
                           </>
                         ) : (
                           <>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Factura → <strong>pendiente</strong> con saldo <strong>{fmt(calculo.saldo)}</strong> por pagar</div>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Anticipo → <strong>vinculado</strong> (desaparece del cash flow)</div>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE y retención copiados a la factura</div>
+                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Factura → saldo <strong>{fmt(calculo.saldo)}</strong> por pagar</div>
+                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Anticipo → <strong>parcial</strong> (permanece en cash flow hasta conciliar en banco)</div>
+                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE, retención y descripción copiados a la factura</div>
                           </>
+                        )}
+                        {/* Info extracto bancario */}
+                        {extractoInfo ? (
+                          <div className="mt-2 pt-2 border-t border-dashed">
+                            <div className="font-semibold text-gray-700 mb-1">Extracto bancario ({extractoInfo.tabla}):</div>
+                            <div className="flex items-start gap-1">
+                              <span className="text-purple-600">✓</span>
+                              Movimiento del {fmtFecha(extractoInfo.fecha)} por {fmt(extractoInfo.monto)} ({extractoInfo.estado})
+                              → se actualizará con datos de la FC (categ, cuenta contable, factura_id)
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 pt-2 border-t border-dashed text-gray-400">
+                            Sin movimiento bancario detectado para este anticipo
+                          </div>
                         )}
                       </div>
                     </div>
