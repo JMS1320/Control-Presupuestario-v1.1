@@ -797,10 +797,16 @@ export function VistaExtractoBancario() {
         let cuotaId: string
 
         if (cuotaElegida) {
-          // Usar cuota existente: actualizar estado a conciliado y monto si difiere
+          // Usar cuota existente: actualizar estado, monto y fechas según extracto
           const updateCuota: Record<string, any> = { estado: 'conciliado' }
           if (parseFloat(cuotaElegida.monto) !== monto) {
             updateCuota.monto = monto
+          }
+          // Actualizar fechas a la fecha real de débito bancario
+          const fechaExtracto = movimientoAsignando.fecha
+          if (fechaExtracto) {
+            updateCuota.fecha_vencimiento = fechaExtracto
+            updateCuota.fecha_estimada = fechaExtracto
           }
           const { error: errUpd } = await supabase
             .from('cuotas_egresos_sin_factura')
@@ -2566,8 +2572,12 @@ export function VistaExtractoBancario() {
                       <label className="text-xs font-medium text-gray-600 mb-1 block">Cuotas existentes del template</label>
                       <div className="max-h-36 overflow-y-auto space-y-1">
                         {cuotasExistentes.map(c => {
-                          const fechaStr = c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+                          const fmtFecha = (f: string | null) => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+                          const fechaVenc = fmtFecha(c.fecha_vencimiento)
+                          const fechaEst = fmtFecha(c.fecha_estimada)
                           const montoStr = parseFloat(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          const fechaExtracto = movimientoAsignando?.fecha
+                          const fechasDifieren = fechaExtracto && (c.fecha_vencimiento !== fechaExtracto || c.fecha_estimada !== fechaExtracto)
                           return (
                             <div
                               key={c.id}
@@ -2579,7 +2589,12 @@ export function VistaExtractoBancario() {
                               }`}
                             >
                               <div className="flex justify-between items-center">
-                                <span className="font-medium">{fechaStr}</span>
+                                <div>
+                                  <span className="font-medium">Venc: {fechaVenc}</span>
+                                  {c.fecha_estimada !== c.fecha_vencimiento && (
+                                    <span className="ml-2 text-gray-400">Est: {fechaEst}</span>
+                                  )}
+                                </div>
                                 <span className="font-mono">${montoStr}</span>
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                                   c.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-700' :
@@ -2587,6 +2602,9 @@ export function VistaExtractoBancario() {
                                   'bg-gray-100 text-gray-600'
                                 }`}>{c.estado}</span>
                               </div>
+                              {cuotaElegida?.id === c.id && fechasDifieren && (
+                                <div className="text-orange-600 mt-1 text-[10px]">⚠ Fechas se actualizarán al {fmtFecha(fechaExtracto)} (fecha real de débito)</div>
+                              )}
                               {c.descripcion && <div className="text-gray-500 mt-0.5">{c.descripcion}</div>}
                               {c.categ && <div className="text-gray-400 mt-0.5">categ: {c.categ}</div>}
                             </div>
