@@ -265,6 +265,8 @@ export function VistaExtractoBancario() {
   const [internoManual, setInternoManual] = useState('')
   const [categManualAsignar, setCategManualAsignar] = useState('')
   const [subcategsDisponibles, setSubcategsDisponibles] = useState<string[]>([])
+  const [cuotasExistentes, setCuotasExistentes] = useState<any[]>([])
+  const [cuotaElegida, setCuotaElegida] = useState<any>(null) // null = crear nueva
 
   // Estados importador
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -720,6 +722,8 @@ export function VistaExtractoBancario() {
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
     setCategManualAsignar('')
+    setCuotaElegida(null)
+    setCuotasExistentes([])
 
     // Cargar templates abiertos para asignación
     const { data } = await supabase
@@ -790,35 +794,51 @@ export function VistaExtractoBancario() {
         // Buscar códigos contable/interno: Tipo A (template específico) → Tipo B (responsable)
         const codigos = await buscarCodigos(templateElegido.id, templateElegido.responsable)
 
-        // Crear cuota nueva en el template
-        const cuotaInsert: Record<string, any> = {
-            egreso_id: templateElegido.id,
-            fecha_vencimiento: movimientoAsignando.fecha,
-            fecha_estimada: movimientoAsignando.fecha,
-            monto,
-            estado: 'conciliado',
-            tipo_movimiento: tipoMovimiento,
-            descripcion: templateElegido.nombre_referencia
-        }
-        // Multi-cuenta: guardar categ en la cuota
-        if (templateElegido.es_multi_cuenta && categManualAsignar) {
-          cuotaInsert.categ = categManualAsignar
-        }
-        const { data: cuota, error: errCuota } = await supabase
-          .from('cuotas_egresos_sin_factura')
-          .insert(cuotaInsert)
-          .select('id')
-          .single()
+        let cuotaId: string
 
-        if (errCuota) throw errCuota
+        if (cuotaElegida) {
+          // Usar cuota existente: actualizar estado a conciliado y monto si difiere
+          const updateCuota: Record<string, any> = { estado: 'conciliado' }
+          if (parseFloat(cuotaElegida.monto) !== monto) {
+            updateCuota.monto = monto
+          }
+          const { error: errUpd } = await supabase
+            .from('cuotas_egresos_sin_factura')
+            .update(updateCuota)
+            .eq('id', cuotaElegida.id)
+          if (errUpd) throw errUpd
+          cuotaId = cuotaElegida.id
+        } else {
+          // Crear cuota nueva en el template
+          const cuotaInsert: Record<string, any> = {
+              egreso_id: templateElegido.id,
+              fecha_vencimiento: movimientoAsignando.fecha,
+              fecha_estimada: movimientoAsignando.fecha,
+              monto,
+              estado: 'conciliado',
+              tipo_movimiento: tipoMovimiento,
+              descripcion: templateElegido.nombre_referencia
+          }
+          // Multi-cuenta: guardar categ en la cuota
+          if (templateElegido.es_multi_cuenta && categManualAsignar) {
+            cuotaInsert.categ = categManualAsignar
+          }
+          const { data: cuota, error: errCuota } = await supabase
+            .from('cuotas_egresos_sin_factura')
+            .insert(cuotaInsert)
+            .select('id')
+            .single()
+
+          if (errCuota) throw errCuota
+          cuotaId = cuota.id
+        }
 
         // Actualizar extracto con todos los campos incluyendo contable/interno
-        // Manual tiene prioridad sobre auto-detectado por reglas
         // Multi-cuenta: usar categ específico si fue seleccionado
-        const categFinal = (templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ
+        const categFinal = cuotaElegida?.categ || ((templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ)
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
-          template_cuota_id: cuota.id,
+          template_cuota_id: cuotaId,
           categ: categFinal,
           detalle: templateElegido.nombre_referencia,
           estado: 'conciliado'
@@ -2497,16 +2517,28 @@ export function VistaExtractoBancario() {
                         const nuevo = templateElegido?.id === t.id ? null : t
                         setTemplateElegido(nuevo)
                         setCategManualAsignar('')
-                        if (nuevo?.es_multi_cuenta) {
-                          const { data } = await supabase
+                        setCuotaElegida(null)
+                        setCuotasExistentes([])
+                        if (nuevo) {
+                          // Cargar cuotas existentes no conciliadas de este template
+                          const { data: cuotas } = await supabase
                             .from('cuotas_egresos_sin_factura')
-                            .select('categ')
+                            .select('id, fecha_vencimiento, fecha_estimada, monto, estado, descripcion, categ, tipo_movimiento')
                             .eq('egreso_id', nuevo.id)
-                            .not('categ', 'is', null)
-                          const unicas = [...new Set((data || []).map((r: any) => r.categ).filter(Boolean))]
-                          setSubcategsDisponibles(unicas as string[])
-                        } else {
-                          setSubcategsDisponibles([])
+                            .not('estado', 'eq', 'conciliado')
+                            .order('fecha_vencimiento', { ascending: true })
+                          setCuotasExistentes(cuotas || [])
+                          if (nuevo.es_multi_cuenta) {
+                            const { data } = await supabase
+                              .from('cuotas_egresos_sin_factura')
+                              .select('categ')
+                              .eq('egreso_id', nuevo.id)
+                              .not('categ', 'is', null)
+                            const unicas = [...new Set((data || []).map((r: any) => r.categ).filter(Boolean))]
+                            setSubcategsDisponibles(unicas as string[])
+                          } else {
+                            setSubcategsDisponibles([])
+                          }
                         }
                       }}
                       className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
@@ -2528,6 +2560,51 @@ export function VistaExtractoBancario() {
               </div>
               {templateElegido && (
                 <div className="space-y-2">
+                  {/* Selector: cuota existente o crear nueva */}
+                  {cuotasExistentes.length > 0 && (
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Cuotas existentes del template</label>
+                      <div className="max-h-36 overflow-y-auto space-y-1">
+                        {cuotasExistentes.map(c => {
+                          const fechaStr = c.fecha_vencimiento ? new Date(c.fecha_vencimiento + 'T12:00:00').toLocaleDateString('es-AR') : '—'
+                          const montoStr = parseFloat(c.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          return (
+                            <div
+                              key={c.id}
+                              onClick={() => setCuotaElegida(cuotaElegida?.id === c.id ? null : c)}
+                              className={`p-2 border rounded cursor-pointer text-xs transition-colors ${
+                                cuotaElegida?.id === c.id
+                                  ? 'border-green-500 bg-green-50'
+                                  : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center">
+                                <span className="font-medium">{fechaStr}</span>
+                                <span className="font-mono">${montoStr}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                  c.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-700' :
+                                  c.estado === 'pagado' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}>{c.estado}</span>
+                              </div>
+                              {c.descripcion && <div className="text-gray-500 mt-0.5">{c.descripcion}</div>}
+                              {c.categ && <div className="text-gray-400 mt-0.5">categ: {c.categ}</div>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div
+                        onClick={() => setCuotaElegida(null)}
+                        className={`mt-1 p-2 border rounded cursor-pointer text-xs text-center transition-colors ${
+                          cuotaElegida === null
+                            ? 'border-blue-500 bg-blue-50 font-medium text-blue-700'
+                            : 'border-dashed border-gray-300 text-gray-500 hover:border-blue-300'
+                        }`}
+                      >
+                        + Crear cuota nueva
+                      </div>
+                    </div>
+                  )}
                   {templateElegido.es_multi_cuenta && (
                     <div>
                       <label className="text-xs font-medium text-gray-600 mb-1 block">Sub-categoría</label>
