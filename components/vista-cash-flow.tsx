@@ -666,7 +666,17 @@ export function VistaCashFlow() {
 
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
-    
+
+    // BLOQUEO: No permitir editar monto en filas agrupadas (grupo de cuotas/facturas)
+    if (celdaEnEdicion.columna === 'debitos' || celdaEnEdicion.columna === 'creditos') {
+      const filaEdit = data.find(f => f.id === celdaEnEdicion.filaId)
+      if (filaEdit && (filaEdit.facturas_agrupadas ?? 0) > 1) {
+        toast.error('Para cambiar el total de un grupo, modifique los montos de sus componentes individuales desde Templates.')
+        setCeldaEnEdicion(null)
+        return
+      }
+    }
+
     // Si está editando categ, validar si existe primero
     if (celdaEnEdicion.columna === 'categ') {
       const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
