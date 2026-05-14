@@ -208,14 +208,36 @@ export function useMotorConciliacion() {
     }
   }
 
+  // Extraer CUIT válido de leyendas_adicionales_2 (si existe)
+  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null => {
+    // El tipo dice leyendas_adicionales2 pero BD devuelve leyendas_adicionales_2
+    const mov = movimiento as any
+    const valor = (mov.leyendas_adicionales_2 || mov.leyendas_adicionales2 || '').trim()
+    if (!valor) return null
+    // CUIT argentino: exactamente 11 dígitos, prefijo válido
+    if (!/^\d{11}$/.test(valor)) return null
+    const prefijo = parseInt(valor.substring(0, 2))
+    if ([20, 23, 24, 27, 30, 33, 34].includes(prefijo)) return valor
+    return null
+  }
+
   // Función para buscar match en Cash Flow
   const buscarMatchCashFlow = (movimiento: MovimientoBancario): any => {
     const toleranciaDias = 5
     const fechaMovimiento = new Date(movimiento.fecha)
-    
+
+    // Pre-filtro por CUIT bancario: si el banco informa CUIT, buscar solo en ese proveedor
+    const cuitBancario = extraerCuitBancario(movimiento)
+    const candidatos = cuitBancario
+      ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
+      : cashFlowData
+
+    // Si hay CUIT pero no hay candidatos con ese CUIT, buscar en todo (fallback)
+    const pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+
     // Buscar por débitos
     if (movimiento.debitos > 0) {
-      const match = cashFlowData.find(cf => {
+      const match = pool.find(cf => {
         if (cf.debitos !== movimiento.debitos) return false
         
         const fechaCF = new Date(cf.fecha_estimada)
@@ -245,7 +267,7 @@ export function useMotorConciliacion() {
 
     // Buscar por créditos
     if (movimiento.creditos > 0) {
-      const match = cashFlowData.find(cf => {
+      const match = pool.find(cf => {
         if (cf.creditos !== movimiento.creditos) return false
         
         const fechaCF = new Date(cf.fecha_estimada)
