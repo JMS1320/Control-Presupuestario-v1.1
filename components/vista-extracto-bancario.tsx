@@ -212,6 +212,8 @@ export function VistaExtractoBancario() {
     { key: 'saldo',               label: 'Saldo',            defaultVisible: true  },
     { key: 'categ',               label: 'CATEG',            defaultVisible: true  },
     { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
+    { key: 'proveedor_nombre',    label: 'Proveedor',        defaultVisible: true  },
+    { key: 'comprobantes_pagados', label: 'Comprobantes',    defaultVisible: true  },
     { key: 'motivo_revision',     label: 'Motivo Revisión',  defaultVisible: true  },
     { key: 'centro_de_costo',     label: 'Centro de Costo',  defaultVisible: false },
     { key: 'contable',            label: 'Contable',         defaultVisible: false },
@@ -842,12 +844,18 @@ export function VistaExtractoBancario() {
         // Actualizar extracto con todos los campos incluyendo contable/interno
         // Multi-cuenta: usar categ específico si fue seleccionado
         const categFinal = cuotaElegida?.categ || ((templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ)
+        // Buscar nombre oficial del proveedor en BBDD proveedores
+        const cuitTemplate = templateElegido.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provTemplate } = cuitTemplate ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitTemplate).maybeSingle() : { data: null }
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
           template_cuota_id: cuotaId,
           categ: categFinal,
           detalle: templateElegido.nombre_referencia,
-          estado: 'conciliado'
+          estado: 'conciliado',
+          proveedor_nombre: provTemplate?.razon_social || null,
+          comprobantes_pagados: templateElegido.display_referencia || templateElegido.nombre_referencia || null
         }
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
@@ -870,10 +878,16 @@ export function VistaExtractoBancario() {
         const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
         const nroCuenta = facturaCompleta?.nro_cuenta || null              // código numérico → nro_cuenta
 
+        // Buscar nombre oficial del proveedor en BBDD proveedores
+        const cuitArca = arcaElegida.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provArca } = cuitArca ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitArca).maybeSingle() : { data: null }
         const updateArca: Record<string, any> = {
           comprobante_arca_id: arcaElegida.id,
           detalle: arcaElegida.display_nombre || '',
-          estado: 'conciliado'
+          estado: 'conciliado',
+          proveedor_nombre: provArca?.razon_social || null,
+          comprobantes_pagados: arcaElegida.display_referencia || null
         }
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
@@ -1918,6 +1932,8 @@ export function VistaExtractoBancario() {
                         {col('categ') && <TableHead>CATEG</TableHead>}
                         <TableHead>Estado</TableHead>
                         {col('detalle') && <TableHead>Detalle</TableHead>}
+                        {col('proveedor_nombre') && <TableHead>Proveedor</TableHead>}
+                        {col('comprobantes_pagados') && <TableHead>Comprobantes</TableHead>}
                         {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
                         {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
                         {col('contable') && <TableHead>Contable</TableHead>}
@@ -2019,6 +2035,16 @@ export function VistaExtractoBancario() {
                                   {movimiento.detalle || <span className="text-gray-300">—</span>}
                                 </span>
                               )}
+                            </TableCell>
+                          )}
+                          {col('proveedor_nombre') && (
+                            <TableCell className="text-sm truncate max-w-[180px]" title={movimiento.proveedor_nombre || ''}>
+                              {movimiento.proveedor_nombre || <span className="text-gray-300">—</span>}
+                            </TableCell>
+                          )}
+                          {col('comprobantes_pagados') && (
+                            <TableCell className="text-sm truncate max-w-[200px]" title={movimiento.comprobantes_pagados || ''}>
+                              {movimiento.comprobantes_pagados || <span className="text-gray-300">—</span>}
                             </TableCell>
                           )}
                           {col('motivo_revision') && (

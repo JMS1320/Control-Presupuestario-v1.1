@@ -63,6 +63,8 @@ export interface MovimientoBancario {
   template_id?: string | null
   template_cuota_id?: string | null
   comprobante_arca_id?: string | null
+  proveedor_nombre?: string | null
+  comprobantes_pagados?: string | null
 }
 
 export interface ResultadoConciliacion {

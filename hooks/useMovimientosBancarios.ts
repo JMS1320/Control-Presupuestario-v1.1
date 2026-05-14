@@ -27,6 +27,8 @@ export interface MovimientoBancario {
   leyendas_adicionales_2: string | null
   revisado: boolean
   nota_operador: string | null
+  proveedor_nombre: string | null
+  comprobantes_pagados: string | null
 }
 
 export interface EstadisticasMovimientos {

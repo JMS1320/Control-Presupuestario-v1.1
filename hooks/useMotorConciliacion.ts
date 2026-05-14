@@ -221,6 +221,19 @@ export function useMotorConciliacion() {
     return null
   }
 
+  // Buscar nombre del proveedor en BBDD proveedores por CUIT
+  const buscarNombreProveedor = async (cuit: string | null | undefined): Promise<string | null> => {
+    if (!cuit) return null
+    const cuitLimpio = cuit.replace(/[-\s]/g, '')
+    if (!cuitLimpio) return null
+    const { data } = await supabase
+      .from('proveedores')
+      .select('razon_social')
+      .eq('cuit', cuitLimpio)
+      .maybeSingle()
+    return data?.razon_social || null
+  }
+
   // Función para buscar match en Cash Flow
   const buscarMatchCashFlow = (movimiento: MovimientoBancario): any => {
     const toleranciaDias = 5
@@ -401,12 +414,17 @@ export function useMotorConciliacion() {
               ? 'Sin categ: requiere asignación de cuenta contable'
               : matchCF.motivo_revision
 
+            // Buscar nombre oficial del proveedor en BBDD proveedores
+            const provNombreCF = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: matchCF.cashFlowRow.detalle,
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
+              proveedor_nombre: provNombreCF,
+              comprobantes_pagados: matchCF.cashFlowRow.detalle || null,
               ...extraIdsCF,
               ...extraCF
             })
@@ -536,6 +554,10 @@ export function useMotorConciliacion() {
                 }
               }
 
+              // Buscar nombre proveedor en BBDD: por CUIT bancario o por CUIT del anticipo
+              const cuitRegla = extraAnticipo.cuit || extraerCuitBancario(movimiento)
+              const provNombreRegla = await buscarNombreProveedor(cuitRegla)
+
               // Actualizar extracto con categ/detalle/estado y códigos de la regla
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
@@ -543,6 +565,8 @@ export function useMotorConciliacion() {
                 detalle: extraAnticipo.detalle || regla.detalle,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
+                proveedor_nombre: provNombreRegla,
+                comprobantes_pagados: extraAnticipo.detalle || null,
                 comprobante_arca_id: extraAnticipo.comprobante_arca_id || null,
                 anticipo_id: extraAnticipo.anticipo_id || null,
                 nro_cuenta: extraAnticipo.nro_cuenta || null,
