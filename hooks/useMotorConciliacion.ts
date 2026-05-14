@@ -392,15 +392,21 @@ export function useMotorConciliacion() {
             // Actualizar estado de la cuota/factura origen si el match fue definitivo
             if (estadoFinal === 'conciliado') {
               if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+                const idsAConciliar = matchCF.cashFlowRow.ids_grupo && matchCF.cashFlowRow.ids_grupo.length > 0
+                  ? matchCF.cashFlowRow.ids_grupo
+                  : [matchCF.cashFlowRow.id]
                 await supabase
                   .from('cuotas_egresos_sin_factura')
                   .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                  .in('id', idsAConciliar)
               } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+                const idsArcaConciliar = matchCF.cashFlowRow.ids_grupo && matchCF.cashFlowRow.ids_grupo.length > 0
+                  ? matchCF.cashFlowRow.ids_grupo
+                  : [matchCF.cashFlowRow.id]
                 await supabase
                   .from('comprobantes_arca')
                   .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                  .in('id', idsArcaConciliar)
                   .schema('msa')
               } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
                 await supabase
