@@ -849,18 +849,27 @@ export function VistaExtractoBancario() {
     const gruposArr = Array.from(mapaGrupos.entries()).map(([grupoId, cuotas]) => {
       const total = Math.round(cuotas.reduce((s: number, c: any) => s + (parseFloat(c.monto) || 0), 0) * 100) / 100
       const primera = cuotas[0]
+      // Nombres únicos de todos los templates del grupo
+      const nombresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_referencia || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      // Proveedores únicos
+      const proveedoresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_quien_cobra || '').filter(Boolean))]
+      const cuitsUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.cuit_quien_cobra || '').filter(Boolean))]
       return {
         id: grupoId,
         cuotas,
         total,
         categ: primera.categ || primera.egreso?.categ || '',
-        nombre: primera.egreso?.nombre_referencia || '',
+        nombre: nombreGrupo || primera.egreso?.nombre_referencia || '',
+        nombresUnicos,
         cuenta_agrupadora: primera.egreso?.cuenta_agrupadora || '',
         responsable: primera.egreso?.responsable || '',
         egreso_id: primera.egreso_id,
         fecha: primera.fecha_estimada,
-        cuit: primera.egreso?.cuit_quien_cobra || '',
-        nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: proveedoresUnicos.join(', '),
         descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
       }
     })
@@ -3295,12 +3304,14 @@ export function VistaExtractoBancario() {
                       )
                     : lista
 
-                  const renderGrupo = (g: any, sugerido: boolean) => (
+                  const renderGrupo = (g: any, sugerido: boolean) => {
+                    const seleccionado = grupoElegido?.id === g.id
+                    return (
                     <div
                       key={g.id}
-                      onClick={() => setGrupoElegido(grupoElegido?.id === g.id ? null : g)}
+                      onClick={() => setGrupoElegido(seleccionado ? null : g)}
                       className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
-                        grupoElegido?.id === g.id ? 'border-blue-500 bg-blue-50'
+                        seleccionado ? 'border-blue-500 bg-blue-50'
                         : sugerido ? 'border-green-200 hover:border-green-400 hover:bg-green-50'
                         : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                       }`}
@@ -3313,11 +3324,27 @@ export function VistaExtractoBancario() {
                         <span>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}</span>
                         <span className="text-purple-600">{g.categ}</span>
                         <span className="text-gray-400">{g.cuotas.length} cuotas</span>
+                        {g.nombre_proveedor && <span className="text-orange-600">{g.nombre_proveedor}</span>}
                         {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
                       </div>
-                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">{g.descripciones}</div>
+                      {/* Desglose de cuotas al seleccionar */}
+                      {seleccionado && g.cuotas.length > 1 && (
+                        <div className="mt-2 pt-2 border-t border-blue-200 space-y-0.5">
+                          <p className="text-[10px] font-semibold text-blue-600 uppercase">Desglose del grupo</p>
+                          {g.cuotas.map((c: any) => (
+                            <div key={c.id} className="flex justify-between text-[11px] text-gray-600">
+                              <span className="truncate mr-2">{c.egreso?.nombre_referencia || c.descripcion || '—'}</span>
+                              <span className="font-mono whitespace-nowrap">${(parseFloat(c.monto) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between text-[11px] font-semibold text-blue-700 border-t border-blue-100 pt-0.5">
+                            <span>Total</span>
+                            <span className="font-mono">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )
+                  )}
 
                   const sugFiltradas = filtrar(sugerencias)
                   const restoFiltradas = filtrar(resto)
@@ -3343,8 +3370,8 @@ export function VistaExtractoBancario() {
                 })()}
               </div>
               {grupoElegido && (
-                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Se vincularán <strong>{grupoElegido.cuotas.length} cuotas</strong> de <strong>{grupoElegido.nombre}</strong> (${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}) y se marcarán como conciliadas.
+                <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded p-2">
+                  Se vincularán <strong>{grupoElegido.cuotas.length} cuotas</strong> ({grupoElegido.nombresUnicos?.length > 1 ? `${grupoElegido.nombresUnicos.length} templates` : grupoElegido.nombre}) por <strong>${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> y se marcarán como conciliadas.
                 </div>
               )}
             </TabsContent>
