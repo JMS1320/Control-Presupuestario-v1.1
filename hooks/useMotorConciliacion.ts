@@ -239,14 +239,30 @@ export function useMotorConciliacion() {
     const toleranciaDias = 5
     const fechaMovimiento = new Date(movimiento.fecha)
 
+    // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
+    const mov = movimiento as any
+    const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
+      .some(campo => campo && /haber/i.test(campo))
+
     // Pre-filtro por CUIT bancario: si el banco informa CUIT, buscar solo en ese proveedor
     const cuitBancario = extraerCuitBancario(movimiento)
-    const candidatos = cuitBancario
-      ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
-      : cashFlowData
 
-    // Si hay CUIT pero no hay candidatos con ese CUIT, buscar en todo (fallback)
-    const pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+    let pool: typeof cashFlowData
+    if (esHaberes) {
+      // Haberes → restringir a sueldos; si además hay CUIT, filtrar por ese empleado
+      const sueldos = cashFlowData.filter(cf => cf.origen === 'SUELDO')
+      pool = cuitBancario
+        ? sueldos.filter(cf => cf.cuit_proveedor === cuitBancario)
+        : sueldos
+      // Fallback: si no encontró sueldos con ese CUIT, usar todos los sueldos
+      if (pool.length === 0 && cuitBancario) pool = sueldos
+    } else {
+      const candidatos = cuitBancario
+        ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
+        : cashFlowData
+      // Si hay CUIT pero no hay candidatos con ese CUIT, buscar en todo (fallback)
+      pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+    }
 
     // Buscar por débitos
     if (movimiento.debitos > 0) {
@@ -390,6 +406,31 @@ export function useMotorConciliacion() {
               if (codigosTab2.interno) extraCF.interno = codigosTab2.interno
 
               // Prioridad 2: Tab 1 — regla de texto que matchee y tenga código propio
+              if (!extraCF.contable || !extraCF.interno) {
+                const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+                if (reglaQueMatcheaF1) {
+                  if (!extraCF.contable && esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                  if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+                }
+              }
+            } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
+              // SUELDO: buscar regla tipo empleado (Tipo C)
+              const empleadoIdCF = matchCF.cashFlowRow.empleado_id
+              if (empleadoIdCF) {
+                const { data: reglaEmp } = await supabase
+                  .from('reglas_contable_interno')
+                  .select('codigo_contable, codigo_interno')
+                  .eq('cuenta_bancaria_id', cuenta.id)
+                  .eq('tipo_regla', 'empleado')
+                  .eq('empleado_id', empleadoIdCF)
+                  .eq('activo', true)
+                  .maybeSingle()
+                if (reglaEmp) {
+                  if (esValorContableValido(reglaEmp.codigo_contable)) extraCF.contable = reglaEmp.codigo_contable!
+                  if (esValorContableValido(reglaEmp.codigo_interno)) extraCF.interno = reglaEmp.codigo_interno!
+                }
+              }
+              // Fallback: regla de texto con código propio
               if (!extraCF.contable || !extraCF.interno) {
                 const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
                 if (reglaQueMatcheaF1) {
