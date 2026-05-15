@@ -372,6 +372,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
   const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
   const [anticiposPagos, setAnticiposPagos] = useState<any[]>([])
+  const [sueldosPagos, setSueldosPagos] = useState<any[]>([])
 
   // Estados para edición masiva en tab Facturas principal
   const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
@@ -380,8 +381,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [anticiposSeleccionadosPagos, setAnticiposSeleccionadosPagos] = useState<Set<string>>(new Set())
+  const [sueldosSeleccionadosPagos, setSueldosSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
-  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true })
+  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true, sueldo: true })
   const [filtroBusquedaPagos, setFiltroBusquedaPagos] = useState('')
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
@@ -5616,12 +5618,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             onClick={async () => {
               setCargandoPagos(true)
               setMostrarModalPagos(true)
-              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
+              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true, sueldo: true })
               setFacturasSeleccionadasPagos(new Set())
               setTemplatesSeleccionadosPagos(new Set())
+              setSueldosSeleccionadosPagos(new Set())
 
-              // Cargar en paralelo las 3 fuentes + cuentas contables
-              const [arcaResult, templatesResult, anticiposResult, cuentasResult] = await Promise.all([
+              // Cargar en paralelo las 4 fuentes + cuentas contables
+              const [arcaResult, templatesResult, anticiposResult, sueldosResult, cuentasResult] = await Promise.all([
                 supabase.schema(schemaName).from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
@@ -5633,6 +5636,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .neq('estado', 'conciliado')
                   .order('fecha_pago', { ascending: true }),
+                supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .gte('fecha', '2026-01-01')
+                  .order('fecha', { ascending: true }),
                 supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
                   .eq('imputable', true)
                   .order('nombre_totalizadora').order('nro_cuenta')
@@ -5641,6 +5648,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
               if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
               if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
+              if (!sueldosResult.error && sueldosResult.data) setSueldosPagos(sueldosResult.data)
               if (!cuentasResult.error && cuentasResult.data) setCuentasContablesPagos(cuentasResult.data)
 
               setCargandoPagos(false)
@@ -7580,6 +7588,16 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   ({anticiposPagos.length})
                 </span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={filtroOrigenPagos.sueldo}
+                  onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, sueldo: !!checked }))}
+                />
+                <span className="text-sm flex items-center gap-1">
+                  <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs">Sueldos</Badge>
+                  ({sueldosPagos.length})
+                </span>
+              </label>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button
@@ -7592,6 +7610,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   if (filtroOrigenPagos.template) {
                     setTemplatesSeleccionadosPagos(new Set(templatesPagos.map(t => t.id)))
                   }
+                  if (filtroOrigenPagos.sueldo) {
+                    setSueldosSeleccionadosPagos(new Set(sueldosPagos.map(s => s.id)))
+                  }
                 }}
                 className="text-xs"
               >
@@ -7603,6 +7624,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 onClick={() => {
                   setFacturasSeleccionadasPagos(new Set())
                   setTemplatesSeleccionadosPagos(new Set())
+                  setSueldosSeleccionadosPagos(new Set())
                 }}
                 className="text-xs"
               >
@@ -7839,6 +7861,98 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               ))
               setTemplatesSeleccionadosPagos(new Set())
             }
+
+            // ── Agrupar / Desagrupar sueldos ─────────────────────────────────
+            const seleccionadasSueldosActivas = sueldosPagos.filter(
+              s => sueldosSeleccionadosPagos.has(s.id)
+            )
+            const puedeAgruparSueldos = seleccionadasSueldosActivas.length >= 2
+              && seleccionadasSueldosActivas.every(s => !s.grupo_pago_id)
+
+            const gruposSueldosSeleccionados = new Set(
+              seleccionadasSueldosActivas.filter(s => s.grupo_pago_id).map(s => s.grupo_pago_id)
+            )
+            const puedeDesagruparSueldos = gruposSueldosSeleccionados.size === 1
+
+            const agruparSueldos = async () => {
+              if (!puedeAgruparSueldos) return
+              const primero = seleccionadasSueldosActivas[0]
+              const monto_total = seleccionadasSueldosActivas.reduce((s, p) => s + (p.monto || 0), 0)
+              const nombresUnicos = [...new Set(seleccionadasSueldosActivas.map(p => p.empleado?.nombre).filter(Boolean))]
+              const proveedorGrupo = nombresUnicos.length <= 2
+                ? nombresUnicos.join(' + ')
+                : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+              // Crear grupo
+              const { data: grupo, error: errGrupo } = await supabase
+                .schema(schemaName)
+                .from('grupos_pago')
+                .insert({
+                  cuit: primero.empleado?.cuit_empleado || 'SUELDO',
+                  proveedor: proveedorGrupo,
+                  monto_total,
+                  estado: 'pagar',
+                  observaciones: `Sueldos agrupados: ${nombresUnicos.join(', ')}`,
+                })
+                .select('id')
+                .single()
+              if (errGrupo || !grupo) { alert('Error al crear grupo'); return }
+              // Asignar grupo a los pagos
+              const ids = seleccionadasSueldosActivas.map(s => s.id)
+              const { error: errUpd } = await supabase
+                .from('sueldos_pagos')
+                .update({ grupo_pago_id: grupo.id })
+                .in('id', ids)
+              if (errUpd) { alert('Error al asignar grupo a sueldos'); return }
+              setSueldosPagos(prev => prev.map(s =>
+                ids.includes(s.id) ? { ...s, grupo_pago_id: grupo.id } : s
+              ))
+              setSueldosSeleccionadosPagos(new Set())
+              alert(`✅ ${ids.length} pagos de sueldo agrupados`)
+            }
+
+            const desagruparSueldos = async () => {
+              if (!puedeDesagruparSueldos) return
+              const grupoId = Array.from(gruposSueldosSeleccionados)[0] as string
+              const ids = seleccionadasSueldosActivas.filter(s => s.grupo_pago_id === grupoId).map(s => s.id)
+              const todasDelGrupo = sueldosPagos.filter(s => s.grupo_pago_id === grupoId)
+              const quedan = todasDelGrupo.filter(s => !ids.includes(s.id))
+              await supabase
+                .from('sueldos_pagos')
+                .update({ grupo_pago_id: null })
+                .in('id', ids)
+              if (quedan.length <= 1) {
+                if (quedan.length === 1) {
+                  await supabase.from('sueldos_pagos')
+                    .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
+                }
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
+              }
+              setSueldosPagos(prev => prev.map(s =>
+                ids.includes(s.id) ? { ...s, grupo_pago_id: null } : s
+              ))
+              setSueldosSeleccionadosPagos(new Set())
+            }
+
+            // Filtrar sueldos por búsqueda
+            const matchBusquedaSueldo = (s: any) => {
+              if (!filtroBusquedaPagos.trim()) return true
+              const q = filtroBusquedaPagos.toLowerCase()
+              return [
+                s.empleado?.nombre,
+                s.empleado?.cuit_empleado,
+                s.descripcion,
+                s.tipo,
+                String(s.monto ?? ''),
+                s.fecha,
+              ].some(v => v && String(v).toLowerCase().includes(q))
+            }
+
+            const sueldosPagar = sueldosPagos.filter(s => s.estado === 'pagar' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+            const sueldosPreparado = sueldosPagos.filter(s => s.estado === 'preparado' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+            const sueldosPendiente = sueldosPagos.filter(s => s.estado === 'pendiente' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string, echeqFecha?: string) => {
@@ -8990,6 +9104,105 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               </div>
             )
 
+            // Sueldos subtotals
+            const subtotalSueldosPagar = sueldosPagar.reduce((s, p) => s + (p.monto || 0), 0)
+            const subtotalSueldosPreparado = sueldosPreparado.reduce((s, p) => s + (p.monto || 0), 0)
+            const subtotalSueldosPendiente = sueldosPendiente.reduce((s, p) => s + (p.monto || 0), 0)
+
+            const renderTablaSueldos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700">Sueldo</Badge>
+                    {titulo} ({lista.length})
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {accionBoton && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          const ids = Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id))
+                          await supabase.from('sueldos_pagos').update({ estado: accionBoton.estado }).in('id', ids)
+                          setSueldosPagos(prev => prev.map(s => ids.includes(s.id) ? { ...s, estado: accionBoton.estado } : s))
+                          setSueldosSeleccionadosPagos(new Set())
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {accionBoton.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
+                      </Button>
+                    )}
+                    {puedeAgruparSueldos && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
+                      <Button size="sm" variant="outline" onClick={agruparSueldos} className="border-blue-500 text-blue-700 hover:bg-blue-50" title="Agrupar en un solo pago">
+                        🔗 Agrupar ({seleccionadasSueldosActivas.length})
+                      </Button>
+                    )}
+                    {puedeDesagruparSueldos && (
+                      <Button size="sm" variant="outline" onClick={desagruparSueldos} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
+                        ✂️ Desagrupar
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
+                  </div>
+                </div>
+                {lista.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-2">No hay sueldos en este estado</p>
+                ) : (
+                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-white border-b">
+                        <TableRow>
+                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Empleado</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead className="text-right">Monto</TableHead>
+                          <TableHead>Grupo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lista.map(s => (
+                          <TableRow key={s.id} className={`hover:bg-muted/50 ${s.grupo_pago_id ? 'bg-blue-50/50' : ''}`}>
+                            {mostrarCheckbox && (
+                              <TableCell>
+                                <Checkbox
+                                  checked={sueldosSeleccionadosPagos.has(s.id)}
+                                  onCheckedChange={(checked) => {
+                                    setSueldosSeleccionadosPagos(prev => {
+                                      const next = new Set(prev)
+                                      if (checked) next.add(s.id)
+                                      else next.delete(s.id)
+                                      return next
+                                    })
+                                  }}
+                                />
+                              </TableCell>
+                            )}
+                            <TableCell>{s.fecha ? new Date(s.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
+                            <TableCell className="max-w-[150px] truncate font-medium">{s.empleado?.nombre || '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={s.tipo === 'sueldo' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}>
+                                {s.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[150px] truncate">{s.descripcion || '-'}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${(s.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell>
+                              {s.grupo_pago_id ? <span className="text-blue-600 text-xs">🔗 Agrupado</span> : <span className="text-gray-400">—</span>}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )
+
             return (
               <div className="space-y-6">
                 {/* Checkboxes de filtro solo para Admin */}
@@ -9028,15 +9241,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.preparado && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPreparado.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
                         (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPreparado : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
                         ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPreparado }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9091,6 +9307,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             { label: 'Marcar como Pagado', estado: 'pagado' },
                             'preparado'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 && renderTablaSueldos(
+                            sueldosPreparado,
+                            '✅ Preparado',
+                            subtotalSueldosPreparado,
+                            true,
+                            { label: 'Marcar como Pagado', estado: 'conciliado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9099,15 +9322,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.pagar && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                        (filtroOrigenPagos.template && templatesPagar.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPagar.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
                         (filtroOrigenPagos.arca ? subtotalPagar : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPagar : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
                         ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPagar.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPagar }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9165,6 +9391,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             'pagar',
                             (t) => revertirTemplateAPendiente(t)
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPagar.length > 0 && renderTablaSueldos(
+                            sueldosPagar,
+                            '📋 Pagar',
+                            subtotalSueldosPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9194,15 +9427,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.pendiente && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPendiente.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPendiente.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPendiente.length > 0)
+                        (filtroOrigenPagos.template && templatesPendiente.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPendiente.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPendiente : 0) +
                         (filtroOrigenPagos.arca ? subtotalPendiente : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPendiente : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPendiente : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPendiente : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPendiente.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPendiente }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPendiente.length > 0 ? [{ label: 'ARCA', total: subtotalPendiente }] : []),
                         ...(!filtroOrigenPagos.template && templatesPendiente.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPendiente }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPendiente.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPendiente }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9255,26 +9491,36 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             'pendiente'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPendiente.length > 0 && renderTablaSueldos(
+                            sueldosPendiente,
+                            '⏳ Pendiente',
+                            subtotalSueldosPendiente,
+                            true,
+                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                          )}
                         </>
                       )
                     })()}
                   </>
                 ) : (
-                  // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template
+                  // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template + Sueldos
                   <>
                     {/* ── PAGAR ─────────────────────────────────────────────── */}
                     {(() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                        (filtroOrigenPagos.template && templatesPagar.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPagar.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
                         (filtroOrigenPagos.arca ? subtotalPagar : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPagar : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
                         ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPagar.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPagar }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9326,6 +9572,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             'pagar'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPagar.length > 0 && renderTablaSueldos(
+                            sueldosPagar,
+                            '📋 Pagar',
+                            subtotalSueldosPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9334,15 +9587,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {(() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPreparado.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
                         (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPreparado : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
                         ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPreparado }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9392,6 +9648,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             undefined,
                             'preparado'
+                          )}
+                          {filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 && renderTablaSueldos(
+                            sueldosPreparado,
+                            '✅ Preparado',
+                            subtotalSueldosPreparado,
+                            false
                           )}
                         </>
                       )

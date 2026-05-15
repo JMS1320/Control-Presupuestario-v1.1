@@ -502,7 +502,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
       const filasAnticipos = mapearAnticipos(anticipos || [])
       const filasSueldos = mapearSueldos(periodosSueldos || [])
-      const filasAnticiposSueldos = (anticiposSueldos || []).map(a => ({
+
+      // Mapear pagos de sueldos (con agrupación por grupo_pago_id)
+      const allSueldosPagos = anticiposSueldos || []
+      const sueldosIndividuales = allSueldosPagos.filter(a => !a.grupo_pago_id)
+      const sueldosAgrupados = allSueldosPagos.filter(a => a.grupo_pago_id)
+
+      const filasAnticiposSueldosInd: CashFlowRow[] = sueldosIndividuales.map(a => ({
         id: a.id,
         origen: 'SUELDO' as const,
         origen_tabla: 'sueldos.pagos',
@@ -519,7 +525,48 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         estado: a.estado ?? 'pagar',
         medio_pago: a.medio_pago || 'banco',
         empleado_id: a.empleado_id ?? null,
+        grupo_pago_id: null,
       }))
+
+      // Agrupar sueldos por grupo_pago_id
+      const porGrupoSueldos = new Map<string, any[]>()
+      sueldosAgrupados.forEach(a => {
+        const g = a.grupo_pago_id as string
+        if (!porGrupoSueldos.has(g)) porGrupoSueldos.set(g, [])
+        porGrupoSueldos.get(g)!.push(a)
+      })
+
+      const filasAnticiposSueldosGrupo: CashFlowRow[] = Array.from(porGrupoSueldos.entries()).map(([grupoId, pagos]) => {
+        const fechaMax = pagos.map(a => a.fecha).filter(Boolean).sort().at(-1) ?? ''
+        const totalDebitos = Math.round(pagos.reduce((s, a) => s + (a.monto ?? 0), 0) * 100) / 100
+        const detallesCombinados = pagos
+          .map(a => `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`)
+          .join(' | ')
+        const primero = pagos[0]
+        return {
+          id: grupoId,
+          origen: 'SUELDO' as const,
+          origen_tabla: 'msa.grupos_pago',
+          fecha_estimada: fechaMax,
+          fecha_vencimiento: null,
+          categ: 'Sueldos',
+          centro_costo: 'ESTRUCTURA',
+          cuit_proveedor: primero.empleado?.cuit_empleado ?? '',
+          nombre_proveedor: primero.empleado?.nombre ?? '',
+          detalle: detallesCombinados,
+          debitos: totalDebitos,
+          creditos: 0,
+          saldo_cta_cte: 0,
+          estado: 'pagar',
+          medio_pago: primero.medio_pago || 'banco',
+          empleado_id: primero.empleado_id ?? null,
+          grupo_pago_id: grupoId,
+          facturas_agrupadas: pagos.length,
+          ids_grupo: pagos.map(a => a.id),
+        }
+      })
+
+      const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
       const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos]
