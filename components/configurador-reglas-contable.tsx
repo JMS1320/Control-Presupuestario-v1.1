@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Plus, Trash2, Building2, Users } from "lucide-react"
+import { Loader2, Plus, Trash2, Building2, Users, UserCheck } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 
@@ -17,9 +17,10 @@ import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 interface ReglaContableInterno {
   id: string
   cuenta_bancaria_id: string
-  tipo_regla: 'especifica' | 'responsable'
+  tipo_regla: 'especifica' | 'responsable' | 'empleado'
   template_id: string | null
   responsable: string | null
+  empleado_id: string | null
   codigo_contable: string | null
   codigo_interno: string | null
   descripcion: string | null
@@ -33,9 +34,15 @@ interface TemplateOpcion {
   responsable: string | null
 }
 
+interface EmpleadoOpcion {
+  id: string
+  nombre: string
+  empresa: string | null
+}
+
 // Modal state
 interface ModalState {
-  tipo: 'especifica' | 'responsable'
+  tipo: 'especifica' | 'responsable' | 'empleado'
   editando: ReglaContableInterno | null
 }
 
@@ -45,6 +52,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   const [cuentaId, setCuentaId] = useState(cuentaBancariaId || 'msa_galicia')
   const [reglas, setReglas] = useState<ReglaContableInterno[]>([])
   const [templates, setTemplates] = useState<TemplateOpcion[]>([])
+  const [empleados, setEmpleados] = useState<EmpleadoOpcion[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState<string | null>(null)
@@ -53,6 +61,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   // Formulario modal
   const [formTemplateId, setFormTemplateId] = useState('')
   const [formResponsable, setFormResponsable] = useState('')
+  const [formEmpleadoId, setFormEmpleadoId] = useState('')
   const [formContable, setFormContable] = useState('')
   const [formInterno, setFormInterno] = useState('')
   const [formDescripcion, setFormDescripcion] = useState('')
@@ -65,7 +74,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
     setLoading(true)
     setError(null)
     try {
-      const [{ data: reglasData, error: e1 }, { data: tmplData, error: e2 }] = await Promise.all([
+      const [{ data: reglasData, error: e1 }, { data: tmplData, error: e2 }, { data: empData, error: e3 }] = await Promise.all([
         supabase
           .from('reglas_contable_interno')
           .select('*')
@@ -76,12 +85,19 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
           .from('egresos_sin_factura')
           .select('id, nombre_referencia, responsable')
           .eq('activo', true)
-          .order('nombre_referencia')
+          .order('nombre_referencia'),
+        supabase
+          .from('sueldos_empleados')
+          .select('id, nombre, empresa')
+          .eq('activo', true)
+          .order('nombre')
       ])
       if (e1) throw e1
       if (e2) throw e2
+      if (e3) throw e3
       setReglas(reglasData || [])
       setTemplates(tmplData || [])
+      setEmpleados(empData || [])
     } catch (err: any) {
       setError(err.message || 'Error cargando datos')
     } finally {
@@ -93,6 +109,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
 
   const tipoA = reglas.filter(r => r.tipo_regla === 'especifica' && r.activo)
   const tipoB = reglas.filter(r => r.tipo_regla === 'responsable' && r.activo)
+  const tipoC = reglas.filter(r => r.tipo_regla === 'empleado' && r.activo)
 
   // Nombre template para mostrar en Tipo A
   const nombreTemplate = (id: string | null) => {
@@ -101,10 +118,18 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
     return t ? `${t.nombre_referencia}${t.responsable ? ` (${t.responsable})` : ''}` : id
   }
 
+  // Nombre empleado para mostrar en Tipo C
+  const nombreEmpleado = (id: string | null) => {
+    if (!id) return '—'
+    const e = empleados.find(e => e.id === id)
+    return e ? `${e.nombre}${e.empresa ? ` (${e.empresa})` : ''}` : id
+  }
+
   // Abrir modal para crear
-  const abrirCrear = (tipo: 'especifica' | 'responsable') => {
+  const abrirCrear = (tipo: 'especifica' | 'responsable' | 'empleado') => {
     setFormTemplateId('')
     setFormResponsable('')
+    setFormEmpleadoId('')
     setFormContable('')
     setFormInterno('')
     setFormDescripcion('')
@@ -115,6 +140,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   const abrirEditar = (regla: ReglaContableInterno) => {
     setFormTemplateId(regla.template_id || '')
     setFormResponsable(regla.responsable || '')
+    setFormEmpleadoId(regla.empleado_id || '')
     setFormContable(regla.codigo_contable || '')
     setFormInterno(regla.codigo_interno || '')
     setFormDescripcion(regla.descripcion || '')
@@ -137,12 +163,18 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
       if (modal.tipo === 'especifica') {
         update.template_id = formTemplateId || null
         update.responsable = null
-        // descripcion automática si está vacía
+        update.empleado_id = null
         if (!update.descripcion && formTemplateId) update.descripcion = nombreTemplate(formTemplateId)
-      } else {
+      } else if (modal.tipo === 'responsable') {
         update.responsable = formResponsable.trim() || null
         update.template_id = null
+        update.empleado_id = null
         if (!update.descripcion && formResponsable.trim()) update.descripcion = formResponsable.trim()
+      } else if (modal.tipo === 'empleado') {
+        update.empleado_id = formEmpleadoId || null
+        update.template_id = null
+        update.responsable = null
+        if (!update.descripcion && formEmpleadoId) update.descripcion = nombreEmpleado(formEmpleadoId)
       }
 
       if (modal.editando) {
@@ -200,13 +232,69 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
 
   const formEsValido = modal?.tipo === 'especifica'
     ? !!formTemplateId && (!!formContable.trim() || !!formInterno.trim())
-    : !!formResponsable.trim() && (!!formContable.trim() || !!formInterno.trim())
+    : modal?.tipo === 'responsable'
+    ? !!formResponsable.trim() && (!!formContable.trim() || !!formInterno.trim())
+    : modal?.tipo === 'empleado'
+    ? !!formEmpleadoId && (!!formContable.trim() || !!formInterno.trim())
+    : false
 
   if (loading) return (
     <div className="flex items-center justify-center p-8">
       <Loader2 className="h-8 w-8 animate-spin" />
       <span className="ml-2">Cargando...</span>
     </div>
+  )
+
+  // Render tabla genérica para los 3 tipos
+  const renderTabla = (lista: ReglaContableInterno[], columnaLabel: string, renderNombre: (r: ReglaContableInterno) => string) => (
+    <table className="w-full text-sm">
+      <thead className="bg-gray-50 border-b">
+        <tr>
+          <th className="text-left p-3 font-medium text-xs text-gray-500">{columnaLabel}</th>
+          <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Contable</th>
+          <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Interno</th>
+          <th className="p-3 w-16"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {lista.map((regla, i) => (
+          <tr key={regla.id} className={`border-b last:border-0 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
+            <td className="p-3">
+              <button className="text-left hover:text-blue-700 transition-colors" onClick={() => abrirEditar(regla)}>
+                <span className="font-medium text-gray-800">{renderNombre(regla)}</span>
+                {regla.descripcion && regla.descripcion !== renderNombre(regla) && (
+                  <span className="text-xs text-gray-400 ml-2">{regla.descripcion}</span>
+                )}
+              </button>
+            </td>
+            <td className="p-3">
+              <CeldaEditable
+                valor={regla.codigo_contable}
+                guardando={guardando === regla.id + 'codigo_contable'}
+                onGuardar={v => guardarCampoInline(regla.id, 'codigo_contable', v)}
+              />
+            </td>
+            <td className="p-3">
+              <CeldaEditable
+                valor={regla.codigo_interno}
+                guardando={guardando === regla.id + 'codigo_interno'}
+                onGuardar={v => guardarCampoInline(regla.id, 'codigo_interno', v)}
+              />
+            </td>
+            <td className="p-3 text-center">
+              <button
+                onClick={() => eliminarRegla(regla.id)}
+                disabled={guardando === regla.id}
+                className="text-gray-300 hover:text-red-500 transition-colors"
+                title="Eliminar regla"
+              >
+                {guardando === regla.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 
   return (
@@ -257,53 +345,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
         <CardContent className="p-0">
           {tipoA.length === 0 ? (
             <p className="p-5 text-sm text-gray-400 text-center">Sin reglas específicas para esta cuenta.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500">Template</th>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Contable</th>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Interno</th>
-                  <th className="p-3 w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {tipoA.map((regla, i) => (
-                  <tr key={regla.id} className={`border-b last:border-0 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
-                    <td className="p-3">
-                      <button className="text-left hover:text-blue-700 transition-colors" onClick={() => abrirEditar(regla)}>
-                        <span className="font-medium text-gray-800">{nombreTemplate(regla.template_id)}</span>
-                      </button>
-                    </td>
-                    <td className="p-3">
-                      <CeldaEditable
-                        valor={regla.codigo_contable}
-                        guardando={guardando === regla.id + 'codigo_contable'}
-                        onGuardar={v => guardarCampoInline(regla.id, 'codigo_contable', v)}
-                      />
-                    </td>
-                    <td className="p-3">
-                      <CeldaEditable
-                        valor={regla.codigo_interno}
-                        guardando={guardando === regla.id + 'codigo_interno'}
-                        onGuardar={v => guardarCampoInline(regla.id, 'codigo_interno', v)}
-                      />
-                    </td>
-                    <td className="p-3 text-center">
-                      <button
-                        onClick={() => eliminarRegla(regla.id)}
-                        disabled={guardando === regla.id}
-                        className="text-gray-300 hover:text-red-500 transition-colors"
-                        title="Eliminar regla"
-                      >
-                        {guardando === regla.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          ) : renderTabla(tipoA, 'Template', r => nombreTemplate(r.template_id))}
         </CardContent>
       </Card>
 
@@ -328,63 +370,40 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
         <CardContent className="p-0">
           {tipoB.length === 0 ? (
             <p className="p-5 text-sm text-gray-400 text-center">Sin reglas por responsable para esta cuenta.</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500">Responsable</th>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Contable</th>
-                  <th className="text-left p-3 font-medium text-xs text-gray-500 w-36">Interno</th>
-                  <th className="p-3 w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {tipoB.map((regla, i) => (
-                  <tr key={regla.id} className={`border-b last:border-0 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
-                    <td className="p-3">
-                      <button className="text-left hover:text-amber-700 transition-colors" onClick={() => abrirEditar(regla)}>
-                        <span className="font-medium text-gray-800">{regla.responsable || '—'}</span>
-                        {regla.descripcion && regla.descripcion !== regla.responsable && (
-                          <span className="text-xs text-gray-400 ml-2">{regla.descripcion}</span>
-                        )}
-                      </button>
-                    </td>
-                    <td className="p-3">
-                      <CeldaEditable
-                        valor={regla.codigo_contable}
-                        guardando={guardando === regla.id + 'codigo_contable'}
-                        onGuardar={v => guardarCampoInline(regla.id, 'codigo_contable', v)}
-                      />
-                    </td>
-                    <td className="p-3">
-                      <CeldaEditable
-                        valor={regla.codigo_interno}
-                        guardando={guardando === regla.id + 'codigo_interno'}
-                        onGuardar={v => guardarCampoInline(regla.id, 'codigo_interno', v)}
-                      />
-                    </td>
-                    <td className="p-3 text-center">
-                      <button
-                        onClick={() => eliminarRegla(regla.id)}
-                        disabled={guardando === regla.id}
-                        className="text-gray-300 hover:text-red-500 transition-colors"
-                        title="Eliminar regla"
-                      >
-                        {guardando === regla.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          ) : renderTabla(tipoB, 'Responsable', r => r.responsable || '—')}
+        </CardContent>
+      </Card>
+
+      {/* ── TIPO C — Reglas por Empleado (Sueldos) ───────────── */}
+      <Card className="border-green-200">
+        <CardHeader className="bg-green-50 rounded-t-lg pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-semibold text-green-800">Tipo C — Reglas por Empleado (Sueldos)</span>
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">{tipoC.length}</span>
+            </div>
+            <Button size="sm" variant="outline" className="border-green-300 text-green-700 hover:bg-green-100"
+              onClick={() => abrirCrear('empleado')}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Agregar
+            </Button>
+          </div>
+          <p className="text-xs text-green-700 mt-0.5">
+            Empleado específico → códigos contable/interno para pagos de sueldos y anticipos.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {tipoC.length === 0 ? (
+            <p className="p-5 text-sm text-gray-400 text-center">Sin reglas por empleado para esta cuenta.</p>
+          ) : renderTabla(tipoC, 'Empleado', r => nombreEmpleado(r.empleado_id))}
         </CardContent>
       </Card>
 
       {/* ── Leyenda prioridades ──────────────────────────────── */}
       <div className="text-xs text-gray-400 bg-gray-50 rounded p-3 space-y-0.5">
-        <p><span className="font-medium text-gray-600">Prioridad de aplicación:</span> Tipo A (específica) &gt; Tipo B (responsable) &gt; Tab 1 regla con código &gt; seccion_regla (legacy)</p>
+        <p><span className="font-medium text-gray-600">Prioridad de aplicación:</span> Tipo A (específica) &gt; Tipo B (responsable) &gt; Tipo C (empleado) &gt; Tab 1 regla con código</p>
         <p>Tipo B solo aplica cuando la empresa que paga ≠ responsable del template (casos cross-company).</p>
+        <p>Tipo C aplica exclusivamente a pagos de sueldos asignados desde el extracto bancario.</p>
       </div>
 
       {/* ── Modal Crear / Editar ─────────────────────────────── */}
@@ -393,7 +412,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
           <DialogHeader>
             <DialogTitle>
               {modal?.editando ? 'Editar regla' : 'Nueva regla'} —{' '}
-              {modal?.tipo === 'especifica' ? 'Tipo A (Específica)' : 'Tipo B (Responsable)'}
+              {modal?.tipo === 'especifica' ? 'Tipo A (Específica)' : modal?.tipo === 'responsable' ? 'Tipo B (Responsable)' : 'Tipo C (Empleado)'}
             </DialogTitle>
           </DialogHeader>
 
@@ -414,7 +433,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
                   ))}
                 </select>
               </div>
-            ) : (
+            ) : modal?.tipo === 'responsable' ? (
               <div>
                 <Label className="text-sm">Responsable *</Label>
                 <Input
@@ -425,16 +444,33 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
                 />
                 <p className="text-xs text-gray-400 mt-1">Se aplicará a todos los templates con ese responsable pagados por esta cuenta.</p>
               </div>
+            ) : (
+              <div>
+                <Label className="text-sm">Empleado *</Label>
+                <select
+                  className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                  value={formEmpleadoId}
+                  onChange={e => setFormEmpleadoId(e.target.value)}
+                >
+                  <option value="">— Seleccionar empleado —</option>
+                  {empleados.map(e => (
+                    <option key={e.id} value={e.id}>
+                      {e.nombre}{e.empresa ? ` (${e.empresa})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">Se aplicará a todos los pagos de sueldo y anticipos de este empleado.</p>
+              </div>
             )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm">Código Contable</Label>
-                <Input className="mt-1" value={formContable} onChange={e => setFormContable(e.target.value)} placeholder="Ej: RET 3 PAM" />
+                <Input className="mt-1" value={formContable} onChange={e => setFormContable(e.target.value)} placeholder="Ej: CTA JMS" />
               </div>
               <div>
                 <Label className="text-sm">Código Interno</Label>
-                <Input className="mt-1" value={formInterno} onChange={e => setFormInterno(e.target.value)} placeholder="Ej: DIST PAM" />
+                <Input className="mt-1" value={formInterno} onChange={e => setFormInterno(e.target.value)} placeholder="Ej: DIST MA" />
               </div>
             </div>
 

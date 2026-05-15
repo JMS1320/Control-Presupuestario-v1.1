@@ -1026,6 +1026,21 @@ export function VistaExtractoBancario() {
         const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
         const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
 
+        // Buscar códigos contable/interno por empleado (Tipo C)
+        const empleadoId = sueldoElegido.empleado_id || sueldoElegido.empleado?.id
+        let codigosSueldo: { contable?: string | null, interno?: string | null } = {}
+        if (empleadoId) {
+          const { data: reglaEmp } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'empleado')
+            .eq('empleado_id', empleadoId)
+            .eq('activo', true)
+            .maybeSingle()
+          if (reglaEmp) codigosSueldo = { contable: reglaEmp.codigo_contable, interno: reglaEmp.codigo_interno }
+        }
+
         const updateSueldo: Record<string, any> = {
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
@@ -1037,8 +1052,8 @@ export function VistaExtractoBancario() {
           template_cuota_id: null,
           comprobante_arca_id: null
         }
-        if (contableManual.trim()) updateSueldo.contable = contableManual.trim()
-        if (internoManual.trim()) updateSueldo.interno = internoManual.trim()
+        updateSueldo.contable = contableManual.trim() || codigosSueldo.contable || ''
+        updateSueldo.interno  = internoManual.trim()  || codigosSueldo.interno  || ''
 
         const { error: errExt } = await supabase
           .from(tablaActiva)
