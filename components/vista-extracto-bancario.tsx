@@ -831,34 +831,48 @@ export function VistaExtractoBancario() {
       .order('fecha', { ascending: false })
     setSueldosParaAsignar(sueldosData || [])
 
-    // Cargar grupos de pago (cuotas agrupadas no conciliadas)
-    const { data: cuotasAgrupadas } = await supabase
-      .from('cuotas_egresos_sin_factura')
-      .select('*, egreso:egresos_sin_factura(id, nombre_referencia, categ, cuenta_agrupadora, responsable, cuit_quien_cobra, nombre_quien_cobra)')
-      .not('grupo_pago_id', 'is', null)
-      .neq('estado', 'conciliado')
-      .neq('estado', 'desactivado')
-      .order('fecha_estimada', { ascending: false })
-    // Agrupar por grupo_pago_id
+    // Cargar grupos de pago — 3 fuentes: templates, ARCA, sueldos
+    const [{ data: cuotasAgrupadas }, { data: arcaAgrupadas }, { data: sueldosAgrupados }] = await Promise.all([
+      supabase
+        .from('cuotas_egresos_sin_factura')
+        .select('*, egreso:egresos_sin_factura(id, nombre_referencia, categ, cuenta_agrupadora, responsable, cuit_quien_cobra, nombre_quien_cobra)')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .neq('estado', 'desactivado')
+        .order('fecha_estimada', { ascending: false }),
+      supabase.schema('msa')
+        .from('comprobantes_arca')
+        .select('*')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .order('fecha_estimada', { ascending: false }),
+      supabase
+        .from('sueldos_pagos')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .order('fecha', { ascending: false }),
+    ])
+
+    // Agrupar templates por grupo_pago_id
     const mapaGrupos = new Map<string, any[]>()
     for (const c of cuotasAgrupadas || []) {
       const g = c.grupo_pago_id
       if (!mapaGrupos.has(g)) mapaGrupos.set(g, [])
       mapaGrupos.get(g)!.push(c)
     }
-    const gruposArr = Array.from(mapaGrupos.entries()).map(([grupoId, cuotas]) => {
+    const gruposTemplates = Array.from(mapaGrupos.entries()).map(([grupoId, cuotas]) => {
       const total = Math.round(cuotas.reduce((s: number, c: any) => s + (parseFloat(c.monto) || 0), 0) * 100) / 100
       const primera = cuotas[0]
-      // Nombres únicos de todos los templates del grupo
       const nombresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_referencia || '').filter(Boolean))]
       const nombreGrupo = nombresUnicos.length <= 2
         ? nombresUnicos.join(' + ')
         : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
-      // Proveedores únicos
       const proveedoresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_quien_cobra || '').filter(Boolean))]
       const cuitsUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.cuit_quien_cobra || '').filter(Boolean))]
       return {
         id: grupoId,
+        tipo_grupo: 'template' as const,
         cuotas,
         total,
         categ: primera.categ || primera.egreso?.categ || '',
@@ -873,7 +887,77 @@ export function VistaExtractoBancario() {
         descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
       }
     })
-    setGruposParaAsignar(gruposArr)
+
+    // Agrupar ARCA por grupo_pago_id
+    const mapaGruposArca = new Map<string, any[]>()
+    for (const f of arcaAgrupadas || []) {
+      const g = f.grupo_pago_id
+      if (!mapaGruposArca.has(g)) mapaGruposArca.set(g, [])
+      mapaGruposArca.get(g)!.push(f)
+    }
+    const gruposArca = Array.from(mapaGruposArca.entries()).map(([grupoId, facturas]) => {
+      const total = Math.round(facturas.reduce((s: number, f: any) => {
+        const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+        return s + (f.monto_a_abonar ?? f.imp_total ?? 0) * tc
+      }, 0) * 100) / 100
+      const primera = facturas[0]
+      const nombresUnicos = [...new Set(facturas.map((f: any) => f.denominacion_emisor || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      const cuitsUnicos = [...new Set(facturas.map((f: any) => f.cuit || '').filter(Boolean))]
+      return {
+        id: grupoId,
+        tipo_grupo: 'arca' as const,
+        cuotas: facturas,
+        total,
+        categ: primera.cuenta_contable || 'SIN_CATEG',
+        nombre: nombreGrupo,
+        nombresUnicos,
+        cuenta_agrupadora: '',
+        responsable: '',
+        egreso_id: null,
+        fecha: primera.fecha_estimada || primera.fecha_emision,
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: nombresUnicos.join(', '),
+        descripciones: facturas.map((f: any) => f.detalle || f.denominacion_emisor || '').join(' + '),
+      }
+    })
+
+    // Agrupar sueldos por grupo_pago_id
+    const mapaGruposSueldos = new Map<string, any[]>()
+    for (const s of sueldosAgrupados || []) {
+      const g = s.grupo_pago_id
+      if (!mapaGruposSueldos.has(g)) mapaGruposSueldos.set(g, [])
+      mapaGruposSueldos.get(g)!.push(s)
+    }
+    const gruposSueldos = Array.from(mapaGruposSueldos.entries()).map(([grupoId, pagos]) => {
+      const total = Math.round(pagos.reduce((s: number, p: any) => s + (parseFloat(p.monto) || 0), 0) * 100) / 100
+      const primera = pagos[0]
+      const nombresUnicos = [...new Set(pagos.map((p: any) => p.empleado?.nombre || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      const cuitsUnicos = [...new Set(pagos.map((p: any) => p.empleado?.cuit_empleado || '').filter(Boolean))]
+      return {
+        id: grupoId,
+        tipo_grupo: 'sueldo' as const,
+        cuotas: pagos,
+        total,
+        categ: 'Sueldos',
+        nombre: nombreGrupo,
+        nombresUnicos,
+        cuenta_agrupadora: '',
+        responsable: '',
+        egreso_id: null,
+        fecha: primera.fecha,
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: nombresUnicos.join(', '),
+        descripciones: pagos.map((p: any) => `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${p.empleado?.nombre || ''}`).join(' + '),
+      }
+    })
+
+    setGruposParaAsignar([...gruposTemplates, ...gruposArca, ...gruposSueldos])
 
     // Asegurar facturas ARCA cargadas
     if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
@@ -1124,15 +1208,29 @@ export function VistaExtractoBancario() {
         actualizarLocal(movimientoAsignando.id, updateSueldo)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
-        // Buscar códigos contable/interno por template
-        const codigos = await buscarCodigos(grupoElegido.egreso_id, grupoElegido.responsable)
+        // Buscar códigos contable/interno por template (si aplica)
+        const codigos = grupoElegido.tipo_grupo === 'template'
+          ? await buscarCodigos(grupoElegido.egreso_id, grupoElegido.responsable)
+          : { contable: '', interno: '' }
 
-        // Conciliar todas las cuotas del grupo
+        // Conciliar todas las items del grupo según tipo
         const idsGrupo = grupoElegido.cuotas.map((c: any) => c.id)
-        await supabase
-          .from('cuotas_egresos_sin_factura')
-          .update({ estado: 'conciliado' })
-          .in('id', idsGrupo)
+        if (grupoElegido.tipo_grupo === 'template') {
+          await supabase
+            .from('cuotas_egresos_sin_factura')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        } else if (grupoElegido.tipo_grupo === 'arca') {
+          await supabase.schema('msa')
+            .from('comprobantes_arca')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        } else if (grupoElegido.tipo_grupo === 'sueldo') {
+          await supabase
+            .from('sueldos_pagos')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        }
 
         // Buscar nombre oficial del proveedor
         const cuitGrupo = grupoElegido.cuit?.replace(/[-\s]/g, '') || ''
@@ -1140,17 +1238,32 @@ export function VistaExtractoBancario() {
           .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
 
         const updateGrupo: Record<string, any> = {
-          template_id: grupoElegido.egreso_id,
-          template_cuota_id: grupoElegido.cuotas[0].id,
           categ: grupoElegido.categ,
           detalle: grupoElegido.descripciones || grupoElegido.nombre,
           estado: 'conciliado',
           proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
           comprobantes_pagados: grupoElegido.nombre,
-          // Limpiar otros orígenes
-          comprobante_arca_id: null,
-          sueldo_pago_id: null
         }
+
+        // Llenar IDs según tipo de grupo
+        if (grupoElegido.tipo_grupo === 'template') {
+          updateGrupo.template_id = grupoElegido.egreso_id
+          updateGrupo.template_cuota_id = grupoElegido.cuotas[0].id
+          updateGrupo.comprobante_arca_id = null
+          updateGrupo.sueldo_pago_id = null
+        } else if (grupoElegido.tipo_grupo === 'arca') {
+          updateGrupo.comprobante_arca_id = grupoElegido.cuotas[0].id
+          updateGrupo.nro_cuenta = grupoElegido.cuotas[0].nro_cuenta || null
+          updateGrupo.template_id = null
+          updateGrupo.template_cuota_id = null
+          updateGrupo.sueldo_pago_id = null
+        } else if (grupoElegido.tipo_grupo === 'sueldo') {
+          updateGrupo.sueldo_pago_id = grupoElegido.cuotas[0].id
+          updateGrupo.template_id = null
+          updateGrupo.template_cuota_id = null
+          updateGrupo.comprobante_arca_id = null
+        }
+
         updateGrupo.contable = contableManual.trim() || codigos.contable || ''
         updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
 
@@ -3323,7 +3436,7 @@ export function VistaExtractoBancario() {
                       <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
                         <span>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}</span>
                         <span className="text-purple-600">{g.categ}</span>
-                        <span className="text-gray-400">{g.cuotas.length} cuotas</span>
+                        <span className="text-gray-400">{g.cuotas.length} {g.tipo_grupo === 'arca' ? 'facturas' : g.tipo_grupo === 'sueldo' ? 'pagos' : 'cuotas'}</span>
                         {g.nombre_proveedor && <span className="text-orange-600">{g.nombre_proveedor}</span>}
                         {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
                       </div>
@@ -3331,12 +3444,21 @@ export function VistaExtractoBancario() {
                       {seleccionado && g.cuotas.length > 1 && (
                         <div className="mt-2 pt-2 border-t border-blue-200 space-y-0.5">
                           <p className="text-[10px] font-semibold text-blue-600 uppercase">Desglose del grupo</p>
-                          {g.cuotas.map((c: any) => (
+                          {g.cuotas.map((c: any) => {
+                            const nombre = g.tipo_grupo === 'arca'
+                              ? (c.denominacion_emisor || c.detalle || '—')
+                              : g.tipo_grupo === 'sueldo'
+                              ? (c.empleado?.nombre || c.descripcion || '—')
+                              : (c.egreso?.nombre_referencia || c.descripcion || '—')
+                            const monto = g.tipo_grupo === 'arca'
+                              ? ((c.monto_a_abonar ?? c.imp_total ?? 0) * (c.tc_pago ?? c.tipo_cambio ?? 1))
+                              : (parseFloat(c.monto) || 0)
+                            return (
                             <div key={c.id} className="flex justify-between text-[11px] text-gray-600">
-                              <span className="truncate mr-2">{c.egreso?.nombre_referencia || c.descripcion || '—'}</span>
-                              <span className="font-mono whitespace-nowrap">${(parseFloat(c.monto) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                              <span className="truncate mr-2">{nombre}</span>
+                              <span className="font-mono whitespace-nowrap">${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                             </div>
-                          ))}
+                          )})}
                           <div className="flex justify-between text-[11px] font-semibold text-blue-700 border-t border-blue-100 pt-0.5">
                             <span>Total</span>
                             <span className="font-mono">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
@@ -3371,7 +3493,7 @@ export function VistaExtractoBancario() {
               </div>
               {grupoElegido && (
                 <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded p-2">
-                  Se vincularán <strong>{grupoElegido.cuotas.length} cuotas</strong> ({grupoElegido.nombresUnicos?.length > 1 ? `${grupoElegido.nombresUnicos.length} templates` : grupoElegido.nombre}) por <strong>${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> y se marcarán como conciliadas.
+                  Se vincularán <strong>{grupoElegido.cuotas.length} {grupoElegido.tipo_grupo === 'arca' ? 'facturas' : grupoElegido.tipo_grupo === 'sueldo' ? 'pagos' : 'cuotas'}</strong> ({grupoElegido.nombresUnicos?.length > 1 ? `${grupoElegido.nombresUnicos.length} ${grupoElegido.tipo_grupo === 'arca' ? 'proveedores' : grupoElegido.tipo_grupo === 'sueldo' ? 'empleados' : 'templates'}` : grupoElegido.nombre}) por <strong>${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> y se marcarán como conciliadas.
                 </div>
               )}
             </TabsContent>
