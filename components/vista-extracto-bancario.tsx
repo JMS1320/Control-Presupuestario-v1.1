@@ -2732,7 +2732,11 @@ export function VistaExtractoBancario() {
                     </div>
                   )}
                   <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                    Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                    {cuotaElegida ? (
+                      <>Se usará cuota existente de <strong>{templateElegido.nombre_referencia}</strong> — monto y fechas se actualizarán desde el extracto.</>
+                    ) : (
+                      <>Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.</>
+                    )}
                     {templateElegido.es_multi_cuenta && categManualAsignar && (
                       <span className="block mt-1 text-blue-600">Categoría: <strong>{categManualAsignar}</strong></span>
                     )}
