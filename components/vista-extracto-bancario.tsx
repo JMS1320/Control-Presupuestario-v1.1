@@ -39,7 +39,8 @@ import {
   Columns,
   DollarSign,
   Loader2,
-  Info
+  Info,
+  ChevronDown
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
@@ -203,6 +204,11 @@ export function VistaExtractoBancario() {
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
   const [filtroCategEspecial, setFiltroCategEspecial] = useState<'invalida' | 'sin_categ' | null>(null)
+
+  // Multi-select categ (filtro client-side tipo Excel)
+  const [categsFiltro, setCategsFiltro] = useState<Set<string> | null>(null) // null = sin filtro (mostrar todas)
+  const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
+  const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
   const [soloSinRevisar, setSoloSinRevisar] = useState(false)
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
@@ -312,6 +318,24 @@ export function VistaExtractoBancario() {
     [movimientos, cuentasCategSet, templateCategSet]
   )
 
+  // Categs únicas de los movimientos cargados (para multi-select)
+  const categsUnicas = useMemo(() => {
+    const set = new Set<string>()
+    movimientos.forEach(m => {
+      set.add(m.categ || '(sin categ)')
+    })
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [movimientos])
+
+  // Movimientos visibles (filtro client-side de categ multi-select)
+  const movimientosVisibles = useMemo(() => {
+    if (!categsFiltro) return movimientos // null = sin filtro
+    return movimientos.filter(m => {
+      const cat = m.categ || '(sin categ)'
+      return categsFiltro.has(cat)
+    })
+  }, [movimientos, categsFiltro])
+
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
     if (modoEdicion) {
@@ -374,10 +398,10 @@ export function VistaExtractoBancario() {
 
   // Seleccionar todos los movimientos visibles
   const seleccionarTodos = () => {
-    if (seleccionados.size === movimientos.length) {
+    if (seleccionados.size === movimientosVisibles.length) {
       setSeleccionados(new Set())
     } else {
-      setSeleccionados(new Set(movimientos.map(m => m.id)))
+      setSeleccionados(new Set(movimientosVisibles.map(m => m.id)))
     }
   }
 
@@ -1044,7 +1068,7 @@ export function VistaExtractoBancario() {
 
   // Marcar visibles como revisados (excepto seleccionados si hay selección)
   const marcarVisiblesComoRevisados = async () => {
-    const sinRevisar = movimientos.filter(m => !m.revisado)
+    const sinRevisar = movimientosVisibles.filter(m => !m.revisado)
     if (sinRevisar.length === 0) return
 
     let idsAMarcar: string[]
@@ -1098,7 +1122,7 @@ export function VistaExtractoBancario() {
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
     if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
     if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
-    else if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
+    // categ multi-select se aplica client-side via movimientosVisibles
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
     if (soloSinRevisar) filtros.soloSinRevisar = true
 
@@ -1117,6 +1141,8 @@ export function VistaExtractoBancario() {
     setFiltroEstado('Todos')
     setFiltroCategEspecial(null)
     setSoloSinRevisar(false)
+    setCategsFiltro(null)
+    setCategFiltroBusqueda('')
 
     cargarMovimientos({
       estado: 'Todos',
@@ -1517,11 +1543,11 @@ export function VistaExtractoBancario() {
                     >
                       ✓ {seleccionados.size > 0
                         ? `Revisar visibles excepto ${seleccionados.size} seleccionados`
-                        : `Marcar ${movimientos.filter(m => !m.revisado).length} como revisados`}
+                        : `Marcar ${movimientosVisibles.filter(m => !m.revisado).length} como revisados`}
                     </Button>
                   )}
                   <span className="text-xs text-gray-400">
-                    {movimientos.length} mov.
+                    {movimientosVisibles.length}{categsFiltro ? `/${movimientos.length}` : ''} mov.
                     {movimientos.length === limiteRegistros && ' (límite)'}
                   </span>
                 </div>
@@ -1595,15 +1621,85 @@ export function VistaExtractoBancario() {
                     </div>
                   </div>
                   
-                  {/* Búsqueda por CATEG */}
-                  <div className="space-y-2">
+                  {/* Multi-select CATEG tipo Excel */}
+                  <div className="space-y-2 relative">
                     <label className="text-sm font-medium text-purple-700">💰 CATEG</label>
-                    <CategCombobox
-                      value={busquedaCateg}
-                      onValueChange={setBusquedaCategExtracto}
-                      placeholder="Buscar por CATEG..."
-                      className="text-xs"
-                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-between text-xs h-9"
+                      onClick={() => setCategFiltroAbierto(!categFiltroAbierto)}
+                    >
+                      <span className="truncate">
+                        {!categsFiltro ? 'Todas las categorías' :
+                          categsFiltro.size === 0 ? 'Ninguna seleccionada' :
+                          categsFiltro.size === 1 ? Array.from(categsFiltro)[0] :
+                          `${categsFiltro.size} categorías`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
+                    </Button>
+                    {categFiltroAbierto && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-72 flex flex-col">
+                        {/* Buscar */}
+                        <div className="p-2 border-b">
+                          <Input
+                            autoFocus
+                            placeholder="Buscar categoría..."
+                            value={categFiltroBusqueda}
+                            onChange={e => setCategFiltroBusqueda(e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        {/* Acciones rápidas */}
+                        <div className="flex gap-1 p-2 border-b text-[10px]">
+                          <button
+                            className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            onClick={() => { setCategsFiltro(null); setCategFiltroAbierto(false) }}
+                          >Todas</button>
+                          <button
+                            className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
+                            onClick={() => setCategsFiltro(new Set(categsUnicas))}
+                          >Seleccionar todas</button>
+                          <button
+                            className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
+                            onClick={() => setCategsFiltro(new Set())}
+                          >Ninguna</button>
+                        </div>
+                        {/* Lista con checkboxes */}
+                        <div className="overflow-y-auto flex-1 p-1">
+                          {categsUnicas
+                            .filter(c => !categFiltroBusqueda || c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
+                            .map(cat => {
+                              const checked = !categsFiltro || categsFiltro.has(cat)
+                              const count = movimientos.filter(m => (m.categ || '(sin categ)') === cat).length
+                              return (
+                                <label key={cat} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const nuevo = new Set(categsFiltro ?? categsUnicas)
+                                      if (nuevo.has(cat)) nuevo.delete(cat)
+                                      else nuevo.add(cat)
+                                      // Si todas seleccionadas → null (sin filtro)
+                                      setCategsFiltro(nuevo.size === categsUnicas.length ? null : nuevo)
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <span className="truncate flex-1">{cat}</span>
+                                  <span className="text-gray-400 text-[10px]">{count}</span>
+                                </label>
+                              )
+                            })}
+                        </div>
+                        {/* Cerrar */}
+                        <div className="p-2 border-t">
+                          <Button size="sm" className="w-full h-7 text-xs" onClick={() => setCategFiltroAbierto(false)}>
+                            Aplicar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Búsqueda por detalle */}
@@ -1622,7 +1718,7 @@ export function VistaExtractoBancario() {
                   <div className="space-y-2 col-span-1 md:col-span-2">
                     <label className="text-sm font-medium text-purple-700">📊 Info de Filtrado</label>
                     <div className="text-xs text-gray-600">
-                      Mostrando {movimientos.length} de {limiteRegistros} movimientos máximo
+                      Mostrando {movimientosVisibles.length}{categsFiltro ? `/${movimientos.length}` : ''} de {limiteRegistros} movimientos máximo
                       {movimientos.length === limiteRegistros && (
                         <div className="text-orange-600 font-medium">
                           ⚠️ Límite alcanzado - puede haber más registros
@@ -1926,7 +2022,7 @@ export function VistaExtractoBancario() {
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
                   <p>Cargando movimientos...</p>
                 </div>
-              ) : movimientos.length === 0 ? (
+              ) : movimientosVisibles.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                   <p className="text-lg mb-2">No se encontraron movimientos</p>
@@ -1942,7 +2038,7 @@ export function VistaExtractoBancario() {
                         {modoEdicion && (
                           <TableHead className="w-12">
                             <Checkbox
-                              checked={seleccionados.size === movimientos.length && movimientos.length > 0}
+                              checked={seleccionados.size === movimientosVisibles.length && movimientosVisibles.length > 0}
                               onCheckedChange={seleccionarTodos}
                             />
                           </TableHead>
@@ -1975,7 +2071,7 @@ export function VistaExtractoBancario() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {movimientos.map((movimiento) => (
+                      {movimientosVisibles.map((movimiento) => (
                         <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
                           {modoEdicion && (
                             <TableCell>
