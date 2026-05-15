@@ -3446,7 +3446,7 @@ export function VistaExtractoBancario() {
                           <p className="text-[10px] font-semibold text-blue-600 uppercase">Desglose del grupo</p>
                           {g.cuotas.map((c: any) => {
                             const nombre = g.tipo_grupo === 'arca'
-                              ? (c.denominacion_emisor || c.detalle || '—')
+                              ? (`FC ${c.tipo_comprobante || ''}-${String(c.punto_venta || 0).padStart(5,'0')}-${String(c.numero_desde || 0).padStart(8,'0')} ${c.denominacion_emisor || ''}`.trim())
                               : g.tipo_grupo === 'sueldo'
                               ? (c.empleado?.nombre || c.descripcion || '—')
                               : (c.egreso?.nombre_referencia || c.descripcion || '—')
