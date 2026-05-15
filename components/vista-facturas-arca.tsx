@@ -239,8 +239,8 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
   )
 }
 
-export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
-  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
+export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)

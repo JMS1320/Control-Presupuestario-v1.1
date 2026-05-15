@@ -30,7 +30,7 @@ export function VistaEgresos() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Facturas MSA
@@ -38,6 +38,10 @@ export function VistaEgresos() {
               <TabsTrigger value="facturas-pam" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas PAM
+              </TabsTrigger>
+              <TabsTrigger value="facturas-ma" className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Facturas MA
               </TabsTrigger>
               <TabsTrigger value="templates" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
@@ -52,6 +56,10 @@ export function VistaEgresos() {
 
               <TabsContent value="facturas-pam" className="space-y-4">
                 <VistaFacturasArca empresa="PAM" />
+              </TabsContent>
+
+              <TabsContent value="facturas-ma" className="space-y-4">
+                <VistaFacturasArca empresa="MA" />
               </TabsContent>
 
               <TabsContent value="templates" className="space-y-4">

@@ -338,14 +338,14 @@ export async function POST(req: Request) {
     // Obtener datos del formulario enviado desde la pantalla
     const formData = await req.formData()
     const file = formData.get("file") as File
-    const empresa = formData.get("empresa") as string  // 'MSA' o 'PAM'
+    const empresa = formData.get("empresa") as string  // 'MSA', 'PAM' o 'MA'
 
     // Validaciones básicas
     if (!file) {
       return NextResponse.json({ error: "No se envió ningún archivo" }, { status: 400 })
     }
 
-    if (!empresa || !['MSA', 'PAM'].includes(empresa)) {
+    if (!empresa || !['MSA', 'PAM', 'MA'].includes(empresa)) {
       return NextResponse.json({ error: "Empresa no válida" }, { status: 400 })
     }
 

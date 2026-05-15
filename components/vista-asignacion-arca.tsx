@@ -109,8 +109,8 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
-  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
+export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [comprobantes, setComprobantes] = useState<ComprobanteArca[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
   const [loading, setLoading] = useState(true)
