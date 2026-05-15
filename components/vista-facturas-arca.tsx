@@ -904,16 +904,26 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return
       }
 
-      // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
+      // Si se actualizó cuenta_contable, propagar categ + nro_cuenta a movimientos bancarios vinculados
       if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
+        const nroCta = cuentas.find(c => c.categ === valorFinal)?.nro_cuenta || null
+        const updateExtracto: Record<string, any> = { categ: valorFinal }
+        if (nroCta) updateExtracto.nro_cuenta = nroCta
+        // También actualizar nro_cuenta en la factura misma
+        if (nroCta) {
+          supabase.schema(schemaName).from('comprobantes_arca')
+            .update({ nro_cuenta: nroCta }).eq('id', datosEdicion.facturaId)
+            .then(({ error }) => { if (error) console.error('Error propagando nro_cuenta a factura:', error) })
+          camposUpdate.nro_cuenta = nroCta
+        }
         for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
           supabase
             .from(tabla)
-            .update({ categ: valorFinal })
+            .update(updateExtracto)
             .eq('comprobante_arca_id', datosEdicion.facturaId)
             .then(({ error }) => {
               if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
-              else console.log(`✅ cuenta_contable propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
+              else console.log(`✅ cuenta_contable+nro_cuenta propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
             })
         }
       }

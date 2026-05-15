@@ -451,13 +451,16 @@ export function VistaExtractoBancario() {
                   console.log(`💰 Monto actualizado: ${montoOriginal} → ${montoExtracto} (${diferenciaPorcentaje.toFixed(1)}% diff)`)
                 }
                 
-                // Propagar CATEG si fue editada (con validación)
+                // Propagar CATEG + nro_cuenta si fue editada (con validación)
                 if (editData.categ?.trim()) {
                   const categIngresado = editData.categ.trim().toUpperCase()
                   const categExiste = validarCateg(categIngresado)
-                  
+
                   if (categExiste) {
                     updateData.cuenta_contable = categIngresado
+                    // Buscar nro_cuenta desde editData o cuentas_contables
+                    const nroCta = editData.nro_cuenta || cuentas.find(c => c.categ === categIngresado)?.nro_cuenta
+                    if (nroCta) updateData.nro_cuenta = nroCta
                   } else {
                     // Si no existe, mostrar alerta y NO propagar
                     alert(`⚠️ La categoría "${categIngresado}" no existe en el sistema.\nNo se propagará este valor. Use una categoría válida.`)
@@ -595,6 +598,11 @@ export function VistaExtractoBancario() {
           const categExiste = validarCateg(categIngresado)
 
           if (categExiste) {
+            // Buscar nro_cuenta para propagar junto con categ
+            const nroCta = editData.nro_cuenta || cuentas.find(c => c.categ === categIngresado)?.nro_cuenta || null
+            const updateArcaPropag: Record<string, any> = { cuenta_contable: categIngresado }
+            if (nroCta) updateArcaPropag.nro_cuenta = nroCta
+
             for (const movimientoId of ids) {
               const movimiento = movimientos.find(m => m.id === movimientoId)
               const arcaId = movimiento?.comprobante_arca_id
@@ -603,13 +611,13 @@ export function VistaExtractoBancario() {
                 const { error } = await supabase
                   .schema('msa')
                   .from('comprobantes_arca')
-                  .update({ cuenta_contable: categIngresado })
+                  .update(updateArcaPropag)
                   .eq('id', arcaId)
 
                 if (error) {
                   console.error(`Error propagando categ a factura ARCA ${arcaId}:`, error)
                 } else {
-                  console.log(`✅ categ propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
+                  console.log(`✅ categ+nro_cuenta propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
                 }
               }
             }

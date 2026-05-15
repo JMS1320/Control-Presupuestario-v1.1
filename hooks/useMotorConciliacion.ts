@@ -417,6 +417,16 @@ export function useMotorConciliacion() {
             // Buscar nombre oficial del proveedor en BBDD proveedores
             const provNombreCF = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
 
+            // Si no tenemos nro_cuenta aún (match TEMPLATE), buscarlo en cuentas_contables
+            if (!extraIdsCF.nro_cuenta && matchCF.cashFlowRow.categ && !sinCateg) {
+              const { data: ccData } = await supabase
+                .from('cuentas_contables')
+                .select('nro_cuenta')
+                .eq('categ', matchCF.cashFlowRow.categ)
+                .maybeSingle()
+              if (ccData?.nro_cuenta) extraIdsCF.nro_cuenta = ccData.nro_cuenta
+            }
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
