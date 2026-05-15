@@ -1242,7 +1242,11 @@ export function VistaExtractoBancario() {
           detalle: grupoElegido.descripciones || grupoElegido.nombre,
           estado: 'conciliado',
           proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
-          comprobantes_pagados: grupoElegido.nombre,
+          comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
+            ? grupoElegido.cuotas.map((f: any) => `FC ${f.tipo_comprobante || ''}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`).join(' + ')
+            : grupoElegido.tipo_grupo === 'sueldo'
+            ? grupoElegido.cuotas.map((p: any) => `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${p.empleado?.nombre || ''}`).join(' + ')
+            : grupoElegido.nombre,
         }
 
         // Llenar IDs según tipo de grupo
