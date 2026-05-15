@@ -262,12 +262,15 @@ export function VistaExtractoBancario() {
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
-  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template'>('template')
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo'>('template')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
+  const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
   const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
+  const [sueldosParaAsignar, setSueldosParaAsignar] = useState<any[]>([])
   const [templateElegido, setTemplateElegido] = useState<any>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
+  const [sueldoElegido, setSueldoElegido] = useState<any>(null)
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
@@ -760,8 +763,10 @@ export function VistaExtractoBancario() {
     setMovimientoAsignando(movimiento)
     setTemplateElegido(null)
     setArcaElegida(null)
+    setSueldoElegido(null)
     setBusquedaAsignarArca('')
     setBusquedaAsignarTemplate('')
+    setBusquedaAsignarSueldo('')
     setTabAsignar('template')
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
@@ -777,6 +782,15 @@ export function VistaExtractoBancario() {
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
     setTemplatesParaAsignar(data || [])
+
+    // Cargar pagos de sueldos no conciliados
+    const { data: sueldosData } = await supabase
+      .from('sueldos_pagos')
+      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+      .neq('estado', 'conciliado')
+      .eq('medio_pago', 'banco')
+      .order('fecha', { ascending: false })
+    setSueldosParaAsignar(sueldosData || [])
 
     // Asegurar facturas ARCA cargadas
     if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
@@ -962,6 +976,54 @@ export function VistaExtractoBancario() {
 
         // Actualizar localmente — preserva filtros y contexto de trabajo
         actualizarLocal(movimientoAsignando.id, updateArca)
+
+      } else if (tabAsignar === 'sueldo' && sueldoElegido) {
+        // Limpiar vínculos anteriores si existían
+        if (movimientoAsignando.template_cuota_id) {
+          await supabase.from('cuotas_egresos_sin_factura')
+            .delete().eq('id', movimientoAsignando.template_cuota_id)
+        }
+        if (movimientoAsignando.comprobante_arca_id) {
+          await supabase.from(tablaActiva)
+            .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
+        }
+
+        const nombreEmpleado = sueldoElegido.empleado?.nombre || ''
+        const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
+        const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
+
+        const updateSueldo: Record<string, any> = {
+          sueldo_pago_id: sueldoElegido.id,
+          categ: 'SUELD',
+          detalle: detalleSueldo,
+          estado: 'conciliado',
+          proveedor_nombre: nombreEmpleado,
+          // Limpiar IDs de otros orígenes
+          template_id: null,
+          template_cuota_id: null,
+          comprobante_arca_id: null
+        }
+        if (contableManual.trim()) updateSueldo.contable = contableManual.trim()
+        if (internoManual.trim()) updateSueldo.interno = internoManual.trim()
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateSueldo)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+        // Marcar el pago de sueldo como conciliado
+        await supabase
+          .from('sueldos_pagos')
+          .update({ estado: 'conciliado' })
+          .eq('id', sueldoElegido.id)
+
+        // Quitar de la lista local
+        setSueldosParaAsignar(prev => prev.filter(s => s.id !== sueldoElegido.id))
+
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateSueldo)
       }
 
       setModalAsignar(false)
@@ -2641,10 +2703,11 @@ export function VistaExtractoBancario() {
             )}
           </DialogHeader>
 
-          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template')}>
+          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template' | 'sueldo')}>
             <TabsList className="w-full">
               <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
               <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
+              <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
             </TabsList>
 
             {/* Tab Template */}
@@ -2960,6 +3023,92 @@ export function VistaExtractoBancario() {
                 </div>
               )}
             </TabsContent>
+
+            {/* Tab Sueldo */}
+            <TabsContent value="sueldo" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por empleado, descripción o monto..."
+                value={busquedaAsignarSueldo}
+                onChange={e => setBusquedaAsignarSueldo(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const busqueda = busquedaAsignarSueldo.toLowerCase().trim()
+                  const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
+
+                  // Separar: sugerencias (mismo monto) y resto
+                  const sugerencias = sueldosParaAsignar.filter(s =>
+                    Math.abs(parseFloat(s.monto) - montoMov) < 0.01
+                  )
+                  const resto = sueldosParaAsignar.filter(s =>
+                    Math.abs(parseFloat(s.monto) - montoMov) >= 0.01
+                  )
+
+                  const filtrar = (lista: any[]) => busqueda
+                    ? lista.filter(s =>
+                        (s.empleado?.nombre || '').toLowerCase().includes(busqueda) ||
+                        (s.descripcion || '').toLowerCase().includes(busqueda) ||
+                        String(s.monto).includes(busqueda)
+                      )
+                    : lista
+
+                  const renderSueldo = (s: any, sugerido: boolean) => (
+                    <div
+                      key={s.id}
+                      onClick={() => setSueldoElegido(sueldoElegido?.id === s.id ? null : s)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        sueldoElegido?.id === s.id ? 'border-blue-500 bg-blue-50'
+                        : sugerido ? 'border-green-200 hover:border-green-400 hover:bg-green-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-sm">{s.empleado?.nombre || 'Sin nombre'}</div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          s.tipo === 'anticipo' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {s.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                        <span>{new Date(s.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                        <span className="font-mono">${parseFloat(s.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                        <span className="text-gray-400">{s.descripcion}</span>
+                        {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
+                      </div>
+                    </div>
+                  )
+
+                  const sugFiltradas = filtrar(sugerencias)
+                  const restoFiltradas = filtrar(resto)
+
+                  if (sugFiltradas.length === 0 && restoFiltradas.length === 0) {
+                    return <p className="text-sm text-gray-400 text-center py-4">No hay pagos de sueldos pendientes{busqueda ? ' para esta búsqueda' : ' (medio_pago=banco)'}</p>
+                  }
+
+                  return (
+                    <>
+                      {sugFiltradas.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {sugFiltradas.map(s => renderSueldo(s, true))}
+                          {restoFiltradas.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otros pagos</p>
+                          )}
+                        </>
+                      )}
+                      {restoFiltradas.map(s => renderSueldo(s, false))}
+                    </>
+                  )
+                })()}
+              </div>
+              {sueldoElegido && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se vinculará pago <strong>{sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'} {sueldoElegido.empleado?.nombre}</strong> y se marcará como conciliado. Categ = SUELD.
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
 
           {/* Códigos contable/interno — opcionales, aplican a cualquier asignación */}
@@ -2993,7 +3142,7 @@ export function VistaExtractoBancario() {
             <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
-              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : !arcaElegida)}
+              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : !sueldoElegido)}
             >
               {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
             </Button>
