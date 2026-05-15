@@ -1180,6 +1180,7 @@ export function TabSueldos() {
                   <TableHead>Descripción</TableHead>
                   <TableHead>Medio</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -1211,6 +1212,22 @@ export function TabSueldos() {
                       })()}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">{formatoMoneda(pago.monto)}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const est = (pago as any).estado ?? 'programado'
+                        const s: Record<string, string> = {
+                          'conciliado': 'bg-green-100 text-green-700',
+                          'pagado': 'bg-blue-100 text-blue-700',
+                          'programado': 'bg-yellow-100 text-yellow-700',
+                          'pagar': 'bg-orange-100 text-orange-700',
+                        }
+                        return (
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium capitalize ${s[est] ?? 'bg-gray-100 text-gray-600'}`}>
+                            {est}
+                          </span>
+                        )
+                      })()}
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <button
