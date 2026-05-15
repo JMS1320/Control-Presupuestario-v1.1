@@ -167,10 +167,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .sort()
         .at(-1) ?? ''
       const fechaVencMax = fs.map(f => f.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
-      const totalDebitos = fs.reduce((s, f) => {
+      const totalDebitos = Math.round(fs.reduce((s, f) => {
         const tc = f.tc_pago ?? f.tipo_cambio ?? 1
         return s + (f.monto_a_abonar ?? f.imp_total ?? 0) * tc
-      }, 0)
+      }, 0) * 100) / 100
       // Detalle: lista de los detalles individuales separados por " · "
       const detallesCombinados = fs
         .map(f => f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f))
@@ -196,7 +196,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_gravado: 0,
         imp_neto_no_gravado: 0,
         imp_op_exentas: 0,
-        imp_total: fs.reduce((s, f) => s + (f.imp_total || 0), 0),
+        imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
         grupo_pago_id: grupoId,
         facturas_agrupadas: fs.length,
         ids_grupo: fs.map(f => f.id),
@@ -250,7 +250,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Fecha más tardía del grupo
       const fechaMax = cs.map(c => c.fecha_estimada).filter(Boolean).sort().at(-1) ?? ''
       const fechaVencMax = cs.map(c => c.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
-      const totalDebitos = cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0)
+      const totalDebitos = Math.round(cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0) * 100) / 100
       const primera = cs[0]
 
       // Detalle inteligente para grupos
