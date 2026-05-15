@@ -1931,14 +1931,26 @@ export function VistaExtractoBancario() {
                   />
                 </div>
 
-                {/* Sección de Vinculación con Facturas */}
-                {editData.estado === 'conciliado' && (
+                {/* Sección de Vinculación con Facturas — solo para movimientos SIN vínculo previo */}
+                {editData.estado === 'conciliado' && (() => {
+                  const sinVinculo = Array.from(seleccionados).filter(id => {
+                    const mov = movimientos.find(m => m.id === id) as any
+                    return mov && !mov.comprobante_arca_id && !mov.template_cuota_id && !mov.sueldo_pago_id
+                  })
+                  const conVinculo = seleccionados.size - sinVinculo.length
+                  return (
                   <div className="border-t pt-4 mt-4">
+                    {conVinculo > 0 && (
+                      <p className="text-sm text-green-700 bg-green-50 rounded p-2 mb-3">
+                        {conVinculo} movimiento(s) ya vinculado(s) — al conciliar se propagará el estado al origen.
+                      </p>
+                    )}
+                    {sinVinculo.length > 0 && (<>
                     <h4 className="text-lg font-medium mb-3 text-blue-800">
                       💡 Vincular con Facturas ARCA (Opcional)
                     </h4>
                     <div className="space-y-3">
-                      {Array.from(seleccionados).map(movimientoId => {
+                      {sinVinculo.map(movimientoId => {
                         const movimiento = movimientos.find(m => m.id === movimientoId)
                         if (!movimiento) return null
                         
@@ -2081,8 +2093,10 @@ export function VistaExtractoBancario() {
                         )
                       })}
                     </div>
+                    </>)}
                   </div>
-                )}
+                  )
+                })()}
 
                 <div className="flex gap-2">
                   <Button onClick={aplicarEdicionMasiva} className="bg-green-600 hover:bg-green-700">
