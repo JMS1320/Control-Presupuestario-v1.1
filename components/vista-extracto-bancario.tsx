@@ -1803,9 +1803,16 @@ export function VistaExtractoBancario() {
                               )
                             })}
                         </div>
-                        {/* Cerrar */}
+                        {/* Aplicar */}
                         <div className="p-2 border-t">
-                          <Button size="sm" className="w-full h-7 text-xs" onClick={() => setCategFiltroAbierto(false)}>
+                          <Button size="sm" className="w-full h-7 text-xs" onClick={() => {
+                            if (categFiltroBusqueda.trim()) {
+                              const visibles = categsUnicas.filter(c => c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
+                              setCategsFiltro(visibles.length === categsUnicas.length ? null : new Set(visibles))
+                              setCategFiltroBusqueda('')
+                            }
+                            setCategFiltroAbierto(false)
+                          }}>
                             Aplicar
                           </Button>
                         </div>
