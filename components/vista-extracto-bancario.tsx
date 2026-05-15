@@ -281,7 +281,7 @@ export function VistaExtractoBancario() {
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
   const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
@@ -624,7 +624,17 @@ export function VistaExtractoBancario() {
           }
         }
 
-        recargar()
+        // Actualizar localmente sin recargar — preserva filtros y contexto de trabajo
+        const camposLocales: Record<string, any> = {}
+        if (editData.categ?.trim()) camposLocales.categ = editData.categ.trim().toUpperCase()
+        if (editData.nro_cuenta) camposLocales.nro_cuenta = editData.nro_cuenta
+        if (editData.centro_de_costo?.trim()) camposLocales.centro_de_costo = editData.centro_de_costo.trim()
+        if (editData.estado?.trim()) camposLocales.estado = editData.estado.trim()
+        if (editData.contable?.trim()) camposLocales.contable = editData.contable.trim()
+        if (editData.interno?.trim()) camposLocales.interno = editData.interno.trim()
+        if (editData.detalle?.trim()) camposLocales.detalle = editData.detalle.trim()
+        if (editData.estado === 'conciliado') camposLocales.motivo_revision = null
+        if (Object.keys(camposLocales).length > 0) actualizarLocal(ids, camposLocales)
       }
     } catch (error) {
       console.error('Error aplicando edición masiva:', error)
@@ -875,6 +885,9 @@ export function VistaExtractoBancario() {
 
         if (errExt) throw errExt
 
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateTemplate)
+
       } else if (tabAsignar === 'arca' && arcaElegida) {
         // Obtener cuenta_contable y nro_cuenta de la factura ARCA (igual que el motor)
         const { data: facturaCompleta } = await supabase
@@ -922,10 +935,12 @@ export function VistaExtractoBancario() {
 
         // Quitar de la lista local para que no vuelva a aparecer como opción
         setFacturasDisponibles(prev => prev.filter(f => f.id !== arcaElegida.id))
+
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateArca)
       }
 
       setModalAsignar(false)
-      recargar()
     } catch (err) {
       console.error('Error en asignación manual:', err)
     } finally {
@@ -1020,7 +1035,7 @@ export function VistaExtractoBancario() {
           .eq('id', id)
         if (err) throw err
       }
-      recargar()
+      actualizarLocal(ids, { revisado: valor })
     } catch (err) {
       console.error('Error marcando revisado:', err)
       alert('Error al marcar como revisado')
@@ -1060,7 +1075,7 @@ export function VistaExtractoBancario() {
         .update({ nota_operador: nota.trim() || null })
         .eq('id', id)
       if (err) throw err
-      recargar()
+      actualizarLocal(id, { nota_operador: nota.trim() || null })
       setEditandoNotaId(null)
       setEditandoNotaVal('')
     } catch (err) {
@@ -2020,7 +2035,7 @@ export function VistaExtractoBancario() {
                                     if (e.key === 'Enter') {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      recargar()
+                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
@@ -2029,7 +2044,7 @@ export function VistaExtractoBancario() {
                                     if (editandoDetalleVal !== (movimiento.detalle || '')) {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      recargar()
+                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
                                     }
                                     setEditandoDetalleId(null)
                                   }}

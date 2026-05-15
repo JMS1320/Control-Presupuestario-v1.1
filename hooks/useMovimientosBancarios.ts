@@ -230,6 +230,13 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     }
   }
 
+  // Actualizar uno o más movimientos localmente sin recargar de BD
+  const actualizarLocal = (ids: string | string[], campos: Record<string, any>) => {
+    const idsArr = Array.isArray(ids) ? ids : [ids]
+    const idsSet = new Set(idsArr)
+    setMovimientos(prev => prev.map(m => idsSet.has(m.id) ? { ...m, ...campos } : m))
+  }
+
   // Recargar datos
   const recargar = () => {
     cargarMovimientos({ limite: 100 })
@@ -244,6 +251,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     cargarMovimientos,
     cargarEstadisticas,
     actualizarMasivo,
+    actualizarLocal,
     recargar
   }
 }
