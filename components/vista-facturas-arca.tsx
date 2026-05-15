@@ -7689,8 +7689,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               f => facturasSeleccionadasPagos.has(f.id) && f.estado === 'pagar'
             )
             // Hay agrupación posible si hay 2+ del mismo proveedor sin grupo asignado
+            const cuitsUnicos = new Set(seleccionadasEnPagar.map(f => f.cuit))
+            const esMultiCuit = cuitsUnicos.size > 1
             const puedeAgrupar = seleccionadasEnPagar.length >= 2
-              && new Set(seleccionadasEnPagar.map(f => f.cuit)).size === 1
               && seleccionadasEnPagar.every(f => !f.grupo_pago_id)
 
             // Hay desagrupación posible si todas las seleccionadas tienen el mismo grupo
@@ -7701,19 +7702,30 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             const agruparPagos = async () => {
               if (!puedeAgrupar) return
+              // Alerta si CUITs distintos
+              if (esMultiCuit) {
+                const proveedores = [...new Set(seleccionadasEnPagar.map(f => f.denominacion_emisor))].join(', ')
+                if (!window.confirm(`⚠️ ATENCIÓN: Las facturas seleccionadas tienen CUITs diferentes:\n\n${proveedores}\n\nEsto es inusual. ¿Confirmar agrupación?`)) return
+              }
               const primeraF = seleccionadasEnPagar[0]
               const monto_total = seleccionadasEnPagar.reduce(
                 (s, f) => s + montoEnPesos(f), 0
               )
+              // Proveedor: combinar nombres si multi-CUIT
+              const proveedoresUnicos = [...new Set(seleccionadasEnPagar.map(f => f.denominacion_emisor).filter(Boolean))]
+              const proveedorGrupo = proveedoresUnicos.length <= 2
+                ? proveedoresUnicos.join(' + ')
+                : `${proveedoresUnicos[0]} + ${proveedoresUnicos.length - 1} más`
               // 1. Crear grupo
               const { data: grupo, error: errGrupo } = await supabase
                 .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primeraF.cuit,
-                  proveedor: primeraF.denominacion_emisor,
+                  proveedor: proveedorGrupo,
                   monto_total,
                   estado: 'pagar',
+                  observaciones: esMultiCuit ? `Multi-CUIT: ${[...cuitsUnicos].join(', ')}` : null,
                 })
                 .select('id')
                 .single()
@@ -7731,7 +7743,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ids.includes(f.id) ? { ...f, grupo_pago_id: grupo.id } : f
               ))
               setFacturasSeleccionadasPagos(new Set())
-              alert(`✅ ${ids.length} facturas agrupadas en un pago`)
+              alert(`✅ ${ids.length} facturas agrupadas en un pago${esMultiCuit ? ' (multi-CUIT)' : ''}`)
             }
 
             const desagruparPago = async () => {
