@@ -262,15 +262,18 @@ export function VistaExtractoBancario() {
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
-  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo'>('template')
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo'>('template')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
   const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
+  const [busquedaAsignarGrupo, setBusquedaAsignarGrupo] = useState('')
   const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
   const [sueldosParaAsignar, setSueldosParaAsignar] = useState<any[]>([])
+  const [gruposParaAsignar, setGruposParaAsignar] = useState<any[]>([])
   const [templateElegido, setTemplateElegido] = useState<any>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
   const [sueldoElegido, setSueldoElegido] = useState<any>(null)
+  const [grupoElegido, setGrupoElegido] = useState<any>(null)
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
@@ -798,9 +801,11 @@ export function VistaExtractoBancario() {
     setTemplateElegido(null)
     setArcaElegida(null)
     setSueldoElegido(null)
+    setGrupoElegido(null)
     setBusquedaAsignarArca('')
     setBusquedaAsignarTemplate('')
     setBusquedaAsignarSueldo('')
+    setBusquedaAsignarGrupo('')
     setTabAsignar('template')
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
@@ -825,6 +830,41 @@ export function VistaExtractoBancario() {
       .eq('medio_pago', 'banco')
       .order('fecha', { ascending: false })
     setSueldosParaAsignar(sueldosData || [])
+
+    // Cargar grupos de pago (cuotas agrupadas no conciliadas)
+    const { data: cuotasAgrupadas } = await supabase
+      .from('cuotas_egresos_sin_factura')
+      .select('*, egreso:egresos_sin_factura(id, nombre_referencia, categ, cuenta_agrupadora, responsable, cuit_quien_cobra, nombre_quien_cobra)')
+      .not('grupo_pago_id', 'is', null)
+      .neq('estado', 'conciliado')
+      .neq('estado', 'desactivado')
+      .order('fecha_estimada', { ascending: false })
+    // Agrupar por grupo_pago_id
+    const mapaGrupos = new Map<string, any[]>()
+    for (const c of cuotasAgrupadas || []) {
+      const g = c.grupo_pago_id
+      if (!mapaGrupos.has(g)) mapaGrupos.set(g, [])
+      mapaGrupos.get(g)!.push(c)
+    }
+    const gruposArr = Array.from(mapaGrupos.entries()).map(([grupoId, cuotas]) => {
+      const total = Math.round(cuotas.reduce((s: number, c: any) => s + (parseFloat(c.monto) || 0), 0) * 100) / 100
+      const primera = cuotas[0]
+      return {
+        id: grupoId,
+        cuotas,
+        total,
+        categ: primera.categ || primera.egreso?.categ || '',
+        nombre: primera.egreso?.nombre_referencia || '',
+        cuenta_agrupadora: primera.egreso?.cuenta_agrupadora || '',
+        responsable: primera.egreso?.responsable || '',
+        egreso_id: primera.egreso_id,
+        fecha: primera.fecha_estimada,
+        cuit: primera.egreso?.cuit_quien_cobra || '',
+        nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
+        descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
+      }
+    })
+    setGruposParaAsignar(gruposArr)
 
     // Asegurar facturas ARCA cargadas
     if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
@@ -1073,6 +1113,50 @@ export function VistaExtractoBancario() {
 
         // Actualizar localmente — preserva filtros y contexto de trabajo
         actualizarLocal(movimientoAsignando.id, updateSueldo)
+
+      } else if (tabAsignar === 'grupo' && grupoElegido) {
+        // Buscar códigos contable/interno por template
+        const codigos = await buscarCodigos(grupoElegido.egreso_id, grupoElegido.responsable)
+
+        // Conciliar todas las cuotas del grupo
+        const idsGrupo = grupoElegido.cuotas.map((c: any) => c.id)
+        await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update({ estado: 'conciliado' })
+          .in('id', idsGrupo)
+
+        // Buscar nombre oficial del proveedor
+        const cuitGrupo = grupoElegido.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provGrupo } = cuitGrupo ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
+
+        const updateGrupo: Record<string, any> = {
+          template_id: grupoElegido.egreso_id,
+          template_cuota_id: grupoElegido.cuotas[0].id,
+          categ: grupoElegido.categ,
+          detalle: grupoElegido.descripciones || grupoElegido.nombre,
+          estado: 'conciliado',
+          proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
+          comprobantes_pagados: grupoElegido.nombre,
+          // Limpiar otros orígenes
+          comprobante_arca_id: null,
+          sueldo_pago_id: null
+        }
+        updateGrupo.contable = contableManual.trim() || codigos.contable || ''
+        updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateGrupo)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+        // Quitar de la lista local
+        setGruposParaAsignar(prev => prev.filter(g => g.id !== grupoElegido.id))
+
+        // Actualizar localmente
+        actualizarLocal(movimientoAsignando.id, updateGrupo)
       }
 
       setModalAsignar(false)
@@ -2773,11 +2857,12 @@ export function VistaExtractoBancario() {
             )}
           </DialogHeader>
 
-          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template' | 'sueldo')}>
+          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as any)}>
             <TabsList className="w-full">
               <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
               <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
               <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
+              <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
             </TabsList>
 
             {/* Tab Template */}
@@ -3175,7 +3260,91 @@ export function VistaExtractoBancario() {
               </div>
               {sueldoElegido && (
                 <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                  Se vinculará pago <strong>{sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'} {sueldoElegido.empleado?.nombre}</strong> y se marcará como conciliado. Categ = SUELD.
+                  Se vinculará pago <strong>{sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'} {sueldoElegido.empleado?.nombre}</strong> y se marcará como conciliado. Categ = Sueldos.
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Tab Grupo */}
+            <TabsContent value="grupo" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por nombre, categoría o monto..."
+                value={busquedaAsignarGrupo}
+                onChange={e => setBusquedaAsignarGrupo(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const busqueda = busquedaAsignarGrupo.toLowerCase().trim()
+                  const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
+
+                  const sugerencias = gruposParaAsignar.filter(g =>
+                    Math.abs(g.total - montoMov) < 0.01
+                  )
+                  const resto = gruposParaAsignar.filter(g =>
+                    Math.abs(g.total - montoMov) >= 0.01
+                  )
+
+                  const filtrar = (lista: any[]) => busqueda
+                    ? lista.filter(g =>
+                        g.nombre.toLowerCase().includes(busqueda) ||
+                        g.categ.toLowerCase().includes(busqueda) ||
+                        g.cuenta_agrupadora.toLowerCase().includes(busqueda) ||
+                        g.descripciones.toLowerCase().includes(busqueda) ||
+                        String(g.total).includes(busqueda)
+                      )
+                    : lista
+
+                  const renderGrupo = (g: any, sugerido: boolean) => (
+                    <div
+                      key={g.id}
+                      onClick={() => setGrupoElegido(grupoElegido?.id === g.id ? null : g)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        grupoElegido?.id === g.id ? 'border-blue-500 bg-blue-50'
+                        : sugerido ? 'border-green-200 hover:border-green-400 hover:bg-green-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-sm">{g.nombre}</div>
+                        <span className="text-xs font-mono font-semibold">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                        <span>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}</span>
+                        <span className="text-purple-600">{g.categ}</span>
+                        <span className="text-gray-400">{g.cuotas.length} cuotas</span>
+                        {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5 truncate">{g.descripciones}</div>
+                    </div>
+                  )
+
+                  const sugFiltradas = filtrar(sugerencias)
+                  const restoFiltradas = filtrar(resto)
+
+                  if (sugFiltradas.length === 0 && restoFiltradas.length === 0) {
+                    return <p className="text-sm text-gray-400 text-center py-4">No hay grupos de pago pendientes{busqueda ? ' para esta búsqueda' : ''}</p>
+                  }
+
+                  return (
+                    <>
+                      {sugFiltradas.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {sugFiltradas.map(g => renderGrupo(g, true))}
+                          {restoFiltradas.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otros grupos</p>
+                          )}
+                        </>
+                      )}
+                      {restoFiltradas.map(g => renderGrupo(g, false))}
+                    </>
+                  )
+                })()}
+              </div>
+              {grupoElegido && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se vincularán <strong>{grupoElegido.cuotas.length} cuotas</strong> de <strong>{grupoElegido.nombre}</strong> (${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}) y se marcarán como conciliadas.
                 </div>
               )}
             </TabsContent>
@@ -3212,7 +3381,7 @@ export function VistaExtractoBancario() {
             <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
-              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : !sueldoElegido)}
+              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)}
             >
               {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
             </Button>
