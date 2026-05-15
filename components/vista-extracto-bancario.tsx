@@ -1028,7 +1028,7 @@ export function VistaExtractoBancario() {
 
         const updateSueldo: Record<string, any> = {
           sueldo_pago_id: sueldoElegido.id,
-          categ: 'SUELD',
+          categ: 'Sueldos',
           detalle: detalleSueldo,
           estado: 'conciliado',
           proveedor_nombre: nombreEmpleado,
