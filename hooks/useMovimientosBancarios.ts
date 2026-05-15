@@ -23,6 +23,11 @@ export interface MovimientoBancario {
   cuenta: string
   orden: number
   comprobante_arca_id: string | null
+  template_id: string | null
+  template_cuota_id: string | null
+  sueldo_pago_id: string | null
+  nro_cuenta: string | null
+  control: number | null
   leyendas_adicionales_1: string | null
   leyendas_adicionales_2: string | null
   revisado: boolean

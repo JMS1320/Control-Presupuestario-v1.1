@@ -603,8 +603,42 @@ export function VistaExtractoBancario() {
               }
             }
           }
+
+          // Propagar conciliado a orígenes ya vinculados (movimientos que el motor dejó en auditar con IDs)
+          for (const movimientoId of ids) {
+            // Si ya se procesó arriba con vinculación nueva, saltar
+            if (vinculaciones[movimientoId]) continue
+
+            const movimiento = movimientos.find(m => m.id === movimientoId) as any
+            if (!movimiento) continue
+
+            // Factura ARCA ya vinculada
+            if (movimiento.comprobante_arca_id) {
+              await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.comprobante_arca_id)
+            }
+
+            // Cuota template ya vinculada
+            if (movimiento.template_cuota_id) {
+              await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.template_cuota_id)
+            }
+
+            // Pago sueldo ya vinculado
+            if (movimiento.sueldo_pago_id) {
+              await supabase
+                .from('sueldos_pagos')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.sueldo_pago_id)
+            }
+          }
         }
-        
+
         // Resetear después de aplicar exitosamente
         setSeleccionados(new Set())
         setModoEdicion(false)
