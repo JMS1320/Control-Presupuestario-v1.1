@@ -115,7 +115,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       if (filtros?.categEspecial === 'invalida') {
         query = query.ilike('categ', 'INVALIDA:%')
       } else if (filtros?.categEspecial === 'sin_categ') {
-        query = query.is('categ', null)
+        query = query.or('categ.is.null,categ.eq.')
       } else if (filtros?.categ) {
         query = query.ilike('categ', `%${filtros.categ}%`)
       }
@@ -172,7 +172,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         conciliados: data?.filter(m => m.estado === 'conciliado').length || 0,
         pendientes: data?.filter(m => m.estado === 'pendiente').length || 0,
         auditar: data?.filter(m => m.estado === 'auditar').length || 0,
-        sin_categ: data?.filter(m => !m.categ || m.categ.startsWith('INVALIDA:')).length || 0,
+        sin_categ: data?.filter(m => !m.categ || m.categ === '').length || 0,
         sin_revisar: data?.filter(m => !m.revisado).length || 0
       }
 
