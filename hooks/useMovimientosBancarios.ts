@@ -70,7 +70,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     categ?: string
     categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
-    soloSinRevisar?: boolean
+    filtroRevisado?: 'todas' | 'revisadas' | 'no_revisadas'
   }) => {
     try {
       setLoading(true)
@@ -125,9 +125,11 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.ilike('detalle', `%${filtros.detalle}%`)
       }
 
-      // Aplicar filtro solo sin revisar
-      if (filtros?.soloSinRevisar) {
+      // Aplicar filtro revisado
+      if (filtros?.filtroRevisado === 'no_revisadas') {
         query = query.eq('revisado', false)
+      } else if (filtros?.filtroRevisado === 'revisadas') {
+        query = query.eq('revisado', true)
       }
 
       // Ordenar por orden descendente — respeta el orden del extracto bancario original

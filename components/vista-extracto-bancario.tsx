@@ -209,7 +209,7 @@ export function VistaExtractoBancario() {
   const [categsFiltro, setCategsFiltro] = useState<Set<string> | null>(null) // null = sin filtro (mostrar todas)
   const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
   const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
-  const [soloSinRevisar, setSoloSinRevisar] = useState(false)
+  const [filtroRevisado, setFiltroRevisado] = useState<'todas' | 'revisadas' | 'no_revisadas'>('todas')
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
@@ -379,7 +379,7 @@ export function VistaExtractoBancario() {
       busqueda: busqueda.trim() || undefined,
       limite: limiteRegistros,
       categEspecial: filtroCategEspecial || undefined,
-      soloSinRevisar: soloSinRevisar || undefined
+      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined
     })
   }
 
@@ -1445,7 +1445,7 @@ export function VistaExtractoBancario() {
     if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
     // categ multi-select se aplica client-side via movimientosVisibles
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
-    if (soloSinRevisar) filtros.soloSinRevisar = true
+    if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
 
     cargarMovimientos(filtros)
   }
@@ -1826,19 +1826,20 @@ export function VistaExtractoBancario() {
                   Conciliados ({estadisticas.conciliados})
                 </Button>
                 <span className="text-gray-300">|</span>
-                <Button
-                  variant={soloSinRevisar ? "default" : "outline"}
-                  size="sm"
-                  className={`h-7 text-xs px-2 ${soloSinRevisar ? 'bg-rose-600 hover:bg-rose-700' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
-                  onClick={() => {
-                    const nuevo = !soloSinRevisar
-                    setSoloSinRevisar(nuevo)
-                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, soloSinRevisar: nuevo || undefined })
+                <select
+                  value={filtroRevisado}
+                  onChange={(e) => {
+                    const nuevo = e.target.value as 'todas' | 'revisadas' | 'no_revisadas'
+                    setFiltroRevisado(nuevo)
+                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, filtroRevisado: nuevo !== 'todas' ? nuevo : undefined })
                   }}
+                  className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroRevisado !== 'todas' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-600 border-rose-300'}`}
                 >
-                  Sin revisar ({estadisticas.sin_revisar})
-                </Button>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || soloSinRevisar) && (
+                  <option value="todas">Todas ({estadisticas.sin_revisar + (movimientos.length - (estadisticas.sin_revisar || 0))})</option>
+                  <option value="no_revisadas">No revisadas ({estadisticas.sin_revisar})</option>
+                  <option value="revisadas">Revisadas</option>
+                </select>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1846,7 +1847,7 @@ export function VistaExtractoBancario() {
                     onClick={() => {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
-                      setSoloSinRevisar(false)
+                      setFiltroRevisado('todas')
                       cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
                     }}
                   >
