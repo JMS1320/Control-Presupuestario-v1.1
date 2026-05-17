@@ -761,7 +761,7 @@ export function VistaExtractoBancario() {
         cuit: f.cuit,
         // Campos para mostrar en UI
         display_nombre: f.denominacion_emisor,
-        display_referencia: `${f.tipo_comprobante}-${f.numero_desde}`,
+        display_referencia: `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde}`,
         display_monto: f.monto_a_abonar,
         fecha_emision: f.fecha_emision
       }))
@@ -825,7 +825,7 @@ export function VistaExtractoBancario() {
     // Cargar pagos de sueldos no conciliados
     const { data: sueldosData } = await supabase
       .from('sueldos_pagos')
-      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
       .neq('estado', 'conciliado')
       .eq('medio_pago', 'banco')
       .order('fecha', { ascending: false })
@@ -848,7 +848,7 @@ export function VistaExtractoBancario() {
         .order('fecha_estimada', { ascending: false }),
       supabase
         .from('sueldos_pagos')
-        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
         .not('grupo_pago_id', 'is', null)
         .neq('estado', 'conciliado')
         .order('fecha', { ascending: false }),
@@ -1158,6 +1158,10 @@ export function VistaExtractoBancario() {
         const nombreEmpleado = sueldoElegido.empleado?.nombre || ''
         const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
         const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
+        const mesesAbrev = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        const periodoLabel = sueldoElegido.periodo
+          ? `${mesesAbrev[(sueldoElegido.periodo.mes || 1) - 1]} ${sueldoElegido.periodo.anio}`
+          : ''
 
         // Buscar códigos contable/interno por empleado (Tipo C)
         const empleadoId = sueldoElegido.empleado_id || sueldoElegido.empleado?.id
@@ -1180,6 +1184,7 @@ export function VistaExtractoBancario() {
           detalle: detalleSueldo,
           estado: 'conciliado',
           proveedor_nombre: nombreEmpleado,
+          comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
           // Limpiar IDs de otros orígenes
           template_id: null,
           template_cuota_id: null,
@@ -1243,9 +1248,15 @@ export function VistaExtractoBancario() {
           estado: 'conciliado',
           proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
           comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
-            ? grupoElegido.cuotas.map((f: any) => `FC ${f.tipo_comprobante || ''}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`).join(' + ')
+            ? grupoElegido.cuotas.map((f: any) => `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde}`).join(' + ')
             : grupoElegido.tipo_grupo === 'sueldo'
-            ? grupoElegido.cuotas.map((p: any) => `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${p.empleado?.nombre || ''}`).join(' + ')
+            ? (() => {
+                const ma = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+                return grupoElegido.cuotas.map((p: any) => {
+                  const per = p.periodo ? `${ma[(p.periodo.mes || 1) - 1]} ${p.periodo.anio}` : ''
+                  return `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${per}`
+                }).join(' + ')
+              })()
             : grupoElegido.nombre,
         }
 
