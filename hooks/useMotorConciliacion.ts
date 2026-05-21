@@ -471,7 +471,7 @@ export function useMotorConciliacion() {
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
-              detalle: matchCF.cashFlowRow.detalle,
+              detalle: matchCF.cashFlowRow.detalle_usuario || null,
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
               proveedor_nombre: provNombreCF,
@@ -577,9 +577,7 @@ export function useMotorConciliacion() {
                       extraAnticipo.comprobante_arca_id = fc.id
                       extraAnticipo.categ = fc.categ || regla.categ
                       if (fc.nro_cuenta) extraAnticipo.nro_cuenta = fc.nro_cuenta
-                      extraAnticipo.detalle = esParcial
-                        ? `Pago parcial vía anticipo: ${match.descripcion || match.nombre_proveedor}`
-                        : `Pago total vía anticipo: ${match.descripcion || match.nombre_proveedor}`
+                      extraAnticipo.detalle = match.descripcion || null
                       // FC number for comprobantes_pagados
                       const abrevFC = [1,6,11,51,201,206,211].includes(fc.tipo_comprobante) ? 'FC'
                         : [2,7,12,52,202,207,212].includes(fc.tipo_comprobante) ? 'ND'
@@ -596,7 +594,7 @@ export function useMotorConciliacion() {
                     // Anticipo sin FC → auditar, pero guardamos anticipo_id para cuando se vincule
                     estadoRegla = 'auditar'
                     motivoRegla = 'Anticipo: requiere vinculación con factura ARCA'
-                    extraAnticipo.detalle = `Anticipo: ${match.descripcion || match.nombre_proveedor}`
+                    extraAnticipo.detalle = match.descripcion || null
                     // Marcar anticipo como conciliado en banco (ya salió el dinero)
                     await supabase
                       .from('anticipos_proveedores')
@@ -618,7 +616,7 @@ export function useMotorConciliacion() {
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || regla.detalle,
+                detalle: extraAnticipo.detalle || null,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,

@@ -1075,7 +1075,7 @@ export function VistaExtractoBancario() {
           template_id: templateElegido.id,
           template_cuota_id: cuotaId,
           categ: categFinal,
-          detalle: templateElegido.nombre_referencia,
+          detalle: null,
           estado: 'conciliado',
           proveedor_nombre: provTemplate?.razon_social || null,
           comprobantes_pagados: templateElegido.display_referencia || templateElegido.nombre_referencia || null
@@ -1110,7 +1110,7 @@ export function VistaExtractoBancario() {
           .from('proveedores').select('razon_social').eq('cuit', cuitArca).maybeSingle() : { data: null }
         const updateArca: Record<string, any> = {
           comprobante_arca_id: arcaElegida.id,
-          detalle: arcaElegida.display_nombre || '',
+          detalle: null,
           estado: 'conciliado',
           proveedor_nombre: provArca?.razon_social || null,
           comprobantes_pagados: arcaElegida.display_referencia || null
@@ -1181,7 +1181,7 @@ export function VistaExtractoBancario() {
         const updateSueldo: Record<string, any> = {
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
-          detalle: detalleSueldo,
+          detalle: null,
           estado: 'conciliado',
           proveedor_nombre: nombreEmpleado,
           comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
@@ -1244,7 +1244,7 @@ export function VistaExtractoBancario() {
 
         const updateGrupo: Record<string, any> = {
           categ: grupoElegido.categ,
-          detalle: grupoElegido.descripciones || grupoElegido.nombre,
+          detalle: null,
           estado: 'conciliado',
           proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
           comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'

@@ -77,6 +77,8 @@ export interface CashFlowRow {
   medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
   // Para extracto: texto limpio de comprobantes (sin proveedor mezclado)
   comprobante_display?: string | null
+  // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
+  detalle_usuario?: string | null
   // Empleado (solo para sueldos)
   empleado_id?: string | null
 }
@@ -138,6 +140,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: f.cuit || '',
         nombre_proveedor: f.denominacion_emisor || '',
         detalle: f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f),
+        detalle_usuario: f.detalle || null,
         debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -193,6 +196,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.cuit || '',
         nombre_proveedor: primera.denominacion_emisor || '',
         detalle: detallesCombinados,
+        detalle_usuario: fs.map(f => f.detalle).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -235,6 +239,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
         detalle: c.descripcion || c.egreso?.nombre_referencia || '',
+        detalle_usuario: c.descripcion || null,
         debitos: esIngreso ? 0 : monto,
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
@@ -295,6 +300,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
         detalle: detallesCombinados,
+        detalle_usuario: cs.map(c => c.descripcion).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -323,6 +329,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       cuit_proveedor: p.empleado?.cuit_empleado ?? '',
       nombre_proveedor: p.empleado?.nombre ?? '',
       detalle: `Sueldo ${MESES_CASH[(p.mes ?? 1) - 1]} ${p.anio} - ${p.empleado?.nombre ?? ''}`,
+      detalle_usuario: null,
       debitos: p.saldo_pendiente ?? p.bruto_calculado ?? 0,
       creditos: 0,
       saldo_cta_cte: 0,
@@ -356,6 +363,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: a.cuit_proveedor || '',
         nombre_proveedor: a.nombre_proveedor || '',
         detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${esParcial ? ' (parcial - pend. conciliar)' : ''}`,
+        detalle_usuario: a.descripcion || null,
         debitos: esCobro ? 0 : monto,   // Pago = débito (dinero sale)
         creditos: esCobro ? monto : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
