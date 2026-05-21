@@ -75,6 +75,10 @@ export interface CashFlowRow {
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
   // Medio de pago
   medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
+  // Para extracto: texto limpio de comprobantes (sin proveedor mezclado)
+  comprobante_display?: string | null
+  // Empleado (solo para sueldos)
+  empleado_id?: string | null
 }
 
 // Filtros para Cash Flow
@@ -148,6 +152,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         moneda: f.moneda || null,
         tipo_cambio: f.tipo_cambio ?? 1,
         tc_pago: f.tc_pago ?? null,
+        comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
         grupo_pago_id: null,
       }
     })
@@ -197,6 +202,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_no_gravado: 0,
         imp_op_exentas: 0,
         imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
+        comprobante_display: fs.map(f => `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`).join(' + '),
         grupo_pago_id: grupoId,
         facturas_agrupadas: fs.length,
         ids_grupo: fs.map(f => f.id),
@@ -234,6 +240,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
         medio_pago: c.medio_pago || 'banco',
+        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,
         grupo_pago_id: null,
       }
     })
@@ -292,6 +299,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         creditos: 0,
         saldo_cta_cte: 0,
         estado: primera.estado || 'pendiente',
+        comprobante_display: [...new Set(cs.map(c => c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: cs.length,
         ids_grupo: cs.map(c => c.id),
@@ -319,6 +327,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       creditos: 0,
       saldo_cta_cte: 0,
       estado: p.estado ?? 'proyectado',
+      comprobante_display: `Saldo ${MESES_CASH[(p.mes ?? 1) - 1]} ${p.anio}`,
       empleado_id: p.empleado_id ?? null,
     }))
   }
@@ -350,7 +359,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         debitos: esCobro ? 0 : monto,   // Pago = débito (dinero sale)
         creditos: esCobro ? monto : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
-        estado: a.estado_pago || 'pendiente'
+        estado: a.estado_pago || 'pendiente',
+        comprobante_display: `${tipoLabel} ${a.descripcion || ''}`.trim() || null,
       }
     })
   }

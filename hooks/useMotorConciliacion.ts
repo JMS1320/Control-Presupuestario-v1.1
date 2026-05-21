@@ -475,7 +475,7 @@ export function useMotorConciliacion() {
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
               proveedor_nombre: provNombreCF,
-              comprobantes_pagados: matchCF.cashFlowRow.detalle || null,
+              comprobantes_pagados: matchCF.cashFlowRow.comprobante_display || null,
               ...extraIdsCF,
               ...extraCF
             })
@@ -567,7 +567,7 @@ export function useMotorConciliacion() {
                     const { data: fc } = await supabase
                       .schema('msa')
                       .from('comprobantes_arca')
-                      .select('id, categ, nro_cuenta, denominacion_emisor')
+                      .select('id, categ, nro_cuenta, denominacion_emisor, tipo_comprobante, numero_desde')
                       .eq('id', match.factura_id)
                       .single()
 
@@ -580,6 +580,11 @@ export function useMotorConciliacion() {
                       extraAnticipo.detalle = esParcial
                         ? `Pago parcial vía anticipo: ${match.descripcion || match.nombre_proveedor}`
                         : `Pago total vía anticipo: ${match.descripcion || match.nombre_proveedor}`
+                      // FC number for comprobantes_pagados
+                      const abrevFC = [1,6,11,51,201,206,211].includes(fc.tipo_comprobante) ? 'FC'
+                        : [2,7,12,52,202,207,212].includes(fc.tipo_comprobante) ? 'ND'
+                        : [3,8,13,53,203,208,213].includes(fc.tipo_comprobante) ? 'NC' : 'FC'
+                      extraAnticipo.comprobante_display = `${abrevFC} - ${fc.numero_desde || ''}`
 
                       // Anticipo → vinculado + conciliado en banco
                       await supabase
@@ -617,7 +622,7 @@ export function useMotorConciliacion() {
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
-                comprobantes_pagados: extraAnticipo.detalle || null,
+                comprobantes_pagados: extraAnticipo.comprobante_display || null,
                 comprobante_arca_id: extraAnticipo.comprobante_arca_id || null,
                 anticipo_id: extraAnticipo.anticipo_id || null,
                 nro_cuenta: extraAnticipo.nro_cuenta || null,
