@@ -448,10 +448,194 @@ Esto convierte AutoMejoras en un canal asincrono de comunicacion: el usuario esc
 4. **Primera ejecucion de prueba** manual para validar
 5. **Activar automatizacion** una vez validado
 
-### Pregunta final de Claude antes de implementar:
+### Pregunta Claude:
 
-Tengo todo claro para armar el `.bat` y la tarea programada. Solo dos cosas mas:
+> 1. Timeout por sesion: sugiero 45 minutos maximo. OK?
+> 2. Primera tarea: arrancamos con "documentar estructura BBDD" como default, o queres escribir en JMS.md primero?
 
-1. **Duracion maxima por sesion**: Task Scheduler necesita un timeout. Si una sesion se cuelga o entra en loop, cuanto tiempo maximo le damos antes de cortar? Sugiero 45 minutos como maximo por ejecucion.
+### Respuesta Usuario:
 
-2. **Primer contenido de JMS.md**: Queres escribir algo vos como primera tarea, o arrancamos con la tarea default de "documentar estructura completa de BBDD"?
+> "si se consume el credito en cada sesion hay algun problema? retomaria en la proxima sesion como objetivo, para la lista de primeras cosas: ideas para lograr esta continuidad intra sesion con modos de comunicacion de sesion a sesion. si se cuelga o corta cual podria ser el peligro?"
+> "esta ok. en JMS anotar esa primer tarea que yo la ordeno hasta nuevo aviso."
+
+### Respuesta Claude — Continuidad y riesgos:
+
+#### 10.1 — Que pasa si se consume el credito a mitad de sesion
+
+**No hay peligro.** Si Claude Code se queda sin creditos:
+
+- La sesion se corta limpiamente (no corrompe archivos)
+- Lo que ya escribio en `.md` queda guardado — cada `Write` es atomico
+- Lo que NO alcanzo a escribir simplemente no existe (no queda a medio escribir)
+- La proxima sesion retoma donde quedo, leyendo lo que ya se genero
+
+**El unico "costo"** es trabajo desperdiciado: si estaba razonando sobre algo y se corto antes de escribir la conclusion, ese razonamiento se pierde. Pero como cada ejecucion empieza leyendo los `.md` existentes, sabe que falta.
+
+#### 10.2 — Que pasa si se cuelga o se corta por timeout
+
+**Mismo principio: no hay peligro.** Escenarios:
+
+| Escenario | Que pasa | Peligro |
+|---|---|---|
+| Se corta por timeout (45 min) | Task Scheduler mata el proceso | Ninguno. Archivos ya escritos quedan. Proxima sesion retoma |
+| Se cuelga (loop infinito) | Task Scheduler lo mata al timeout | Ninguno. Solo desperdicio de tokens |
+| Crash de Claude Code | Proceso termina con error | Ninguno. Archivos escritos quedan |
+| PC se apaga | Proceso muere | Ninguno. Archivos escritos quedan |
+| Internet se cae | Claude Code falla al llamar API | Ninguno. Puede quedar un archivo parcial pero legible |
+
+**Por que no hay peligro**: AutoMejoras solo ESCRIBE archivos `.md` en su carpeta. No modifica codigo, no modifica BBDD. Lo peor que puede pasar es un archivo `.md` incompleto que se sobreescribe en la proxima sesion.
+
+#### 10.3 — Continuidad entre sesiones: el mecanismo
+
+Cada sesion de Claude Code no-interactivo empieza de cero (no tiene memoria de la anterior). La continuidad se logra asi:
+
+```
+SESION N termina:
+  → Escribe en NOVEDADES.md: "Hoy complete: schema public (15 tablas). Pendiente: schema msa."
+  → Escribe en AutoMejoras/bbdd/schema-public.md: documentacion completa
+  → Escribe en PROGRESO.md: checklist de que esta hecho y que falta
+
+SESION N+1 arranca:
+  → Lee JMS.md (hay tarea nueva del usuario?)
+  → Lee PROGRESO.md (que falta hacer?)
+  → Lee NOVEDADES.md (que hice ayer?)
+  → Continua donde quedo: "Pendiente schema msa → empiezo por ahi"
+```
+
+**Archivo clave para continuidad: `PROGRESO.md`**
+
+```markdown
+# PROGRESO AutoMejoras
+
+## BBDD — Estructura
+- [x] Schema public: 15 tablas documentadas
+- [x] Schema msa: 8 tablas documentadas
+- [ ] Schema ma: pendiente
+- [ ] Schema pam: no existe aun (ver nota)
+- [ ] Relaciones FK: pendiente
+- [ ] Triggers y funciones: pendiente
+
+## Codigo — Componentes
+- [ ] vista-extracto-bancario.tsx
+- [ ] vista-cash-flow.tsx
+- [ ] ...
+
+## Auditorias
+- [ ] Contrastar schema-public.md vs BD real
+- [ ] ...
+```
+
+Cada sesion actualiza este archivo al final. La siguiente lo lee al principio.
+
+#### 10.4 — Protocolo completo de cada sesion
+
+```
+1. Leer JMS.md          → hay tarea nueva? priorizar
+2. Leer PROGRESO.md     → que falta? donde seguir
+3. Leer NOVEDADES.md    → contexto de la sesion anterior
+4. Trabajar             → documentar, auditar, queries
+5. Durante la sesion    → re-leer JMS.md cada ~10 min por si el usuario escribio algo
+6. Al terminar          → actualizar PROGRESO.md + NOVEDADES.md
+7. Si se corta antes    → lo que ya escribio queda, la proxima retoma
+```
+
+---
+
+#### 10.5 — Pregunta Claude: timeout 45 min OK?
+
+**Respuesta Usuario:**
+> "no le podria time auto, dejaria que se corte cuando no haya tokens. hay alguna manera de verificar cuantos tokens quedan? asi se documenta todo y nunca se consumen los ultimos minimos tokens. digamos nunca usar el equivalente a 6 mensajes."
+
+**Respuesta Claude:**
+
+No hay forma de consultar cuantos tokens quedan del plan. No existe un API para eso. Claude Code simplemente falla cuando se agotan.
+
+El timeout NO es para controlar consumo de tokens — es **proteccion contra loops infinitos**. Si el programa se cuelga en un loop, sin timeout podria estar 8 horas intentando, gastando tokens sin producir nada util. 45 minutos es un seguro: si en 45 min no termino, algo anda mal.
+
+Si la sesion termina productivamente en 10 minutos, perfecto — no llega al timeout. El timeout solo interviene si algo se rompe.
+
+Sobre la reserva de 6 mensajes: no se puede implementar programaticamente. Lo que si se puede hacer es instruir al programa en el prompt: "mantene tus sesiones cortas y enfocadas, no intentes documentar todo en una sola sesion, prioriza escribir resultados parciales temprano para que no se pierdan si se corta".
+
+**Decision**: Timeout de 45 minutos como seguro anti-loop. El programa corre hasta que termina naturalmente o hasta que se agotan los tokens.
+
+---
+
+## 11. DECISIONES FINALES CONFIRMADAS
+
+| Parametro | Valor |
+|---|---|
+| Timeout por sesion | 45 minutos (seguro anti-loop, no control de consumo) |
+| Si se corta | Sin peligro. Retoma en proxima sesion |
+| Continuidad | Via PROGRESO.md + NOVEDADES.md |
+| Primera tarea | Documentar estructura completa de BBDD |
+| Comunicacion | JMS.md (usuario→programa) / NOVEDADES.md (programa→usuario) / PROGRESO.md (estado) |
+| Modelo | Sonnet |
+| Frecuencia | Cada 5 horas automatico via Task Scheduler |
+| Pausa | Archivo AutoMejoras/PAUSA — si existe, no corre |
+| Limite tokens | Solo allowance base plan Pro. No usar extra comprado |
+| BBDD | Solo SELECT. Prohibido cualquier modificacion |
+| Archivos | Solo escribir dentro de AutoMejoras/. Prohibido tocar resto |
+| Alcance | Solo data 2026. Revisar de hoy hacia atras |
+
+---
+
+## 12. LISTA DE PRIORIDADES — Lo que el usuario pidio como inmediato
+
+Extraido textualmente de las instrucciones del usuario durante la conversacion del 2026-05-21:
+
+### PRIORIDAD 1 — Implementar AutoMejoras
+
+1. Crear archivos base: `JMS.md`, `NOVEDADES.md`, `PROGRESO.md`, `CONFIG.md`
+2. Crear el `.bat` que invoca Claude Code Sonnet con instrucciones correctas
+3. Crear tarea en Task Scheduler cada 5 horas
+4. Primera ejecucion de prueba manual para validar
+5. Activar automatizacion
+
+### PRIORIDAD 2 — Primera tarea del programa: BBDD
+
+> "empezar por BBDD si, calculo luego codigo mas queries para entender. siempre documentar."
+
+1. Listar todos los schemas y tablas
+2. Para cada tabla: columnas, tipos, defaults, constraints, FK
+3. Generar diagrama de relaciones en formato texto
+4. Documentar triggers y funciones
+5. Todo en `AutoMejoras/bbdd/`
+
+### PRIORIDAD 3 — Continuidad entre sesiones
+
+> "ideas para lograr esta continuidad intra sesion con modos de comunicacion de sesion a sesion"
+
+El mecanismo basico esta definido (PROGRESO.md + NOVEDADES.md + JMS.md). Pero el usuario pidio que sea una tarea del propio programa generar ideas para mejorar este mecanismo.
+
+### PRIORIDAD 4 — Documentacion del codigo
+
+> "luego codigo mas queries para entender"
+
+Despues de BBDD completa:
+- Componentes, hooks, APIs
+- Flujos de datos
+- Queries que contrasten documentacion vs realidad
+
+### PRIORIDAD 5 — Auditorias y listas
+
+> "dar lista de tareas/objetivos que el usuario espera de la app"
+> "de cosas pendientes (contrastar listas de pendientes documentadas desde el presente hacia el pasado)"
+> "de ideas de mejoras"
+> "de ideas de correcciones sobre cosas que supuestamente ya las queriamos asi pero se predetectan bugs"
+
+1. Pendientes vigentes vs resueltos (contrastar documentacion)
+2. Ideas de mejoras (analisis propio)
+3. Bugs pre-detectados (contrastar intencion vs codigo)
+4. Todo partiendo de data 2026, CLAUDE.md de hoy hacia atras
+
+### PRIORIDAD 6 — Estructura de documentacion
+
+> "dar un mapa de la estructura de documentacion desde lo micro hasta lo macro"
+> "un indice total"
+
+- Indice general (`INDICE.md`)
+- Cuadros sinopticos de arquitectura
+- Explicacion jerarquica
+- Cada archivo autocontenido y extraible
+
+**Estado: CONSENSUADO. Listo para implementar.**
