@@ -256,3 +256,139 @@ Si el usuario da el OK:
 - **MCP Supabase en read-only**: las queries a BBDD son solo SELECT. Cualquier cambio requiere intervencion manual del usuario.
 - **No puede ejecutar la app**: no puede abrir un browser ni testear la UI. Solo puede auditar codigo y datos.
 - **Enforcement de "no modificar"**: es por instruccion en el prompt, no por restriccion de sistema. El programa PODRIA modificar archivos fuera de AutoMejoras/ si el prompt no es suficientemente claro. Mitigacion: tools restringidas + instrucciones explicitas + revision de logs.
+
+---
+
+## 8. PREGUNTAS Y RESPUESTAS — Sesion 2026-05-21
+
+### Pregunta Claude (seccion 4 del documento):
+
+> De las 3 opciones (A/B/C), cual te parece mas razonable para arrancar? Mi recomendacion: Opcion A para probar el concepto, migrar a C si funciona bien.
+> En que horario preferis que corra?
+> Solo SELECT a Supabase?
+> Empezar por BBDD o codigo?
+> Los pendientes en CLAUDE.md son muy extensos (2500 lineas). Confias en que el programa identifique que esta vigente vs obsoleto, o preferis darle una lista curada?
+> Mas preguntas?
+
+### Respuesta Usuario:
+
+> "entre a y b para el principio entiendo que es A. pero desconozco la diferencia entre a y b. por ej: ambas pueden pedir info a BBDD y crear un diagrama de como es la estructura de datos? y en base a lo obtenido hacer preguntas, o hacer ciertas queries para constatar cosas? razonar, pensar, auditar sobre lo recibido? idem hacia codigo."
+>
+> "no conozco la opcion C."
+>
+> "si la idea es que a las 10 pm; 3 am y 8 am puede trabajar hasta agotar limite. no debe usar mi limite extra pagado aparte. luego incluso creo que cada 5 horas deberia prender en realidad. siempre cada 5 horas y yo pararlo cuando quiero trabajar."
+>
+> "esto debes explicarmelo bien, restricciones y posibilidades de SELECT y OTRAS. nunca modificar en ninguna situacion."
+>
+> "empezar por BBDD si, calculo luego codigo mas queryes para entender. siempre documentar."
+>
+> "claude.md habria que tomar desde hoy hacia el pasado. enfocarnos siempre en data de 2026 para empezar. los archivos no modificados durante el 2026 no los usemos por ahora."
+
+### Respuesta Claude — Aclaraciones:
+
+#### 8.1 — Diferencia real entre Opcion A y Opcion B
+
+**La capacidad es identica.** Ambas opciones pueden hacer exactamente lo mismo:
+
+- Consultar BBDD via Supabase (queries SQL)
+- Leer todo el codigo fuente
+- Razonar, pensar, auditar sobre lo que recibe
+- Generar diagramas en texto/markdown
+- Hacer queries de constatacion (ej: "la tabla X tiene FK a Y? dejame verificar...")
+- Escribir documentacion en archivos .md
+
+La diferencia es **como se arranca el proceso**, no que puede hacer:
+
+| Aspecto | Opcion A: CLI directo | Opcion B: Script Node SDK |
+|---|---|---|
+| **Que es** | Un archivo `.bat` que ejecuta `claude -p "instrucciones..."` | Un programa `.js` que usa la libreria de Claude como codigo |
+| **Analogia** | Como abrir CMD y escribir un comando | Como hacer un programa que automatiza varios comandos |
+| **Setup** | 5 minutos — crear un `.bat` y programar en Task Scheduler | 30-60 minutos — instalar SDK, escribir script, testear |
+| **Capacidad** | Identica | Identica |
+| **Ventaja** | Simplicidad — si funciona, no hay nada mas que hacer | Mas control — puede encadenar pasos, manejar errores, forzar restricciones por codigo |
+| **Desventaja** | Menos control sobre el flujo (una sola instruccion larga) | Mas complejo de mantener |
+| **Cuando conviene** | Para probar si el concepto funciona | Cuando el concepto ya funciona y queremos refinarlo |
+
+**Conclusion**: Empezar con A. Si despues de unas semanas se necesita mas control, migrar a B.
+
+**Opcion C** (hibrida) era simplemente un `.bat` mas inteligente que lee los archivos que genero ayer para no repetir trabajo. Es un punto intermedio — no es una opcion separada, es A evolucionada. Por lo tanto descartamos C como opcion independiente y la consideramos una mejora natural de A si fuera necesario.
+
+#### 8.2 — Frecuencia: cada 5 horas, pausable
+
+**Acordado:**
+- Ejecucion automatica cada 5 horas (aprox 4-5 veces por dia)
+- El usuario lo pausa cuando quiere trabajar en Claude Code interactivo
+- No debe consumir el limite extra pagado aparte (solo el allowance base del plan Pro)
+
+**Mecanismo de pausa**: Un archivo `AutoMejoras/PAUSA` (sin extension). Si existe, el `.bat` no ejecuta Claude y se cierra silenciosamente. Para pausar: crear el archivo. Para reanudar: borrarlo.
+
+```
+# Pausar
+echo. > AutoMejoras/PAUSA
+
+# Reanudar
+del AutoMejoras/PAUSA
+```
+
+**Nota sobre limites Plan Pro**: El plan Pro tiene un rate limit diario. Claude Code no-interactivo consume del mismo pool que el uso interactivo. Si AutoMejoras agota el limite, el usuario no podra usar Claude Code interactivo hasta que se resetee. Por eso la pausa manual es critica.
+
+#### 8.3 — Queries a BBDD: que puede y que no puede hacer
+
+**Herramienta disponible**: `mcp__supabase__execute_sql` — ejecuta SQL arbitrario contra la base de datos Supabase del proyecto.
+
+**Lo que SI puede hacer (y hara):**
+
+| Operacion | Ejemplo | Para que |
+|---|---|---|
+| `SELECT` | `SELECT * FROM information_schema.columns WHERE table_name = 'msa_galicia'` | Documentar estructura de tablas |
+| `SELECT` con JOINs | `SELECT c.column_name, tc.constraint_type FROM ... JOIN ...` | Mapear relaciones FK |
+| `SELECT COUNT(*)` | `SELECT estado, COUNT(*) FROM msa.comprobantes_arca GROUP BY estado` | Auditar datos, detectar inconsistencias |
+| `SELECT` con filtros | `SELECT * FROM msa_galicia WHERE categ IS NULL AND estado = 'conciliado'` | Buscar anomalias |
+| Vistas de sistema | `SELECT schemaname, tablename FROM pg_tables` | Listar schemas y tablas |
+| Funciones/triggers | `SELECT * FROM information_schema.triggers` | Documentar automatismos BD |
+| Constraints | `SELECT * FROM information_schema.table_constraints` | Documentar reglas de integridad |
+
+**Lo que NO puede hacer (prohibido):**
+
+| Operacion | Ejemplo | Por que no |
+|---|---|---|
+| `INSERT` | `INSERT INTO ...` | Modifica datos |
+| `UPDATE` | `UPDATE msa_galicia SET ...` | Modifica datos |
+| `DELETE` | `DELETE FROM ...` | Elimina datos |
+| `DROP` | `DROP TABLE ...` | Destruye estructura |
+| `ALTER` | `ALTER TABLE ...` | Modifica estructura |
+| `CREATE` | `CREATE TABLE ...` | Crea estructura |
+| `TRUNCATE` | `TRUNCATE ...` | Vacia tablas |
+| Funciones mutantes | `SELECT borrar_todo()` | Si existiera alguna funcion que modifica datos |
+
+**Enforcement**: En las instrucciones del prompt se dira explicitamente: "Solo ejecutar queries SELECT. Nunca INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, ni TRUNCATE. Si necesitas verificar algo que requiere modificacion, documentar la query propuesta para que el usuario la ejecute manualmente."
+
+**Nota tecnica**: El MCP Supabase esta configurado en modo read-only (`mcp-mode: read-only` en la config). Sin embargo, `execute_sql` tecnicamente puede ejecutar cualquier SQL. La proteccion real es la instruccion en el prompt + la revision de logs. Para mayor seguridad, se podria crear un rol PostgreSQL de solo lectura, pero eso es una mejora futura.
+
+#### 8.4 — Orden de trabajo: BBDD primero
+
+**Acordado:**
+1. **Fase 1**: BBDD completa — schemas, tablas, columnas, relaciones, constraints, triggers
+2. **Fase 2**: Codigo — componentes, hooks, APIs, leyendo archivos fuente
+3. **Fase 3**: Cruce — queries que contrasten lo documentado en codigo vs lo real en BBDD
+4. **Siempre documentar** — cada ejecucion deja su output en AutoMejoras/
+
+#### 8.5 — Alcance temporal: 2026 en adelante
+
+**Acordado:**
+- CLAUDE.md: revisar de hoy (2026-05-21) hacia atras, solo contenido de 2026
+- Archivos de codigo: solo los modificados durante 2026 (verificar con `git log --since="2026-01-01"`)
+- Documentacion legacy (2025): ignorar por ahora
+- Memorias: las vigentes (carpeta memory/ actual) si se consideran
+
+#### 8.6 — Preguntas adicionales de Claude
+
+Antes de implementar, necesito confirmar:
+
+1. **Task Scheduler o manual?** Windows Task Scheduler puede programar la ejecucion cada 5 horas automaticamente. O preferis arrancarlo manualmente cada vez que quieras (ej: antes de ir a dormir)?
+
+2. **Modelo**: Claude Code puede usar Opus (mas inteligente, mas lento, gasta mas tokens) o Sonnet (mas rapido, gasta menos, menos profundo). Para AutoMejoras que prioriza analisis y documentacion, **Sonnet seria mas eficiente** en tokens. Opus para tareas que requieren mas razonamiento. Cual preferis, o un mix?
+
+3. **Largo de cada ejecucion**: Cada invocacion tiene un limite natural de contexto (~200K tokens). Una sesion que lea toda la BBDD + genere docs puede durar 10-30 minutos y consumir el equivalente a 3-5 mensajes del plan. **Te parece bien ese nivel de consumo por ejecucion?**
+
+4. **Revision**: Cuando AutoMejoras genere documentacion, queres que te avise (ej: un archivo `NOVEDADES.md` con lo ultimo) o simplemente que vaya llenando la carpeta y vos lo revisas cuando quieras?
