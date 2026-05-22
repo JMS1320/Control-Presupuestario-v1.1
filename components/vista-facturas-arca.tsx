@@ -388,6 +388,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
+  // Cancelación FC/NC
+  const [modalCancelacionNC, setModalCancelacionNC] = useState<{
+    tipo: 'fc_con_nc' | 'nc_con_descuento'
+    facturas: FacturaArca[]        // FCs o NCs seleccionadas por el usuario
+    disponibles: FacturaArca[]     // NCs disponibles (escenario A) o FCs con descuento (escenario B)
+    seleccionadas: Set<string>     // IDs elegidos por el usuario en el modal
+    restoCambioEstado: FacturaArca[] // Facturas que NO son parte de la cancelación y siguen flujo normal
+  } | null>(null)
+
   // ECHEQ — estado del modal y datos del cheque pendiente
   const [mostrarModalEcheq, setMostrarModalEcheq] = useState(false)
   const [echeqForm, setEcheqForm] = useState({ banco: '', numero: '', fechaEmision: '', fechaCobro: '' })
@@ -7954,6 +7963,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const sueldosPendiente = sueldosPagos.filter(s => s.estado === 'pendiente' && matchBusquedaSueldo(s))
               .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
+            // Helper para identificar Notas de Crédito por tipo_comprobante AFIP
+            const esNotaCredito = (f: FacturaArca) => [3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante)
+            const esNotaDebito = (f: FacturaArca) => [2, 7, 12, 52, 202, 207, 212].includes(f.tipo_comprobante)
+            const abrevTipoComp = (f: FacturaArca) => esNotaCredito(f) ? 'NC' : esNotaDebito(f) ? 'ND' : 'FC'
+
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string, echeqFecha?: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
@@ -7969,6 +7983,74 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 const sinFC = facturasACambiar.filter(f => f.fc !== 'Sí')
                 if (sinFC.length > 0) {
                   toast.warning(`${sinFC.length} factura(s) sin comprobante físico recibido (FC ≠ Sí)`, { duration: 5000 })
+                }
+              }
+
+              // ── INTERCEPTAR CANCELACIÓN FC/NC ──────────────────────────────────
+              if (nuevoEstado === 'pagar') {
+                const fcsSeleccionadas = facturasACambiar.filter(f => !esNotaCredito(f))
+                const ncsSeleccionadas = facturasACambiar.filter(f => esNotaCredito(f))
+
+                // ESCENARIO A: Usuario seleccionó FCs → buscar NCs pendientes del mismo CUIT
+                if (fcsSeleccionadas.length > 0 && ncsSeleccionadas.length === 0) {
+                  const cuitsFC = [...new Set(fcsSeleccionadas.map(f => f.cuit))]
+                  const ncsDisponibles = facturasPagos.filter(f =>
+                    esNotaCredito(f) &&
+                    cuitsFC.includes(f.cuit) &&
+                    (f.estado === 'pendiente' || f.estado === 'pagar') &&
+                    !ids.includes(f.id)
+                  )
+                  if (ncsDisponibles.length > 0) {
+                    const opcion = window.confirm(
+                      `Hay ${ncsDisponibles.length} Nota(s) de Crédito pendiente(s) del mismo proveedor:\n\n` +
+                      ncsDisponibles.map(nc => `• NC ${nc.numero_desde || ''} — ${nc.denominacion_emisor} — $${Math.abs(nc.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `\n\n¿Desea aplicar las NC para cancelar?` +
+                      `\n\n[Aceptar] = Seleccionar NC a aplicar\n[Cancelar] = Continuar sin aplicar NC`
+                    )
+                    if (opcion) {
+                      setModalCancelacionNC({
+                        tipo: 'fc_con_nc',
+                        facturas: fcsSeleccionadas,
+                        disponibles: ncsDisponibles,
+                        seleccionadas: new Set(ncsDisponibles.map(nc => nc.id)),
+                        restoCambioEstado: [] // se determinará al procesar
+                      })
+                      return
+                    }
+                    // Si dice No → continúa flujo normal de pagar
+                  }
+                }
+
+                // ESCENARIO B: Usuario seleccionó NCs → buscar FCs conciliadas con descuento_aplicado
+                if (ncsSeleccionadas.length > 0 && fcsSeleccionadas.length === 0) {
+                  const cuitsNC = [...new Set(ncsSeleccionadas.map(f => f.cuit))]
+                  // Buscar en BD FCs conciliadas del mismo CUIT con descuento aplicado
+                  const { data: fcsConDescuento } = await supabase
+                    .schema(schemaName)
+                    .from('comprobantes_arca')
+                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore')
+                    .in('cuit', cuitsNC)
+                    .eq('estado', 'conciliado')
+                    .gt('descuento_aplicado', 0)
+
+                  if (fcsConDescuento && fcsConDescuento.length > 0) {
+                    const opcion = window.confirm(
+                      `Hay ${fcsConDescuento.length} Factura(s) conciliada(s) del mismo proveedor con descuento aplicado:\n\n` +
+                      fcsConDescuento.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `\n\n¿Desea aplicar las NC contra estos descuentos?` +
+                      `\n\n[Aceptar] = Seleccionar FC con descuento\n[Cancelar] = Continuar sin aplicar`
+                    )
+                    if (opcion) {
+                      setModalCancelacionNC({
+                        tipo: 'nc_con_descuento',
+                        facturas: ncsSeleccionadas,
+                        disponibles: fcsConDescuento as unknown as FacturaArca[],
+                        seleccionadas: new Set(fcsConDescuento.map((fc: any) => fc.id)),
+                        restoCambioEstado: []
+                      })
+                      return
+                    }
+                  }
                 }
               }
 
@@ -9675,6 +9757,233 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Cancelación FC/NC */}
+      {modalCancelacionNC && (
+        <Dialog open={true} onOpenChange={() => setModalCancelacionNC(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {modalCancelacionNC.tipo === 'fc_con_nc'
+                  ? '🔄 Cancelar FC con Notas de Crédito'
+                  : '🔄 Aplicar NC contra descuentos'}
+              </DialogTitle>
+              <DialogDescription>
+                {modalCancelacionNC.tipo === 'fc_con_nc'
+                  ? 'Seleccione las NC que desea aplicar para cancelar las facturas'
+                  : 'Seleccione las FC con descuento contra las cuales aplicar las NC'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Facturas seleccionadas por el usuario */}
+            <div className="space-y-3">
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <h4 className="font-semibold text-sm mb-2">
+                  {modalCancelacionNC.tipo === 'fc_con_nc' ? '📄 Facturas a cancelar:' : '📄 Notas de Crédito a aplicar:'}
+                </h4>
+                {modalCancelacionNC.facturas.map(f => (
+                  <div key={f.id} className="flex justify-between text-sm py-1">
+                    <span>{[3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante) ? 'NC' : 'FC'} {f.numero_desde} — {f.denominacion_emisor}</span>
+                    <span className="font-medium">${Math.abs(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+                <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
+                  <span>Total:</span>
+                  <span>${modalCancelacionNC.facturas.reduce((s, f) => s + Math.abs(f.imp_total), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Comprobantes disponibles para matchear */}
+              <div className="bg-amber-50 p-3 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-semibold text-sm">
+                    {modalCancelacionNC.tipo === 'fc_con_nc' ? '📋 NC disponibles:' : '📋 FC con descuento aplicado:'}
+                  </h4>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs h-6"
+                    onClick={() => {
+                      const allIds = modalCancelacionNC.disponibles.map(d => d.id)
+                      const todosSeleccionados = allIds.every(id => modalCancelacionNC.seleccionadas.has(id))
+                      setModalCancelacionNC(prev => prev ? {
+                        ...prev,
+                        seleccionadas: todosSeleccionados ? new Set() : new Set(allIds)
+                      } : null)
+                    }}
+                  >
+                    {modalCancelacionNC.disponibles.every(d => modalCancelacionNC.seleccionadas.has(d.id)) ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                  </Button>
+                </div>
+                {modalCancelacionNC.disponibles.map(d => {
+                  const monto = modalCancelacionNC.tipo === 'fc_con_nc'
+                    ? Math.abs(d.imp_total)
+                    : (d.descuento_aplicado || 0)
+                  return (
+                    <label key={d.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-amber-100 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={modalCancelacionNC.seleccionadas.has(d.id)}
+                        onChange={() => {
+                          setModalCancelacionNC(prev => {
+                            if (!prev) return null
+                            const nuevo = new Set(prev.seleccionadas)
+                            if (nuevo.has(d.id)) nuevo.delete(d.id)
+                            else nuevo.add(d.id)
+                            return { ...prev, seleccionadas: nuevo }
+                          })
+                        }}
+                      />
+                      <span className="flex-1">
+                        {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC' : 'FC'} {d.numero_desde} — {d.denominacion_emisor}
+                      </span>
+                      <span className="font-medium text-red-600">
+                        ${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </label>
+                  )
+                })}
+                <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
+                  <span>Total seleccionado:</span>
+                  <span className="text-red-600">
+                    ${modalCancelacionNC.disponibles
+                      .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
+                      .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
+                      .toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Resumen de la operación */}
+              {(() => {
+                const totalFacturas = modalCancelacionNC.facturas.reduce((s, f) => s + Math.abs(f.imp_total), 0)
+                const totalDisponible = modalCancelacionNC.disponibles
+                  .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
+                  .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
+                const saldoRestante = totalFacturas - totalDisponible
+
+                return (
+                  <div className={`p-3 rounded-lg text-sm ${saldoRestante <= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
+                    <div className="flex justify-between">
+                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'FC' : 'NC'}:</span>
+                      <span>${totalFacturas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC aplicadas' : 'descuento disponible'}:</span>
+                      <span className="text-red-600">-${totalDisponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="border-t mt-1 pt-1 flex justify-between font-bold">
+                      <span>{saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total'}</span>
+                      <span className={saldoRestante <= 0 ? 'text-green-600' : 'text-orange-600'}>
+                        {saldoRestante > 0
+                          ? `$${saldoRestante.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                          : '✓ $0,00'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setModalCancelacionNC(null)}>
+                Cancelar
+              </Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  // procesarCancelacionNC is defined inside the IIFE — we need to handle it here
+                  // Since the modal state has all data, we process directly
+                  const modal = modalCancelacionNC
+                  if (!modal) return
+                  const idsSeleccionados = Array.from(modal.seleccionadas)
+                  if (idsSeleccionados.length === 0) {
+                    alert('Selecciona al menos un comprobante')
+                    return
+                  }
+
+                  const procesarAsync = async () => {
+                    try {
+                      if (modal.tipo === 'fc_con_nc') {
+                        const ncsAplicar = modal.disponibles.filter(nc => modal.seleccionadas.has(nc.id))
+                        let saldoNC = ncsAplicar.reduce((sum, nc) => sum + Math.abs(nc.imp_total), 0)
+
+                        for (const fc of modal.facturas) {
+                          if (saldoNC <= 0) break
+                          const montoFC = fc.imp_total
+                          if (saldoNC >= montoFC) {
+                            await supabase.schema(schemaName).from('comprobantes_arca')
+                              .update({
+                                estado: 'conciliado',
+                                monto_a_abonar: 0,
+                                detalle: `Cancelada con NC ${ncsAplicar.map(nc => nc.numero_desde || '').join(', ')}`
+                              })
+                              .eq('id', fc.id)
+                            saldoNC -= montoFC
+                          } else {
+                            const nuevoMonto = montoFC - saldoNC
+                            await supabase.schema(schemaName).from('comprobantes_arca')
+                              .update({
+                                monto_a_abonar: nuevoMonto,
+                                detalle: `Descuento parcial NC ${ncsAplicar.map(nc => nc.numero_desde || '').join(', ')}`
+                              })
+                              .eq('id', fc.id)
+                            saldoNC = 0
+                          }
+                        }
+
+                        for (const nc of ncsAplicar) {
+                          await supabase.schema(schemaName).from('comprobantes_arca')
+                            .update({
+                              estado: 'conciliado',
+                              monto_a_abonar: 0,
+                              detalle: `Cancela FC ${modal.facturas.map(f => f.numero_desde || '').join(', ')}`
+                            })
+                            .eq('id', nc.id)
+                        }
+
+                        toast.success(`Cancelación aplicada: ${modal.facturas.length} FC + ${ncsAplicar.length} NC`, { duration: 5000 })
+                      } else {
+                        // Escenario B
+                        const fcsMatchear = modal.disponibles.filter(fc => modal.seleccionadas.has(fc.id))
+                        for (const nc of modal.facturas) {
+                          await supabase.schema(schemaName).from('comprobantes_arca')
+                            .update({
+                              estado: 'conciliado',
+                              monto_a_abonar: 0,
+                              detalle: `Cancela descuento FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
+                            })
+                            .eq('id', nc.id)
+                        }
+
+                        toast.success(`${modal.facturas.length} NC conciliada(s) contra descuentos`, { duration: 5000 })
+                      }
+
+                      // Actualizar estado local
+                      const todosIdsAfectados = new Set([
+                        ...modal.facturas.map(f => f.id),
+                        ...Array.from(modal.seleccionadas)
+                      ])
+                      setFacturasPagos(prev => prev.map(f =>
+                        todosIdsAfectados.has(f.id) ? { ...f, estado: 'conciliado', monto_a_abonar: 0 } : f
+                      ))
+                      setFacturasSeleccionadasPagos(new Set())
+                      setModalCancelacionNC(null)
+                      cargarFacturas()
+                    } catch (error) {
+                      console.error('Error procesando cancelación NC:', error)
+                      alert('Error al procesar la cancelación')
+                    }
+                  }
+                  procesarAsync()
+                }}
+              >
+                ✓ Aplicar Cancelación
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Modal ECHEQ */}
       <Dialog open={mostrarModalEcheq} onOpenChange={setMostrarModalEcheq}>
