@@ -381,14 +381,77 @@ del AutoMejoras/PAUSA
 - Documentacion legacy (2025): ignorar por ahora
 - Memorias: las vigentes (carpeta memory/ actual) si se consideran
 
-#### 8.6 — Preguntas adicionales de Claude
+#### 8.6 — Preguntas adicionales de Claude y respuestas del usuario
 
-Antes de implementar, necesito confirmar:
+**Pregunta 1**: Task Scheduler o manual?
+**Respuesta**: Automatico. Que se active cada 5 horas hasta consumir limite. No usar el limite extra comprado aparte.
 
-1. **Task Scheduler o manual?** Windows Task Scheduler puede programar la ejecucion cada 5 horas automaticamente. O preferis arrancarlo manualmente cada vez que quieras (ej: antes de ir a dormir)?
+**Pregunta 2**: Modelo Opus o Sonnet?
+**Respuesta**: Sonnet.
 
-2. **Modelo**: Claude Code puede usar Opus (mas inteligente, mas lento, gasta mas tokens) o Sonnet (mas rapido, gasta menos, menos profundo). Para AutoMejoras que prioriza analisis y documentacion, **Sonnet seria mas eficiente** en tokens. Opus para tareas que requieren mas razonamiento. Cual preferis, o un mix?
+**Pregunta 3**: Consumo ~3-5 mensajes por ejecucion OK?
+**Respuesta**: Si, pero si luego se ve que conviene hacer algunos mas largos, se reevalua.
 
-3. **Largo de cada ejecucion**: Cada invocacion tiene un limite natural de contexto (~200K tokens). Una sesion que lea toda la BBDD + genere docs puede durar 10-30 minutos y consumir el equivalente a 3-5 mensajes del plan. **Te parece bien ese nivel de consumo por ejecucion?**
+**Pregunta 4**: Como comunicar novedades?
+**Respuesta del usuario**:
+> "en novedades.md puedes dejarme tus comentarios, preguntas, respuestas. en JMS.md yo te dejare pedidos, objetivos, tareas para que vallas haciendo en tus sesiones. osea que la primer regla es ver JMS.md por actualizaciones y si las hay ver que te deje anotado. si escribo algo durante tu sesion debemos poder interactuar en vivo."
 
-4. **Revision**: Cuando AutoMejoras genere documentacion, queres que te avise (ej: un archivo `NOVEDADES.md` con lo ultimo) o simplemente que vaya llenando la carpeta y vos lo revisas cuando quieras?
+---
+
+## 9. DECISIONES CONFIRMADAS — Resumen ejecutivo
+
+| Parametro | Valor |
+|---|---|
+| **Opcion** | A (CLI directo con `.bat` + Task Scheduler) |
+| **Modelo** | Sonnet (eficiente en tokens) |
+| **Frecuencia** | Cada 5 horas, automatico via Task Scheduler |
+| **Pausa** | Archivo `AutoMejoras/PAUSA` — si existe, no corre |
+| **Limite** | Solo allowance base del plan Pro. No usar limite extra comprado |
+| **Queries BBDD** | Solo SELECT. Prohibido INSERT/UPDATE/DELETE/DROP/ALTER/CREATE |
+| **Modificar archivos** | Solo dentro de `AutoMejoras/`. Prohibido tocar codigo, config, o cualquier otro archivo |
+| **Fase 1** | BBDD: schemas, tablas, relaciones, constraints, datos |
+| **Fase 2** | Codigo: componentes, hooks, APIs, flujos |
+| **Fase 3** | Cruce: contrastar documentacion vs realidad con queries |
+| **Alcance temporal** | Solo data 2026. Archivos no modificados en 2026 se ignoran |
+| **CLAUDE.md** | Revisar de hoy hacia atras, solo contenido 2026 |
+
+### 9.1 — Sistema de comunicacion bidireccional
+
+```
+AutoMejoras/
+  JMS.md          ← El usuario escribe aca: pedidos, objetivos, tareas, feedback
+  NOVEDADES.md    ← AutoMejoras escribe aca: hallazgos, preguntas, respuestas, progreso
+```
+
+**Protocolo de cada ejecucion:**
+1. **Primero**: Leer `JMS.md` — si tiene contenido nuevo, priorizar lo que el usuario pidio
+2. **Segundo**: Si el usuario esta escribiendo durante la sesion (archivo cambia), leer y responder en vivo
+3. **Tercero**: Hacer el trabajo programado (documentar, auditar, etc.)
+4. **Ultimo**: Escribir en `NOVEDADES.md` lo que se hizo, preguntas pendientes, hallazgos
+
+### 9.2 — Interaccion en vivo
+
+Si el usuario escribe en `JMS.md` mientras AutoMejoras esta corriendo:
+- AutoMejoras debe detectar el cambio (re-leer el archivo periodicamente durante la sesion)
+- Responder en `NOVEDADES.md` inmediatamente
+- Ajustar el trabajo en curso segun lo que el usuario pidio
+
+Esto convierte AutoMejoras en un canal asincrono de comunicacion: el usuario escribe en JMS.md, AutoMejoras responde en NOVEDADES.md, como un chat lento por archivos.
+
+---
+
+## 10. PROXIMOS PASOS INMEDIATOS
+
+1. **Crear los archivos base**: `JMS.md`, `NOVEDADES.md`, `CONFIG.md`
+2. **Crear el `.bat`** que invoca Claude Code con las instrucciones correctas
+3. **Crear la tarea en Task Scheduler** cada 5 horas
+4. **Primera ejecucion de prueba** manual para validar
+5. **Activar automatizacion** una vez validado
+
+### Pregunta final de Claude antes de implementar:
+
+Tengo todo claro para armar el `.bat` y la tarea programada. Solo dos cosas mas:
+
+1. **Duracion maxima por sesion**: Task Scheduler necesita un timeout. Si una sesion se cuelga o entra en loop, cuanto tiempo maximo le damos antes de cortar? Sugiero 45 minutos como maximo por ejecucion.
+
+2. **Primer contenido de JMS.md**: Queres escribir algo vos como primera tarea, o arrancamos con la tarea default de "documentar estructura completa de BBDD"?
