@@ -113,6 +113,65 @@ Así el cierre obligatorio (PROGRESO + INDICE + NOVEDADES) no es el único momen
 
 ---
 
+## Archivos locales (no van al repo) — cómo recrearlos (2026-05-22)
+
+Estos archivos están en `.gitignore` por seguridad. Si se clona el repo en otra PC, hay que crearlos manualmente.
+
+### 1. `.mcp.json` (raíz del proyecto)
+
+Ruta: `D:\Users\josem\Documents\Jose\Automatizarr\Claude\Control-Presupuestario-v1.1\.mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--project-ref=lyojiaglcictmboqwxfm",
+        "--read-only"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "(poner el token real aquí)"
+      }
+    }
+  }
+}
+```
+
+**Nota**: `--read-only` se agrega/quita con los scripts pausar/reanudar. El token de Supabase no se documenta por seguridad — pedirlo al usuario.
+
+### 2. `.claude/hooks/restrict-automejoras.sh`
+
+Ruta: `D:\Users\josem\Documents\Jose\Automatizarr\Claude\Control-Presupuestario-v1.1\.claude\hooks\restrict-automejoras.sh`
+
+Crear la carpeta `.claude/hooks/` si no existe.
+
+```bash
+#!/bin/bash
+# Hook de seguridad: bloquea Write/Edit fuera de AutoMejoras/
+# Recibe JSON en stdin con tool_input.file_path
+
+INPUT=$(cat)
+
+# Extraer file_path del JSON
+FILE_PATH=$(echo "$INPUT" | grep -o '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//' | sed 's/"$//')
+
+# Si el path contiene AutoMejoras, permitir
+if echo "$FILE_PATH" | grep -qi "AutoMejoras"; then
+  exit 0
+fi
+
+# Bloquear cualquier otro path
+echo "BLOQUEADO: Solo se permite escribir dentro de AutoMejoras/. Path: $FILE_PATH" >&2
+exit 2
+```
+
+---
+
 ## Estado actual (2026-05-22)
 
 - **Implementación**: Completa — todos los archivos y scripts creados
