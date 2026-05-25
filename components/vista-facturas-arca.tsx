@@ -92,6 +92,17 @@ interface FacturaArca {
   origen_factura: string | null
 }
 
+// Monto a pagar en pesos (Vista Pagos). Fuente única usada por display, subtotales y PDF.
+// ARS: usa monto_a_abonar (ya refleja SICORE, descuento y anticipos vinculados).
+// USD: recalcula imp_total*tc − sicore − descuento (evita el doble redondeo de monto_a_abonar × TC).
+function montoPagoEnPesos(f: FacturaArca): number {
+  const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+  if (f.moneda === 'USD') {
+    return (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+  }
+  return f.monto_a_abonar ?? f.imp_total ?? 0
+}
+
 // Interface para configuración tipos SICORE
 interface TipoSicore {
   id: number
@@ -7700,15 +7711,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente' && matchBusqueda(f)))
             const facturasEcheq = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'echeq' && matchBusqueda(f)))
 
-            // Calcular subtotales (convertir a pesos con TC de pago)
-            // Para facturas con SICORE/descuento: usar imp_total*tc - sicore - descuento (evita redondeo doble)
-            const montoEnPesos = (f: FacturaArca) => {
-              const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-              if (f.monto_sicore || f.descuento_aplicado) {
-                return (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-              }
-              return (f.monto_a_abonar || f.imp_total || 0) * tc
-            }
+            // Subtotales: misma fuente única que el display y el PDF (montoPagoEnPesos)
+            const montoEnPesos = (f: FacturaArca) => montoPagoEnPesos(f)
             const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + montoEnPesos(f), 0)
             const subtotalPagar = facturasPagar.reduce((sum, f) => sum + montoEnPesos(f), 0)
             const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + montoEnPesos(f), 0)
@@ -8462,9 +8466,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             imp_total: (f.imp_total || 0) * tc,
                                             monto_sicore: f.monto_sicore,
                                             descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
-                                              ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                              : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            monto_a_abonar: montoPagoEnPesos(f),
                                           }
                                         })
                                       )}
@@ -8622,9 +8624,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                     {(() => {
                                       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
                                       const esUSD = f.moneda === 'USD' || tc > 1.01
-                                      const montoPesos = (f.monto_sicore || f.descuento_aplicado)
-                                        ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                        : (f.monto_a_abonar || f.imp_total || 0) * tc
+                                      const montoPesos = montoPagoEnPesos(f)
                                       return (
                                         <span className={esUSD ? 'text-amber-700' : ''}>
                                           {esUSD && (
