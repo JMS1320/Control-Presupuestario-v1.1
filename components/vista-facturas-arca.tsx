@@ -407,6 +407,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     seleccionadas: Set<string>     // IDs elegidos por el usuario en el modal
     restoCambioEstado: FacturaArca[] // Facturas que NO son parte de la cancelación y siguen flujo normal
   } | null>(null)
+  // Grupos de pago expandidos en el modal cancelación NC (escenario B agrupado por grupo_pago_id)
+  const [gruposExpandidosNC, setGruposExpandidosNC] = useState<Set<string>>(new Set())
 
   // ECHEQ — estado del modal y datos del cheque pendiente
   const [mostrarModalEcheq, setMostrarModalEcheq] = useState(false)
@@ -8032,14 +8034,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   const { data: fcsConDescuento } = await supabase
                     .schema(schemaName)
                     .from('comprobantes_arca')
-                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore')
+                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore, grupo_pago_id, fecha_estimada')
                     .in('cuit', cuitsNC)
-                    .eq('estado', 'conciliado')
+                    .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
                     .gt('descuento_aplicado', 0)
 
                   if (fcsConDescuento && fcsConDescuento.length > 0) {
                     const opcion = window.confirm(
-                      `Hay ${fcsConDescuento.length} Factura(s) conciliada(s) del mismo proveedor con descuento aplicado:\n\n` +
+                      `Hay ${fcsConDescuento.length} Factura(s) pagada(s) del mismo proveedor con descuento aplicado:\n\n` +
                       fcsConDescuento.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
                       `\n\n¿Desea aplicar las NC contra estos descuentos?` +
                       `\n\n[Aceptar] = Seleccionar FC con descuento\n[Cancelar] = Continuar sin aplicar`
@@ -8049,9 +8051,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         tipo: 'nc_con_descuento',
                         facturas: ncsSeleccionadas,
                         disponibles: fcsConDescuento as unknown as FacturaArca[],
-                        seleccionadas: new Set(fcsConDescuento.map((fc: any) => fc.id)),
+                        seleccionadas: new Set(),
                         restoCambioEstado: []
                       })
+                      setGruposExpandidosNC(new Set())
                       return
                     }
                   }
@@ -9815,11 +9818,90 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {modalCancelacionNC.disponibles.every(d => modalCancelacionNC.seleccionadas.has(d.id)) ? 'Deseleccionar todas' : 'Seleccionar todas'}
                   </Button>
                 </div>
-                {modalCancelacionNC.disponibles.map(d => {
-                  const monto = modalCancelacionNC.tipo === 'fc_con_nc'
-                    ? Math.abs(d.imp_total)
-                    : (d.descuento_aplicado || 0)
-                  return (
+                {modalCancelacionNC.tipo === 'nc_con_descuento' ? (
+                  /* Escenario B: agrupado por grupo_pago_id */
+                  (() => {
+                    const grupos = new Map<string, FacturaArca[]>()
+                    for (const d of modalCancelacionNC.disponibles) {
+                      const k = d.grupo_pago_id || '__sueltas__'
+                      if (!grupos.has(k)) grupos.set(k, [])
+                      grupos.get(k)!.push(d)
+                    }
+                    return Array.from(grupos.entries()).map(([gid, fcs]) => {
+                      const esSuelta = gid === '__sueltas__'
+                      const subtotal = fcs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0)
+                      const sel = modalCancelacionNC.seleccionadas
+                      const allSel = fcs.every(f => sel.has(f.id))
+                      const someSel = fcs.some(f => sel.has(f.id))
+                      const expandido = gruposExpandidosNC.has(gid)
+                      const fechaGrupo = fcs[0].fecha_estimada
+                        ? String(fcs[0].fecha_estimada).split('-').reverse().join('/')
+                        : ''
+                      return (
+                        <div key={gid} className="mb-2 border border-amber-200 rounded overflow-hidden">
+                          <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-100">
+                            <input
+                              type="checkbox"
+                              checked={allSel}
+                              ref={el => { if (el) el.indeterminate = !allSel && someSel }}
+                              onChange={() => {
+                                setModalCancelacionNC(prev => {
+                                  if (!prev) return null
+                                  const nuevo = new Set(prev.seleccionadas)
+                                  if (allSel) fcs.forEach(f => nuevo.delete(f.id))
+                                  else fcs.forEach(f => nuevo.add(f.id))
+                                  return { ...prev, seleccionadas: nuevo }
+                                })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="flex-1 text-left text-sm font-medium flex items-center gap-1"
+                              onClick={() => setGruposExpandidosNC(prev => {
+                                const n = new Set(prev)
+                                if (n.has(gid)) n.delete(gid)
+                                else n.add(gid)
+                                return n
+                              })}
+                            >
+                              <span className="text-xs w-3">{expandido ? '▼' : '▶'}</span>
+                              {esSuelta ? 'Sin grupo (FC sueltas)' : `Grupo pago ${fechaGrupo}`}
+                              <span className="text-muted-foreground font-normal">— {fcs.length} FC</span>
+                            </button>
+                            <span className="text-sm font-semibold text-red-600">
+                              ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          {expandido && (
+                            <div className="px-2 py-1 bg-white">
+                              {fcs.map(f => (
+                                <label key={f.id} className="flex items-center gap-2 text-sm py-0.5 pl-6 cursor-pointer hover:bg-amber-50 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={sel.has(f.id)}
+                                    onChange={() => {
+                                      setModalCancelacionNC(prev => {
+                                        if (!prev) return null
+                                        const nuevo = new Set(prev.seleccionadas)
+                                        if (nuevo.has(f.id)) nuevo.delete(f.id)
+                                        else nuevo.add(f.id)
+                                        return { ...prev, seleccionadas: nuevo }
+                                      })
+                                    }}
+                                  />
+                                  <span className="flex-1">FC {f.numero_desde} — {f.denominacion_emisor}</span>
+                                  <span className="text-red-600">${(f.descuento_aplicado || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  })()
+                ) : (
+                  /* Escenario A: lista plana de NC */
+                  modalCancelacionNC.disponibles.map(d => (
                     <label key={d.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-amber-100 px-1 rounded">
                       <input
                         type="checkbox"
@@ -9835,14 +9917,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         }}
                       />
                       <span className="flex-1">
-                        {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC' : 'FC'} {d.numero_desde} — {d.denominacion_emisor}
+                        NC {d.numero_desde} — {d.denominacion_emisor}
                       </span>
                       <span className="font-medium text-red-600">
-                        ${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        ${Math.abs(d.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                       </span>
                     </label>
-                  )
-                })}
+                  ))
+                )}
                 <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
                   <span>Total seleccionado:</span>
                   <span className="text-red-600">
@@ -9873,7 +9955,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                       <span className="text-red-600">-${totalDisponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="border-t mt-1 pt-1 flex justify-between font-bold">
-                      <span>{saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total'}</span>
+                      <span>{
+                        modalCancelacionNC.tipo === 'nc_con_descuento'
+                          ? (saldoRestante > 0 ? 'Diferencia (la NC se concilia igual):' : 'Cuadra con el descuento')
+                          : (saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total')
+                      }</span>
                       <span className={saldoRestante <= 0 ? 'text-green-600' : 'text-orange-600'}>
                         {saldoRestante > 0
                           ? `$${saldoRestante.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
@@ -9951,7 +10037,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             .update({
                               estado: 'conciliado',
                               monto_a_abonar: 0,
-                              detalle: `Cancela descuento FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
+                              detalle: `Corresponde a descuentos aplicados FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
                             })
                             .eq('id', nc.id)
                         }
