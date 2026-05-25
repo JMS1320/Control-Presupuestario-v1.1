@@ -35,6 +35,7 @@ interface FacturaArca {
   id: string
   fecha_emision: string
   tipo_comprobante: number
+  tipo_comprobante_desc?: string | null
   punto_venta: number | null
   numero_desde: number | null
   numero_hasta: number | null
@@ -269,6 +270,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [estadoSeleccionado, setEstadoSeleccionado] = useState('todos')
+  const [filtroTipoComprobante, setFiltroTipoComprobante] = useState('todos')
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
@@ -396,6 +398,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true, sueldo: true })
   const [filtroBusquedaPagos, setFiltroBusquedaPagos] = useState('')
+  const [filtroSoloNCPagos, setFiltroSoloNCPagos] = useState(false)
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
@@ -695,10 +698,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     cargarFacturas()
   }, [])
 
-  // Re-aplicar filtros cuando cambia el filtro FC
+  // Re-aplicar filtros cuando cambia el filtro FC o el tipo de comprobante
   useEffect(() => {
     aplicarFiltros()
-  }, [filtroFcPendiente])
+  }, [filtroFcPendiente, filtroTipoComprobante])
 
   // Auto-cargar facturas cuando cambia el período de imputación
   useEffect(() => {
@@ -773,6 +776,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (estadoSeleccionado && estadoSeleccionado !== 'todos') {
       facturasFiltradas = facturasFiltradas.filter(f => f.estado === estadoSeleccionado)
     }
+
+    // Filtro por tipo de comprobante
+    if (filtroTipoComprobante && filtroTipoComprobante !== 'todos') {
+      facturasFiltradas = facturasFiltradas.filter(f => String(f.tipo_comprobante) === filtroTipoComprobante)
+    }
     
     // Filtro por rango de montos
     if (montoMinimo) {
@@ -807,6 +815,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     setBusquedaCUIT('')
     setBusquedaDetalle('')
     setEstadoSeleccionado('todos')
+    setFiltroTipoComprobante('todos')
     setMontoMinimo('')
     setMontoMaximo('')
     setBusquedaCateg('')
@@ -1067,6 +1076,22 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
   // Obtener estados únicos para el selector
   const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
+
+  // Tipos de comprobante presentes en los datos (solo los que existen, no la lista AFIP completa)
+  const tiposComprobantePresentes = (() => {
+    const map = new Map<number, string>()
+    const esPlaceholder = (d: string) => !d || /^Código\s/i.test(d)
+    for (const f of facturasOriginales) {
+      const t = f.tipo_comprobante
+      if (t == null) continue
+      const desc = f.tipo_comprobante_desc || ''
+      const existente = map.get(t)
+      if (existente === undefined || (esPlaceholder(existente) && !esPlaceholder(desc))) {
+        map.set(t, desc || `Tipo ${t}`)
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
+  })()
 
   // Obtener columnas visibles
   const columnasVisiblesArray = Object.entries(columnasVisibles)
@@ -5853,7 +5878,25 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   </SelectContent>
                 </Select>
               </div>
-              
+
+              {/* Selector de tipo de comprobante (solo los presentes en los datos) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">🧾 Tipo Comprobante</Label>
+                <Select value={filtroTipoComprobante} onValueChange={setFiltroTipoComprobante}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los tipos</SelectItem>
+                    {tiposComprobantePresentes.map(([tipo, desc]) => (
+                      <SelectItem key={tipo} value={String(tipo)}>
+                        {tipo} - {desc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Búsqueda por CATEG */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">💰 Cuenta Contable</Label>
@@ -7668,6 +7711,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ✕
               </Button>
             )}
+            <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap px-2">
+              <Checkbox
+                checked={filtroSoloNCPagos}
+                onCheckedChange={(checked) => setFiltroSoloNCPagos(!!checked)}
+              />
+              <span className="text-sm flex items-center gap-1">
+                <Badge variant="outline" className="bg-red-50 text-red-700 text-xs">Solo NC</Badge>
+              </span>
+            </label>
           </div>
 
           {cargandoPagos ? (
@@ -7692,6 +7744,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Función de búsqueda full-text sobre los campos relevantes
             const matchBusqueda = (f: FacturaArca) => {
+              // Filtro "Solo NC": solo Notas de Crédito (por tipo_comprobante AFIP)
+              if (filtroSoloNCPagos && ![3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante)) return false
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -7950,6 +8004,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Filtrar sueldos por búsqueda
             const matchBusquedaSueldo = (s: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta sueldos
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -9032,6 +9087,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Búsqueda para templates
             const matchTemplate = (t: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta templates
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -9048,6 +9104,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Búsqueda para anticipos
             const matchAnticipo = (a: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta anticipos
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
