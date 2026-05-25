@@ -8039,10 +8039,32 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
                     .gt('descuento_aplicado', 0)
 
-                  if (fcsConDescuento && fcsConDescuento.length > 0) {
+                  // Excluir FC cuyo descuento YA fue cubierto por una NC conciliada antes.
+                  // Se detecta parseando el detalle estructurado "Corresponde a descuentos aplicados FC ..."
+                  const { data: ncsYaAplicadas } = await supabase
+                    .schema(schemaName)
+                    .from('comprobantes_arca')
+                    .select('detalle')
+                    .in('cuit', cuitsNC)
+                    .eq('estado', 'conciliado')
+                    .like('detalle', 'Corresponde a descuentos aplicados FC%')
+                  const fcNumerosCubiertos = new Set<number>()
+                  for (const nc of ncsYaAplicadas || []) {
+                    const nums = (nc.detalle || '')
+                      .replace('Corresponde a descuentos aplicados FC', '')
+                      .split(/[,\s]+/)
+                      .map((x: string) => parseInt(x, 10))
+                      .filter((n: number) => !isNaN(n))
+                    nums.forEach((n: number) => fcNumerosCubiertos.add(n))
+                  }
+                  const fcsDisponibles = (fcsConDescuento || []).filter(
+                    (fc: any) => !fcNumerosCubiertos.has(Number(fc.numero_desde))
+                  )
+
+                  if (fcsDisponibles.length > 0) {
                     const opcion = window.confirm(
-                      `Hay ${fcsConDescuento.length} Factura(s) pagada(s) del mismo proveedor con descuento aplicado:\n\n` +
-                      fcsConDescuento.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `Hay ${fcsDisponibles.length} Factura(s) pagada(s) del mismo proveedor con descuento aplicado:\n\n` +
+                      fcsDisponibles.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
                       `\n\n¿Desea aplicar las NC contra estos descuentos?` +
                       `\n\n[Aceptar] = Seleccionar FC con descuento\n[Cancelar] = Continuar sin aplicar`
                     )
@@ -8050,7 +8072,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                       setModalCancelacionNC({
                         tipo: 'nc_con_descuento',
                         facturas: ncsSeleccionadas,
-                        disponibles: fcsConDescuento as unknown as FacturaArca[],
+                        disponibles: fcsDisponibles as unknown as FacturaArca[],
                         seleccionadas: new Set(),
                         restoCambioEstado: []
                       })
@@ -9943,27 +9965,30 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
                   .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
                 const saldoRestante = totalFacturas - totalDisponible
+                const esB = modalCancelacionNC.tipo === 'nc_con_descuento'
+                // Escenario B: cuadra solo si la diferencia es ~0 (tolerancia 1 peso por redondeo).
+                // Si se selecciona descuento de más, saldoRestante es negativo → no cuadra (naranja) y se muestra el negativo.
+                const cuadra = esB ? Math.abs(saldoRestante) < 1 : saldoRestante <= 0
+                const saldoStr = `${saldoRestante < 0 ? '-' : ''}$${Math.abs(saldoRestante).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
 
                 return (
-                  <div className={`p-3 rounded-lg text-sm ${saldoRestante <= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
+                  <div className={`p-3 rounded-lg text-sm ${cuadra ? 'bg-green-50' : 'bg-orange-50'}`}>
                     <div className="flex justify-between">
-                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'FC' : 'NC'}:</span>
+                      <span>Total {esB ? 'NC' : 'FC'}:</span>
                       <span>${totalFacturas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC aplicadas' : 'descuento disponible'}:</span>
+                      <span>Total {esB ? 'descuento seleccionado' : 'NC aplicadas'}:</span>
                       <span className="text-red-600">-${totalDisponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="border-t mt-1 pt-1 flex justify-between font-bold">
                       <span>{
-                        modalCancelacionNC.tipo === 'nc_con_descuento'
-                          ? (saldoRestante > 0 ? 'Diferencia (la NC se concilia igual):' : 'Cuadra con el descuento')
+                        esB
+                          ? (cuadra ? 'Cuadra con el descuento' : 'Diferencia (la NC se concilia igual):')
                           : (saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total')
                       }</span>
-                      <span className={saldoRestante <= 0 ? 'text-green-600' : 'text-orange-600'}>
-                        {saldoRestante > 0
-                          ? `$${saldoRestante.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : '✓ $0,00'}
+                      <span className={cuadra ? 'text-green-600' : 'text-orange-600'}>
+                        {cuadra ? '✓ $0,00' : saldoStr}
                       </span>
                     </div>
                   </div>
