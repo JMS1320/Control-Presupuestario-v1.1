@@ -23,10 +23,17 @@ export interface MovimientoBancario {
   cuenta: string
   orden: number
   comprobante_arca_id: string | null
+  template_id: string | null
+  template_cuota_id: string | null
+  sueldo_pago_id: string | null
+  nro_cuenta: string | null
+  control: number | null
   leyendas_adicionales_1: string | null
   leyendas_adicionales_2: string | null
   revisado: boolean
   nota_operador: string | null
+  proveedor_nombre: string | null
+  comprobantes_pagados: string | null
 }
 
 export interface EstadisticasMovimientos {
@@ -63,7 +70,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     categ?: string
     categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
-    soloSinRevisar?: boolean
+    filtroRevisado?: 'todas' | 'revisadas' | 'no_revisadas'
   }) => {
     try {
       setLoading(true)
@@ -108,7 +115,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       if (filtros?.categEspecial === 'invalida') {
         query = query.ilike('categ', 'INVALIDA:%')
       } else if (filtros?.categEspecial === 'sin_categ') {
-        query = query.is('categ', null)
+        query = query.or('categ.is.null,categ.eq.')
       } else if (filtros?.categ) {
         query = query.ilike('categ', `%${filtros.categ}%`)
       }
@@ -118,9 +125,11 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.ilike('detalle', `%${filtros.detalle}%`)
       }
 
-      // Aplicar filtro solo sin revisar
-      if (filtros?.soloSinRevisar) {
+      // Aplicar filtro revisado
+      if (filtros?.filtroRevisado === 'no_revisadas') {
         query = query.eq('revisado', false)
+      } else if (filtros?.filtroRevisado === 'revisadas') {
+        query = query.eq('revisado', true)
       }
 
       // Ordenar por orden descendente — respeta el orden del extracto bancario original
@@ -163,7 +172,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         conciliados: data?.filter(m => m.estado === 'conciliado').length || 0,
         pendientes: data?.filter(m => m.estado === 'pendiente').length || 0,
         auditar: data?.filter(m => m.estado === 'auditar').length || 0,
-        sin_categ: data?.filter(m => !m.categ || m.categ.startsWith('INVALIDA:')).length || 0,
+        sin_categ: data?.filter(m => !m.categ || m.categ === '').length || 0,
         sin_revisar: data?.filter(m => !m.revisado).length || 0
       }
 
@@ -228,6 +237,13 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     }
   }
 
+  // Actualizar uno o más movimientos localmente sin recargar de BD
+  const actualizarLocal = (ids: string | string[], campos: Record<string, any>) => {
+    const idsArr = Array.isArray(ids) ? ids : [ids]
+    const idsSet = new Set(idsArr)
+    setMovimientos(prev => prev.map(m => idsSet.has(m.id) ? { ...m, ...campos } : m))
+  }
+
   // Recargar datos
   const recargar = () => {
     cargarMovimientos({ limite: 100 })
@@ -242,6 +258,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     cargarMovimientos,
     cargarEstadisticas,
     actualizarMasivo,
+    actualizarLocal,
     recargar
   }
 }

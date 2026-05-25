@@ -75,6 +75,12 @@ export interface CashFlowRow {
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
   // Medio de pago
   medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
+  // Para extracto: texto limpio de comprobantes (sin proveedor mezclado)
+  comprobante_display?: string | null
+  // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
+  detalle_usuario?: string | null
+  // Empleado (solo para sueldos)
+  empleado_id?: string | null
 }
 
 // Filtros para Cash Flow
@@ -134,6 +140,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: f.cuit || '',
         nombre_proveedor: f.denominacion_emisor || '',
         detalle: f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f),
+        detalle_usuario: f.detalle || null,
         debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -148,6 +155,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         moneda: f.moneda || null,
         tipo_cambio: f.tipo_cambio ?? 1,
         tc_pago: f.tc_pago ?? null,
+        comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
         grupo_pago_id: null,
       }
     })
@@ -167,10 +175,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .sort()
         .at(-1) ?? ''
       const fechaVencMax = fs.map(f => f.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
-      const totalDebitos = fs.reduce((s, f) => {
+      const totalDebitos = Math.round(fs.reduce((s, f) => {
         const tc = f.tc_pago ?? f.tipo_cambio ?? 1
         return s + (f.monto_a_abonar ?? f.imp_total ?? 0) * tc
-      }, 0)
+      }, 0) * 100) / 100
       // Detalle: lista de los detalles individuales separados por " · "
       const detallesCombinados = fs
         .map(f => f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f))
@@ -188,6 +196,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.cuit || '',
         nombre_proveedor: primera.denominacion_emisor || '',
         detalle: detallesCombinados,
+        detalle_usuario: fs.map(f => f.detalle).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -196,7 +205,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_gravado: 0,
         imp_neto_no_gravado: 0,
         imp_op_exentas: 0,
-        imp_total: fs.reduce((s, f) => s + (f.imp_total || 0), 0),
+        imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
+        comprobante_display: fs.map(f => `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`).join(' + '),
         grupo_pago_id: grupoId,
         facturas_agrupadas: fs.length,
         ids_grupo: fs.map(f => f.id),
@@ -229,11 +239,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
         detalle: c.descripcion || c.egreso?.nombre_referencia || '',
+        detalle_usuario: c.descripcion || null,
         debitos: esIngreso ? 0 : monto,
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
         medio_pago: c.medio_pago || 'banco',
+        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,
         grupo_pago_id: null,
       }
     })
@@ -250,7 +262,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Fecha más tardía del grupo
       const fechaMax = cs.map(c => c.fecha_estimada).filter(Boolean).sort().at(-1) ?? ''
       const fechaVencMax = cs.map(c => c.fecha_vencimiento).filter(Boolean).sort().at(-1) ?? null
-      const totalDebitos = cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0)
+      const totalDebitos = Math.round(cs.reduce((s, c) => s + (c.tipo_movimiento === 'ingreso' ? 0 : (c.monto || 0)), 0) * 100) / 100
       const primera = cs[0]
 
       // Detalle inteligente para grupos
@@ -288,10 +300,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
         detalle: detallesCombinados,
+        detalle_usuario: cs.map(c => c.descripcion).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
         estado: primera.estado || 'pendiente',
+        comprobante_display: [...new Set(cs.map(c => c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: cs.length,
         ids_grupo: cs.map(c => c.id),
@@ -315,10 +329,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       cuit_proveedor: p.empleado?.cuit_empleado ?? '',
       nombre_proveedor: p.empleado?.nombre ?? '',
       detalle: `Sueldo ${MESES_CASH[(p.mes ?? 1) - 1]} ${p.anio} - ${p.empleado?.nombre ?? ''}`,
+      detalle_usuario: null,
       debitos: p.saldo_pendiente ?? p.bruto_calculado ?? 0,
       creditos: 0,
       saldo_cta_cte: 0,
       estado: p.estado ?? 'proyectado',
+      comprobante_display: `Saldo ${MESES_CASH[(p.mes ?? 1) - 1]} ${p.anio}`,
+      empleado_id: p.empleado_id ?? null,
     }))
   }
 
@@ -346,10 +363,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: a.cuit_proveedor || '',
         nombre_proveedor: a.nombre_proveedor || '',
         detalle: `${tipoLabel}: ${a.descripcion || a.nombre_proveedor}${esParcial ? ' (parcial - pend. conciliar)' : ''}`,
+        detalle_usuario: a.descripcion || null,
         debitos: esCobro ? 0 : monto,   // Pago = débito (dinero sale)
         creditos: esCobro ? monto : 0,  // Cobro = crédito (dinero entra)
         saldo_cta_cte: 0,
-        estado: a.estado_pago || 'pendiente'
+        estado: a.estado_pago || 'pendiente',
+        comprobante_display: `${tipoLabel} ${a.descripcion || ''}`.trim() || null,
       }
     })
   }
@@ -501,7 +520,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
       const filasAnticipos = mapearAnticipos(anticipos || [])
       const filasSueldos = mapearSueldos(periodosSueldos || [])
-      const filasAnticiposSueldos = (anticiposSueldos || []).map(a => ({
+
+      // Mapear pagos de sueldos (con agrupación por grupo_pago_id)
+      const allSueldosPagos = anticiposSueldos || []
+      const sueldosIndividuales = allSueldosPagos.filter(a => !a.grupo_pago_id)
+      const sueldosAgrupados = allSueldosPagos.filter(a => a.grupo_pago_id)
+
+      const filasAnticiposSueldosInd: CashFlowRow[] = sueldosIndividuales.map(a => ({
         id: a.id,
         origen: 'SUELDO' as const,
         origen_tabla: 'sueldos.pagos',
@@ -517,7 +542,49 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: a.estado ?? 'pagar',
         medio_pago: a.medio_pago || 'banco',
+        empleado_id: a.empleado_id ?? null,
+        grupo_pago_id: null,
       }))
+
+      // Agrupar sueldos por grupo_pago_id
+      const porGrupoSueldos = new Map<string, any[]>()
+      sueldosAgrupados.forEach(a => {
+        const g = a.grupo_pago_id as string
+        if (!porGrupoSueldos.has(g)) porGrupoSueldos.set(g, [])
+        porGrupoSueldos.get(g)!.push(a)
+      })
+
+      const filasAnticiposSueldosGrupo: CashFlowRow[] = Array.from(porGrupoSueldos.entries()).map(([grupoId, pagos]) => {
+        const fechaMax = pagos.map(a => a.fecha).filter(Boolean).sort().at(-1) ?? ''
+        const totalDebitos = Math.round(pagos.reduce((s, a) => s + (a.monto ?? 0), 0) * 100) / 100
+        const detallesCombinados = pagos
+          .map(a => `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`)
+          .join(' | ')
+        const primero = pagos[0]
+        return {
+          id: grupoId,
+          origen: 'SUELDO' as const,
+          origen_tabla: 'msa.grupos_pago',
+          fecha_estimada: fechaMax,
+          fecha_vencimiento: null,
+          categ: 'Sueldos',
+          centro_costo: 'ESTRUCTURA',
+          cuit_proveedor: primero.empleado?.cuit_empleado ?? '',
+          nombre_proveedor: primero.empleado?.nombre ?? '',
+          detalle: detallesCombinados,
+          debitos: totalDebitos,
+          creditos: 0,
+          saldo_cta_cte: 0,
+          estado: 'pagar',
+          medio_pago: primero.medio_pago || 'banco',
+          empleado_id: primero.empleado_id ?? null,
+          grupo_pago_id: grupoId,
+          facturas_agrupadas: pagos.length,
+          ids_grupo: pagos.map(a => a.id),
+        }
+      })
+
+      const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
       const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos]

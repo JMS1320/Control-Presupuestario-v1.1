@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
+import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
+import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
 import { toast } from "sonner"
 
 interface UltimoIPC {
@@ -17,35 +18,8 @@ interface UltimoIPC {
   fuente: string
 }
 
-interface AnticipoSicore {
-  id: string
-  nombre_proveedor: string
-  cuit_proveedor: string
-  monto: number
-  monto_sicore: number
-  descuento_aplicado: number | null
-  sicore: string
-  tipo_sicore: string
-  fecha_pago: string
-  factura_id: string | null
-  descripcion: string | null
-}
-
-interface FacturaCandidato {
-  id: string
-  denominacion_emisor: string
-  cuit: string
-  imp_total: number
-  fecha_emision: string
-}
-
-interface CalcVinculacion {
-  caso: 'A' | 'B'
-  saldo: number
-  neto_pagado: number
-  descuento: number
-  sicore: number
-}
+// AnticipoSicore == AnticipoVinculable (mismos campos) — alias para la lista de alertas
+type AnticipoSicore = AnticipoVinculable
 
 export function VistaPrincipal() {
   const [ultimoIPC, setUltimoIPC] = useState<UltimoIPC | null>(null)
@@ -57,14 +31,8 @@ export function VistaPrincipal() {
   const [facturasCandidatos, setFacturasCandidatos] = useState<Record<string, FacturaCandidato[]>>({})
   const [cargandoAlertas, setCargandoAlertas] = useState(false)
 
-  // Modal vinculación — wizard
-  const [modalVinculacion, setModalVinculacion] = useState(false)
-  const [anticipoParaVincular, setAnticipoParaVincular] = useState<AnticipoSicore | null>(null)
-  const [facturaElegida, setFacturaElegida] = useState<string>('')
-  const [pasoWizard, setPasoWizard] = useState<'seleccion' | 'confirmacion'>('seleccion')
-  const [calculo, setCalculo] = useState<CalcVinculacion | null>(null)
-  const [vinculando, setVinculando] = useState(false)
-  const [extractoInfo, setExtractoInfo] = useState<{ tabla: string, fecha: string, monto: number, estado: string } | null>(null)
+  // Wizard de vinculación — lógica compartida en useVinculacionAnticipo
+  const v = useVinculacionAnticipo(() => cargarAlertasSicore())
 
   const meses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -114,20 +82,10 @@ export function VistaPrincipal() {
 
       await Promise.all(
         cuitsUnicos.map(async (cuit) => {
-          const { data: facturas } = await supabase
-            .schema('msa')
-            .from('comprobantes_arca')
-            .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado')
-            .eq('cuit', cuit)
-            .not('estado', 'in', '("pagado","conciliado")')
-            .order('fecha_emision', { ascending: false })
-            .limit(10)
-
-          if (facturas) {
-            anticipos
-              .filter((a: any) => a.cuit_proveedor === cuit)
-              .forEach((a: any) => { candidatosPorAnticipo[a.id] = facturas })
-          }
+          const facturas = await buscarFacturasCandidatas(cuit as string)
+          anticipos
+            .filter((a: any) => a.cuit_proveedor === cuit)
+            .forEach((a: any) => { candidatosPorAnticipo[a.id] = facturas })
         })
       )
 
@@ -144,291 +102,6 @@ export function VistaPrincipal() {
     cargarAlertasSicore()
   }, [cargarAlertasSicore])
 
-  const abrirVinculacion = async (anticipo: AnticipoSicore) => {
-    setAnticipoParaVincular(anticipo)
-    setFacturaElegida('')
-    setCalculo(null)
-    setExtractoInfo(null)
-    setPasoWizard('seleccion')
-    setModalVinculacion(true)
-
-    // Buscar si este anticipo ya tiene movimiento en extracto (por anticipo_id o por categ/detalle/monto)
-    const tablasBancarias: { tabla: string, schema?: string }[] = [
-      { tabla: 'msa_galicia' },
-      { tabla: 'pam_galicia' },
-      { tabla: 'pam_galicia_cc' },
-      { tabla: 'ma_galicia', schema: 'ma' },
-    ]
-    const netoAnticipo = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
-
-    for (const { tabla, schema } of tablasBancarias) {
-      const client = schema ? supabase.schema(schema) : supabase
-      // Primero por anticipo_id (si el motor ya lo guardó)
-      let { data: movs } = await client
-        .from(tabla)
-        .select('id, fecha, debitos, creditos, estado')
-        .eq('anticipo_id', anticipo.id)
-        .limit(1)
-
-      // Si no hay match por anticipo_id, buscar por CUIT en leyendas_adicionales_2 + monto
-      if (!movs || movs.length === 0) {
-        // Estrategia 1: CUIT del proveedor en leyendas_adicionales_2 (más confiable)
-        const { data: movsCuit } = await client
-          .from(tabla)
-          .select('id, fecha, debitos, creditos, estado, categ, detalle, leyendas_adicionales_2')
-          .eq('fecha', anticipo.fecha_pago)
-          .eq('leyendas_adicionales_2', anticipo.cuit_proveedor)
-          .limit(10)
-
-        // Estrategia 2: categ ANTICIPO o detalle con ANTICIPO (fallback)
-        const { data: movsCateg } = await client
-          .from(tabla)
-          .select('id, fecha, debitos, creditos, estado, categ, detalle')
-          .eq('fecha', anticipo.fecha_pago)
-          .eq('categ', 'ANTICIPO')
-          .limit(10)
-
-        // Combinar y deduplicar
-        const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
-        const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
-
-        if (unicos.length > 0) {
-          // Buscar match por monto: bruto, neto (sin SICORE), o tolerancia 3%
-          const match = unicos.find((m: any) => {
-            const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
-            const diffBruto = Math.abs(montoMov - anticipo.monto)
-            const diffNeto = Math.abs(montoMov - netoAnticipo)
-            return diffBruto < anticipo.monto * 0.03 || diffNeto < netoAnticipo * 0.01 || diffBruto < 1 || diffNeto < 1
-          })
-          if (match) movs = [match]
-        }
-      }
-
-      if (movs && movs.length > 0) {
-        const m = movs[0]
-        setExtractoInfo({
-          tabla,
-          fecha: m.fecha,
-          monto: parseFloat(m.debitos) || parseFloat(m.creditos) || 0,
-          estado: m.estado
-        })
-        break
-      }
-    }
-  }
-
-  // Calcular cuando se selecciona una factura
-  const onSeleccionarFactura = (facturaId: string) => {
-    setFacturaElegida(facturaId)
-    if (!anticipoParaVincular) return
-    const candidatos = facturasCandidatos[anticipoParaVincular.id] || []
-    const fac = candidatos.find(f => f.id === facturaId)
-    if (!fac) return
-
-    const sicore = anticipoParaVincular.monto_sicore || 0
-    const descuento = anticipoParaVincular.descuento_aplicado || 0
-    // Caso A: anticipo >= imp_total → FC cubierta completamente
-    // Caso B: anticipo < imp_total → saldo pendiente = imp_total - anticipo - sicore - descuento
-    const cubierto = anticipoParaVincular.monto >= fac.imp_total - 0.01
-    const saldo = cubierto ? 0 : fac.imp_total - anticipoParaVincular.monto - sicore - descuento
-    const neto_pagado = anticipoParaVincular.monto - sicore - descuento
-
-    setCalculo({
-      caso: cubierto ? 'A' : 'B',
-      saldo: Math.max(0, saldo),
-      neto_pagado,
-      descuento,
-      sicore,
-    })
-  }
-
-  // Paso 1 → Paso 2
-  const avanzarAConfirmacion = () => {
-    if (!facturaElegida || !calculo) return
-    setPasoWizard('confirmacion')
-  }
-
-  // Confirmar vinculación definitiva
-  const confirmarVinculacion = async () => {
-    if (!anticipoParaVincular || !facturaElegida || !calculo) return
-    setVinculando(true)
-    try {
-      const candidatos = facturasCandidatos[anticipoParaVincular.id] || []
-      const fac = candidatos.find(f => f.id === facturaElegida)
-      if (!fac) throw new Error('Factura no encontrada')
-
-      // Datos comunes que la FC hereda del anticipo
-      const herenciaComun: Record<string, any> = {
-        sicore: anticipoParaVincular.sicore,
-        monto_sicore: anticipoParaVincular.monto_sicore,
-        tipo_sicore: anticipoParaVincular.tipo_sicore,
-      }
-      // Heredar descripcion del anticipo a la FC (si tiene)
-      if (anticipoParaVincular.descripcion) {
-        herenciaComun.detalle = anticipoParaVincular.descripcion
-      }
-
-      if (calculo.caso === 'A') {
-        // Factura completamente cubierta
-        // Si el extracto ya está conciliado → FC = conciliado (pago ya pasó por banco)
-        // Si no → FC = pagado
-        const estadoFC = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'pagado'
-        const { error: errFac } = await supabase
-          .schema('msa')
-          .from('comprobantes_arca')
-          .update({
-            ...herenciaComun,
-            estado: estadoFC,
-            monto_a_abonar: calculo.neto_pagado,
-            fecha_vencimiento: anticipoParaVincular.fecha_pago,
-            fecha_estimada: anticipoParaVincular.fecha_pago,
-          })
-          .eq('id', facturaElegida)
-        if (errFac) throw errFac
-      } else {
-        // Caso B: saldo pendiente — FC mantiene su estado, anticipo queda parcial
-        const { error: errFac } = await supabase
-          .schema('msa')
-          .from('comprobantes_arca')
-          .update({
-            ...herenciaComun,
-            monto_a_abonar: calculo.saldo,
-          })
-          .eq('id', facturaElegida)
-        if (errFac) throw errFac
-      }
-
-      // Vincular anticipo: Caso A → vinculado (desaparece), Caso B → parcial (permanece)
-      const { error: errAnticipo } = await supabase
-        .from('anticipos_proveedores')
-        .update({
-          factura_id: facturaElegida,
-          estado: calculo.caso === 'A' ? 'vinculado' : 'parcial',
-        })
-        .eq('id', anticipoParaVincular.id)
-      if (errAnticipo) throw errAnticipo
-
-      // Transferir sicore_retenciones: agregar factura_id al registro del anticipo
-      if (anticipoParaVincular.sicore || anticipoParaVincular.monto_sicore) {
-        await supabase
-          .schema('msa')
-          .from('sicore_retenciones')
-          .update({ factura_id: facturaElegida })
-          .eq('anticipo_id', anticipoParaVincular.id)
-          .is('factura_id', null)
-      }
-
-      // Propagar datos de FC al extracto bancario (si el anticipo ya estaba conciliado)
-      // Buscar movimiento en extracto: por anticipo_id, o fallback por categ/detalle ANTICIPO + monto
-      let extractoActualizado = false
-      const tablasBanc: { tabla: string, schema?: string }[] = [
-        { tabla: 'msa_galicia' },
-        { tabla: 'pam_galicia' },
-        { tabla: 'pam_galicia_cc' },
-        { tabla: 'ma_galicia', schema: 'ma' },
-      ]
-      const { data: fcCompleta } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('id, nro_cuenta, denominacion_emisor')
-        .eq('id', facturaElegida)
-        .single()
-
-      // Obtener categ de cuentas_contables vía nro_cuenta de la FC
-      let categFC: string | null = null
-      if (fcCompleta?.nro_cuenta) {
-        const { data: cta } = await supabase
-          .from('cuentas_contables')
-          .select('categ')
-          .eq('nro_cuenta', fcCompleta.nro_cuenta)
-          .single()
-        categFC = cta?.categ || null
-      }
-
-      if (fcCompleta) {
-        const netoAnt = anticipoParaVincular.monto - (anticipoParaVincular.monto_sicore || 0) - (anticipoParaVincular.descuento_aplicado || 0)
-        for (const { tabla, schema } of tablasBanc) {
-          const client = schema ? supabase.schema(schema) : supabase
-
-          // Primero por anticipo_id
-          let { data: movExtracto } = await client
-            .from(tabla)
-            .select('id, estado')
-            .eq('anticipo_id', anticipoParaVincular.id)
-            .limit(1)
-
-          // Fallback: CUIT en leyendas_adicionales_2 + categ ANTICIPO
-          if (!movExtracto || movExtracto.length === 0) {
-            // Estrategia 1: CUIT del proveedor
-            const { data: movsCuit } = await client
-              .from(tabla)
-              .select('id, estado, debitos, creditos, categ, detalle, leyendas_adicionales_2')
-              .eq('fecha', anticipoParaVincular.fecha_pago)
-              .eq('leyendas_adicionales_2', anticipoParaVincular.cuit_proveedor)
-              .limit(10)
-
-            // Estrategia 2: categ ANTICIPO
-            const { data: movsCateg } = await client
-              .from(tabla)
-              .select('id, estado, debitos, creditos, categ, detalle')
-              .eq('fecha', anticipoParaVincular.fecha_pago)
-              .eq('categ', 'ANTICIPO')
-              .limit(10)
-
-            const todosMovs = [...(movsCuit || []), ...(movsCateg || [])]
-            const unicos = todosMovs.filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
-
-            const match = unicos.find((m: any) => {
-              const montoMov = parseFloat(m.debitos) || parseFloat(m.creditos) || 0
-              const diffBruto = Math.abs(montoMov - anticipoParaVincular.monto)
-              const diffNeto = Math.abs(montoMov - netoAnt)
-              return diffBruto < anticipoParaVincular.monto * 0.03 || diffNeto < netoAnt * 0.01 || diffBruto < 1 || diffNeto < 1
-            })
-            if (match) movExtracto = [match]
-          }
-
-          if (movExtracto && movExtracto.length > 0) {
-            const mov = movExtracto[0]
-            const detalleExtracto = calculo.caso === 'A'
-              ? `Pago total vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
-              : `Pago parcial vía anticipo: ${anticipoParaVincular.descripcion || anticipoParaVincular.nombre_proveedor}`
-
-            // Guardar anticipo_id en extracto para trazabilidad
-            await client
-              .from(tabla)
-              .update({
-                comprobante_arca_id: fcCompleta.id,
-                anticipo_id: anticipoParaVincular.id,
-                categ: categFC,
-                nro_cuenta: fcCompleta.nro_cuenta,
-                detalle: detalleExtracto,
-                estado: 'conciliado',
-                motivo_revision: null,
-              })
-              .eq('id', mov.id)
-
-            extractoActualizado = true
-            break
-          }
-        }
-      }
-
-      const msgExtracto = extractoActualizado ? ' Extracto bancario actualizado.' : ''
-      const estadoFinal = extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'
-      const msg = calculo.caso === 'A'
-        ? `Vinculación completa. Factura marcada como ${estadoFinal} (${fmt(calculo.neto_pagado)} neto).${msgExtracto}`
-        : `Vinculación parcial. Saldo pendiente: ${fmt(calculo.saldo)}.${msgExtracto}`
-      toast.success(msg)
-      setModalVinculacion(false)
-      setAnticipoParaVincular(null)
-      await cargarAlertasSicore()
-    } catch (err) {
-      toast.error('Error al vincular: ' + (err as Error).message)
-    } finally {
-      setVinculando(false)
-    }
-  }
-
   // Eliminar anticipo (solo si no está conciliado en banco)
   const eliminarAnticipo = async (anticipo: AnticipoSicore) => {
     if (!window.confirm(`¿Eliminar anticipo de ${anticipo.nombre_proveedor} por ${fmt(anticipo.monto)}?\n\nEsta acción no se puede deshacer.`)) return
@@ -443,14 +116,6 @@ export function VistaPrincipal() {
     } catch (err) {
       toast.error('Error al eliminar: ' + (err as Error).message)
     }
-  }
-
-  const cerrarModal = () => {
-    setModalVinculacion(false)
-    setAnticipoParaVincular(null)
-    setFacturaElegida('')
-    setCalculo(null)
-    setPasoWizard('seleccion')
   }
 
   return (
@@ -571,7 +236,7 @@ export function VistaPrincipal() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => abrirVinculacion(anticipo)}>
+                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => v.abrirVinculacion(anticipo, candidatos)}>
                           <Link2 className="h-3 w-3 mr-1" />Vincular
                         </Button>
                         <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2" onClick={() => eliminarAnticipo(anticipo)} title="Eliminar anticipo">
@@ -603,7 +268,7 @@ export function VistaPrincipal() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <Button size="sm" variant="outline" className="text-xs" onClick={() => abrirVinculacion(anticipo)}>
+                          <Button size="sm" variant="outline" className="text-xs" onClick={() => v.abrirVinculacion(anticipo, facturasCandidatos[anticipo.id] || [])}>
                             <Link2 className="h-3 w-3 mr-1" />Vincular
                           </Button>
                           <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2" onClick={() => eliminarAnticipo(anticipo)} title="Eliminar anticipo">
@@ -630,174 +295,8 @@ export function VistaPrincipal() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal vinculación — wizard 2 pasos */}
-      <Dialog open={modalVinculacion} onOpenChange={cerrarModal}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>🔗 Vincular Anticipo a Factura</DialogTitle>
-            <DialogDescription>
-              {pasoWizard === 'seleccion' ? 'Paso 1 — Seleccioná la factura correspondiente' : 'Paso 2 — Confirmá la vinculación'}
-            </DialogDescription>
-          </DialogHeader>
-
-          {anticipoParaVincular && (
-            <div className="space-y-4">
-
-              {/* Resumen anticipo — siempre visible */}
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm space-y-1">
-                <div className="font-semibold">{anticipoParaVincular.nombre_proveedor}</div>
-                <div className="text-gray-500 text-xs">{anticipoParaVincular.cuit_proveedor} — pagado {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
-                <div className="flex gap-4 mt-1 flex-wrap">
-                  <span>💰 Monto anticipo: <strong>{fmt(anticipoParaVincular.monto)}</strong></span>
-                  <span className="text-red-700">🏛️ Retención: <strong>{fmt(anticipoParaVincular.monto_sicore || 0)}</strong> ({anticipoParaVincular.tipo_sicore} — {anticipoParaVincular.sicore})</span>
-                  {anticipoParaVincular.descuento_aplicado ? (
-                    <span className="text-blue-700">📉 Descuento: <strong>{fmt(anticipoParaVincular.descuento_aplicado)}</strong></span>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* PASO 1: Selector factura + preview cálculo */}
-              {pasoWizard === 'seleccion' && (
-                <>
-                  {(facturasCandidatos[anticipoParaVincular.id] || []).length > 0 ? (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 mb-2 block">
-                        Factura a vincular:
-                      </label>
-                      <Select value={facturaElegida} onValueChange={onSeleccionarFactura}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar factura..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(facturasCandidatos[anticipoParaVincular.id] || []).map(f => (
-                            <SelectItem key={f.id} value={f.id}>
-                              {f.fecha_emision} — {f.denominacion_emisor} — {fmt(f.imp_total || 0)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ) : (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
-                      ⚠️ No se encontraron facturas pendientes de este proveedor.
-                    </div>
-                  )}
-
-                  {/* Preview cálculo inline */}
-                  {calculo && facturaElegida && (() => {
-                    const fac = (facturasCandidatos[anticipoParaVincular.id] || []).find(f => f.id === facturaElegida)
-                    return (
-                      <div className={`rounded-lg p-3 text-sm space-y-1 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
-                        <div className="font-semibold mb-2">
-                          {calculo.caso === 'A' ? '✅ Factura cubierta completamente' : '⚠️ Anticipo cubre parcialmente'}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
-                          <span className="text-gray-600">Total factura:</span>
-                          <span className="font-medium">{fmt(fac?.imp_total || 0)}</span>
-                          <span className="text-gray-600">Anticipo aplicado:</span>
-                          <span className="font-medium text-amber-700">− {fmt(anticipoParaVincular.monto)}</span>
-                          {calculo.sicore > 0 && (<><span className="text-gray-600">Retención SICORE:</span><span className="font-medium text-red-700">− {fmt(calculo.sicore)}</span></>)}
-                          {calculo.descuento > 0 && (<><span className="text-gray-600">Descuento:</span><span className="font-medium text-blue-700">− {fmt(calculo.descuento)}</span></>)}
-                          <span className="text-gray-600 border-t pt-1 mt-1">{calculo.caso === 'A' ? 'Neto transferido:' : 'Saldo pendiente:'}</span>
-                          <span className={`font-bold border-t pt-1 mt-1 ${calculo.caso === 'A' ? 'text-green-700' : 'text-blue-700'}`}>
-                            {calculo.caso === 'A' ? fmt(calculo.neto_pagado) : fmt(calculo.saldo)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      className="flex-1 bg-blue-600 hover:bg-blue-700"
-                      disabled={!facturaElegida || !calculo}
-                      onClick={avanzarAConfirmacion}
-                    >
-                      Siguiente →
-                    </Button>
-                    <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
-                  </div>
-                </>
-              )}
-
-              {/* PASO 2: Confirmación */}
-              {pasoWizard === 'confirmacion' && calculo && (() => {
-                const fac = (facturasCandidatos[anticipoParaVincular.id] || []).find(f => f.id === facturaElegida)
-                return (
-                  <>
-                    <div className={`rounded-lg p-4 text-sm space-y-2 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
-                      <div className="font-semibold text-base mb-3">
-                        {calculo.caso === 'A'
-                          ? (extractoInfo?.estado === 'conciliado' ? '✅ Factura cubierta — se marcará como CONCILIADA (pago ya en banco)' : '✅ Factura cubierta — se marcará como PAGADA')
-                          : '📋 Pago parcial — quedará saldo pendiente'}
-                      </div>
-
-                      <div className="text-xs space-y-1">
-                        <div className="font-medium text-gray-700 mb-1">Factura: {fac?.denominacion_emisor} — {fac?.fecha_emision}</div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                          <span className="text-gray-600">Total factura:</span>
-                          <span>{fmt(fac?.imp_total || 0)}</span>
-                          <span className="text-gray-600">Anticipo aplicado:</span>
-                          <span className="text-amber-700">− {fmt(anticipoParaVincular.monto)}</span>
-                          {calculo.sicore > 0 && (<><span className="text-gray-600">Retención SICORE ({anticipoParaVincular.tipo_sicore}):</span><span className="text-red-700">− {fmt(calculo.sicore)}</span></>)}
-                          {calculo.descuento > 0 && (<><span className="text-gray-600">Descuento:</span><span className="text-blue-700">− {fmt(calculo.descuento)}</span></>)}
-                        </div>
-                      </div>
-
-                      <div className="border-t pt-2 mt-2 space-y-1 text-xs">
-                        <div className="font-semibold text-gray-700">Lo que va a suceder:</div>
-                        {calculo.caso === 'A' ? (
-                          <>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>{extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'}</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Anticipo → <strong>vinculado</strong> (desaparece del cash flow)</div>
-                            <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE, retención y descripción heredados a la factura</div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Factura → saldo <strong>{fmt(calculo.saldo)}</strong> por pagar</div>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Anticipo → <strong>parcial</strong> (permanece en cash flow hasta conciliar en banco)</div>
-                            <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE, retención y descripción copiados a la factura</div>
-                          </>
-                        )}
-                        {/* Info extracto bancario */}
-                        {extractoInfo ? (
-                          <div className="mt-2 pt-2 border-t border-dashed">
-                            <div className="font-semibold text-gray-700 mb-1">Extracto bancario ({extractoInfo.tabla}):</div>
-                            <div className="flex items-start gap-1">
-                              <span className="text-purple-600">✓</span>
-                              Movimiento del {fmtFecha(extractoInfo.fecha)} por {fmt(extractoInfo.monto)} ({extractoInfo.estado})
-                              → se actualizará con datos de la FC (categ, cuenta contable, factura_id)
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-2 pt-2 border-t border-dashed text-gray-400">
-                            Sin movimiento bancario detectado para este anticipo
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 pt-2">
-                      <Button variant="outline" onClick={() => setPasoWizard('seleccion')} disabled={vinculando}>
-                        ← Atrás
-                      </Button>
-                      <Button
-                        className={`flex-1 ${calculo.caso === 'A' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                        disabled={vinculando}
-                        onClick={confirmarVinculacion}
-                      >
-                        {vinculando ? 'Vinculando...' : '✅ Confirmar Vinculación'}
-                      </Button>
-                      <Button variant="outline" onClick={cerrarModal} disabled={vinculando}>Cancelar</Button>
-                    </div>
-                  </>
-                )
-              })()}
-
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Modal vinculación — wizard 2 pasos (compartido) */}
+      <ModalVinculacionAnticipo controller={v} />
     </div>
   )
 }

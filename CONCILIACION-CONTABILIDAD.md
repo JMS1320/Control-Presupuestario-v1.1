@@ -1,6 +1,6 @@
 # CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-03-26
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-05-21
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
@@ -2335,3 +2335,127 @@ Bug detectado: al usar ↩, la fila quedaba marcada (checked) en la selección. 
 - `revertirFacturaAPendiente` (sin SICORE)
 - `revertirTemplateAPendiente`
 - `resetearAnticipo`
+
+---
+
+## 30 — Columnas extracto: separación proveedor / comprobante / detalle (2026-05-21)
+
+### 30.1 — Principio fundamental
+
+Cada fila del extracto bancario tiene 3 columnas de información textual con roles estrictamente separados:
+
+| Columna | Rol | Ejemplo |
+|---|---|---|
+| `proveedor_nombre` | Quién cobró/pagó | `ALCORTA EDMUNDO`, `Ruben Sigot`, `Banco Galicia` |
+| `comprobantes_pagados` | Qué se pagó (referencia documental) | `FC - 1234`, `Saldo Mar 2026`, `Seguro Flota` |
+| `detalle` | Nota libre del usuario | Solo si el usuario escribe algo; de lo contrario `null` |
+
+**Regla**: `detalle` NUNCA se llena automáticamente con FC, proveedor ni período. Esos datos ya están en sus columnas propias. Si `detalle` no tiene input del usuario, queda `null`.
+
+### 30.2 — Formato de `comprobantes_pagados` por origen
+
+| Origen | Formato | Ejemplo |
+|---|---|---|
+| ARCA individual | `FC/NC/ND - {numero_desde}` | `FC - 12345` |
+| ARCA grupo | Ídem, separados por ` + ` | `FC - 12345 + FC - 67890` |
+| Template individual | `nombre_referencia` del template | `Seguro Flota` |
+| Template grupo | Nombres únicos separados por ` + ` | `Red Vial SP + Red Vial Rojas` |
+| Sueldo individual | `{tipo} {Mes} {Año}` (período, no fecha pago) | `Pago Saldo Mar 2026` |
+| Sueldo grupo | Ídem por cada pago, separados por ` + ` | `Saldo Abr 2026 + Anticipo May 2026` |
+| Anticipo con FC | FC vinculada | `FC - 9876` |
+| Anticipo sin FC | `null` | — |
+| Bancario (motor) | Nombre del template bancario | `Comision Cuenta Bancaria` |
+
+**Convención FC**: sin punto_venta, sin ceros a la izquierda, solo `FC/NC/ND - {numero}`. Mapeo tipo_comprobante AFIP: 1,6,11,51,201,206,211 → FC; 2,7,12,52,202,207,212 → ND; 3,8,13,53,203,208,213 → NC.
+
+### 30.3 — Implementación técnica: `comprobante_display` y `detalle_usuario`
+
+Para separar lo que se **muestra** en Cash Flow (decorativo) de lo que se **propaga** al extracto, se agregaron 2 campos al `CashFlowRow` (`hooks/useMultiCashFlowData.ts`):
+
+```typescript
+interface CashFlowRow {
+  // ...campos existentes...
+  detalle: string           // Visual para Cash Flow UI (decorado con FC + proveedor)
+  detalle_usuario: string | null  // Solo input del usuario → va al extracto
+  comprobante_display: string | null  // Referencia documental → va al extracto
+}
+```
+
+**`detalle`** sigue igual para la UI del Cash Flow (ej: `"FC 1234 - Proveedor · nota del usuario"`). No se toca.
+
+**`detalle_usuario`** contiene solo lo que el usuario escribió:
+- ARCA: `f.detalle` (campo detalle de la factura, editable por usuario)
+- Template: `c.descripcion` (descripción de la cuota)
+- Sueldo: `null` (no hay input de usuario)
+- Anticipo: `a.descripcion` (descripción del anticipo)
+
+**`comprobante_display`** contiene la referencia documental limpia:
+- ARCA: `"FC - 1234"` (usando `tipoComprobanteAbrev()`)
+- Template: `nombre_referencia` del egreso
+- Sueldo: `"Saldo Mar 2026"` (período)
+- Anticipo: `"ANTICIPO descripcion"`
+
+### 30.4 — Paths que escriben al extracto
+
+#### Motor automático (`useMotorConciliacion.ts`)
+
+**Path Cash Flow match** (línea ~471):
+```
+detalle           → cashFlowRow.detalle_usuario || null
+proveedor_nombre  → buscarNombreProveedor(cuit)
+comprobantes_pagados → cashFlowRow.comprobante_display || null
+```
+
+**Path Anticipo** (línea ~617):
+```
+detalle           → match.descripcion || null  (input usuario del anticipo)
+proveedor_nombre  → buscarNombreProveedor(cuit)
+comprobantes_pagados → "FC - {numero}" de la FC vinculada, o null si no hay FC
+```
+
+#### Asignación manual (`vista-extracto-bancario.tsx`)
+
+Todos los paths (ARCA, Template, Sueldo, Grupo) escriben `detalle: null`. Solo el usuario puede agregar detalle después, editando inline.
+
+### 30.5 — Auditoría masiva de datos existentes (2026-05-17)
+
+Se ejecutó corrección SQL masiva sobre ~300 filas de `msa_galicia`:
+
+| Categoría | Filas | Corrección |
+|---|---|---|
+| ARCA conciliados | 62 | `comprobantes_pagados` reformateado a `FC/NC/ND - {numero}` |
+| Grupos ARCA | 2 | Ídem |
+| Sueldos | 29 | `comprobantes_pagados` = `Saldo/Anticipo {Mes} {Año}` según período |
+| Templates sin proveedor | 13 | `proveedor_nombre` llenado desde template |
+| Bancarios sin proveedor | 195 | `proveedor_nombre = "Banco Galicia"` |
+| ARCA sin proveedor | 2 | `proveedor_nombre` llenado desde factura ARCA |
+| Conciliados adicionales | 5 | `comprobantes_pagados` completado |
+
+### 30.6 — Correcciones manuales contable/interno (2026-05-17)
+
+| Empleado | Campo | Valor | Alcance |
+|---|---|---|---|
+| Alondra | `interno` | `DIST MA` | Período marzo 2026 en adelante |
+| Alondra (abril) | `contable` | `RET 3 MA` | Solo abril (ya existía) |
+| JMS (4 filas) | `contable` / `interno` | `CTA JMS` / `Desglosar` | Todos los pagos JMS |
+| AMS (4 filas) | `contable` / `interno` / `proveedor_nombre` | `CTA AMS` / `Desglosar` / `AMS` | Todos los pagos AMS |
+
+### 30.7 — Selector revisadas (2026-05-17)
+
+Reemplazado botón toggle booleano por selector de 3 opciones:
+
+```
+filtroRevisado: 'todas' | 'no_revisadas' | 'revisadas'
+```
+
+- `<select>` con estilo rojo cuando activo (no es 'todas')
+- Hook `useMovimientosBancarios`: filtro `eq('revisado', false)` o `eq('revisado', true)` según opción
+- Botón "Limpiar" resetea a 'todas'
+
+### 30.8 — Fix contador Sin CATEG (2026-05-17)
+
+**Bug**: Chip "Sin CATEG" mostraba 13 pero al filtrar no aparecía nada.
+
+**Causa**: El contador sumaba filas con `categ.startsWith('INVALIDA:')` pero el filtro solo buscaba `categ IS NULL OR categ = ''`.
+
+**Fix**: Contador alineado al filtro — solo cuenta `!m.categ || m.categ === ''`. INVALIDA tiene su propio chip separado.

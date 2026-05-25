@@ -39,7 +39,8 @@ import {
   Columns,
   DollarSign,
   Loader2,
-  Info
+  Info,
+  ChevronDown
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
@@ -203,7 +204,12 @@ export function VistaExtractoBancario() {
   const [busquedaDetalle, setBusquedaDetalleExtracto] = useState('')
   const [limiteRegistros, setLimiteRegistros] = useState<number>(200)
   const [filtroCategEspecial, setFiltroCategEspecial] = useState<'invalida' | 'sin_categ' | null>(null)
-  const [soloSinRevisar, setSoloSinRevisar] = useState(false)
+
+  // Multi-select categ (filtro client-side tipo Excel)
+  const [categsFiltro, setCategsFiltro] = useState<Set<string> | null>(null) // null = sin filtro (mostrar todas)
+  const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
+  const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
+  const [filtroRevisado, setFiltroRevisado] = useState<'todas' | 'revisadas' | 'no_revisadas'>('todas')
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
@@ -212,6 +218,8 @@ export function VistaExtractoBancario() {
     { key: 'saldo',               label: 'Saldo',            defaultVisible: true  },
     { key: 'categ',               label: 'CATEG',            defaultVisible: true  },
     { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
+    { key: 'proveedor_nombre',    label: 'Proveedor',        defaultVisible: true  },
+    { key: 'comprobantes_pagados', label: 'Comprobantes',    defaultVisible: true  },
     { key: 'motivo_revision',     label: 'Motivo Revisión',  defaultVisible: true  },
     { key: 'centro_de_costo',     label: 'Centro de Costo',  defaultVisible: false },
     { key: 'contable',            label: 'Contable',         defaultVisible: false },
@@ -254,12 +262,18 @@ export function VistaExtractoBancario() {
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
-  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template'>('template')
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo'>('template')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
+  const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
+  const [busquedaAsignarGrupo, setBusquedaAsignarGrupo] = useState('')
   const [templatesParaAsignar, setTemplatesParaAsignar] = useState<any[]>([])
+  const [sueldosParaAsignar, setSueldosParaAsignar] = useState<any[]>([])
+  const [gruposParaAsignar, setGruposParaAsignar] = useState<any[]>([])
   const [templateElegido, setTemplateElegido] = useState<any>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
+  const [sueldoElegido, setSueldoElegido] = useState<any>(null)
+  const [grupoElegido, setGrupoElegido] = useState<any>(null)
   const [guardandoAsignacion, setGuardandoAsignacion] = useState(false)
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
@@ -279,7 +293,7 @@ export function VistaExtractoBancario() {
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
   const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
@@ -309,6 +323,24 @@ export function VistaExtractoBancario() {
     }),
     [movimientos, cuentasCategSet, templateCategSet]
   )
+
+  // Categs únicas de los movimientos cargados (para multi-select)
+  const categsUnicas = useMemo(() => {
+    const set = new Set<string>()
+    movimientos.forEach(m => {
+      set.add(m.categ || '(sin categ)')
+    })
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [movimientos])
+
+  // Movimientos visibles (filtro client-side de categ multi-select)
+  const movimientosVisibles = useMemo(() => {
+    if (!categsFiltro) return movimientos // null = sin filtro
+    return movimientos.filter(m => {
+      const cat = m.categ || '(sin categ)'
+      return categsFiltro.has(cat)
+    })
+  }, [movimientos, categsFiltro])
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -347,7 +379,7 @@ export function VistaExtractoBancario() {
       busqueda: busqueda.trim() || undefined,
       limite: limiteRegistros,
       categEspecial: filtroCategEspecial || undefined,
-      soloSinRevisar: soloSinRevisar || undefined
+      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined
     })
   }
 
@@ -372,10 +404,10 @@ export function VistaExtractoBancario() {
 
   // Seleccionar todos los movimientos visibles
   const seleccionarTodos = () => {
-    if (seleccionados.size === movimientos.length) {
+    if (seleccionados.size === movimientosVisibles.length) {
       setSeleccionados(new Set())
     } else {
-      setSeleccionados(new Set(movimientos.map(m => m.id)))
+      setSeleccionados(new Set(movimientosVisibles.map(m => m.id)))
     }
   }
 
@@ -449,13 +481,16 @@ export function VistaExtractoBancario() {
                   console.log(`💰 Monto actualizado: ${montoOriginal} → ${montoExtracto} (${diferenciaPorcentaje.toFixed(1)}% diff)`)
                 }
                 
-                // Propagar CATEG si fue editada (con validación)
+                // Propagar CATEG + nro_cuenta si fue editada (con validación)
                 if (editData.categ?.trim()) {
                   const categIngresado = editData.categ.trim().toUpperCase()
                   const categExiste = validarCateg(categIngresado)
-                  
+
                   if (categExiste) {
                     updateData.cuenta_contable = categIngresado
+                    // Buscar nro_cuenta desde editData o cuentas_contables
+                    const nroCta = editData.nro_cuenta || cuentas.find(c => c.categ === categIngresado)?.nro_cuenta
+                    if (nroCta) updateData.nro_cuenta = nroCta
                   } else {
                     // Si no existe, mostrar alerta y NO propagar
                     alert(`⚠️ La categoría "${categIngresado}" no existe en el sistema.\nNo se propagará este valor. Use una categoría válida.`)
@@ -571,8 +606,42 @@ export function VistaExtractoBancario() {
               }
             }
           }
+
+          // Propagar conciliado a orígenes ya vinculados (movimientos que el motor dejó en auditar con IDs)
+          for (const movimientoId of ids) {
+            // Si ya se procesó arriba con vinculación nueva, saltar
+            if (vinculaciones[movimientoId]) continue
+
+            const movimiento = movimientos.find(m => m.id === movimientoId) as any
+            if (!movimiento) continue
+
+            // Factura ARCA ya vinculada
+            if (movimiento.comprobante_arca_id) {
+              await supabase
+                .schema('msa')
+                .from('comprobantes_arca')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.comprobante_arca_id)
+            }
+
+            // Cuota template ya vinculada
+            if (movimiento.template_cuota_id) {
+              await supabase
+                .from('cuotas_egresos_sin_factura')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.template_cuota_id)
+            }
+
+            // Pago sueldo ya vinculado
+            if (movimiento.sueldo_pago_id) {
+              await supabase
+                .from('sueldos_pagos')
+                .update({ estado: 'conciliado' })
+                .eq('id', movimiento.sueldo_pago_id)
+            }
+          }
         }
-        
+
         // Resetear después de aplicar exitosamente
         setSeleccionados(new Set())
         setModoEdicion(false)
@@ -593,6 +662,11 @@ export function VistaExtractoBancario() {
           const categExiste = validarCateg(categIngresado)
 
           if (categExiste) {
+            // Buscar nro_cuenta para propagar junto con categ
+            const nroCta = editData.nro_cuenta || cuentas.find(c => c.categ === categIngresado)?.nro_cuenta || null
+            const updateArcaPropag: Record<string, any> = { cuenta_contable: categIngresado }
+            if (nroCta) updateArcaPropag.nro_cuenta = nroCta
+
             for (const movimientoId of ids) {
               const movimiento = movimientos.find(m => m.id === movimientoId)
               const arcaId = movimiento?.comprobante_arca_id
@@ -601,20 +675,30 @@ export function VistaExtractoBancario() {
                 const { error } = await supabase
                   .schema('msa')
                   .from('comprobantes_arca')
-                  .update({ cuenta_contable: categIngresado })
+                  .update(updateArcaPropag)
                   .eq('id', arcaId)
 
                 if (error) {
                   console.error(`Error propagando categ a factura ARCA ${arcaId}:`, error)
                 } else {
-                  console.log(`✅ categ propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
+                  console.log(`✅ categ+nro_cuenta propagada a factura ARCA vinculada ${arcaId}: ${categIngresado}`)
                 }
               }
             }
           }
         }
 
-        recargar()
+        // Actualizar localmente sin recargar — preserva filtros y contexto de trabajo
+        const camposLocales: Record<string, any> = {}
+        if (editData.categ?.trim()) camposLocales.categ = editData.categ.trim().toUpperCase()
+        if (editData.nro_cuenta) camposLocales.nro_cuenta = editData.nro_cuenta
+        if (editData.centro_de_costo?.trim()) camposLocales.centro_de_costo = editData.centro_de_costo.trim()
+        if (editData.estado?.trim()) camposLocales.estado = editData.estado.trim()
+        if (editData.contable?.trim()) camposLocales.contable = editData.contable.trim()
+        if (editData.interno?.trim()) camposLocales.interno = editData.interno.trim()
+        if (editData.detalle?.trim()) camposLocales.detalle = editData.detalle.trim()
+        if (editData.estado === 'conciliado') camposLocales.motivo_revision = null
+        if (Object.keys(camposLocales).length > 0) actualizarLocal(ids, camposLocales)
       }
     } catch (error) {
       console.error('Error aplicando edición masiva:', error)
@@ -677,7 +761,7 @@ export function VistaExtractoBancario() {
         cuit: f.cuit,
         // Campos para mostrar en UI
         display_nombre: f.denominacion_emisor,
-        display_referencia: `${f.tipo_comprobante}-${f.numero_desde}`,
+        display_referencia: `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde}`,
         display_monto: f.monto_a_abonar,
         fecha_emision: f.fecha_emision
       }))
@@ -716,8 +800,12 @@ export function VistaExtractoBancario() {
     setMovimientoAsignando(movimiento)
     setTemplateElegido(null)
     setArcaElegida(null)
+    setSueldoElegido(null)
+    setGrupoElegido(null)
     setBusquedaAsignarArca('')
     setBusquedaAsignarTemplate('')
+    setBusquedaAsignarSueldo('')
+    setBusquedaAsignarGrupo('')
     setTabAsignar('template')
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
@@ -733,6 +821,143 @@ export function VistaExtractoBancario() {
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
     setTemplatesParaAsignar(data || [])
+
+    // Cargar pagos de sueldos no conciliados
+    const { data: sueldosData } = await supabase
+      .from('sueldos_pagos')
+      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
+      .neq('estado', 'conciliado')
+      .eq('medio_pago', 'banco')
+      .order('fecha', { ascending: false })
+    setSueldosParaAsignar(sueldosData || [])
+
+    // Cargar grupos de pago — 3 fuentes: templates, ARCA, sueldos
+    const [{ data: cuotasAgrupadas }, { data: arcaAgrupadas }, { data: sueldosAgrupados }] = await Promise.all([
+      supabase
+        .from('cuotas_egresos_sin_factura')
+        .select('*, egreso:egresos_sin_factura(id, nombre_referencia, categ, cuenta_agrupadora, responsable, cuit_quien_cobra, nombre_quien_cobra)')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .neq('estado', 'desactivado')
+        .order('fecha_estimada', { ascending: false }),
+      supabase.schema('msa')
+        .from('comprobantes_arca')
+        .select('*')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .order('fecha_estimada', { ascending: false }),
+      supabase
+        .from('sueldos_pagos')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
+        .not('grupo_pago_id', 'is', null)
+        .neq('estado', 'conciliado')
+        .order('fecha', { ascending: false }),
+    ])
+
+    // Agrupar templates por grupo_pago_id
+    const mapaGrupos = new Map<string, any[]>()
+    for (const c of cuotasAgrupadas || []) {
+      const g = c.grupo_pago_id
+      if (!mapaGrupos.has(g)) mapaGrupos.set(g, [])
+      mapaGrupos.get(g)!.push(c)
+    }
+    const gruposTemplates = Array.from(mapaGrupos.entries()).map(([grupoId, cuotas]) => {
+      const total = Math.round(cuotas.reduce((s: number, c: any) => s + (parseFloat(c.monto) || 0), 0) * 100) / 100
+      const primera = cuotas[0]
+      const nombresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_referencia || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      const proveedoresUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.nombre_quien_cobra || '').filter(Boolean))]
+      const cuitsUnicos = [...new Set(cuotas.map((c: any) => c.egreso?.cuit_quien_cobra || '').filter(Boolean))]
+      return {
+        id: grupoId,
+        tipo_grupo: 'template' as const,
+        cuotas,
+        total,
+        categ: primera.categ || primera.egreso?.categ || '',
+        nombre: nombreGrupo || primera.egreso?.nombre_referencia || '',
+        nombresUnicos,
+        cuenta_agrupadora: primera.egreso?.cuenta_agrupadora || '',
+        responsable: primera.egreso?.responsable || '',
+        egreso_id: primera.egreso_id,
+        fecha: primera.fecha_estimada,
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: proveedoresUnicos.join(', '),
+        descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
+      }
+    })
+
+    // Agrupar ARCA por grupo_pago_id
+    const mapaGruposArca = new Map<string, any[]>()
+    for (const f of arcaAgrupadas || []) {
+      const g = f.grupo_pago_id
+      if (!mapaGruposArca.has(g)) mapaGruposArca.set(g, [])
+      mapaGruposArca.get(g)!.push(f)
+    }
+    const gruposArca = Array.from(mapaGruposArca.entries()).map(([grupoId, facturas]) => {
+      const total = Math.round(facturas.reduce((s: number, f: any) => {
+        const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+        return s + (f.monto_a_abonar ?? f.imp_total ?? 0) * tc
+      }, 0) * 100) / 100
+      const primera = facturas[0]
+      const nombresUnicos = [...new Set(facturas.map((f: any) => f.denominacion_emisor || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      const cuitsUnicos = [...new Set(facturas.map((f: any) => f.cuit || '').filter(Boolean))]
+      return {
+        id: grupoId,
+        tipo_grupo: 'arca' as const,
+        cuotas: facturas,
+        total,
+        categ: primera.cuenta_contable || 'SIN_CATEG',
+        nombre: nombreGrupo,
+        nombresUnicos,
+        cuenta_agrupadora: '',
+        responsable: '',
+        egreso_id: null,
+        fecha: primera.fecha_estimada || primera.fecha_emision,
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: nombresUnicos.join(', '),
+        descripciones: facturas.map((f: any) => f.detalle || f.denominacion_emisor || '').join(' + '),
+      }
+    })
+
+    // Agrupar sueldos por grupo_pago_id
+    const mapaGruposSueldos = new Map<string, any[]>()
+    for (const s of sueldosAgrupados || []) {
+      const g = s.grupo_pago_id
+      if (!mapaGruposSueldos.has(g)) mapaGruposSueldos.set(g, [])
+      mapaGruposSueldos.get(g)!.push(s)
+    }
+    const gruposSueldos = Array.from(mapaGruposSueldos.entries()).map(([grupoId, pagos]) => {
+      const total = Math.round(pagos.reduce((s: number, p: any) => s + (parseFloat(p.monto) || 0), 0) * 100) / 100
+      const primera = pagos[0]
+      const nombresUnicos = [...new Set(pagos.map((p: any) => p.empleado?.nombre || '').filter(Boolean))]
+      const nombreGrupo = nombresUnicos.length <= 2
+        ? nombresUnicos.join(' + ')
+        : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+      const cuitsUnicos = [...new Set(pagos.map((p: any) => p.empleado?.cuit_empleado || '').filter(Boolean))]
+      return {
+        id: grupoId,
+        tipo_grupo: 'sueldo' as const,
+        cuotas: pagos,
+        total,
+        categ: 'Sueldos',
+        nombre: nombreGrupo,
+        nombresUnicos,
+        cuenta_agrupadora: '',
+        responsable: '',
+        egreso_id: null,
+        fecha: primera.fecha,
+        cuit: cuitsUnicos.join(', '),
+        nombre_proveedor: nombresUnicos.join(', '),
+        descripciones: pagos.map((p: any) => `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${p.empleado?.nombre || ''}`).join(' + '),
+      }
+    })
+
+    setGruposParaAsignar([...gruposTemplates, ...gruposArca, ...gruposSueldos])
 
     // Asegurar facturas ARCA cargadas
     if (facturasDisponibles.length === 0) await cargarFacturasDisponibles()
@@ -842,12 +1067,18 @@ export function VistaExtractoBancario() {
         // Actualizar extracto con todos los campos incluyendo contable/interno
         // Multi-cuenta: usar categ específico si fue seleccionado
         const categFinal = cuotaElegida?.categ || ((templateElegido.es_multi_cuenta && categManualAsignar) ? categManualAsignar : templateElegido.categ)
+        // Buscar nombre oficial del proveedor en BBDD proveedores
+        const cuitTemplate = templateElegido.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provTemplate } = cuitTemplate ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitTemplate).maybeSingle() : { data: null }
         const updateTemplate: Record<string, any> = {
           template_id: templateElegido.id,
           template_cuota_id: cuotaId,
           categ: categFinal,
-          detalle: templateElegido.nombre_referencia,
-          estado: 'conciliado'
+          detalle: null,
+          estado: 'conciliado',
+          proveedor_nombre: provTemplate?.razon_social || null,
+          comprobantes_pagados: templateElegido.display_referencia || templateElegido.nombre_referencia || null
         }
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
@@ -858,6 +1089,9 @@ export function VistaExtractoBancario() {
           .eq('id', movimientoAsignando.id)
 
         if (errExt) throw errExt
+
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateTemplate)
 
       } else if (tabAsignar === 'arca' && arcaElegida) {
         // Obtener cuenta_contable y nro_cuenta de la factura ARCA (igual que el motor)
@@ -870,10 +1104,16 @@ export function VistaExtractoBancario() {
         const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
         const nroCuenta = facturaCompleta?.nro_cuenta || null              // código numérico → nro_cuenta
 
+        // Buscar nombre oficial del proveedor en BBDD proveedores
+        const cuitArca = arcaElegida.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provArca } = cuitArca ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitArca).maybeSingle() : { data: null }
         const updateArca: Record<string, any> = {
           comprobante_arca_id: arcaElegida.id,
-          detalle: arcaElegida.display_nombre || '',
-          estado: 'conciliado'
+          detalle: null,
+          estado: 'conciliado',
+          proveedor_nombre: provArca?.razon_social || null,
+          comprobantes_pagados: arcaElegida.display_referencia || null
         }
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
@@ -900,10 +1140,163 @@ export function VistaExtractoBancario() {
 
         // Quitar de la lista local para que no vuelva a aparecer como opción
         setFacturasDisponibles(prev => prev.filter(f => f.id !== arcaElegida.id))
+
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateArca)
+
+      } else if (tabAsignar === 'sueldo' && sueldoElegido) {
+        // Limpiar vínculos anteriores si existían
+        if (movimientoAsignando.template_cuota_id) {
+          await supabase.from('cuotas_egresos_sin_factura')
+            .delete().eq('id', movimientoAsignando.template_cuota_id)
+        }
+        if (movimientoAsignando.comprobante_arca_id) {
+          await supabase.from(tablaActiva)
+            .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
+        }
+
+        const nombreEmpleado = sueldoElegido.empleado?.nombre || ''
+        const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
+        const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
+        const mesesAbrev = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        const periodoLabel = sueldoElegido.periodo
+          ? `${mesesAbrev[(sueldoElegido.periodo.mes || 1) - 1]} ${sueldoElegido.periodo.anio}`
+          : ''
+
+        // Buscar códigos contable/interno por empleado (Tipo C)
+        const empleadoId = sueldoElegido.empleado_id || sueldoElegido.empleado?.id
+        let codigosSueldo: { contable?: string | null, interno?: string | null } = {}
+        if (empleadoId) {
+          const { data: reglaEmp } = await supabase
+            .from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('tipo_regla', 'empleado')
+            .eq('empleado_id', empleadoId)
+            .eq('activo', true)
+            .maybeSingle()
+          if (reglaEmp) codigosSueldo = { contable: reglaEmp.codigo_contable, interno: reglaEmp.codigo_interno }
+        }
+
+        const updateSueldo: Record<string, any> = {
+          sueldo_pago_id: sueldoElegido.id,
+          categ: 'Sueldos',
+          detalle: null,
+          estado: 'conciliado',
+          proveedor_nombre: nombreEmpleado,
+          comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
+          // Limpiar IDs de otros orígenes
+          template_id: null,
+          template_cuota_id: null,
+          comprobante_arca_id: null
+        }
+        updateSueldo.contable = contableManual.trim() || codigosSueldo.contable || ''
+        updateSueldo.interno  = internoManual.trim()  || codigosSueldo.interno  || ''
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateSueldo)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+        // Marcar el pago de sueldo como conciliado
+        await supabase
+          .from('sueldos_pagos')
+          .update({ estado: 'conciliado' })
+          .eq('id', sueldoElegido.id)
+
+        // Quitar de la lista local
+        setSueldosParaAsignar(prev => prev.filter(s => s.id !== sueldoElegido.id))
+
+        // Actualizar localmente — preserva filtros y contexto de trabajo
+        actualizarLocal(movimientoAsignando.id, updateSueldo)
+
+      } else if (tabAsignar === 'grupo' && grupoElegido) {
+        // Buscar códigos contable/interno por template (si aplica)
+        const codigos = grupoElegido.tipo_grupo === 'template'
+          ? await buscarCodigos(grupoElegido.egreso_id, grupoElegido.responsable)
+          : { contable: '', interno: '' }
+
+        // Conciliar todas las items del grupo según tipo
+        const idsGrupo = grupoElegido.cuotas.map((c: any) => c.id)
+        if (grupoElegido.tipo_grupo === 'template') {
+          await supabase
+            .from('cuotas_egresos_sin_factura')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        } else if (grupoElegido.tipo_grupo === 'arca') {
+          await supabase.schema('msa')
+            .from('comprobantes_arca')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        } else if (grupoElegido.tipo_grupo === 'sueldo') {
+          await supabase
+            .from('sueldos_pagos')
+            .update({ estado: 'conciliado' })
+            .in('id', idsGrupo)
+        }
+
+        // Buscar nombre oficial del proveedor
+        const cuitGrupo = grupoElegido.cuit?.replace(/[-\s]/g, '') || ''
+        const { data: provGrupo } = cuitGrupo ? await supabase
+          .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
+
+        const updateGrupo: Record<string, any> = {
+          categ: grupoElegido.categ,
+          detalle: null,
+          estado: 'conciliado',
+          proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
+          comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
+            ? grupoElegido.cuotas.map((f: any) => `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde}`).join(' + ')
+            : grupoElegido.tipo_grupo === 'sueldo'
+            ? (() => {
+                const ma = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+                return grupoElegido.cuotas.map((p: any) => {
+                  const per = p.periodo ? `${ma[(p.periodo.mes || 1) - 1]} ${p.periodo.anio}` : ''
+                  return `${p.tipo === 'sueldo' ? 'Saldo' : 'Anticipo'} ${per}`
+                }).join(' + ')
+              })()
+            : grupoElegido.nombre,
+        }
+
+        // Llenar IDs según tipo de grupo
+        if (grupoElegido.tipo_grupo === 'template') {
+          updateGrupo.template_id = grupoElegido.egreso_id
+          updateGrupo.template_cuota_id = grupoElegido.cuotas[0].id
+          updateGrupo.comprobante_arca_id = null
+          updateGrupo.sueldo_pago_id = null
+        } else if (grupoElegido.tipo_grupo === 'arca') {
+          updateGrupo.comprobante_arca_id = grupoElegido.cuotas[0].id
+          updateGrupo.nro_cuenta = grupoElegido.cuotas[0].nro_cuenta || null
+          updateGrupo.template_id = null
+          updateGrupo.template_cuota_id = null
+          updateGrupo.sueldo_pago_id = null
+        } else if (grupoElegido.tipo_grupo === 'sueldo') {
+          updateGrupo.sueldo_pago_id = grupoElegido.cuotas[0].id
+          updateGrupo.template_id = null
+          updateGrupo.template_cuota_id = null
+          updateGrupo.comprobante_arca_id = null
+        }
+
+        updateGrupo.contable = contableManual.trim() || codigos.contable || ''
+        updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
+
+        const { error: errExt } = await supabase
+          .from(tablaActiva)
+          .update(updateGrupo)
+          .eq('id', movimientoAsignando.id)
+
+        if (errExt) throw errExt
+
+        // Quitar de la lista local
+        setGruposParaAsignar(prev => prev.filter(g => g.id !== grupoElegido.id))
+
+        // Actualizar localmente
+        actualizarLocal(movimientoAsignando.id, updateGrupo)
       }
 
       setModalAsignar(false)
-      recargar()
     } catch (err) {
       console.error('Error en asignación manual:', err)
     } finally {
@@ -998,7 +1391,7 @@ export function VistaExtractoBancario() {
           .eq('id', id)
         if (err) throw err
       }
-      recargar()
+      actualizarLocal(ids, { revisado: valor })
     } catch (err) {
       console.error('Error marcando revisado:', err)
       alert('Error al marcar como revisado')
@@ -1007,7 +1400,7 @@ export function VistaExtractoBancario() {
 
   // Marcar visibles como revisados (excepto seleccionados si hay selección)
   const marcarVisiblesComoRevisados = async () => {
-    const sinRevisar = movimientos.filter(m => !m.revisado)
+    const sinRevisar = movimientosVisibles.filter(m => !m.revisado)
     if (sinRevisar.length === 0) return
 
     let idsAMarcar: string[]
@@ -1038,7 +1431,7 @@ export function VistaExtractoBancario() {
         .update({ nota_operador: nota.trim() || null })
         .eq('id', id)
       if (err) throw err
-      recargar()
+      actualizarLocal(id, { nota_operador: nota.trim() || null })
       setEditandoNotaId(null)
       setEditandoNotaVal('')
     } catch (err) {
@@ -1061,9 +1454,9 @@ export function VistaExtractoBancario() {
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
     if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
     if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
-    else if (busquedaCateg.trim()) filtros.categ = busquedaCateg.trim()
+    // categ multi-select se aplica client-side via movimientosVisibles
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
-    if (soloSinRevisar) filtros.soloSinRevisar = true
+    if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
 
     cargarMovimientos(filtros)
   }
@@ -1080,6 +1473,8 @@ export function VistaExtractoBancario() {
     setFiltroEstado('Todos')
     setFiltroCategEspecial(null)
     setSoloSinRevisar(false)
+    setCategsFiltro(null)
+    setCategFiltroBusqueda('')
 
     cargarMovimientos({
       estado: 'Todos',
@@ -1442,19 +1837,20 @@ export function VistaExtractoBancario() {
                   Conciliados ({estadisticas.conciliados})
                 </Button>
                 <span className="text-gray-300">|</span>
-                <Button
-                  variant={soloSinRevisar ? "default" : "outline"}
-                  size="sm"
-                  className={`h-7 text-xs px-2 ${soloSinRevisar ? 'bg-rose-600 hover:bg-rose-700' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
-                  onClick={() => {
-                    const nuevo = !soloSinRevisar
-                    setSoloSinRevisar(nuevo)
-                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, soloSinRevisar: nuevo || undefined })
+                <select
+                  value={filtroRevisado}
+                  onChange={(e) => {
+                    const nuevo = e.target.value as 'todas' | 'revisadas' | 'no_revisadas'
+                    setFiltroRevisado(nuevo)
+                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, filtroRevisado: nuevo !== 'todas' ? nuevo : undefined })
                   }}
+                  className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroRevisado !== 'todas' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-600 border-rose-300'}`}
                 >
-                  Sin revisar ({estadisticas.sin_revisar})
-                </Button>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || soloSinRevisar) && (
+                  <option value="todas">Todas ({estadisticas.sin_revisar + (movimientos.length - (estadisticas.sin_revisar || 0))})</option>
+                  <option value="no_revisadas">No revisadas ({estadisticas.sin_revisar})</option>
+                  <option value="revisadas">Revisadas</option>
+                </select>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1462,7 +1858,7 @@ export function VistaExtractoBancario() {
                     onClick={() => {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
-                      setSoloSinRevisar(false)
+                      setFiltroRevisado('todas')
                       cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
                     }}
                   >
@@ -1480,11 +1876,11 @@ export function VistaExtractoBancario() {
                     >
                       ✓ {seleccionados.size > 0
                         ? `Revisar visibles excepto ${seleccionados.size} seleccionados`
-                        : `Marcar ${movimientos.filter(m => !m.revisado).length} como revisados`}
+                        : `Marcar ${movimientosVisibles.filter(m => !m.revisado).length} como revisados`}
                     </Button>
                   )}
                   <span className="text-xs text-gray-400">
-                    {movimientos.length} mov.
+                    {movimientosVisibles.length}{categsFiltro ? `/${movimientos.length}` : ''} mov.
                     {movimientos.length === limiteRegistros && ' (límite)'}
                   </span>
                 </div>
@@ -1558,15 +1954,92 @@ export function VistaExtractoBancario() {
                     </div>
                   </div>
                   
-                  {/* Búsqueda por CATEG */}
-                  <div className="space-y-2">
+                  {/* Multi-select CATEG tipo Excel */}
+                  <div className="space-y-2 relative">
                     <label className="text-sm font-medium text-purple-700">💰 CATEG</label>
-                    <CategCombobox
-                      value={busquedaCateg}
-                      onValueChange={setBusquedaCategExtracto}
-                      placeholder="Buscar por CATEG..."
-                      className="text-xs"
-                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-between text-xs h-9"
+                      onClick={() => setCategFiltroAbierto(!categFiltroAbierto)}
+                    >
+                      <span className="truncate">
+                        {!categsFiltro ? 'Todas las categorías' :
+                          categsFiltro.size === 0 ? 'Ninguna seleccionada' :
+                          categsFiltro.size === 1 ? Array.from(categsFiltro)[0] :
+                          `${categsFiltro.size} categorías`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 ml-1 shrink-0" />
+                    </Button>
+                    {categFiltroAbierto && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-72 flex flex-col">
+                        {/* Buscar */}
+                        <div className="p-2 border-b">
+                          <Input
+                            autoFocus
+                            placeholder="Buscar categoría..."
+                            value={categFiltroBusqueda}
+                            onChange={e => setCategFiltroBusqueda(e.target.value)}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        {/* Acciones rápidas */}
+                        <div className="flex gap-1 p-2 border-b text-[10px]">
+                          <button
+                            className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            onClick={() => { setCategsFiltro(null); setCategFiltroAbierto(false) }}
+                          >Todas</button>
+                          <button
+                            className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
+                            onClick={() => setCategsFiltro(new Set(categsUnicas))}
+                          >Seleccionar todas</button>
+                          <button
+                            className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
+                            onClick={() => setCategsFiltro(new Set())}
+                          >Ninguna</button>
+                        </div>
+                        {/* Lista con checkboxes */}
+                        <div className="overflow-y-auto flex-1 p-1">
+                          {categsUnicas
+                            .filter(c => !categFiltroBusqueda || c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
+                            .map(cat => {
+                              const checked = !categsFiltro || categsFiltro.has(cat)
+                              const count = movimientos.filter(m => (m.categ || '(sin categ)') === cat).length
+                              return (
+                                <label key={cat} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const nuevo = new Set(categsFiltro ?? categsUnicas)
+                                      if (nuevo.has(cat)) nuevo.delete(cat)
+                                      else nuevo.add(cat)
+                                      // Si todas seleccionadas → null (sin filtro)
+                                      setCategsFiltro(nuevo.size === categsUnicas.length ? null : nuevo)
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <span className="truncate flex-1">{cat}</span>
+                                  <span className="text-gray-400 text-[10px]">{count}</span>
+                                </label>
+                              )
+                            })}
+                        </div>
+                        {/* Aplicar */}
+                        <div className="p-2 border-t">
+                          <Button size="sm" className="w-full h-7 text-xs" onClick={() => {
+                            if (categFiltroBusqueda.trim()) {
+                              const visibles = categsUnicas.filter(c => c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
+                              setCategsFiltro(visibles.length === categsUnicas.length ? null : new Set(visibles))
+                              setCategFiltroBusqueda('')
+                            }
+                            setCategFiltroAbierto(false)
+                          }}>
+                            Aplicar
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Búsqueda por detalle */}
@@ -1585,7 +2058,7 @@ export function VistaExtractoBancario() {
                   <div className="space-y-2 col-span-1 md:col-span-2">
                     <label className="text-sm font-medium text-purple-700">📊 Info de Filtrado</label>
                     <div className="text-xs text-gray-600">
-                      Mostrando {movimientos.length} de {limiteRegistros} movimientos máximo
+                      Mostrando {movimientosVisibles.length}{categsFiltro ? `/${movimientos.length}` : ''} de {limiteRegistros} movimientos máximo
                       {movimientos.length === limiteRegistros && (
                         <div className="text-orange-600 font-medium">
                           ⚠️ Límite alcanzado - puede haber más registros
@@ -1687,14 +2160,26 @@ export function VistaExtractoBancario() {
                   />
                 </div>
 
-                {/* Sección de Vinculación con Facturas */}
-                {editData.estado === 'conciliado' && (
+                {/* Sección de Vinculación con Facturas — solo para movimientos SIN vínculo previo */}
+                {editData.estado === 'conciliado' && (() => {
+                  const sinVinculo = Array.from(seleccionados).filter(id => {
+                    const mov = movimientos.find(m => m.id === id) as any
+                    return mov && !mov.comprobante_arca_id && !mov.template_cuota_id && !mov.sueldo_pago_id
+                  })
+                  const conVinculo = seleccionados.size - sinVinculo.length
+                  return (
                   <div className="border-t pt-4 mt-4">
+                    {conVinculo > 0 && (
+                      <p className="text-sm text-green-700 bg-green-50 rounded p-2 mb-3">
+                        {conVinculo} movimiento(s) ya vinculado(s) — al conciliar se propagará el estado al origen.
+                      </p>
+                    )}
+                    {sinVinculo.length > 0 && (<>
                     <h4 className="text-lg font-medium mb-3 text-blue-800">
                       💡 Vincular con Facturas ARCA (Opcional)
                     </h4>
                     <div className="space-y-3">
-                      {Array.from(seleccionados).map(movimientoId => {
+                      {sinVinculo.map(movimientoId => {
                         const movimiento = movimientos.find(m => m.id === movimientoId)
                         if (!movimiento) return null
                         
@@ -1837,8 +2322,10 @@ export function VistaExtractoBancario() {
                         )
                       })}
                     </div>
+                    </>)}
                   </div>
-                )}
+                  )
+                })()}
 
                 <div className="flex gap-2">
                   <Button onClick={aplicarEdicionMasiva} className="bg-green-600 hover:bg-green-700">
@@ -1889,7 +2376,7 @@ export function VistaExtractoBancario() {
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
                   <p>Cargando movimientos...</p>
                 </div>
-              ) : movimientos.length === 0 ? (
+              ) : movimientosVisibles.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                   <p className="text-lg mb-2">No se encontraron movimientos</p>
@@ -1905,7 +2392,7 @@ export function VistaExtractoBancario() {
                         {modoEdicion && (
                           <TableHead className="w-12">
                             <Checkbox
-                              checked={seleccionados.size === movimientos.length && movimientos.length > 0}
+                              checked={seleccionados.size === movimientosVisibles.length && movimientosVisibles.length > 0}
                               onCheckedChange={seleccionarTodos}
                             />
                           </TableHead>
@@ -1918,6 +2405,8 @@ export function VistaExtractoBancario() {
                         {col('categ') && <TableHead>CATEG</TableHead>}
                         <TableHead>Estado</TableHead>
                         {col('detalle') && <TableHead>Detalle</TableHead>}
+                        {col('proveedor_nombre') && <TableHead>Proveedor</TableHead>}
+                        {col('comprobantes_pagados') && <TableHead>Comprobantes</TableHead>}
                         {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
                         {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
                         {col('contable') && <TableHead>Contable</TableHead>}
@@ -1936,7 +2425,7 @@ export function VistaExtractoBancario() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {movimientos.map((movimiento) => (
+                      {movimientosVisibles.map((movimiento) => (
                         <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
                           {modoEdicion && (
                             <TableCell>
@@ -1996,7 +2485,7 @@ export function VistaExtractoBancario() {
                                     if (e.key === 'Enter') {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      recargar()
+                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
@@ -2005,7 +2494,7 @@ export function VistaExtractoBancario() {
                                     if (editandoDetalleVal !== (movimiento.detalle || '')) {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      recargar()
+                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
                                     }
                                     setEditandoDetalleId(null)
                                   }}
@@ -2019,6 +2508,16 @@ export function VistaExtractoBancario() {
                                   {movimiento.detalle || <span className="text-gray-300">—</span>}
                                 </span>
                               )}
+                            </TableCell>
+                          )}
+                          {col('proveedor_nombre') && (
+                            <TableCell className="text-sm truncate max-w-[180px]" title={movimiento.proveedor_nombre || ''}>
+                              {movimiento.proveedor_nombre || <span className="text-gray-300">—</span>}
+                            </TableCell>
+                          )}
+                          {col('comprobantes_pagados') && (
+                            <TableCell className="text-sm truncate max-w-[200px]" title={movimiento.comprobantes_pagados || ''}>
+                              {movimiento.comprobantes_pagados || <span className="text-gray-300">—</span>}
                             </TableCell>
                           )}
                           {col('motivo_revision') && (
@@ -2496,10 +2995,12 @@ export function VistaExtractoBancario() {
             )}
           </DialogHeader>
 
-          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as 'arca' | 'template')}>
+          <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as any)}>
             <TabsList className="w-full">
               <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
               <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
+              <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
+              <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
             </TabsList>
 
             {/* Tab Template */}
@@ -2698,7 +3199,11 @@ export function VistaExtractoBancario() {
                     </div>
                   )}
                   <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-                    Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.
+                    {cuotaElegida ? (
+                      <>Se usará cuota existente de <strong>{templateElegido.nombre_referencia}</strong> — monto y fechas se actualizarán desde el extracto.</>
+                    ) : (
+                      <>Se creará cuota nueva en <strong>{templateElegido.nombre_referencia}</strong> con monto del extracto y estado <em>conciliado</em>.</>
+                    )}
                     {templateElegido.es_multi_cuenta && categManualAsignar && (
                       <span className="block mt-1 text-blue-600">Categoría: <strong>{categManualAsignar}</strong></span>
                     )}
@@ -2811,6 +3316,203 @@ export function VistaExtractoBancario() {
                 </div>
               )}
             </TabsContent>
+
+            {/* Tab Sueldo */}
+            <TabsContent value="sueldo" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por empleado, descripción o monto..."
+                value={busquedaAsignarSueldo}
+                onChange={e => setBusquedaAsignarSueldo(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const busqueda = busquedaAsignarSueldo.toLowerCase().trim()
+                  const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
+
+                  // Separar: sugerencias (mismo monto) y resto
+                  const sugerencias = sueldosParaAsignar.filter(s =>
+                    Math.abs(parseFloat(s.monto) - montoMov) < 0.01
+                  )
+                  const resto = sueldosParaAsignar.filter(s =>
+                    Math.abs(parseFloat(s.monto) - montoMov) >= 0.01
+                  )
+
+                  const filtrar = (lista: any[]) => busqueda
+                    ? lista.filter(s =>
+                        (s.empleado?.nombre || '').toLowerCase().includes(busqueda) ||
+                        (s.descripcion || '').toLowerCase().includes(busqueda) ||
+                        String(s.monto).includes(busqueda)
+                      )
+                    : lista
+
+                  const renderSueldo = (s: any, sugerido: boolean) => (
+                    <div
+                      key={s.id}
+                      onClick={() => setSueldoElegido(sueldoElegido?.id === s.id ? null : s)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        sueldoElegido?.id === s.id ? 'border-blue-500 bg-blue-50'
+                        : sugerido ? 'border-green-200 hover:border-green-400 hover:bg-green-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-sm">{s.empleado?.nombre || 'Sin nombre'}</div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          s.tipo === 'anticipo' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {s.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                        <span>{new Date(s.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                        <span className="font-mono">${parseFloat(s.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                        <span className="text-gray-400">{s.descripcion}</span>
+                        {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
+                      </div>
+                    </div>
+                  )
+
+                  const sugFiltradas = filtrar(sugerencias)
+                  const restoFiltradas = filtrar(resto)
+
+                  if (sugFiltradas.length === 0 && restoFiltradas.length === 0) {
+                    return <p className="text-sm text-gray-400 text-center py-4">No hay pagos de sueldos pendientes{busqueda ? ' para esta búsqueda' : ' (medio_pago=banco)'}</p>
+                  }
+
+                  return (
+                    <>
+                      {sugFiltradas.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {sugFiltradas.map(s => renderSueldo(s, true))}
+                          {restoFiltradas.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otros pagos</p>
+                          )}
+                        </>
+                      )}
+                      {restoFiltradas.map(s => renderSueldo(s, false))}
+                    </>
+                  )
+                })()}
+              </div>
+              {sueldoElegido && (
+                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
+                  Se vinculará pago <strong>{sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'} {sueldoElegido.empleado?.nombre}</strong> y se marcará como conciliado. Categ = Sueldos.
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Tab Grupo */}
+            <TabsContent value="grupo" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por nombre, categoría o monto..."
+                value={busquedaAsignarGrupo}
+                onChange={e => setBusquedaAsignarGrupo(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const busqueda = busquedaAsignarGrupo.toLowerCase().trim()
+                  const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
+
+                  const sugerencias = gruposParaAsignar.filter(g =>
+                    Math.abs(g.total - montoMov) < 0.01
+                  )
+                  const resto = gruposParaAsignar.filter(g =>
+                    Math.abs(g.total - montoMov) >= 0.01
+                  )
+
+                  const filtrar = (lista: any[]) => busqueda
+                    ? lista.filter(g =>
+                        g.nombre.toLowerCase().includes(busqueda) ||
+                        g.categ.toLowerCase().includes(busqueda) ||
+                        g.cuenta_agrupadora.toLowerCase().includes(busqueda) ||
+                        g.descripciones.toLowerCase().includes(busqueda) ||
+                        String(g.total).includes(busqueda)
+                      )
+                    : lista
+
+                  const renderGrupo = (g: any, sugerido: boolean) => {
+                    const seleccionado = grupoElegido?.id === g.id
+                    return (
+                    <div
+                      key={g.id}
+                      onClick={() => setGrupoElegido(seleccionado ? null : g)}
+                      className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                        seleccionado ? 'border-blue-500 bg-blue-50'
+                        : sugerido ? 'border-green-200 hover:border-green-400 hover:bg-green-50'
+                        : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-sm">{g.nombre}</div>
+                        <span className="text-xs font-mono font-semibold">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                        <span>{g.fecha ? new Date(g.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}</span>
+                        <span className="text-purple-600">{g.categ}</span>
+                        <span className="text-gray-400">{g.cuotas.length} {g.tipo_grupo === 'arca' ? 'facturas' : g.tipo_grupo === 'sueldo' ? 'pagos' : 'cuotas'}</span>
+                        {g.nombre_proveedor && <span className="text-orange-600">{g.nombre_proveedor}</span>}
+                        {sugerido && <span className="text-green-600 font-medium">Mismo monto</span>}
+                      </div>
+                      {/* Desglose de cuotas al seleccionar */}
+                      {seleccionado && g.cuotas.length > 1 && (
+                        <div className="mt-2 pt-2 border-t border-blue-200 space-y-0.5">
+                          <p className="text-[10px] font-semibold text-blue-600 uppercase">Desglose del grupo</p>
+                          {g.cuotas.map((c: any) => {
+                            const nombre = g.tipo_grupo === 'arca'
+                              ? (`FC ${c.tipo_comprobante || ''}-${String(c.punto_venta || 0).padStart(5,'0')}-${String(c.numero_desde || 0).padStart(8,'0')} ${c.denominacion_emisor || ''}`.trim())
+                              : g.tipo_grupo === 'sueldo'
+                              ? (c.empleado?.nombre || c.descripcion || '—')
+                              : (c.egreso?.nombre_referencia || c.descripcion || '—')
+                            const monto = g.tipo_grupo === 'arca'
+                              ? ((c.monto_a_abonar ?? c.imp_total ?? 0) * (c.tc_pago ?? c.tipo_cambio ?? 1))
+                              : (parseFloat(c.monto) || 0)
+                            return (
+                            <div key={c.id} className="flex justify-between text-[11px] text-gray-600">
+                              <span className="truncate mr-2">{nombre}</span>
+                              <span className="font-mono whitespace-nowrap">${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          )})}
+                          <div className="flex justify-between text-[11px] font-semibold text-blue-700 border-t border-blue-100 pt-0.5">
+                            <span>Total</span>
+                            <span className="font-mono">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  const sugFiltradas = filtrar(sugerencias)
+                  const restoFiltradas = filtrar(resto)
+
+                  if (sugFiltradas.length === 0 && restoFiltradas.length === 0) {
+                    return <p className="text-sm text-gray-400 text-center py-4">No hay grupos de pago pendientes{busqueda ? ' para esta búsqueda' : ''}</p>
+                  }
+
+                  return (
+                    <>
+                      {sugFiltradas.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5">Sugerencias</p>
+                          {sugFiltradas.map(g => renderGrupo(g, true))}
+                          {restoFiltradas.length > 0 && (
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-0.5 pt-1">Otros grupos</p>
+                          )}
+                        </>
+                      )}
+                      {restoFiltradas.map(g => renderGrupo(g, false))}
+                    </>
+                  )
+                })()}
+              </div>
+              {grupoElegido && (
+                <div className="text-xs text-gray-500 bg-blue-50 border border-blue-200 rounded p-2">
+                  Se vincularán <strong>{grupoElegido.cuotas.length} {grupoElegido.tipo_grupo === 'arca' ? 'facturas' : grupoElegido.tipo_grupo === 'sueldo' ? 'pagos' : 'cuotas'}</strong> ({grupoElegido.nombresUnicos?.length > 1 ? `${grupoElegido.nombresUnicos.length} ${grupoElegido.tipo_grupo === 'arca' ? 'proveedores' : grupoElegido.tipo_grupo === 'sueldo' ? 'empleados' : 'templates'}` : grupoElegido.nombre}) por <strong>${grupoElegido.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> y se marcarán como conciliadas.
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
 
           {/* Códigos contable/interno — opcionales, aplican a cualquier asignación */}
@@ -2844,7 +3546,7 @@ export function VistaExtractoBancario() {
             <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
-              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : !arcaElegida)}
+              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)}
             >
               {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
             </Button>

@@ -208,14 +208,65 @@ export function useMotorConciliacion() {
     }
   }
 
+  // Extraer CUIT válido de leyendas_adicionales_2 (si existe)
+  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null => {
+    // El tipo dice leyendas_adicionales2 pero BD devuelve leyendas_adicionales_2
+    const mov = movimiento as any
+    const valor = (mov.leyendas_adicionales_2 || mov.leyendas_adicionales2 || '').trim()
+    if (!valor) return null
+    // CUIT argentino: exactamente 11 dígitos, prefijo válido
+    if (!/^\d{11}$/.test(valor)) return null
+    const prefijo = parseInt(valor.substring(0, 2))
+    if ([20, 23, 24, 27, 30, 33, 34].includes(prefijo)) return valor
+    return null
+  }
+
+  // Buscar nombre del proveedor en BBDD proveedores por CUIT
+  const buscarNombreProveedor = async (cuit: string | null | undefined): Promise<string | null> => {
+    if (!cuit) return null
+    const cuitLimpio = cuit.replace(/[-\s]/g, '')
+    if (!cuitLimpio) return null
+    const { data } = await supabase
+      .from('proveedores')
+      .select('razon_social')
+      .eq('cuit', cuitLimpio)
+      .maybeSingle()
+    return data?.razon_social || null
+  }
+
   // Función para buscar match en Cash Flow
   const buscarMatchCashFlow = (movimiento: MovimientoBancario): any => {
     const toleranciaDias = 5
     const fechaMovimiento = new Date(movimiento.fecha)
-    
+
+    // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
+    const mov = movimiento as any
+    const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
+      .some(campo => campo && /haber/i.test(campo))
+
+    // Pre-filtro por CUIT bancario: si el banco informa CUIT, buscar solo en ese proveedor
+    const cuitBancario = extraerCuitBancario(movimiento)
+
+    let pool: typeof cashFlowData
+    if (esHaberes) {
+      // Haberes → restringir a sueldos; si además hay CUIT, filtrar por ese empleado
+      const sueldos = cashFlowData.filter(cf => cf.origen === 'SUELDO')
+      pool = cuitBancario
+        ? sueldos.filter(cf => cf.cuit_proveedor === cuitBancario)
+        : sueldos
+      // Fallback: si no encontró sueldos con ese CUIT, usar todos los sueldos
+      if (pool.length === 0 && cuitBancario) pool = sueldos
+    } else {
+      const candidatos = cuitBancario
+        ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
+        : cashFlowData
+      // Si hay CUIT pero no hay candidatos con ese CUIT, buscar en todo (fallback)
+      pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+    }
+
     // Buscar por débitos
     if (movimiento.debitos > 0) {
-      const match = cashFlowData.find(cf => {
+      const match = pool.find(cf => {
         if (cf.debitos !== movimiento.debitos) return false
         
         const fechaCF = new Date(cf.fecha_estimada)
@@ -245,7 +296,7 @@ export function useMotorConciliacion() {
 
     // Buscar por créditos
     if (movimiento.creditos > 0) {
-      const match = cashFlowData.find(cf => {
+      const match = pool.find(cf => {
         if (cf.creditos !== movimiento.creditos) return false
         
         const fechaCF = new Date(cf.fecha_estimada)
@@ -362,6 +413,31 @@ export function useMotorConciliacion() {
                   if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
                 }
               }
+            } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
+              // SUELDO: buscar regla tipo empleado (Tipo C)
+              const empleadoIdCF = matchCF.cashFlowRow.empleado_id
+              if (empleadoIdCF) {
+                const { data: reglaEmp } = await supabase
+                  .from('reglas_contable_interno')
+                  .select('codigo_contable, codigo_interno')
+                  .eq('cuenta_bancaria_id', cuenta.id)
+                  .eq('tipo_regla', 'empleado')
+                  .eq('empleado_id', empleadoIdCF)
+                  .eq('activo', true)
+                  .maybeSingle()
+                if (reglaEmp) {
+                  if (esValorContableValido(reglaEmp.codigo_contable)) extraCF.contable = reglaEmp.codigo_contable!
+                  if (esValorContableValido(reglaEmp.codigo_interno)) extraCF.interno = reglaEmp.codigo_interno!
+                }
+              }
+              // Fallback: regla de texto con código propio
+              if (!extraCF.contable || !extraCF.interno) {
+                const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+                if (reglaQueMatcheaF1) {
+                  if (!extraCF.contable && esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                  if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+                }
+              }
             } else {
               // ARCA u otros orígenes: solo regla de texto con código propio
               const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
@@ -379,12 +455,27 @@ export function useMotorConciliacion() {
               ? 'Sin categ: requiere asignación de cuenta contable'
               : matchCF.motivo_revision
 
+            // Buscar nombre oficial del proveedor en BBDD proveedores
+            const provNombreCF = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
+
+            // Si no tenemos nro_cuenta aún (match TEMPLATE), buscarlo en cuentas_contables
+            if (!extraIdsCF.nro_cuenta && matchCF.cashFlowRow.categ && !sinCateg) {
+              const { data: ccData } = await supabase
+                .from('cuentas_contables')
+                .select('nro_cuenta')
+                .eq('categ', matchCF.cashFlowRow.categ)
+                .maybeSingle()
+              if (ccData?.nro_cuenta) extraIdsCF.nro_cuenta = ccData.nro_cuenta
+            }
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
-              detalle: matchCF.cashFlowRow.detalle,
+              detalle: matchCF.cashFlowRow.detalle_usuario || null,
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
+              proveedor_nombre: provNombreCF,
+              comprobantes_pagados: matchCF.cashFlowRow.comprobante_display || null,
               ...extraIdsCF,
               ...extraCF
             })
@@ -392,15 +483,21 @@ export function useMotorConciliacion() {
             // Actualizar estado de la cuota/factura origen si el match fue definitivo
             if (estadoFinal === 'conciliado') {
               if (matchCF.cashFlowRow.origen === 'TEMPLATE') {
+                const idsAConciliar = matchCF.cashFlowRow.ids_grupo && matchCF.cashFlowRow.ids_grupo.length > 0
+                  ? matchCF.cashFlowRow.ids_grupo
+                  : [matchCF.cashFlowRow.id]
                 await supabase
                   .from('cuotas_egresos_sin_factura')
                   .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                  .in('id', idsAConciliar)
               } else if (matchCF.cashFlowRow.origen === 'ARCA') {
+                const idsArcaConciliar = matchCF.cashFlowRow.ids_grupo && matchCF.cashFlowRow.ids_grupo.length > 0
+                  ? matchCF.cashFlowRow.ids_grupo
+                  : [matchCF.cashFlowRow.id]
                 await supabase
                   .from('comprobantes_arca')
                   .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                  .in('id', idsArcaConciliar)
                   .schema('msa')
               } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
                 await supabase
@@ -470,7 +567,7 @@ export function useMotorConciliacion() {
                     const { data: fc } = await supabase
                       .schema('msa')
                       .from('comprobantes_arca')
-                      .select('id, categ, nro_cuenta, denominacion_emisor')
+                      .select('id, categ, nro_cuenta, denominacion_emisor, tipo_comprobante, numero_desde')
                       .eq('id', match.factura_id)
                       .single()
 
@@ -480,9 +577,12 @@ export function useMotorConciliacion() {
                       extraAnticipo.comprobante_arca_id = fc.id
                       extraAnticipo.categ = fc.categ || regla.categ
                       if (fc.nro_cuenta) extraAnticipo.nro_cuenta = fc.nro_cuenta
-                      extraAnticipo.detalle = esParcial
-                        ? `Pago parcial vía anticipo: ${match.descripcion || match.nombre_proveedor}`
-                        : `Pago total vía anticipo: ${match.descripcion || match.nombre_proveedor}`
+                      extraAnticipo.detalle = match.descripcion || null
+                      // FC number for comprobantes_pagados
+                      const abrevFC = [1,6,11,51,201,206,211].includes(fc.tipo_comprobante) ? 'FC'
+                        : [2,7,12,52,202,207,212].includes(fc.tipo_comprobante) ? 'ND'
+                        : [3,8,13,53,203,208,213].includes(fc.tipo_comprobante) ? 'NC' : 'FC'
+                      extraAnticipo.comprobante_display = `${abrevFC} - ${fc.numero_desde || ''}`
 
                       // Anticipo → vinculado + conciliado en banco
                       await supabase
@@ -494,7 +594,7 @@ export function useMotorConciliacion() {
                     // Anticipo sin FC → auditar, pero guardamos anticipo_id para cuando se vincule
                     estadoRegla = 'auditar'
                     motivoRegla = 'Anticipo: requiere vinculación con factura ARCA'
-                    extraAnticipo.detalle = `Anticipo: ${match.descripcion || match.nombre_proveedor}`
+                    extraAnticipo.detalle = match.descripcion || null
                     // Marcar anticipo como conciliado en banco (ya salió el dinero)
                     await supabase
                       .from('anticipos_proveedores')
@@ -508,13 +608,19 @@ export function useMotorConciliacion() {
                 }
               }
 
+              // Buscar nombre proveedor en BBDD: por CUIT bancario o por CUIT del anticipo
+              const cuitRegla = extraAnticipo.cuit || extraerCuitBancario(movimiento)
+              const provNombreRegla = await buscarNombreProveedor(cuitRegla)
+
               // Actualizar extracto con categ/detalle/estado y códigos de la regla
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || regla.detalle,
+                detalle: extraAnticipo.detalle || null,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
+                proveedor_nombre: provNombreRegla,
+                comprobantes_pagados: extraAnticipo.comprobante_display || null,
                 comprobante_arca_id: extraAnticipo.comprobante_arca_id || null,
                 anticipo_id: extraAnticipo.anticipo_id || null,
                 nro_cuenta: extraAnticipo.nro_cuenta || null,

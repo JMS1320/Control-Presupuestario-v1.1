@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 
 export interface CuentaContable {
   categ: string
+  nro_cuenta: string | null
   cuenta_contable: string
   tipo: string
   activo: boolean

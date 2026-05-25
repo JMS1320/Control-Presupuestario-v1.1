@@ -92,6 +92,17 @@ interface FacturaArca {
   origen_factura: string | null
 }
 
+// Monto a pagar en pesos (Vista Pagos). Fuente única usada por display, subtotales y PDF.
+// ARS: usa monto_a_abonar (ya refleja SICORE, descuento y anticipos vinculados).
+// USD: recalcula imp_total*tc − sicore − descuento (evita el doble redondeo de monto_a_abonar × TC).
+function montoPagoEnPesos(f: FacturaArca): number {
+  const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+  if (f.moneda === 'USD') {
+    return (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+  }
+  return f.monto_a_abonar ?? f.imp_total ?? 0
+}
+
 // Interface para configuración tipos SICORE
 interface TipoSicore {
   id: number
@@ -239,8 +250,8 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
   )
 }
 
-export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' } = {}) {
-  const schemaName = empresa === 'PAM' ? 'pam' : 'msa'
+export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
+  const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
   const [loading, setLoading] = useState(true)
@@ -372,6 +383,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
   const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
   const [anticiposPagos, setAnticiposPagos] = useState<any[]>([])
+  const [sueldosPagos, setSueldosPagos] = useState<any[]>([])
 
   // Estados para edición masiva en tab Facturas principal
   const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
@@ -380,11 +392,21 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [anticiposSeleccionadosPagos, setAnticiposSeleccionadosPagos] = useState<Set<string>>(new Set())
+  const [sueldosSeleccionadosPagos, setSueldosSeleccionadosPagos] = useState<Set<string>>(new Set())
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
-  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true })
+  const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true, sueldo: true })
   const [filtroBusquedaPagos, setFiltroBusquedaPagos] = useState('')
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
+
+  // Cancelación FC/NC
+  const [modalCancelacionNC, setModalCancelacionNC] = useState<{
+    tipo: 'fc_con_nc' | 'nc_con_descuento'
+    facturas: FacturaArca[]        // FCs o NCs seleccionadas por el usuario
+    disponibles: FacturaArca[]     // NCs disponibles (escenario A) o FCs con descuento (escenario B)
+    seleccionadas: Set<string>     // IDs elegidos por el usuario en el modal
+    restoCambioEstado: FacturaArca[] // Facturas que NO son parte de la cancelación y siguen flujo normal
+  } | null>(null)
 
   // ECHEQ — estado del modal y datos del cheque pendiente
   const [mostrarModalEcheq, setMostrarModalEcheq] = useState(false)
@@ -904,16 +926,26 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         return
       }
 
-      // Si se actualizó cuenta_contable, propagar a movimientos bancarios vinculados
+      // Si se actualizó cuenta_contable, propagar categ + nro_cuenta a movimientos bancarios vinculados
       if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
+        const nroCta = cuentas.find(c => c.categ === valorFinal)?.nro_cuenta || null
+        const updateExtracto: Record<string, any> = { categ: valorFinal }
+        if (nroCta) updateExtracto.nro_cuenta = nroCta
+        // También actualizar nro_cuenta en la factura misma
+        if (nroCta) {
+          supabase.schema(schemaName).from('comprobantes_arca')
+            .update({ nro_cuenta: nroCta }).eq('id', datosEdicion.facturaId)
+            .then(({ error }) => { if (error) console.error('Error propagando nro_cuenta a factura:', error) })
+          camposUpdate.nro_cuenta = nroCta
+        }
         for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
           supabase
             .from(tabla)
-            .update({ categ: valorFinal })
+            .update(updateExtracto)
             .eq('comprobante_arca_id', datosEdicion.facturaId)
             .then(({ error }) => {
               if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
-              else console.log(`✅ cuenta_contable propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
+              else console.log(`✅ cuenta_contable+nro_cuenta propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
             })
         }
       }
@@ -5606,12 +5638,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             onClick={async () => {
               setCargandoPagos(true)
               setMostrarModalPagos(true)
-              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
+              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true, sueldo: true })
               setFacturasSeleccionadasPagos(new Set())
               setTemplatesSeleccionadosPagos(new Set())
+              setSueldosSeleccionadosPagos(new Set())
 
-              // Cargar en paralelo las 3 fuentes + cuentas contables
-              const [arcaResult, templatesResult, anticiposResult, cuentasResult] = await Promise.all([
+              // Cargar en paralelo las 4 fuentes + cuentas contables
+              const [arcaResult, templatesResult, anticiposResult, sueldosResult, cuentasResult] = await Promise.all([
                 supabase.schema(schemaName).from('comprobantes_arca').select('*')
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .order('fecha_vencimiento', { ascending: true }),
@@ -5623,6 +5656,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
                   .neq('estado', 'conciliado')
                   .order('fecha_pago', { ascending: true }),
+                supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+                  .in('estado', ['pendiente', 'pagar', 'preparado'])
+                  .gte('fecha', '2026-01-01')
+                  .order('fecha', { ascending: true }),
                 supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
                   .eq('imputable', true)
                   .order('nombre_totalizadora').order('nro_cuenta')
@@ -5631,6 +5668,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
               if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
               if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
+              if (!sueldosResult.error && sueldosResult.data) setSueldosPagos(sueldosResult.data)
               if (!cuentasResult.error && cuentasResult.data) setCuentasContablesPagos(cuentasResult.data)
 
               setCargandoPagos(false)
@@ -7570,6 +7608,16 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   ({anticiposPagos.length})
                 </span>
               </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={filtroOrigenPagos.sueldo}
+                  onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, sueldo: !!checked }))}
+                />
+                <span className="text-sm flex items-center gap-1">
+                  <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs">Sueldos</Badge>
+                  ({sueldosPagos.length})
+                </span>
+              </label>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <Button
@@ -7582,6 +7630,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   if (filtroOrigenPagos.template) {
                     setTemplatesSeleccionadosPagos(new Set(templatesPagos.map(t => t.id)))
                   }
+                  if (filtroOrigenPagos.sueldo) {
+                    setSueldosSeleccionadosPagos(new Set(sueldosPagos.map(s => s.id)))
+                  }
                 }}
                 className="text-xs"
               >
@@ -7593,6 +7644,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 onClick={() => {
                   setFacturasSeleccionadasPagos(new Set())
                   setTemplatesSeleccionadosPagos(new Set())
+                  setSueldosSeleccionadosPagos(new Set())
                 }}
                 className="text-xs"
               >
@@ -7659,15 +7711,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const facturasPendiente = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'pendiente' && matchBusqueda(f)))
             const facturasEcheq = ordenarPorFecha(facturasPagos.filter(f => f.estado === 'echeq' && matchBusqueda(f)))
 
-            // Calcular subtotales (convertir a pesos con TC de pago)
-            // Para facturas con SICORE/descuento: usar imp_total*tc - sicore - descuento (evita redondeo doble)
-            const montoEnPesos = (f: FacturaArca) => {
-              const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-              if (f.monto_sicore || f.descuento_aplicado) {
-                return (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-              }
-              return (f.monto_a_abonar || f.imp_total || 0) * tc
-            }
+            // Subtotales: misma fuente única que el display y el PDF (montoPagoEnPesos)
+            const montoEnPesos = (f: FacturaArca) => montoPagoEnPesos(f)
             const subtotalPreparado = facturasPreparado.reduce((sum, f) => sum + montoEnPesos(f), 0)
             const subtotalPagar = facturasPagar.reduce((sum, f) => sum + montoEnPesos(f), 0)
             const subtotalPendiente = facturasPendiente.reduce((sum, f) => sum + montoEnPesos(f), 0)
@@ -7679,8 +7724,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               f => facturasSeleccionadasPagos.has(f.id) && f.estado === 'pagar'
             )
             // Hay agrupación posible si hay 2+ del mismo proveedor sin grupo asignado
+            const cuitsUnicos = new Set(seleccionadasEnPagar.map(f => f.cuit))
+            const esMultiCuit = cuitsUnicos.size > 1
             const puedeAgrupar = seleccionadasEnPagar.length >= 2
-              && new Set(seleccionadasEnPagar.map(f => f.cuit)).size === 1
               && seleccionadasEnPagar.every(f => !f.grupo_pago_id)
 
             // Hay desagrupación posible si todas las seleccionadas tienen el mismo grupo
@@ -7691,19 +7737,30 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             const agruparPagos = async () => {
               if (!puedeAgrupar) return
+              // Alerta si CUITs distintos
+              if (esMultiCuit) {
+                const proveedores = [...new Set(seleccionadasEnPagar.map(f => f.denominacion_emisor))].join(', ')
+                if (!window.confirm(`⚠️ ATENCIÓN: Las facturas seleccionadas tienen CUITs diferentes:\n\n${proveedores}\n\nEsto es inusual. ¿Confirmar agrupación?`)) return
+              }
               const primeraF = seleccionadasEnPagar[0]
               const monto_total = seleccionadasEnPagar.reduce(
                 (s, f) => s + montoEnPesos(f), 0
               )
+              // Proveedor: combinar nombres si multi-CUIT
+              const proveedoresUnicos = [...new Set(seleccionadasEnPagar.map(f => f.denominacion_emisor).filter(Boolean))]
+              const proveedorGrupo = proveedoresUnicos.length <= 2
+                ? proveedoresUnicos.join(' + ')
+                : `${proveedoresUnicos[0]} + ${proveedoresUnicos.length - 1} más`
               // 1. Crear grupo
               const { data: grupo, error: errGrupo } = await supabase
                 .schema(schemaName)
                 .from('grupos_pago')
                 .insert({
                   cuit: primeraF.cuit,
-                  proveedor: primeraF.denominacion_emisor,
+                  proveedor: proveedorGrupo,
                   monto_total,
                   estado: 'pagar',
+                  observaciones: esMultiCuit ? `Multi-CUIT: ${[...cuitsUnicos].join(', ')}` : null,
                 })
                 .select('id')
                 .single()
@@ -7721,7 +7778,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ids.includes(f.id) ? { ...f, grupo_pago_id: grupo.id } : f
               ))
               setFacturasSeleccionadasPagos(new Set())
-              alert(`✅ ${ids.length} facturas agrupadas en un pago`)
+              alert(`✅ ${ids.length} facturas agrupadas en un pago${esMultiCuit ? ' (multi-CUIT)' : ''}`)
             }
 
             const desagruparPago = async () => {
@@ -7818,6 +7875,103 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               setTemplatesSeleccionadosPagos(new Set())
             }
 
+            // ── Agrupar / Desagrupar sueldos ─────────────────────────────────
+            const seleccionadasSueldosActivas = sueldosPagos.filter(
+              s => sueldosSeleccionadosPagos.has(s.id)
+            )
+            const puedeAgruparSueldos = seleccionadasSueldosActivas.length >= 2
+              && seleccionadasSueldosActivas.every(s => !s.grupo_pago_id)
+
+            const gruposSueldosSeleccionados = new Set(
+              seleccionadasSueldosActivas.filter(s => s.grupo_pago_id).map(s => s.grupo_pago_id)
+            )
+            const puedeDesagruparSueldos = gruposSueldosSeleccionados.size === 1
+
+            const agruparSueldos = async () => {
+              if (!puedeAgruparSueldos) return
+              const primero = seleccionadasSueldosActivas[0]
+              const monto_total = seleccionadasSueldosActivas.reduce((s, p) => s + (p.monto || 0), 0)
+              const nombresUnicos = [...new Set(seleccionadasSueldosActivas.map(p => p.empleado?.nombre).filter(Boolean))]
+              const proveedorGrupo = nombresUnicos.length <= 2
+                ? nombresUnicos.join(' + ')
+                : `${nombresUnicos[0]} + ${nombresUnicos.length - 1} más`
+              // Crear grupo
+              const { data: grupo, error: errGrupo } = await supabase
+                .schema(schemaName)
+                .from('grupos_pago')
+                .insert({
+                  cuit: primero.empleado?.cuit_empleado || 'SUELDO',
+                  proveedor: proveedorGrupo,
+                  monto_total,
+                  estado: 'pagar',
+                  observaciones: `Sueldos agrupados: ${nombresUnicos.join(', ')}`,
+                })
+                .select('id')
+                .single()
+              if (errGrupo || !grupo) { alert('Error al crear grupo'); return }
+              // Asignar grupo a los pagos
+              const ids = seleccionadasSueldosActivas.map(s => s.id)
+              const { error: errUpd } = await supabase
+                .from('sueldos_pagos')
+                .update({ grupo_pago_id: grupo.id })
+                .in('id', ids)
+              if (errUpd) { alert('Error al asignar grupo a sueldos'); return }
+              setSueldosPagos(prev => prev.map(s =>
+                ids.includes(s.id) ? { ...s, grupo_pago_id: grupo.id } : s
+              ))
+              setSueldosSeleccionadosPagos(new Set())
+              alert(`✅ ${ids.length} pagos de sueldo agrupados`)
+            }
+
+            const desagruparSueldos = async () => {
+              if (!puedeDesagruparSueldos) return
+              const grupoId = Array.from(gruposSueldosSeleccionados)[0] as string
+              const ids = seleccionadasSueldosActivas.filter(s => s.grupo_pago_id === grupoId).map(s => s.id)
+              const todasDelGrupo = sueldosPagos.filter(s => s.grupo_pago_id === grupoId)
+              const quedan = todasDelGrupo.filter(s => !ids.includes(s.id))
+              await supabase
+                .from('sueldos_pagos')
+                .update({ grupo_pago_id: null })
+                .in('id', ids)
+              if (quedan.length <= 1) {
+                if (quedan.length === 1) {
+                  await supabase.from('sueldos_pagos')
+                    .update({ grupo_pago_id: null }).eq('grupo_pago_id', grupoId)
+                }
+                await supabase.schema(schemaName).from('grupos_pago').delete().eq('id', grupoId)
+              }
+              setSueldosPagos(prev => prev.map(s =>
+                ids.includes(s.id) ? { ...s, grupo_pago_id: null } : s
+              ))
+              setSueldosSeleccionadosPagos(new Set())
+            }
+
+            // Filtrar sueldos por búsqueda
+            const matchBusquedaSueldo = (s: any) => {
+              if (!filtroBusquedaPagos.trim()) return true
+              const q = filtroBusquedaPagos.toLowerCase()
+              return [
+                s.empleado?.nombre,
+                s.empleado?.cuit_empleado,
+                s.descripcion,
+                s.tipo,
+                String(s.monto ?? ''),
+                s.fecha,
+              ].some(v => v && String(v).toLowerCase().includes(q))
+            }
+
+            const sueldosPagar = sueldosPagos.filter(s => s.estado === 'pagar' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+            const sueldosPreparado = sueldosPagos.filter(s => s.estado === 'preparado' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+            const sueldosPendiente = sueldosPagos.filter(s => s.estado === 'pendiente' && matchBusquedaSueldo(s))
+              .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+
+            // Helper para identificar Notas de Crédito por tipo_comprobante AFIP
+            const esNotaCredito = (f: FacturaArca) => [3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante)
+            const esNotaDebito = (f: FacturaArca) => [2, 7, 12, 52, 202, 207, 212].includes(f.tipo_comprobante)
+            const abrevTipoComp = (f: FacturaArca) => esNotaCredito(f) ? 'NC' : esNotaDebito(f) ? 'ND' : 'FC'
+
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string, echeqFecha?: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
@@ -7833,6 +7987,74 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 const sinFC = facturasACambiar.filter(f => f.fc !== 'Sí')
                 if (sinFC.length > 0) {
                   toast.warning(`${sinFC.length} factura(s) sin comprobante físico recibido (FC ≠ Sí)`, { duration: 5000 })
+                }
+              }
+
+              // ── INTERCEPTAR CANCELACIÓN FC/NC ──────────────────────────────────
+              if (nuevoEstado === 'pagar') {
+                const fcsSeleccionadas = facturasACambiar.filter(f => !esNotaCredito(f))
+                const ncsSeleccionadas = facturasACambiar.filter(f => esNotaCredito(f))
+
+                // ESCENARIO A: Usuario seleccionó FCs → buscar NCs pendientes del mismo CUIT
+                if (fcsSeleccionadas.length > 0 && ncsSeleccionadas.length === 0) {
+                  const cuitsFC = [...new Set(fcsSeleccionadas.map(f => f.cuit))]
+                  const ncsDisponibles = facturasPagos.filter(f =>
+                    esNotaCredito(f) &&
+                    cuitsFC.includes(f.cuit) &&
+                    (f.estado === 'pendiente' || f.estado === 'pagar') &&
+                    !ids.includes(f.id)
+                  )
+                  if (ncsDisponibles.length > 0) {
+                    const opcion = window.confirm(
+                      `Hay ${ncsDisponibles.length} Nota(s) de Crédito pendiente(s) del mismo proveedor:\n\n` +
+                      ncsDisponibles.map(nc => `• NC ${nc.numero_desde || ''} — ${nc.denominacion_emisor} — $${Math.abs(nc.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `\n\n¿Desea aplicar las NC para cancelar?` +
+                      `\n\n[Aceptar] = Seleccionar NC a aplicar\n[Cancelar] = Continuar sin aplicar NC`
+                    )
+                    if (opcion) {
+                      setModalCancelacionNC({
+                        tipo: 'fc_con_nc',
+                        facturas: fcsSeleccionadas,
+                        disponibles: ncsDisponibles,
+                        seleccionadas: new Set(ncsDisponibles.map(nc => nc.id)),
+                        restoCambioEstado: [] // se determinará al procesar
+                      })
+                      return
+                    }
+                    // Si dice No → continúa flujo normal de pagar
+                  }
+                }
+
+                // ESCENARIO B: Usuario seleccionó NCs → buscar FCs conciliadas con descuento_aplicado
+                if (ncsSeleccionadas.length > 0 && fcsSeleccionadas.length === 0) {
+                  const cuitsNC = [...new Set(ncsSeleccionadas.map(f => f.cuit))]
+                  // Buscar en BD FCs conciliadas del mismo CUIT con descuento aplicado
+                  const { data: fcsConDescuento } = await supabase
+                    .schema(schemaName)
+                    .from('comprobantes_arca')
+                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore')
+                    .in('cuit', cuitsNC)
+                    .eq('estado', 'conciliado')
+                    .gt('descuento_aplicado', 0)
+
+                  if (fcsConDescuento && fcsConDescuento.length > 0) {
+                    const opcion = window.confirm(
+                      `Hay ${fcsConDescuento.length} Factura(s) conciliada(s) del mismo proveedor con descuento aplicado:\n\n` +
+                      fcsConDescuento.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `\n\n¿Desea aplicar las NC contra estos descuentos?` +
+                      `\n\n[Aceptar] = Seleccionar FC con descuento\n[Cancelar] = Continuar sin aplicar`
+                    )
+                    if (opcion) {
+                      setModalCancelacionNC({
+                        tipo: 'nc_con_descuento',
+                        facturas: ncsSeleccionadas,
+                        disponibles: fcsConDescuento as unknown as FacturaArca[],
+                        seleccionadas: new Set(fcsConDescuento.map((fc: any) => fc.id)),
+                        restoCambioEstado: []
+                      })
+                      return
+                    }
+                  }
                 }
               }
 
@@ -8244,9 +8466,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                             imp_total: (f.imp_total || 0) * tc,
                                             monto_sicore: f.monto_sicore,
                                             descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
-                                              ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                              : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            monto_a_abonar: montoPagoEnPesos(f),
                                           }
                                         })
                                       )}
@@ -8404,9 +8624,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                     {(() => {
                                       const tc = f.tc_pago ?? f.tipo_cambio ?? 1
                                       const esUSD = f.moneda === 'USD' || tc > 1.01
-                                      const montoPesos = (f.monto_sicore || f.descuento_aplicado)
-                                        ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
-                                        : (f.monto_a_abonar || f.imp_total || 0) * tc
+                                      const montoPesos = montoPagoEnPesos(f)
                                       return (
                                         <span className={esUSD ? 'text-amber-700' : ''}>
                                           {esUSD && (
@@ -8968,6 +9186,105 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               </div>
             )
 
+            // Sueldos subtotals
+            const subtotalSueldosPagar = sueldosPagar.reduce((s, p) => s + (p.monto || 0), 0)
+            const subtotalSueldosPreparado = sueldosPreparado.reduce((s, p) => s + (p.monto || 0), 0)
+            const subtotalSueldosPendiente = sueldosPendiente.reduce((s, p) => s + (p.monto || 0), 0)
+
+            const renderTablaSueldos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <Badge variant="outline" className="bg-orange-50 text-orange-700">Sueldo</Badge>
+                    {titulo} ({lista.length})
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {accionBoton && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          const ids = Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id))
+                          await supabase.from('sueldos_pagos').update({ estado: accionBoton.estado }).in('id', ids)
+                          setSueldosPagos(prev => prev.map(s => ids.includes(s.id) ? { ...s, estado: accionBoton.estado } : s))
+                          setSueldosSeleccionadosPagos(new Set())
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {accionBoton.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
+                      </Button>
+                    )}
+                    {puedeAgruparSueldos && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
+                      <Button size="sm" variant="outline" onClick={agruparSueldos} className="border-blue-500 text-blue-700 hover:bg-blue-50" title="Agrupar en un solo pago">
+                        🔗 Agrupar ({seleccionadasSueldosActivas.length})
+                      </Button>
+                    )}
+                    {puedeDesagruparSueldos && (
+                      <Button size="sm" variant="outline" onClick={desagruparSueldos} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
+                        ✂️ Desagrupar
+                      </Button>
+                    )}
+                    <Badge variant="outline" className="text-lg px-3 py-1">
+                      Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                    </Badge>
+                  </div>
+                </div>
+                {lista.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-2">No hay sueldos en este estado</p>
+                ) : (
+                  <div className="border rounded-md max-h-60 overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-10 bg-white border-b">
+                        <TableRow>
+                          {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Empleado</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead className="text-right">Monto</TableHead>
+                          <TableHead>Grupo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lista.map(s => (
+                          <TableRow key={s.id} className={`hover:bg-muted/50 ${s.grupo_pago_id ? 'bg-blue-50/50' : ''}`}>
+                            {mostrarCheckbox && (
+                              <TableCell>
+                                <Checkbox
+                                  checked={sueldosSeleccionadosPagos.has(s.id)}
+                                  onCheckedChange={(checked) => {
+                                    setSueldosSeleccionadosPagos(prev => {
+                                      const next = new Set(prev)
+                                      if (checked) next.add(s.id)
+                                      else next.delete(s.id)
+                                      return next
+                                    })
+                                  }}
+                                />
+                              </TableCell>
+                            )}
+                            <TableCell>{s.fecha ? new Date(s.fecha + 'T12:00:00').toLocaleDateString('es-AR') : '-'}</TableCell>
+                            <TableCell className="max-w-[150px] truncate font-medium">{s.empleado?.nombre || '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={s.tipo === 'sueldo' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}>
+                                {s.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[150px] truncate">{s.descripcion || '-'}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              ${(s.monto || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                            <TableCell>
+                              {s.grupo_pago_id ? <span className="text-blue-600 text-xs">🔗 Agrupado</span> : <span className="text-gray-400">—</span>}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )
+
             return (
               <div className="space-y-6">
                 {/* Checkboxes de filtro solo para Admin */}
@@ -9006,15 +9323,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.preparado && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPreparado.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
                         (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPreparado : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
                         ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPreparado }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9069,6 +9389,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             { label: 'Marcar como Pagado', estado: 'pagado' },
                             'preparado'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 && renderTablaSueldos(
+                            sueldosPreparado,
+                            '✅ Preparado',
+                            subtotalSueldosPreparado,
+                            true,
+                            { label: 'Marcar como Pagado', estado: 'conciliado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9077,15 +9404,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.pagar && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                        (filtroOrigenPagos.template && templatesPagar.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPagar.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
                         (filtroOrigenPagos.arca ? subtotalPagar : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPagar : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
                         ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPagar.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPagar }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9143,6 +9473,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             'pagar',
                             (t) => revertirTemplateAPendiente(t)
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPagar.length > 0 && renderTablaSueldos(
+                            sueldosPagar,
+                            '📋 Pagar',
+                            subtotalSueldosPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9172,15 +9509,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {filtrosPagos.pendiente && (() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPendiente.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPendiente.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPendiente.length > 0)
+                        (filtroOrigenPagos.template && templatesPendiente.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPendiente.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPendiente : 0) +
                         (filtroOrigenPagos.arca ? subtotalPendiente : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPendiente : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPendiente : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPendiente : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPendiente.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPendiente }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPendiente.length > 0 ? [{ label: 'ARCA', total: subtotalPendiente }] : []),
                         ...(!filtroOrigenPagos.template && templatesPendiente.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPendiente }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPendiente.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPendiente }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9233,26 +9573,36 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             'pendiente'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPendiente.length > 0 && renderTablaSueldos(
+                            sueldosPendiente,
+                            '⏳ Pendiente',
+                            subtotalSueldosPendiente,
+                            true,
+                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                          )}
                         </>
                       )
                     })()}
                   </>
                 ) : (
-                  // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template
+                  // ULISES (contable): Pagar > Preparado, cada estado muestra Anticipo + ARCA + Template + Sueldos
                   <>
                     {/* ── PAGAR ─────────────────────────────────────────────── */}
                     {(() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPagar.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPagar.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPagar.length > 0)
+                        (filtroOrigenPagos.template && templatesPagar.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPagar.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPagar : 0) +
                         (filtroOrigenPagos.arca ? subtotalPagar : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPagar : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPagar : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPagar.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPagar }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPagar.length > 0 ? [{ label: 'ARCA', total: subtotalPagar }] : []),
                         ...(!filtroOrigenPagos.template && templatesPagar.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPagar }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPagar.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPagar }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9304,6 +9654,13 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             'pagar'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPagar.length > 0 && renderTablaSueldos(
+                            sueldosPagar,
+                            '📋 Pagar',
+                            subtotalSueldosPagar,
+                            true,
+                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                          )}
                         </>
                       )
                     })()}
@@ -9312,15 +9669,18 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {(() => {
                       const tieneVisible = (filtroOrigenPagos.anticipo && anticiposPreparado.length > 0) ||
                         (filtroOrigenPagos.arca && facturasPreparado.length > 0) ||
-                        (filtroOrigenPagos.template && templatesPreparado.length > 0)
+                        (filtroOrigenPagos.template && templatesPreparado.length > 0) ||
+                        (filtroOrigenPagos.sueldo && sueldosPreparado.length > 0)
                       const totalVisible =
                         (filtroOrigenPagos.anticipo ? subtotalAnticiposPreparado : 0) +
                         (filtroOrigenPagos.arca ? subtotalPreparado : 0) +
-                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0)
+                        (filtroOrigenPagos.template ? subtotalTemplatesPreparado : 0) +
+                        (filtroOrigenPagos.sueldo ? subtotalSueldosPreparado : 0)
                       const ocultos: { label: string; total: number }[] = [
                         ...(!filtroOrigenPagos.anticipo && anticiposPreparado.length > 0 ? [{ label: 'Anticipos', total: subtotalAnticiposPreparado }] : []),
                         ...(!filtroOrigenPagos.arca && facturasPreparado.length > 0 ? [{ label: 'ARCA', total: subtotalPreparado }] : []),
                         ...(!filtroOrigenPagos.template && templatesPreparado.length > 0 ? [{ label: 'Templates', total: subtotalTemplatesPreparado }] : []),
+                        ...(!filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 ? [{ label: 'Sueldos', total: subtotalSueldosPreparado }] : []),
                       ]
                       if (!tieneVisible) {
                         return (
@@ -9371,6 +9731,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             undefined,
                             'preparado'
                           )}
+                          {filtroOrigenPagos.sueldo && sueldosPreparado.length > 0 && renderTablaSueldos(
+                            sueldosPreparado,
+                            '✅ Preparado',
+                            subtotalSueldosPreparado,
+                            false
+                          )}
                         </>
                       )
                     })()}
@@ -9391,6 +9757,233 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Cancelación FC/NC */}
+      {modalCancelacionNC && (
+        <Dialog open={true} onOpenChange={() => setModalCancelacionNC(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {modalCancelacionNC.tipo === 'fc_con_nc'
+                  ? '🔄 Cancelar FC con Notas de Crédito'
+                  : '🔄 Aplicar NC contra descuentos'}
+              </DialogTitle>
+              <DialogDescription>
+                {modalCancelacionNC.tipo === 'fc_con_nc'
+                  ? 'Seleccione las NC que desea aplicar para cancelar las facturas'
+                  : 'Seleccione las FC con descuento contra las cuales aplicar las NC'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Facturas seleccionadas por el usuario */}
+            <div className="space-y-3">
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <h4 className="font-semibold text-sm mb-2">
+                  {modalCancelacionNC.tipo === 'fc_con_nc' ? '📄 Facturas a cancelar:' : '📄 Notas de Crédito a aplicar:'}
+                </h4>
+                {modalCancelacionNC.facturas.map(f => (
+                  <div key={f.id} className="flex justify-between text-sm py-1">
+                    <span>{[3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante) ? 'NC' : 'FC'} {f.numero_desde} — {f.denominacion_emisor}</span>
+                    <span className="font-medium">${Math.abs(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+                <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
+                  <span>Total:</span>
+                  <span>${modalCancelacionNC.facturas.reduce((s, f) => s + Math.abs(f.imp_total), 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+
+              {/* Comprobantes disponibles para matchear */}
+              <div className="bg-amber-50 p-3 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-semibold text-sm">
+                    {modalCancelacionNC.tipo === 'fc_con_nc' ? '📋 NC disponibles:' : '📋 FC con descuento aplicado:'}
+                  </h4>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs h-6"
+                    onClick={() => {
+                      const allIds = modalCancelacionNC.disponibles.map(d => d.id)
+                      const todosSeleccionados = allIds.every(id => modalCancelacionNC.seleccionadas.has(id))
+                      setModalCancelacionNC(prev => prev ? {
+                        ...prev,
+                        seleccionadas: todosSeleccionados ? new Set() : new Set(allIds)
+                      } : null)
+                    }}
+                  >
+                    {modalCancelacionNC.disponibles.every(d => modalCancelacionNC.seleccionadas.has(d.id)) ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                  </Button>
+                </div>
+                {modalCancelacionNC.disponibles.map(d => {
+                  const monto = modalCancelacionNC.tipo === 'fc_con_nc'
+                    ? Math.abs(d.imp_total)
+                    : (d.descuento_aplicado || 0)
+                  return (
+                    <label key={d.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-amber-100 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={modalCancelacionNC.seleccionadas.has(d.id)}
+                        onChange={() => {
+                          setModalCancelacionNC(prev => {
+                            if (!prev) return null
+                            const nuevo = new Set(prev.seleccionadas)
+                            if (nuevo.has(d.id)) nuevo.delete(d.id)
+                            else nuevo.add(d.id)
+                            return { ...prev, seleccionadas: nuevo }
+                          })
+                        }}
+                      />
+                      <span className="flex-1">
+                        {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC' : 'FC'} {d.numero_desde} — {d.denominacion_emisor}
+                      </span>
+                      <span className="font-medium text-red-600">
+                        ${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </label>
+                  )
+                })}
+                <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
+                  <span>Total seleccionado:</span>
+                  <span className="text-red-600">
+                    ${modalCancelacionNC.disponibles
+                      .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
+                      .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
+                      .toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Resumen de la operación */}
+              {(() => {
+                const totalFacturas = modalCancelacionNC.facturas.reduce((s, f) => s + Math.abs(f.imp_total), 0)
+                const totalDisponible = modalCancelacionNC.disponibles
+                  .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
+                  .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
+                const saldoRestante = totalFacturas - totalDisponible
+
+                return (
+                  <div className={`p-3 rounded-lg text-sm ${saldoRestante <= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
+                    <div className="flex justify-between">
+                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'FC' : 'NC'}:</span>
+                      <span>${totalFacturas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC aplicadas' : 'descuento disponible'}:</span>
+                      <span className="text-red-600">-${totalDisponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="border-t mt-1 pt-1 flex justify-between font-bold">
+                      <span>{saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total'}</span>
+                      <span className={saldoRestante <= 0 ? 'text-green-600' : 'text-orange-600'}>
+                        {saldoRestante > 0
+                          ? `$${saldoRestante.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                          : '✓ $0,00'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setModalCancelacionNC(null)}>
+                Cancelar
+              </Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  // procesarCancelacionNC is defined inside the IIFE — we need to handle it here
+                  // Since the modal state has all data, we process directly
+                  const modal = modalCancelacionNC
+                  if (!modal) return
+                  const idsSeleccionados = Array.from(modal.seleccionadas)
+                  if (idsSeleccionados.length === 0) {
+                    alert('Selecciona al menos un comprobante')
+                    return
+                  }
+
+                  const procesarAsync = async () => {
+                    try {
+                      if (modal.tipo === 'fc_con_nc') {
+                        const ncsAplicar = modal.disponibles.filter(nc => modal.seleccionadas.has(nc.id))
+                        let saldoNC = ncsAplicar.reduce((sum, nc) => sum + Math.abs(nc.imp_total), 0)
+
+                        for (const fc of modal.facturas) {
+                          if (saldoNC <= 0) break
+                          const montoFC = fc.imp_total
+                          if (saldoNC >= montoFC) {
+                            await supabase.schema(schemaName).from('comprobantes_arca')
+                              .update({
+                                estado: 'conciliado',
+                                monto_a_abonar: 0,
+                                detalle: `Cancelada con NC ${ncsAplicar.map(nc => nc.numero_desde || '').join(', ')}`
+                              })
+                              .eq('id', fc.id)
+                            saldoNC -= montoFC
+                          } else {
+                            const nuevoMonto = montoFC - saldoNC
+                            await supabase.schema(schemaName).from('comprobantes_arca')
+                              .update({
+                                monto_a_abonar: nuevoMonto,
+                                detalle: `Descuento parcial NC ${ncsAplicar.map(nc => nc.numero_desde || '').join(', ')}`
+                              })
+                              .eq('id', fc.id)
+                            saldoNC = 0
+                          }
+                        }
+
+                        for (const nc of ncsAplicar) {
+                          await supabase.schema(schemaName).from('comprobantes_arca')
+                            .update({
+                              estado: 'conciliado',
+                              monto_a_abonar: 0,
+                              detalle: `Cancela FC ${modal.facturas.map(f => f.numero_desde || '').join(', ')}`
+                            })
+                            .eq('id', nc.id)
+                        }
+
+                        toast.success(`Cancelación aplicada: ${modal.facturas.length} FC + ${ncsAplicar.length} NC`, { duration: 5000 })
+                      } else {
+                        // Escenario B
+                        const fcsMatchear = modal.disponibles.filter(fc => modal.seleccionadas.has(fc.id))
+                        for (const nc of modal.facturas) {
+                          await supabase.schema(schemaName).from('comprobantes_arca')
+                            .update({
+                              estado: 'conciliado',
+                              monto_a_abonar: 0,
+                              detalle: `Cancela descuento FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
+                            })
+                            .eq('id', nc.id)
+                        }
+
+                        toast.success(`${modal.facturas.length} NC conciliada(s) contra descuentos`, { duration: 5000 })
+                      }
+
+                      // Actualizar estado local
+                      const todosIdsAfectados = new Set([
+                        ...modal.facturas.map(f => f.id),
+                        ...Array.from(modal.seleccionadas)
+                      ])
+                      setFacturasPagos(prev => prev.map(f =>
+                        todosIdsAfectados.has(f.id) ? { ...f, estado: 'conciliado', monto_a_abonar: 0 } : f
+                      ))
+                      setFacturasSeleccionadasPagos(new Set())
+                      setModalCancelacionNC(null)
+                      cargarFacturas()
+                    } catch (error) {
+                      console.error('Error procesando cancelación NC:', error)
+                      alert('Error al procesar la cancelación')
+                    }
+                  }
+                  procesarAsync()
+                }}
+              >
+                ✓ Aplicar Cancelación
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Modal ECHEQ */}
       <Dialog open={mostrarModalEcheq} onOpenChange={setMostrarModalEcheq}>
