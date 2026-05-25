@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus, Search } from "lucide-react"
+import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filter, Edit3, Save, X, Plus, Search, Link2 } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
@@ -19,6 +19,8 @@ import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
+import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -183,6 +185,12 @@ export function VistaCashFlow() {
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
   const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
+
+  // Wizard de vinculación anticipo → factura (lógica compartida con Vista Principal)
+  const vincAnticipo = useVinculacionAnticipo(async () => {
+    await cargarAnticiposExistentes()
+    await cargarDatos()
+  })
 
   // Estados modal SICORE - facturas ARCA
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -1371,12 +1379,43 @@ export function VistaCashFlow() {
 
       if (error) throw error
 
+      // Capturar datos del anticipo recién creado (antes de resetear el form)
+      const esPago = nuevoAnticipo.tipo === 'pago'
+      const cuitLimpio = nuevoAnticipo.cuit.replace(/-/g, '')
+      const anticipoNuevo: AnticipoVinculable | null = data?.[0]?.id ? {
+        id: data[0].id,
+        nombre_proveedor: nuevoAnticipo.nombre,
+        cuit_proveedor: cuitLimpio,
+        monto,
+        monto_sicore: null,
+        descuento_aplicado: null,
+        sicore: null,
+        tipo_sicore: null,
+        fecha_pago: nuevoAnticipo.fecha,
+        factura_id: null,
+        descripcion: nuevoAnticipo.descripcion || null,
+      } : null
+
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
       toast.success(`${tipoLabel} registrado con estado "${nuevoAnticipo.estado_pago}".`)
 
       setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado' })
       await cargarDatos()
       await cargarAnticiposExistentes()
+
+      // Auto-ofrecer vinculación: si es anticipo de pago y hay facturas pendientes del mismo CUIT
+      if (esPago && anticipoNuevo) {
+        const candidatos = await buscarFacturasCandidatas(cuitLimpio)
+        if (candidatos.length > 0) {
+          const ok = window.confirm(
+            `Se encontraron ${candidatos.length} factura(s) pendiente(s) de ${anticipoNuevo.nombre_proveedor}.\n\n¿Querés vincular este anticipo a una factura ahora?`
+          )
+          if (ok) {
+            setModalAnticipo(false)
+            await vincAnticipo.abrirVinculacion(anticipoNuevo, candidatos)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error guardando anticipo:', error)
       toast.error(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
@@ -1401,6 +1440,17 @@ export function VistaCashFlow() {
     } finally {
       setCargandoAnticipos(false)
     }
+  }
+
+  // Vincular un anticipo ya existente a una factura (desde la pestaña "Anticipos Existentes")
+  const vincularDesdeExistente = async (a: any) => {
+    const candidatos = await buscarFacturasCandidatas(a.cuit_proveedor)
+    if (candidatos.length === 0) {
+      toast.info(`No hay facturas pendientes de ${a.nombre_proveedor}`)
+      return
+    }
+    setModalAnticipo(false)
+    await vincAnticipo.abrirVinculacion(a as AnticipoVinculable, candidatos)
   }
 
   const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string) => {
@@ -2961,14 +3011,26 @@ export function VistaCashFlow() {
                               </Select>
                             </td>
                             <td className="px-2 py-2 text-center">
-                              <Badge variant="outline" className={
-                                a.estado === 'vinculado' ? 'bg-green-50 text-green-700' :
-                                a.estado === 'parcial' ? 'bg-blue-50 text-blue-700' :
-                                'bg-yellow-50 text-yellow-700'
-                              }>
-                                {a.estado === 'vinculado' ? 'Vinculado' :
-                                 a.estado === 'parcial' ? 'Parcial' : 'Pendiente'}
-                              </Badge>
+                              <div className="flex items-center justify-center gap-1">
+                                <Badge variant="outline" className={
+                                  a.estado === 'vinculado' ? 'bg-green-50 text-green-700' :
+                                  a.estado === 'parcial' ? 'bg-blue-50 text-blue-700' :
+                                  'bg-yellow-50 text-yellow-700'
+                                }>
+                                  {a.estado === 'vinculado' ? 'Vinculado' :
+                                   a.estado === 'parcial' ? 'Parcial' : 'Pendiente'}
+                                </Badge>
+                                {a.tipo === 'pago' && a.estado !== 'vinculado' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-xs px-2 text-blue-600 border-blue-200 hover:bg-blue-50"
+                                    onClick={() => vincularDesdeExistente(a)}
+                                  >
+                                    <Link2 className="h-3 w-3 mr-0.5" />Vincular
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                             <td className="px-2 py-2 text-xs text-gray-600 max-w-[200px] truncate">
                               {a.descripcion || '-'}
@@ -2984,6 +3046,9 @@ export function VistaCashFlow() {
           </Tabs>
         </DialogContent>
       </Dialog>
+
+      {/* Wizard vinculación anticipo → factura (compartido con Vista Principal) */}
+      <ModalVinculacionAnticipo controller={vincAnticipo} />
 
       {/* Modal SICORE - Anticipo de pago */}
       <Dialog open={mostrarModalSicoreAnticipo} onOpenChange={(open) => { if (!open) cerrarModalSicoreAnticipo() }}>
