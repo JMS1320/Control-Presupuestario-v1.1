@@ -49,7 +49,8 @@ export async function buscarFacturasCandidatas(cuit: string): Promise<FacturaCan
     .from('comprobantes_arca')
     .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado, monto_a_abonar, monto_sicore')
     .eq('cuit', cuit)
-    .not('estado', 'in', '("pagado","conciliado")')
+    // Excluir pagadas/conciliadas (sin saldo que reducir) y anteriores (históricas, no se muestran en ARCA)
+    .not('estado', 'in', '("pagado","conciliado","anterior")')
     .order('fecha_emision', { ascending: false })
     .limit(10)
   return (data as FacturaCandidato[]) || []
