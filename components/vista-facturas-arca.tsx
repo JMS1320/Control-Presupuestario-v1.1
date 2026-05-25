@@ -35,6 +35,7 @@ interface FacturaArca {
   id: string
   fecha_emision: string
   tipo_comprobante: number
+  tipo_comprobante_desc?: string | null
   punto_venta: number | null
   numero_desde: number | null
   numero_hasta: number | null
@@ -269,6 +270,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [estadoSeleccionado, setEstadoSeleccionado] = useState('todos')
+  const [filtroTipoComprobante, setFiltroTipoComprobante] = useState('todos')
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
@@ -396,6 +398,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [filtrosPagos, setFiltrosPagos] = useState({ pendiente: true, pagar: true, preparado: true })
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState({ arca: true, template: true, anticipo: true, sueldo: true })
   const [filtroBusquedaPagos, setFiltroBusquedaPagos] = useState('')
+  const [filtroSoloNCPagos, setFiltroSoloNCPagos] = useState(false)
   const [cargandoPagos, setCargandoPagos] = useState(false)
   const [fechaPagoSeleccionada, setFechaPagoSeleccionada] = useState<string>('')
 
@@ -407,6 +410,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     seleccionadas: Set<string>     // IDs elegidos por el usuario en el modal
     restoCambioEstado: FacturaArca[] // Facturas que NO son parte de la cancelación y siguen flujo normal
   } | null>(null)
+  // Grupos de pago expandidos en el modal cancelación NC (escenario B agrupado por grupo_pago_id)
+  const [gruposExpandidosNC, setGruposExpandidosNC] = useState<Set<string>>(new Set())
 
   // ECHEQ — estado del modal y datos del cheque pendiente
   const [mostrarModalEcheq, setMostrarModalEcheq] = useState(false)
@@ -693,10 +698,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     cargarFacturas()
   }, [])
 
-  // Re-aplicar filtros cuando cambia el filtro FC
+  // Re-aplicar filtros cuando cambia el filtro FC o el tipo de comprobante
   useEffect(() => {
     aplicarFiltros()
-  }, [filtroFcPendiente])
+  }, [filtroFcPendiente, filtroTipoComprobante])
 
   // Auto-cargar facturas cuando cambia el período de imputación
   useEffect(() => {
@@ -771,6 +776,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     if (estadoSeleccionado && estadoSeleccionado !== 'todos') {
       facturasFiltradas = facturasFiltradas.filter(f => f.estado === estadoSeleccionado)
     }
+
+    // Filtro por tipo de comprobante
+    if (filtroTipoComprobante && filtroTipoComprobante !== 'todos') {
+      facturasFiltradas = facturasFiltradas.filter(f => String(f.tipo_comprobante) === filtroTipoComprobante)
+    }
     
     // Filtro por rango de montos
     if (montoMinimo) {
@@ -805,6 +815,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     setBusquedaCUIT('')
     setBusquedaDetalle('')
     setEstadoSeleccionado('todos')
+    setFiltroTipoComprobante('todos')
     setMontoMinimo('')
     setMontoMaximo('')
     setBusquedaCateg('')
@@ -1065,6 +1076,22 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
   // Obtener estados únicos para el selector
   const estadosUnicos = [...new Set(facturasOriginales.map(f => f.estado))].filter(Boolean).sort()
+
+  // Tipos de comprobante presentes en los datos (solo los que existen, no la lista AFIP completa)
+  const tiposComprobantePresentes = (() => {
+    const map = new Map<number, string>()
+    const esPlaceholder = (d: string) => !d || /^Código\s/i.test(d)
+    for (const f of facturasOriginales) {
+      const t = f.tipo_comprobante
+      if (t == null) continue
+      const desc = f.tipo_comprobante_desc || ''
+      const existente = map.get(t)
+      if (existente === undefined || (esPlaceholder(existente) && !esPlaceholder(desc))) {
+        map.set(t, desc || `Tipo ${t}`)
+      }
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
+  })()
 
   // Obtener columnas visibles
   const columnasVisiblesArray = Object.entries(columnasVisibles)
@@ -5851,7 +5878,25 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   </SelectContent>
                 </Select>
               </div>
-              
+
+              {/* Selector de tipo de comprobante (solo los presentes en los datos) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">🧾 Tipo Comprobante</Label>
+                <Select value={filtroTipoComprobante} onValueChange={setFiltroTipoComprobante}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los tipos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los tipos</SelectItem>
+                    {tiposComprobantePresentes.map(([tipo, desc]) => (
+                      <SelectItem key={tipo} value={String(tipo)}>
+                        {tipo} - {desc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Búsqueda por CATEG */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">💰 Cuenta Contable</Label>
@@ -7666,6 +7711,15 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ✕
               </Button>
             )}
+            <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap px-2">
+              <Checkbox
+                checked={filtroSoloNCPagos}
+                onCheckedChange={(checked) => setFiltroSoloNCPagos(!!checked)}
+              />
+              <span className="text-sm flex items-center gap-1">
+                <Badge variant="outline" className="bg-red-50 text-red-700 text-xs">Solo NC</Badge>
+              </span>
+            </label>
           </div>
 
           {cargandoPagos ? (
@@ -7690,6 +7744,8 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Función de búsqueda full-text sobre los campos relevantes
             const matchBusqueda = (f: FacturaArca) => {
+              // Filtro "Solo NC": solo Notas de Crédito (por tipo_comprobante AFIP)
+              if (filtroSoloNCPagos && ![3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante)) return false
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -7948,6 +8004,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Filtrar sueldos por búsqueda
             const matchBusquedaSueldo = (s: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta sueldos
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -8032,15 +8089,37 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   const { data: fcsConDescuento } = await supabase
                     .schema(schemaName)
                     .from('comprobantes_arca')
-                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore')
+                    .select('id, tipo_comprobante, numero_desde, denominacion_emisor, cuit, imp_total, descuento_aplicado, monto_sicore, grupo_pago_id, fecha_estimada')
                     .in('cuit', cuitsNC)
-                    .eq('estado', 'conciliado')
+                    .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
                     .gt('descuento_aplicado', 0)
 
-                  if (fcsConDescuento && fcsConDescuento.length > 0) {
+                  // Excluir FC cuyo descuento YA fue cubierto por una NC conciliada antes.
+                  // Se detecta parseando el detalle estructurado "Corresponde a descuentos aplicados FC ..."
+                  const { data: ncsYaAplicadas } = await supabase
+                    .schema(schemaName)
+                    .from('comprobantes_arca')
+                    .select('detalle')
+                    .in('cuit', cuitsNC)
+                    .eq('estado', 'conciliado')
+                    .like('detalle', 'Corresponde a descuentos aplicados FC%')
+                  const fcNumerosCubiertos = new Set<number>()
+                  for (const nc of ncsYaAplicadas || []) {
+                    const nums = (nc.detalle || '')
+                      .replace('Corresponde a descuentos aplicados FC', '')
+                      .split(/[,\s]+/)
+                      .map((x: string) => parseInt(x, 10))
+                      .filter((n: number) => !isNaN(n))
+                    nums.forEach((n: number) => fcNumerosCubiertos.add(n))
+                  }
+                  const fcsDisponibles = (fcsConDescuento || []).filter(
+                    (fc: any) => !fcNumerosCubiertos.has(Number(fc.numero_desde))
+                  )
+
+                  if (fcsDisponibles.length > 0) {
                     const opcion = window.confirm(
-                      `Hay ${fcsConDescuento.length} Factura(s) conciliada(s) del mismo proveedor con descuento aplicado:\n\n` +
-                      fcsConDescuento.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
+                      `Hay ${fcsDisponibles.length} Factura(s) pagada(s) del mismo proveedor con descuento aplicado:\n\n` +
+                      fcsDisponibles.map((fc: any) => `• FC ${fc.numero_desde || ''} — ${fc.denominacion_emisor} — Descuento: $${fc.descuento_aplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`).join('\n') +
                       `\n\n¿Desea aplicar las NC contra estos descuentos?` +
                       `\n\n[Aceptar] = Seleccionar FC con descuento\n[Cancelar] = Continuar sin aplicar`
                     )
@@ -8048,10 +8127,11 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                       setModalCancelacionNC({
                         tipo: 'nc_con_descuento',
                         facturas: ncsSeleccionadas,
-                        disponibles: fcsConDescuento as unknown as FacturaArca[],
-                        seleccionadas: new Set(fcsConDescuento.map((fc: any) => fc.id)),
+                        disponibles: fcsDisponibles as unknown as FacturaArca[],
+                        seleccionadas: new Set(),
                         restoCambioEstado: []
                       })
+                      setGruposExpandidosNC(new Set())
                       return
                     }
                   }
@@ -9007,6 +9087,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Búsqueda para templates
             const matchTemplate = (t: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta templates
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -9023,6 +9104,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
 
             // Búsqueda para anticipos
             const matchAnticipo = (a: any) => {
+              if (filtroSoloNCPagos) return false  // "Solo NC" oculta anticipos
               if (!filtroBusquedaPagos.trim()) return true
               const q = filtroBusquedaPagos.toLowerCase()
               return [
@@ -9815,11 +9897,90 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                     {modalCancelacionNC.disponibles.every(d => modalCancelacionNC.seleccionadas.has(d.id)) ? 'Deseleccionar todas' : 'Seleccionar todas'}
                   </Button>
                 </div>
-                {modalCancelacionNC.disponibles.map(d => {
-                  const monto = modalCancelacionNC.tipo === 'fc_con_nc'
-                    ? Math.abs(d.imp_total)
-                    : (d.descuento_aplicado || 0)
-                  return (
+                {modalCancelacionNC.tipo === 'nc_con_descuento' ? (
+                  /* Escenario B: agrupado por grupo_pago_id */
+                  (() => {
+                    const grupos = new Map<string, FacturaArca[]>()
+                    for (const d of modalCancelacionNC.disponibles) {
+                      const k = d.grupo_pago_id || '__sueltas__'
+                      if (!grupos.has(k)) grupos.set(k, [])
+                      grupos.get(k)!.push(d)
+                    }
+                    return Array.from(grupos.entries()).map(([gid, fcs]) => {
+                      const esSuelta = gid === '__sueltas__'
+                      const subtotal = fcs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0)
+                      const sel = modalCancelacionNC.seleccionadas
+                      const allSel = fcs.every(f => sel.has(f.id))
+                      const someSel = fcs.some(f => sel.has(f.id))
+                      const expandido = gruposExpandidosNC.has(gid)
+                      const fechaGrupo = fcs[0].fecha_estimada
+                        ? String(fcs[0].fecha_estimada).split('-').reverse().join('/')
+                        : ''
+                      return (
+                        <div key={gid} className="mb-2 border border-amber-200 rounded overflow-hidden">
+                          <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-100">
+                            <input
+                              type="checkbox"
+                              checked={allSel}
+                              ref={el => { if (el) el.indeterminate = !allSel && someSel }}
+                              onChange={() => {
+                                setModalCancelacionNC(prev => {
+                                  if (!prev) return null
+                                  const nuevo = new Set(prev.seleccionadas)
+                                  if (allSel) fcs.forEach(f => nuevo.delete(f.id))
+                                  else fcs.forEach(f => nuevo.add(f.id))
+                                  return { ...prev, seleccionadas: nuevo }
+                                })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="flex-1 text-left text-sm font-medium flex items-center gap-1"
+                              onClick={() => setGruposExpandidosNC(prev => {
+                                const n = new Set(prev)
+                                if (n.has(gid)) n.delete(gid)
+                                else n.add(gid)
+                                return n
+                              })}
+                            >
+                              <span className="text-xs w-3">{expandido ? '▼' : '▶'}</span>
+                              {esSuelta ? 'Sin grupo (FC sueltas)' : `Grupo pago ${fechaGrupo}`}
+                              <span className="text-muted-foreground font-normal">— {fcs.length} FC</span>
+                            </button>
+                            <span className="text-sm font-semibold text-red-600">
+                              ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          {expandido && (
+                            <div className="px-2 py-1 bg-white">
+                              {fcs.map(f => (
+                                <label key={f.id} className="flex items-center gap-2 text-sm py-0.5 pl-6 cursor-pointer hover:bg-amber-50 rounded">
+                                  <input
+                                    type="checkbox"
+                                    checked={sel.has(f.id)}
+                                    onChange={() => {
+                                      setModalCancelacionNC(prev => {
+                                        if (!prev) return null
+                                        const nuevo = new Set(prev.seleccionadas)
+                                        if (nuevo.has(f.id)) nuevo.delete(f.id)
+                                        else nuevo.add(f.id)
+                                        return { ...prev, seleccionadas: nuevo }
+                                      })
+                                    }}
+                                  />
+                                  <span className="flex-1">FC {f.numero_desde} — {f.denominacion_emisor}</span>
+                                  <span className="text-red-600">${(f.descuento_aplicado || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  })()
+                ) : (
+                  /* Escenario A: lista plana de NC */
+                  modalCancelacionNC.disponibles.map(d => (
                     <label key={d.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-amber-100 px-1 rounded">
                       <input
                         type="checkbox"
@@ -9835,14 +9996,14 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         }}
                       />
                       <span className="flex-1">
-                        {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC' : 'FC'} {d.numero_desde} — {d.denominacion_emisor}
+                        NC {d.numero_desde} — {d.denominacion_emisor}
                       </span>
                       <span className="font-medium text-red-600">
-                        ${monto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        ${Math.abs(d.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                       </span>
                     </label>
-                  )
-                })}
+                  ))
+                )}
                 <div className="border-t mt-2 pt-2 flex justify-between font-bold text-sm">
                   <span>Total seleccionado:</span>
                   <span className="text-red-600">
@@ -9861,23 +10022,30 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   .filter(d => modalCancelacionNC.seleccionadas.has(d.id))
                   .reduce((s, d) => s + (modalCancelacionNC.tipo === 'fc_con_nc' ? Math.abs(d.imp_total) : (d.descuento_aplicado || 0)), 0)
                 const saldoRestante = totalFacturas - totalDisponible
+                const esB = modalCancelacionNC.tipo === 'nc_con_descuento'
+                // Escenario B: cuadra solo si la diferencia es ~0 (tolerancia 1 peso por redondeo).
+                // Si se selecciona descuento de más, saldoRestante es negativo → no cuadra (naranja) y se muestra el negativo.
+                const cuadra = esB ? Math.abs(saldoRestante) < 1 : saldoRestante <= 0
+                const saldoStr = `${saldoRestante < 0 ? '-' : ''}$${Math.abs(saldoRestante).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
 
                 return (
-                  <div className={`p-3 rounded-lg text-sm ${saldoRestante <= 0 ? 'bg-green-50' : 'bg-orange-50'}`}>
+                  <div className={`p-3 rounded-lg text-sm ${cuadra ? 'bg-green-50' : 'bg-orange-50'}`}>
                     <div className="flex justify-between">
-                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'FC' : 'NC'}:</span>
+                      <span>Total {esB ? 'NC' : 'FC'}:</span>
                       <span>${totalFacturas.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Total {modalCancelacionNC.tipo === 'fc_con_nc' ? 'NC aplicadas' : 'descuento disponible'}:</span>
+                      <span>Total {esB ? 'descuento seleccionado' : 'NC aplicadas'}:</span>
                       <span className="text-red-600">-${totalDisponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="border-t mt-1 pt-1 flex justify-between font-bold">
-                      <span>{saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total'}</span>
-                      <span className={saldoRestante <= 0 ? 'text-green-600' : 'text-orange-600'}>
-                        {saldoRestante > 0
-                          ? `$${saldoRestante.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                          : '✓ $0,00'}
+                      <span>{
+                        esB
+                          ? (cuadra ? 'Cuadra con el descuento' : 'Diferencia (la NC se concilia igual):')
+                          : (saldoRestante > 0 ? 'Saldo restante (sigue pendiente):' : 'Cancelación total')
+                      }</span>
+                      <span className={cuadra ? 'text-green-600' : 'text-orange-600'}>
+                        {cuadra ? '✓ $0,00' : saldoStr}
                       </span>
                     </div>
                   </div>
@@ -9951,7 +10119,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                             .update({
                               estado: 'conciliado',
                               monto_a_abonar: 0,
-                              detalle: `Cancela descuento FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
+                              detalle: `Corresponde a descuentos aplicados FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}`
                             })
                             .eq('id', nc.id)
                         }
