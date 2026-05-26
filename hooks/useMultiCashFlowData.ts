@@ -442,7 +442,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     setError(null)
 
     try {
-      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior)
+      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior, cuotas)
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
@@ -450,6 +450,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')
+        .neq('estado', 'cuotas')
         .order('fecha_estimada', { ascending: true, nullsFirst: false })
 
       if (errorArca) {

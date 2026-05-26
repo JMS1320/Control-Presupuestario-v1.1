@@ -1118,6 +1118,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
       credito:    'bg-gray-100 text-gray-600 border-gray-200',
       conciliado: 'bg-gray-100 text-gray-600 border-gray-200',
       anterior:   'bg-gray-100 text-gray-600 border-gray-200',
+      cuotas:     'bg-blue-100 text-blue-800 border-blue-200',
       historico:  'bg-slate-200 text-slate-600 border-slate-300',
     }
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
@@ -1221,6 +1222,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   <SelectItem value="credito">Crédito</SelectItem>
                   <SelectItem value="conciliado">Conciliado</SelectItem>
                   <SelectItem value="anterior">Anterior</SelectItem>
+                  <SelectItem value="cuotas">Cuotas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -6238,6 +6240,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                         <SelectItem value="credito">Crédito</SelectItem>
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="anterior">Anterior</SelectItem>
+                        <SelectItem value="cuotas">Cuotas</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
