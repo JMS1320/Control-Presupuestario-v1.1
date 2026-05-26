@@ -1234,9 +1234,9 @@ export function VistaTemplatesEgresos() {
         </div>
         
         {/* Búsqueda rápida + Controles */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Búsqueda rápida general */}
-          <div className="relative flex-1 max-w-xs">
+          <div className="relative w-64 shrink-0">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
             <Input
               placeholder="Buscar template, proveedor, CATEG..."
