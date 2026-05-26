@@ -29,6 +29,7 @@ import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
+import { ModalReglasImport } from "@/components/modal-reglas-import"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -519,6 +520,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   
   // Estados para importador Excel
   const [mostrarImportador, setMostrarImportador] = useState(false)
+  const [mostrarReglasImport, setMostrarReglasImport] = useState(false)
   const [archivoImportacion, setArchivoImportacion] = useState<File | null>(null)
   const [importandoExcel, setImportandoExcel] = useState(false)
   const [resultadoImportacion, setResultadoImportacion] = useState<any>(null)
@@ -5593,14 +5595,24 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             </div>
             <div className="flex gap-2 ml-auto">
           {/* Botón importar Excel */}
-          <Button 
+          <Button
             variant="outline"
             onClick={() => setMostrarImportador(true)}
           >
             <Upload className="mr-2 h-4 w-4" />
             Importar Excel
           </Button>
-          
+
+          {/* Botón reglas de importación */}
+          <Button
+            variant="outline"
+            onClick={() => setMostrarReglasImport(true)}
+            title="Reglas que asignan cuenta contable y estado por CUIT al importar"
+          >
+            <Settings2 className="mr-2 h-4 w-4" />
+            Reglas Import
+          </Button>
+
           {/* Botón de filtros */}
           <Button 
             variant={mostrarFiltros ? "default" : "outline"}
@@ -9843,6 +9855,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Reglas de Importación */}
+      <ModalReglasImport open={mostrarReglasImport} onClose={() => setMostrarReglasImport(false)} />
 
       {/* Modal Cancelación FC/NC */}
       {modalCancelacionNC && (
