@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { CategCombobox } from "@/components/ui/categ-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { Loader2, Plus, Trash2, Save, X, Pencil } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -157,11 +157,13 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
             </div>
             <div>
               <Label className="text-xs">Cuenta contable *</Label>
-              <CategCombobox
+              <SelectorCuentaContable
                 value={form.cuenta_contable}
-                onValueChange={v => setForm(f => ({ ...f, cuenta_contable: v }))}
+                onSelect={(cuenta) => setForm(f => ({ ...f, cuenta_contable: cuenta?.categ || '' }))}
                 placeholder="Buscar cuenta del plan..."
-                className="text-sm"
+                autoFocus={false}
+                mostrarSinAsignar={false}
+                className="w-full"
               />
             </div>
             <div className="flex items-end gap-4">

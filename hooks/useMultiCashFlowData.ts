@@ -503,12 +503,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin sueldos
       }
 
-      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados)
+      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados ni anteriores)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
         .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
+        .neq('estado', 'anterior')
         .gte('fecha', '2026-01-01')
         .order('fecha', { ascending: true })
 
