@@ -334,14 +334,24 @@ export function VistaExtractoBancario() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
   }, [movimientos])
 
-  // Movimientos visibles (filtro client-side de categ multi-select)
+  // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   const movimientosVisibles = useMemo(() => {
-    if (!categsFiltro) return movimientos // null = sin filtro
-    return movimientos.filter(m => {
-      const cat = m.categ || '(sin categ)'
-      return categsFiltro.has(cat)
-    })
-  }, [movimientos, categsFiltro])
+    let lista = categsFiltro
+      ? movimientos.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
+      : movimientos
+    const q = normalizarBusqueda(busqueda)
+    if (q) {
+      lista = lista.filter(m => {
+        const mm = m as any
+        return [
+          mm.descripcion, mm.categ, mm.detalle, mm.contable, mm.interno, mm.origen,
+          mm.observaciones_cliente, mm.numero_de_comprobante, mm.nota_operador,
+          mm.leyendas_adicionales_1, mm.leyendas_adicionales_2,
+        ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
+      })
+    }
+    return lista
+  }, [movimientos, categsFiltro, busqueda])
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
