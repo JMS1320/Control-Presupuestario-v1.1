@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
@@ -392,7 +393,7 @@ export function VistaTemplatesEgresos() {
 
     // Búsqueda rápida multi-campo
     if (busquedaRapida.trim()) {
-      const q = busquedaRapida.toLowerCase()
+      const q = normalizarBusqueda(busquedaRapida)
       cuotasFiltradas = cuotasFiltradas.filter(c => {
         const campos = [
           c.egreso?.nombre_referencia || '',
@@ -406,7 +407,7 @@ export function VistaTemplatesEgresos() {
           c.monto?.toLocaleString('es-AR') || '',
           c.categ || '',
         ]
-        return campos.some(f => f.toLowerCase().includes(q))
+        return campos.some(f => normalizarBusqueda(f).includes(q))
       })
     }
 
@@ -420,25 +421,25 @@ export function VistaTemplatesEgresos() {
     
     // Filtro por responsable
     if (busquedaResponsable.trim()) {
-      const busqueda = busquedaResponsable.toLowerCase()
-      cuotasFiltradas = cuotasFiltradas.filter(c => 
-        c.egreso?.responsable?.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaResponsable)
+      cuotasFiltradas = cuotasFiltradas.filter(c =>
+        normalizarBusqueda(c.egreso?.responsable).includes(busqueda)
       )
     }
     
     // Filtro por nombre de referencia
     if (busquedaNombreReferencia.trim()) {
-      const busqueda = busquedaNombreReferencia.toLowerCase()
-      cuotasFiltradas = cuotasFiltradas.filter(c => 
-        c.egreso?.nombre_referencia?.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaNombreReferencia)
+      cuotasFiltradas = cuotasFiltradas.filter(c =>
+        normalizarBusqueda(c.egreso?.nombre_referencia).includes(busqueda)
       )
     }
     
     // Filtro por descripción
     if (busquedaDescripcion.trim()) {
-      const busqueda = busquedaDescripcion.toLowerCase()
-      cuotasFiltradas = cuotasFiltradas.filter(c => 
-        c.descripcion?.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaDescripcion)
+      cuotasFiltradas = cuotasFiltradas.filter(c =>
+        normalizarBusqueda(c.descripcion).includes(busqueda)
       )
     }
     
@@ -459,9 +460,9 @@ export function VistaTemplatesEgresos() {
     
     // Filtro por CATEG
     if (busquedaCateg.trim()) {
-      const busqueda = busquedaCateg.toLowerCase()
-      cuotasFiltradas = cuotasFiltradas.filter(c => 
-        c.egreso?.categ?.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaCateg)
+      cuotasFiltradas = cuotasFiltradas.filter(c =>
+        normalizarBusqueda(c.egreso?.categ).includes(busqueda)
       )
     }
     

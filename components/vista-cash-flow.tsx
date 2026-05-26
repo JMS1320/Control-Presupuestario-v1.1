@@ -13,6 +13,7 @@ import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filte
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -801,15 +802,15 @@ export function VistaCashFlow() {
   // Filtro rápido por búsqueda (client-side, siempre activo)
   const datosConBusqueda = busquedaRapida.trim()
     ? data.filter(fila => {
-        const q = busquedaRapida.toLowerCase().replace(/\./g, '')
+        const q = normalizarBusqueda(busquedaRapida).replace(/\./g, '')
         const normalizarMonto = (n: number) => n > 0
           ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
           : ''
         return (
-          fila.nombre_proveedor?.toLowerCase().includes(q) ||
-          fila.cuit_proveedor?.toLowerCase().includes(q) ||
-          fila.categ?.toLowerCase().includes(q) ||
-          fila.detalle?.toLowerCase().includes(q) ||
+          normalizarBusqueda(fila.nombre_proveedor).includes(q) ||
+          normalizarBusqueda(fila.cuit_proveedor).includes(q) ||
+          normalizarBusqueda(fila.categ).includes(q) ||
+          normalizarBusqueda(fila.detalle).includes(q) ||
           normalizarMonto(fila.debitos).includes(q) ||
           normalizarMonto(fila.creditos).includes(q)
         )

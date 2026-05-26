@@ -26,6 +26,7 @@ import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { format } from "date-fns"
@@ -751,9 +752,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     
     // Filtro por proveedor
     if (busquedaProveedor.trim()) {
-      const busqueda = busquedaProveedor.toLowerCase()
-      facturasFiltradas = facturasFiltradas.filter(f => 
-        f.denominacion_emisor && f.denominacion_emisor.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaProveedor)
+      facturasFiltradas = facturasFiltradas.filter(f =>
+        f.denominacion_emisor && normalizarBusqueda(f.denominacion_emisor).includes(busqueda)
       )
     }
     
@@ -766,9 +767,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     
     // Filtro por detalle
     if (busquedaDetalle.trim()) {
-      const busqueda = busquedaDetalle.toLowerCase()
-      facturasFiltradas = facturasFiltradas.filter(f => 
-        f.detalle && f.detalle.toLowerCase().includes(busqueda)
+      const busqueda = normalizarBusqueda(busquedaDetalle)
+      facturasFiltradas = facturasFiltradas.filter(f =>
+        f.detalle && normalizarBusqueda(f.detalle).includes(busqueda)
       )
     }
     
@@ -794,9 +795,9 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
     
     // Filtro por cuenta contable (CATEG)
     if (busquedaCateg.trim()) {
-      const busqueda = busquedaCateg.toLowerCase()
+      const busqueda = normalizarBusqueda(busquedaCateg)
       facturasFiltradas = facturasFiltradas.filter(f =>
-        f.cuenta_contable && f.cuenta_contable.toLowerCase().includes(busqueda)
+        f.cuenta_contable && normalizarBusqueda(f.cuenta_contable).includes(busqueda)
       )
     }
 
@@ -6067,12 +6068,12 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   </TableHeader>
                   <TableBody>
                     {(() => {
-                      const q = busquedaRapida.trim().toLowerCase()
+                      const q = normalizarBusqueda(busquedaRapida.trim())
                       const facturasDisplay = q
                         ? facturas.filter(f =>
-                            f.denominacion_emisor?.toLowerCase().includes(q) ||
+                            normalizarBusqueda(f.denominacion_emisor).includes(q) ||
                             f.cuit?.includes(q) ||
-                            (f.cuenta_contable ?? '').toLowerCase().includes(q)
+                            normalizarBusqueda(f.cuenta_contable ?? '').includes(q)
                           )
                         : facturas
                       return facturasDisplay.length === 0 ? (
@@ -7747,7 +7748,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               // Filtro "Solo NC": solo Notas de Crédito (por tipo_comprobante AFIP)
               if (filtroSoloNCPagos && ![3, 8, 13, 53, 203, 208, 213].includes(f.tipo_comprobante)) return false
               if (!filtroBusquedaPagos.trim()) return true
-              const q = filtroBusquedaPagos.toLowerCase()
+              const q = normalizarBusqueda(filtroBusquedaPagos)
               return [
                 f.denominacion_emisor,
                 f.cuit,
@@ -7758,7 +7759,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 String(f.monto_a_abonar ?? f.imp_total ?? ''),
                 f.fecha_vencimiento,
                 f.fecha_estimada,
-              ].some(v => v && String(v).toLowerCase().includes(q))
+              ].some(v => v && normalizarBusqueda(String(v)).includes(q))
             }
 
             // Filtrar facturas por estado, búsqueda y ordenar por fecha
@@ -8006,7 +8007,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const matchBusquedaSueldo = (s: any) => {
               if (filtroSoloNCPagos) return false  // "Solo NC" oculta sueldos
               if (!filtroBusquedaPagos.trim()) return true
-              const q = filtroBusquedaPagos.toLowerCase()
+              const q = normalizarBusqueda(filtroBusquedaPagos)
               return [
                 s.empleado?.nombre,
                 s.empleado?.cuit_empleado,
@@ -8014,7 +8015,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 s.tipo,
                 String(s.monto ?? ''),
                 s.fecha,
-              ].some(v => v && String(v).toLowerCase().includes(q))
+              ].some(v => v && normalizarBusqueda(String(v)).includes(q))
             }
 
             const sueldosPagar = sueldosPagos.filter(s => s.estado === 'pagar' && matchBusquedaSueldo(s))
@@ -9089,7 +9090,7 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
             const matchTemplate = (t: any) => {
               if (filtroSoloNCPagos) return false  // "Solo NC" oculta templates
               if (!filtroBusquedaPagos.trim()) return true
-              const q = filtroBusquedaPagos.toLowerCase()
+              const q = normalizarBusqueda(filtroBusquedaPagos)
               return [
                 t.egreso?.nombre_referencia,
                 t.descripcion,
@@ -9099,21 +9100,21 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 String(t.monto ?? ''),
                 t.fecha_vencimiento,
                 t.fecha_estimada,
-              ].some(v => v && String(v).toLowerCase().includes(q))
+              ].some(v => v && normalizarBusqueda(String(v)).includes(q))
             }
 
             // Búsqueda para anticipos
             const matchAnticipo = (a: any) => {
               if (filtroSoloNCPagos) return false  // "Solo NC" oculta anticipos
               if (!filtroBusquedaPagos.trim()) return true
-              const q = filtroBusquedaPagos.toLowerCase()
+              const q = normalizarBusqueda(filtroBusquedaPagos)
               return [
                 a.descripcion,
                 a.nombre_proveedor,
                 a.cuit_proveedor,
                 String(a.monto ?? ''),
                 a.fecha_pago,
-              ].some(v => v && String(v).toLowerCase().includes(q))
+              ].some(v => v && normalizarBusqueda(String(v)).includes(q))
             }
 
             const ordenarTemplatesPorFecha = (lista: any[]) =>
