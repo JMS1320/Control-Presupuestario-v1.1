@@ -317,6 +317,12 @@ Permite seleccionar múltiples movimientos con checkbox y aplicar los mismos val
 - Por texto (descripción)
 - Ver solo débitos / solo créditos / todos
 
+### Búsquedas insensibles a tildes (2026-05-26)
+
+Helper compartido `lib/normalizar-texto.ts` → `normalizarBusqueda(s)` (minúsculas + sin diacríticos). Aplicado en TODOS los buscadores de texto **client-side**: ARCA (filtros + búsqueda rápida + las 4 funciones match de Pagos), Templates, Cash Flow y Extracto (helper de asignación + 4 búsquedas de asignación manual). Así "federación" = "federacion".
+
+El **buscador principal del Extracto** pasó de server-side (`.or` con `ilike`, que no ignora tildes) a **client-side**: `useMovimientosBancarios` ya NO filtra `busqueda` en SQL; la vista filtra `movimientosVisibles` con `normalizarBusqueda` sobre los 11 campos buscables. Trade-off: busca sobre los movimientos cargados (según el límite). Se descartó la alternativa con columna generada en la BD (preferencia: no tocar la base — solo 9/398 filas tenían tildes incidentales en `detalle`).
+
 ---
 
 ## 9. COLUMNA "CONTROL"
@@ -373,7 +379,11 @@ Al clickearlo abre el Dialog selector con **dos grupos**: "Cuentas Bancarias" y 
 | `public` | Extractos bancarios + todas las tablas compartidas | `supabase.from('tabla')` |
 | `msa` | Facturas ARCA + tablas de caja empresa MSA | `supabase.schema('msa').from('tabla')` |
 | `pam` | Facturas ARCA empresa PAM | `supabase.schema('pam').from('tabla')` |
+| `ma` | Extracto + facturas ARCA empresa MA (`ma.ma_galicia`, etc.) | `supabase.schema('ma').from('tabla')` |
 | `sueldos` | Empleados, períodos, pagos | `supabase.schema('sueldos').from('tabla')` |
+| `productivo` | Hacienda / sector productivo | `supabase.schema('productivo').from('tabla')` |
+
+> **Schemas expuestos hoy** (`pgrst.db_schemas`): `public, msa, productivo, sueldos, pam, ma`.
 
 ### ⚠️ Problema resuelto (2026-03-22): schema `pam` devolvía HTTP 406
 
@@ -395,6 +405,18 @@ NOTIFY pgrst;
 ```
 
 **Lección**: El Dashboard de Supabase puede mostrar un schema como configurado sin que el valor real en PostgreSQL se haya actualizado. Si un schema da 406, verificar siempre `SELECT rolconfig FROM pg_roles WHERE rolname = 'authenticator'` antes de buscar causas más complejas.
+
+### ⚠️ Mismo problema con schema `ma` (resuelto 2026-05-25)
+
+La cuenta bancaria **MA** (`ma.ma_galicia`) no cargaba en Extracto y el selector se comportaba errático. Tabla, GRANTs (anon/authenticated full) y RLS (`allow_all_ma_galicia`) estaban OK, pero `ma` **no estaba expuesto** en `pgrst.db_schemas`. Fix:
+
+```sql
+ALTER ROLE authenticator SET pgrst.db_schemas = 'public, msa, productivo, sueldos, pam, ma';
+NOTIFY pgrst, 'reload config';
+NOTIFY pgrst, 'reload schema';   -- al agregar un schema nuevo, recargar también el caché de esquema
+```
+
+Tras el cambio: **hard refresh del navegador** (el cliente supabase-js cachea el estado fallido). Estos cambios de config **no están en el backup** → rehacer si se reconstruye la BD.
 
 ---
 
@@ -705,6 +727,31 @@ Revisar todos los templates existentes para verificar:
 - `cuenta_agrupadora` asignada en todos
 - `categ` consistente con código de regla
 - `es_bidireccional`: hoy los 14 bancarios tienen `true` (correcto: bancos a veces reintegran gastos mal cobrados)
+
+---
+
+## 15.bis. CAMBIOS FACTURAS ARCA / PAGOS (2026-05-25/26) — ⚠️ pendiente de probar en producción
+
+Todo en `components/vista-facturas-arca.tsx` salvo aclaración. En branch `desarrollo` (mergeado a `main` lo de FC/NC y filtros; lo nuevo de 2026-05-26 sigue en `desarrollo`).
+
+### Cancelación FC/NC — Escenario B agrupado (commits `e553582`, `b44625c`)
+Al poner una **NC** a "pagar" (sin FC seleccionada), si hay FCs del mismo CUIT **pagadas con descuento** (`descuento_aplicado>0`, estados `pagar/pagado/echeq/conciliado`), se abre el modal para aplicar la NC contra esos descuentos.
+- Modal **agrupa las FC por `grupo_pago_id`** con subtotal de descuento por grupo; checkbox de grupo + despliegue de FC individuales.
+- **Resumen honesto**: verde solo si la diferencia es ~0 (tolerancia 1 peso); si se selecciona descuento de más → naranja con el negativo. Nunca bloquea.
+- **Oculta grupos ya aplicados**: parsea el `detalle` (`"Corresponde a descuentos aplicados FC ..."`) de las NC ya conciliadas del CUIT y excluye esas FC.
+- Al confirmar: la NC pasa a `conciliado`, `monto_a_abonar=0`, `detalle` con los números de FC. NO se toca `grupo_pago_id` de la NC (evita ensuciar el PDF de orden de pago).
+
+### Filtros nuevos
+- **Tipo de comprobante** (vista ARCA): selector que lista **solo los tipos presentes** en los datos (no la lista AFIP completa). Estado `filtroTipoComprobante`.
+- **"Solo NC"** (Vista Pagos): checkbox que muestra únicamente Notas de Crédito y oculta templates/sueldos/anticipos.
+
+### Estado `cuotas` (commit `805f226`)
+Factura que se paga en cuotas vía template (ej. **Federación Patronal**, póliza en 12 cuotas) → marcarla estado **`cuotas`** para que NO aparezca en Cash Flow ni Vista Pagos (las cuotas del template son las que aportan al flujo). Queda en ARCA con badge azul.
+- `useMultiCashFlowData` excluye `cuotas`; Vista Pagos ya lo excluye (whitelist de estados).
+- **BD (no en backup)**: CHECK `comprobantes_arca_estado_check` actualizado para incluir `cuotas` en `msa.comprobantes_arca` y `ma.comprobantes_arca`.
+
+### UI Reglas de Importación (commit `61ae7f6`)
+Botón **"Reglas Import"** en la barra de Facturas ARCA → modal `components/modal-reglas-import.tsx` (ABM de `reglas_ctas_import_arca`). Mapea CUIT → cuenta contable + estado al importar. Cuenta con CategCombobox, estado fijo (pendiente/debito/credito), CUIT texto, proveedor opcional, activa. **Unificadas por CUIT** (sin dimensión empresa). Sin cambios de BD.
 
 ---
 

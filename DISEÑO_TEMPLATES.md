@@ -222,3 +222,22 @@ ALTER TABLE egresos_sin_factura
 | Crear template multi-cuenta con categ en el wizard | Checkbox oculta el campo |
 | Template abierto normal sin categ | Validación en `validarPaso` |
 | Templates solo_conciliacion en sección principal Pago Manual | Filtro en query UI |
+
+---
+
+## 12. Caja como presupuesto — estado `programado` (2026-05-26)
+
+El template **Caja** (categ `CAJA`, abierto, bidireccional) se usa para **presupuestar** extracciones (~$900k/mes) y tenerlas presentes. Pero la extracción real suele ser otro monto, y por regla/motor se crean **cuotas reales** (conciliadas, descripción "Extraccion a Caja"). La cuota presupuesto queda colgada en estado `pendiente` → **molesta en Vista Pagos**.
+
+**Solución — usar estado `programado` para las cuotas presupuesto:**
+
+| Estado | Vista Pagos (Egresos→Pagos) | Cash Flow |
+|--------|------------------------------|-----------|
+| `pendiente` | ❌ aparece (molesta) | ✅ aparece |
+| `programado` | ✅ **ni se carga** (la query de Pagos es whitelist `pendiente/pagar/preparado/echeq`) | ✅ aparece (violeta, débito proyectado) |
+
+Así el presupuesto queda **visible en Cash Flow para planificar** pero **fuera del laburo de Pagos**. Las extracciones reales se concilian aparte, como hoy.
+
+**Cuotas presupuesto NO usadas** (la extracción real fue otro monto y se creó cuota nueva; la presupuesto nunca se concilió): **se BORRAN** (decisión del usuario, no desactivar). 2026-05-25: borradas las cuotas Caja del 25/02 y 25/04 ($900k c/u).
+
+> Pendiente (a futuro, lo maneja el usuario): crear los presupuestos mensuales directamente en `programado`; automatizar que al conciliar la extracción real del mes se marque el presupuesto como consumido.
