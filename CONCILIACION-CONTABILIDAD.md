@@ -751,7 +751,16 @@ Factura que se paga en cuotas vía template (ej. **Federación Patronal**, póli
 - **BD (no en backup)**: CHECK `comprobantes_arca_estado_check` actualizado para incluir `cuotas` en `msa.comprobantes_arca` y `ma.comprobantes_arca`.
 
 ### UI Reglas de Importación (commit `61ae7f6`)
-Botón **"Reglas Import"** en la barra de Facturas ARCA → modal `components/modal-reglas-import.tsx` (ABM de `reglas_ctas_import_arca`). Mapea CUIT → cuenta contable + estado al importar. Cuenta con CategCombobox, estado fijo (pendiente/debito/credito), CUIT texto, proveedor opcional, activa. **Unificadas por CUIT** (sin dimensión empresa). Sin cambios de BD.
+Botón **"Reglas Import"** en la barra de Facturas ARCA → modal `components/modal-reglas-import.tsx` (ABM de `reglas_ctas_import_arca`). Mapea CUIT → cuenta contable + estado al importar. Cuenta con **`SelectorCuentaContable`** (jerarquía completa + buscador; commit `8b9215e` lo unificó, antes era CategCombobox), estado fijo (pendiente/debito/credito), CUIT texto, proveedor opcional, activa. **Unificadas por CUIT** (sin dimensión empresa). Sin cambios de BD.
+
+### 🐛 Fix motor: factura ARCA no pasaba a `conciliado` (commit `9877cc3`, 2026-05-27)
+**Síntoma**: facturas conciliadas en el extracto seguían apareciendo en Cash Flow como `pagado`. El movimiento bancario quedaba `conciliado` y con `comprobante_arca_id`, pero la factura ARCA quedaba en `pagado`.
+
+**Causa raíz**: en `useMotorConciliacion.ts` (match por Cash Flow, `origen === 'ARCA'`) el `.schema('msa')` estaba **al final** de la cadena (`supabase.from('comprobantes_arca').update(...).in(...).schema('msa')`). En supabase-js `.schema()` debe ir **antes de `.from()`**; al final se ignora → el update apuntaba a `public.comprobantes_arca` (inexistente) y no actualizaba nada. **Solo afectaba al motor automático**; la conciliación manual (vista-extracto) sí actualizaba bien la factura.
+
+**Fix**: mover `.schema('msa')` antes de `.from()`.
+
+**Limpieza de datos (2026-05-27, vía SQL)**: se detectaron 30 facturas MSA con movimiento `conciliado` apuntándolas por `comprobante_arca_id` pero en estado `pagado`. Se pasaron a `conciliado` 26 (vínculo por ID + monto coincidente; las 2 USD coinciden al convertir). El usuario excluyó 4 para revisar (FC 10558/10661/10762 I.C.T. NET, FC 1168 FERNANDEZ). Detección: `JOIN public.msa_galicia m ON m.comprobante_arca_id = c.id WHERE m.estado='conciliado' AND c.estado<>'conciliado'`.
 
 ---
 
