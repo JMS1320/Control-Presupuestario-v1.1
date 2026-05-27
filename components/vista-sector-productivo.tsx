@@ -3880,24 +3880,28 @@ function SubTabOrdenesAplicacion() {
         .update({ estado: 'ejecutada' })
         .eq('id', ordenConfirmando.id)
 
-      // Descontar stock por uso
+      // Descontar stock por uso: el movimiento 'uso' se crea AL EJECUTAR (no al crear) y el
+      // stock se recalcula desde los movimientos (fuente única). Una orden planificada no descuenta.
       if (ordenConfirmando.lineas) {
-        const descuentos: Record<string, number> = {}
-        for (const l of ordenConfirmando.lineas) {
-          if (l.insumo_stock_id) {
-            // Descontar en la unidad de stock del insumo (cantidad_total_ml está en ml)
-            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida)
-          }
-        }
-        // Leer stock actual y restar
-        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
-          .select('id, cantidad').in('id', Object.keys(descuentos))
-        if (stockActual) {
-          for (const s of stockActual) {
-            const nuevaCantidad = s.cantidad - (descuentos[s.id] || 0)
-            await supabase.schema('productivo').from('stock_insumos')
-              .update({ cantidad: nuevaCantidad })
-              .eq('id', s.id)
+        const movimientosUso = ordenConfirmando.lineas
+          .filter(l => l.insumo_stock_id)
+          .map(l => ({
+            fecha: ordenConfirmando.fecha,
+            insumo_stock_id: l.insumo_stock_id,
+            tipo: 'uso',
+            cantidad: mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida),
+            observaciones: `Orden aplicacion - ${l.insumo_nombre}`,
+          }))
+        if (movimientosUso.length > 0) {
+          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+          // Recalcular stock de cada insumo afectado desde sus movimientos (fuente única)
+          const ids = [...new Set(movimientosUso.map(m => m.insumo_stock_id as string))]
+          for (const id of ids) {
+            const { data: movs } = await supabase.schema('productivo').from('movimientos_insumos')
+              .select('tipo, cantidad').eq('insumo_stock_id', id)
+            const total = (movs || []).reduce((sum, m) =>
+              sum + (m.tipo === 'compra' || m.tipo === 'ajuste' ? Number(m.cantidad) : -Number(m.cantidad)), 0)
+            await supabase.schema('productivo').from('stock_insumos').update({ cantidad: total }).eq('id', id)
           }
         }
       }
@@ -4365,23 +4369,10 @@ function SubTabOrdenesAplicacion() {
         if (lineasError) throw new Error(lineasError.message)
       }
 
-      // Crear movimientos de uso (solo en creacion, en edicion los movimientos previos quedan)
-      // Si es carga retrospectiva, no generar movimientos de insumos
-      if (!ordenEditandoId && lineasData.length > 0 && !cargaRetrospectiva) {
-        const movimientosUso = lineasData
-          .filter(l => l.insumo_stock_id)
-          .map(l => ({
-            fecha: nuevaOrden.fecha,
-            insumo_stock_id: l.insumo_stock_id,
-            tipo: 'uso',
-            // Descontar en la unidad de stock del insumo (cantidad_total_ml está en ml)
-            cantidad: mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida),
-            observaciones: `Orden aplicacion - ${l.insumo_nombre}`
-          }))
-        if (movimientosUso.length > 0) {
-          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
-        }
-      }
+      // NOTA: el descuento de stock (movimiento 'uso') NO se hace al crear la orden.
+      // Una orden planificada no toca el stock; los movimientos de uso se crean al EJECUTAR
+      // la orden (ver ejecutarOrden). Así el stock refleja solo lo realmente aplicado y el
+      // reporte de Necesidad de Compra no descuenta dos veces lo proyectado.
 
       // === CICLOS DE CRIA ===
       if (laborEspecial) {
