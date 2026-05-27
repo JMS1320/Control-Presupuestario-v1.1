@@ -3191,6 +3191,10 @@ function SubTabOrdenesAplicacion() {
 
   // Rodeos seleccionados (multi-select)
   const [rodeosSeleccionados, setRodeosSeleccionados] = useState<Record<string, boolean>>({})
+  // Carga manual: muestra TODAS las categorías activas y permite ingresar la cantidad
+  // por categoría (para sanidad retroactiva sobre categorías sin stock actual)
+  const [cargaManualRodeos, setCargaManualRodeos] = useState(false)
+  const [cantidadManualRodeos, setCantidadManualRodeos] = useState<Record<string, string>>({})
 
   // Labores
   const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string, tipo: string | null }[]>([])
@@ -3590,10 +3594,10 @@ function SubTabOrdenesAplicacion() {
     setRodeosSeleccionados(prev => ({ ...prev, [catId]: !prev[catId] }))
   }
 
-  // Total cabezas = suma de stock de todos los rodeos seleccionados
+  // Total cabezas = suma de los rodeos seleccionados (manual = cantidad ingresada, sino = stock)
   const totalCabezas = Object.entries(rodeosSeleccionados)
     .filter(([_, sel]) => sel)
-    .reduce((sum, [catId]) => sum + (stockHaciendaMap[catId] || 0), 0)
+    .reduce((sum, [catId]) => sum + (cargaManualRodeos ? (parseInt(cantidadManualRodeos[catId]) || 0) : (stockHaciendaMap[catId] || 0)), 0)
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -3643,6 +3647,9 @@ function SubTabOrdenesAplicacion() {
           } else if (m.tipo === 'venta' || m.tipo === 'mortandad') {
             map[m.categoria_id] -= m.cantidad
           } else if (m.tipo === 'ajuste_stock') {
+            map[m.categoria_id] += m.cantidad
+          } else if (m.tipo === 'cambio_categoria') {
+            // La cantidad ya viene firmada: negativa en la categoría origen, positiva en la destino
             map[m.categoria_id] += m.cantidad
           }
         }
@@ -3754,6 +3761,8 @@ function SubTabOrdenesAplicacion() {
     setModoVer(false)
     setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
     setRodeosSeleccionados({})
+    setCargaManualRodeos(false)
+    setCantidadManualRodeos({})
     setLaboresSeleccionadas({})
     setLineas([])
     setLaborEspecial(null)
@@ -4209,6 +4218,13 @@ function SubTabOrdenesAplicacion() {
       toast.error('Seleccione al menos un rodeo')
       return
     }
+    if (cargaManualRodeos) {
+      const sinCantidad = rodeosIds.filter(id => (parseInt(cantidadManualRodeos[id]) || 0) <= 0)
+      if (sinCantidad.length > 0) {
+        toast.error('En carga manual, ingresá una cantidad mayor a 0 para cada categoría seleccionada')
+        return
+      }
+    }
     // Filtrar lineas vacías (sin insumo seleccionado)
     const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
 
@@ -4243,6 +4259,7 @@ function SubTabOrdenesAplicacion() {
 
       // Si es labor servicio, usar cabezas ingresadas por rodeo en vez de stock actual
       const getCabezasRodeo = (catId: string): number => {
+        if (cargaManualRodeos) return parseInt(cantidadManualRodeos[catId]) || 0
         if (laborEspecial && cabezasServicioPorRodeo[catId]) {
           return parseInt(cabezasServicioPorRodeo[catId])
         }
@@ -4665,9 +4682,24 @@ function SubTabOrdenesAplicacion() {
 
             {/* Multi-select rodeos */}
             <div>
-              <Label className="mb-2 block">Rodeos * <span className="text-muted-foreground text-xs">(seleccione uno o mas)</span></Label>
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <Label className="block">Rodeos * <span className="text-muted-foreground text-xs">(seleccione uno o mas)</span></Label>
+                {!modoVer && (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                    <input type="checkbox" checked={cargaManualRodeos}
+                      onChange={() => setCargaManualRodeos(v => !v)}
+                      className="rounded" />
+                    ✏️ Carga manual de categorías y cantidades
+                  </label>
+                )}
+              </div>
+              {cargaManualRodeos && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
+                  Modo manual: se listan todas las categorías. Tildá la/s que correspondan e ingresá la cantidad (útil para sanidad retroactiva).
+                </p>
+              )}
               <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto border rounded p-2">
-                {categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0).map(c => {
+                {(cargaManualRodeos ? categoriasHacienda : categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0)).map(c => {
                   const stock = stockHaciendaMap[c.id] || 0
                   const seleccionado = rodeosSeleccionados[c.id] || false
                   return (
@@ -4677,7 +4709,18 @@ function SubTabOrdenesAplicacion() {
                         onChange={() => toggleRodeo(c.id)}
                         className="rounded" />
                       <span className="font-medium">{c.nombre}</span>
-                      <span className="text-muted-foreground text-xs">({stock} cab.)</span>
+                      {cargaManualRodeos ? (
+                        seleccionado ? (
+                          <input type="text" inputMode="numeric" value={cantidadManualRodeos[c.id] ?? ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setCantidadManualRodeos(prev => ({ ...prev, [c.id]: e.target.value.replace(/\D/g, '') }))}
+                            placeholder="cant." className="w-14 border rounded px-1 py-0.5 text-xs ml-auto" />
+                        ) : (
+                          <span className="text-muted-foreground text-xs ml-auto">{stock > 0 ? `(${stock})` : ''}</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground text-xs">({stock} cab.)</span>
+                      )}
                     </label>
                   )
                 })}
