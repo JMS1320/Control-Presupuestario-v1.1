@@ -3609,6 +3609,10 @@ function SubTabOrdenesAplicacion() {
     .filter(([_, sel]) => sel)
     .reduce((sum, [catId]) => sum + (cargaManualRodeos ? (parseInt(cantidadManualRodeos[catId]) || 0) : (stockHaciendaMap[catId] || 0)), 0)
 
+  // La orden de aplicación es ganadera → mostrar solo insumos ganaderos (no Agroquímico),
+  // misma regla que usa la pestaña Stock de Insumos / form de compra.
+  const insumosGanaderos = insumosVet.filter(i => i.categorias_insumo?.nombre !== 'Agroquímico')
+
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
@@ -4955,9 +4959,10 @@ function SubTabOrdenesAplicacion() {
                         <TableCell>
                           <InsumoCombobox
                             value={l.insumo_stock_id || null}
-                            insumos={insumosVet}
+                            insumos={insumosGanaderos}
                             onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
                             onCreated={cargarDatos}
+                            categoriasExcluidas={['Agroquímico']}
                             disabled={modoVer}
                             className="w-full"
                           />

@@ -24,6 +24,7 @@ export function InsumoCombobox({
   insumos,
   onChange,
   onCreated,
+  categoriasExcluidas,
   disabled = false,
   className,
 }: {
@@ -32,6 +33,8 @@ export function InsumoCombobox({
   onChange: (id: string) => void
   /** Se llama tras crear un insumo nuevo (para que el padre recargue la lista) */
   onCreated?: () => void | Promise<void>
+  /** Nombres de categorías a NO ofrecer al crear (ej. ['Agroquímico'] en órdenes ganaderas) */
+  categoriasExcluidas?: string[]
   disabled?: boolean
   className?: string
 }) {
@@ -98,7 +101,9 @@ export function InsumoCombobox({
             }}>
               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Categoría" /></SelectTrigger>
               <SelectContent>
-                {categorias.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                {categorias
+                  .filter(c => !(categoriasExcluidas || []).includes(c.nombre))
+                  .map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
               </SelectContent>
             </Select>
             <Input className="h-8 text-xs" placeholder="Unidad (L, ml, kg, dosis...)" value={form.unidad_medida}
