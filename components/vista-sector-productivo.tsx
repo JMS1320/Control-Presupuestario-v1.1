@@ -22,6 +22,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
+import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
 
 // ============================================================
@@ -4952,25 +4953,14 @@ function SubTabOrdenesAplicacion() {
                     return (
                       <TableRow key={l.key}>
                         <TableCell>
-                          {insumosVet.length > 0 ? (
-                            <Select value={l.insumo_stock_id} onValueChange={v => actualizarLinea(l.key, 'insumo_stock_id', v)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar o escribir" /></SelectTrigger>
-                              <SelectContent position="popper" className="z-[9999]">
-                                {insumosVet.map(ins => (
-                                  <SelectItem key={ins.id} value={ins.id}>{ins.producto}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input className="h-8 text-xs" placeholder="Nombre insumo"
-                              value={l.insumo_nombre}
-                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
-                          )}
-                          {!l.insumo_stock_id && insumosVet.length > 0 && (
-                            <Input className="h-7 text-xs mt-1" placeholder="O escriba nombre"
-                              value={l.insumo_nombre}
-                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
-                          )}
+                          <InsumoCombobox
+                            value={l.insumo_stock_id || null}
+                            insumos={insumosVet}
+                            onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
+                            onCreated={cargarDatos}
+                            disabled={modoVer}
+                            className="w-full"
+                          />
                         </TableCell>
                         <TableCell>
                           <Select value={l.tipo_dosis} onValueChange={v => actualizarLinea(l.key, 'tipo_dosis', v)}>
