@@ -254,6 +254,15 @@ const calcularTotal = (
   return { total: 0, unidad: 'ml' }
 }
 
+// Convierte un total calculado (en ml) a la unidad de stock del insumo.
+// El stock y las compras se llevan en la unidad declarada del insumo (ej. L);
+// el cálculo de dosis es en ml → hay que convertir antes de descontar/comparar.
+const mlAUnidadStock = (cantidadMl: number, unidad: string | null | undefined): number => {
+  const u = (unidad || 'ml').toLowerCase().trim()
+  if (u === 'l' || u === 'lt' || u === 'litro' || u === 'litros') return cantidadMl / 1000
+  return cantidadMl  // ml / dosis / unidad / kg / g → se descuenta tal cual
+}
+
 // Calcula la dosis individual que se aplica a cada animal
 const dosisPorCabeza = (
   tipoDosis: string,
@@ -3871,7 +3880,8 @@ function SubTabOrdenesAplicacion() {
         const descuentos: Record<string, number> = {}
         for (const l of ordenConfirmando.lineas) {
           if (l.insumo_stock_id) {
-            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + l.cantidad_total_ml
+            // Descontar en la unidad de stock del insumo (cantidad_total_ml está en ml)
+            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida)
           }
         }
         // Leer stock actual y restar
@@ -4359,7 +4369,8 @@ function SubTabOrdenesAplicacion() {
             fecha: nuevaOrden.fecha,
             insumo_stock_id: l.insumo_stock_id,
             tipo: 'uso',
-            cantidad: l.cantidad_total_ml,
+            // Descontar en la unidad de stock del insumo (cantidad_total_ml está en ml)
+            cantidad: mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida),
             observaciones: `Orden aplicacion - ${l.insumo_nombre}`
           }))
         if (movimientosUso.length > 0) {
@@ -5592,7 +5603,8 @@ function SubTabNecesidadCompra() {
       for (const l of (lineasVetRes.data || [])) {
         const key = l.insumo_stock_id || l.insumo_nombre
         if (!mapVet[key]) mapVet[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0, unidad: l.unidad_medida || 'ml' }
-        mapVet[key].necesario += l.cantidad_total_ml
+        // necesario en la misma unidad que el stock (cantidad_total_ml está en ml)
+        mapVet[key].necesario += mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida)
       }
       const ganadero = Object.values(mapVet).map(n => {
         const s = n.stockId ? stockMap[n.stockId] : null
