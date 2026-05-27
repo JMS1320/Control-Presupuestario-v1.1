@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft, Download } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft, Download, Info } from "lucide-react"
 import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
@@ -745,6 +746,40 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <Scale className="h-4 w-4" />
             {importandoPesadas ? 'Analizando...' : 'Importar Pesadas'}
           </Button>
+
+          {/* Ayuda: formato del Excel de pesadas */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Formato del archivo de pesadas">
+                <Info className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96 text-sm">
+              <p className="font-semibold mb-1">📋 Formato del Excel de pesadas</p>
+              <p className="text-muted-foreground mb-2">
+                3 columnas (en cualquier orden; primera hoja; encabezados en la 1ª fila):
+              </p>
+              <ul className="list-disc pl-4 space-y-1 mb-3">
+                <li><b>Fecha</b> — una sola para todo el archivo (DD/MM/AAAA). Si hay fechas distintas, el archivo se rechaza.</li>
+                <li><b>IDV</b> — número de caravana del lector (es la <b>caravana oficial</b> del animal); con o sin espacios.</li>
+                <li><b>Peso</b> — en kg (coma o punto).</li>
+              </ul>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted">
+                    <th className="border px-1.5 py-0.5 text-left">Fecha</th>
+                    <th className="border px-1.5 py-0.5 text-left">IDV</th>
+                    <th className="border px-1.5 py-0.5 text-left">Peso</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326455</td><td className="border px-1.5 py-0.5">185,5</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326456</td><td className="border px-1.5 py-0.5">192</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326457</td><td className="border px-1.5 py-0.5">178,3</td></tr>
+                </tbody>
+              </table>
+            </PopoverContent>
+          </Popover>
 
           {/* Import terneros */}
           <input ref={inputTernerosRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleArchivoTerneros} />
