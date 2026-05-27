@@ -495,10 +495,10 @@ export function useMotorConciliacion() {
                   ? matchCF.cashFlowRow.ids_grupo
                   : [matchCF.cashFlowRow.id]
                 await supabase
+                  .schema('msa')
                   .from('comprobantes_arca')
                   .update({ estado: 'conciliado' })
                   .in('id', idsArcaConciliar)
-                  .schema('msa')
               } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
                 await supabase
                   .from('sueldos_pagos')
