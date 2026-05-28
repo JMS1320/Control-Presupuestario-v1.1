@@ -6040,7 +6040,7 @@ function SubTabOrdenesAgricolas() {
             <TableHead>Lote / Campo</TableHead>
             <TableHead className="text-right">Ha</TableHead>
             <TableHead>Labores</TableHead>
-            <TableHead className="text-right">Insumos</TableHead>
+            <TableHead>Insumos</TableHead>
             <TableHead>Estado</TableHead>
             <TableHead className="text-right">Acciones</TableHead>
           </TableRow>
@@ -6059,7 +6059,18 @@ function SubTabOrdenesAgricolas() {
                 <TableCell>{o.lote?.nombre_lote || o.lote_nombre || '-'}</TableCell>
                 <TableCell className="text-right">{formatoNumero(o.hectareas)}</TableCell>
                 <TableCell className="text-sm">{(o.labores || []).join(', ') || '-'}</TableCell>
-                <TableCell className="text-right">{(o.lineas || []).length}</TableCell>
+                <TableCell>
+                  {(o.lineas || []).length > 0 ? (
+                    <div className="space-y-0.5">
+                      {(o.lineas || []).map(l => (
+                        <div key={l.id} className="text-xs">
+                          <span className="font-medium">{l.insumo_nombre}</span>
+                          {l.dosis ? `: ${l.dosis} ${l.unidad_dosis || ''}/ha` : ''} → {formatoCantidad(l.cantidad_total_l, 'L')}
+                        </div>
+                      ))}
+                    </div>
+                  ) : <span className="text-muted-foreground text-xs">—</span>}
+                </TableCell>
                 <TableCell>
                   <Badge className={
                     o.estado === 'ejecutada' ? 'bg-green-100 text-green-800' :
