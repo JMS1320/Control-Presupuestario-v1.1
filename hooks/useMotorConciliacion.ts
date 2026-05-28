@@ -691,7 +691,7 @@ export function useMotorConciliacion() {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
-        .select('id, responsable')
+        .select('id, responsable, solo_conciliacion')
         .eq('categ', regla.categ)
         .eq('activo', true)
 
@@ -700,9 +700,24 @@ export function useMotorConciliacion() {
         return null
       }
 
-      // Si hay varios (ej: FCI MSA + PAM), elegir el que corresponde a la empresa de la cuenta
+      // Templates bancarios genéricos (solo_conciliacion=true): el banco define la empresa.
+      // Filtro estricto — si no existe template con responsable de la empresa de la cuenta, NO crear cuota.
+      // Esto evita que una regla PAM cargue silenciosamente en un template MSA cuando solo existe el MSA.
+      const algunoBancario = templates.some(t => (t as any).solo_conciliacion)
       let template = templates[0]
-      if (templates.length > 1) {
+      if (algunoBancario) {
+        const matchEmpresa = templates.find(t =>
+          t.responsable?.toLowerCase().includes(cuenta.empresa.toLowerCase())
+        )
+        if (!matchEmpresa) {
+          console.warn(`⚠️ No hay template "${regla.categ}" para ${cuenta.empresa} (solo_conciliacion). Cuota NO creada.`)
+          return null
+        }
+        template = matchEmpresa
+      } else if (templates.length > 1) {
+        // Templates específicos (Red Vial, FCI, etc.): si hay varios, elegir por empresa.
+        // Si hay uno solo, se usa tal cual aunque el banco sea de otra empresa
+        // (caso Red Vial Rojas MSA pagado desde banco PAM → carga en MSA, correcto).
         const coincide = templates.find(t =>
           t.responsable?.toLowerCase().includes(cuenta.empresa.toLowerCase())
         )
