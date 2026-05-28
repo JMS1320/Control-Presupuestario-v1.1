@@ -20,6 +20,7 @@ import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
 
@@ -1540,6 +1541,14 @@ export function VistaCashFlow() {
                   ))}
                 </datalist>
               </>
+            ) : columna.key === 'centro_costo' ? (
+              <CentroCostoCombobox
+                value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                onValueChange={(v) => hookEditor.guardarCambio(v)}
+                autoFocus
+                disabled={hookEditor.guardandoCambio}
+                className="h-6 text-xs w-full"
+              />
             ) : (
               <Input
                 ref={hookEditor.inputRef}

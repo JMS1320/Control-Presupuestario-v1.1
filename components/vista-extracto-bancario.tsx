@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -2126,10 +2127,11 @@ export function VistaExtractoBancario() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Centro de Costo</label>
-                    <Input
-                      placeholder="Centro de costo"
+                    <CentroCostoCombobox
                       value={editData.centro_de_costo}
-                      onChange={(e) => setEditData({...editData, centro_de_costo: e.target.value})}
+                      onValueChange={(v) => setEditData({...editData, centro_de_costo: v})}
+                      placeholder="Centro de costo"
+                      className="w-full"
                     />
                   </div>
                   <div>

@@ -21,6 +21,7 @@ import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
@@ -1249,6 +1250,17 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                 ))}
               </datalist>
             </>
+          ) : (columna === 'centro_costo') ? (
+            <CentroCostoCombobox
+              value={String(celdaEnEdicion.valor || '')}
+              onValueChange={(v) => {
+                setCeldaEnEdicion(prev => prev ? { ...prev, valor: v } : null)
+                setTimeout(() => guardarCambio(), 50)
+              }}
+              autoFocus
+              disabled={guardandoCambio}
+              className="h-6 text-xs w-full"
+            />
           ) : (
             <Input
               ref={inputRefLocal}

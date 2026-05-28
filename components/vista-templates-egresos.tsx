@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, Settings2, FileText, Info, Eye, EyeOff, Plus, X, Filter, Edit3, Save, XCircle, TestTube, Check, RefreshCw, Search } from "lucide-react"
 import { CategCombobox } from "@/components/ui/categ-combobox"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
@@ -1054,6 +1055,31 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="anterior">Anterior</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0"
+              onClick={cancelarEdicion}
+            >
+              <XCircle className="h-3 w-3" />
+            </Button>
+          </div>
+        )
+      }
+
+      // Edición de centro_costo: combobox controlado (lista maestra + crear nuevo)
+      if (columna === 'centro_costo') {
+        return (
+          <div
+            className="flex items-center gap-1 min-w-[140px]"
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); cancelarEdicion(); } }}
+          >
+            <CentroCostoCombobox
+              value={String(celdaEnEdicion.valor || '')}
+              onValueChange={(v) => guardarCambio(v)}
+              autoFocus
+              className="h-8 text-xs w-full"
+            />
             <Button
               size="sm"
               variant="ghost"
