@@ -233,15 +233,17 @@ Los pagos se filtran por **`periodo_id`** (el mes al que fue asignado el pago), 
 - Query: `sueldos_periodos` con join a `sueldos_empleados`, desde 2026-02-01
 - Estado `'historico'` excluido
 - `debitos` = `saldo_pendiente ?? bruto_calculado`
+- **Se ocultan los períodos con saldo < $1** (ya pagados, sin bruto cargado, negativos, o residuos por redondeo) — filtro `>= 1` en `mapearSueldos` (commit `eabc988` inicial `> 0`, ajustado a tolerancia de $1 el 2026-05-27). Se auto-corrige en todos los meses: al pagar un período su saldo cae por debajo de $1 y desaparece del flujo.
 - `fecha_estimada` = último día del mes del período
 - **Solo lectura** desde Cash Flow (`actualizarRegistro` bloquea si `origen_tabla = 'sueldos.periodos'`)
 
 ### Fuente 2 — Anticipos (`sueldos_pagos`)
 
 - Origen: `'SUELDO'`, `categ: 'SUELD ANT'`
-- Query: `sueldos_pagos` con `tipo = 'anticipo'`, excluye `estado = 'conciliado'`, desde 2026-02-01
-- Cada anticipo = 1 fila propia (conciliable con extracto bancario)
+- Query: `sueldos_pagos` con `tipo IN ('anticipo','sueldo')`, excluye `estado = 'conciliado'` y `estado = 'anterior'`, desde 2026-01-01
+- Cada anticipo/pago = 1 fila propia (conciliable con extracto bancario)
 - **Editable** desde Cash Flow: estado, fecha, monto, detalle → UPDATE directo en `sueldos_pagos`
+- **Estado `anterior`** (2026-05-27, commits `8b9215e` + `71a788c`): opción agregada al dropdown "Estado en Cash Flow" del modal Editar Pago. Sirve para sacar del Cash Flow sueldos viejos no conciliables (ej. enero, cuando el extracto arranca en febrero) — el Cash Flow excluye `anterior` igual que `conciliado`.
 - Distinción en `actualizarRegistro`: si `origen_tabla = 'sueldos.pagos'` → editable
 
 ---

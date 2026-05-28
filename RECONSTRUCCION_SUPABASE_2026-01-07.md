@@ -3317,6 +3317,56 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-05-27: Nueva tabla maestra `centros_costo`**
+
+#### **🎯 Motivo:**
+
+El campo `centro_costo` (presente en `egresos_sin_factura`, `cuotas_egresos_sin_factura` y `msa.comprobantes_arca`) era texto libre en 6 lugares de la UI. Para evitar typos / duplicados ("Libertad" vs "libertad" vs "Lbertad") se creó una tabla maestra que funciona análoga a `cuentas_contables`: el selector solo permite elegir de la lista o crear uno nuevo (que queda persistido y disponible globalmente).
+
+#### **🔧 DDL aplicado:**
+
+```sql
+CREATE TABLE IF NOT EXISTS public.centros_costo (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre VARCHAR(100) NOT NULL UNIQUE,
+  activo BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.centros_costo ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS allow_all_centros_costo ON public.centros_costo;
+CREATE POLICY allow_all_centros_costo ON public.centros_costo
+  FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON public.centros_costo TO anon, authenticated;
+
+-- Seed con los 13 valores distintos que ya estaban en uso
+INSERT INTO public.centros_costo (nombre) VALUES
+  ('Nazarenas'), ('Estructura'), ('Quinta Rosello'), ('Libertad'),
+  ('Lote Puerto'), ('Rojas'), ('Lima'), ('Cochera Posadas'),
+  ('Tiguan'), ('Toyota'), ('Voyage'), ('Gol'), ('Otros')
+ON CONFLICT (nombre) DO NOTHING;
+```
+
+#### **⚠️ Si reconstruís la BD:**
+
+Esta tabla **NO está en el backup original**. Ejecutar el script de arriba después de los scripts de estructura (igual que con `tipos_comprobante_afip` y el DEFAULT de `ddjj_iva`).
+
+**Verificación:**
+```sql
+SELECT nombre, activo FROM public.centros_costo ORDER BY nombre;
+-- Debe devolver 13 filas activas
+```
+
+#### **🎨 Código asociado:**
+
+- `components/ui/centro-costo-combobox.tsx` — selector reutilizable (lista + crear nuevo, búsqueda acento-insensible)
+- Conectado en: wizard de templates, edición inline (Templates / Cash Flow / Facturas ARCA), modal asignación del Extracto, configurador de Reglas
+- **Commit:** `99fa03a` - "Feature: centro de costo controlado (tabla maestra + selector reutilizable)"
+
+---
+
 ### **2026-01-10: Fix DEFAULT ddjj_iva - Desviación del Backup**
 
 #### **🚨 Problema Detectado:**

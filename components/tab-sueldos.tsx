@@ -1598,6 +1598,7 @@ export function TabSueldos() {
                   <SelectItem value="programado">programado</SelectItem>
                   <SelectItem value="pendiente">pendiente</SelectItem>
                   <SelectItem value="pagado">pagado</SelectItem>
+                  <SelectItem value="anterior">anterior</SelectItem>
                 </SelectContent>
               </Select>
             </div>

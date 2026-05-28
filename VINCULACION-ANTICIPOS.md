@@ -53,7 +53,9 @@ El hook recibe un callback `onVinculado` para refrescar los datos al vincular co
 
 ### 4.1. Candidatos
 
-`buscarFacturasCandidatas(cuit)` → facturas ARCA del CUIT que no están `pagado`/`conciliado` (máx. 10), ordenadas por fecha. Trae también `monto_a_abonar` y `monto_sicore` (necesarios para el cálculo).
+`buscarFacturasCandidatas(cuit)` → facturas ARCA del CUIT que no están `pagado`/`conciliado`/`anterior` (máx. 10), ordenadas por fecha. Trae también `monto_a_abonar` y `monto_sicore` (necesarios para el cálculo).
+
+> **Fix 2026-05-25 (`7b2591b`)**: se agregó `anterior` a las exclusiones. Las facturas históricas (`estado='anterior'`) no se muestran en la vista ARCA, así que la alerta de Vista Principal ofrecía vincular contra una FC inhallable (caso Nuñez Omar: anticipo de $330.000 ofrecía la FC 1132 histórica). `pagado`/`conciliado` se excluyen a propósito (no tienen saldo que reducir).
 
 ### 4.2. Caso A vs Caso B
 

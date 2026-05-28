@@ -86,6 +86,25 @@ Esta conversión se hace en el servidor (`app/api/import-pesadas/route.ts`, func
 El Excel del lector puede tener el IDV como número o como texto con espacio — ambos funcionan
 porque la función hace `.replace(/\D/g, '')` antes de procesar.
 
+### 📋 Formato del Excel de pesadas (import — `accion=analizar`)
+
+El importador lee la **primera hoja**, con **encabezados en la primera fila**. Solo lee **3 columnas** (por nombre, no por posición → orden libre; otras columnas se ignoran):
+
+| Columna | Variantes aceptadas | Detalle |
+|---------|---------------------|---------|
+| **Fecha** | `Fecha` / `fecha` / `FECHA` | Una sola por archivo (`DD/MM/AAAA`, `YYYY-MM-DD` o fecha de Excel). **Si hay fechas distintas, el endpoint rechaza el archivo** (validación 2026-05-27). |
+| **IDV** | `IDV` / `idv` / `Idv` | N° de caravana del lector (= caravana oficial del animal). Con o sin espacios. Se convierte a `caravana_oficial`. |
+| **Peso** | `Peso` / `peso` / `PESO` | Kg, coma o punto. Filas con peso ≤ 0 / vacío se ignoran. |
+
+Ejemplo:
+
+| Fecha | IDV | Peso |
+|---|---|---|
+| 23/02/2026 | 32010012326455 | 185,5 |
+| 23/02/2026 | 32010012326456 | 192 |
+
+> ⚠️ El encabezado de la caravana debe ser **`IDV`** (no "caravana oficial") — el sistema calcula la caravana oficial a partir del IDV. La UI (`tab-terneros.tsx`) muestra este formato en un popover ⓘ junto al botón "Importar Pesadas".
+
 ---
 
 ## 3. Estructura de base de datos — estado real

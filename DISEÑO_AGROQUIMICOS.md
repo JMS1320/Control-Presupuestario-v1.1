@@ -284,5 +284,38 @@ VistaSectorProductivo
 
 ---
 
-**📅 Última actualización:** 2026-02-27
-**Estado**: Diseño completo — listo para implementar cuando se decida
+## 10. CAMBIOS 2026-05-27 — Modelo de stock, unidades, selector y trazabilidad
+
+Aplica a insumos **ganaderos (veterinarios)** y **agrícolas** (comparten `stock_insumos` / `movimientos_insumos`). En branch `desarrollo`.
+
+### 10.1 Stock se descuenta solo al EJECUTAR (no al planificar) — commits `ddef961` (ganadero), `85924fa` (agrícola)
+**Regla**: `stock = compras + ajustes − usos`, y el movimiento **`uso` se crea al EJECUTAR la orden**, no al crearla. Una orden **planificada NO toca el stock**. Tras ejecutar, el stock se **recalcula desde los movimientos** (fuente única) — no más resta directa.
+- **Bug que corrigió (ganadero)**: el uso se creaba al CREAR la orden (incluso planificada) → el stock ya descontaba lo proyectado y el reporte Necesidad de Compra lo restaba otra vez → doble conteo / falsa "falta".
+- El **agrícola** ya descontaba solo al ejecutar (no tenía el bug), pero se pasó al mismo modelo (movimiento + recalc) para trazabilidad y para que `recalcularStockInsumo` no pierda el consumo al editar una compra.
+- Limpieza de datos: se borraron los 3 usos de órdenes planificadas (Ivermectina, Rotatek) y se reconstruyeron los usos de las órdenes **agrícolas ejecutadas** (reproduce los stocks exactos + da historial).
+
+### 10.2 Unidades — commit `f6a7a61`
+El cálculo de dosis ganadero da **ml**, pero el stock está en la unidad del insumo (ej. L). Helper `mlAUnidadStock(ml, unidad)` (L/lt → ÷1000) convierte al descontar y al comparar en el reporte. (El agrícola calcula en L directo, no necesita conversión.) Ivermectina se corrigió por SQL (usos ml÷1000) → 2,88 L.
+> Pendiente: `formatoCantidad` para unidad 'L' en las **líneas de orden** muestra el número de ml como L (recibe valores en distintas unidades según el caller). No tocado por riesgo con el recuento.
+
+### 10.3 Selector de insumo — commits `bf75b18`, `27060f6`
+`components/insumo-combobox.tsx` (`InsumoCombobox`): buscador insensible a tildes que **solo permite elegir insumos existentes** (se quitó el texto libre) + **"➕ Nuevo insumo"** que crea el `stock_insumos` (producto + categoría + unidad). La orden ganadera filtra a insumos **no-Agroquímico** (`insumosGanaderos`) y el form de crear excluye 'Agroquímico' ahí.
+> La distinción ganadero/agrícola sigue **hardcodeada por nombre de categoría = 'Agroquímico'** (frágil: Herbicida/Fertilizante/etc. caerían como ganaderos). Opción robusta postergada: campo `ambito` en `categorias_insumo`.
+
+### 10.4 Reporte Necesidad de Compra
+`A Comprar = max(0, Necesario(órdenes planificadas) − Stock)`, en dos tablas (Ganadero / Agrícola). Como las planificadas ya **no** descuentan stock, no hay doble conteo.
+
+### 10.5 Órdenes ganaderas — rodeos + carga manual — commit `c4d2bab`
+- El stock de hacienda por categoría ahora cuenta el tipo `cambio_categoria` (antes lo ignoraba) → aparecen las categorías de recría y se corrigen los números.
+- Checkbox **"Carga manual de categorías y cantidades"**: lista todas las categorías activas + cantidad editable (para sanidad retroactiva).
+
+### 10.6 Detalle de insumos en órdenes agrícolas — commit `acbf6e1`
+La tabla de órdenes agrícolas muestra en la columna "Insumos" el detalle de cada uno (`insumo: dosis/ha → total L`), igual que el ganadero (antes solo mostraba el número de líneas).
+
+### Pendientes del usuario (datos)
+- Cargar compras faltantes de agroquímicos con stock negativo (2,4 DB −42, Coadyuvante −12,85, Flumetsulam −11,2, 2,4D −23,2, Metsulfuron −0,15): se ejecutaron órdenes sin registrar la compra.
+
+---
+
+**📅 Última actualización:** 2026-05-27
+**Estado**: Diseño completo + cambios de stock/unidades/selector/trazabilidad implementados (sección 10) en `desarrollo`

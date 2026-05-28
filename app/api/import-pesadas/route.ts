@@ -67,15 +67,22 @@ async function handleAnalizar(request: Request) {
       return NextResponse.json({ error: 'El archivo está vacío' }, { status: 400 })
     }
 
-    // Detectar fecha (tomamos la primera que encontremos — todas deben ser iguales)
-    let fechaDetectada: string | null = null
+    // Detectar fechas: debe haber UNA sola por archivo. Si hay distintas, rechazar.
+    const fechasUnicas = new Set<string>()
     for (const row of rows) {
       const f = parseFecha(row['Fecha'] ?? row['fecha'] ?? row['FECHA'])
-      if (f) { fechaDetectada = f; break }
+      if (f) fechasUnicas.add(f)
     }
-    if (!fechaDetectada) {
-      return NextResponse.json({ error: 'No se pudo detectar la fecha de pesada' }, { status: 400 })
+    if (fechasUnicas.size === 0) {
+      return NextResponse.json({ error: 'No se pudo detectar la fecha de pesada. Verificá que exista una columna "Fecha".' }, { status: 400 })
     }
+    if (fechasUnicas.size > 1) {
+      const lista = [...fechasUnicas].sort().map(f => f.split('-').reverse().join('/')).join(', ')
+      return NextResponse.json({
+        error: `El archivo tiene fechas de pesada distintas (${lista}). Debe haber una sola fecha por archivo: separá las pesadas en un archivo por fecha.`,
+      }, { status: 400 })
+    }
+    const fechaDetectada = [...fechasUnicas][0]
 
     // Clasificar filas
     const sinIdv: number[] = []

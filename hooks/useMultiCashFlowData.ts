@@ -318,7 +318,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   // Mapear períodos de sueldos a formato Cash Flow
   const MESES_CASH = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
   const mapearSueldos = (periodosS: any[]): CashFlowRow[] => {
-    return periodosS.map(p => ({
+    return periodosS
+      // Ocultar del Cash Flow los períodos con saldo < $1 (ya pagados, sin bruto
+      // cargado, negativos, o residuos por redondeo). Se auto-corrige al pagar.
+      .filter(p => (p.saldo_pendiente ?? p.bruto_calculado ?? 0) >= 1)
+      .map(p => ({
       id: p.id,
       origen: 'SUELDO' as const,
       origen_tabla: 'sueldos.periodos',
@@ -442,7 +446,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     setError(null)
 
     try {
-      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior)
+      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior, cuotas)
       const { data: facturasArca, error: errorArca } = await supabase
         .schema('msa')
         .from('comprobantes_arca')
@@ -450,6 +454,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .neq('estado', 'conciliado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')
+        .neq('estado', 'cuotas')
         .order('fecha_estimada', { ascending: true, nullsFirst: false })
 
       if (errorArca) {
@@ -502,12 +507,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         // No es crítico, continuamos sin sueldos
       }
 
-      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados)
+      // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados ni anteriores)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
         .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
         .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
+        .neq('estado', 'anterior')
         .gte('fecha', '2026-01-01')
         .order('fecha', { ascending: true })
 

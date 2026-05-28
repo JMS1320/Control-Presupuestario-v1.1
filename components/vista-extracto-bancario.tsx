@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -48,6 +49,7 @@ import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -333,14 +335,24 @@ export function VistaExtractoBancario() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
   }, [movimientos])
 
-  // Movimientos visibles (filtro client-side de categ multi-select)
+  // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   const movimientosVisibles = useMemo(() => {
-    if (!categsFiltro) return movimientos // null = sin filtro
-    return movimientos.filter(m => {
-      const cat = m.categ || '(sin categ)'
-      return categsFiltro.has(cat)
-    })
-  }, [movimientos, categsFiltro])
+    let lista = categsFiltro
+      ? movimientos.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
+      : movimientos
+    const q = normalizarBusqueda(busqueda)
+    if (q) {
+      lista = lista.filter(m => {
+        const mm = m as any
+        return [
+          mm.descripcion, mm.categ, mm.detalle, mm.contable, mm.interno, mm.origen,
+          mm.observaciones_cliente, mm.numero_de_comprobante, mm.nota_operador,
+          mm.leyendas_adicionales_1, mm.leyendas_adicionales_2,
+        ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
+      })
+    }
+    return lista
+  }, [movimientos, categsFiltro, busqueda])
 
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
@@ -1350,7 +1362,7 @@ export function VistaExtractoBancario() {
   const filtrarFacturasConBusqueda = (opciones: any[], termino: string) => {
     if (!termino.trim()) return opciones
     
-    const busqueda = termino.toLowerCase()
+    const busqueda = normalizarBusqueda(termino)
     return opciones.filter(opcion => {
       // Buscar en múltiples campos - compatible con ARCA y Templates
       const campos = [
@@ -1369,7 +1381,7 @@ export function VistaExtractoBancario() {
         opcion.fecha_estimada ? new Date(opcion.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR') : ''
       ]
       
-      return campos.some(campo => campo.includes(busqueda))
+      return campos.some(campo => normalizarBusqueda(campo).includes(busqueda))
     })
   }
 
@@ -2115,10 +2127,11 @@ export function VistaExtractoBancario() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Centro de Costo</label>
-                    <Input
-                      placeholder="Centro de costo"
+                    <CentroCostoCombobox
                       value={editData.centro_de_costo}
-                      onChange={(e) => setEditData({...editData, centro_de_costo: e.target.value})}
+                      onValueChange={(v) => setEditData({...editData, centro_de_costo: v})}
+                      placeholder="Centro de costo"
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -3014,8 +3027,8 @@ export function VistaExtractoBancario() {
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {templatesParaAsignar
                   .filter(t => {
-                    const q = busquedaAsignarTemplate.toLowerCase()
-                    return !q || t.nombre_referencia?.toLowerCase().includes(q) || t.cuenta_agrupadora?.toLowerCase().includes(q) || t.categ?.toLowerCase().includes(q)
+                    const q = normalizarBusqueda(busquedaAsignarTemplate)
+                    return !q || normalizarBusqueda(t.nombre_referencia).includes(q) || normalizarBusqueda(t.cuenta_agrupadora).includes(q) || normalizarBusqueda(t.categ).includes(q)
                   })
                   .map(t => (
                     <div
@@ -3227,7 +3240,7 @@ export function VistaExtractoBancario() {
                     : []
                   const conScore   = propuestas.filter(p => p.score > 0)
                   const sinScore   = propuestas.filter(p => p.score === 0)
-                  const busqueda   = busquedaAsignarArca.toLowerCase().trim()
+                  const busqueda   = normalizarBusqueda(busquedaAsignarArca).trim()
 
                   // Helper fechas: muestra emision siempre; estimada solo si difiere
                   const fmtFecha = (iso: string | null | undefined) =>
@@ -3249,7 +3262,7 @@ export function VistaExtractoBancario() {
                   if (busqueda) {
                     return propuestas
                       .filter(({ factura: f }) =>
-                        f.display_nombre?.toLowerCase().includes(busqueda) ||
+                        normalizarBusqueda(f.display_nombre).includes(busqueda) ||
                         (f.cuit || '').includes(busqueda) ||
                         String(f.display_monto).includes(busqueda)
                       )
@@ -3327,7 +3340,7 @@ export function VistaExtractoBancario() {
               />
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {(() => {
-                  const busqueda = busquedaAsignarSueldo.toLowerCase().trim()
+                  const busqueda = normalizarBusqueda(busquedaAsignarSueldo).trim()
                   const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
 
                   // Separar: sugerencias (mismo monto) y resto
@@ -3340,8 +3353,8 @@ export function VistaExtractoBancario() {
 
                   const filtrar = (lista: any[]) => busqueda
                     ? lista.filter(s =>
-                        (s.empleado?.nombre || '').toLowerCase().includes(busqueda) ||
-                        (s.descripcion || '').toLowerCase().includes(busqueda) ||
+                        normalizarBusqueda(s.empleado?.nombre).includes(busqueda) ||
+                        normalizarBusqueda(s.descripcion).includes(busqueda) ||
                         String(s.monto).includes(busqueda)
                       )
                     : lista
@@ -3413,7 +3426,7 @@ export function VistaExtractoBancario() {
               />
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {(() => {
-                  const busqueda = busquedaAsignarGrupo.toLowerCase().trim()
+                  const busqueda = normalizarBusqueda(busquedaAsignarGrupo).trim()
                   const montoMov = movimientoAsignando?.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando?.creditos || 0
 
                   const sugerencias = gruposParaAsignar.filter(g =>
@@ -3425,10 +3438,10 @@ export function VistaExtractoBancario() {
 
                   const filtrar = (lista: any[]) => busqueda
                     ? lista.filter(g =>
-                        g.nombre.toLowerCase().includes(busqueda) ||
-                        g.categ.toLowerCase().includes(busqueda) ||
-                        g.cuenta_agrupadora.toLowerCase().includes(busqueda) ||
-                        g.descripciones.toLowerCase().includes(busqueda) ||
+                        normalizarBusqueda(g.nombre).includes(busqueda) ||
+                        normalizarBusqueda(g.categ).includes(busqueda) ||
+                        normalizarBusqueda(g.cuenta_agrupadora).includes(busqueda) ||
+                        normalizarBusqueda(g.descripciones).includes(busqueda) ||
                         String(g.total).includes(busqueda)
                       )
                     : lista

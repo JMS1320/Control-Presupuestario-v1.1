@@ -85,11 +85,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.eq('estado', filtros.estado)
       }
 
-      // Aplicar búsqueda multi-columna
-      if (filtros?.busqueda) {
-        const b = filtros.busqueda
-        query = query.or(`descripcion.ilike.%${b}%,categ.ilike.%${b}%,detalle.ilike.%${b}%,contable.ilike.%${b}%,interno.ilike.%${b}%,origen.ilike.%${b}%,observaciones_cliente.ilike.%${b}%,numero_de_comprobante.ilike.%${b}%,nota_operador.ilike.%${b}%,leyendas_adicionales_1.ilike.%${b}%,leyendas_adicionales_2.ilike.%${b}%`)
-      }
+      // NOTA: la búsqueda de texto se aplica client-side en la vista (insensible a tildes),
+      // por eso NO se filtra acá. El parámetro `busqueda` se mantiene por compatibilidad.
 
       // Aplicar filtro de fecha desde
       if (filtros?.fechaDesde) {

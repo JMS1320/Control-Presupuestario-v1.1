@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Calendar, Plus, Save, ArrowLeft, ArrowRight, Eye, Check } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
@@ -562,11 +563,11 @@ export function WizardTemplatesEgresos() {
 
                 <div>
                   <Label htmlFor="centro_costo">Centro de Costo</Label>
-                  <Input
-                    id="centro_costo"
+                  <CentroCostoCombobox
                     value={state.datos_basicos.centro_costo}
-                    onChange={(e) => actualizarDatosBasicos('centro_costo', e.target.value)}
-                    placeholder="Ej: ADM (opcional)"
+                    onValueChange={(v) => actualizarDatosBasicos('centro_costo', v)}
+                    placeholder="Centro de costo (opcional)"
+                    className="w-full"
                   />
                 </div>
 

@@ -13,12 +13,14 @@ import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filte
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
 
@@ -801,15 +803,15 @@ export function VistaCashFlow() {
   // Filtro rápido por búsqueda (client-side, siempre activo)
   const datosConBusqueda = busquedaRapida.trim()
     ? data.filter(fila => {
-        const q = busquedaRapida.toLowerCase().replace(/\./g, '')
+        const q = normalizarBusqueda(busquedaRapida).replace(/\./g, '')
         const normalizarMonto = (n: number) => n > 0
           ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
           : ''
         return (
-          fila.nombre_proveedor?.toLowerCase().includes(q) ||
-          fila.cuit_proveedor?.toLowerCase().includes(q) ||
-          fila.categ?.toLowerCase().includes(q) ||
-          fila.detalle?.toLowerCase().includes(q) ||
+          normalizarBusqueda(fila.nombre_proveedor).includes(q) ||
+          normalizarBusqueda(fila.cuit_proveedor).includes(q) ||
+          normalizarBusqueda(fila.categ).includes(q) ||
+          normalizarBusqueda(fila.detalle).includes(q) ||
           normalizarMonto(fila.debitos).includes(q) ||
           normalizarMonto(fila.creditos).includes(q)
         )
@@ -1539,6 +1541,14 @@ export function VistaCashFlow() {
                   ))}
                 </datalist>
               </>
+            ) : columna.key === 'centro_costo' ? (
+              <CentroCostoCombobox
+                value={String(hookEditor.celdaEnEdicion?.valor || '')}
+                onValueChange={(v) => hookEditor.guardarCambio(v)}
+                autoFocus
+                disabled={hookEditor.guardandoCambio}
+                className="h-6 text-xs w-full"
+              />
             ) : (
               <Input
                 ref={hookEditor.inputRef}

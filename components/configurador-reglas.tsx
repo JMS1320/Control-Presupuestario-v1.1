@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -446,11 +447,11 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
 
             <div>
               <Label htmlFor="centro_costo">Centro de Costo (Opcional)</Label>
-              <Input
-                id="centro_costo"
+              <CentroCostoCombobox
                 value={formulario.centro_costo}
-                onChange={(e) => setFormulario(prev => ({ ...prev, centro_costo: e.target.value }))}
-                placeholder="Ej: ADM, OPE"
+                onValueChange={(v) => setFormulario(prev => ({ ...prev, centro_costo: v }))}
+                placeholder="Centro de costo (opcional)"
+                className="w-full"
               />
             </div>
 

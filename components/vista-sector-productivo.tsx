@@ -22,6 +22,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
+import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
 
 // ============================================================
@@ -252,6 +253,15 @@ const calcularTotal = (
     return { total: (pesoPromedioKg / dosisCadaKg) * dosis * cantidadCabezas, unidad: 'ml' }
   }
   return { total: 0, unidad: 'ml' }
+}
+
+// Convierte un total calculado (en ml) a la unidad de stock del insumo.
+// El stock y las compras se llevan en la unidad declarada del insumo (ej. L);
+// el cálculo de dosis es en ml → hay que convertir antes de descontar/comparar.
+const mlAUnidadStock = (cantidadMl: number, unidad: string | null | undefined): number => {
+  const u = (unidad || 'ml').toLowerCase().trim()
+  if (u === 'l' || u === 'lt' || u === 'litro' || u === 'litros') return cantidadMl / 1000
+  return cantidadMl  // ml / dosis / unidad / kg / g → se descuenta tal cual
 }
 
 // Calcula la dosis individual que se aplica a cada animal
@@ -3191,6 +3201,10 @@ function SubTabOrdenesAplicacion() {
 
   // Rodeos seleccionados (multi-select)
   const [rodeosSeleccionados, setRodeosSeleccionados] = useState<Record<string, boolean>>({})
+  // Carga manual: muestra TODAS las categorías activas y permite ingresar la cantidad
+  // por categoría (para sanidad retroactiva sobre categorías sin stock actual)
+  const [cargaManualRodeos, setCargaManualRodeos] = useState(false)
+  const [cantidadManualRodeos, setCantidadManualRodeos] = useState<Record<string, string>>({})
 
   // Labores
   const [laboresDisponibles, setLaboresDisponibles] = useState<{ id: number, nombre: string, tipo: string | null }[]>([])
@@ -3590,10 +3604,14 @@ function SubTabOrdenesAplicacion() {
     setRodeosSeleccionados(prev => ({ ...prev, [catId]: !prev[catId] }))
   }
 
-  // Total cabezas = suma de stock de todos los rodeos seleccionados
+  // Total cabezas = suma de los rodeos seleccionados (manual = cantidad ingresada, sino = stock)
   const totalCabezas = Object.entries(rodeosSeleccionados)
     .filter(([_, sel]) => sel)
-    .reduce((sum, [catId]) => sum + (stockHaciendaMap[catId] || 0), 0)
+    .reduce((sum, [catId]) => sum + (cargaManualRodeos ? (parseInt(cantidadManualRodeos[catId]) || 0) : (stockHaciendaMap[catId] || 0)), 0)
+
+  // La orden de aplicación es ganadera → mostrar solo insumos ganaderos (no Agroquímico),
+  // misma regla que usa la pestaña Stock de Insumos / form de compra.
+  const insumosGanaderos = insumosVet.filter(i => i.categorias_insumo?.nombre !== 'Agroquímico')
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -3643,6 +3661,9 @@ function SubTabOrdenesAplicacion() {
           } else if (m.tipo === 'venta' || m.tipo === 'mortandad') {
             map[m.categoria_id] -= m.cantidad
           } else if (m.tipo === 'ajuste_stock') {
+            map[m.categoria_id] += m.cantidad
+          } else if (m.tipo === 'cambio_categoria') {
+            // La cantidad ya viene firmada: negativa en la categoría origen, positiva en la destino
             map[m.categoria_id] += m.cantidad
           }
         }
@@ -3754,6 +3775,8 @@ function SubTabOrdenesAplicacion() {
     setModoVer(false)
     setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
     setRodeosSeleccionados({})
+    setCargaManualRodeos(false)
+    setCantidadManualRodeos({})
     setLaboresSeleccionadas({})
     setLineas([])
     setLaborEspecial(null)
@@ -3857,23 +3880,28 @@ function SubTabOrdenesAplicacion() {
         .update({ estado: 'ejecutada' })
         .eq('id', ordenConfirmando.id)
 
-      // Descontar stock por uso
+      // Descontar stock por uso: el movimiento 'uso' se crea AL EJECUTAR (no al crear) y el
+      // stock se recalcula desde los movimientos (fuente única). Una orden planificada no descuenta.
       if (ordenConfirmando.lineas) {
-        const descuentos: Record<string, number> = {}
-        for (const l of ordenConfirmando.lineas) {
-          if (l.insumo_stock_id) {
-            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + l.cantidad_total_ml
-          }
-        }
-        // Leer stock actual y restar
-        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
-          .select('id, cantidad').in('id', Object.keys(descuentos))
-        if (stockActual) {
-          for (const s of stockActual) {
-            const nuevaCantidad = s.cantidad - (descuentos[s.id] || 0)
-            await supabase.schema('productivo').from('stock_insumos')
-              .update({ cantidad: nuevaCantidad })
-              .eq('id', s.id)
+        const movimientosUso = ordenConfirmando.lineas
+          .filter(l => l.insumo_stock_id)
+          .map(l => ({
+            fecha: ordenConfirmando.fecha,
+            insumo_stock_id: l.insumo_stock_id,
+            tipo: 'uso',
+            cantidad: mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida),
+            observaciones: `Orden aplicacion - ${l.insumo_nombre}`,
+          }))
+        if (movimientosUso.length > 0) {
+          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+          // Recalcular stock de cada insumo afectado desde sus movimientos (fuente única)
+          const ids = [...new Set(movimientosUso.map(m => m.insumo_stock_id as string))]
+          for (const id of ids) {
+            const { data: movs } = await supabase.schema('productivo').from('movimientos_insumos')
+              .select('tipo, cantidad').eq('insumo_stock_id', id)
+            const total = (movs || []).reduce((sum, m) =>
+              sum + (m.tipo === 'compra' || m.tipo === 'ajuste' ? Number(m.cantidad) : -Number(m.cantidad)), 0)
+            await supabase.schema('productivo').from('stock_insumos').update({ cantidad: total }).eq('id', id)
           }
         }
       }
@@ -4209,6 +4237,13 @@ function SubTabOrdenesAplicacion() {
       toast.error('Seleccione al menos un rodeo')
       return
     }
+    if (cargaManualRodeos) {
+      const sinCantidad = rodeosIds.filter(id => (parseInt(cantidadManualRodeos[id]) || 0) <= 0)
+      if (sinCantidad.length > 0) {
+        toast.error('En carga manual, ingresá una cantidad mayor a 0 para cada categoría seleccionada')
+        return
+      }
+    }
     // Filtrar lineas vacías (sin insumo seleccionado)
     const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
 
@@ -4243,6 +4278,7 @@ function SubTabOrdenesAplicacion() {
 
       // Si es labor servicio, usar cabezas ingresadas por rodeo en vez de stock actual
       const getCabezasRodeo = (catId: string): number => {
+        if (cargaManualRodeos) return parseInt(cantidadManualRodeos[catId]) || 0
         if (laborEspecial && cabezasServicioPorRodeo[catId]) {
           return parseInt(cabezasServicioPorRodeo[catId])
         }
@@ -4333,22 +4369,10 @@ function SubTabOrdenesAplicacion() {
         if (lineasError) throw new Error(lineasError.message)
       }
 
-      // Crear movimientos de uso (solo en creacion, en edicion los movimientos previos quedan)
-      // Si es carga retrospectiva, no generar movimientos de insumos
-      if (!ordenEditandoId && lineasData.length > 0 && !cargaRetrospectiva) {
-        const movimientosUso = lineasData
-          .filter(l => l.insumo_stock_id)
-          .map(l => ({
-            fecha: nuevaOrden.fecha,
-            insumo_stock_id: l.insumo_stock_id,
-            tipo: 'uso',
-            cantidad: l.cantidad_total_ml,
-            observaciones: `Orden aplicacion - ${l.insumo_nombre}`
-          }))
-        if (movimientosUso.length > 0) {
-          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
-        }
-      }
+      // NOTA: el descuento de stock (movimiento 'uso') NO se hace al crear la orden.
+      // Una orden planificada no toca el stock; los movimientos de uso se crean al EJECUTAR
+      // la orden (ver ejecutarOrden). Así el stock refleja solo lo realmente aplicado y el
+      // reporte de Necesidad de Compra no descuenta dos veces lo proyectado.
 
       // === CICLOS DE CRIA ===
       if (laborEspecial) {
@@ -4665,9 +4689,24 @@ function SubTabOrdenesAplicacion() {
 
             {/* Multi-select rodeos */}
             <div>
-              <Label className="mb-2 block">Rodeos * <span className="text-muted-foreground text-xs">(seleccione uno o mas)</span></Label>
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <Label className="block">Rodeos * <span className="text-muted-foreground text-xs">(seleccione uno o mas)</span></Label>
+                {!modoVer && (
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                    <input type="checkbox" checked={cargaManualRodeos}
+                      onChange={() => setCargaManualRodeos(v => !v)}
+                      className="rounded" />
+                    ✏️ Carga manual de categorías y cantidades
+                  </label>
+                )}
+              </div>
+              {cargaManualRodeos && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
+                  Modo manual: se listan todas las categorías. Tildá la/s que correspondan e ingresá la cantidad (útil para sanidad retroactiva).
+                </p>
+              )}
               <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto border rounded p-2">
-                {categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0).map(c => {
+                {(cargaManualRodeos ? categoriasHacienda : categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0)).map(c => {
                   const stock = stockHaciendaMap[c.id] || 0
                   const seleccionado = rodeosSeleccionados[c.id] || false
                   return (
@@ -4677,7 +4716,18 @@ function SubTabOrdenesAplicacion() {
                         onChange={() => toggleRodeo(c.id)}
                         className="rounded" />
                       <span className="font-medium">{c.nombre}</span>
-                      <span className="text-muted-foreground text-xs">({stock} cab.)</span>
+                      {cargaManualRodeos ? (
+                        seleccionado ? (
+                          <input type="text" inputMode="numeric" value={cantidadManualRodeos[c.id] ?? ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => setCantidadManualRodeos(prev => ({ ...prev, [c.id]: e.target.value.replace(/\D/g, '') }))}
+                            placeholder="cant." className="w-14 border rounded px-1 py-0.5 text-xs ml-auto" />
+                        ) : (
+                          <span className="text-muted-foreground text-xs ml-auto">{stock > 0 ? `(${stock})` : ''}</span>
+                        )
+                      ) : (
+                        <span className="text-muted-foreground text-xs">({stock} cab.)</span>
+                      )}
                     </label>
                   )
                 })}
@@ -4898,25 +4948,15 @@ function SubTabOrdenesAplicacion() {
                     return (
                       <TableRow key={l.key}>
                         <TableCell>
-                          {insumosVet.length > 0 ? (
-                            <Select value={l.insumo_stock_id} onValueChange={v => actualizarLinea(l.key, 'insumo_stock_id', v)}>
-                              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar o escribir" /></SelectTrigger>
-                              <SelectContent position="popper" className="z-[9999]">
-                                {insumosVet.map(ins => (
-                                  <SelectItem key={ins.id} value={ins.id}>{ins.producto}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input className="h-8 text-xs" placeholder="Nombre insumo"
-                              value={l.insumo_nombre}
-                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
-                          )}
-                          {!l.insumo_stock_id && insumosVet.length > 0 && (
-                            <Input className="h-7 text-xs mt-1" placeholder="O escriba nombre"
-                              value={l.insumo_nombre}
-                              onChange={e => actualizarLinea(l.key, 'insumo_nombre', e.target.value)} />
-                          )}
+                          <InsumoCombobox
+                            value={l.insumo_stock_id || null}
+                            insumos={insumosGanaderos}
+                            onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
+                            onCreated={cargarDatos}
+                            categoriasExcluidas={['Agroquímico']}
+                            disabled={modoVer}
+                            className="w-full"
+                          />
                         </TableCell>
                         <TableCell>
                           <Select value={l.tipo_dosis} onValueChange={v => actualizarLinea(l.key, 'tipo_dosis', v)}>
@@ -5549,7 +5589,8 @@ function SubTabNecesidadCompra() {
       for (const l of (lineasVetRes.data || [])) {
         const key = l.insumo_stock_id || l.insumo_nombre
         if (!mapVet[key]) mapVet[key] = { nombre: l.insumo_nombre, stockId: l.insumo_stock_id, necesario: 0, unidad: l.unidad_medida || 'ml' }
-        mapVet[key].necesario += l.cantidad_total_ml
+        // necesario en la misma unidad que el stock (cantidad_total_ml está en ml)
+        mapVet[key].necesario += mlAUnidadStock(l.cantidad_total_ml, l.unidad_medida)
       }
       const ganadero = Object.values(mapVet).map(n => {
         const s = n.stockId ? stockMap[n.stockId] : null
@@ -5927,21 +5968,31 @@ function SubTabOrdenesAgricolas() {
       await supabase.schema('productivo').from('ordenes_agricolas')
         .update({ estado: 'ejecutada' }).eq('id', ordenEjecutando.id)
 
+      // Descontar stock por uso: se crea el movimiento 'uso' AL EJECUTAR (trazabilidad) y se
+      // recalcula el stock desde los movimientos (fuente única). Mismo modelo que el ganadero.
       if (ordenEjecutando.lineas) {
-        const descuentos: Record<string, number> = {}
-        for (const l of ordenEjecutando.lineas) {
-          if (l.insumo_stock_id) {
+        const movimientosUso = ordenEjecutando.lineas
+          .filter(l => l.insumo_stock_id)
+          .map(l => {
             const rec = recuentoLineas[l.id]
             const cantidad = rec?.checked ? (parseFloat(rec.cantidad) || 0) : l.cantidad_total_l
-            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + cantidad
-          }
-        }
-        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
-          .select('id, cantidad').in('id', Object.keys(descuentos))
-        if (stockActual) {
-          for (const s of stockActual) {
-            await supabase.schema('productivo').from('stock_insumos')
-              .update({ cantidad: s.cantidad - (descuentos[s.id] || 0) }).eq('id', s.id)
+            return {
+              fecha: ordenEjecutando.fecha,
+              insumo_stock_id: l.insumo_stock_id,
+              tipo: 'uso',
+              cantidad,
+              observaciones: `Orden agricola - ${l.insumo_nombre}`,
+            }
+          })
+        if (movimientosUso.length > 0) {
+          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+          const ids = [...new Set(movimientosUso.map(m => m.insumo_stock_id as string))]
+          for (const id of ids) {
+            const { data: movs } = await supabase.schema('productivo').from('movimientos_insumos')
+              .select('tipo, cantidad').eq('insumo_stock_id', id)
+            const total = (movs || []).reduce((sum, m) =>
+              sum + (m.tipo === 'compra' || m.tipo === 'ajuste' ? Number(m.cantidad) : -Number(m.cantidad)), 0)
+            await supabase.schema('productivo').from('stock_insumos').update({ cantidad: total }).eq('id', id)
           }
         }
       }
@@ -5989,7 +6040,7 @@ function SubTabOrdenesAgricolas() {
             <TableHead>Lote / Campo</TableHead>
             <TableHead className="text-right">Ha</TableHead>
             <TableHead>Labores</TableHead>
-            <TableHead className="text-right">Insumos</TableHead>
+            <TableHead>Insumos</TableHead>
             <TableHead>Estado</TableHead>
             <TableHead className="text-right">Acciones</TableHead>
           </TableRow>
@@ -6008,7 +6059,18 @@ function SubTabOrdenesAgricolas() {
                 <TableCell>{o.lote?.nombre_lote || o.lote_nombre || '-'}</TableCell>
                 <TableCell className="text-right">{formatoNumero(o.hectareas)}</TableCell>
                 <TableCell className="text-sm">{(o.labores || []).join(', ') || '-'}</TableCell>
-                <TableCell className="text-right">{(o.lineas || []).length}</TableCell>
+                <TableCell>
+                  {(o.lineas || []).length > 0 ? (
+                    <div className="space-y-0.5">
+                      {(o.lineas || []).map(l => (
+                        <div key={l.id} className="text-xs">
+                          <span className="font-medium">{l.insumo_nombre}</span>
+                          {l.dosis ? `: ${l.dosis} ${l.unidad_dosis || ''}/ha` : ''} → {formatoCantidad(l.cantidad_total_l, 'L')}
+                        </div>
+                      ))}
+                    </div>
+                  ) : <span className="text-muted-foreground text-xs">—</span>}
+                </TableCell>
                 <TableCell>
                   <Badge className={
                     o.estado === 'ejecutada' ? 'bg-green-100 text-green-800' :
