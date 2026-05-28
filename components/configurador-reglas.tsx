@@ -11,15 +11,17 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
-import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff } from "lucide-react"
+import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff, Copy } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
+import { ModalCopiarReglas } from "@/components/modal-copiar-reglas"
 
 export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
-  const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas } = useReglasConciliacion()
+  const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas, cargarReglas } = useReglasConciliacion()
 
   const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
+  const [modalCopiarAbierto, setModalCopiarAbierto] = useState(false)
 
   // Sincronizar si el padre cambia la cuenta
   useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
@@ -171,11 +173,23 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
           <h2 className="text-2xl font-bold">Configurador de Reglas</h2>
           <p className="text-gray-600">Gestiona las reglas de conciliación bancaria automática</p>
         </div>
-        <Button onClick={abrirModalNueva} className="bg-blue-600 hover:bg-blue-700">
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva Regla
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setModalCopiarAbierto(true)} variant="outline">
+            <Copy className="mr-2 h-4 w-4" />
+            Copiar reglas
+          </Button>
+          <Button onClick={abrirModalNueva} className="bg-blue-600 hover:bg-blue-700">
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva Regla
+          </Button>
+        </div>
       </div>
+
+      <ModalCopiarReglas
+        abierto={modalCopiarAbierto}
+        onCerrar={() => setModalCopiarAbierto(false)}
+        onCompletado={cargarReglas}
+      />
 
       {/* Selector cuenta bancaria — solo si no viene del padre */}
       {!cuentaBancariaId && (

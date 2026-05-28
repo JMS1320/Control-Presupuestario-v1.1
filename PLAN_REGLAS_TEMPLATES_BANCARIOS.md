@@ -143,10 +143,22 @@ Cuando se crea/edita una regla nueva con `llena_template=true` y `cuenta_bancari
 ## ⏳ Estado actual
 
 - [x] **Paso 1 — Blindar el motor** ✅ implementado 2026-05-28 en `desarrollo`
-- [ ] **Paso 2 — Copia + wizard SICORE-style** ← próximo
-- [ ] Paso 3 — Validación al guardar regla nueva
+- [x] **Paso 2 — Copia + wizard SICORE-style** ✅ implementado 2026-05-28 en `desarrollo`
+- [ ] **Paso 3 — Validación al guardar regla nueva** ← próximo (pequeño)
 - [ ] Paso 4 — Decidir grises (CAJA, CRED P)
 - [ ] Paso 5 — Mejoras UX opcionales
+
+### Detalle Paso 2 implementado
+
+- `components/modal-copiar-reglas.tsx` (nuevo) — modal con 4 pasos:
+  1. **Selección**: cuenta origen+destino, lista de reglas con checkboxes, búsqueda acento-insensible, toggle "solo activas"
+  2. **Wizard templates faltantes** (estilo SICORE): uno por categ, editable nombre/agrupadora/centro_costo, hereda solo_conciliacion + es_bidireccional del template MSA. Botones: Crear / Saltar (regla queda inactiva) / Crear todos con defaults.
+  3. **Confirmación**: resumen con cantidad de reglas activas/inactivas + templates a crear + listado completo.
+  4. **Completado**: stats finales.
+- `components/configurador-reglas.tsx` — botón "Copiar reglas" en header, integración del modal.
+- Reglas cuyo template falta y NO se crea → se copian con `activo=false`.
+- Reglas con `llena_template=false` o cuyo template ya existe → se copian activas.
+- Templates nuevos se crean con `tipo_template='abierto'`, `tipo_recurrencia='abierto'`, `es_multi_cuenta=false`. Heredan `solo_conciliacion` y `es_bidireccional` del template origen.
 
 ---
 
