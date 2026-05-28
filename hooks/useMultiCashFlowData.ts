@@ -319,9 +319,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   const MESES_CASH = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
   const mapearSueldos = (periodosS: any[]): CashFlowRow[] => {
     return periodosS
-      // Ocultar del Cash Flow los períodos sin saldo pendiente (≤ 0): ya pagados,
-      // sin bruto cargado, o negativos por redondeo. Se auto-corrige al pagar.
-      .filter(p => (p.saldo_pendiente ?? p.bruto_calculado ?? 0) > 0)
+      // Ocultar del Cash Flow los períodos con saldo < $1 (ya pagados, sin bruto
+      // cargado, negativos, o residuos por redondeo). Se auto-corrige al pagar.
+      .filter(p => (p.saldo_pendiente ?? p.bruto_calculado ?? 0) >= 1)
       .map(p => ({
       id: p.id,
       origen: 'SUELDO' as const,

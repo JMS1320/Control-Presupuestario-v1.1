@@ -233,7 +233,7 @@ Los pagos se filtran por **`periodo_id`** (el mes al que fue asignado el pago), 
 - Query: `sueldos_periodos` con join a `sueldos_empleados`, desde 2026-02-01
 - Estado `'historico'` excluido
 - `debitos` = `saldo_pendiente ?? bruto_calculado`
-- **Se ocultan los períodos con saldo ≤ 0** (ya pagados, sin bruto cargado, o negativos por redondeo) — filtro en `mapearSueldos` (2026-05-27, commit `eabc988`). Se auto-corrige en todos los meses: al pagar un período su saldo llega a 0 y desaparece del flujo.
+- **Se ocultan los períodos con saldo < $1** (ya pagados, sin bruto cargado, negativos, o residuos por redondeo) — filtro `>= 1` en `mapearSueldos` (commit `eabc988` inicial `> 0`, ajustado a tolerancia de $1 el 2026-05-27). Se auto-corrige en todos los meses: al pagar un período su saldo cae por debajo de $1 y desaparece del flujo.
 - `fecha_estimada` = último día del mes del período
 - **Solo lectura** desde Cash Flow (`actualizarRegistro` bloquea si `origen_tabla = 'sueldos.periodos'`)
 
