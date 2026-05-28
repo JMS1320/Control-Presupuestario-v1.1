@@ -5968,21 +5968,31 @@ function SubTabOrdenesAgricolas() {
       await supabase.schema('productivo').from('ordenes_agricolas')
         .update({ estado: 'ejecutada' }).eq('id', ordenEjecutando.id)
 
+      // Descontar stock por uso: se crea el movimiento 'uso' AL EJECUTAR (trazabilidad) y se
+      // recalcula el stock desde los movimientos (fuente única). Mismo modelo que el ganadero.
       if (ordenEjecutando.lineas) {
-        const descuentos: Record<string, number> = {}
-        for (const l of ordenEjecutando.lineas) {
-          if (l.insumo_stock_id) {
+        const movimientosUso = ordenEjecutando.lineas
+          .filter(l => l.insumo_stock_id)
+          .map(l => {
             const rec = recuentoLineas[l.id]
             const cantidad = rec?.checked ? (parseFloat(rec.cantidad) || 0) : l.cantidad_total_l
-            descuentos[l.insumo_stock_id] = (descuentos[l.insumo_stock_id] || 0) + cantidad
-          }
-        }
-        const { data: stockActual } = await supabase.schema('productivo').from('stock_insumos')
-          .select('id, cantidad').in('id', Object.keys(descuentos))
-        if (stockActual) {
-          for (const s of stockActual) {
-            await supabase.schema('productivo').from('stock_insumos')
-              .update({ cantidad: s.cantidad - (descuentos[s.id] || 0) }).eq('id', s.id)
+            return {
+              fecha: ordenEjecutando.fecha,
+              insumo_stock_id: l.insumo_stock_id,
+              tipo: 'uso',
+              cantidad,
+              observaciones: `Orden agricola - ${l.insumo_nombre}`,
+            }
+          })
+        if (movimientosUso.length > 0) {
+          await supabase.schema('productivo').from('movimientos_insumos').insert(movimientosUso)
+          const ids = [...new Set(movimientosUso.map(m => m.insumo_stock_id as string))]
+          for (const id of ids) {
+            const { data: movs } = await supabase.schema('productivo').from('movimientos_insumos')
+              .select('tipo, cantidad').eq('insumo_stock_id', id)
+            const total = (movs || []).reduce((sum, m) =>
+              sum + (m.tipo === 'compra' || m.tipo === 'ajuste' ? Number(m.cantidad) : -Number(m.cantidad)), 0)
+            await supabase.schema('productivo').from('stock_insumos').update({ cantidad: total }).eq('id', id)
           }
         }
       }
