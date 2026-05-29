@@ -21,6 +21,7 @@ import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/ho
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
 
@@ -2855,27 +2856,12 @@ export function VistaCashFlow() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="anticipo-cuit">CUIT {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
-                  <Input
-                    id="anticipo-cuit"
-                    type="text"
-                    placeholder="30-12345678-9"
-                    value={nuevoAnticipo.cuit}
-                    onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, cuit: e.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="anticipo-nombre">Nombre {nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'} *</Label>
-                  <Input
-                    id="anticipo-nombre"
-                    type="text"
-                    placeholder={`Nombre del ${nuevoAnticipo.tipo === 'cobro' ? 'cliente' : 'proveedor'}`}
-                    value={nuevoAnticipo.nombre}
-                    onChange={(e) => setNuevoAnticipo(prev => ({ ...prev, nombre: e.target.value }))}
-                  />
-                </div>
+                <ProveedorCombobox
+                  label={nuevoAnticipo.tipo === 'cobro' ? 'Cliente' : 'Proveedor'}
+                  required
+                  value={{ cuit: nuevoAnticipo.cuit, nombre: nuevoAnticipo.nombre }}
+                  onChange={(sel) => setNuevoAnticipo(prev => ({ ...prev, cuit: sel.cuit, nombre: sel.nombre }))}
+                />
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
