@@ -463,7 +463,7 @@ export async function POST(req: Request) {
         interno: null,
         centro_de_costo: null,
         orden: nextOrden,
-        estado: "Pendiente",
+        estado: "pendiente",
       }
 
       rowsParaInsertar.push(filaInsert)

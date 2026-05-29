@@ -144,7 +144,7 @@ export function useMotorConciliacion() {
       console.log(`🏦 Cargando movimientos de ${cuenta.tabla_bd}...`)
       
       const clientSchema = cuenta.schema_bd && cuenta.schema_bd !== 'public' ? supabase.schema(cuenta.schema_bd) : supabase
-      let query = clientSchema.from(cuenta.tabla_bd).select('*').eq('estado', 'Pendiente')
+      let query = clientSchema.from(cuenta.tabla_bd).select('*').eq('estado', 'pendiente')
       
       const { data, error } = await query.order('fecha', { ascending: true })
 
