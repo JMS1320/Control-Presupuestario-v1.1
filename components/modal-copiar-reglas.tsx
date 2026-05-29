@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, ArrowRight, ArrowLeft, Check, X, Copy } from "lucide-react"
@@ -437,7 +436,7 @@ export function ModalCopiarReglas({ abierto, onCerrar, onCompletado }: Props) {
         {/* PASO 1: SELECCIÓN */}
         {/* ============================================================ */}
         {paso === "seleccion" && (
-          <div className="flex-1 overflow-hidden flex flex-col gap-4">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Cuenta origen</Label>
@@ -492,7 +491,7 @@ export function ModalCopiarReglas({ abierto, onCerrar, onCompletado }: Props) {
                   </Button>
                 </div>
 
-                <ScrollArea className="flex-1 border rounded-md">
+                <div className="flex-1 min-h-0 overflow-y-auto border rounded-md">
                   {loading && (
                     <div className="p-8 flex items-center justify-center text-gray-500">
                       <Loader2 className="h-4 w-4 animate-spin mr-2" /> Cargando reglas...
@@ -522,7 +521,7 @@ export function ModalCopiarReglas({ abierto, onCerrar, onCompletado }: Props) {
                         {!r.activo && <Badge variant="secondary" className="text-xs">inactiva</Badge>}
                       </label>
                     ))}
-                </ScrollArea>
+                </div>
               </>
             )}
           </div>
