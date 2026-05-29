@@ -279,7 +279,6 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [filtroFcPendiente, setFiltroFcPendiente] = useState(false)
   const [mostrarModalMarcarFC, setMostrarModalMarcarFC] = useState(false)
-  const [facturasSeleccionadasFC, setFacturasSeleccionadasFC] = useState<Set<string>>(new Set())
 
   // Estados para tabs de navegación
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
@@ -6035,13 +6034,10 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                   size="sm"
                   variant="outline"
                   className="border-amber-400 text-amber-700 hover:bg-amber-100"
-                  onClick={() => {
-                    setFacturasSeleccionadasFC(new Set())
-                    setMostrarModalMarcarFC(true)
-                  }}
+                  onClick={() => setMostrarModalMarcarFC(true)}
                 >
                   <Check className="mr-1 h-3 w-3" />
-                  Marcar como recibidas
+                  Ver detalle
                 </Button>
               </div>
             </AlertDescription>
@@ -6656,83 +6652,71 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
         </DialogContent>
       </Dialog>
 
-      {/* Modal para marcar FC como recibidas */}
+      {/* Modal para marcar FC como recibidas — individual con confirmación */}
       <Dialog open={mostrarModalMarcarFC} onOpenChange={setMostrarModalMarcarFC}>
         <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Marcar comprobantes como recibidos</DialogTitle>
+            <DialogTitle>Facturas pendientes de recibir comprobante</DialogTitle>
             <DialogDescription>
-              Seleccioná las facturas que ya tenés el comprobante físico
+              Marcá una por una. Cada acción pide confirmación.
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-y-auto flex-1">
-            <div className="flex items-center gap-2 mb-3">
-              <Button size="sm" variant="outline" onClick={() => {
-                const fcNo = facturasOriginales.filter(f => f.fc === 'No')
-                setFacturasSeleccionadasFC(new Set(fcNo.map(f => f.id)))
-              }}>Seleccionar todas</Button>
-              <Button size="sm" variant="outline" onClick={() => setFacturasSeleccionadasFC(new Set())}>Ninguna</Button>
-            </div>
-            <table className="w-full text-xs border-collapse">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr>
-                  <th className="p-2 w-8"></th>
-                  <th className="text-left p-2">Fecha</th>
-                  <th className="text-left p-2">Proveedor</th>
-                  <th className="text-left p-2">CUIT</th>
-                  <th className="text-right p-2">Monto</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {facturasOriginales.filter(f => f.fc === 'No').map(f => (
-                  <tr key={f.id} className="hover:bg-gray-50">
-                    <td className="p-2">
-                      <Checkbox
-                        checked={facturasSeleccionadasFC.has(f.id)}
-                        onCheckedChange={(checked) => {
-                          setFacturasSeleccionadasFC(prev => {
-                            const next = new Set(prev)
-                            if (checked) next.add(f.id); else next.delete(f.id)
-                            return next
-                          })
-                        }}
-                      />
-                    </td>
-                    <td className="p-2">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
-                    <td className="p-2 max-w-[200px] truncate">{f.denominacion_emisor}</td>
-                    <td className="p-2 text-gray-500">{f.cuit}</td>
-                    <td className="p-2 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {(() => {
+              const pendientes = facturasOriginales.filter(f => f.fc === 'No')
+              if (pendientes.length === 0) {
+                return <div className="text-center text-gray-500 py-8">No quedan facturas pendientes 🎉</div>
+              }
+              return (
+                <table className="w-full text-xs border-collapse">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left p-2">Fecha</th>
+                      <th className="text-left p-2">Proveedor</th>
+                      <th className="text-left p-2">CUIT</th>
+                      <th className="text-right p-2">Monto</th>
+                      <th className="p-2 w-40"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pendientes.map(f => (
+                      <tr key={f.id} className="hover:bg-gray-50">
+                        <td className="p-2">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
+                        <td className="p-2 max-w-[200px] truncate">{f.denominacion_emisor}</td>
+                        <td className="p-2 text-gray-500">{f.cuit}</td>
+                        <td className="p-2 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })}</td>
+                        <td className="p-2 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-green-400 text-green-700 hover:bg-green-50"
+                            onClick={async () => {
+                              const proveedor = f.denominacion_emisor || f.cuit || 'esta factura'
+                              const monto = (f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })
+                              if (!window.confirm(`¿Marcar como recibido el comprobante de ${proveedor} por ${monto}?`)) return
+                              const { error } = await supabase
+                                .schema(schemaName)
+                                .from('comprobantes_arca')
+                                .update({ fc: 'Sí' })
+                                .eq('id', f.id)
+                              if (error) { alert('Error al actualizar: ' + error.message); return }
+                              setFacturasOriginales(prev => prev.map(x => x.id === f.id ? { ...x, fc: 'Sí' } : x))
+                              setFacturas(prev => prev.map(x => x.id === f.id ? { ...x, fc: 'Sí' } : x))
+                            }}
+                          >
+                            <Check className="mr-1 h-3 w-3" />
+                            Marcar recibida
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
           <DialogFooter className="pt-2 border-t">
-            <Button variant="outline" onClick={() => setMostrarModalMarcarFC(false)}>Cancelar</Button>
-            <Button
-              disabled={facturasSeleccionadasFC.size === 0}
-              onClick={async () => {
-                const ids = Array.from(facturasSeleccionadasFC)
-                const { error } = await supabase
-                  .schema(schemaName)
-                  .from('comprobantes_arca')
-                  .update({ fc: 'Sí' })
-                  .in('id', ids)
-                if (error) { alert('Error al actualizar: ' + error.message); return }
-                // Actualizar estado local
-                setFacturasOriginales(prev => prev.map(f =>
-                  ids.includes(f.id) ? { ...f, fc: 'Sí' } : f
-                ))
-                setFacturas(prev => prev.map(f =>
-                  ids.includes(f.id) ? { ...f, fc: 'Sí' } : f
-                ))
-                setMostrarModalMarcarFC(false)
-                setFacturasSeleccionadasFC(new Set())
-              }}
-            >
-              <Check className="mr-1 h-4 w-4" />
-              Marcar {facturasSeleccionadasFC.size} como recibida{facturasSeleccionadasFC.size !== 1 ? 's' : ''}
-            </Button>
+            <Button variant="outline" onClick={() => setMostrarModalMarcarFC(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
