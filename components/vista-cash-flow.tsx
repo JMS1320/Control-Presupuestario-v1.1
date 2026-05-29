@@ -93,7 +93,7 @@ export function VistaCashFlow() {
   const [busquedaDetalle, setBusquedaDetalle] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [busquedaCUIT, setBusquedaCUIT] = useState('')
-  const [medioPagoFiltro, setMedioPagoFiltro] = useState('todos')
+  const [medioPagoFiltro, setMedioPagoFiltro] = useState('banco')
   
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
@@ -168,7 +168,8 @@ export function VistaCashFlow() {
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
-  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '' })
+  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+  const [busquedaTemplatesPM, setBusquedaTemplatesPM] = useState('')
   const [cuentasContablesOpciones, setCuentasContablesOpciones] = useState<{categ: string, nombre_totalizadora: string | null}[]>([])
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
   const [subcategsDisponiblesCF, setSubcategsDisponiblesCF] = useState<string[]>([])
@@ -986,7 +987,8 @@ export function VistaCashFlow() {
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
-    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '' })
+    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+    setBusquedaTemplatesPM('')
     setMostrarBancarios(false)
     setModalPagoManual(true)
   }
@@ -1033,7 +1035,7 @@ export function VistaCashFlow() {
           fecha_vencimiento: nuevaCuota.fecha,
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
-          estado: 'pendiente',
+          estado: nuevaCuota.estado || 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
           ...(categCuota ? { categ: categCuota } : {})
         })
@@ -1047,7 +1049,8 @@ export function VistaCashFlow() {
       setModalPagoManual(false)
       setTemplateSeleccionado(null)
       setTipoMovimiento('egreso')
-      setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '' })
+      setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+      setBusquedaTemplatesPM('')
       await cargarDatos()
     } catch (error) {
       console.error('Error guardando pago manual:', error)
@@ -2483,14 +2486,29 @@ export function VistaCashFlow() {
 
           {/* Paso 1: Seleccionar template */}
           {pasoModal === 'seleccionar' && (() => {
-            const templatesUso = templatesAbiertos.filter(t => !t.solo_conciliacion)
-            const templatesBancarios = templatesAbiertos.filter(t => t.solo_conciliacion)
+            const matchTemplate = (t: typeof templatesAbiertos[number]) => {
+              if (!busquedaTemplatesPM.trim()) return true
+              const q = normalizarBusqueda(busquedaTemplatesPM)
+              const texto = normalizarBusqueda(
+                `${t.nombre_referencia} ${t.categ || ''} ${t.cuenta_agrupadora || ''} ${t.responsable || ''}`
+              )
+              return texto.includes(q)
+            }
+            const templatesUso = templatesAbiertos.filter(t => !t.solo_conciliacion && matchTemplate(t))
+            const templatesBancarios = templatesAbiertos.filter(t => t.solo_conciliacion && matchTemplate(t))
             return (
               <div className="py-4 space-y-3">
+                <Input
+                  placeholder="Buscar por nombre, categ, agrupadora o responsable..."
+                  value={busquedaTemplatesPM}
+                  onChange={(e) => setBusquedaTemplatesPM(e.target.value)}
+                  className="text-sm"
+                  autoFocus
+                />
                 {templatesUso.length === 0 ? (
                   <div className="text-center text-gray-500 py-6">
-                    <p>No hay templates disponibles.</p>
-                    <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>
+                    <p>{busquedaTemplatesPM.trim() ? 'Sin resultados para la búsqueda.' : 'No hay templates disponibles.'}</p>
+                    {!busquedaTemplatesPM.trim() && <p className="text-xs mt-2">Cree un template con tipo "abierto" primero.</p>}
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[260px] overflow-y-auto">
@@ -2759,6 +2777,26 @@ export function VistaCashFlow() {
                   </div>
                 )
               })()}
+
+              {/* Estado al crear la cuota */}
+              <div className="space-y-2">
+                <Label htmlFor="estado-pago-cf">Estado</Label>
+                <Select
+                  value={nuevaCuota.estado}
+                  onValueChange={(v) => setNuevaCuota(prev => ({ ...prev, estado: v }))}
+                >
+                  <SelectTrigger id="estado-pago-cf">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pendiente">Pendiente</SelectItem>
+                    <SelectItem value="pagar">Pagar</SelectItem>
+                    <SelectItem value="preparado">Preparado</SelectItem>
+                    <SelectItem value="pagado">Pagado</SelectItem>
+                    <SelectItem value="echeq">ECHEQ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
 
