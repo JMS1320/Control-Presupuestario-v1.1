@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Calendar, Plus, Save, ArrowLeft, ArrowRight, Eye, Check } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
@@ -614,22 +615,14 @@ export function WizardTemplatesEgresos() {
                   </div>
                 )}
 
-                <div>
-                  <Label htmlFor="cuit_quien_cobra">CUIT Quien Cobra</Label>
-                  <Input
-                    id="cuit_quien_cobra"
-                    value={state.datos_basicos.cuit_quien_cobra}
-                    onChange={(e) => actualizarDatosBasicos('cuit_quien_cobra', e.target.value)}
-                    placeholder="Ej: 33-XXXXXXXX-9 (ARBA)"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="nombre_quien_cobra">Nombre Quien Cobra</Label>
-                  <Input
-                    id="nombre_quien_cobra"
-                    value={state.datos_basicos.nombre_quien_cobra}
-                    onChange={(e) => actualizarDatosBasicos('nombre_quien_cobra', e.target.value)}
-                    placeholder="Ej: ARBA"
+                <div className="col-span-2">
+                  <ProveedorCombobox
+                    label="Quien Cobra"
+                    value={{ cuit: state.datos_basicos.cuit_quien_cobra, nombre: state.datos_basicos.nombre_quien_cobra }}
+                    onChange={(sel) => {
+                      actualizarDatosBasicos('cuit_quien_cobra', sel.cuit)
+                      actualizarDatosBasicos('nombre_quien_cobra', sel.nombre)
+                    }}
                   />
                 </div>
               </div>
