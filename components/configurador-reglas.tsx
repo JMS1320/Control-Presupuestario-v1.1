@@ -16,12 +16,22 @@ import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
 import { ModalCopiarReglas } from "@/components/modal-copiar-reglas"
+import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
+import { supabase } from "@/lib/supabase"
 
 export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas, cargarReglas } = useReglasConciliacion()
 
   const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
   const [modalCopiarAbierto, setModalCopiarAbierto] = useState(false)
+  // Modal "crear template faltante" — disparado al activar regla o guardar regla con llena_template
+  const [modalTemplateFaltante, setModalTemplateFaltante] = useState<{
+    abierto: boolean
+    categ: string
+    empresaDestino: string
+    motivo: "activar_regla" | "guardar_regla"
+    onResolve: (creado: boolean) => void
+  } | null>(null)
 
   // Sincronizar si el padre cambia la cuenta
   useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
@@ -111,6 +121,33 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       cuenta_bancaria_id: formulario.cuenta_bancaria_id
     }
 
+    // Si la regla se guarda como activa y llena template, validar que exista template apropiado
+    if (datosRegla.activo && datosRegla.llena_template) {
+      const templateExiste = await verificarTemplateRegla(datosRegla.categ, datosRegla.cuenta_bancaria_id)
+      if (!templateExiste) {
+        const cuenta = CUENTAS_BANCARIAS.find(c => c.id === datosRegla.cuenta_bancaria_id)
+        setModalTemplateFaltante({
+          abierto: true,
+          categ: datosRegla.categ,
+          empresaDestino: cuenta?.empresa || '',
+          motivo: 'guardar_regla',
+          onResolve: async (creado) => {
+            setModalTemplateFaltante(null)
+            // Si el usuario no creó el template, guardar con activo=false
+            const datosFinal = creado ? datosRegla : { ...datosRegla, activo: false }
+            const ok = reglaEditando
+              ? await actualizarRegla(reglaEditando.id, datosFinal)
+              : await crearRegla(datosFinal)
+            if (ok) {
+              setModalAbierto(false)
+              resetFormulario()
+            }
+          },
+        })
+        return
+      }
+    }
+
     let exito = false
     if (reglaEditando) {
       exito = await actualizarRegla(reglaEditando.id, datosRegla)
@@ -122,6 +159,64 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       setModalAbierto(false)
       resetFormulario()
     }
+  }
+
+  // Validar si existe template apropiado para una regla.
+  // Replica la lógica del motor (Paso 1): si hay template con solo_conciliacion=true,
+  // exige match por empresa. Si todos son solo_conciliacion=false, cualquiera sirve.
+  const verificarTemplateRegla = async (categ: string, cuentaBancariaId: string): Promise<boolean> => {
+    const cuenta = CUENTAS_BANCARIAS.find(c => c.id === cuentaBancariaId)
+    if (!cuenta) return true // si no encuentro la cuenta, asumir OK (no bloquear)
+
+    const { data: templates } = await supabase
+      .from('egresos_sin_factura')
+      .select('id, responsable, solo_conciliacion')
+      .eq('categ', categ)
+      .eq('activo', true)
+
+    if (!templates || templates.length === 0) return false // sin template → falta
+
+    const algunoBancario = templates.some((t: any) => t.solo_conciliacion)
+    if (algunoBancario) {
+      return templates.some((t: any) =>
+        t.responsable?.toLowerCase().includes(cuenta.empresa.toLowerCase())
+      )
+    }
+    return true // no bancario → cualquier template sirve
+  }
+
+  // Toggle de activo/inactivo con validación de template al activar
+  const handleToggleRegla = async (regla: ReglaConciliacion) => {
+    // Desactivar siempre se permite
+    if (regla.activo) {
+      await toggleRegla(regla.id)
+      return
+    }
+    // Activar regla que no llena template → no requiere validación
+    if (!regla.llena_template) {
+      await toggleRegla(regla.id)
+      return
+    }
+    const templateExiste = await verificarTemplateRegla(regla.categ, regla.cuenta_bancaria_id)
+    if (templateExiste) {
+      await toggleRegla(regla.id)
+      return
+    }
+    // Falta template → abrir modal
+    const cuenta = CUENTAS_BANCARIAS.find(c => c.id === regla.cuenta_bancaria_id)
+    setModalTemplateFaltante({
+      abierto: true,
+      categ: regla.categ,
+      empresaDestino: cuenta?.empresa || '',
+      motivo: 'activar_regla',
+      onResolve: async (creado) => {
+        setModalTemplateFaltante(null)
+        if (creado) {
+          await toggleRegla(regla.id)
+        }
+        // si no creó → no se activa (queda como estaba)
+      },
+    })
   }
 
   // Cambiar orden de regla
@@ -190,6 +285,18 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
         onCerrar={() => setModalCopiarAbierto(false)}
         onCompletado={cargarReglas}
       />
+
+      {modalTemplateFaltante && (
+        <ModalCrearTemplateFaltante
+          abierto={modalTemplateFaltante.abierto}
+          categ={modalTemplateFaltante.categ}
+          empresaDestino={modalTemplateFaltante.empresaDestino}
+          motivo={modalTemplateFaltante.motivo}
+          onCerrar={() => modalTemplateFaltante.onResolve(false)}
+          onCreado={() => modalTemplateFaltante.onResolve(true)}
+          onCancelar={() => modalTemplateFaltante.onResolve(false)}
+        />
+      )}
 
       {/* Selector cuenta bancaria — solo si no viene del padre */}
       {!cuentaBancariaId && (
@@ -331,7 +438,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                     </Button>
                     <Switch
                       checked={regla.activo}
-                      onCheckedChange={() => toggleRegla(regla.id)}
+                      onCheckedChange={() => handleToggleRegla(regla)}
                     />
                     <Button
                       variant="outline"

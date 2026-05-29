@@ -144,9 +144,18 @@ Cuando se crea/edita una regla nueva con `llena_template=true` y `cuenta_bancari
 
 - [x] **Paso 1 — Blindar el motor** ✅ implementado 2026-05-28 en `desarrollo`
 - [x] **Paso 2 — Copia + wizard SICORE-style** ✅ implementado 2026-05-28 en `desarrollo`
-- [ ] **Paso 3 — Validación al guardar regla nueva** ← próximo (pequeño)
+- [x] **Paso 3 — Validación al activar/guardar regla en Configurador** ✅ implementado 2026-05-29 en `desarrollo`
 - [ ] Paso 4 — Decidir grises (CAJA, CRED P)
 - [ ] Paso 5 — Mejoras UX opcionales
+
+### Detalle Paso 3 implementado
+
+- `components/modal-crear-template-faltante.tsx` (nuevo) — modal individual para crear un template específico cuando falta uno al activar/guardar regla. Pre-llena defaults desde otro template existente con la misma categ. Botones: "Crear template y continuar" / "No crear (regla queda inactiva)".
+- `components/configurador-reglas.tsx`:
+  - Función `verificarTemplateRegla(categ, cuentaBancariaId)` replica la lógica del motor (Paso 1) — si hay template con `solo_conciliacion=true` exige match por empresa, sino cualquiera sirve.
+  - `handleToggleRegla(regla)` envuelve `toggleRegla` del hook: desactivar siempre permitido; activar con `llena_template=true` valida primero. Si falta template → abre modal. Si el usuario lo crea → activa la regla. Si cancela → la regla queda inactiva.
+  - `guardarRegla` interceptado: si la regla se guarda con `activo=true` y `llena_template=true` y falta template → abre modal. Si crea → guarda activa. Si cancela → guarda con `activo=false`.
+- El motor del Paso 1 sigue siendo defensa última: si por algún camino quedara una regla activa sin template (script, edición SQL directa, etc.), la cuota no se crea + warning en consola.
 
 ### Detalle Paso 2 implementado
 
