@@ -6,18 +6,22 @@ import { supabase, type CuentaContable, type MovimientoMSA } from "@/lib/supabas
 export type ResumenFinanciero = {
   mes: number
   año: number
-  ingresos: { [cuenta: string]: number }
-  egresos: { [cuenta: string]: number }
-  financieros: { [cuenta: string]: number }
-  distribuciones: { [cuenta: string]: number }
-  /** Sub-categorías de templates multi-cuenta: { "Otros Gastos": { "MAIZ": -335800, "GASOIL": -120000 } } */
-  subCategorias: { [parentCuenta: string]: { [subCateg: string]: number } }
+  /** Totales por agrupadora — claves son nombres de agrupadora (cuenta_agrupadora de template o nombre_totalizadora de cuenta contable). */
+  ingresos: { [agrupadora: string]: number }
+  egresos: { [agrupadora: string]: number }
+  financieros: { [agrupadora: string]: number }
+  distribuciones: { [agrupadora: string]: number }
+  /** Desglose por detalle dentro de cada agrupadora. Para templates normales: nombre del template. Para cuentas contables: nombre de la cuenta. Para templates multi-cuenta: nombre de la cuenta de cada sub-movimiento. */
+  subCategorias: { [agrupadora: string]: { [detalle: string]: number } }
   totalIngresos: number
   totalEgresos: number
   totalFinancieros: number
   totalDistribuciones: number
   saldoMensual: number
 }
+
+const AGRUPADORA_SIN_AGRUPAR = "(Sin agrupar)"
+const AGRUPADORA_SIN_CLASIFICAR = "(Sin clasificar)"
 
 export function useFinancialData(año: number, semestre?: number) {
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
@@ -51,16 +55,20 @@ export function useFinancialData(año: number, semestre?: number) {
           fechaInicio = `${año}-07-01`
         }
 
-        // Obtener TODOS los templates activos (para agrupar por nombre de template en dashboard)
+        // Templates activos con su agrupadora y flag multi-cuenta
         const { data: allTemplates } = await supabase
           .from("egresos_sin_factura")
-          .select("id, nombre_referencia, es_multi_cuenta")
+          .select("id, nombre_referencia, cuenta_agrupadora, es_multi_cuenta")
           .eq("activo", true)
 
-        const templateMap = new Map<string, { nombre: string, esMulti: boolean }>()
-        ;(allTemplates || []).forEach((t: any) => templateMap.set(t.id, { nombre: t.nombre_referencia, esMulti: !!t.es_multi_cuenta }))
+        const templateMap = new Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean }>()
+        ;(allTemplates || []).forEach((t: any) => templateMap.set(t.id, {
+          nombre: t.nombre_referencia,
+          agrupadora: t.cuenta_agrupadora || null,
+          esMulti: !!t.es_multi_cuenta,
+        }))
 
-        // Obtener movimientos SIN JOIN (relación se resuelve en el cliente)
+        // Movimientos del período
         const { data: movimientosData, error: movimientosError } = await supabase
           .from("msa_galicia")
           .select("*")
@@ -76,8 +84,6 @@ export function useFinancialData(año: number, semestre?: number) {
 
         if (movimientosData) {
           setMovimientos(movimientosData)
-
-          // Procesar resumen financiero
           const resumenPorMes = procesarResumenFinanciero(movimientosData, cuentasData || [], templateMap)
           setResumen(resumenPorMes)
         }
@@ -94,8 +100,53 @@ export function useFinancialData(año: number, semestre?: number) {
   return { cuentas, movimientos, resumen, loading }
 }
 
-function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[], templateMap: Map<string, { nombre: string, esMulti: boolean }> = new Map()): ResumenFinanciero[] {
+/**
+ * Normaliza un nombre de totalizadora a su forma canónica para evitar duplicados
+ * por diferencias de mayúsculas (ej: "EGRESOS POR GANADERIA" vs "Egresos Por Ganaderia").
+ */
+function construirMapaCanonizacionTotalizadoras(cuentas: CuentaContable[]): Map<string, string> {
+  // Agrupar por key normalizada (lowercase trim) → tomar la versión más usada (la primera que aparezca con más cuentas)
+  const conteo = new Map<string, Map<string, number>>()
+  cuentas.forEach(c => {
+    if (!c.nombre_totalizadora) return
+    const key = c.nombre_totalizadora.toLowerCase().trim()
+    if (!conteo.has(key)) conteo.set(key, new Map())
+    const inner = conteo.get(key)!
+    inner.set(c.nombre_totalizadora, (inner.get(c.nombre_totalizadora) || 0) + 1)
+  })
+
+  const canonical = new Map<string, string>()
+  conteo.forEach((variantes, key) => {
+    // Elegir la variante con mayor cuenta, o la "más limpia" (más mayúsculas) en empate
+    let mejor = ''
+    let mejorScore = -1
+    variantes.forEach((cant, variante) => {
+      const upperCount = (variante.match(/[A-ZÁÉÍÓÚÑ]/g) || []).length
+      const score = cant * 1000 + upperCount
+      if (score > mejorScore) {
+        mejorScore = score
+        mejor = variante
+      }
+    })
+    canonical.set(key, mejor)
+  })
+
+  return canonical
+}
+
+function procesarResumenFinanciero(
+  movimientos: any[],
+  cuentas: CuentaContable[],
+  templateMap: Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean }>
+): ResumenFinanciero[] {
   const cuentasMap = new Map(cuentas.map((c) => [c.categ, c]))
+  const canonicalTotalizadoras = construirMapaCanonizacionTotalizadoras(cuentas)
+
+  const canonicalizar = (nombre: string | null | undefined): string | null => {
+    if (!nombre) return null
+    return canonicalTotalizadoras.get(nombre.toLowerCase().trim()) || nombre
+  }
+
   const resumenPorMes = new Map<string, ResumenFinanciero>()
 
   movimientos.forEach((mov) => {
@@ -105,12 +156,34 @@ function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]
     const key = `${año}-${mes}`
 
     const cuentaInfo = cuentasMap.get(mov.categ)
+    const templateInfo = mov.template_id ? templateMap.get(mov.template_id) : null
+    const monto = (mov.creditos || 0) - (mov.debitos || 0)
 
-    if (!cuentaInfo) {
-      console.warn(`No se encontró información de cuenta para categ: ${mov.categ}`)
-      return
+    // ---- Determinar agrupadora, detalle y tipo ----
+    let agrupadora: string
+    let detalle: string
+    let tipo: string | undefined
+
+    if (templateInfo && !templateInfo.esMulti) {
+      // Template normal: la agrupadora viene del template, el detalle es el nombre del template
+      agrupadora = canonicalizar(templateInfo.agrupadora) || AGRUPADORA_SIN_AGRUPAR
+      detalle = templateInfo.nombre
+      tipo = cuentaInfo?.tipo || (monto >= 0 ? "ingreso" : "egreso")
+    } else if (cuentaInfo) {
+      // Sin template normal (multi-cuenta o sin template): usar la cuenta contable
+      agrupadora = canonicalizar(cuentaInfo.nombre_totalizadora) || AGRUPADORA_SIN_AGRUPAR
+      detalle = cuentaInfo.cuenta_contable || cuentaInfo.categ
+      tipo = cuentaInfo.tipo
+    } else {
+      // Sin cuenta válida — pendiente de adjudicar
+      agrupadora = AGRUPADORA_SIN_CLASIFICAR
+      detalle = mov.categ || "(sin categ)"
+      tipo = monto >= 0 ? "ingreso" : "egreso"
     }
 
+    if (!tipo) return // Sin tipo válido, no sabemos en qué sección ponerlo
+
+    // ---- Inicializar mes si no existe ----
     if (!resumenPorMes.has(key)) {
       resumenPorMes.set(key, {
         mes,
@@ -129,38 +202,33 @@ function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]
     }
 
     const resumen = resumenPorMes.get(key)!
-    const monto = (mov.creditos || 0) - (mov.debitos || 0)
-    const nombreCuenta = cuentaInfo.cuenta_contable || cuentaInfo.categ
 
-    // Detectar si el movimiento tiene template vinculado
-    const templateInfo = mov.template_id ? templateMap.get(mov.template_id) : null
+    // ---- Acumular en sección + subcategoría ----
+    const sumarSubCateg = () => {
+      if (!resumen.subCategorias[agrupadora]) resumen.subCategorias[agrupadora] = {}
+      resumen.subCategorias[agrupadora][detalle] = (resumen.subCategorias[agrupadora][detalle] || 0) + monto
+    }
 
-    // Determinar el nombre de agrupación:
-    // - Con template → nombre del template
-    // - Sin template → nombre de la cuenta contable
-    const nombreAgrupacion = templateInfo ? templateInfo.nombre : nombreCuenta
-
-    switch (cuentaInfo.tipo) {
+    switch (tipo) {
       case "ingreso":
-        resumen.ingresos[nombreAgrupacion] = (resumen.ingresos[nombreAgrupacion] || 0) + monto
+        resumen.ingresos[agrupadora] = (resumen.ingresos[agrupadora] || 0) + monto
         resumen.totalIngresos += monto
+        sumarSubCateg()
         break
       case "egreso":
-        resumen.egresos[nombreAgrupacion] = (resumen.egresos[nombreAgrupacion] || 0) + monto
-        // Si es multi-cuenta, guardar detalle por sub-categoría
-        if (templateInfo?.esMulti) {
-          if (!resumen.subCategorias[nombreAgrupacion]) resumen.subCategorias[nombreAgrupacion] = {}
-          resumen.subCategorias[nombreAgrupacion][nombreCuenta] = (resumen.subCategorias[nombreAgrupacion][nombreCuenta] || 0) + monto
-        }
+        resumen.egresos[agrupadora] = (resumen.egresos[agrupadora] || 0) + monto
         resumen.totalEgresos += monto
+        sumarSubCateg()
         break
       case "financiero":
-        resumen.financieros[nombreAgrupacion] = (resumen.financieros[nombreAgrupacion] || 0) + monto
+        resumen.financieros[agrupadora] = (resumen.financieros[agrupadora] || 0) + monto
         resumen.totalFinancieros += monto
+        sumarSubCateg()
         break
       case "distribucion":
-        resumen.distribuciones[nombreAgrupacion] = (resumen.distribuciones[nombreAgrupacion] || 0) + monto
+        resumen.distribuciones[agrupadora] = (resumen.distribuciones[agrupadora] || 0) + monto
         resumen.totalDistribuciones += monto
+        sumarSubCateg()
         break
     }
 
@@ -168,11 +236,8 @@ function procesarResumenFinanciero(movimientos: any[], cuentas: CuentaContable[]
       resumen.totalIngresos + resumen.totalEgresos + resumen.totalFinancieros + resumen.totalDistribuciones
   })
 
-  const resultado = Array.from(resumenPorMes.values()).sort((a, b) => {
+  return Array.from(resumenPorMes.values()).sort((a, b) => {
     if (a.año !== b.año) return a.año - b.año
     return a.mes - b.mes
   })
-
-  console.log("Resumen procesado:", resultado)
-  return resultado
 }
