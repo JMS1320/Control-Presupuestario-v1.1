@@ -178,10 +178,7 @@ export function ModalCopiarReglas({ abierto, onCerrar, onCompletado }: Props) {
       setError("Elegí una cuenta destino")
       return
     }
-    if (cuentaOrigenId === cuentaDestinoId) {
-      setError("La cuenta destino debe ser distinta del origen")
-      return
-    }
+    // Permitir misma cuenta como destino (útil para duplicar reglas y editarlas después)
 
     setError(null)
     setLoading(true)
@@ -464,13 +461,11 @@ export function ModalCopiarReglas({ abierto, onCerrar, onCompletado }: Props) {
                     <SelectValue placeholder="Elegir cuenta destino" />
                   </SelectTrigger>
                   <SelectContent>
-                    {cuentas
-                      .filter(c => c.id !== cuentaOrigenId)
-                      .map(c => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.nombre} ({c.empresa})
-                        </SelectItem>
-                      ))}
+                    {cuentas.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre} ({c.empresa}){c.id === cuentaOrigenId ? " — misma cuenta" : ""}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
