@@ -142,9 +142,9 @@ Cuando se crea/edita una regla nueva con `llena_template=true` y `cuenta_bancari
 
 ## ⏳ Estado actual
 
-- [x] **Paso 1 — Blindar el motor** ✅ implementado 2026-05-28 en `desarrollo`
-- [x] **Paso 2 — Copia + wizard SICORE-style** ✅ implementado 2026-05-28 en `desarrollo`
-- [x] **Paso 3 — Validación al activar/guardar regla en Configurador** ✅ implementado 2026-05-29 en `desarrollo`
+- [x] **Paso 1 — Blindar el motor** ✅ implementado 2026-05-28, testeado (conciliación PAM CC 16 conciliados sin contaminación)
+- [x] **Paso 2 — Copia + wizard SICORE-style** ✅ implementado 2026-05-28, testeado (34 reglas copiadas a `pam_galicia_cc` + 14 templates PAM creados)
+- [x] **Paso 3 — Validación al activar/guardar regla en Configurador** ✅ implementado 2026-05-29, pendiente test del usuario
 - [ ] Paso 4 — Decidir grises (CAJA, CRED P)
 - [ ] Paso 5 — Mejoras UX opcionales
 
