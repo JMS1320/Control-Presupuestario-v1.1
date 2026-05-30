@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Loader2, Plus, Trash2, Save, X, Pencil } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -135,26 +136,12 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
         {/* Form crear/editar */}
         {editId && (
           <div className="border rounded-lg p-3 space-y-2 bg-gray-50">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-xs">CUIT *</Label>
-                <Input
-                  value={form.cuit}
-                  onChange={e => setForm(f => ({ ...f, cuit: e.target.value }))}
-                  placeholder="30715665731"
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Proveedor (opcional)</Label>
-                <Input
-                  value={form.denominacion_emisor}
-                  onChange={e => setForm(f => ({ ...f, denominacion_emisor: e.target.value }))}
-                  placeholder="Nombre para identificarla"
-                  className="text-sm"
-                />
-              </div>
-            </div>
+            <ProveedorCombobox
+              label="Proveedor"
+              required
+              value={{ cuit: form.cuit, nombre: form.denominacion_emisor }}
+              onChange={(sel) => setForm(f => ({ ...f, cuit: sel.cuit, denominacion_emisor: sel.nombre }))}
+            />
             <div>
               <Label className="text-xs">Cuenta contable *</Label>
               <SelectorCuentaContable

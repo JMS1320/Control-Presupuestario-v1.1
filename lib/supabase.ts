@@ -10,6 +10,9 @@ export type CuentaContable = {
   categ: string
   cuenta_contable: string
   tipo: "ingreso" | "egreso" | "financiero" | "distribucion"
+  nombre_totalizadora?: string | null
+  cta_totalizadora?: string | null
+  imputable?: boolean | null
 }
 
 export type MovimientoMSA = {
