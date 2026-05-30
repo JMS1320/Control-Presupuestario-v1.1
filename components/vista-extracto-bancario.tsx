@@ -2692,6 +2692,9 @@ export function VistaExtractoBancario() {
               caja_general:    { endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
               caja_ams:        { endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
               caja_sigot:      { endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
+              tarjeta_visa_business_msa: { endpoint: '/api/import-excel-tarjeta', formato: 'Excel VISA Business MSA (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales: REFERENCIA / CUOTA / COMPROBANTE / NRO RESUMEN / FECHA CIERRE / FECHA VENCIMIENTO / TARJETA / TITULAR). Positivo = consumo, negativo = pago/reverso.', accept: '.xlsx,.xls' },
+              tarjeta_visa_pam:          { endpoint: '/api/import-excel-tarjeta', formato: 'Excel VISA PAM (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales: REFERENCIA / CUOTA / COMPROBANTE / NRO RESUMEN / FECHA CIERRE / FECHA VENCIMIENTO / TARJETA / TITULAR). Positivo = consumo, negativo = pago/reverso.',        accept: '.xlsx,.xls' },
+              tarjeta_visa_ma:           { endpoint: '/api/import-excel-tarjeta', formato: 'Excel VISA MA (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales: REFERENCIA / CUOTA / COMPROBANTE / NRO RESUMEN / FECHA CIERRE / FECHA VENCIMIENTO / TARJETA / TITULAR). Positivo = consumo, negativo = pago/reverso.',          accept: '.xlsx,.xls' },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
@@ -2952,7 +2955,7 @@ export function VistaExtractoBancario() {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
               <div className="space-y-2">
-                {cuentasDisponibles.filter(c => c.tipo !== 'caja').map((cuenta) => (
+                {cuentasDisponibles.filter(c => c.tipo !== 'caja' && c.tipo !== 'tarjeta').map((cuenta) => (
                   <Button
                     key={cuenta.id}
                     variant="outline"
@@ -2983,6 +2986,28 @@ export function VistaExtractoBancario() {
                   >
                     <div className="flex items-center gap-3">
                       <Banknote className="h-4 w-4 text-green-600" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {/* Tarjetas */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarjetas de Crédito</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo === 'tarjeta').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-purple-500 bg-purple-50' : ''}`}
+                    onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4 text-purple-600" />
                       <div className="text-left">
                         <div className="font-medium">{cuenta.nombre}</div>
                         <div className="text-sm text-gray-500">{cuenta.empresa}</div>

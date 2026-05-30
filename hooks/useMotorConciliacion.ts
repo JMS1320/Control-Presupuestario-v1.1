@@ -11,10 +11,10 @@ export interface CuentaBancaria {
   id: string
   nombre: string
   tabla_bd: string
-  schema_bd?: string   // 'public' (default) | 'msa'
+  schema_bd?: string   // 'public' (default) | 'msa' | 'pam' | 'ma'
   empresa: 'MSA' | 'PAM' | 'MA'
   activa: boolean
-  tipo?: 'banco' | 'caja'
+  tipo?: 'banco' | 'caja' | 'tarjeta'
 }
 
 export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
@@ -77,6 +77,33 @@ export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
     empresa: 'MSA',
     activa: true,
     tipo: 'caja'
+  },
+  {
+    id: 'tarjeta_visa_business_msa',
+    nombre: 'VISA Business MSA',
+    tabla_bd: 'tarjeta_visa_business',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'tarjeta'
+  },
+  {
+    id: 'tarjeta_visa_pam',
+    nombre: 'VISA PAM',
+    tabla_bd: 'tarjeta_visa',
+    schema_bd: 'pam',
+    empresa: 'PAM',
+    activa: true,
+    tipo: 'tarjeta'
+  },
+  {
+    id: 'tarjeta_visa_ma',
+    nombre: 'VISA MA',
+    tabla_bd: 'tarjeta_visa',
+    schema_bd: 'ma',
+    empresa: 'MA',
+    activa: true,
+    tipo: 'tarjeta'
   }
 ]
 
