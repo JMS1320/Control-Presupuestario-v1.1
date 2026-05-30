@@ -2685,10 +2685,13 @@ export function VistaExtractoBancario() {
           {(() => {
             // Configuración por cuenta
             const CONFIG_IMPORTADORES: Record<string, { endpoint: string; formato: string; accept: string }> = {
-              msa_galicia:     { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia_cc:  { endpoint: '/api/import-excel',    formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia:     { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
-              ma_galicia:      { endpoint: '/api/import-excel-ca', formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+              msa_galicia:     { endpoint: '/api/import-excel',      formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia_cc:  { endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia:     { endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+              ma_galicia:      { endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+              caja_general:    { endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
+              caja_ams:        { endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
+              caja_sigot:      { endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
@@ -2712,7 +2715,9 @@ export function VistaExtractoBancario() {
             const verificarSaldo = async () => {
               setImportVerificando(true)
               try {
-                const { data } = await supabase.from(tablaActiva).select('id').limit(1).maybeSingle()
+                const schema = cuenta?.schema_bd && cuenta.schema_bd !== 'public' ? cuenta.schema_bd : null
+                const client = schema ? supabase.schema(schema) : supabase
+                const { data } = await client.from(tablaActiva).select('id').limit(1).maybeSingle()
                 setImportMostrarSaldo(data === null)
               } catch { setImportMostrarSaldo(false) }
               finally { setImportVerificando(false) }
