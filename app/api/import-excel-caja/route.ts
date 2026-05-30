@@ -226,7 +226,7 @@ export async function POST(req: Request) {
 
       const concepto = clean(row[cols.concepto])
       const cat = cols.cat >= 0 ? clean(row[cols.cat]) : ""
-      const comp = cols.comp >= 0 ? clean(row[cols.comp]) : ""
+      // Comp se ignora a propósito — el usuario usa columnas Contable / Interno aparte
       const salida = cols.salida >= 0 ? parseNum(row[cols.salida]) : 0
       const entrada = cols.entrada >= 0 ? parseNum(row[cols.entrada]) : 0
       const saldoExcel = cols.saldo >= 0 ? parseNum(row[cols.saldo]) : 0
@@ -263,7 +263,7 @@ export async function POST(req: Request) {
         saldo: saldoExcel,
         control,
         categ: cat || null,
-        detalle: comp || null,
+        detalle: null,
         contable: null,
         interno: null,
         centro_de_costo: null,

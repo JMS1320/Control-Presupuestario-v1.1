@@ -2689,9 +2689,9 @@ export function VistaExtractoBancario() {
               pam_galicia_cc:  { endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia:     { endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
               ma_galicia:      { endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
-              caja_general:    { endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
-              caja_ams:        { endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
-              caja_sigot:      { endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Comp / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
+              caja_general:    { endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
+              caja_ams:        { endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
+              caja_sigot:      { endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
