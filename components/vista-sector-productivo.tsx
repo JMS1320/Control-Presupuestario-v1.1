@@ -4929,9 +4929,9 @@ function SubTabOrdenesAplicacion() {
                   <TableRow>
                     <TableHead className="w-[180px]">Insumo</TableHead>
                     <TableHead className="w-[110px]">Tipo Dosis</TableHead>
-                    <TableHead className="w-[70px] text-right">Dosis</TableHead>
+                    <TableHead className="w-[95px] text-right">Dosis</TableHead>
                     <TableHead className="w-[80px] text-right">Cada X kg</TableHead>
-                    <TableHead className="w-[70px] text-right">Cabezas</TableHead>
+                    <TableHead className="w-[80px] text-right">Cabezas</TableHead>
                     <TableHead className="w-[80px] text-right">Dosis/Cab</TableHead>
                     <TableHead className="w-[90px] text-right">Total</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
