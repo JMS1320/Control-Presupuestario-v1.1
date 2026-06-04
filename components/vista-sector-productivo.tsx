@@ -6284,8 +6284,25 @@ function SubTabOrdenesAgricolas() {
                               </SelectContent>
                             </Select>
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium">
-                            {totalL > 0 ? `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(totalL)} L` : '-'}
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              className="h-8 text-xs text-right"
+                              placeholder="0"
+                              value={totalL > 0 ? Number(totalL.toFixed(3)) : ''}
+                              onChange={e => {
+                                const nuevoTotal = parseFloat(e.target.value) || 0
+                                if (totalHectareas > 0 && nuevoTotal > 0) {
+                                  // Recalcular dosis hacia atrás según unidad
+                                  const dosisL = nuevoTotal / totalHectareas
+                                  const nuevaDosis = l.unidad_dosis === 'cc' ? dosisL * 1000 : dosisL
+                                  // Redondear con precisión razonable (2 decimales en cc/ha, 3 en L/ha)
+                                  const precision = l.unidad_dosis === 'cc' ? 2 : 3
+                                  actualizarLinea(l.key, 'dosis', nuevaDosis.toFixed(precision))
+                                }
+                              }}
+                            />
                           </TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => eliminarLinea(l.key)}>
