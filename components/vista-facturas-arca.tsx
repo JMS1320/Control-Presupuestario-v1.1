@@ -8530,7 +8530,47 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                   )}
                                   <TableCell></TableCell>
                                   <TableCell></TableCell>
-                                  <TableCell>{row.fecha || '-'}</TableCell>
+                                  <TableCell className="min-w-[110px]">
+                                    {editandoFechaPagosId === row.grupoPagoId ? (
+                                      <Input
+                                        type="date"
+                                        value={editandoFechaPagosVal}
+                                        onChange={e => setEditandoFechaPagosVal(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter' && editandoFechaPagosVal) {
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .in('id', row.ids)
+                                            setFacturasPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setEditandoFechaPagosId(null)
+                                          }
+                                          if (e.key === 'Escape') setEditandoFechaPagosId(null)
+                                        }}
+                                        onBlur={async () => {
+                                          if (editandoFechaPagosVal) {
+                                            await supabase.schema(schemaName).from('comprobantes_arca')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .in('id', row.ids)
+                                            setFacturasPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                          }
+                                          setEditandoFechaPagosId(null)
+                                        }}
+                                        className="h-7 text-xs w-[120px]"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span
+                                        className="cursor-pointer hover:bg-purple-100 px-1 py-0.5 rounded text-xs font-medium"
+                                        title="Click para cambiar fecha de pago del grupo (propaga a todas las FC)"
+                                        onClick={() => {
+                                          setEditandoFechaPagosId(row.grupoPagoId)
+                                          setEditandoFechaPagosVal(row.fecha || facsGrupo[0]?.fecha_vencimiento || facsGrupo[0]?.fecha_estimada || '')
+                                        }}
+                                      >
+                                        {row.fecha || '-'}
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="max-w-[200px] truncate">
                                     <span className="font-medium">{row.proveedor}</span>
                                     <span className="ml-2 text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full font-semibold">
@@ -8960,7 +9000,47 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
                                       <Checkbox checked={checked} onCheckedChange={(c) => toggleTGroup(row.ids, !!c)} />
                                     </TableCell>
                                   )}
-                                  <TableCell>{row.fecha || '-'}</TableCell>
+                                  <TableCell className="min-w-[110px]">
+                                    {editandoFechaPagosId === row.grupoPagoId ? (
+                                      <Input
+                                        type="date"
+                                        value={editandoFechaPagosVal}
+                                        onChange={e => setEditandoFechaPagosVal(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                          if (e.key === 'Enter' && editandoFechaPagosVal) {
+                                            await supabase.from('cuotas_egresos_sin_factura')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .in('id', row.ids)
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setEditandoFechaPagosId(null)
+                                          }
+                                          if (e.key === 'Escape') setEditandoFechaPagosId(null)
+                                        }}
+                                        onBlur={async () => {
+                                          if (editandoFechaPagosVal) {
+                                            await supabase.from('cuotas_egresos_sin_factura')
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .in('id', row.ids)
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                          }
+                                          setEditandoFechaPagosId(null)
+                                        }}
+                                        className="h-7 text-xs w-[120px]"
+                                        autoFocus
+                                      />
+                                    ) : (
+                                      <span
+                                        className="cursor-pointer hover:bg-purple-100 px-1 py-0.5 rounded text-xs font-medium"
+                                        title="Click para cambiar fecha de pago del grupo (propaga a todas las cuotas)"
+                                        onClick={() => {
+                                          setEditandoFechaPagosId(row.grupoPagoId)
+                                          setEditandoFechaPagosVal(row.fecha || tsGrupo[0]?.fecha_vencimiento || tsGrupo[0]?.fecha_estimada || '')
+                                        }}
+                                      >
+                                        {row.fecha || '-'}
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="max-w-[150px] truncate">
                                     <span className="font-medium">{row.proveedor}</span>
                                     <span className="ml-2 text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full font-semibold">
