@@ -3609,9 +3609,11 @@ function SubTabOrdenesAplicacion() {
     .filter(([_, sel]) => sel)
     .reduce((sum, [catId]) => sum + (cargaManualRodeos ? (parseInt(cantidadManualRodeos[catId]) || 0) : (stockHaciendaMap[catId] || 0)), 0)
 
-  // La orden de aplicación es ganadera → mostrar solo insumos ganaderos (no Agroquímico),
-  // misma regla que usa la pestaña Stock de Insumos / form de compra.
-  const insumosGanaderos = insumosVet.filter(i => i.categorias_insumo?.nombre !== 'Agroquímico')
+  // La orden de aplicación es ganadera → mostrar insumos con ambito 'ganadero' o 'ambos' (o null por compatibilidad)
+  const insumosGanaderos = insumosVet.filter(i => {
+    const a = (i.categorias_insumo as any)?.ambito
+    return a === 'ganadero' || a === 'ambos' || a == null
+  })
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -3623,7 +3625,7 @@ function SubTabOrdenesAplicacion() {
         supabase.schema('productivo').from('categorias_hacienda')
           .select('*').eq('activo', true).order('nombre'),
         supabase.schema('productivo').from('stock_insumos')
-          .select('*, categorias_insumo(nombre, unidad_medida)')
+          .select('*, categorias_insumo(nombre, unidad_medida, ambito)')
           .order('producto'),
         supabase.schema('productivo').from('movimientos_hacienda')
           .select('categoria_id, tipo, cantidad'),
@@ -4953,7 +4955,7 @@ function SubTabOrdenesAplicacion() {
                             insumos={insumosGanaderos}
                             onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
                             onCreated={cargarDatos}
-                            categoriasExcluidas={['Agroquímico']}
+                            ambito="ganadero"
                             disabled={modoVer}
                             className="w-full"
                           />
@@ -5771,11 +5773,13 @@ function SubTabOrdenesAgricolas() {
       }))
       setOrdenes(ordenesConLabores)
 
-      const { data: catData } = await supabase.schema('productivo').from('categorias_insumo')
-        .select('id').eq('nombre', 'Agroquímico').single()
-      if (catData) {
+      // Insumos agrícolas: todas las categorías con ambito='agricola' o 'ambos'
+      const { data: catsAgro } = await supabase.schema('productivo').from('categorias_insumo')
+        .select('id').in('ambito', ['agricola', 'ambos'])
+      if (catsAgro && catsAgro.length > 0) {
+        const ids = catsAgro.map((c: any) => c.id)
         const { data: insumosData } = await supabase.schema('productivo').from('stock_insumos')
-          .select('*').eq('categoria_id', catData.id).order('producto')
+          .select('*').in('categoria_id', ids).order('producto')
         setInsumosAgro(insumosData || [])
       }
 
@@ -6253,39 +6257,18 @@ function SubTabOrdenesAgricolas() {
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
-                            <Popover open={openInsumoKey === l.key} onOpenChange={open => setOpenInsumoKey(open ? l.key : null)}>
-                              <PopoverTrigger asChild>
-                                <Button variant="outline" role="combobox"
-                                  className="h-8 w-full justify-between text-xs font-normal truncate">
-                                  <span className="truncate">{l.insumo_nombre || 'Seleccionar insumo...'}</span>
-                                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-56 p-0 z-[9999]" align="start">
-                                <Command>
-                                  <CommandInput placeholder="Buscar insumo..." className="h-8 text-xs" />
-                                  <CommandList>
-                                    <CommandEmpty className="py-2 text-xs text-center text-muted-foreground">
-                                      No encontrado. Use &quot;Agregar Insumo&quot; para crear uno.
-                                    </CommandEmpty>
-                                    <CommandGroup>
-                                      {insumosAgro.map(ins => (
-                                        <CommandItem key={ins.id} value={ins.producto}
-                                          onSelect={() => {
-                                            actualizarLinea(l.key, 'insumo_stock_id', ins.id)
-                                            actualizarLinea(l.key, 'insumo_nombre', ins.producto)
-                                            setOpenInsumoKey(null)
-                                          }}
-                                          className="text-xs">
-                                          <Check className={`mr-1 h-3 w-3 ${l.insumo_stock_id === ins.id ? 'opacity-100' : 'opacity-0'}`} />
-                                          {ins.producto}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
+                            <InsumoCombobox
+                              value={l.insumo_stock_id || null}
+                              insumos={insumosAgro.map(i => ({ id: i.id, producto: i.producto, unidad_medida: i.unidad_medida }))}
+                              onChange={(id) => {
+                                actualizarLinea(l.key, 'insumo_stock_id', id)
+                                const ins = insumosAgro.find(s => s.id === id)
+                                if (ins) actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                              }}
+                              onCreated={cargarDatos}
+                              ambito="agricola"
+                              className="w-full"
+                            />
                           </TableCell>
                           <TableCell>
                             <Input type="number" step="0.0001" className="h-8 text-xs text-right"

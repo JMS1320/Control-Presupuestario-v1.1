@@ -13,7 +13,7 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 
 interface InsumoOpt { id: string; producto: string; unidad_medida?: string | null }
-interface CategoriaInsumo { id: string; nombre: string; unidad_medida: string | null }
+interface CategoriaInsumo { id: string; nombre: string; unidad_medida: string | null; ambito: 'agricola' | 'ganadero' | 'ambos' | null }
 
 /**
  * Selector de insumo: buscador que SOLO permite elegir insumos existentes
@@ -25,6 +25,7 @@ export function InsumoCombobox({
   onChange,
   onCreated,
   categoriasExcluidas,
+  ambito,
   disabled = false,
   className,
 }: {
@@ -33,8 +34,10 @@ export function InsumoCombobox({
   onChange: (id: string) => void
   /** Se llama tras crear un insumo nuevo (para que el padre recargue la lista) */
   onCreated?: () => void | Promise<void>
-  /** Nombres de categorías a NO ofrecer al crear (ej. ['Agroquímico'] en órdenes ganaderas) */
+  /** Nombres de categorías a NO ofrecer al crear (legacy — usar `ambito` cuando sea posible) */
   categoriasExcluidas?: string[]
+  /** Restringe categorías al crear según ámbito. Acepta tb 'ambos'. Si se pasa, ignora categoriasExcluidas. */
+  ambito?: 'agricola' | 'ganadero'
   disabled?: boolean
   className?: string
 }) {
@@ -47,9 +50,14 @@ export function InsumoCombobox({
 
   useEffect(() => {
     supabase.schema('productivo').from('categorias_insumo')
-      .select('id, nombre, unidad_medida').eq('activo', true).order('nombre')
+      .select('id, nombre, unidad_medida, ambito').eq('activo', true).order('nombre')
       .then(({ data }) => setCategorias((data as CategoriaInsumo[]) || []))
   }, [])
+
+  // Filtrar categorías a mostrar al crear nuevo insumo
+  const categoriasParaCrear = ambito
+    ? categorias.filter(c => c.ambito === ambito || c.ambito === 'ambos' || c.ambito == null)
+    : categorias.filter(c => !(categoriasExcluidas || []).includes(c.nombre))
 
   const seleccionado = insumos.find(i => i.id === value)
   const q = normalizarBusqueda(busqueda)
@@ -101,9 +109,7 @@ export function InsumoCombobox({
             }}>
               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Categoría" /></SelectTrigger>
               <SelectContent>
-                {categorias
-                  .filter(c => !(categoriasExcluidas || []).includes(c.nombre))
-                  .map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                {categoriasParaCrear.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
               </SelectContent>
             </Select>
             <Input className="h-8 text-xs" placeholder="Unidad (L, ml, kg, dosis...)" value={form.unidad_medida}
