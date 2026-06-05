@@ -254,7 +254,8 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
   )
 }
 
-export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
+export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: 'admin' | 'contable' } = {}) {
+  const esContable = userRole === 'contable'
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
@@ -5697,21 +5698,23 @@ export function VistaFacturasArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM'
               setSueldosSeleccionadosPagos(new Set())
 
               // Cargar en paralelo las 4 fuentes + cuentas contables
+              // Si el rol es contable, solo se ven los marcados como visible_contable=true
+              const filtroVisible = (q: any) => esContable ? q.eq('visible_contable', true) : q
               const [arcaResult, templatesResult, anticiposResult, sueldosResult, cuentasResult] = await Promise.all([
-                supabase.schema(schemaName).from('comprobantes_arca').select('*')
-                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
+                filtroVisible(supabase.schema(schemaName).from('comprobantes_arca').select('*')
+                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq']))
                   .order('fecha_vencimiento', { ascending: true }),
-                supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
+                filtroVisible(supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
                   .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
-                  .eq('egreso.activo', true)
+                  .eq('egreso.activo', true))
                   .order('fecha_vencimiento', { ascending: true }),
-                supabase.from('anticipos_proveedores').select('*')
+                filtroVisible(supabase.from('anticipos_proveedores').select('*')
                   .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
-                  .neq('estado', 'conciliado')
+                  .neq('estado', 'conciliado'))
                   .order('fecha_pago', { ascending: true }),
-                supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+                filtroVisible(supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
                   .in('estado', ['pendiente', 'pagar', 'preparado'])
-                  .gte('fecha', '2026-01-01')
+                  .gte('fecha', '2026-01-01'))
                   .order('fecha', { ascending: true }),
                 supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
                   .eq('imputable', true)
