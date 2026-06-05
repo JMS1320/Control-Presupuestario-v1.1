@@ -19,6 +19,7 @@ import * as XLSX from "xlsx"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
@@ -2616,6 +2617,9 @@ function SubTabStockInsumos() {
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
+  // Filtros del listado de movimientos
+  const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
+  const [busquedaMov, setBusquedaMov] = useState('')
 
   // Recalcular stock de un insumo desde sus movimientos
   const recalcularStockInsumo = async (insumoStockId: string) => {
@@ -2836,7 +2840,19 @@ function SubTabStockInsumos() {
   })
   const movimientosFiltrados = movimientos.filter(m => {
     const esAgroquimico = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    const matchAmbito = filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    if (!matchAmbito) return false
+    // Filtro por tipo de movimiento (multi-select; vacío = todos)
+    if (filtroTipoMov.size > 0 && !filtroTipoMov.has(m.tipo)) return false
+    // Búsqueda acento-insensible en producto + proveedor + observaciones
+    if (busquedaMov.trim()) {
+      const q = normalizarBusqueda(busquedaMov)
+      const texto = normalizarBusqueda(
+        `${(m.stock_insumos as any)?.producto || ''} ${m.proveedor || ''} ${m.observaciones || ''}`
+      )
+      if (!texto.includes(q)) return false
+    }
+    return true
   })
 
   if (loading) {
@@ -2924,6 +2940,54 @@ function SubTabStockInsumos() {
           </TableBody>
         </Table>
       ) : (
+        <>
+          {/* Filtros de movimientos */}
+          <div className="flex items-center gap-3 flex-wrap pb-2">
+            <Input
+              placeholder="Buscar en producto, proveedor u obs..."
+              value={busquedaMov}
+              onChange={e => setBusquedaMov(e.target.value)}
+              className="h-8 text-xs max-w-xs"
+            />
+            <div className="flex gap-1 items-center">
+              {(['compra', 'ajuste', 'uso'] as const).map(t => {
+                const activo = filtroTipoMov.has(t)
+                const label = t.charAt(0).toUpperCase() + t.slice(1) + 's'
+                return (
+                  <Button
+                    key={t}
+                    size="sm"
+                    variant={activo ? 'default' : 'outline'}
+                    className="h-7 text-xs"
+                    onClick={() => setFiltroTipoMov(prev => {
+                      const next = new Set(prev)
+                      if (next.has(t)) next.delete(t); else next.add(t)
+                      return next
+                    })}
+                  >
+                    {label}
+                  </Button>
+                )
+              })}
+              {(filtroTipoMov.size > 0 || busquedaMov.trim()) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => { setFiltroTipoMov(new Set()); setBusquedaMov('') }}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground ml-auto">
+              {movimientosFiltrados.length} de {movimientos.filter(m => {
+                const esAgro = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
+                return filtroTipo === 'agricola' ? esAgro : !esAgro
+              }).length} movimientos
+            </span>
+          </div>
+
         <Table>
           <TableHeader>
             <TableRow>
@@ -2998,6 +3062,7 @@ function SubTabStockInsumos() {
             )}
           </TableBody>
         </Table>
+        </>
       )}
 
       {/* Modal Movimiento Insumos Multi-linea */}
