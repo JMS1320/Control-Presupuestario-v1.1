@@ -8044,6 +8044,48 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             const esNotaDebito = (f: FacturaArca) => [2, 7, 12, 52, 202, 207, 212].includes(f.tipo_comprobante)
             const abrevTipoComp = (f: FacturaArca) => esNotaCredito(f) ? 'NC' : esNotaDebito(f) ? 'ND' : 'FC'
 
+            // Toggle visible_contable (Visible para Ulises) — solo admin
+            const toggleVisibleContable = async (
+              origen: 'facturas' | 'templates' | 'anticipos' | 'sueldos',
+              ids: string[]
+            ) => {
+              if (ids.length === 0) return
+              const items: any[] =
+                origen === 'facturas' ? facturasPagos.filter(f => ids.includes(f.id))
+                : origen === 'templates' ? templatesPagos.filter(t => ids.includes(t.id))
+                : origen === 'anticipos' ? anticiposPagos.filter(a => ids.includes(a.id))
+                : sueldosPagos.filter(s => ids.includes(s.id))
+              if (items.length === 0) return
+              const todasVisibles = items.every(i => i.visible_contable === true)
+              const nuevoValor = !todasVisibles
+              try {
+                if (origen === 'facturas') {
+                  const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+                    .update({ visible_contable: nuevoValor }).in('id', ids)
+                  if (error) throw error
+                  setFacturasPagos(prev => prev.map(f => ids.includes(f.id) ? { ...f, visible_contable: nuevoValor } as any : f))
+                } else if (origen === 'templates') {
+                  const { error } = await supabase.from('cuotas_egresos_sin_factura')
+                    .update({ visible_contable: nuevoValor }).in('id', ids)
+                  if (error) throw error
+                  setTemplatesPagos(prev => prev.map(t => ids.includes(t.id) ? { ...t, visible_contable: nuevoValor } : t))
+                } else if (origen === 'anticipos') {
+                  const { error } = await supabase.from('anticipos_proveedores')
+                    .update({ visible_contable: nuevoValor }).in('id', ids)
+                  if (error) throw error
+                  setAnticiposPagos(prev => prev.map(a => ids.includes(a.id) ? { ...a, visible_contable: nuevoValor } : a))
+                } else {
+                  const { error } = await supabase.from('sueldos_pagos')
+                    .update({ visible_contable: nuevoValor }).in('id', ids)
+                  if (error) throw error
+                  setSueldosPagos(prev => prev.map(s => ids.includes(s.id) ? { ...s, visible_contable: nuevoValor } : s))
+                }
+                toast.success(nuevoValor ? `${ids.length} marcado(s) como visibles para Ulises` : `${ids.length} oculto(s) de Ulises`)
+              } catch (err: any) {
+                toast.error(`Error al actualizar visible_contable: ${err?.message || 'desconocido'}`)
+              }
+            }
+
             // Función para cambiar estado de facturas seleccionadas
             const cambiarEstadoSeleccionadas = async (nuevoEstado: string, echeqFecha?: string) => {
               if (facturasSeleccionadasPagos.size === 0) {
@@ -8470,6 +8512,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           {accionSecundaria.label} ({seleccionadasEnEsteBloque})
                         </Button>
                       )}
+                      {!esContable && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (() => {
+                        const sel = facturas.filter(f => facturasSeleccionadasPagos.has(f.id))
+                        const todasVisibles = sel.every(f => (f as any).visible_contable === true)
+                        return (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-cyan-500 text-cyan-700 hover:bg-cyan-50"
+                            onClick={() => toggleVisibleContable('facturas', sel.map(f => f.id))}
+                            title="Hacer visible/oculto para Ulises (rol contable)"
+                          >
+                            {todasVisibles ? '🚫 Ocultar Ulises' : '👁 Visible Ulises'} ({sel.length})
+                          </Button>
+                        )
+                      })()}
                       {puedeAgrupar && (
                         <Button
                           size="sm"
@@ -8960,6 +9017,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           {accionSecundaria.label} ({seleccionadasEnEsteBloque})
                         </Button>
                       )}
+                      {!esContable && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (() => {
+                        const sel = templates.filter(t => templatesSeleccionadosPagos.has(t.id))
+                        const todasVisibles = sel.every(t => t.visible_contable === true)
+                        return (
+                          <Button size="sm" variant="outline" className="border-cyan-500 text-cyan-700 hover:bg-cyan-50"
+                            onClick={() => toggleVisibleContable('templates', sel.map(t => t.id))}
+                            title="Hacer visible/oculto para Ulises (rol contable)">
+                            {todasVisibles ? '🚫 Ocultar Ulises' : '👁 Visible Ulises'} ({sel.length})
+                          </Button>
+                        )
+                      })()}
                       {puedeAgruparTemplates && (
                         <Button size="sm" variant="outline" onClick={agruparTemplates} className="border-purple-500 text-purple-700 hover:bg-purple-50" title="Agrupar en un solo pago">
                           🔗 Agrupar ({seleccionadasTemplatesActivas.length})
@@ -9283,6 +9351,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         {accionSecundaria.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
                       </Button>
                     )}
+                    {!esContable && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (() => {
+                      const sel = lista.filter(a => anticiposSeleccionadosPagos.has(a.id))
+                      const todasVisibles = sel.every(a => a.visible_contable === true)
+                      return (
+                        <Button size="sm" variant="outline" className="border-cyan-500 text-cyan-700 hover:bg-cyan-50"
+                          onClick={() => toggleVisibleContable('anticipos', sel.map(a => a.id))}
+                          title="Hacer visible/oculto para Ulises (rol contable)">
+                          {todasVisibles ? '🚫 Ocultar Ulises' : '👁 Visible Ulises'} ({sel.length})
+                        </Button>
+                      )
+                    })()}
                     <Badge variant="outline" className="text-lg px-3 py-1">
                       Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                     </Badge>
@@ -9368,7 +9447,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             const subtotalSueldosPreparado = sueldosPreparado.reduce((s, p) => s + (p.monto || 0), 0)
             const subtotalSueldosPendiente = sueldosPendiente.reduce((s, p) => s + (p.monto || 0), 0)
 
-            const renderTablaSueldos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }) => (
+            const renderTablaSueldos = (lista: any[], titulo: string, subtotal: number, mostrarCheckbox: boolean = true, accionBoton?: { label: string, estado: string }, accionSecundaria?: { label: string, estado: string }) => (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -9390,6 +9469,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         {accionBoton.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
                       </Button>
                     )}
+                    {accionSecundaria && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          const ids = Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id))
+                          await supabase.from('sueldos_pagos').update({ estado: accionSecundaria.estado }).in('id', ids)
+                          setSueldosPagos(prev => prev.map(s => ids.includes(s.id) ? { ...s, estado: accionSecundaria.estado } : s))
+                          setSueldosSeleccionadosPagos(new Set())
+                        }}
+                        className="border-green-500 text-green-700 hover:bg-green-50"
+                      >
+                        {accionSecundaria.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
+                      </Button>
+                    )}
+                    {!esContable && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (() => {
+                      const sel = lista.filter(s => sueldosSeleccionadosPagos.has(s.id))
+                      const todasVisibles = sel.every(s => s.visible_contable === true)
+                      return (
+                        <Button size="sm" variant="outline" className="border-cyan-500 text-cyan-700 hover:bg-cyan-50"
+                          onClick={() => toggleVisibleContable('sueldos', sel.map(s => s.id))}
+                          title="Hacer visible/oculto para Ulises (rol contable)">
+                          {todasVisibles ? '🚫 Ocultar Ulises' : '👁 Visible Ulises'} ({sel.length})
+                        </Button>
+                      )
+                    })()}
                     {puedeAgruparSueldos && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
                       <Button size="sm" variant="outline" onClick={agruparSueldos} className="border-blue-500 text-blue-700 hover:bg-blue-50" title="Agrupar en un solo pago">
                         🔗 Agrupar ({seleccionadasSueldosActivas.length})
@@ -9627,7 +9732,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalAnticiposPagar,
                             true,
                             { label: 'Marcar como Preparado', estado: 'preparado' },
-                            undefined,
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined,
                             (a) => resetearAnticipo(a)
                           )}
                           {filtroOrigenPagos.arca && facturasPagar.length > 0 && renderTablaFacturas(
@@ -9637,7 +9742,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             'pagar',
                             true,
                             { label: 'Marcar como Preparado', estado: 'preparado' },
-                            undefined,
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined,
                             (f) => revertirFacturaAPendiente(f)
                           )}
                           {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
@@ -9646,7 +9751,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalTemplatesPagar,
                             true,
                             { label: 'Marcar como Preparado', estado: 'preparado' },
-                            undefined,
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined,
                             'pagar',
                             (t) => revertirTemplateAPendiente(t)
                           )}
@@ -9655,7 +9760,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             '📋 Pagar',
                             subtotalSueldosPagar,
                             true,
-                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'conciliado' } : undefined
                           )}
                         </>
                       )
@@ -9731,7 +9837,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             '⏳ Pendiente',
                             subtotalAnticiposPendiente,
                             true,
-                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                            { label: 'Marcar como Pagar', estado: 'pagar' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined
                           )}
                           {filtroOrigenPagos.arca && facturasPendiente.length > 0 && renderTablaFacturas(
                             facturasPendiente,
@@ -9739,7 +9846,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalPendiente,
                             'pendiente',
                             true,
-                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                            { label: 'Marcar como Pagar', estado: 'pagar' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined
                           )}
                           {filtroOrigenPagos.template && templatesPendiente.length > 0 && renderTablaTemplates(
                             templatesPendiente,
@@ -9747,7 +9855,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalTemplatesPendiente,
                             true,
                             { label: 'Marcar como Pagar', estado: 'pagar' },
-                            undefined,
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined,
                             'pendiente'
                           )}
                           {filtroOrigenPagos.sueldo && sueldosPendiente.length > 0 && renderTablaSueldos(
@@ -9755,7 +9863,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             '⏳ Pendiente',
                             subtotalSueldosPendiente,
                             true,
-                            { label: 'Marcar como Pagar', estado: 'pagar' }
+                            { label: 'Marcar como Pagar', estado: 'pagar' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'conciliado' } : undefined
                           )}
                         </>
                       )
@@ -9820,7 +9929,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalPagar,
                             'pagar',
                             true,
-                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined
                           )}
                           {filtroOrigenPagos.template && templatesPagar.length > 0 && renderTablaTemplates(
                             templatesPagar,
@@ -9828,7 +9938,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             subtotalTemplatesPagar,
                             true,
                             { label: 'Marcar como Preparado', estado: 'preparado' },
-                            undefined,
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'pagado' } : undefined,
                             'pagar'
                           )}
                           {filtroOrigenPagos.sueldo && sueldosPagar.length > 0 && renderTablaSueldos(
@@ -9836,7 +9946,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             '📋 Pagar',
                             subtotalSueldosPagar,
                             true,
-                            { label: 'Marcar como Preparado', estado: 'preparado' }
+                            { label: 'Marcar como Preparado', estado: 'preparado' },
+                            !esContable ? { label: '✅ Marcar como Pagado', estado: 'conciliado' } : undefined
                           )}
                         </>
                       )
