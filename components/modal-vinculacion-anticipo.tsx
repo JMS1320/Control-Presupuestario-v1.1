@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import type { VinculacionController } from "@/hooks/useVinculacionAnticipo"
 
 const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
@@ -18,8 +19,11 @@ const fmtFecha = (f: string) => {
 export function ModalVinculacionAnticipo({ controller }: { controller: VinculacionController }) {
   const {
     modalVinculacion, anticipoParaVincular, candidatosActivos, facturaElegida,
-    pasoWizard, calculo, vinculando, extractoInfo,
+    pasoWizard, calculo, vinculando, extractoInfo, motivoExterno,
+    conflictoCuenta, cuentaPreferida,
     onSeleccionarFactura, avanzarAConfirmacion, volverASeleccion, confirmarVinculacion, cerrarModal,
+    iniciarMarcaExterno, volverDeExterno, confirmarMarcaExterno, setMotivoExterno,
+    setCuentaPreferida,
   } = controller
 
   return (
@@ -28,7 +32,11 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
         <DialogHeader>
           <DialogTitle>🔗 Vincular Anticipo a Factura</DialogTitle>
           <DialogDescription>
-            {pasoWizard === 'seleccion' ? 'Paso 1 — Seleccioná la factura correspondiente' : 'Paso 2 — Confirmá la vinculación'}
+            {pasoWizard === 'seleccion'
+              ? 'Paso 1 — Seleccioná la factura correspondiente'
+              : pasoWizard === 'confirmacion'
+                ? 'Paso 2 — Confirmá la vinculación'
+                : 'Marcar como vinculado externamente'}
           </DialogDescription>
         </DialogHeader>
 
@@ -75,6 +83,38 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                   </div>
                 )}
 
+                {/* Warning: conflicto de cuenta contable FC vs anticipo */}
+                {conflictoCuenta && facturaElegida && (
+                  <div className="bg-orange-50 border border-orange-300 rounded-lg p-3 text-sm space-y-2">
+                    <div className="font-semibold text-orange-900">⚠️ Cuentas contables diferentes</div>
+                    <div className="text-xs text-gray-700">
+                      La FC y el anticipo tienen cuentas contables distintas. Elegí cuál se conserva al vincular:
+                    </div>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="cuenta-preferida"
+                          value="fc"
+                          checked={cuentaPreferida === 'fc'}
+                          onChange={() => setCuentaPreferida('fc')}
+                        />
+                        <span>Conservar cuenta de la <strong>FC</strong>: <code className="bg-white px-1 rounded">{conflictoCuenta.fc}</code></span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="cuenta-preferida"
+                          value="anticipo"
+                          checked={cuentaPreferida === 'anticipo'}
+                          onChange={() => setCuentaPreferida('anticipo')}
+                        />
+                        <span>Usar cuenta del <strong>anticipo</strong>: <code className="bg-white px-1 rounded">{conflictoCuenta.anticipo}</code></span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 {/* Preview cálculo inline */}
                 {calculo && facturaElegida && (() => {
                   const fac = candidatosActivos.find(f => f.id === facturaElegida)
@@ -109,6 +149,60 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                     Siguiente →
                   </Button>
                   <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
+                </div>
+
+                <div className="pt-1 border-t mt-2">
+                  <button
+                    type="button"
+                    onClick={iniciarMarcaExterno}
+                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                  >
+                    No tengo la FC en el sistema → marcar como vinculado externamente
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* PASO EXTERNO: explicación obligatoria */}
+            {pasoWizard === 'externo' && (
+              <>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-2">
+                  <div className="font-semibold">📝 Marcar como vinculado externamente</div>
+                  <p className="text-xs text-gray-600">
+                    Usá esta opción si el anticipo fue aplicado contra una factura que <strong>no está cargada en la app</strong>
+                    {' '}(p.ej. una FC del sistema anterior). El anticipo dejará de aparecer en la alerta de vinculación pendiente.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Explicación <span className="text-red-600">*</span>
+                  </label>
+                  <Textarea
+                    value={motivoExterno}
+                    onChange={(e) => setMotivoExterno(e.target.value)}
+                    placeholder="Detalle de la FC externa (nro, fecha, monto, etc.)"
+                    rows={4}
+                    disabled={vinculando}
+                    className="text-sm"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Se guarda en la descripción del anticipo para auditoría.
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" onClick={volverDeExterno} disabled={vinculando}>
+                    ← Atrás
+                  </Button>
+                  <Button
+                    className="flex-1 bg-gray-700 hover:bg-gray-800"
+                    disabled={vinculando || !motivoExterno.trim()}
+                    onClick={confirmarMarcaExterno}
+                  >
+                    {vinculando ? 'Guardando...' : '✅ Confirmar externo'}
+                  </Button>
+                  <Button variant="outline" onClick={cerrarModal} disabled={vinculando}>Cancelar</Button>
                 </div>
               </>
             )}

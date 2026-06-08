@@ -3317,6 +3317,45 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-08: Columna `nro_cuenta` en `anticipos_proveedores` + estado `'externo'`**
+
+#### **🎯 Motivo:**
+
+Dos mejoras complementarias en anticipos:
+
+1. **Cuenta contable opcional en anticipos**: permite que cuando se vincule a una factura sin cuenta, la FC herede la cuenta del anticipo (mismo patrón que `sicore/monto_sicore/tipo_sicore`). También sirve para que al conciliar el movimiento bancario del anticipo, el extracto herede la cuenta directamente (sin pasar por `categ='ANTICIPO'`).
+
+2. **Estado `'externo'`**: cierre limpio para anticipos que fueron usados contra una factura que NO está en la app (sistema viejo, FC previa al control). Antes quedaban indefinidamente como `pendiente_vincular` molestando la alerta de Vista Principal.
+
+#### **🔧 DDL aplicado:**
+
+```sql
+ALTER TABLE public.anticipos_proveedores
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20);
+
+COMMENT ON COLUMN public.anticipos_proveedores.nro_cuenta IS
+'Cuenta contable opcional del anticipo. Referencia lógica a cuentas_contables.nro_cuenta (sin FK formal).';
+```
+
+**No se agregan columnas para `'externo'`**: el valor es un string libre en el VARCHAR `estado`, y la explicación obligatoria se persiste en el campo `descripcion` existente.
+
+#### **⚠️ Si reconstruís la BD:**
+
+Estos cambios **NO están en el backup original**. Ejecutar el ALTER después de los scripts de estructura.
+
+#### **🎨 Código asociado:**
+
+- `hooks/useVinculacionAnticipo.ts` — herencia bidireccional FC↔anticipo + warning si difieren cuentas
+- `components/modal-vinculacion-anticipo.tsx` — botón "No tengo la FC en el sistema" + mini-modal textarea required
+- `components/vista-principal.tsx` — query alerta excluye `'externo'` (preserva trato actual de `'parcial'`); alta de anticipo con selector cuenta opcional
+- `components/vista-anticipos.tsx` — columna cuenta + edición inline + chip filtro "Mostrar externos" off-default + "Volver a pendiente"
+- `hooks/useMotorConciliacion.ts` — propagación de `nro_cuenta` del anticipo al extracto
+- `components/modal-asignacion-manual.tsx` (camino "Anticipo") — precarga `nro_cuenta` del anticipo
+
+**Documentación:** `memory/reference_anticipos_nro_cuenta_y_externo.md`
+
+---
+
 ### **2026-05-27: Nueva tabla maestra `centros_costo`**
 
 #### **🎯 Motivo:**

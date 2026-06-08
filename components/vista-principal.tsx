@@ -65,6 +65,7 @@ export function VistaPrincipal() {
         .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado')
         .is('factura_id', null)
         .neq('estado', 'vinculado')
+        .neq('estado', 'externo')
         .eq('tipo', 'pago')
         .order('fecha_pago', { ascending: false })
 

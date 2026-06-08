@@ -18,6 +18,7 @@ export interface AnticipoVinculable {
   fecha_pago: string
   factura_id: string | null
   descripcion: string | null
+  nro_cuenta?: string | null
 }
 
 export interface FacturaCandidato {
@@ -28,6 +29,7 @@ export interface FacturaCandidato {
   fecha_emision: string
   monto_a_abonar: number
   monto_sicore: number | null
+  nro_cuenta?: string | null
 }
 
 export interface CalcVinculacion {
@@ -47,7 +49,7 @@ export async function buscarFacturasCandidatas(cuit: string): Promise<FacturaCan
   const { data } = await supabase
     .schema('msa')
     .from('comprobantes_arca')
-    .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado, monto_a_abonar, monto_sicore')
+    .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado, monto_a_abonar, monto_sicore, nro_cuenta')
     .eq('cuit', cuit)
     // Excluir pagadas/conciliadas (sin saldo que reducir) y anteriores (históricas, no se muestran en ARCA)
     .not('estado', 'in', '("pagado","conciliado","anterior")')
@@ -74,10 +76,14 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
   const [anticipoParaVincular, setAnticipoParaVincular] = useState<AnticipoVinculable | null>(null)
   const [candidatosActivos, setCandidatosActivos] = useState<FacturaCandidato[]>([])
   const [facturaElegida, setFacturaElegida] = useState<string>('')
-  const [pasoWizard, setPasoWizard] = useState<'seleccion' | 'confirmacion'>('seleccion')
+  const [pasoWizard, setPasoWizard] = useState<'seleccion' | 'confirmacion' | 'externo'>('seleccion')
   const [calculo, setCalculo] = useState<CalcVinculacion | null>(null)
   const [vinculando, setVinculando] = useState(false)
   const [extractoInfo, setExtractoInfo] = useState<{ tabla: string, fecha: string, monto: number, estado: string } | null>(null)
+  const [motivoExterno, setMotivoExterno] = useState<string>('')
+  // Conflicto de cuenta contable cuando FC y anticipo tienen cuentas distintas
+  const [conflictoCuenta, setConflictoCuenta] = useState<{ fc: string, anticipo: string } | null>(null)
+  const [cuentaPreferida, setCuentaPreferida] = useState<'fc' | 'anticipo'>('fc')
 
   const abrirVinculacion = async (anticipo: AnticipoVinculable, candidatos: FacturaCandidato[]) => {
     setAnticipoParaVincular(anticipo)
@@ -154,6 +160,16 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     const fac = candidatosActivos.find(f => f.id === facturaId)
     if (!fac) return
 
+    // Detectar conflicto de cuenta contable
+    const fcCuenta = fac.nro_cuenta || null
+    const antCuenta = anticipoParaVincular.nro_cuenta || null
+    if (fcCuenta && antCuenta && fcCuenta !== antCuenta) {
+      setConflictoCuenta({ fc: fcCuenta, anticipo: antCuenta })
+      setCuentaPreferida('fc') // default conservador: gana la cuenta ya asignada en la FC
+    } else {
+      setConflictoCuenta(null)
+    }
+
     const sicore = anticipoParaVincular.monto_sicore || 0
     const descuento = anticipoParaVincular.descuento_aplicado || 0
     // ¿La factura ya tiene SICORE propio? Entonces su monto_a_abonar ya está neto de retención.
@@ -216,6 +232,27 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
         herenciaComun.detalle = anticipoParaVincular.descripcion
       }
 
+      // Herencia de cuenta contable (nro_cuenta) — bidireccional
+      // Reglas:
+      //   FC sin cuenta + anticipo con cuenta → FC hereda del anticipo
+      //   FC con cuenta + anticipo sin cuenta → anticipo hereda hacia atrás (por si se concilia después)
+      //   ambos con cuenta y difieren → usuario eligió en el modal (cuentaPreferida)
+      const fcCuenta = fac.nro_cuenta || null
+      const antCuenta = anticipoParaVincular.nro_cuenta || null
+      let cuentaFinal: string | null = null
+      if (fcCuenta && antCuenta) {
+        cuentaFinal = cuentaPreferida === 'anticipo' ? antCuenta : fcCuenta
+      } else {
+        cuentaFinal = fcCuenta || antCuenta
+      }
+      // Si la FC no tiene la cuenta final → setearla
+      const fcDebeActualizarCuenta = cuentaFinal && fcCuenta !== cuentaFinal
+      if (fcDebeActualizarCuenta) {
+        herenciaComun.nro_cuenta = cuentaFinal
+      }
+      // Si el anticipo no tiene la cuenta final → setearla (herencia hacia atrás)
+      const anticipoDebeActualizarCuenta = cuentaFinal && antCuenta !== cuentaFinal
+
       if (calculo.caso === 'A') {
         // Factura completamente cubierta
         // Si el extracto ya está conciliado → FC = conciliado (pago ya pasó por banco)
@@ -247,12 +284,14 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
       }
 
       // Vincular anticipo: Caso A → vinculado (desaparece), Caso B → parcial (permanece)
+      const updateAnticipo: Record<string, any> = {
+        factura_id: facturaElegida,
+        estado: calculo.caso === 'A' ? 'vinculado' : 'parcial',
+      }
+      if (anticipoDebeActualizarCuenta) updateAnticipo.nro_cuenta = cuentaFinal
       const { error: errAnticipo } = await supabase
         .from('anticipos_proveedores')
-        .update({
-          factura_id: facturaElegida,
-          estado: calculo.caso === 'A' ? 'vinculado' : 'parcial',
-        })
+        .update(updateAnticipo)
         .eq('id', anticipoParaVincular.id)
       if (errAnticipo) throw errAnticipo
 
@@ -377,6 +416,56 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     setFacturaElegida('')
     setCalculo(null)
     setPasoWizard('seleccion')
+    setMotivoExterno('')
+    setConflictoCuenta(null)
+    setCuentaPreferida('fc')
+  }
+
+  // Modo externo: el anticipo se vinculó a una FC que no está en la app
+  const iniciarMarcaExterno = () => {
+    setMotivoExterno('')
+    setPasoWizard('externo')
+  }
+
+  const volverDeExterno = () => {
+    setMotivoExterno('')
+    setPasoWizard('seleccion')
+  }
+
+  const confirmarMarcaExterno = async () => {
+    if (!anticipoParaVincular) return
+    const motivo = motivoExterno.trim()
+    if (!motivo) {
+      toast.error('La explicación es obligatoria para marcar como externo')
+      return
+    }
+    setVinculando(true)
+    try {
+      // Guardamos la explicación en `descripcion` (sin sumar columnas).
+      // Si el anticipo ya tenía descripcion, la concatenamos para no perder el dato original.
+      const descActual = (anticipoParaVincular.descripcion || '').trim()
+      const descNueva = descActual ? `${descActual}\n${motivo}` : motivo
+
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({
+          estado: 'externo',
+          descripcion: descNueva,
+        })
+        .eq('id', anticipoParaVincular.id)
+      if (error) throw error
+
+      toast.success('Anticipo marcado como vinculado externamente')
+      setModalVinculacion(false)
+      setAnticipoParaVincular(null)
+      setMotivoExterno('')
+      setPasoWizard('seleccion')
+      await onVinculado?.()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    } finally {
+      setVinculando(false)
+    }
   }
 
   return {
@@ -389,6 +478,9 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     calculo,
     vinculando,
     extractoInfo,
+    motivoExterno,
+    conflictoCuenta,
+    cuentaPreferida,
     // acciones
     abrirVinculacion,
     onSeleccionarFactura,
@@ -396,6 +488,11 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     volverASeleccion,
     confirmarVinculacion,
     cerrarModal,
+    iniciarMarcaExterno,
+    volverDeExterno,
+    confirmarMarcaExterno,
+    setMotivoExterno,
+    setCuentaPreferida,
   }
 }
 

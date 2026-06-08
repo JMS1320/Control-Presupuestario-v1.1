@@ -184,11 +184,15 @@ export function VistaCashFlow() {
     monto: '',
     fecha: '',
     descripcion: '',
-    estado_pago: 'pagado'
+    estado_pago: 'pagado',
+    nro_cuenta: null as string | null,
+    categ: null as string | null,
   })
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
   const [cargandoAnticipos, setCargandoAnticipos] = useState(false)
+  const [mostrarAnticiposExternos, setMostrarAnticiposExternos] = useState(false)
+  const [editandoCuentaAnticipoId, setEditandoCuentaAnticipoId] = useState<string | null>(null)
 
   // Wizard de vinculación anticipo → factura (lógica compartida con Vista Principal)
   const vincAnticipo = useVinculacionAnticipo(async () => {
@@ -1062,7 +1066,7 @@ export function VistaCashFlow() {
 
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
-    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado' })
+    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null })
     setTabAnticipo('nuevo')
     setModalAnticipo(true)
     cargarAnticiposExistentes()
@@ -1379,7 +1383,8 @@ export function VistaCashFlow() {
           fecha_pago: nuevoAnticipo.fecha,
           descripcion: nuevoAnticipo.descripcion || null,
           estado: 'pendiente_vincular',
-          estado_pago: nuevoAnticipo.estado_pago
+          estado_pago: nuevoAnticipo.estado_pago,
+          nro_cuenta: nuevoAnticipo.nro_cuenta || null,
         })
         .select('id')
 
@@ -1400,12 +1405,13 @@ export function VistaCashFlow() {
         fecha_pago: nuevoAnticipo.fecha,
         factura_id: null,
         descripcion: nuevoAnticipo.descripcion || null,
+        nro_cuenta: nuevoAnticipo.nro_cuenta || null,
       } : null
 
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
       toast.success(`${tipoLabel} registrado con estado "${nuevoAnticipo.estado_pago}".`)
 
-      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado' })
+      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null })
       await cargarDatos()
       await cargarAnticiposExistentes()
 
@@ -1457,6 +1463,38 @@ export function VistaCashFlow() {
     }
     setModalAnticipo(false)
     await vincAnticipo.abrirVinculacion(a as AnticipoVinculable, candidatos)
+  }
+
+  // Actualizar cuenta contable de un anticipo
+  const actualizarCuentaAnticipo = async (anticipoId: string, nroCuenta: string | null) => {
+    try {
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({ nro_cuenta: nroCuenta })
+        .eq('id', anticipoId)
+      if (error) throw error
+      toast.success(nroCuenta ? 'Cuenta contable actualizada' : 'Cuenta contable removida')
+      setEditandoCuentaAnticipoId(null)
+      await cargarAnticiposExistentes()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    }
+  }
+
+  // Revertir un anticipo marcado como 'externo' a 'pendiente_vincular'
+  const revertirAnticipoExterno = async (a: any) => {
+    if (!window.confirm(`¿Volver el anticipo de ${a.nombre_proveedor} a "pendiente de vincular"?\n\nSe usa cuando lo marcaste como externo por error.`)) return
+    try {
+      const { error } = await supabase
+        .from('anticipos_proveedores')
+        .update({ estado: 'pendiente_vincular' })
+        .eq('id', a.id)
+      if (error) throw error
+      toast.success('Anticipo revertido a pendiente de vincular')
+      await cargarAnticiposExistentes()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    }
   }
 
   const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string) => {
@@ -2936,6 +2974,26 @@ export function VistaCashFlow() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label>Cuenta contable (opcional)</Label>
+                  <SelectorCuentaContable
+                    value={nuevoAnticipo.categ}
+                    onSelect={(cuenta) => setNuevoAnticipo(prev => ({
+                      ...prev,
+                      categ: cuenta?.categ || null,
+                      nro_cuenta: cuenta?.nro_cuenta || null,
+                    }))}
+                    cuitProveedor={nuevoAnticipo.cuit || null}
+                    autoFocus={false}
+                    mostrarSinAsignar={true}
+                    placeholder="Sin cuenta — se hereda de la FC al vincular"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Si lo dejás sin cuenta, al vincular a una FC el anticipo hereda la cuenta de la FC.
+                    Si lo cargás con cuenta y la FC no tiene, la FC la hereda del anticipo.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Estado</Label>
                   <Select
                     value={nuevoAnticipo.estado_pago}
@@ -2992,8 +3050,24 @@ export function VistaCashFlow() {
                   <div className="text-center py-8 text-gray-500">
                     No hay anticipos registrados
                   </div>
-                ) : (
+                ) : (() => {
+                  const externosCount = anticiposExistentes.filter(a => a.estado === 'externo').length
+                  const visibles = mostrarAnticiposExternos
+                    ? anticiposExistentes
+                    : anticiposExistentes.filter(a => a.estado !== 'externo')
+                  return (
                   <div className="overflow-x-auto">
+                    <div className="flex items-center justify-end mb-2 gap-2 text-xs">
+                      <label className="flex items-center gap-1 cursor-pointer text-gray-600 select-none">
+                        <input
+                          type="checkbox"
+                          checked={mostrarAnticiposExternos}
+                          onChange={(e) => setMostrarAnticiposExternos(e.target.checked)}
+                          className="rounded"
+                        />
+                        Mostrar externos {externosCount > 0 && <span className="text-gray-500">({externosCount})</span>}
+                      </label>
+                    </div>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50">
@@ -3001,6 +3075,7 @@ export function VistaCashFlow() {
                           <th className="px-2 py-2 text-left">Tipo</th>
                           <th className="px-2 py-2 text-left">Proveedor</th>
                           <th className="px-2 py-2 text-left">CUIT</th>
+                          <th className="px-2 py-2 text-left">Cuenta</th>
                           <th className="px-2 py-2 text-right">Monto</th>
                           <th className="px-2 py-2 text-right">Restante</th>
                           <th className="px-2 py-2 text-center">Pago</th>
@@ -3009,7 +3084,7 @@ export function VistaCashFlow() {
                         </tr>
                       </thead>
                       <tbody>
-                        {anticiposExistentes.map((a) => (
+                        {visibles.map((a) => (
                           <tr key={a.id} className="border-b hover:bg-gray-50">
                             <td className="px-2 py-2 whitespace-nowrap">
                               {a.fecha_pago ? new Date(a.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '-'}
@@ -3021,6 +3096,28 @@ export function VistaCashFlow() {
                             </td>
                             <td className="px-2 py-2">{a.nombre_proveedor}</td>
                             <td className="px-2 py-2 text-xs">{a.cuit_proveedor}</td>
+                            <td className="px-2 py-2 text-xs min-w-[160px]">
+                              {editandoCuentaAnticipoId === a.id ? (
+                                <SelectorCuentaContable
+                                  value={null}
+                                  onSelect={(cuenta) => actualizarCuentaAnticipo(a.id, cuenta?.nro_cuenta || null)}
+                                  onCancel={() => setEditandoCuentaAnticipoId(null)}
+                                  cuitProveedor={a.cuit_proveedor}
+                                  autoFocus={true}
+                                  mostrarSinAsignar={true}
+                                  placeholder="Buscar cuenta..."
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditandoCuentaAnticipoId(a.id)}
+                                  className="text-left hover:bg-gray-100 px-1 py-0.5 rounded w-full"
+                                  title="Click para editar cuenta contable"
+                                >
+                                  {a.nro_cuenta || <span className="text-gray-400 italic">— sin cuenta —</span>}
+                                </button>
+                              )}
+                            </td>
                             <td className="px-2 py-2 text-right whitespace-nowrap">
                               ${Number(a.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                             </td>
@@ -3049,12 +3146,14 @@ export function VistaCashFlow() {
                                 <Badge variant="outline" className={
                                   a.estado === 'vinculado' ? 'bg-green-50 text-green-700' :
                                   a.estado === 'parcial' ? 'bg-blue-50 text-blue-700' :
+                                  a.estado === 'externo' ? 'bg-gray-100 text-gray-700' :
                                   'bg-yellow-50 text-yellow-700'
                                 }>
                                   {a.estado === 'vinculado' ? 'Vinculado' :
-                                   a.estado === 'parcial' ? 'Parcial' : 'Pendiente'}
+                                   a.estado === 'parcial' ? 'Parcial' :
+                                   a.estado === 'externo' ? 'Externo' : 'Pendiente'}
                                 </Badge>
-                                {a.tipo === 'pago' && a.estado !== 'vinculado' && (
+                                {a.tipo === 'pago' && a.estado !== 'vinculado' && a.estado !== 'externo' && (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -3062,6 +3161,17 @@ export function VistaCashFlow() {
                                     onClick={() => vincularDesdeExistente(a)}
                                   >
                                     <Link2 className="h-3 w-3 mr-0.5" />Vincular
+                                  </Button>
+                                )}
+                                {a.estado === 'externo' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-xs px-2 text-gray-600 border-gray-200 hover:bg-gray-50"
+                                    onClick={() => revertirAnticipoExterno(a)}
+                                    title="Volver a pendiente de vincular"
+                                  >
+                                    ↩ Revertir
                                   </Button>
                                 )}
                               </div>
@@ -3074,7 +3184,8 @@ export function VistaCashFlow() {
                       </tbody>
                     </table>
                   </div>
-                )}
+                  )
+                })()}
               </div>
             </TabsContent>
           </Tabs>

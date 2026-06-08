@@ -575,7 +575,7 @@ export function useMotorConciliacion() {
                 // Buscar anticipo por monto (cualquier estado no vinculado) para guardar anticipo_id
                 const { data: anticiposMatch } = await supabase
                   .from('anticipos_proveedores')
-                  .select('id, factura_id, descripcion, monto, nombre_proveedor, estado, estado_pago')
+                  .select('id, factura_id, descripcion, monto, nombre_proveedor, estado, estado_pago, nro_cuenta')
                   .in('estado', ['pendiente_vincular', 'parcial'])
                   .order('fecha_pago', { ascending: true })
 
@@ -588,6 +588,17 @@ export function useMotorConciliacion() {
                 if (match) {
                   // Siempre guardar anticipo_id para trazabilidad
                   extraAnticipo.anticipo_id = match.id
+
+                  // Si el anticipo trae nro_cuenta, buscar categ correspondiente
+                  let categAnticipo: string | null = null
+                  if (match.nro_cuenta) {
+                    const { data: cta } = await supabase
+                      .from('cuentas_contables')
+                      .select('categ')
+                      .eq('nro_cuenta', match.nro_cuenta)
+                      .single()
+                    categAnticipo = cta?.categ || null
+                  }
 
                   if (match.factura_id) {
                     // Anticipo ya vinculado a FC → conciliar con datos de la FC
@@ -602,8 +613,11 @@ export function useMotorConciliacion() {
                       const esParcial = match.estado === 'parcial'
                       estadoRegla = 'conciliado'
                       extraAnticipo.comprobante_arca_id = fc.id
-                      extraAnticipo.categ = fc.categ || regla.categ
-                      if (fc.nro_cuenta) extraAnticipo.nro_cuenta = fc.nro_cuenta
+                      // C2: si el anticipo tiene cuenta y difiere de la FC, gana la del anticipo (también categ)
+                      const cuentaPropag = match.nro_cuenta || fc.nro_cuenta
+                      if (cuentaPropag) extraAnticipo.nro_cuenta = cuentaPropag
+                      // categ coincidente con la cuenta ganadora
+                      extraAnticipo.categ = (match.nro_cuenta ? categAnticipo : fc.categ) || regla.categ
                       extraAnticipo.detalle = match.descripcion || null
                       // FC number for comprobantes_pagados
                       const abrevFC = [1,6,11,51,201,206,211].includes(fc.tipo_comprobante) ? 'FC'
@@ -622,6 +636,11 @@ export function useMotorConciliacion() {
                     estadoRegla = 'auditar'
                     motivoRegla = 'Anticipo: requiere vinculación con factura ARCA'
                     extraAnticipo.detalle = match.descripcion || null
+                    // Si el anticipo trae cuenta contable, propagar al extracto (cuenta + categ)
+                    if (match.nro_cuenta) {
+                      extraAnticipo.nro_cuenta = match.nro_cuenta
+                      if (categAnticipo) extraAnticipo.categ = categAnticipo
+                    }
                     // Marcar anticipo como conciliado en banco (ya salió el dinero)
                     await supabase
                       .from('anticipos_proveedores')
