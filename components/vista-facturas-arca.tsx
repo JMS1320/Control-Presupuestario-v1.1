@@ -534,6 +534,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
+  // Modo edición/eliminación admin: habilita edición libre de todos los campos + delete real
+  const [modoEdicionAdmin, setModoEdicionAdmin] = useState(false)
+  const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
+  const [textoConfirmarEliminar, setTextoConfirmarEliminar] = useState('')
+  const [depsParaEliminar, setDepsParaEliminar] = useState<Map<string, any>>(new Map())
+  const [eliminandoFacturas, setEliminandoFacturas] = useState(false)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<{facturaId: string, columna: string, valor: any} | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
   const inputRefLocal = useRef<HTMLInputElement>(null)
@@ -606,6 +612,89 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   useEffect(() => {
     localStorage.setItem('facturas-arca-anchos-columnas', JSON.stringify(anchosColumnas))
   }, [anchosColumnas])
+
+  // Chequeo de dependencias de una factura (admin: aviso antes de editar/eliminar)
+  // Retorna lo que está vinculado a la FC para que el usuario decida.
+  const chequearDependenciasFC = async (facturaId: string) => {
+    try {
+      const [anticiposRes, sicoreRes, conciliacionesMsa, conciliacionesPam, conciliacionesPamCc, conciliacionesMa, fcRes] = await Promise.all([
+        supabase.from('anticipos_proveedores').select('id, monto').eq('factura_id', facturaId),
+        supabase.schema('msa').from('sicore_retenciones').select('id, ddjj_confirmada').eq('factura_id', facturaId),
+        supabase.from('msa_galicia').select('id').eq('comprobante_arca_id', facturaId),
+        supabase.from('pam_galicia').select('id').eq('comprobante_arca_id', facturaId),
+        supabase.from('pam_galicia_cc').select('id').eq('comprobante_arca_id', facturaId),
+        supabase.schema('ma').from('ma_galicia').select('id').eq('comprobante_arca_id', facturaId),
+        supabase.schema(schemaName).from('comprobantes_arca').select('ddjj_iva, estado').eq('id', facturaId).maybeSingle(),
+      ])
+      const conciliaciones =
+        (conciliacionesMsa.data?.length || 0) +
+        (conciliacionesPam.data?.length || 0) +
+        (conciliacionesPamCc.data?.length || 0) +
+        (conciliacionesMa.data?.length || 0)
+      const sicoreCount = sicoreRes.data?.length || 0
+      const sicoreDdjjConfirmada = (sicoreRes.data || []).some((s: any) => s.ddjj_confirmada)
+      return {
+        anticipos: anticiposRes.data?.length || 0,
+        sicore: sicoreCount,
+        sicoreDdjjConfirmada,
+        conciliaciones,
+        ddjjIva: fcRes.data?.ddjj_iva || null,
+        estado: fcRes.data?.estado || null,
+      }
+    } catch (err) {
+      console.warn('chequearDependenciasFC error:', err)
+      return { anticipos: 0, sicore: 0, sicoreDdjjConfirmada: false, conciliaciones: 0, ddjjIva: null, estado: null }
+    }
+  }
+
+  // Formato texto resumen de dependencias para alertas
+  const formatearDependencias = (deps: Awaited<ReturnType<typeof chequearDependenciasFC>>) => {
+    const items: string[] = []
+    if (deps.anticipos > 0) items.push(`• ${deps.anticipos} anticipo(s) vinculado(s)`)
+    if (deps.sicore > 0) items.push(`• ${deps.sicore} retención(es) SICORE${deps.sicoreDdjjConfirmada ? ' (¡DDJJ ya confirmada!)' : ''}`)
+    if (deps.conciliaciones > 0) items.push(`• ${deps.conciliaciones} movimiento(s) bancario(s) conciliado(s)`)
+    if (deps.ddjjIva === 'DDJJ OK') items.push('• DDJJ IVA ya cerrada (estado "DDJJ OK")')
+    else if (deps.ddjjIva === 'Imputado') items.push('• Imputada en un período de DDJJ IVA')
+    return items
+  }
+
+  // Abre el modal de eliminación: pre-carga las dependencias de cada FC seleccionada
+  const abrirModalEliminarSeleccionadas = async () => {
+    if (facturasSeleccionadasMasiva.size === 0) return
+    const ids = Array.from(facturasSeleccionadasMasiva)
+    const deps = new Map<string, any>()
+    for (const id of ids) {
+      deps.set(id, await chequearDependenciasFC(id))
+    }
+    setDepsParaEliminar(deps)
+    setTextoConfirmarEliminar('')
+    setMostrarModalEliminar(true)
+  }
+
+  // Ejecuta el DELETE real de las facturas seleccionadas
+  const ejecutarEliminacionMasiva = async () => {
+    const ids = Array.from(facturasSeleccionadasMasiva)
+    if (ids.length === 0) return
+    setEliminandoFacturas(true)
+    try {
+      const { error } = await supabase
+        .schema(schemaName)
+        .from('comprobantes_arca')
+        .delete()
+        .in('id', ids)
+      if (error) throw error
+      alert(`✅ ${ids.length} factura(s) eliminada(s) permanentemente.`)
+      setFacturasSeleccionadasMasiva(new Set())
+      setMostrarModalEliminar(false)
+      setTextoConfirmarEliminar('')
+      setDepsParaEliminar(new Map())
+      await cargarFacturas()
+    } catch (err) {
+      alert('❌ Error al eliminar: ' + (err as Error).message)
+    } finally {
+      setEliminandoFacturas(false)
+    }
+  }
 
   // Cargar facturas ARCA desde Supabase
   const cargarFacturas = async () => {
@@ -828,7 +917,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Funciones para edición inline
   const iniciarEdicion = (facturaId: string, columna: string, valor: any, event: React.MouseEvent) => {
-    if (!event.ctrlKey || !modoEdicion) return
+    // En modo admin: click simple alcanza. En modo normal: requiere Ctrl+Click.
+    if (modoEdicionAdmin) {
+      // sin verificación de Ctrl ni modoEdicion
+    } else {
+      if (!event.ctrlKey || !modoEdicion) return
+    }
     
     event.preventDefault()
     event.stopPropagation()
@@ -875,9 +969,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   const guardarCambio = async () => {
     if (!celdaEnEdicion) return
-    
+
     console.log('🔍 DEBUG guardarCambio:', { celdaEnEdicion, cuentasCargadas: cuentas.length })
-    
+
+    // Confirmación adicional en MODO ADMIN — pide "aceptar" y avisa dependencias relevantes
+    if (modoEdicionAdmin) {
+      const facturaActual = facturas.find(f => f.id === celdaEnEdicion.facturaId)
+      const valorAnterior = facturaActual ? (facturaActual as any)[celdaEnEdicion.columna] : '(?)'
+      const deps = await chequearDependenciasFC(celdaEnEdicion.facturaId)
+      const depsTexto = formatearDependencias(deps)
+      const camposCriticos = ['imp_total', 'monto_a_abonar', 'cuit', 'tipo_comprobante', 'punto_venta', 'numero_desde']
+      const esCampoCritico = camposCriticos.includes(celdaEnEdicion.columna)
+      const advertencia = (esCampoCritico && depsTexto.length > 0)
+        ? '\n\n⚠️ Esta FC tiene elementos vinculados que pueden quedar inconsistentes:\n' + depsTexto.join('\n')
+        : (depsTexto.length > 0 ? '\n\nInformación: la FC tiene vinculados:\n' + depsTexto.join('\n') : '')
+      const txt = window.prompt(
+        `MODO ADMIN — Cambiar campo "${celdaEnEdicion.columna}" en FC ${facturaActual?.denominacion_emisor || ''}\n\n` +
+        `De: ${valorAnterior ?? '(vacío)'}\n` +
+        `A:  ${celdaEnEdicion.valor ?? '(vacío)'}` +
+        advertencia +
+        `\n\nEscribí "aceptar" para confirmar:`
+      )
+      if (txt?.trim().toLowerCase() !== 'aceptar') {
+        setCeldaEnEdicion(null)
+        return
+      }
+    }
+
     // Si está editando cuenta_contable, validar si existe primero
     if (celdaEnEdicion.columna === 'cuenta_contable') {
       const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
@@ -1130,7 +1248,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
-    const esEditable = camposEditables.includes(columna as string) && factura.estado !== 'historico'
+    // En modo admin TODOS los campos son editables (incluso facturas históricas)
+    const esEditable = modoEdicionAdmin
+      ? true
+      : (camposEditables.includes(columna as string) && factura.estado !== 'historico')
     const esCeldaEnEdicion = celdaEnEdicion?.facturaId === factura.id && celdaEnEdicion?.columna === columna
     
     if (columna === 'cuenta_contable') {
@@ -5584,7 +5705,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       </div>
 
       {/* Tabs principales */}
-      <Tabs value={tabActivo} onValueChange={(value) => setTabActivo(value as 'facturas' | 'subdiarios' | 'historico' | 'asignacion')}>
+      <Tabs value={tabActivo} onValueChange={(value) => {
+        // Auto-OFF del modo admin al cambiar de tab (decisión A5)
+        if (modoEdicionAdmin) {
+          setModoEdicionAdmin(false)
+          setFacturasSeleccionadasMasiva(new Set())
+        }
+        setTabActivo(value as 'facturas' | 'subdiarios' | 'historico' | 'asignacion')
+      }}>
         <TabsList>
           <TabsTrigger value="facturas">Facturas</TabsTrigger>
           <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>
@@ -5594,6 +5722,41 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
         {/* Tab Content: Facturas */}
         <TabsContent value="facturas" className="space-y-6">
+          {modoEdicionAdmin && (
+            <div className="bg-red-50 border-2 border-red-400 rounded-lg p-3 flex items-center justify-between sticky top-0 z-30 shadow">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-2xl">🔧</span>
+                <div>
+                  <div className="font-bold text-red-800">MODO EDICIÓN / ELIMINACIÓN ACTIVO</div>
+                  <div className="text-xs text-red-700">
+                    Click en cualquier campo para editarlo. Seleccioná facturas con los checkboxes para eliminarlas.
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {facturasSeleccionadasMasiva.size > 0 && (
+                  <Button
+                    size="sm"
+                    onClick={abrirModalEliminarSeleccionadas}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    🗑️ Eliminar {facturasSeleccionadasMasiva.size} factura(s)
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setModoEdicionAdmin(false)
+                    setFacturasSeleccionadasMasiva(new Set())
+                  }}
+                  className="border-red-400 text-red-700 hover:bg-red-100"
+                >
+                  Salir del modo
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             {/* Búsqueda rápida */}
             <div className="relative flex-1 max-w-sm">
@@ -5668,6 +5831,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <Check className="mr-2 h-4 w-4" />
             {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
           </Button>
+
+          {/* Botón modo edición/eliminación admin (solo admin) */}
+          {!esContable && (
+            <Button
+              variant={modoEdicionAdmin ? "default" : "outline"}
+              onClick={() => {
+                if (modoEdicionAdmin) {
+                  setModoEdicionAdmin(false)
+                  setFacturasSeleccionadasMasiva(new Set())
+                  return
+                }
+                const ok = window.confirm(
+                  '⚠️ MODO EDICIÓN / ELIMINACIÓN ADMIN\n\n' +
+                  'Vas a habilitar la posibilidad de modificar TODOS los campos de las facturas y de ELIMINARLAS permanentemente.\n\n' +
+                  'Las facturas son la fuente de verdad fiscal y contable. Modificarlas o borrarlas puede romper:\n' +
+                  '  • Vinculaciones con anticipos\n' +
+                  '  • Retenciones SICORE\n' +
+                  '  • Conciliación bancaria\n' +
+                  '  • Declaraciones de IVA ya cerradas\n\n' +
+                  '¿Confirmás activar el modo?'
+                )
+                if (ok) setModoEdicionAdmin(true)
+              }}
+              className={modoEdicionAdmin ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-300 text-red-700 hover:bg-red-50"}
+              title="Solo admin — modifica o elimina facturas"
+            >
+              {modoEdicionAdmin ? '🔧 Salir Modo Admin' : '🔧 Modo Admin'}
+            </Button>
+          )}
 
           {/* Botón Panel SICORE */}
           <Button
@@ -6063,7 +6255,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               <Table style={{ minWidth: 'fit-content' }}>
                 <TableHeader className="sticky top-0 z-10 bg-white border-b">
                     <TableRow>
-                      {modoEdicionMasiva && (
+                      {(modoEdicionMasiva || modoEdicionAdmin) && (
                         <TableHead style={{ width: '50px', minWidth: '50px' }}>
                           <Checkbox
                             checked={facturasSeleccionadasMasiva.size === facturas.length && facturas.length > 0}
@@ -6104,7 +6296,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       return facturasDisplay.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={columnasVisiblesArray.length + (modoEdicionMasiva ? 1 : 0)}
+                          colSpan={columnasVisiblesArray.length + ((modoEdicionMasiva || modoEdicionAdmin) ? 1 : 0)}
                           className="h-24 text-center text-muted-foreground"
                         >
                           No hay facturas para mostrar
@@ -6116,10 +6308,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         return (
                         <TableRow key={factura.id} className={
                           facturasSeleccionadasMasiva.has(factura.id)
-                            ? 'bg-purple-50'
+                            ? (modoEdicionAdmin ? 'bg-red-50' : 'bg-purple-50')
                             : esUSD ? 'bg-amber-50' : ''
                         }>
-                          {modoEdicionMasiva && (
+                          {(modoEdicionMasiva || modoEdicionAdmin) && (
                             <TableCell style={{ width: '50px', minWidth: '50px' }}>
                               <Checkbox
                                 checked={facturasSeleccionadasMasiva.has(factura.id)}
@@ -6310,6 +6502,98 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             </Button>
             <Button onClick={manejarCrearCategoria}>
               Crear nueva categoría
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de confirmación — eliminación masiva (modo admin) */}
+      <Dialog open={mostrarModalEliminar} onOpenChange={(v) => {
+        if (eliminandoFacturas) return
+        setMostrarModalEliminar(v)
+        if (!v) { setTextoConfirmarEliminar(''); setDepsParaEliminar(new Map()) }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">⚠️ Eliminar facturas permanentemente</DialogTitle>
+            <DialogDescription>
+              Esta acción NO se puede deshacer. La factura desaparece de la BD junto con su vínculo a anticipos, SICORE y conciliaciones.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-3 my-3">
+            <div className="text-sm font-semibold">
+              Vas a eliminar {facturasSeleccionadasMasiva.size} factura(s):
+            </div>
+
+            <div className="border rounded-md max-h-[300px] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Fecha</th>
+                    <th className="px-2 py-1 text-left">Proveedor</th>
+                    <th className="px-2 py-1 text-right">Importe</th>
+                    <th className="px-2 py-1 text-left">Dependencias vinculadas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from(facturasSeleccionadasMasiva).map(id => {
+                    const fc = facturas.find(f => f.id === id)
+                    const deps = depsParaEliminar.get(id)
+                    const depsTexto = deps ? formatearDependencias(deps) : []
+                    return (
+                      <tr key={id} className="border-t">
+                        <td className="px-2 py-1 whitespace-nowrap">{fc?.fecha_emision || ''}</td>
+                        <td className="px-2 py-1">{fc?.denominacion_emisor || ''}</td>
+                        <td className="px-2 py-1 text-right whitespace-nowrap">
+                          ${Number(fc?.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-2 py-1 text-xs">
+                          {depsTexto.length === 0
+                            ? <span className="text-gray-400 italic">— sin dependencias —</span>
+                            : <ul className="list-none">{depsTexto.map((d, i) => <li key={i} className="text-orange-700">{d}</li>)}</ul>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="bg-red-50 border border-red-300 rounded p-3 text-xs text-red-900 space-y-1">
+              <div>• El DELETE es <strong>físico</strong> (no se puede deshacer).</div>
+              <div>• Si la FC tiene SICORE confirmado o DDJJ cerrada, vas a romper esos reportes.</div>
+              <div>• Anticipos vinculados quedarán huérfanos (factura_id apuntando a nada) — revisalos manualmente después.</div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t">
+              <label className="text-sm font-semibold">
+                Para confirmar, escribí <code className="bg-gray-100 px-1 rounded">aceptar</code>:
+              </label>
+              <Input
+                value={textoConfirmarEliminar}
+                onChange={(e) => setTextoConfirmarEliminar(e.target.value)}
+                placeholder="aceptar"
+                disabled={eliminandoFacturas}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setMostrarModalEliminar(false)}
+              disabled={eliminandoFacturas}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={ejecutarEliminacionMasiva}
+              disabled={eliminandoFacturas || textoConfirmarEliminar.trim().toLowerCase() !== 'aceptar'}
+            >
+              {eliminandoFacturas ? 'Eliminando...' : `🗑️ Eliminar ${facturasSeleccionadasMasiva.size} factura(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
