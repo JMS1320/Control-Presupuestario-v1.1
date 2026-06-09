@@ -1704,11 +1704,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
       }
 
-      // Bloque Monotributo: NO se toca (sigue funcionando como antes, solo tipo 11)
+      // Bloque Monotributo: 3 filas (Facturas C tipo 11 / NC C tipo 13 / Total Neto)
       const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
-      const totalFacturasC = facturasC.reduce((sum, f) => {
-        return sum + (Number(f.imp_total) || 0) * tcFactura(f)
-      }, 0)
+      const notasC = facturas.filter(f => f.tipo_comprobante === 13)
+      const totalFacturasC = facturasC.reduce((sum, f) => sum + (Number(f.imp_total) || 0) * tcFactura(f), 0)
+      const totalNotasC = notasC.reduce((sum, f) => sum + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
+      const totalNetoC = totalFacturasC - totalNotasC
 
       setSubtotales({
         ivaCompras: {
@@ -1716,6 +1717,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           nc: { ...sumNC, cantidad: facturasNC.length },
           neto: sumNeto,
         },
+        monotributo: {
+          fc: { total: totalFacturasC, cantidad: facturasC.length },
+          nc: { total: totalNotasC, cantidad: notasC.length },
+          neto: totalNetoC,
+        },
+        // Campos legacy para no romper otras referencias si existen
         facturas_c: totalFacturasC,
         cantidad_facturas_c: facturasC.length,
       })
@@ -5485,16 +5492,41 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
             </div>
 
-            {/* Bloque 2: Monotributo (Facturas C tipo 11) — sin tocar */}
-            {subtotales.cantidad_facturas_c > 0 && (
+            {/* Bloque 2: Monotributo — FC C (tipo 11) y NC C (tipo 13) con 3 filas */}
+            {(subtotales.monotributo?.fc?.cantidad > 0 || subtotales.monotributo?.nc?.cantidad > 0) && (() => {
+              const mfc = subtotales.monotributo.fc
+              const mnc = subtotales.monotributo.nc
+              const mneto = subtotales.monotributo.neto
+              return (
               <div>
-                <h4 className="font-medium mb-2 text-sm">📋 Monotributo — Facturas C (Tipo 11)</h4>
-                <div className="bg-red-50 p-3 rounded">
-                  <p className="text-gray-600">Total Facturas C ({subtotales.cantidad_facturas_c} facturas)</p>
-                  <p className="font-bold text-lg">{fmt(subtotales.facturas_c || 0)}</p>
+                <h4 className="font-medium mb-2 text-sm">📋 Monotributo — Facturas C (Tipo 11) y NC C (Tipo 13)</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Concepto</th>
+                        <th className="px-3 py-2 text-right font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-t">
+                        <td className="px-3 py-2">Facturas C{mfc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mfc.cantidad})</span>}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mfc.total || 0)}</td>
+                      </tr>
+                      <tr className="border-t">
+                        <td className="px-3 py-2">NC C{mnc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mnc.cantidad})</span>}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mnc.total || 0)}</td>
+                      </tr>
+                      <tr className="border-t bg-red-50 font-semibold">
+                        <td className="px-3 py-2">Total Neto (FC − NC)</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mneto || 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            )}
+              )
+            })()}
           </CardContent>
         </Card>
         )
