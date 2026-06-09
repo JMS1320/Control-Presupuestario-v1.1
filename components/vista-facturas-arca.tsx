@@ -1673,27 +1673,52 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       
       // Calcular subtotales (todos los importes en pesos: siempre TC de la factura, nunca tc_pago)
       const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
-      const totales = facturas.reduce((acc, f) => {
-        const tc = tcFactura(f)
-        acc.imp_total += (Number(f.imp_total) || 0) * tc
-        acc.iva += (Number(f.iva) || 0) * tc
-        acc.imp_neto_gravado += (Number(f.imp_neto_gravado) || 0) * tc
-        acc.imp_neto_no_gravado += (Number(f.imp_neto_no_gravado) || 0) * tc
-        acc.imp_op_exentas += (Number(f.imp_op_exentas) || 0) * tc
-        acc.otros_tributos += (Number(f.otros_tributos) || 0) * tc
-        return acc
-      }, {
-        imp_total: 0, iva: 0, imp_neto_gravado: 0,
-        imp_neto_no_gravado: 0, imp_op_exentas: 0, otros_tributos: 0
-      })
 
-      // Facturas C (tipo 11) por separado
+      // Bloque "Libro IVA Compras": TODOS los tipos EXCEPTO Factura C (tipo 11),
+      // que va en el bloque Monotributo aparte. Separamos FC (imp_total >= 0)
+      // de NC (imp_total < 0) para mostrar 3 filas: Facturas, NC, Total Neto.
+      const sumarBloque = (lista: any[], abs: boolean) => lista.reduce((acc, f) => {
+        const tc = tcFactura(f)
+        const sgn = (v: number) => (abs ? Math.abs(v) : v)
+        const ng = Number(f.imp_neto_gravado) || 0
+        const nng = Number(f.imp_neto_no_gravado) || 0
+        const opEx = Number(f.imp_op_exentas) || 0
+        acc.imp_total          += sgn(Number(f.imp_total) || 0) * tc
+        acc.iva                += sgn(Number(f.iva) || 0) * tc
+        acc.imp_neto_gravado   += sgn(ng) * tc
+        acc.exento_no_gravado  += sgn(nng + opEx) * tc
+        acc.otros_tributos     += sgn(Number(f.otros_tributos) || 0) * tc
+        return acc
+      }, { imp_total: 0, iva: 0, imp_neto_gravado: 0, exento_no_gravado: 0, otros_tributos: 0 })
+
+      const facturasNoMonotrib = facturas.filter(f => f.tipo_comprobante !== 11)
+      const facturasFC = facturasNoMonotrib.filter(f => (Number(f.imp_total) || 0) >= 0)
+      const facturasNC = facturasNoMonotrib.filter(f => (Number(f.imp_total) || 0) < 0)
+      const sumFC = sumarBloque(facturasFC, false)        // valores ya positivos
+      const sumNC = sumarBloque(facturasNC, true)         // abs para mostrar en positivo
+      const sumNeto = {                                    // Total = FC − |NC|
+        imp_total:         sumFC.imp_total         - sumNC.imp_total,
+        iva:               sumFC.iva               - sumNC.iva,
+        imp_neto_gravado:  sumFC.imp_neto_gravado  - sumNC.imp_neto_gravado,
+        exento_no_gravado: sumFC.exento_no_gravado - sumNC.exento_no_gravado,
+        otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
+      }
+
+      // Bloque Monotributo: NO se toca (sigue funcionando como antes, solo tipo 11)
       const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
       const totalFacturasC = facturasC.reduce((sum, f) => {
         return sum + (Number(f.imp_total) || 0) * tcFactura(f)
       }, 0)
 
-      setSubtotales({ ...totales, facturas_c: totalFacturasC, cantidad_facturas_c: facturasC.length })
+      setSubtotales({
+        ivaCompras: {
+          fc: { ...sumFC, cantidad: facturasFC.length },
+          nc: { ...sumNC, cantidad: facturasNC.length },
+          neto: sumNeto,
+        },
+        facturas_c: totalFacturasC,
+        cantidad_facturas_c: facturasC.length,
+      })
     } catch (error) {
       console.error('Error cargando período:', error)
     } finally {
@@ -5400,53 +5425,80 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         </CardContent>
       </Card>
 
-      {/* Subtotales del período */}
-      {subtotales && (
+      {/* Subtotales del período — estilo ARCA: 3 filas FC / NC / Total */}
+      {subtotales && (() => {
+        const fmt = (n: number) => `$${(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const fc = subtotales.ivaCompras?.fc
+        const nc = subtotales.ivaCompras?.nc
+        const neto = subtotales.ivaCompras?.neto
+        const cantFC = fc?.cantidad || 0
+        const cantNC = nc?.cantidad || 0
+        return (
         <Card>
           <CardHeader>
             <CardTitle>📈 Subtotales Período {periodoConsulta}</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-              <div className="bg-blue-50 p-3 rounded">
-                <p className="text-gray-600">Total General</p>
-                <p className="font-bold text-lg">${subtotales.imp_total.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="bg-green-50 p-3 rounded">
-                <p className="text-gray-600">IVA</p>
-                <p className="font-bold">${subtotales.iva.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="bg-yellow-50 p-3 rounded">
-                <p className="text-gray-600">Neto Gravado</p>
-                <p className="font-bold">${subtotales.imp_neto_gravado.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="bg-purple-50 p-3 rounded">
-                <p className="text-gray-600">Neto No Gravado</p>
-                <p className="font-bold">${subtotales.imp_neto_no_gravado.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="bg-indigo-50 p-3 rounded">
-                <p className="text-gray-600">Op. Exentas</p>
-                <p className="font-bold">${subtotales.imp_op_exentas.toLocaleString('es-AR')}</p>
-              </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <p className="text-gray-600">Otros Tributos</p>
-                <p className="font-bold">${subtotales.otros_tributos.toLocaleString('es-AR')}</p>
+          <CardContent className="space-y-6">
+
+            {/* Bloque 1: Libro IVA Compras */}
+            <div>
+              <h4 className="font-medium mb-2 text-sm">📒 Libro IVA Compras</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Concepto</th>
+                      <th className="px-3 py-2 text-right font-medium">Neto Gravado</th>
+                      <th className="px-3 py-2 text-right font-medium">Exento / No Gravado</th>
+                      <th className="px-3 py-2 text-right font-medium">IVA</th>
+                      <th className="px-3 py-2 text-right font-medium">Otros Tributos</th>
+                      <th className="px-3 py-2 text-right font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t">
+                      <td className="px-3 py-2">Facturas{cantFC > 0 && <span className="text-gray-500 text-xs ml-1">({cantFC})</span>}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(fc?.imp_neto_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(fc?.exento_no_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(fc?.iva || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(fc?.otros_tributos || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(fc?.imp_total || 0)}</td>
+                    </tr>
+                    <tr className="border-t">
+                      <td className="px-3 py-2">Notas de Crédito{cantNC > 0 && <span className="text-gray-500 text-xs ml-1">({cantNC})</span>}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(nc?.imp_neto_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(nc?.exento_no_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(nc?.iva || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(nc?.otros_tributos || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(nc?.imp_total || 0)}</td>
+                    </tr>
+                    <tr className="border-t bg-blue-50 font-semibold">
+                      <td className="px-3 py-2">Total Neto (FC − NC)</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(neto?.imp_neto_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(neto?.exento_no_gravado || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(neto?.iva || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(neto?.otros_tributos || 0)}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(neto?.imp_total || 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-            
-            {/* Facturas C separadas */}
+
+            {/* Bloque 2: Monotributo (Facturas C tipo 11) — sin tocar */}
             {subtotales.cantidad_facturas_c > 0 && (
-              <div className="mt-4 pt-4 border-t">
-                <h4 className="font-medium mb-2">📋 Facturas C (Tipo 11) - Apartado</h4>
+              <div>
+                <h4 className="font-medium mb-2 text-sm">📋 Monotributo — Facturas C (Tipo 11)</h4>
                 <div className="bg-red-50 p-3 rounded">
                   <p className="text-gray-600">Total Facturas C ({subtotales.cantidad_facturas_c} facturas)</p>
-                  <p className="font-bold text-lg">${subtotales.facturas_c.toLocaleString('es-AR')}</p>
+                  <p className="font-bold text-lg">{fmt(subtotales.facturas_c || 0)}</p>
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
-      )}
+        )
+      })()}
 
       {/* Tabla facturas del período */}
       {facturasPeriodo.length > 0 && (
