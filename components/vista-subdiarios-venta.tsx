@@ -8,9 +8,12 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, RefreshCw, Search, Pencil, Trash2, Eye, EyeOff, FileText, CheckCircle } from "lucide-react"
+import { Plus, RefreshCw, Search, Pencil, Trash2, Eye, EyeOff, FileText, CheckCircle, FileSpreadsheet, Printer } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import * as XLSX from "xlsx"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 import { ModalComprobanteVentaMsa, type ComprobanteVenta } from "./modal-comprobante-venta-msa"
 
 interface Props {
@@ -237,6 +240,256 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
     })
   }
 
+  // ════════════════════════════════════════════════════════════
+  // Generación Excel — Libro IVA Ventas
+  // (espejo del Libro IVA Compras, SIN columna Otros Tributos)
+  // ════════════════════════════════════════════════════════════
+
+  const fmtNum = (v: any) => {
+    if (v === 0 || v === null || v === undefined) return 0
+    return parseFloat(Number(v).toFixed(2))
+  }
+
+  const generarExcelLibroIvaVentas = () => {
+    if (comprobantes.length === 0 || !periodoConsulta) {
+      toast.error('No hay comprobantes para exportar')
+      return
+    }
+    try {
+      const [mes, año] = periodoConsulta.split('/')
+
+      // Detalle por comprobante
+      const datosExcel = comprobantes.map(c => {
+        const tipoDesc = tiposMap.get(c.tipo_comprobante)?.descripcion || ''
+        return {
+          'Fecha': c.fecha_liquidacion || '',
+          'Tipo': c.tipo_comprobante != null ? String(c.tipo_comprobante).padStart(3, '0') : '',
+          'Tipo Desc.': tipoDesc,
+          'Pto Vta': c.punto_venta || '',
+          'Número': c.numero_desde || '',
+          'Razón Social': c.denominacion_cliente || '',
+          'C.U.I.T.': c.cuit_cliente || '',
+          'Neto Gravado': fmtNum(c.imp_neto_gravado),
+          'Neto No Gravado': fmtNum(c.imp_neto_no_gravado),
+          'Op. Exentas': fmtNum(c.imp_op_exentas),
+          'Alícuota IVA': c.alicuota_iva != null ? Number(c.alicuota_iva) : '',
+          'IVA': fmtNum(c.iva),
+          'Imp. Total': fmtNum(c.imp_total),
+        }
+      })
+
+      // Subtotales (mismos cálculos que en la vista)
+      const sumar = (lista: any[], abs: boolean) => lista.reduce((acc, c) => {
+        const sgn = (v: number) => (abs ? Math.abs(v) : v)
+        acc.neto_gravado     += sgn(Number(c.imp_neto_gravado) || 0)
+        acc.neto_no_gravado  += sgn(Number(c.imp_neto_no_gravado) || 0)
+        acc.op_exentas       += sgn(Number(c.imp_op_exentas) || 0)
+        acc.iva              += sgn(Number(c.iva) || 0)
+        acc.imp_total        += sgn(Number(c.imp_total) || 0)
+        return acc
+      }, { neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, iva: 0, imp_total: 0 })
+
+      const sinMonotrib = comprobantes.filter(c => c.tipo_comprobante !== 11)
+      const fcs = sinMonotrib.filter(c => (Number(c.imp_total) || 0) >= 0)
+      const ncs = sinMonotrib.filter(c => (Number(c.imp_total) || 0) < 0)
+      const sFC = sumar(fcs, false)
+      const sNC = sumar(ncs, true)
+      const sNeto = {
+        neto_gravado: sFC.neto_gravado - sNC.neto_gravado,
+        neto_no_gravado: sFC.neto_no_gravado - sNC.neto_no_gravado,
+        op_exentas: sFC.op_exentas - sNC.op_exentas,
+        iva: sFC.iva - sNC.iva,
+        imp_total: sFC.imp_total - sNC.imp_total,
+      }
+
+      // Detalle por alícuota (agrupar por alicuota_iva del comprobante, signo + para FC, − para NC)
+      const desgloseAlic = new Map<string, { neto: number; iva: number }>()
+      comprobantes.forEach(c => {
+        if (c.tipo_comprobante === 11) return  // monotributo aparte
+        const alic = c.alicuota_iva != null ? Number(c.alicuota_iva) : 0
+        const key = String(alic)
+        const cur = desgloseAlic.get(key) || { neto: 0, iva: 0 }
+        const esNC = (Number(c.imp_total) || 0) < 0
+        const factor = esNC ? -1 : 1   // si NC, su valor en BD es negativo; queremos sumar al neto, pero el cálculo del Libro neto los resta
+        // Nota: como ng e iva en BD ya tienen signo, sumamos directo (queda con el signo correcto)
+        cur.neto += Number(c.imp_neto_gravado) || 0
+        cur.iva += Number(c.iva) || 0
+        desgloseAlic.set(key, cur)
+      })
+
+      const facC = comprobantes.filter(c => c.tipo_comprobante === 11)
+      const ncC = comprobantes.filter(c => c.tipo_comprobante === 13)
+      const totalFC_C = facC.reduce((s, c) => s + (Number(c.imp_total) || 0), 0)
+      const totalNC_C = ncC.reduce((s, c) => s + Math.abs(Number(c.imp_total) || 0), 0)
+
+      // Filas extras: tabla resumen
+      const filasExtras: any[] = [
+        {},
+        { 'Fecha': '— LIBRO IVA VENTAS —' },
+        { 'Fecha': 'Concepto', 'Tipo': 'Cant.', 'Neto Gravado': 'Neto Gravado', 'Neto No Gravado': 'Neto No Gravado', 'Op. Exentas': 'Op. Exentas', 'IVA': 'IVA', 'Imp. Total': 'Total' },
+        { 'Fecha': 'Facturas', 'Tipo': fcs.length, 'Neto Gravado': fmtNum(sFC.neto_gravado), 'Neto No Gravado': fmtNum(sFC.neto_no_gravado), 'Op. Exentas': fmtNum(sFC.op_exentas), 'IVA': fmtNum(sFC.iva), 'Imp. Total': fmtNum(sFC.imp_total) },
+        { 'Fecha': 'Notas de Crédito', 'Tipo': ncs.length, 'Neto Gravado': fmtNum(sNC.neto_gravado), 'Neto No Gravado': fmtNum(sNC.neto_no_gravado), 'Op. Exentas': fmtNum(sNC.op_exentas), 'IVA': fmtNum(sNC.iva), 'Imp. Total': fmtNum(sNC.imp_total) },
+        { 'Fecha': 'TOTAL NETO (FC − NC)', 'Tipo': '', 'Neto Gravado': fmtNum(sNeto.neto_gravado), 'Neto No Gravado': fmtNum(sNeto.neto_no_gravado), 'Op. Exentas': fmtNum(sNeto.op_exentas), 'IVA': fmtNum(sNeto.iva), 'Imp. Total': fmtNum(sNeto.imp_total) },
+        {},
+        { 'Fecha': '— DETALLE POR ALÍCUOTA —' },
+        { 'Fecha': 'Alícuota', 'Tipo': 'Neto $', 'Neto Gravado': 'IVA $' },
+        ...Array.from(desgloseAlic.entries()).sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])).map(([alic, v]) => ({
+          'Fecha': `Al ${alic}%`, 'Tipo': fmtNum(v.neto), 'Neto Gravado': fmtNum(v.iva)
+        })),
+      ]
+
+      // Bloque monotributo si aplica
+      if (facC.length > 0 || ncC.length > 0) {
+        filasExtras.push(
+          {},
+          { 'Fecha': '— MONOTRIBUTO —' },
+          { 'Fecha': 'Concepto', 'Tipo': 'Cant.', 'Imp. Total': 'Total' },
+          { 'Fecha': 'Facturas C (Tipo 11)', 'Tipo': facC.length, 'Imp. Total': fmtNum(totalFC_C) },
+          { 'Fecha': 'NC C (Tipo 13)', 'Tipo': ncC.length, 'Imp. Total': fmtNum(totalNC_C) },
+          { 'Fecha': 'TOTAL NETO (FC − NC)', 'Tipo': '', 'Imp. Total': fmtNum(totalFC_C - totalNC_C) },
+        )
+      }
+
+      const datosCompletos = [...datosExcel, ...filasExtras]
+      const ws = XLSX.utils.json_to_sheet(datosCompletos)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, `LIBRO IVA VENTAS ${mes}-${año}`)
+      const filename = `LIBRO IVA VENTAS ${empresa} ${año}-${mes}.xlsx`
+      XLSX.writeFile(wb, filename)
+      toast.success(`Excel generado: ${filename}`)
+    } catch (err) {
+      toast.error('Error generando Excel: ' + (err as Error).message)
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Generación PDF — Libro IVA Ventas
+  // ════════════════════════════════════════════════════════════
+
+  const generarPdfLibroIvaVentas = () => {
+    if (comprobantes.length === 0 || !periodoConsulta) {
+      toast.error('No hay comprobantes para exportar')
+      return
+    }
+    try {
+      const [mes, año] = periodoConsulta.split('/')
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+
+      // Header
+      const cuit = empresa === 'MA' ? 'CUIT MA' : '30617786016'
+      const titulo = empresa === 'MA' ? 'MA SRL' : 'MARTINEZ SOBRADO AGRO SRL'
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(14)
+      doc.text(titulo, 14, 14)
+      doc.setFontSize(10)
+      doc.text(`CUIT: ${cuit}`, 14, 20)
+      doc.setFontSize(12)
+      doc.text(`LIBRO IVA VENTAS — Período ${periodoConsulta}`, 14, 28)
+
+      // Tabla principal: detalle por comprobante
+      const headDetalle = [['Fecha', 'Tipo', 'Pto-Nro', 'Razón Social', 'CUIT', 'Neto Gravado', 'Exento/NG', 'Alíc.', 'IVA', 'Total']]
+      const bodyDetalle = comprobantes.map(c => [
+        c.fecha_liquidacion || '',
+        c.tipo_comprobante != null ? String(c.tipo_comprobante).padStart(3, '0') : '',
+        `${c.punto_venta || ''}-${c.numero_desde || ''}`,
+        c.denominacion_cliente || '',
+        c.cuit_cliente || '',
+        fmtNum(c.imp_neto_gravado).toLocaleString('es-AR'),
+        fmtNum((Number(c.imp_neto_no_gravado) || 0) + (Number(c.imp_op_exentas) || 0)).toLocaleString('es-AR'),
+        c.alicuota_iva != null ? `${c.alicuota_iva}%` : '',
+        fmtNum(c.iva).toLocaleString('es-AR'),
+        fmtNum(c.imp_total).toLocaleString('es-AR'),
+      ])
+
+      autoTable(doc, {
+        head: headDetalle,
+        body: bodyDetalle,
+        startY: 34,
+        styles: { fontSize: 7, cellPadding: 1 },
+        headStyles: { fillColor: [22, 160, 133], textColor: 255 },
+        columnStyles: {
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+          7: { halign: 'center' },
+          8: { halign: 'right' },
+          9: { halign: 'right' },
+        },
+      })
+
+      // Tabla resumen IVA Ventas
+      const sumar = (lista: any[], abs: boolean) => lista.reduce((acc, c) => {
+        const sgn = (v: number) => (abs ? Math.abs(v) : v)
+        acc.neto_gravado     += sgn(Number(c.imp_neto_gravado) || 0)
+        acc.neto_no_gravado  += sgn(Number(c.imp_neto_no_gravado) || 0)
+        acc.op_exentas       += sgn(Number(c.imp_op_exentas) || 0)
+        acc.iva              += sgn(Number(c.iva) || 0)
+        acc.imp_total        += sgn(Number(c.imp_total) || 0)
+        return acc
+      }, { neto_gravado: 0, neto_no_gravado: 0, op_exentas: 0, iva: 0, imp_total: 0 })
+
+      const sinMonotrib = comprobantes.filter(c => c.tipo_comprobante !== 11)
+      const fcs = sinMonotrib.filter(c => (Number(c.imp_total) || 0) >= 0)
+      const ncs = sinMonotrib.filter(c => (Number(c.imp_total) || 0) < 0)
+      const sFC = sumar(fcs, false)
+      const sNC = sumar(ncs, true)
+      const sNeto = {
+        neto_gravado: sFC.neto_gravado - sNC.neto_gravado,
+        neto_no_gravado: sFC.neto_no_gravado - sNC.neto_no_gravado,
+        op_exentas: sFC.op_exentas - sNC.op_exentas,
+        iva: sFC.iva - sNC.iva,
+        imp_total: sFC.imp_total - sNC.imp_total,
+      }
+
+      // Nueva página para el resumen
+      doc.addPage()
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      doc.text(`Resumen — Libro IVA Ventas ${periodoConsulta}`, 14, 14)
+
+      autoTable(doc, {
+        startY: 20,
+        head: [['Concepto', 'Cant.', 'Neto Gravado', 'Exento/NG', 'IVA', 'Total']],
+        body: [
+          ['Facturas', String(fcs.length), fmtNum(sFC.neto_gravado).toLocaleString('es-AR'), fmtNum(sFC.neto_no_gravado + sFC.op_exentas).toLocaleString('es-AR'), fmtNum(sFC.iva).toLocaleString('es-AR'), fmtNum(sFC.imp_total).toLocaleString('es-AR')],
+          ['Notas de Crédito', String(ncs.length), fmtNum(sNC.neto_gravado).toLocaleString('es-AR'), fmtNum(sNC.neto_no_gravado + sNC.op_exentas).toLocaleString('es-AR'), fmtNum(sNC.iva).toLocaleString('es-AR'), fmtNum(sNC.imp_total).toLocaleString('es-AR')],
+          [{ content: 'TOTAL NETO (FC − NC)', styles: { fontStyle: 'bold' } }, '', { content: fmtNum(sNeto.neto_gravado).toLocaleString('es-AR'), styles: { fontStyle: 'bold' } }, { content: fmtNum(sNeto.neto_no_gravado + sNeto.op_exentas).toLocaleString('es-AR'), styles: { fontStyle: 'bold' } }, { content: fmtNum(sNeto.iva).toLocaleString('es-AR'), styles: { fontStyle: 'bold' } }, { content: fmtNum(sNeto.imp_total).toLocaleString('es-AR'), styles: { fontStyle: 'bold' } }],
+        ],
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [22, 160, 133], textColor: 255 },
+        columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      })
+
+      // Bloque monotributo si aplica
+      const facC = comprobantes.filter(c => c.tipo_comprobante === 11)
+      const ncC = comprobantes.filter(c => c.tipo_comprobante === 13)
+      if (facC.length > 0 || ncC.length > 0) {
+        const totalFC_C = facC.reduce((s, c) => s + (Number(c.imp_total) || 0), 0)
+        const totalNC_C = ncC.reduce((s, c) => s + Math.abs(Number(c.imp_total) || 0), 0)
+        const finalY = (doc as any).lastAutoTable.finalY + 10
+        doc.setFontSize(11)
+        doc.text('Monotributo — Facturas C y NC C', 14, finalY)
+        autoTable(doc, {
+          startY: finalY + 4,
+          head: [['Concepto', 'Cant.', 'Total']],
+          body: [
+            ['Facturas C (Tipo 11)', String(facC.length), fmtNum(totalFC_C).toLocaleString('es-AR')],
+            ['NC C (Tipo 13)', String(ncC.length), fmtNum(totalNC_C).toLocaleString('es-AR')],
+            [{ content: 'TOTAL NETO', styles: { fontStyle: 'bold' } }, '', { content: fmtNum(totalFC_C - totalNC_C).toLocaleString('es-AR'), styles: { fontStyle: 'bold' } }],
+          ],
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [192, 57, 43], textColor: 255 },
+          columnStyles: { 2: { halign: 'right' } },
+        })
+      }
+
+      const filename = `LIBRO IVA VENTAS ${empresa} ${año}-${mes}.pdf`
+      doc.save(filename)
+      toast.success(`PDF generado: ${filename}`)
+    } catch (err) {
+      toast.error('Error generando PDF: ' + (err as Error).message)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -263,7 +516,17 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
             <Button onClick={cargarPeriodo} disabled={!periodoConsulta || cargando}>
               <Search className="mr-2 h-4 w-4" />Consultar período
             </Button>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex gap-2 flex-wrap">
+              {comprobantes.length > 0 && (
+                <>
+                  <Button variant="outline" onClick={generarExcelLibroIvaVentas} title="Exportar Libro IVA Ventas a Excel">
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />Excel
+                  </Button>
+                  <Button variant="outline" onClick={generarPdfLibroIvaVentas} title="Exportar Libro IVA Ventas a PDF">
+                    <Printer className="mr-2 h-4 w-4" />PDF
+                  </Button>
+                </>
+              )}
               <Button variant="outline" onClick={() => setMostrarModalImputar(true)}>
                 Imputar período…
               </Button>
