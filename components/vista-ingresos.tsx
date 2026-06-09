@@ -3,9 +3,10 @@
 import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TrendingUp, Receipt, FileText } from "lucide-react"
+import { TrendingUp, Receipt, FileText, BookOpen, Building2 } from "lucide-react"
 import { VistaVentasMsa } from "./vista-ventas-msa"
 import { VistaLiquidacionesMsa } from "./vista-liquidaciones-msa"
+import { VistaSubdiariosVenta } from "./vista-subdiarios-venta"
 
 export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
   const [tabActiva, setTabActiva] = useState("ventas-msa")
@@ -28,7 +29,7 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="ventas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Ventas MSA
@@ -36,6 +37,14 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
               <TabsTrigger value="liquidaciones-msa" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Liquidaciones MSA
+              </TabsTrigger>
+              <TabsTrigger value="subdiarios-msa" className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4" />
+                Subdiarios MSA
+              </TabsTrigger>
+              <TabsTrigger value="subdiarios-ma" className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Subdiarios MA
               </TabsTrigger>
             </TabsList>
 
@@ -46,6 +55,14 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
 
               <TabsContent value="liquidaciones-msa" className="space-y-4">
                 <VistaLiquidacionesMsa userRole={userRole} />
+              </TabsContent>
+
+              <TabsContent value="subdiarios-msa" className="space-y-4">
+                <VistaSubdiariosVenta empresa="MSA" userRole={userRole} />
+              </TabsContent>
+
+              <TabsContent value="subdiarios-ma" className="space-y-4">
+                <VistaSubdiariosVenta empresa="MA" userRole={userRole} />
               </TabsContent>
             </div>
           </Tabs>
