@@ -74,9 +74,15 @@ interface Props {
 }
 
 // ─── Helpers de formato ───────────────────────────────────────────
+// Para INPUTS del usuario en formato es-AR (punto miles, coma decimal)
 const parsearAR = (s: string): number => {
   if (!s) return 0
   return parseFloat(String(s).replace(/\./g, '').replace(',', '.')) || 0
+}
+// Para valores con FORMATO STANDARD (punto decimal, sin miles) — alícuotas del código
+const parsearStd = (s: string): number => {
+  if (!s) return 0
+  return parseFloat(String(s).replace(',', '.')) || 0
 }
 const fmtAR = (n: number, dec = 2) =>
   n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
@@ -311,7 +317,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
   // ════════════════════════════════════════════════════════════
 
   const recalcIvaVenta = (subStr = subtotal, alicStr = alicuotaIva) => {
-    const sub = parsearAR(subStr), alic = parsearAR(alicStr)
+    const sub = parsearAR(subStr), alic = parsearStd(alicStr)
     setIva(fmtAR(sub * alic / 100, 2))
   }
 
@@ -340,7 +346,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
   }
   // Recalcular comision_iva cuando cambia neto o alic
   useEffect(() => {
-    const m = parsearAR(comisionNeto), a = parsearAR(comisionAlicIva)
+    const m = parsearAR(comisionNeto), a = parsearStd(comisionAlicIva)
     setComisionIva(fmtAR(m * a / 100, 2))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comisionNeto, comisionAlicIva])
@@ -362,7 +368,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
     else setAlmacenajeNeto('')
   }
   useEffect(() => {
-    const m = parsearAR(almacenajeNeto), a = parsearAR(almacenajeAlicIva)
+    const m = parsearAR(almacenajeNeto), a = parsearStd(almacenajeAlicIva)
     setAlmacenajeIva(fmtAR(m * a / 100, 2))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [almacenajeNeto, almacenajeAlicIva])
@@ -444,13 +450,13 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         precio_pesos: precioPesos ? parsearAR(precioPesos) : null,
         precio_final_pesos: precioFinal ? parsearAR(precioFinal) : null,
         subtotal_neto: parsearAR(subtotal),
-        alicuota_iva: alicuotaIva ? parsearAR(alicuotaIva) : null,
+        alicuota_iva: alicuotaIva ? parsearStd(alicuotaIva) : null,
         iva: iva ? parsearAR(iva) : 0,
         comision_neto: comisionNeto ? parsearAR(comisionNeto) : 0,
-        comision_alicuota_iva: comisionAlicIva ? parsearAR(comisionAlicIva) : null,
+        comision_alicuota_iva: comisionAlicIva ? parsearStd(comisionAlicIva) : null,
         comision_iva: comisionIva ? parsearAR(comisionIva) : 0,
         almacenaje_neto: almacenajeNeto ? parsearAR(almacenajeNeto) : 0,
-        almacenaje_alicuota_iva: almacenajeAlicIva ? parsearAR(almacenajeAlicIva) : null,
+        almacenaje_alicuota_iva: almacenajeAlicIva ? parsearStd(almacenajeAlicIva) : null,
         almacenaje_iva: almacenajeIva ? parsearAR(almacenajeIva) : 0,
         ret_iva: retIva ? parsearAR(retIva) : 0,
         ret_iibb: retIibb ? parsearAR(retIibb) : 0,

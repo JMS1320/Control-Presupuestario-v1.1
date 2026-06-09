@@ -36,10 +36,15 @@ interface Props {
   onGuardado?: () => void
 }
 
-// Parser argentino: "1.234,56" → 1234.56
+// Parser argentino: "1.234,56" → 1234.56 (para montos)
 const parsearAR = (s: string): number => {
   if (!s) return 0
   return parseFloat(String(s).replace(/\./g, '').replace(',', '.')) || 0
+}
+// Para alícuotas y porcentajes (sin separador de miles, coma o punto decimal)
+const parsearStd = (s: string): number => {
+  if (!s) return 0
+  return parseFloat(String(s).replace(',', '.')) || 0
 }
 
 // Formato argentino — con decimales fijos
@@ -130,18 +135,18 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
   const calc = useMemo(() => {
     const ton = parsearAR(toneladas)
     const pPesos = parsearAR(precioPesos)
-    const aliq = parsearAR(alicuotaIva)
+    const aliq = parsearStd(alicuotaIva)
     const subtotal = ton * pPesos
     const iva = subtotal * aliq / 100
     const total = subtotal + iva
 
     const comNeto = parsearAR(comisionNeto)
-    const comAliq = parsearAR(comisionAlicuota)
+    const comAliq = parsearStd(comisionAlicuota)
     const comIva = comNeto * comAliq / 100
     const comTotal = comNeto + comIva
 
     const almNeto = parsearAR(almacenajeNeto)
-    const almAliq = parsearAR(almacenajeAlicuota)
+    const almAliq = parsearStd(almacenajeAlicuota)
     const almIva = almNeto * almAliq / 100
     const almTotal = almNeto + almIva
 
@@ -169,11 +174,11 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
         precio_usd: precioUsd ? parsearAR(precioUsd) : null,
         tc: tc ? parsearAR(tc) : null,
         precio_pesos: parsearAR(precioPesos),
-        alicuota_iva: alicuotaIva ? parsearAR(alicuotaIva) : null,
+        alicuota_iva: alicuotaIva ? parsearStd(alicuotaIva) : null,
         comision_neto: comisionNeto ? parsearAR(comisionNeto) : 0,
-        comision_alicuota_iva: comisionAlicuota ? parsearAR(comisionAlicuota) : null,
+        comision_alicuota_iva: comisionAlicuota ? parsearStd(comisionAlicuota) : null,
         almacenaje_neto: almacenajeNeto ? parsearAR(almacenajeNeto) : 0,
-        almacenaje_alicuota_iva: almacenajeAlicuota ? parsearAR(almacenajeAlicuota) : null,
+        almacenaje_alicuota_iva: almacenajeAlicuota ? parsearStd(almacenajeAlicuota) : null,
         observaciones: observaciones || null,
       }
 
