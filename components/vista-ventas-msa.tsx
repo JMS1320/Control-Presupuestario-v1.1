@@ -69,7 +69,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       // Conteo de liquidaciones por venta (vía pivot)
       const { data: pivot } = await supabase
         .schema('msa')
-        .from('ventas_liquidaciones')
+        .from('ventas_comprobantes')
         .select('venta_id')
       const conteo = new Map<string, number>()
       for (const row of (pivot || []) as { venta_id: string }[]) {

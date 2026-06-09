@@ -175,9 +175,9 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         // Vínculos existentes
         const { data: pData } = await supabase
           .schema('msa')
-          .from('ventas_liquidaciones')
+          .from('ventas_comprobantes')
           .select('venta_id')
-          .eq('liquidacion_id', liquidacionInicial.id)
+          .eq('comprobante_id', liquidacionInicial.id)
         setSeleccionadas(new Set((pData || []).map((p: any) => p.venta_id)))
 
         const l = liquidacionInicial
@@ -432,6 +432,22 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
     }
     setGuardando(true)
     try {
+      // Derivados neteados para el Libro IVA Ventas (decisión usuario T6):
+      // Neto Gravado del Libro = subtotal − comisión − almacenaje
+      // IVA del Libro          = iva venta − iva comisión − iva almacenaje
+      // Total del Libro        = Neto Gravado + IVA
+      const subN = parsearAR(subtotal)
+      const ivaN = parsearAR(iva)
+      const comN = parsearAR(comisionNeto)
+      const comI = parsearAR(comisionIva)
+      const almN = parsearAR(almacenajeNeto)
+      const almI = parsearAR(almacenajeIva)
+      const ivaGravadoLibro = subN - comN - almN
+      const ivaLibro = ivaN - comI - almI
+      const totalLibro = ivaGravadoLibro + ivaLibro
+      // Período contable derivado de fecha_liquidacion
+      const [añoLiq, mesLiq] = fechaLiq.split('-').map(Number)
+
       const payload = {
         fecha_liquidacion: fechaLiq,
         nro_comprobante: nroComp || null,
@@ -449,15 +465,15 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         tc: tc ? parsearAR(tc) : null,
         precio_pesos: precioPesos ? parsearAR(precioPesos) : null,
         precio_final_pesos: precioFinal ? parsearAR(precioFinal) : null,
-        subtotal_neto: parsearAR(subtotal),
+        subtotal_neto: subN,
         alicuota_iva: alicuotaIva ? parsearStd(alicuotaIva) : null,
-        iva: iva ? parsearAR(iva) : 0,
-        comision_neto: comisionNeto ? parsearAR(comisionNeto) : 0,
+        iva: ivaN,
+        comision_neto: comN,
         comision_alicuota_iva: comisionAlicIva ? parsearStd(comisionAlicIva) : null,
-        comision_iva: comisionIva ? parsearAR(comisionIva) : 0,
-        almacenaje_neto: almacenajeNeto ? parsearAR(almacenajeNeto) : 0,
+        comision_iva: comI,
+        almacenaje_neto: almN,
         almacenaje_alicuota_iva: almacenajeAlicIva ? parsearStd(almacenajeAlicIva) : null,
-        almacenaje_iva: almacenajeIva ? parsearAR(almacenajeIva) : 0,
+        almacenaje_iva: almI,
         ret_iva: retIva ? parsearAR(retIva) : 0,
         ret_iibb: retIibb ? parsearAR(retIibb) : 0,
         fecha_acreditacion: fechaAcred || null,
@@ -466,20 +482,28 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         cosecha: cosecha || null,
         peso_kg: pesoKg ? parsearAR(pesoKg) : null,
         datos_adicionales: datosAdic || null,
+        // Campos para Subdiario IVA Ventas
+        tipo_comprobante: 332,                  // Liquidación primaria de granos
+        imp_neto_gravado: ivaGravadoLibro,
+        imp_neto_no_gravado: 0,
+        imp_op_exentas: 0,
+        imp_total: totalLibro,
+        año_contable: añoLiq || null,
+        mes_contable: mesLiq || null,
       }
 
       let liqId = liquidacionInicial?.id
       if (esEdicion) {
         const { error } = await supabase
           .schema('msa')
-          .from('liquidaciones_venta')
+          .from('comprobantes_venta')
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', liqId!)
         if (error) throw error
       } else {
         const { data, error } = await supabase
           .schema('msa')
-          .from('liquidaciones_venta')
+          .from('comprobantes_venta')
           .insert(payload)
           .select('id')
           .single()
@@ -490,14 +514,14 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
       // Pivot: reemplazar vínculos
       await supabase
         .schema('msa')
-        .from('ventas_liquidaciones')
+        .from('ventas_comprobantes')
         .delete()
-        .eq('liquidacion_id', liqId!)
+        .eq('comprobante_id', liqId!)
       if (seleccionadas.size > 0) {
-        const rows = Array.from(seleccionadas).map(venta_id => ({ venta_id, liquidacion_id: liqId! }))
+        const rows = Array.from(seleccionadas).map(venta_id => ({ venta_id, comprobante_id: liqId! }))
         const { error: errPivot } = await supabase
           .schema('msa')
-          .from('ventas_liquidaciones')
+          .from('ventas_comprobantes')
           .insert(rows)
         if (errPivot) throw errPivot
       }

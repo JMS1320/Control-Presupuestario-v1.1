@@ -59,7 +59,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     try {
       const { data, error } = await supabase
         .schema('msa')
-        .from('liquidaciones_venta')
+        .from('comprobantes_venta')
         .select('*')
         .order('fecha_liquidacion', { ascending: false })
       if (error) throw error
@@ -68,8 +68,8 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
       // Conteo de ventas por liquidación
       const { data: pivot2 } = await supabase
         .schema('msa')
-        .from('ventas_liquidaciones')
-        .select('venta_id, liquidacion_id')
+        .from('ventas_comprobantes')
+        .select('venta_id, comprobante_id')
       const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
       const { data: ventas2 } = ventaIds.size > 0 ? await supabase
         .schema('msa')
@@ -80,10 +80,10 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
       const map = new Map<string, { count: number, clientes: string[] }>()
       for (const row of (pivot2 || []) as any[]) {
         const nom = ventasMap.get(row.venta_id) || '?'
-        const cur = map.get(row.liquidacion_id) || { count: 0, clientes: [] }
+        const cur = map.get(row.comprobante_id) || { count: 0, clientes: [] }
         cur.count += 1
         if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
-        map.set(row.liquidacion_id, cur)
+        map.set(row.comprobante_id, cur)
       }
       setVentasPorLiq(map)
     } catch (err) {
@@ -125,7 +125,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     try {
       const { error } = await supabase
         .schema('msa')
-        .from('liquidaciones_venta')
+        .from('comprobantes_venta')
         .delete()
         .eq('id', l.id)
       if (error) throw error

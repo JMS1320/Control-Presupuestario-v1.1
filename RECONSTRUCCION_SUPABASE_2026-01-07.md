@@ -3317,6 +3317,53 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-09 (noche): Subdiario IVA Ventas — rename + columnas + ma clon**
+
+Habilita un Libro IVA Ventas espejo del Libro IVA Compras. La tabla pasa a contener no solo liquidaciones de granos (tipo 332) sino también FC/NC venta normales. Por eso rename.
+
+```sql
+-- 1) Rename
+ALTER TABLE msa.liquidaciones_venta RENAME TO comprobantes_venta;
+ALTER TABLE msa.ventas_liquidaciones RENAME COLUMN liquidacion_id TO comprobante_id;
+ALTER TABLE msa.ventas_liquidaciones RENAME TO ventas_comprobantes;
+
+-- 2) Columnas para Subdiario + FC normales
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS tipo_comprobante INT,
+  ADD COLUMN IF NOT EXISTS ddjj_iva VARCHAR(20) DEFAULT 'No',
+  ADD COLUMN IF NOT EXISTS año_contable INT,
+  ADD COLUMN IF NOT EXISTS mes_contable INT,
+  ADD COLUMN IF NOT EXISTS punto_venta INT,
+  ADD COLUMN IF NOT EXISTS numero_desde BIGINT,
+  ADD COLUMN IF NOT EXISTS imp_neto_gravado NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_neto_no_gravado NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_op_exentas NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_total NUMERIC(15,2);
+
+CREATE INDEX IF NOT EXISTS idx_comprobantes_venta_periodo ON msa.comprobantes_venta(año_contable, mes_contable);
+CREATE INDEX IF NOT EXISTS idx_comprobantes_venta_ddjj ON msa.comprobantes_venta(ddjj_iva);
+
+-- 3) MA: clon estructural
+CREATE SCHEMA IF NOT EXISTS ma;
+GRANT USAGE ON SCHEMA ma TO anon, authenticated;
+CREATE TABLE IF NOT EXISTS ma.comprobantes_venta (LIKE msa.comprobantes_venta INCLUDING ALL);
+ALTER TABLE ma.comprobantes_venta ENABLE ROW LEVEL SECURITY;
+CREATE POLICY allow_all_ma_comp_venta ON ma.comprobantes_venta FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON ma.comprobantes_venta TO anon, authenticated;
+```
+
+**Reglas de cálculo para liquidaciones de granos (tipo 332)**, persistidos al guardar:
+- `imp_neto_gravado` = `subtotal_neto − comision_neto − almacenaje_neto`
+- `iva` (Libro) = `iva venta − iva comisión − iva almacenaje`
+- `imp_total` = `imp_neto_gravado + iva` (Libro)
+- Las retenciones (`ret_iva`, `ret_iibb`) NO entran en el Libro IVA Ventas, van por otra vía.
+
+Para FC venta normales: los valores se ingresan directamente sin neteo.
+
+⚠️ Ejecutar este bloque DESPUÉS del bloque "2026-06-09 (tarde)" que rediseña el modelo.
+
+---
+
 ### **2026-06-09 (tarde): Rediseño modelo Ventas/Liquidaciones — separación inputs vs cálculos**
 
 Misma sesión, después del primer commit del módulo. El usuario detectó que el modal de liquidación pedía como inputs muchos importes que en realidad son cálculos derivados (subtotal × alic, suma de deducciones, importe neto, etc.). Re-leído el Excel línea por línea para identificar qué columna es INPUT y cuál es CÁLCULO. Lista completa en `memory/reference_ventas_msa.md`.
