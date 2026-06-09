@@ -12,6 +12,7 @@ import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
+import { VistaIngresos } from "./components/vista-ingresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
@@ -23,7 +24,7 @@ import { TabPresupuesto } from "./components/tab-presupuesto"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -62,7 +63,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
       <div className="mx-auto max-w-7xl space-y-6">
         {/* pestañas principales */}
         <Tabs defaultValue={getDefaultTab()} className="w-full">
-          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-11'}`}>
+          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-12'}`}>
             {shouldShowTab('principal') && (
               <TabsTrigger value="principal" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
@@ -91,6 +92,12 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <TabsTrigger value="egresos" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Egresos
+              </TabsTrigger>
+            )}
+            {shouldShowTab('ingresos') && (
+              <TabsTrigger value="ingresos" className="flex items-center gap-2">
+                <ArrowUpRight className="h-4 w-4" />
+                Ingresos
               </TabsTrigger>
             )}
             {shouldShowTab('cashflow') && (
@@ -223,6 +230,11 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           {/* EGRESOS */}
           <TabsContent value="egresos" className="space-y-6">
             <VistaEgresos userRole={userRole} />
+          </TabsContent>
+
+          {/* INGRESOS */}
+          <TabsContent value="ingresos" className="space-y-6">
+            <VistaIngresos userRole={userRole} />
           </TabsContent>
 
           {/* CASH FLOW */}

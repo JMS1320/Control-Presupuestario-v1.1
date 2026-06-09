@@ -3317,6 +3317,122 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-09: Sistema "IVA Ventas" — `msa.ventas` + `msa.liquidaciones_venta` + pivot + flags `es_proveedor`/`es_cliente`**
+
+#### **🎯 Motivo:**
+
+Nuevo módulo "Ingresos → Ventas" (espejo de Egresos → Facturas ARCA pero del lado del vendedor). Por ahora solo MSA y solo ventas de granos. MA tendrá su propio modelo de ventas distinto (no granos) cuando llegue el momento.
+
+Decisiones del usuario:
+- Venta y Liquidación son tablas separadas con relación **N:N** (una venta puede tener varias liquidaciones; una liquidación puede cubrir varias ventas).
+- Cero o una comisión, cero o un almacenaje por venta → columnas nullables, no tabla aparte.
+- BBDD `proveedores` compartida cliente/proveedor con flags booleanos globales.
+- Todos los cálculos (subtotal, IVA, totales, gravado_neto, iva_total) los hace la app.
+
+#### **🔧 DDL aplicado:**
+
+```sql
+-- Flags en proveedores
+ALTER TABLE public.proveedores
+  ADD COLUMN IF NOT EXISTS es_proveedor BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS es_cliente BOOLEAN DEFAULT FALSE;
+
+-- msa.ventas — la VENTA
+CREATE TABLE msa.ventas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuit_cliente VARCHAR(20) NOT NULL,
+  denominacion_cliente VARCHAR(255) NOT NULL,
+  fecha_operacion DATE NOT NULL,
+  grano VARCHAR(50),
+  grado VARCHAR(20),
+  factor NUMERIC,
+  toneladas NUMERIC(15,4),
+  modo_precio VARCHAR(10) NOT NULL DEFAULT 'pesos' CHECK (modo_precio IN ('usd','pesos')),
+  precio_usd NUMERIC(15,4),
+  tc NUMERIC(15,6),
+  precio_pesos NUMERIC(15,4),
+  alicuota_iva NUMERIC(5,2),
+  comision_neto NUMERIC(15,2) DEFAULT 0,
+  comision_alicuota NUMERIC(5,2),
+  almacenaje_neto NUMERIC(15,2) DEFAULT 0,
+  almacenaje_alicuota NUMERIC(5,2),
+  observaciones TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- msa.liquidaciones_venta — la LIQUIDACIÓN
+CREATE TABLE msa.liquidaciones_venta (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha_liquidacion DATE,
+  nro_comprobante VARCHAR(50),
+  coe VARCHAR(50),
+  tipo_operacion VARCHAR(100),
+  actividad VARCHAR(100),
+  total_operacion NUMERIC(15,2),
+  total_percepciones NUMERIC(15,2) DEFAULT 0,
+  total_retenciones_afip NUMERIC(15,2) DEFAULT 0,
+  total_otras_retenciones NUMERIC(15,2) DEFAULT 0,
+  total_deducciones NUMERIC(15,2) DEFAULT 0,
+  ret_iva NUMERIC(15,2) DEFAULT 0,
+  ret_iibb NUMERIC(15,2) DEFAULT 0,
+  importe_neto_a_pagar NUMERIC(15,2),
+  iva_rg_2300 NUMERIC(15,2),
+  pago_segun_condiciones NUMERIC(15,2),
+  fecha_acreditacion DATE,
+  puerto VARCHAR(100),
+  procedencia VARCHAR(200),
+  cosecha VARCHAR(50),
+  peso_kg NUMERIC(15,2),
+  datos_adicionales TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Pivot N:N
+CREATE TABLE msa.ventas_liquidaciones (
+  venta_id UUID NOT NULL REFERENCES msa.ventas(id) ON DELETE CASCADE,
+  liquidacion_id UUID NOT NULL REFERENCES msa.liquidaciones_venta(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (venta_id, liquidacion_id)
+);
+
+-- Índices + RLS + GRANTs
+CREATE INDEX idx_ventas_fecha ON msa.ventas(fecha_operacion DESC);
+CREATE INDEX idx_ventas_cuit ON msa.ventas(cuit_cliente);
+CREATE INDEX idx_liquidaciones_fecha ON msa.liquidaciones_venta(fecha_liquidacion DESC);
+CREATE INDEX idx_pivot_liq ON msa.ventas_liquidaciones(liquidacion_id);
+
+ALTER TABLE msa.ventas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE msa.liquidaciones_venta ENABLE ROW LEVEL SECURITY;
+ALTER TABLE msa.ventas_liquidaciones ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY allow_all_ventas ON msa.ventas FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY allow_all_liquidaciones ON msa.liquidaciones_venta FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY allow_all_ventas_liq ON msa.ventas_liquidaciones FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON msa.ventas TO anon, authenticated;
+GRANT ALL ON msa.liquidaciones_venta TO anon, authenticated;
+GRANT ALL ON msa.ventas_liquidaciones TO anon, authenticated;
+```
+
+#### **⚠️ Si reconstruís la BD:**
+
+Estos cambios **NO están en el backup original**. Ejecutar el script anterior después de los scripts de estructura.
+
+#### **🎨 Código asociado:**
+
+- `components/control-presupuestario.tsx` — tab nuevo "Ingresos"
+- `components/vista-ingresos.tsx` — agrupa sub-tabs MSA/MA
+- `components/vista-ventas-msa.tsx` — listado de ventas
+- `components/modal-venta-msa.tsx` — wizard de alta/edición de ventas (reactividad USD/TC/Pesos)
+- `components/vista-liquidaciones-msa.tsx` — listado de liquidaciones
+- `components/modal-liquidacion-msa.tsx` — wizard de liquidación + multi-select de ventas a vincular
+
+**Documentación:** `memory/reference_ventas_msa.md`
+
+---
+
 ### **2026-06-08: Columna `nro_cuenta` en `anticipos_proveedores` + estado `'externo'`**
 
 #### **🎯 Motivo:**
