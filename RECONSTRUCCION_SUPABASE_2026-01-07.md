@@ -3317,7 +3317,76 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
-### **2026-06-09: Sistema "IVA Ventas" — `msa.ventas` + `msa.liquidaciones_venta` + pivot + flags `es_proveedor`/`es_cliente`**
+### **2026-06-09 (tarde): Rediseño modelo Ventas/Liquidaciones — separación inputs vs cálculos**
+
+Misma sesión, después del primer commit del módulo. El usuario detectó que el modal de liquidación pedía como inputs muchos importes que en realidad son cálculos derivados (subtotal × alic, suma de deducciones, importe neto, etc.). Re-leído el Excel línea por línea para identificar qué columna es INPUT y cuál es CÁLCULO. Lista completa en `memory/reference_ventas_msa.md`.
+
+```sql
+-- 1) msa.ventas: quitar grado y factor (van solo en la liquidación)
+ALTER TABLE msa.ventas DROP COLUMN IF EXISTS grado, DROP COLUMN IF EXISTS factor;
+
+-- 2) Renombrar alicuotas para consistencia (alicuota_iva, no alicuota a secas)
+ALTER TABLE msa.ventas RENAME COLUMN comision_alicuota TO comision_alicuota_iva;
+ALTER TABLE msa.ventas RENAME COLUMN almacenaje_alicuota TO almacenaje_alicuota_iva;
+
+-- 3) msa.liquidaciones_venta: quitar columnas calculadas
+ALTER TABLE msa.liquidaciones_venta
+  DROP COLUMN IF EXISTS total_operacion,
+  DROP COLUMN IF EXISTS total_percepciones,
+  DROP COLUMN IF EXISTS total_retenciones_afip,
+  DROP COLUMN IF EXISTS total_otras_retenciones,
+  DROP COLUMN IF EXISTS total_deducciones,
+  DROP COLUMN IF EXISTS importe_neto_a_pagar,
+  DROP COLUMN IF EXISTS iva_rg_2300,
+  DROP COLUMN IF EXISTS pago_segun_condiciones;
+
+-- 4) msa.liquidaciones_venta: agregar columnas (todas inputs del PDF/Excel)
+ALTER TABLE msa.liquidaciones_venta
+  -- Cliente
+  ADD COLUMN IF NOT EXISTS cuit_cliente VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS denominacion_cliente VARCHAR(255),
+  -- Operación
+  ADD COLUMN IF NOT EXISTS grano VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS grado VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS factor NUMERIC,
+  ADD COLUMN IF NOT EXISTS toneladas NUMERIC(15,4),
+  -- Precio lleno + precio final (override editable)
+  ADD COLUMN IF NOT EXISTS modo_precio VARCHAR(10) DEFAULT 'pesos' CHECK (modo_precio IN ('usd','pesos')),
+  ADD COLUMN IF NOT EXISTS precio_usd NUMERIC(15,4),
+  ADD COLUMN IF NOT EXISTS tc NUMERIC(15,6),
+  ADD COLUMN IF NOT EXISTS precio_pesos NUMERIC(15,4),
+  ADD COLUMN IF NOT EXISTS precio_final_pesos NUMERIC(15,4),
+  -- Subtotal (input manual editable, no se calcula automáticamente)
+  ADD COLUMN IF NOT EXISTS subtotal_neto NUMERIC(15,2),
+  -- IVA venta: alicuota selector 0/10.5/21, IVA persistido y editable
+  ADD COLUMN IF NOT EXISTS alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS iva NUMERIC(15,2),
+  -- Comisión: doble vía (monto ↔ % sobre subtotal). neto + alic + iva persistidos
+  ADD COLUMN IF NOT EXISTS comision_neto NUMERIC(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS comision_alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS comision_iva NUMERIC(15,2) DEFAULT 0,
+  -- Almacenaje: mismo formato
+  ADD COLUMN IF NOT EXISTS almacenaje_neto NUMERIC(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS almacenaje_alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS almacenaje_iva NUMERIC(15,2) DEFAULT 0;
+
+-- ret_iva y ret_iibb ya existían y siguen como inputs.
+```
+
+**Reglas de UI (importantes para futuras reconstrucciones de código)**:
+- Precio lleno (USD+TC+pesos): reactividad clásica. Cambio USD/TC → pesos. Cambio pesos → USD manteniendo TC.
+- Precio final (opcional): default = precio_pesos al cambiarlo. Si tiene valor, no se pisa por cambios en precio_lleno.
+- Subtotal: default = ton × precio_efectivo (precio_final ?? precio_pesos). Editar subtotal recalcula precio_final (no toca precio_lleno). Editar precio_final recalcula subtotal.
+- IVA venta / IVA comisión / IVA almacenaje: calc automático al cambiar alícuota o neto, pero editables (override persiste).
+- Comisión y almacenaje: doble vía monto ↔ % sobre subtotal.
+
+**Cálculos al vuelo (NO en BD)**: total_operacion, gravado_neto, iva_total, total_deducciones, total_op_menos_deducciones, importe_neto_a_pagar, iva_rg_2300, pago_segun_condiciones.
+
+⚠️ Si reconstruís la BD, ejecutar este bloque DESPUÉS del bloque "2026-06-09 (mañana)" que crea las tablas originales.
+
+---
+
+### **2026-06-09 (mañana): Sistema "IVA Ventas" — `msa.ventas` + `msa.liquidaciones_venta` + pivot + flags `es_proveedor`/`es_cliente`**
 
 #### **🎯 Motivo:**
 

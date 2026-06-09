@@ -34,9 +34,9 @@ function calcDerivados(v: VentaMsa) {
   const iva = subtotal * aliq / 100
   const total = subtotal + iva
   const comNeto = Number(v.comision_neto) || 0
-  const comIva = comNeto * (Number(v.comision_alicuota) || 0) / 100
+  const comIva = comNeto * (Number(v.comision_alicuota_iva) || 0) / 100
   const almNeto = Number(v.almacenaje_neto) || 0
-  const almIva = almNeto * (Number(v.almacenaje_alicuota) || 0) / 100
+  const almIva = almNeto * (Number(v.almacenaje_alicuota_iva) || 0) / 100
   return {
     subtotal,
     iva,
@@ -188,7 +188,6 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                       <TableCell className="text-xs">{v.cuit_cliente}</TableCell>
                       <TableCell>
                         {v.grano || '—'}
-                        {v.grado ? <span className="text-xs text-gray-500 ml-1">({v.grado})</span> : null}
                       </TableCell>
                       <TableCell className="text-right whitespace-nowrap">{fmtAR(Number(v.toneladas) || 0, 2)}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">{fmtMoney(Number(v.precio_pesos) || 0)}</TableCell>

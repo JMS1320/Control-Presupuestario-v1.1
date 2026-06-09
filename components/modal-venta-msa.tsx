@@ -16,8 +16,6 @@ export interface VentaMsa {
   denominacion_cliente: string
   fecha_operacion: string
   grano: string | null
-  grado: string | null
-  factor: number | null
   toneladas: number | null
   modo_precio: 'usd' | 'pesos'
   precio_usd: number | null
@@ -25,9 +23,9 @@ export interface VentaMsa {
   precio_pesos: number | null
   alicuota_iva: number | null
   comision_neto: number | null
-  comision_alicuota: number | null
+  comision_alicuota_iva: number | null
   almacenaje_neto: number | null
-  almacenaje_alicuota: number | null
+  almacenaje_alicuota_iva: number | null
   observaciones: string | null
 }
 
@@ -57,8 +55,6 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
   const [cliente, setCliente] = useState({ cuit: '', nombre: '' })
   const [fechaOperacion, setFechaOperacion] = useState('')
   const [grano, setGrano] = useState('')
-  const [grado, setGrado] = useState('')
-  const [factor, setFactor] = useState('')
   const [toneladas, setToneladas] = useState('')
   const [modoPrecio, setModoPrecio] = useState<'usd' | 'pesos'>('pesos')
   const [precioUsd, setPrecioUsd] = useState('')
@@ -79,8 +75,6 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
       setCliente({ cuit: ventaInicial.cuit_cliente, nombre: ventaInicial.denominacion_cliente })
       setFechaOperacion(ventaInicial.fecha_operacion || '')
       setGrano(ventaInicial.grano || '')
-      setGrado(ventaInicial.grado || '')
-      setFactor(ventaInicial.factor != null ? String(ventaInicial.factor) : '')
       setToneladas(ventaInicial.toneladas != null ? fmtAR(ventaInicial.toneladas, 4) : '')
       setModoPrecio(ventaInicial.modo_precio || 'pesos')
       setPrecioUsd(ventaInicial.precio_usd != null ? fmtAR(ventaInicial.precio_usd, 4) : '')
@@ -88,15 +82,15 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
       setPrecioPesos(ventaInicial.precio_pesos != null ? fmtAR(ventaInicial.precio_pesos, 4) : '')
       setAlicuotaIva(ventaInicial.alicuota_iva != null ? String(ventaInicial.alicuota_iva) : '21')
       setComisionNeto(ventaInicial.comision_neto ? fmtAR(ventaInicial.comision_neto) : '')
-      setComisionAlicuota(ventaInicial.comision_alicuota != null ? String(ventaInicial.comision_alicuota) : '')
+      setComisionAlicuota(ventaInicial.comision_alicuota_iva != null ? String(ventaInicial.comision_alicuota_iva) : '')
       setAlmacenajeNeto(ventaInicial.almacenaje_neto ? fmtAR(ventaInicial.almacenaje_neto) : '')
-      setAlmacenajeAlicuota(ventaInicial.almacenaje_alicuota != null ? String(ventaInicial.almacenaje_alicuota) : '')
+      setAlmacenajeAlicuota(ventaInicial.almacenaje_alicuota_iva != null ? String(ventaInicial.almacenaje_alicuota_iva) : '')
       setObservaciones(ventaInicial.observaciones || '')
     } else {
       // Reset para alta
       setCliente({ cuit: '', nombre: '' })
       setFechaOperacion(new Date().toISOString().slice(0, 10))
-      setGrano(''); setGrado(''); setFactor('')
+      setGrano('')
       setToneladas('')
       setModoPrecio('pesos')
       setPrecioUsd(''); setTc(''); setPrecioPesos('')
@@ -170,8 +164,6 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
         denominacion_cliente: cliente.nombre,
         fecha_operacion: fechaOperacion,
         grano: grano || null,
-        grado: grado || null,
-        factor: factor ? parsearAR(factor) : null,
         toneladas: parsearAR(toneladas),
         modo_precio: modoPrecio,
         precio_usd: precioUsd ? parsearAR(precioUsd) : null,
@@ -179,9 +171,9 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
         precio_pesos: parsearAR(precioPesos),
         alicuota_iva: alicuotaIva ? parsearAR(alicuotaIva) : null,
         comision_neto: comisionNeto ? parsearAR(comisionNeto) : 0,
-        comision_alicuota: comisionAlicuota ? parsearAR(comisionAlicuota) : null,
+        comision_alicuota_iva: comisionAlicuota ? parsearAR(comisionAlicuota) : null,
         almacenaje_neto: almacenajeNeto ? parsearAR(almacenajeNeto) : 0,
-        almacenaje_alicuota: almacenajeAlicuota ? parsearAR(almacenajeAlicuota) : null,
+        almacenaje_alicuota_iva: almacenajeAlicuota ? parsearAR(almacenajeAlicuota) : null,
         observaciones: observaciones || null,
       }
 
@@ -244,19 +236,11 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
             </div>
           </div>
 
-          {/* Grano / grado / factor / toneladas */}
-          <div className="grid grid-cols-4 gap-4">
+          {/* Grano / toneladas (grado y factor van en la liquidación) */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Grano</Label>
               <Input placeholder="SOJA" value={grano} onChange={e => setGrano(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Grado</Label>
-              <Input placeholder="G2" value={grado} onChange={e => setGrado(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Factor</Label>
-              <Input type="text" placeholder="100" value={factor} onChange={e => setFactor(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>Toneladas *</Label>

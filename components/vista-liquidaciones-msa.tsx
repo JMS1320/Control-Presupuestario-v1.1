@@ -16,12 +16,33 @@ interface Props {
   userRole?: 'admin' | 'contable'
 }
 
-const fmtAR = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtAR = (n: number, dec = 2) =>
+  n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 const fmtMoney = (n: number) => `$${fmtAR(n)}`
 const fmtFecha = (s: string | null) => {
   if (!s) return '—'
   const [y, m, d] = s.split('-')
   return `${d}/${m}/${y}`
+}
+
+// Cálculos derivados a partir de las columnas persistidas
+function calcular(l: LiquidacionMsa) {
+  const sub = Number(l.subtotal_neto) || 0
+  const ivaV = Number(l.iva) || 0
+  const comNeto = Number(l.comision_neto) || 0
+  const comIva = Number(l.comision_iva) || 0
+  const almNeto = Number(l.almacenaje_neto) || 0
+  const almIva = Number(l.almacenaje_iva) || 0
+  const ri = Number(l.ret_iva) || 0
+  const rii = Number(l.ret_iibb) || 0
+  const totalOp = sub + ivaV
+  const totalDed = comNeto + comIva + almNeto + almIva
+  const totalOpMenosDed = totalOp - totalDed
+  const importeNeto = totalOpMenosDed - ri - rii
+  const ivaTotal = ivaV - comIva - almIva
+  const ivaRg2300 = ivaTotal - ri
+  const pagoCond = importeNeto - ivaRg2300
+  return { totalOp, importeNeto, pagoCond }
 }
 
 export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
@@ -44,42 +65,25 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
       if (error) throw error
       setLiquidaciones((data || []) as LiquidacionMsa[])
 
-      // Cargar ventas vinculadas por cada liquidación
-      const { data: pivot } = await supabase
+      // Conteo de ventas por liquidación
+      const { data: pivot2 } = await supabase
         .schema('msa')
         .from('ventas_liquidaciones')
-        .select('liquidacion_id, venta:msa_ventas:ventas(denominacion_cliente)') as any
-      // Si el join falla por nombres, hacemos query separada
-      let map = new Map<string, { count: number, clientes: string[] }>()
-      if (pivot && Array.isArray(pivot) && pivot.length > 0 && pivot[0].venta) {
-        for (const row of pivot as any[]) {
-          const lid = row.liquidacion_id
-          const nom = row.venta?.denominacion_cliente || '?'
-          const cur = map.get(lid) || { count: 0, clientes: [] }
-          cur.count += 1
-          if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
-          map.set(lid, cur)
-        }
-      } else {
-        // Fallback: dos queries
-        const { data: pivot2 } = await supabase
-          .schema('msa')
-          .from('ventas_liquidaciones')
-          .select('venta_id, liquidacion_id')
-        const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
-        const { data: ventas2 } = await supabase
-          .schema('msa')
-          .from('ventas')
-          .select('id, denominacion_cliente')
-          .in('id', Array.from(ventaIds))
-        const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
-        for (const row of (pivot2 || []) as any[]) {
-          const nom = ventasMap.get(row.venta_id) || '?'
-          const cur = map.get(row.liquidacion_id) || { count: 0, clientes: [] }
-          cur.count += 1
-          if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
-          map.set(row.liquidacion_id, cur)
-        }
+        .select('venta_id, liquidacion_id')
+      const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
+      const { data: ventas2 } = ventaIds.size > 0 ? await supabase
+        .schema('msa')
+        .from('ventas')
+        .select('id, denominacion_cliente')
+        .in('id', Array.from(ventaIds)) : { data: [] }
+      const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
+      const map = new Map<string, { count: number, clientes: string[] }>()
+      for (const row of (pivot2 || []) as any[]) {
+        const nom = ventasMap.get(row.venta_id) || '?'
+        const cur = map.get(row.liquidacion_id) || { count: 0, clientes: [] }
+        cur.count += 1
+        if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
+        map.set(row.liquidacion_id, cur)
       }
       setVentasPorLiq(map)
     } catch (err) {
@@ -96,6 +100,8 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         const q = normalizarBusqueda(busqueda)
         return normalizarBusqueda(l.nro_comprobante || '').includes(q)
           || normalizarBusqueda(l.coe || '').includes(q)
+          || normalizarBusqueda(l.denominacion_cliente || '').includes(q)
+          || l.cuit_cliente?.includes(q)
           || normalizarBusqueda(l.puerto || '').includes(q)
       })
     : liquidaciones
@@ -136,7 +142,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
           <Input
-            placeholder="Buscar por nro comprobante, COE, puerto..."
+            placeholder="Buscar por comprador, CUIT, nro comp, COE..."
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
             className="pl-8 h-9 text-sm"
@@ -162,34 +168,39 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
                 <TableRow>
                   <TableHead>Fecha liq.</TableHead>
                   <TableHead>Nº Comp.</TableHead>
-                  <TableHead>COE</TableHead>
-                  <TableHead>Puerto</TableHead>
-                  <TableHead className="text-right">Total operación</TableHead>
+                  <TableHead>Comprador</TableHead>
+                  <TableHead>Grano</TableHead>
+                  <TableHead className="text-right">Ton</TableHead>
+                  <TableHead className="text-right">Subtotal</TableHead>
+                  <TableHead className="text-right">Total op.</TableHead>
                   <TableHead className="text-right">Importe neto</TableHead>
                   <TableHead className="text-right">Pago s/cond.</TableHead>
                   <TableHead>Acreditación</TableHead>
-                  <TableHead>Ventas vinculadas</TableHead>
+                  <TableHead>Ventas vinc.</TableHead>
                   <TableHead className="text-right" style={{ width: 110 }}>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-500">Cargando…</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-gray-500">Cargando…</TableCell></TableRow>
                 ) : filtradas.length === 0 ? (
-                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-gray-500">
                     {liquidaciones.length === 0 ? 'No hay liquidaciones cargadas todavía.' : 'No hay resultados para la búsqueda.'}
                   </TableCell></TableRow>
                 ) : filtradas.map(l => {
+                  const c = calcular(l)
                   const v = ventasPorLiq.get(l.id)
                   return (
                     <TableRow key={l.id} className="hover:bg-gray-50">
                       <TableCell className="whitespace-nowrap">{fmtFecha(l.fecha_liquidacion)}</TableCell>
                       <TableCell className="text-xs">{l.nro_comprobante || '—'}</TableCell>
-                      <TableCell className="text-xs">{l.coe || '—'}</TableCell>
-                      <TableCell>{l.puerto || '—'}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{l.total_operacion != null ? fmtMoney(Number(l.total_operacion)) : '—'}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{l.importe_neto_a_pagar != null ? fmtMoney(Number(l.importe_neto_a_pagar)) : '—'}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{l.pago_segun_condiciones != null ? fmtMoney(Number(l.pago_segun_condiciones)) : '—'}</TableCell>
+                      <TableCell>{l.denominacion_cliente || '—'}</TableCell>
+                      <TableCell>{l.grano || '—'}{l.grado ? <span className="text-xs text-gray-500 ml-1">({l.grado})</span> : null}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{l.toneladas != null ? fmtAR(Number(l.toneladas), 2) : '—'}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{l.subtotal_neto != null ? fmtMoney(Number(l.subtotal_neto)) : '—'}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{fmtMoney(c.totalOp)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap font-semibold">{fmtMoney(c.importeNeto)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">{fmtMoney(c.pagoCond)}</TableCell>
                       <TableCell className="whitespace-nowrap">{fmtFecha(l.fecha_acreditacion)}</TableCell>
                       <TableCell>
                         {v && v.count > 0 ? (
