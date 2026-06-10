@@ -7,7 +7,7 @@ import { Receipt, FileText, Building2 } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
 
-export function VistaEgresos() {
+export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
   const [tabActiva, setTabActiva] = useState("facturas-msa")
 
   return (
@@ -51,15 +51,15 @@ export function VistaEgresos() {
 
             <div className="mt-6">
               <TabsContent value="facturas-msa" className="space-y-4">
-                <VistaFacturasArca empresa="MSA" />
+                <VistaFacturasArca empresa="MSA" userRole={userRole} />
               </TabsContent>
 
               <TabsContent value="facturas-pam" className="space-y-4">
-                <VistaFacturasArca empresa="PAM" />
+                <VistaFacturasArca empresa="PAM" userRole={userRole} />
               </TabsContent>
 
               <TabsContent value="facturas-ma" className="space-y-4">
-                <VistaFacturasArca empresa="MA" />
+                <VistaFacturasArca empresa="MA" userRole={userRole} />
               </TabsContent>
 
               <TabsContent value="templates" className="space-y-4">

@@ -19,6 +19,7 @@ import * as XLSX from "xlsx"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { supabase } from "@/lib/supabase"
+import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
@@ -2616,6 +2617,9 @@ function SubTabStockInsumos() {
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
+  // Filtros del listado de movimientos
+  const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
+  const [busquedaMov, setBusquedaMov] = useState('')
 
   // Recalcular stock de un insumo desde sus movimientos
   const recalcularStockInsumo = async (insumoStockId: string) => {
@@ -2836,7 +2840,19 @@ function SubTabStockInsumos() {
   })
   const movimientosFiltrados = movimientos.filter(m => {
     const esAgroquimico = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    const matchAmbito = filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    if (!matchAmbito) return false
+    // Filtro por tipo de movimiento (multi-select; vacío = todos)
+    if (filtroTipoMov.size > 0 && !filtroTipoMov.has(m.tipo)) return false
+    // Búsqueda acento-insensible en producto + proveedor + observaciones
+    if (busquedaMov.trim()) {
+      const q = normalizarBusqueda(busquedaMov)
+      const texto = normalizarBusqueda(
+        `${(m.stock_insumos as any)?.producto || ''} ${m.proveedor || ''} ${m.observaciones || ''}`
+      )
+      if (!texto.includes(q)) return false
+    }
+    return true
   })
 
   if (loading) {
@@ -2924,6 +2940,54 @@ function SubTabStockInsumos() {
           </TableBody>
         </Table>
       ) : (
+        <>
+          {/* Filtros de movimientos */}
+          <div className="flex items-center gap-3 flex-wrap pb-2">
+            <Input
+              placeholder="Buscar en producto, proveedor u obs..."
+              value={busquedaMov}
+              onChange={e => setBusquedaMov(e.target.value)}
+              className="h-8 text-xs max-w-xs"
+            />
+            <div className="flex gap-1 items-center">
+              {(['compra', 'ajuste', 'uso'] as const).map(t => {
+                const activo = filtroTipoMov.has(t)
+                const label = t.charAt(0).toUpperCase() + t.slice(1) + 's'
+                return (
+                  <Button
+                    key={t}
+                    size="sm"
+                    variant={activo ? 'default' : 'outline'}
+                    className="h-7 text-xs"
+                    onClick={() => setFiltroTipoMov(prev => {
+                      const next = new Set(prev)
+                      if (next.has(t)) next.delete(t); else next.add(t)
+                      return next
+                    })}
+                  >
+                    {label}
+                  </Button>
+                )
+              })}
+              {(filtroTipoMov.size > 0 || busquedaMov.trim()) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => { setFiltroTipoMov(new Set()); setBusquedaMov('') }}
+                >
+                  Limpiar
+                </Button>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground ml-auto">
+              {movimientosFiltrados.length} de {movimientos.filter(m => {
+                const esAgro = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
+                return filtroTipo === 'agricola' ? esAgro : !esAgro
+              }).length} movimientos
+            </span>
+          </div>
+
         <Table>
           <TableHeader>
             <TableRow>
@@ -2998,6 +3062,7 @@ function SubTabStockInsumos() {
             )}
           </TableBody>
         </Table>
+        </>
       )}
 
       {/* Modal Movimiento Insumos Multi-linea */}
@@ -3609,9 +3674,11 @@ function SubTabOrdenesAplicacion() {
     .filter(([_, sel]) => sel)
     .reduce((sum, [catId]) => sum + (cargaManualRodeos ? (parseInt(cantidadManualRodeos[catId]) || 0) : (stockHaciendaMap[catId] || 0)), 0)
 
-  // La orden de aplicación es ganadera → mostrar solo insumos ganaderos (no Agroquímico),
-  // misma regla que usa la pestaña Stock de Insumos / form de compra.
-  const insumosGanaderos = insumosVet.filter(i => i.categorias_insumo?.nombre !== 'Agroquímico')
+  // La orden de aplicación es ganadera → mostrar insumos con ambito 'ganadero' o 'ambos' (o null por compatibilidad)
+  const insumosGanaderos = insumosVet.filter(i => {
+    const a = (i.categorias_insumo as any)?.ambito
+    return a === 'ganadero' || a === 'ambos' || a == null
+  })
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -3623,7 +3690,7 @@ function SubTabOrdenesAplicacion() {
         supabase.schema('productivo').from('categorias_hacienda')
           .select('*').eq('activo', true).order('nombre'),
         supabase.schema('productivo').from('stock_insumos')
-          .select('*, categorias_insumo(nombre, unidad_medida)')
+          .select('*, categorias_insumo(nombre, unidad_medida, ambito)')
           .order('producto'),
         supabase.schema('productivo').from('movimientos_hacienda')
           .select('categoria_id, tipo, cantidad'),
@@ -4927,9 +4994,9 @@ function SubTabOrdenesAplicacion() {
                   <TableRow>
                     <TableHead className="w-[180px]">Insumo</TableHead>
                     <TableHead className="w-[110px]">Tipo Dosis</TableHead>
-                    <TableHead className="w-[70px] text-right">Dosis</TableHead>
+                    <TableHead className="w-[95px] text-right">Dosis</TableHead>
                     <TableHead className="w-[80px] text-right">Cada X kg</TableHead>
-                    <TableHead className="w-[70px] text-right">Cabezas</TableHead>
+                    <TableHead className="w-[80px] text-right">Cabezas</TableHead>
                     <TableHead className="w-[80px] text-right">Dosis/Cab</TableHead>
                     <TableHead className="w-[90px] text-right">Total</TableHead>
                     <TableHead className="w-[40px]"></TableHead>
@@ -4953,7 +5020,7 @@ function SubTabOrdenesAplicacion() {
                             insumos={insumosGanaderos}
                             onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
                             onCreated={cargarDatos}
-                            categoriasExcluidas={['Agroquímico']}
+                            ambito="ganadero"
                             disabled={modoVer}
                             className="w-full"
                           />
@@ -5771,11 +5838,13 @@ function SubTabOrdenesAgricolas() {
       }))
       setOrdenes(ordenesConLabores)
 
-      const { data: catData } = await supabase.schema('productivo').from('categorias_insumo')
-        .select('id').eq('nombre', 'Agroquímico').single()
-      if (catData) {
+      // Insumos agrícolas: todas las categorías con ambito='agricola' o 'ambos'
+      const { data: catsAgro } = await supabase.schema('productivo').from('categorias_insumo')
+        .select('id').in('ambito', ['agricola', 'ambos'])
+      if (catsAgro && catsAgro.length > 0) {
+        const ids = catsAgro.map((c: any) => c.id)
         const { data: insumosData } = await supabase.schema('productivo').from('stock_insumos')
-          .select('*').eq('categoria_id', catData.id).order('producto')
+          .select('*').in('categoria_id', ids).order('producto')
         setInsumosAgro(insumosData || [])
       }
 
@@ -6253,39 +6322,18 @@ function SubTabOrdenesAgricolas() {
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
-                            <Popover open={openInsumoKey === l.key} onOpenChange={open => setOpenInsumoKey(open ? l.key : null)}>
-                              <PopoverTrigger asChild>
-                                <Button variant="outline" role="combobox"
-                                  className="h-8 w-full justify-between text-xs font-normal truncate">
-                                  <span className="truncate">{l.insumo_nombre || 'Seleccionar insumo...'}</span>
-                                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-56 p-0 z-[9999]" align="start">
-                                <Command>
-                                  <CommandInput placeholder="Buscar insumo..." className="h-8 text-xs" />
-                                  <CommandList>
-                                    <CommandEmpty className="py-2 text-xs text-center text-muted-foreground">
-                                      No encontrado. Use &quot;Agregar Insumo&quot; para crear uno.
-                                    </CommandEmpty>
-                                    <CommandGroup>
-                                      {insumosAgro.map(ins => (
-                                        <CommandItem key={ins.id} value={ins.producto}
-                                          onSelect={() => {
-                                            actualizarLinea(l.key, 'insumo_stock_id', ins.id)
-                                            actualizarLinea(l.key, 'insumo_nombre', ins.producto)
-                                            setOpenInsumoKey(null)
-                                          }}
-                                          className="text-xs">
-                                          <Check className={`mr-1 h-3 w-3 ${l.insumo_stock_id === ins.id ? 'opacity-100' : 'opacity-0'}`} />
-                                          {ins.producto}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
+                            <InsumoCombobox
+                              value={l.insumo_stock_id || null}
+                              insumos={insumosAgro.map(i => ({ id: i.id, producto: i.producto, unidad_medida: i.unidad_medida }))}
+                              onChange={(id) => {
+                                actualizarLinea(l.key, 'insumo_stock_id', id)
+                                const ins = insumosAgro.find(s => s.id === id)
+                                if (ins) actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                              }}
+                              onCreated={cargarDatos}
+                              ambito="agricola"
+                              className="w-full"
+                            />
                           </TableCell>
                           <TableCell>
                             <Input type="number" step="0.0001" className="h-8 text-xs text-right"
@@ -6301,8 +6349,25 @@ function SubTabOrdenesAgricolas() {
                               </SelectContent>
                             </Select>
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium">
-                            {totalL > 0 ? `${new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(totalL)} L` : '-'}
+                          <TableCell className="text-right">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              className="h-8 text-xs text-right"
+                              placeholder="0"
+                              value={totalL > 0 ? Number(totalL.toFixed(3)) : ''}
+                              onChange={e => {
+                                const nuevoTotal = parseFloat(e.target.value) || 0
+                                if (totalHectareas > 0 && nuevoTotal > 0) {
+                                  // Recalcular dosis hacia atrás según unidad
+                                  const dosisL = nuevoTotal / totalHectareas
+                                  const nuevaDosis = l.unidad_dosis === 'cc' ? dosisL * 1000 : dosisL
+                                  // Redondear con precisión razonable (2 decimales en cc/ha, 3 en L/ha)
+                                  const precision = l.unidad_dosis === 'cc' ? 2 : 3
+                                  actualizarLinea(l.key, 'dosis', nuevaDosis.toFixed(precision))
+                                }
+                              }}
+                            />
                           </TableCell>
                           <TableCell>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => eliminarLinea(l.key)}>

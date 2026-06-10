@@ -3317,6 +3317,298 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-10: Cuenta contable + centro costo en comprobantes_venta**
+
+Para que las ventas se imputen contablemente igual que las facturas de compra.
+
+```sql
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cuenta_contable VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS centro_costo VARCHAR(100);
+ALTER TABLE ma.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cuenta_contable VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS centro_costo VARCHAR(100);
+```
+
+UI: SelectorCuentaContable + CentroCostoCombobox agregados al modal-comprobante-venta-msa y al modal-liquidacion-msa. Vista subdiarios muestra ambas columnas.
+
+⚠️ Ejecutar después del bloque "2026-06-09 (noche)".
+
+---
+
+### **2026-06-09 (noche): Subdiario IVA Ventas — rename + columnas + ma clon**
+
+Habilita un Libro IVA Ventas espejo del Libro IVA Compras. La tabla pasa a contener no solo liquidaciones de granos (tipo 332) sino también FC/NC venta normales. Por eso rename.
+
+```sql
+-- 1) Rename
+ALTER TABLE msa.liquidaciones_venta RENAME TO comprobantes_venta;
+ALTER TABLE msa.ventas_liquidaciones RENAME COLUMN liquidacion_id TO comprobante_id;
+ALTER TABLE msa.ventas_liquidaciones RENAME TO ventas_comprobantes;
+
+-- 2) Columnas para Subdiario + FC normales
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS tipo_comprobante INT,
+  ADD COLUMN IF NOT EXISTS ddjj_iva VARCHAR(20) DEFAULT 'No',
+  ADD COLUMN IF NOT EXISTS año_contable INT,
+  ADD COLUMN IF NOT EXISTS mes_contable INT,
+  ADD COLUMN IF NOT EXISTS punto_venta INT,
+  ADD COLUMN IF NOT EXISTS numero_desde BIGINT,
+  ADD COLUMN IF NOT EXISTS imp_neto_gravado NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_neto_no_gravado NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_op_exentas NUMERIC(15,2),
+  ADD COLUMN IF NOT EXISTS imp_total NUMERIC(15,2);
+
+CREATE INDEX IF NOT EXISTS idx_comprobantes_venta_periodo ON msa.comprobantes_venta(año_contable, mes_contable);
+CREATE INDEX IF NOT EXISTS idx_comprobantes_venta_ddjj ON msa.comprobantes_venta(ddjj_iva);
+
+-- 3) MA: clon estructural
+CREATE SCHEMA IF NOT EXISTS ma;
+GRANT USAGE ON SCHEMA ma TO anon, authenticated;
+CREATE TABLE IF NOT EXISTS ma.comprobantes_venta (LIKE msa.comprobantes_venta INCLUDING ALL);
+ALTER TABLE ma.comprobantes_venta ENABLE ROW LEVEL SECURITY;
+CREATE POLICY allow_all_ma_comp_venta ON ma.comprobantes_venta FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON ma.comprobantes_venta TO anon, authenticated;
+```
+
+**Reglas de cálculo para liquidaciones de granos (tipo 332)**, persistidos al guardar:
+- `imp_neto_gravado` = `subtotal_neto − comision_neto − almacenaje_neto`
+- `iva` (Libro) = `iva venta − iva comisión − iva almacenaje`
+- `imp_total` = `imp_neto_gravado + iva` (Libro)
+- Las retenciones (`ret_iva`, `ret_iibb`) NO entran en el Libro IVA Ventas, van por otra vía.
+
+Para FC venta normales: los valores se ingresan directamente sin neteo.
+
+⚠️ Ejecutar este bloque DESPUÉS del bloque "2026-06-09 (tarde)" que rediseña el modelo.
+
+---
+
+### **2026-06-09 (tarde): Rediseño modelo Ventas/Liquidaciones — separación inputs vs cálculos**
+
+Misma sesión, después del primer commit del módulo. El usuario detectó que el modal de liquidación pedía como inputs muchos importes que en realidad son cálculos derivados (subtotal × alic, suma de deducciones, importe neto, etc.). Re-leído el Excel línea por línea para identificar qué columna es INPUT y cuál es CÁLCULO. Lista completa en `memory/reference_ventas_msa.md`.
+
+```sql
+-- 1) msa.ventas: quitar grado y factor (van solo en la liquidación)
+ALTER TABLE msa.ventas DROP COLUMN IF EXISTS grado, DROP COLUMN IF EXISTS factor;
+
+-- 2) Renombrar alicuotas para consistencia (alicuota_iva, no alicuota a secas)
+ALTER TABLE msa.ventas RENAME COLUMN comision_alicuota TO comision_alicuota_iva;
+ALTER TABLE msa.ventas RENAME COLUMN almacenaje_alicuota TO almacenaje_alicuota_iva;
+
+-- 3) msa.liquidaciones_venta: quitar columnas calculadas
+ALTER TABLE msa.liquidaciones_venta
+  DROP COLUMN IF EXISTS total_operacion,
+  DROP COLUMN IF EXISTS total_percepciones,
+  DROP COLUMN IF EXISTS total_retenciones_afip,
+  DROP COLUMN IF EXISTS total_otras_retenciones,
+  DROP COLUMN IF EXISTS total_deducciones,
+  DROP COLUMN IF EXISTS importe_neto_a_pagar,
+  DROP COLUMN IF EXISTS iva_rg_2300,
+  DROP COLUMN IF EXISTS pago_segun_condiciones;
+
+-- 4) msa.liquidaciones_venta: agregar columnas (todas inputs del PDF/Excel)
+ALTER TABLE msa.liquidaciones_venta
+  -- Cliente
+  ADD COLUMN IF NOT EXISTS cuit_cliente VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS denominacion_cliente VARCHAR(255),
+  -- Operación
+  ADD COLUMN IF NOT EXISTS grano VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS grado VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS factor NUMERIC,
+  ADD COLUMN IF NOT EXISTS toneladas NUMERIC(15,4),
+  -- Precio lleno + precio final (override editable)
+  ADD COLUMN IF NOT EXISTS modo_precio VARCHAR(10) DEFAULT 'pesos' CHECK (modo_precio IN ('usd','pesos')),
+  ADD COLUMN IF NOT EXISTS precio_usd NUMERIC(15,4),
+  ADD COLUMN IF NOT EXISTS tc NUMERIC(15,6),
+  ADD COLUMN IF NOT EXISTS precio_pesos NUMERIC(15,4),
+  ADD COLUMN IF NOT EXISTS precio_final_pesos NUMERIC(15,4),
+  -- Subtotal (input manual editable, no se calcula automáticamente)
+  ADD COLUMN IF NOT EXISTS subtotal_neto NUMERIC(15,2),
+  -- IVA venta: alicuota selector 0/10.5/21, IVA persistido y editable
+  ADD COLUMN IF NOT EXISTS alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS iva NUMERIC(15,2),
+  -- Comisión: doble vía (monto ↔ % sobre subtotal). neto + alic + iva persistidos
+  ADD COLUMN IF NOT EXISTS comision_neto NUMERIC(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS comision_alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS comision_iva NUMERIC(15,2) DEFAULT 0,
+  -- Almacenaje: mismo formato
+  ADD COLUMN IF NOT EXISTS almacenaje_neto NUMERIC(15,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS almacenaje_alicuota_iva NUMERIC(5,2),
+  ADD COLUMN IF NOT EXISTS almacenaje_iva NUMERIC(15,2) DEFAULT 0;
+
+-- ret_iva y ret_iibb ya existían y siguen como inputs.
+```
+
+**Reglas de UI (importantes para futuras reconstrucciones de código)**:
+- Precio lleno (USD+TC+pesos): reactividad clásica. Cambio USD/TC → pesos. Cambio pesos → USD manteniendo TC.
+- Precio final (opcional): default = precio_pesos al cambiarlo. Si tiene valor, no se pisa por cambios en precio_lleno.
+- Subtotal: default = ton × precio_efectivo (precio_final ?? precio_pesos). Editar subtotal recalcula precio_final (no toca precio_lleno). Editar precio_final recalcula subtotal.
+- IVA venta / IVA comisión / IVA almacenaje: calc automático al cambiar alícuota o neto, pero editables (override persiste).
+- Comisión y almacenaje: doble vía monto ↔ % sobre subtotal.
+
+**Cálculos al vuelo (NO en BD)**: total_operacion, gravado_neto, iva_total, total_deducciones, total_op_menos_deducciones, importe_neto_a_pagar, iva_rg_2300, pago_segun_condiciones.
+
+⚠️ Si reconstruís la BD, ejecutar este bloque DESPUÉS del bloque "2026-06-09 (mañana)" que crea las tablas originales.
+
+---
+
+### **2026-06-09 (mañana): Sistema "IVA Ventas" — `msa.ventas` + `msa.liquidaciones_venta` + pivot + flags `es_proveedor`/`es_cliente`**
+
+#### **🎯 Motivo:**
+
+Nuevo módulo "Ingresos → Ventas" (espejo de Egresos → Facturas ARCA pero del lado del vendedor). Por ahora solo MSA y solo ventas de granos. MA tendrá su propio modelo de ventas distinto (no granos) cuando llegue el momento.
+
+Decisiones del usuario:
+- Venta y Liquidación son tablas separadas con relación **N:N** (una venta puede tener varias liquidaciones; una liquidación puede cubrir varias ventas).
+- Cero o una comisión, cero o un almacenaje por venta → columnas nullables, no tabla aparte.
+- BBDD `proveedores` compartida cliente/proveedor con flags booleanos globales.
+- Todos los cálculos (subtotal, IVA, totales, gravado_neto, iva_total) los hace la app.
+
+#### **🔧 DDL aplicado:**
+
+```sql
+-- Flags en proveedores
+ALTER TABLE public.proveedores
+  ADD COLUMN IF NOT EXISTS es_proveedor BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS es_cliente BOOLEAN DEFAULT FALSE;
+
+-- msa.ventas — la VENTA
+CREATE TABLE msa.ventas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuit_cliente VARCHAR(20) NOT NULL,
+  denominacion_cliente VARCHAR(255) NOT NULL,
+  fecha_operacion DATE NOT NULL,
+  grano VARCHAR(50),
+  grado VARCHAR(20),
+  factor NUMERIC,
+  toneladas NUMERIC(15,4),
+  modo_precio VARCHAR(10) NOT NULL DEFAULT 'pesos' CHECK (modo_precio IN ('usd','pesos')),
+  precio_usd NUMERIC(15,4),
+  tc NUMERIC(15,6),
+  precio_pesos NUMERIC(15,4),
+  alicuota_iva NUMERIC(5,2),
+  comision_neto NUMERIC(15,2) DEFAULT 0,
+  comision_alicuota NUMERIC(5,2),
+  almacenaje_neto NUMERIC(15,2) DEFAULT 0,
+  almacenaje_alicuota NUMERIC(5,2),
+  observaciones TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- msa.liquidaciones_venta — la LIQUIDACIÓN
+CREATE TABLE msa.liquidaciones_venta (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha_liquidacion DATE,
+  nro_comprobante VARCHAR(50),
+  coe VARCHAR(50),
+  tipo_operacion VARCHAR(100),
+  actividad VARCHAR(100),
+  total_operacion NUMERIC(15,2),
+  total_percepciones NUMERIC(15,2) DEFAULT 0,
+  total_retenciones_afip NUMERIC(15,2) DEFAULT 0,
+  total_otras_retenciones NUMERIC(15,2) DEFAULT 0,
+  total_deducciones NUMERIC(15,2) DEFAULT 0,
+  ret_iva NUMERIC(15,2) DEFAULT 0,
+  ret_iibb NUMERIC(15,2) DEFAULT 0,
+  importe_neto_a_pagar NUMERIC(15,2),
+  iva_rg_2300 NUMERIC(15,2),
+  pago_segun_condiciones NUMERIC(15,2),
+  fecha_acreditacion DATE,
+  puerto VARCHAR(100),
+  procedencia VARCHAR(200),
+  cosecha VARCHAR(50),
+  peso_kg NUMERIC(15,2),
+  datos_adicionales TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Pivot N:N
+CREATE TABLE msa.ventas_liquidaciones (
+  venta_id UUID NOT NULL REFERENCES msa.ventas(id) ON DELETE CASCADE,
+  liquidacion_id UUID NOT NULL REFERENCES msa.liquidaciones_venta(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (venta_id, liquidacion_id)
+);
+
+-- Índices + RLS + GRANTs
+CREATE INDEX idx_ventas_fecha ON msa.ventas(fecha_operacion DESC);
+CREATE INDEX idx_ventas_cuit ON msa.ventas(cuit_cliente);
+CREATE INDEX idx_liquidaciones_fecha ON msa.liquidaciones_venta(fecha_liquidacion DESC);
+CREATE INDEX idx_pivot_liq ON msa.ventas_liquidaciones(liquidacion_id);
+
+ALTER TABLE msa.ventas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE msa.liquidaciones_venta ENABLE ROW LEVEL SECURITY;
+ALTER TABLE msa.ventas_liquidaciones ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY allow_all_ventas ON msa.ventas FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY allow_all_liquidaciones ON msa.liquidaciones_venta FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY allow_all_ventas_liq ON msa.ventas_liquidaciones FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON msa.ventas TO anon, authenticated;
+GRANT ALL ON msa.liquidaciones_venta TO anon, authenticated;
+GRANT ALL ON msa.ventas_liquidaciones TO anon, authenticated;
+```
+
+#### **⚠️ Si reconstruís la BD:**
+
+Estos cambios **NO están en el backup original**. Ejecutar el script anterior después de los scripts de estructura.
+
+#### **🎨 Código asociado:**
+
+- `components/control-presupuestario.tsx` — tab nuevo "Ingresos"
+- `components/vista-ingresos.tsx` — agrupa sub-tabs MSA/MA
+- `components/vista-ventas-msa.tsx` — listado de ventas
+- `components/modal-venta-msa.tsx` — wizard de alta/edición de ventas (reactividad USD/TC/Pesos)
+- `components/vista-liquidaciones-msa.tsx` — listado de liquidaciones
+- `components/modal-liquidacion-msa.tsx` — wizard de liquidación + multi-select de ventas a vincular
+
+**Documentación:** `memory/reference_ventas_msa.md`
+
+---
+
+### **2026-06-08: Columna `nro_cuenta` en `anticipos_proveedores` + estado `'externo'`**
+
+#### **🎯 Motivo:**
+
+Dos mejoras complementarias en anticipos:
+
+1. **Cuenta contable opcional en anticipos**: permite que cuando se vincule a una factura sin cuenta, la FC herede la cuenta del anticipo (mismo patrón que `sicore/monto_sicore/tipo_sicore`). También sirve para que al conciliar el movimiento bancario del anticipo, el extracto herede la cuenta directamente (sin pasar por `categ='ANTICIPO'`).
+
+2. **Estado `'externo'`**: cierre limpio para anticipos que fueron usados contra una factura que NO está en la app (sistema viejo, FC previa al control). Antes quedaban indefinidamente como `pendiente_vincular` molestando la alerta de Vista Principal.
+
+#### **🔧 DDL aplicado:**
+
+```sql
+ALTER TABLE public.anticipos_proveedores
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20);
+
+COMMENT ON COLUMN public.anticipos_proveedores.nro_cuenta IS
+'Cuenta contable opcional del anticipo. Referencia lógica a cuentas_contables.nro_cuenta (sin FK formal).';
+```
+
+**No se agregan columnas para `'externo'`**: el valor es un string libre en el VARCHAR `estado`, y la explicación obligatoria se persiste en el campo `descripcion` existente.
+
+#### **⚠️ Si reconstruís la BD:**
+
+Estos cambios **NO están en el backup original**. Ejecutar el ALTER después de los scripts de estructura.
+
+#### **🎨 Código asociado:**
+
+- `hooks/useVinculacionAnticipo.ts` — herencia bidireccional FC↔anticipo + warning si difieren cuentas
+- `components/modal-vinculacion-anticipo.tsx` — botón "No tengo la FC en el sistema" + mini-modal textarea required
+- `components/vista-principal.tsx` — query alerta excluye `'externo'` (preserva trato actual de `'parcial'`); alta de anticipo con selector cuenta opcional
+- `components/vista-anticipos.tsx` — columna cuenta + edición inline + chip filtro "Mostrar externos" off-default + "Volver a pendiente"
+- `hooks/useMotorConciliacion.ts` — propagación de `nro_cuenta` del anticipo al extracto
+- `components/modal-asignacion-manual.tsx` (camino "Anticipo") — precarga `nro_cuenta` del anticipo
+
+**Documentación:** `memory/reference_anticipos_nro_cuenta_y_externo.md`
+
+---
+
 ### **2026-05-27: Nueva tabla maestra `centros_costo`**
 
 #### **🎯 Motivo:**

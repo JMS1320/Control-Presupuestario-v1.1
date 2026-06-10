@@ -291,6 +291,9 @@ export function VistaExtractoBancario() {
   const [importSaldoInicial, setImportSaldoInicial] = useState('')
   const [importMostrarSaldo, setImportMostrarSaldo] = useState(false)
   const [importVerificando, setImportVerificando] = useState(false)
+  // Para cuentas con 2 modos (ej. tarjetas: PDF default + Excel alt)
+  const [importTipoArchivo, setImportTipoArchivo] = useState<'base' | 'alt'>('base')
+  const [importForzar, setImportForzar] = useState(false)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
@@ -2683,16 +2686,36 @@ export function VistaExtractoBancario() {
 
         <TabsContent value="importar" className="space-y-4">
           {(() => {
-            // Configuración por cuenta
-            const CONFIG_IMPORTADORES: Record<string, { endpoint: string; formato: string; accept: string }> = {
-              msa_galicia:     { endpoint: '/api/import-excel',    formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia_cc:  { endpoint: '/api/import-excel',    formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia:     { endpoint: '/api/import-excel-ca', formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
-              ma_galicia:      { endpoint: '/api/import-excel-ca', formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+            // Configuración por cuenta. `alt` = importador alternativo (ej: tarjetas tienen PDF default + Excel manual).
+            type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf' }
+            const CONFIG_IMPORTADORES: Record<string, ImpCfg & { alt?: ImpCfg }> = {
+              msa_galicia:     { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia_cc:  { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
+              pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
+              ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+              caja_general:    { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
+              caja_ams:        { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
+              caja_sigot:      { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
+              tarjeta_visa_business_msa: {
+                modo: 'pdf', endpoint: '/api/import-pdf-tarjeta', formato: 'PDF VISA Business MSA — resumen oficial Galicia (.pdf)', accept: '.pdf',
+                alt: { modo: 'excel', endpoint: '/api/import-excel-tarjeta', formato: 'Excel manual VISA Business MSA (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales).', accept: '.xlsx,.xls' }
+              },
+              tarjeta_visa_pam: {
+                modo: 'pdf', endpoint: '/api/import-pdf-tarjeta', formato: 'PDF VISA PAM — resumen oficial Galicia (.pdf)', accept: '.pdf',
+                alt: { modo: 'excel', endpoint: '/api/import-excel-tarjeta', formato: 'Excel manual VISA PAM (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales).', accept: '.xlsx,.xls' }
+              },
+              tarjeta_visa_ma: {
+                modo: 'pdf', endpoint: '/api/import-pdf-tarjeta', formato: 'PDF VISA MA — resumen oficial Galicia (.pdf)', accept: '.pdf',
+                alt: { modo: 'excel', endpoint: '/api/import-excel-tarjeta', formato: 'Excel manual VISA MA (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales).', accept: '.xlsx,.xls' }
+              },
             }
 
             const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
-            const config = CONFIG_IMPORTADORES[tablaActiva]
+            const cfgBase = CONFIG_IMPORTADORES[tablaActiva]
+            // Si la cuenta soporta dos modos, elegir según importTipoArchivo (default = modo base)
+            const config: ImpCfg | undefined = cfgBase
+              ? (cfgBase.alt && importTipoArchivo === 'alt' ? cfgBase.alt : cfgBase)
+              : undefined
 
             if (!config) {
               return (
@@ -2712,7 +2735,9 @@ export function VistaExtractoBancario() {
             const verificarSaldo = async () => {
               setImportVerificando(true)
               try {
-                const { data } = await supabase.from(tablaActiva).select('id').limit(1).maybeSingle()
+                const schema = cuenta?.schema_bd && cuenta.schema_bd !== 'public' ? cuenta.schema_bd : null
+                const client = schema ? supabase.schema(schema) : supabase
+                const { data } = await client.from(tablaActiva).select('id').limit(1).maybeSingle()
                 setImportMostrarSaldo(data === null)
               } catch { setImportMostrarSaldo(false) }
               finally { setImportVerificando(false) }
@@ -2726,7 +2751,7 @@ export function VistaExtractoBancario() {
             }
 
             const handleImport = async () => {
-              if (!importFile) return
+              if (!importFile || !config) return
               setImportLoading(true)
               setImportResult(null)
               try {
@@ -2736,14 +2761,31 @@ export function VistaExtractoBancario() {
                 if (importMostrarSaldo && importSaldoInicial.trim()) {
                   fd.append('saldo_inicial', importSaldoInicial)
                 }
+                if (importForzar) fd.append('forzar', 'true')
                 const res = await fetch(config.endpoint, { method: 'POST', body: fd })
                 const data = await res.json()
-                setImportResult({ ...data, ok: res.ok })
+                setImportResult({ ...data, ok: res.ok && data.ok !== false })
               } catch {
                 setImportResult({ ok: false, message: 'Error de conexión al procesar el archivo' })
               } finally {
                 setImportLoading(false)
               }
+            }
+
+            const descargarExcelAuditoria = () => {
+              if (!importResult?.excel_base64) return
+              const bin = atob(importResult.excel_base64)
+              const bytes = new Uint8Array(bin.length)
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+              const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `auditoria_${tablaActiva}_${new Date().toISOString().slice(0, 10)}.xlsx`
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              URL.revokeObjectURL(url)
             }
 
             return (
@@ -2755,6 +2797,33 @@ export function VistaExtractoBancario() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+
+                  {/* Selector tipo de archivo (solo si la cuenta soporta 2 modos, ej. tarjetas: PDF + Excel) */}
+                  {cfgBase?.alt && (
+                    <div className="space-y-2">
+                      <Label>Tipo de archivo</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant={importTipoArchivo === 'base' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => { setImportTipoArchivo('base'); setImportFile(null); setImportResult(null) }}
+                          disabled={importLoading}
+                        >
+                          📄 PDF Galicia (oficial)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={importTipoArchivo === 'alt' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => { setImportTipoArchivo('alt'); setImportFile(null); setImportResult(null) }}
+                          disabled={importLoading}
+                        >
+                          📊 Excel manual
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Selector archivo */}
                   <div className="space-y-2">
@@ -2770,6 +2839,14 @@ export function VistaExtractoBancario() {
                       <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
                     )}
                   </div>
+
+                  {/* Checkbox "forzar" — solo modo PDF de tarjeta */}
+                  {config.modo === 'pdf' && (
+                    <label className="flex items-center gap-2 cursor-pointer text-sm">
+                      <Checkbox checked={importForzar} onCheckedChange={(v) => setImportForzar(!!v)} disabled={importLoading} />
+                      <span>Forzar importación aunque el control de saldos no cuadre</span>
+                    </label>
+                  )}
 
                   {/* Saldo inicial (solo primer import) */}
                   {importVerificando && (
@@ -2812,6 +2889,49 @@ export function VistaExtractoBancario() {
                           <AlertDescription>{importResult.message}</AlertDescription>
                         </div>
                       </Alert>
+
+                      {/* Resumen de tarjeta (PDF) */}
+                      {importResult.resumen && (
+                        <Alert>
+                          <Info className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="text-sm space-y-1">
+                              {importResult.resumen.nro_resumen && (
+                                <div>Nº Resumen: <strong>{importResult.resumen.nro_resumen}</strong></div>
+                              )}
+                              {importResult.resumen.fecha_cierre && (
+                                <div>Cierre: <strong>{importResult.resumen.fecha_cierre}</strong> · Vencimiento: <strong>{importResult.resumen.fecha_vencimiento}</strong></div>
+                              )}
+                              <div>Saldo anterior: ${importResult.resumen.saldo_anterior_pesos?.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · USD {importResult.resumen.saldo_anterior_usd?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                              <div>Total a pagar: ${importResult.resumen.total_a_pagar_pesos?.toLocaleString('es-AR', { minimumFractionDigits: 2 })} · USD {importResult.resumen.total_a_pagar_usd?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                              {importResult.movimientos_detectados !== undefined && (
+                                <div>Movimientos detectados: <strong>{importResult.movimientos_detectados}</strong></div>
+                              )}
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {/* Control de saldos (PDF) */}
+                      {importResult.control && (
+                        <Alert variant={importResult.control.ok ? 'default' : 'destructive'}>
+                          <Info className="h-4 w-4" />
+                          <AlertDescription>
+                            <div className="text-sm space-y-1">
+                              <div className="font-semibold">{importResult.control.ok ? '✓ Control de saldos OK' : '⚠ Control de saldos NO cuadra'}</div>
+                              <div>Diferencia pesos: <strong>{importResult.control.diferencia_pesos?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong> · USD: <strong>{importResult.control.diferencia_usd?.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong></div>
+                            </div>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {/* Botón descargar Excel de auditoría */}
+                      {importResult.excel_base64 && (
+                        <Button type="button" variant="outline" onClick={descargarExcelAuditoria} className="w-full">
+                          <FileSpreadsheet className="mr-2 h-4 w-4" />
+                          Descargar Excel de auditoría
+                        </Button>
+                      )}
 
                       {importResult.summary && (
                         <Alert>
@@ -2947,7 +3067,7 @@ export function VistaExtractoBancario() {
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
               <div className="space-y-2">
-                {cuentasDisponibles.filter(c => c.tipo !== 'caja').map((cuenta) => (
+                {cuentasDisponibles.filter(c => c.tipo !== 'caja' && c.tipo !== 'tarjeta').map((cuenta) => (
                   <Button
                     key={cuenta.id}
                     variant="outline"
@@ -2978,6 +3098,28 @@ export function VistaExtractoBancario() {
                   >
                     <div className="flex items-center gap-3">
                       <Banknote className="h-4 w-4 text-green-600" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+            {/* Tarjetas */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarjetas de Crédito</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.tipo === 'tarjeta').map((cuenta) => (
+                  <Button
+                    key={cuenta.id}
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-purple-500 bg-purple-50' : ''}`}
+                    onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4 text-purple-600" />
                       <div className="text-left">
                         <div className="font-medium">{cuenta.nombre}</div>
                         <div className="text-sm text-gray-500">{cuenta.empresa}</div>
