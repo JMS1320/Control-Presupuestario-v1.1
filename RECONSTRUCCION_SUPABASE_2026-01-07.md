@@ -3317,6 +3317,27 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-10: Cuenta contable + centro costo en comprobantes_venta**
+
+Para que las ventas se imputen contablemente igual que las facturas de compra.
+
+```sql
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cuenta_contable VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS centro_costo VARCHAR(100);
+ALTER TABLE ma.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cuenta_contable VARCHAR(100),
+  ADD COLUMN IF NOT EXISTS nro_cuenta VARCHAR(20),
+  ADD COLUMN IF NOT EXISTS centro_costo VARCHAR(100);
+```
+
+UI: SelectorCuentaContable + CentroCostoCombobox agregados al modal-comprobante-venta-msa y al modal-liquidacion-msa. Vista subdiarios muestra ambas columnas.
+
+⚠️ Ejecutar después del bloque "2026-06-09 (noche)".
+
+---
+
 ### **2026-06-09 (noche): Subdiario IVA Ventas — rename + columnas + ma clon**
 
 Habilita un Libro IVA Ventas espejo del Libro IVA Compras. La tabla pasa a contener no solo liquidaciones de granos (tipo 332) sino también FC/NC venta normales. Por eso rename.

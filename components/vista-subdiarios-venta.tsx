@@ -658,6 +658,8 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                     <TableHead className="text-right">Exento/NG</TableHead>
                     <TableHead className="text-right">IVA</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Cuenta contable</TableHead>
+                    <TableHead>Centro costo</TableHead>
                     <TableHead>Estado</TableHead>
                     {esAdmin && <TableHead className="text-right" style={{ width: 110 }}>Acciones</TableHead>}
                   </TableRow>
@@ -690,6 +692,8 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                         <TableCell className="text-right whitespace-nowrap">{fmtMoney((Number(c.imp_neto_no_gravado) || 0) + (Number(c.imp_op_exentas) || 0))}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{c.iva != null ? fmtMoney(Number(c.iva)) : '—'}</TableCell>
                         <TableCell className="text-right whitespace-nowrap font-medium">{c.imp_total != null ? fmtMoney(Number(c.imp_total)) : '—'}</TableCell>
+                        <TableCell className="text-xs">{c.cuenta_contable || <span className="text-gray-400 italic">—</span>}</TableCell>
+                        <TableCell className="text-xs">{c.centro_costo || <span className="text-gray-400 italic">—</span>}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={
                             c.ddjj_iva === 'DDJJ OK' ? 'bg-green-50 text-green-700' :

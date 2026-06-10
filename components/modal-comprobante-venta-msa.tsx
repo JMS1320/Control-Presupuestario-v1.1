@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -28,6 +30,9 @@ export interface ComprobanteVenta {
   año_contable: number | null
   mes_contable: number | null
   datos_adicionales: string | null
+  cuenta_contable: string | null
+  nro_cuenta: string | null
+  centro_costo: string | null
 }
 
 interface TipoComp {
@@ -73,6 +78,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
   const [alicuotaIva, setAlicuotaIva] = useState('21')
   const [iva, setIva] = useState('')
   const [observaciones, setObservaciones] = useState('')
+  const [cuentaContable, setCuentaContable] = useState<string | null>(null)
+  const [nroCuenta, setNroCuenta] = useState<string | null>(null)
+  const [centroCosto, setCentroCosto] = useState('')
   const [guardando, setGuardando] = useState(false)
 
   // Tipos de comprobante (cargar 1 vez)
@@ -106,6 +114,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
       setAlicuotaIva(c.alicuota_iva != null ? String(c.alicuota_iva) : '21')
       setIva(c.iva != null ? fmtAR(Math.abs(Number(c.iva))) : '')
       setObservaciones(c.datos_adicionales || '')
+      setCuentaContable(c.cuenta_contable || null)
+      setNroCuenta(c.nro_cuenta || null)
+      setCentroCosto(c.centro_costo || '')
     } else {
       setFechaEmision(new Date().toISOString().slice(0, 10))
       setTipoComp('')
@@ -118,6 +129,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
       setAlicuotaIva('21')
       setIva('')
       setObservaciones('')
+      setCuentaContable(null)
+      setNroCuenta(null)
+      setCentroCosto('')
     }
   }, [open, comprobanteInicial])
 
@@ -180,6 +194,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
         datos_adicionales: observaciones || null,
         año_contable: añoEm || null,
         mes_contable: mesEm || null,
+        cuenta_contable: cuentaContable || null,
+        nro_cuenta: nroCuenta || null,
+        centro_costo: centroCosto || null,
       }
 
       if (esEdicion) {
@@ -313,7 +330,35 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
             )}
           </div>
 
-          {/* 4. Observaciones */}
+          {/* 4. Imputación contable */}
+          <div className="border rounded-md p-3 space-y-3">
+            <div className="font-semibold text-sm">Imputación contable</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Cuenta contable</Label>
+                <SelectorCuentaContable
+                  value={cuentaContable}
+                  onSelect={(cta) => {
+                    setCuentaContable(cta?.categ || null)
+                    setNroCuenta(cta?.nro_cuenta || null)
+                  }}
+                  cuitProveedor={cliente.cuit || null}
+                  mostrarSinAsignar={true}
+                  placeholder="Sin cuenta — clic para asignar"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Centro de costo</Label>
+                <CentroCostoCombobox
+                  value={centroCosto}
+                  onValueChange={setCentroCosto}
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 5. Observaciones */}
           <div className="space-y-2">
             <Label className="text-xs">Observaciones</Label>
             <Textarea rows={2} value={observaciones} onChange={e => setObservaciones(e.target.value)}

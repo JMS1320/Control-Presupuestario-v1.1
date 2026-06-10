@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -55,6 +57,10 @@ export interface LiquidacionMsa {
   cosecha: string | null
   peso_kg: number | null
   datos_adicionales: string | null
+  // Imputación contable
+  cuenta_contable: string | null
+  nro_cuenta: string | null
+  centro_costo: string | null
 }
 
 interface VentaResumen {
@@ -148,6 +154,11 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
   const [pesoKg, setPesoKg] = useState('')
   const [datosAdic, setDatosAdic] = useState('')
 
+  // ─── Imputación contable ─────────────────────────────────────
+  const [cuentaContable, setCuentaContable] = useState<string | null>(null)
+  const [nroCuenta, setNroCuenta] = useState<string | null>(null)
+  const [centroCosto, setCentroCosto] = useState('')
+
   // ─── Vinculación con ventas ──────────────────────────────────
   const [ventas, setVentas] = useState<VentaResumen[]>([])
   const [seleccionadas, setSeleccionadas] = useState<Set<string>>(new Set())
@@ -213,6 +224,9 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         setCosecha(l.cosecha || '')
         setPesoKg(l.peso_kg != null ? fmtAR(Number(l.peso_kg)) : '')
         setDatosAdic(l.datos_adicionales || '')
+        setCuentaContable(l.cuenta_contable || null)
+        setNroCuenta(l.nro_cuenta || null)
+        setCentroCosto(l.centro_costo || '')
       } else {
         // Alta — reset
         setSeleccionadas(new Set())
@@ -228,6 +242,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         setAlmacenajeNeto(''); setAlmacenajePct(''); setAlmacenajeAlicIva('10.5'); setAlmacenajeIva('')
         setRetIva(''); setRetIibb('')
         setFechaAcred(''); setPuerto(''); setProcedencia(''); setCosecha(''); setPesoKg(''); setDatosAdic('')
+        setCuentaContable(null); setNroCuenta(null); setCentroCosto('')
       }
       setBusquedaVenta('')
     }
@@ -490,6 +505,10 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         imp_total: totalLibro,
         año_contable: añoLiq || null,
         mes_contable: mesLiq || null,
+        // Imputación contable
+        cuenta_contable: cuentaContable || null,
+        nro_cuenta: nroCuenta || null,
+        centro_costo: centroCosto || null,
       }
 
       let liqId = liquidacionInicial?.id
@@ -749,6 +768,31 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
               <Field label="Datos adicionales" wide>
                 <Textarea rows={2} value={datosAdic} onChange={e => setDatosAdic(e.target.value)}
                   placeholder="Acreditación 11/06/2025 - CCP ARRECIFES - Cosecha 25" />
+              </Field>
+            </div>
+          </Section>
+
+          {/* ════ 12b. IMPUTACIÓN CONTABLE ════ */}
+          <Section title="12b. Imputación contable">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Cuenta contable">
+                <SelectorCuentaContable
+                  value={cuentaContable}
+                  onSelect={(cta) => {
+                    setCuentaContable(cta?.categ || null)
+                    setNroCuenta(cta?.nro_cuenta || null)
+                  }}
+                  cuitProveedor={cliente.cuit || null}
+                  mostrarSinAsignar={true}
+                  placeholder="Sin cuenta — clic para asignar"
+                />
+              </Field>
+              <Field label="Centro de costo">
+                <CentroCostoCombobox
+                  value={centroCosto}
+                  onValueChange={setCentroCosto}
+                  className="h-9"
+                />
               </Field>
             </div>
           </Section>
