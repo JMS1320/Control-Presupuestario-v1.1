@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "login": "tsx src/login-test.ts",
+    "mcmp": "tsx src/navigate-mcmp-test.ts",
     "fetch": "tsx src/fetch-comprobantes.ts"
   },
   "dependencies": {
@@ -14,6 +15,7 @@
     "axios-cookiejar-support": "^5.0.3",
     "cheerio": "^1.0.0",
     "dotenv": "^16.4.5",
+    "jszip": "^3.10.1",
     "tough-cookie": "^5.0.0"
   },
   "devDependencies": {

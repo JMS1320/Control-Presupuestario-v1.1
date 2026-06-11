@@ -12,26 +12,30 @@ import { writeFileSync } from 'node:fs'
 
 async function main() {
   try {
-    const cred = getCredenciales(PARAMS.empresa)
+    const cred = await getCredenciales(PARAMS.empresa)
     console.log(`\nEmpresa objetivo: ${cred.empresa}  |  CUIT empresa: ${cred.cuitEmpresa}`)
 
     const client = await loginArca(cred)
 
-    // Test: pedir la home del contribuyente
-    console.log('\n📋 Test: GET portal del contribuyente')
-    const r = await client.get('https://auth.afip.gob.ar/contribuyente_/index.xhtml', {
+    // Test: pedir el portal real del contribuyente (post-SSO)
+    console.log('\n📋 Test: GET portal del contribuyente (post-SSO)')
+    const r = await client.get('https://portalcf.cloud.afip.gob.ar/portal/app/', {
       maxRedirects: 5,
       validateStatus: () => true,
     })
     console.log(`  Status: ${r.status}`)
+    console.log(`  Final URL: ${r.request?.res?.responseUrl || ''}`)
     console.log(`  Content-Type: ${r.headers['content-type']}`)
     console.log(`  Tamaño respuesta: ${String(r.data).length} bytes`)
 
-    // Guardar HTML para inspección manual si algo anduvo raro
-    writeFileSync('debug-home.html', String(r.data))
-    console.log('  📄 HTML guardado en debug-home.html (para inspección)')
+    writeFileSync('debug-portal-final.html', String(r.data))
+    console.log('  📄 HTML guardado en debug-portal-final.html')
 
-    console.log('\n✅ POC LOGIN OK')
+    if (r.status === 200 && String(r.data).length > 2000) {
+      console.log('\n✅ POC LOGIN COMPLETO — sesión activa en el portal')
+    } else {
+      console.log('\n⚠️ Login terminó pero el GET final no devolvió una página rica. Revisar debug-portal-final.html')
+    }
   } catch (err) {
     console.error('\n❌ Error:', (err as Error).message)
     process.exit(1)

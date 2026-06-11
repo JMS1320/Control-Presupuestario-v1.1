@@ -536,6 +536,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modoEdicion, setModoEdicion] = useState(false)
   // Modo edición/eliminación admin: habilita edición libre de todos los campos + delete real
   const [modoEdicionAdmin, setModoEdicionAdmin] = useState(false)
+  // Modal de descarga automática desde ARCA (solo admin)
+  const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
   const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
   const [textoConfirmarEliminar, setTextoConfirmarEliminar] = useState('')
   const [depsParaEliminar, setDepsParaEliminar] = useState<Map<string, any>>(new Map())
@@ -5841,109 +5843,109 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
             </div>
           )}
-          <div className="flex items-center gap-3">
-            {/* Búsqueda rápida */}
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar emisor, CUIT, cuenta..."
-                value={busquedaRapida}
-                onChange={e => setBusquedaRapida(e.target.value)}
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
-            <div className="flex gap-2 ml-auto">
-          {/* Botón importar Excel */}
-          <Button
-            variant="outline"
-            onClick={() => setMostrarImportador(true)}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Importar Excel
-          </Button>
+          {/* ───────────── Fila 0: Búsqueda (ancho completo) ───────────── */}
+          <div className="relative w-full">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Buscar emisor, CUIT, cuenta..."
+              value={busquedaRapida}
+              onChange={e => setBusquedaRapida(e.target.value)}
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
 
-          {/* Botón reglas de importación */}
-          <Button
-            variant="outline"
-            onClick={() => setMostrarReglasImport(true)}
-            title="Reglas que asignan cuenta contable y estado por CUIT al importar"
-          >
-            <Settings2 className="mr-2 h-4 w-4" />
-            Reglas Import
-          </Button>
+          {/* ───────────── Fila 1: Datos (importar / reglas / actualizar / filtros) ───────────── */}
+          <div className="flex flex-wrap gap-2">
+            {/* Importar FC (dropdown: ARCA solo admin, Excel para todos) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar FC
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {!esContable && (
+                  <DropdownMenuItem onClick={() => setMostrarImportadorArca(true)}>
+                    📥 Importar desde ARCA (automático)
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setMostrarImportador(true)}>
+                  📂 Importar Excel manual
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          {/* Botón de filtros */}
-          <Button 
-            variant={mostrarFiltros ? "default" : "outline"}
-            onClick={() => setMostrarFiltros(!mostrarFiltros)}
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Filtros
-          </Button>
-          
-          {/* Botón actualizar */}
-          <Button
-            variant="outline"
-            onClick={() => cargarFacturas()}
-            title="Recargar datos desde BD"
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Actualizar
-          </Button>
-
-          {/* Botón modo edición */}
-          <Button
-            variant={modoEdicion ? "default" : "outline"}
-            onClick={() => setModoEdicion(!modoEdicion)}
-          >
-            <Edit3 className="mr-2 h-4 w-4" />
-            {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
-          </Button>
-
-          {/* Botón edición masiva */}
-          <Button
-            variant={modoEdicionMasiva ? "default" : "outline"}
-            onClick={() => {
-              setModoEdicionMasiva(!modoEdicionMasiva)
-              if (modoEdicionMasiva) {
-                setFacturasSeleccionadasMasiva(new Set())
-                setNuevoEstadoMasivo('')
-              }
-            }}
-            className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
-          >
-            <Check className="mr-2 h-4 w-4" />
-            {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
-          </Button>
-
-          {/* Botón modo edición/eliminación admin (solo admin) */}
-          {!esContable && (
-            <Button
-              variant={modoEdicionAdmin ? "default" : "outline"}
-              onClick={() => {
-                if (modoEdicionAdmin) {
-                  setModoEdicionAdmin(false)
-                  setFacturasSeleccionadasMasiva(new Set())
-                  return
-                }
-                const ok = window.confirm(
-                  '⚠️ MODO EDICIÓN / ELIMINACIÓN ADMIN\n\n' +
-                  'Vas a habilitar la posibilidad de modificar TODOS los campos de las facturas y de ELIMINARLAS permanentemente.\n\n' +
-                  'Las facturas son la fuente de verdad fiscal y contable. Modificarlas o borrarlas puede romper:\n' +
-                  '  • Vinculaciones con anticipos\n' +
-                  '  • Retenciones SICORE\n' +
-                  '  • Conciliación bancaria\n' +
-                  '  • Declaraciones de IVA ya cerradas\n\n' +
-                  '¿Confirmás activar el modo?'
-                )
-                if (ok) setModoEdicionAdmin(true)
-              }}
-              className={modoEdicionAdmin ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-300 text-red-700 hover:bg-red-50"}
-              title="Solo admin — modifica o elimina facturas"
-            >
-              {modoEdicionAdmin ? '🔧 Salir Modo Admin' : '🔧 Modo Admin'}
+            <Button variant="outline" onClick={() => setMostrarReglasImport(true)}
+              title="Reglas que asignan cuenta contable y estado por CUIT al importar">
+              <Settings2 className="mr-2 h-4 w-4" />
+              Reglas Import
             </Button>
-          )}
+
+            <Button variant="outline" onClick={() => cargarFacturas()} title="Recargar datos desde BD">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Actualizar
+            </Button>
+
+            <Button variant={mostrarFiltros ? "default" : "outline"} onClick={() => setMostrarFiltros(!mostrarFiltros)}>
+              <Filter className="mr-2 h-4 w-4" />
+              Filtros
+            </Button>
+          </div>
+
+          {/* ───────────── Fila 2: Acciones (edición + SICORE + Pagos) ───────────── */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Grupo edición */}
+            <Button variant={modoEdicion ? "default" : "outline"} onClick={() => setModoEdicion(!modoEdicion)}>
+              <Edit3 className="mr-2 h-4 w-4" />
+              {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
+            </Button>
+
+            <Button
+              variant={modoEdicionMasiva ? "default" : "outline"}
+              onClick={() => {
+                setModoEdicionMasiva(!modoEdicionMasiva)
+                if (modoEdicionMasiva) {
+                  setFacturasSeleccionadasMasiva(new Set())
+                  setNuevoEstadoMasivo('')
+                }
+              }}
+              className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
+            </Button>
+
+            {!esContable && (
+              <Button
+                variant={modoEdicionAdmin ? "default" : "outline"}
+                onClick={() => {
+                  if (modoEdicionAdmin) {
+                    setModoEdicionAdmin(false)
+                    setFacturasSeleccionadasMasiva(new Set())
+                    return
+                  }
+                  const ok = window.confirm(
+                    '⚠️ MODO EDICIÓN / ELIMINACIÓN ADMIN\n\n' +
+                    'Vas a habilitar la posibilidad de modificar TODOS los campos de las facturas y de ELIMINARLAS permanentemente.\n\n' +
+                    'Las facturas son la fuente de verdad fiscal y contable. Modificarlas o borrarlas puede romper:\n' +
+                    '  • Vinculaciones con anticipos\n' +
+                    '  • Retenciones SICORE\n' +
+                    '  • Conciliación bancaria\n' +
+                    '  • Declaraciones de IVA ya cerradas\n\n' +
+                    '¿Confirmás activar el modo?'
+                  )
+                  if (ok) setModoEdicionAdmin(true)
+                }}
+                className={modoEdicionAdmin ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-300 text-red-700 hover:bg-red-50"}
+                title="Solo admin — modifica o elimina facturas"
+              >
+                {modoEdicionAdmin ? '🔧 Salir Modo Admin' : '🔧 Modo Admin'}
+              </Button>
+            )}
+
+            {/* Separador visual */}
+            <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
           {/* Botón Panel SICORE */}
           <Button
@@ -6087,7 +6089,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             </div>
           </PopoverContent>
         </Popover>
-        </div>
           </div>
 
       {/* Panel de filtros */}

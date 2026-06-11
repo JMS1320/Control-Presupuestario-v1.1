@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { pedirPassword } from './prompt.js'
 
 export interface CredencialesArca {
   cuitPersonal: string
@@ -7,25 +8,40 @@ export interface CredencialesArca {
   empresa: 'MSA' | 'PAM' | 'MA'
 }
 
-export function getCredenciales(empresa: 'MSA' | 'PAM' | 'MA'): CredencialesArca {
+/**
+ * Devuelve las credenciales de ARCA para una empresa.
+ * Si la password NO está en .env, la pide por terminal (sin mostrarla).
+ * Los CUIT sí pueden estar en .env (no son secretos).
+ */
+export async function getCredenciales(empresa: 'MSA' | 'PAM' | 'MA'): Promise<CredencialesArca> {
   const reqEnv = (key: string): string => {
     const v = process.env[key]
-    if (!v) throw new Error(`Falta variable de entorno: ${key}. Copiá .env.example a .env y completá.`)
+    if (!v) throw new Error(`Falta variable de entorno: ${key}. Editá .env`)
     return v
   }
 
   if (empresa === 'MA') {
+    const cuitPersonal = reqEnv('ARCA_CUIT_PERSONAL_MA')
+    let password = process.env.ARCA_PASSWORD_PERSONAL_MA
+    if (!password) {
+      password = await pedirPassword(`🔐 Ingresá la clave fiscal del CUIT ${cuitPersonal} (MA): `)
+    }
     return {
-      cuitPersonal: reqEnv('ARCA_CUIT_PERSONAL_MA'),
-      password: reqEnv('ARCA_PASSWORD_PERSONAL_MA'),
-      cuitEmpresa: reqEnv('ARCA_CUIT_EMPRESA_MA'),
+      cuitPersonal,
+      password,
+      cuitEmpresa: cuitPersonal,   // En MA logueás directo con el CUIT de la empresa
       empresa: 'MA',
     }
   }
 
+  const cuitPersonal = reqEnv('ARCA_CUIT_PERSONAL')
+  let password = process.env.ARCA_PASSWORD_PERSONAL
+  if (!password) {
+    password = await pedirPassword(`🔐 Ingresá tu clave fiscal del CUIT ${cuitPersonal}: `)
+  }
   return {
-    cuitPersonal: reqEnv('ARCA_CUIT_PERSONAL'),
-    password: reqEnv('ARCA_PASSWORD_PERSONAL'),
+    cuitPersonal,
+    password,
     cuitEmpresa: empresa === 'MSA' ? reqEnv('ARCA_CUIT_EMPRESA_MSA') : reqEnv('ARCA_CUIT_EMPRESA_PAM'),
     empresa,
   }
@@ -38,7 +54,7 @@ export const PARAMS = {
   empresa: (process.env.ARCA_EMPRESA || 'MSA') as 'MSA' | 'PAM' | 'MA',
 }
 
-// URLs base — habrá que ajustar contra el portal real al testear
+// URLs base
 export const URLS = {
   LOGIN: 'https://auth.afip.gob.ar/contribuyente_/login.xhtml',
   PORTAL_BASE: 'https://serviciosweb.afip.gob.ar/genericos/comprobantes/',

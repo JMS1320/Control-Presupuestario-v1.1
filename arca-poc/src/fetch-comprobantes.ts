@@ -58,7 +58,7 @@ function parsearListadoComprobantes(html: string): ComprobanteScraped[] {
 
 async function main() {
   try {
-    const cred = getCredenciales(PARAMS.empresa)
+    const cred = await getCredenciales(PARAMS.empresa)
     console.log(`\n🎯 Objetivo: comprobantes ${PARAMS.tipo} de ${cred.empresa} (CUIT ${cred.cuitEmpresa})`)
     console.log(`   Rango: ${PARAMS.fechaDesde} → ${PARAMS.fechaHasta}`)
 
