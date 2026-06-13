@@ -538,6 +538,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modoEdicionAdmin, setModoEdicionAdmin] = useState(false)
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
+  const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'MA'>('MSA')
+  const [arcaFechaDesde, setArcaFechaDesde] = useState('')
+  const [arcaFechaHasta, setArcaFechaHasta] = useState('')
+  const [arcaCargando, setArcaCargando] = useState(false)
+  const [arcaError, setArcaError] = useState<string | null>(null)
   const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
   const [textoConfirmarEliminar, setTextoConfirmarEliminar] = useState('')
   const [depsParaEliminar, setDepsParaEliminar] = useState<Map<string, any>>(new Map())
@@ -6679,6 +6684,146 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               disabled={eliminandoFacturas || textoConfirmarEliminar.trim().toLowerCase() !== 'aceptar'}
             >
               {eliminandoFacturas ? 'Eliminando...' : `🗑️ Eliminar ${facturasSeleccionadasMasiva.size} factura(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Importar desde ARCA (descarga automática) — solo admin */}
+      <Dialog open={mostrarImportadorArca} onOpenChange={(v) => {
+        if (arcaCargando) return  // no cerrar mientras descarga
+        setMostrarImportadorArca(v)
+        if (!v) { setArcaError(null) }
+        if (v) {
+          // Precargar empresa según la tab actual del componente
+          setArcaEmpresa(empresa === 'MA' ? 'MA' : 'MSA')
+          // Atajo por defecto: mes anterior
+          const hoy = new Date()
+          const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+          const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+          const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+          setArcaFechaDesde(fmt(mesAnt))
+          setArcaFechaHasta(fmt(finMesAnt))
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📥 Importar desde ARCA</DialogTitle>
+            <DialogDescription>
+              Descarga automática de Mis Comprobantes. Después revisás e imputás antes del INSERT final.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Empresa */}
+            <div className="space-y-1">
+              <Label className="text-xs">Empresa</Label>
+              <Select value={arcaEmpresa} onValueChange={(v) => setArcaEmpresa(v as 'MSA' | 'MA')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MSA">MSA — Martinez Sobrado Agro</SelectItem>
+                  <SelectItem value="MA">MA — Otro CUIT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Atajos de fecha */}
+            <div className="space-y-1">
+              <Label className="text-xs">Atajos rápidos</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const mes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+                  const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(mes)); setArcaFechaHasta(fmt(fin))
+                }}>Mes anterior</Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const hace30 = new Date(hoy); hace30.setDate(hace30.getDate() - 30)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(hace30)); setArcaFechaHasta(fmt(hoy))
+                }}>Últimos 30 días</Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+                  const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(inicio)); setArcaFechaHasta(fmt(ayer))
+                }}>Este mes hasta ayer</Button>
+              </div>
+            </div>
+
+            {/* Fechas custom */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Fecha desde *</Label>
+                <Input type="date" value={arcaFechaDesde} onChange={e => setArcaFechaDesde(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Fecha hasta *</Label>
+                <Input type="date" value={arcaFechaHasta} onChange={e => setArcaFechaHasta(e.target.value)} />
+              </div>
+            </div>
+
+            {arcaError && (
+              <div className="bg-red-50 border border-red-300 rounded p-3 text-sm text-red-900">
+                ❌ {arcaError}
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs text-blue-900">
+              ℹ️ La descarga puede tardar 10-20 segundos (login + SSO + consulta + descarga).
+              Después vas al wizard de imputación para revisar antes de importar a BD.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarImportadorArca(false)} disabled={arcaCargando}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                setArcaError(null)
+                if (!arcaFechaDesde || !arcaFechaHasta) { setArcaError('Completá ambas fechas'); return }
+                if (arcaFechaDesde > arcaFechaHasta) { setArcaError('Fecha desde debe ser anterior o igual a fecha hasta'); return }
+                setArcaCargando(true)
+                try {
+                  const resp = await fetch('/api/arca/descargar-comprobantes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      empresa: arcaEmpresa,
+                      fechaDesde: arcaFechaDesde,
+                      fechaHasta: arcaFechaHasta,
+                      tipo: 'recibidos',
+                      userRole,
+                    }),
+                  })
+                  const data = await resp.json()
+                  if (!resp.ok) {
+                    setArcaError(data.error || `Error ${resp.status}`)
+                    return
+                  }
+                  // Crear File con el CSV adaptado y delegar al wizard de Excel
+                  const csvBlob = new Blob([data.csvText], { type: 'text/csv;charset=utf-8' })
+                  const fileName = `arca-${arcaEmpresa}-${arcaFechaDesde}-a-${arcaFechaHasta}.csv`
+                  const csvFile = new File([csvBlob], fileName, { type: 'text/csv' })
+                  setArchivoImportacion(csvFile)
+                  setOrigenFactura('ARCA')
+                  setPasoImportacion('archivo')
+                  setMostrarImportadorArca(false)
+                  setMostrarImportador(true)  // abre el wizard existente en paso 2 con el File precargado
+                } catch (err) {
+                  setArcaError((err as Error).message || 'Error de red')
+                } finally {
+                  setArcaCargando(false)
+                }
+              }}
+              disabled={arcaCargando}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {arcaCargando ? '⏳ Descargando...' : '📥 Descargar de ARCA'}
             </Button>
           </DialogFooter>
         </DialogContent>

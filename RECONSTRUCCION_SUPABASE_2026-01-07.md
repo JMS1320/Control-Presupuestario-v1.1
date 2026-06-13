@@ -3317,6 +3317,43 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-12: Tabla `arca_descargas_log` (histórico descargas automáticas ARCA)**
+
+Para el módulo de descarga automática desde el portal de ARCA (Mis Comprobantes), se agregó una tabla de auditoría que registra cada descarga realizada.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.arca_descargas_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha_hora TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_role VARCHAR(20),
+  empresa VARCHAR(10) NOT NULL,                -- 'MSA' | 'MA'
+  tipo VARCHAR(20) NOT NULL,                   -- 'recibidos' | 'emitidos'
+  fecha_desde DATE NOT NULL,
+  fecha_hasta DATE NOT NULL,
+  comprobantes_descargados INT,
+  comprobantes_importados INT,
+  duplicados INT,
+  errores INT,
+  status VARCHAR(20) NOT NULL,                 -- 'ok' | 'error' | 'cancelado'
+  error_mensaje TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_arca_log_fecha ON public.arca_descargas_log(fecha_hora DESC);
+CREATE INDEX idx_arca_log_empresa ON public.arca_descargas_log(empresa, fecha_desde, fecha_hasta);
+ALTER TABLE public.arca_descargas_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY allow_all_arca_log ON public.arca_descargas_log FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.arca_descargas_log TO anon, authenticated;
+```
+
+Esta tabla **NO está en el backup original**, ejecutar manualmente si se reconstruye la BD.
+
+Variables de entorno requeridas (en Vercel):
+- `ARCA_CUIT_PERSONAL`, `ARCA_PASSWORD_PERSONAL` (loguea MSA)
+- `ARCA_CUIT_EMPRESA_MSA` (CUIT a representar)
+- `ARCA_CUIT_PERSONAL_MA`, `ARCA_PASSWORD_PERSONAL_MA`, `ARCA_CUIT_EMPRESA_MA` (para MA)
+
+---
+
 ### **2026-06-10: Cuenta contable + centro costo en comprobantes_venta**
 
 Para que las ventas se imputen contablemente igual que las facturas de compra.

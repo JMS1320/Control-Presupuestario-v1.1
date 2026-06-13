@@ -51,6 +51,5 @@ Thumbs.db
 .claude/
 .mcp.json
 
-# ARCA Integration (desarrollo local únicamente)
+# ARCA Integration (legacy: experimentación previa al módulo integrado)
 arca-integration/
-app/api/arca/
