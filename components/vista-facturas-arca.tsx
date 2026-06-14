@@ -539,6 +539,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
   const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'MA'>('MSA')
+  const [arcaPassword, setArcaPassword] = useState('')         // se ingresa cada vez, no se guarda
   const [arcaFechaDesde, setArcaFechaDesde] = useState('')
   const [arcaFechaHasta, setArcaFechaHasta] = useState('')
   const [arcaCargando, setArcaCargando] = useState(false)
@@ -6693,7 +6694,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <Dialog open={mostrarImportadorArca} onOpenChange={(v) => {
         if (arcaCargando) return  // no cerrar mientras descarga
         setMostrarImportadorArca(v)
-        if (!v) { setArcaError(null) }
+        if (!v) { setArcaError(null); setArcaPassword('') }   // al cerrar, descartar la clave de memoria
         if (v) {
           // Precargar empresa según la tab actual del componente
           setArcaEmpresa(empresa === 'MA' ? 'MA' : 'MSA')
@@ -6766,6 +6767,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
             </div>
 
+            {/* Clave fiscal (input password, no se ve, no se guarda) */}
+            <div className="space-y-1">
+              <Label className="text-xs">Clave fiscal de ARCA *</Label>
+              <Input
+                type="password"
+                value={arcaPassword}
+                onChange={e => setArcaPassword(e.target.value)}
+                placeholder="Ingresá tu clave fiscal"
+                autoComplete="current-password"
+              />
+              <p className="text-[10px] text-gray-500">
+                La clave se usa una sola vez para esta descarga. No se guarda en el servidor.
+              </p>
+            </div>
+
             {arcaError && (
               <div className="bg-red-50 border border-red-300 rounded p-3 text-sm text-red-900">
                 ❌ {arcaError}
@@ -6785,6 +6801,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <Button
               onClick={async () => {
                 setArcaError(null)
+                if (!arcaPassword || arcaPassword.trim().length === 0) { setArcaError('Ingresá tu clave fiscal'); return }
                 if (!arcaFechaDesde || !arcaFechaHasta) { setArcaError('Completá ambas fechas'); return }
                 if (arcaFechaDesde > arcaFechaHasta) { setArcaError('Fecha desde debe ser anterior o igual a fecha hasta'); return }
                 setArcaCargando(true)
@@ -6794,6 +6811,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       empresa: arcaEmpresa,
+                      password: arcaPassword,
                       fechaDesde: arcaFechaDesde,
                       fechaHasta: arcaFechaHasta,
                       tipo: 'recibidos',
@@ -6812,6 +6830,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   setArchivoImportacion(csvFile)
                   setOrigenFactura('ARCA')
                   setPasoImportacion('archivo')
+                  setArcaPassword('')  // borrar la clave de memoria
                   setMostrarImportadorArca(false)
                   setMostrarImportador(true)  // abre el wizard existente en paso 2 con el File precargado
                 } catch (err) {
@@ -6820,7 +6839,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   setArcaCargando(false)
                 }
               }}
-              disabled={arcaCargando}
+              disabled={arcaCargando || !arcaPassword}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {arcaCargando ? '⏳ Descargando...' : '📥 Descargar de ARCA'}

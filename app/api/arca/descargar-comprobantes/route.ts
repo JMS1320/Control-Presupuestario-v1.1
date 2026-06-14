@@ -9,8 +9,12 @@
  *   - Credenciales SOLO en variables de entorno del servidor (nunca expuestas).
  *
  * Body esperado:
- *   { empresa: 'MSA'|'MA', fechaDesde: 'YYYY-MM-DD', fechaHasta: 'YYYY-MM-DD',
+ *   { empresa: 'MSA'|'MA', password: string,
+ *     fechaDesde: 'YYYY-MM-DD', fechaHasta: 'YYYY-MM-DD',
  *     tipo?: 'recibidos'|'emitidos', userRole?: 'admin'|'contable' }
+ *
+ * La password la ingresa el usuario en el modal. No se guarda en ningún lado:
+ * llega al endpoint, se usa una vez para loguear, y se descarta al final.
  *
  * Response (200):
  *   { csvText, cantidad, rango, logId }
@@ -33,8 +37,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    const { empresa, fechaDesde, fechaHasta, tipo, userRole } = body as {
+    const { empresa, password, fechaDesde, fechaHasta, tipo, userRole } = body as {
       empresa?: string
+      password?: string
       fechaDesde?: string
       fechaHasta?: string
       tipo?: string
@@ -44,6 +49,9 @@ export async function POST(request: Request) {
     // ── Validaciones ────────────────────────────────────────────
     if (!empresa || !['MSA', 'MA'].includes(empresa)) {
       return NextResponse.json({ error: 'empresa debe ser MSA o MA' }, { status: 400 })
+    }
+    if (!password || password.trim().length === 0) {
+      return NextResponse.json({ error: 'Ingresá tu clave fiscal de ARCA' }, { status: 400 })
     }
     if (!fechaDesde || !/^\d{4}-\d{2}-\d{2}$/.test(fechaDesde)) {
       return NextResponse.json({ error: 'fechaDesde debe estar en formato YYYY-MM-DD' }, { status: 400 })
@@ -80,6 +88,7 @@ export async function POST(request: Request) {
     // ── Ejecutar descarga ───────────────────────────────────────
     const result = await descargarComprobantesArca({
       empresa: empresa as Empresa,
+      password: password.trim(),
       fechaDesde,
       fechaHasta,
       tipo: (tipo as Tipo) || 'recibidos',

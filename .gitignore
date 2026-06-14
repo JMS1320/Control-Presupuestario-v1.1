@@ -51,5 +51,6 @@ Thumbs.db
 .claude/
 .mcp.json
 
-# ARCA Integration (legacy: experimentación previa al módulo integrado)
+# ARCA — POC standalone y experimentación local (ya migrado a lib/arca/)
 arca-integration/
+arca-poc/

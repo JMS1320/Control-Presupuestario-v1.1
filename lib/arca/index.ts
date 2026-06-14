@@ -1,15 +1,15 @@
 /**
  * Punto de entrada del módulo lib/arca.
  *
- * Función pública: descargarComprobantesArca({ empresa, fechaDesde, fechaHasta, tipo })
+ * Función pública: descargarComprobantesArca({ empresa, password, fechaDesde, fechaHasta, tipo })
  *
- * Lee credenciales de variables de entorno:
- *   - ARCA_CUIT_PERSONAL / ARCA_PASSWORD_PERSONAL  (loguea a MSA/PAM)
- *   - ARCA_CUIT_PERSONAL_MA / ARCA_PASSWORD_PERSONAL_MA  (loguea a MA)
- *   - ARCA_CUIT_EMPRESA_MSA / ARCA_CUIT_EMPRESA_MA  (CUIT a representar)
+ * Lee SOLO los CUIT de variables de entorno (no son secretos):
+ *   - ARCA_CUIT_PERSONAL          (CUIT que loguea para MSA/PAM)
+ *   - ARCA_CUIT_EMPRESA_MSA       (CUIT a representar — MSA SRL)
+ *   - ARCA_CUIT_PERSONAL_MA       (CUIT para entrar a MA)
  *
- * No expone credenciales al frontend. Solo devuelve el CSV adaptado al
- * formato que ya entiende /api/import-facturas-arca.
+ * La password se recibe POR PARÁMETRO (el usuario la ingresa en el modal
+ * de la app cada vez). Nunca se guarda en disco ni en BD ni en env vars.
  */
 
 import { loginArca } from './login'
@@ -20,12 +20,13 @@ export type Tipo = 'recibidos' | 'emitidos'
 
 export interface DescargarArcaInput {
   empresa: Empresa
-  fechaDesde: string          // YYYY-MM-DD
-  fechaHasta: string          // YYYY-MM-DD
-  tipo?: Tipo                 // default: 'recibidos'
+  password: string             // ingresada por el usuario en el modal (no en env)
+  fechaDesde: string           // YYYY-MM-DD
+  fechaHasta: string           // YYYY-MM-DD
+  tipo?: Tipo                  // default: 'recibidos'
 }
 
-function getCredenciales(empresa: Empresa): { cuitPersonal: string; password: string; cuitEmpresa: string } {
+function getCuits(empresa: Empresa): { cuitPersonal: string; cuitEmpresa: string } {
   const req = (k: string): string => {
     const v = process.env[k]
     if (!v) throw new Error(`Falta variable de entorno: ${k}`)
@@ -36,13 +37,11 @@ function getCredenciales(empresa: Empresa): { cuitPersonal: string; password: st
     const cuitPersonal = req('ARCA_CUIT_PERSONAL_MA')
     return {
       cuitPersonal,
-      password: req('ARCA_PASSWORD_PERSONAL_MA'),
       cuitEmpresa: cuitPersonal,   // En MA loguea directo (no hay representado)
     }
   }
   return {
     cuitPersonal: req('ARCA_CUIT_PERSONAL'),
-    password: req('ARCA_PASSWORD_PERSONAL'),
     cuitEmpresa: req(empresa === 'MSA' ? 'ARCA_CUIT_EMPRESA_MSA' : 'ARCA_CUIT_EMPRESA_PAM'),
   }
 }
@@ -55,16 +54,19 @@ function getCredenciales(empresa: Empresa): { cuitPersonal: string; password: st
  *             que ya tiene anti-duplicados y reglas testeadas.
  */
 export async function descargarComprobantesArca(input: DescargarArcaInput): Promise<DescargaResult> {
-  const cred = getCredenciales(input.empresa)
+  if (!input.password || input.password.trim().length === 0) {
+    throw new Error('Falta password (debe ser ingresada por el usuario)')
+  }
+  const cuits = getCuits(input.empresa)
 
   const client = await loginArca({
-    cuitPersonal: cred.cuitPersonal,
-    password: cred.password,
+    cuitPersonal: cuits.cuitPersonal,
+    password: input.password,
   })
 
   const result = await descargarMisComprobantes(client, {
-    cuitPersonal: cred.cuitPersonal,
-    cuitEmpresa: cred.cuitEmpresa,
+    cuitPersonal: cuits.cuitPersonal,
+    cuitEmpresa: cuits.cuitEmpresa,
     fechaDesde: input.fechaDesde,
     fechaHasta: input.fechaHasta,
     tipo: input.tipo || 'recibidos',
