@@ -25,7 +25,13 @@ function toAR(yyyymmdd: string): string {
  * espera "Neto Grav. IVA 0%". Los datos son los mismos, solo cambian los labels.
  */
 const MAPEO_COLUMNAS: Record<string, string> = {
+  // Estas dos son las que el endpoint usa para detectar "EXCEL NUEVO"
+  // (necesita Fecha + Tipo presentes y Fecha de Emisión ausente)
+  'Fecha de Emisión': 'Fecha',
   'Tipo de Comprobante': 'Tipo',
+  // Totales IVA
+  'IVA': 'Total IVA',
+  // Desglose por alícuota
   'Imp. Neto Gravado IVA 0%': 'Neto Grav. IVA 0%',
   'Imp. Neto Gravado IVA 2,5%': 'Neto Grav. IVA 2,5%',
   'Imp. Neto Gravado IVA 5%': 'Neto Grav. IVA 5%',
