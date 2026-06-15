@@ -157,7 +157,7 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
-function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCertificado?: (registros: any[]) => void }) {
+function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }: { registros: any[], onCertificado?: (registros: any[]) => void, mostrarAnulados?: boolean }) {
   const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
   const fmtFecha = (f: string | null) => {
     if (!f) return '-'
@@ -169,11 +169,15 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
     anticipo: 'bg-purple-100 text-purple-700',
     agrupacion: 'bg-orange-100 text-orange-700',
   }
-  const totRet   = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
-  const totPago  = registros.reduce((s, r) => s + (Number(r.pago) || 0), 0)
-  const totTotal = registros.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
-  const totBase  = registros.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
-  const totNeto  = registros.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
+  // Filas visibles según toggle; filas vigentes (no anuladas) para totales
+  const filasVisibles = mostrarAnulados ? registros : registros.filter(r => !r.anulado)
+  const vigentes = registros.filter(r => !r.anulado)
+  const cantAnuladas = registros.length - vigentes.length
+  const totRet   = vigentes.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+  const totPago  = vigentes.reduce((s, r) => s + (Number(r.pago) || 0), 0)
+  const totTotal = vigentes.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+  const totBase  = vigentes.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
+  const totNeto  = vigentes.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
 
   return (
     <div className="overflow-x-auto rounded border border-green-200 max-h-[350px] overflow-y-auto">
@@ -195,50 +199,66 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
           </tr>
         </thead>
         <tbody>
-          {registros.map((r, i) => (
-            <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-green-50/30'}>
-              <td className="border border-green-100 px-2 py-1">
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${origenColor[r.origen] || 'bg-gray-100 text-gray-700'}`}>
-                  {r.origen || '-'}
-                </span>
+          {filasVisibles.map((r, i) => {
+            const tachado = r.anulado ? 'line-through opacity-50' : ''
+            const rowBg = r.anulado ? 'bg-gray-100' : (i % 2 === 0 ? 'bg-white' : 'bg-green-50/30')
+            return (
+            <tr key={r.id || i} className={rowBg}>
+              <td className={`border border-green-100 px-2 py-1 ${tachado}`}>
+                {r.anulado ? (
+                  <span
+                    className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-200 text-orange-800"
+                    title={`Anulado el ${r.fecha_anulacion ? new Date(r.fecha_anulacion).toLocaleString('es-AR') : '?'}\nMotivo: ${r.motivo_anulacion || '-'}`}
+                  >
+                    ANULADO
+                  </span>
+                ) : (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${origenColor[r.origen] || 'bg-gray-100 text-gray-700'}`}>
+                    {r.origen || '-'}
+                  </span>
+                )}
               </td>
-              <td className="border border-green-100 px-2 py-1">{r.tipo_sicore || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{fmtFecha(r.fecha_pago)}</td>
-              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{r.cuit_emisor || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 max-w-[150px] truncate" title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.neto_gravado_pagado)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">
+              <td className={`border border-green-100 px-2 py-1 ${tachado}`}>{r.tipo_sicore || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 whitespace-nowrap ${tachado}`}>{fmtFecha(r.fecha_pago)}</td>
+              <td className={`border border-green-100 px-2 py-1 whitespace-nowrap ${tachado}`}>{r.cuit_emisor || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 max-w-[150px] truncate ${tachado}`} title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.neto_gravado_pagado)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.total_pagado)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.base_imponible)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>
                 {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2).replace(".", ",")}%` : '-'}
               </td>
-              <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right font-medium text-red-700 ${tachado}`}>{fmt(r.retencion)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right font-medium text-green-700 ${tachado}`}>{fmt(r.pago)}</td>
               {onCertificado && (
                 <td className="border border-green-100 px-2 py-1 text-center">
-                  <button
-                    onClick={() => {
-                      // Agrupar todos los registros con el mismo nro_certificado
-                      const key = r.nro_certificado || r.id
-                      const grupo = r.nro_certificado
-                        ? registros.filter(x => x.nro_certificado === r.nro_certificado)
-                        : [r]
-                      onCertificado(grupo)
-                    }}
-                    title="Descargar Certificado de Retención"
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
+                  {r.anulado ? (
+                    <span className="text-gray-400 text-xs">—</span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        // Agrupar todos los registros NO anulados con el mismo nro_certificado
+                        const grupo = r.nro_certificado
+                          ? registros.filter(x => !x.anulado && x.nro_certificado === r.nro_certificado)
+                          : [r]
+                        onCertificado(grupo)
+                      }}
+                      title="Descargar Certificado de Retención"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </td>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
         <tfoot className="bg-green-100 font-semibold sticky bottom-0">
           <tr>
             <td colSpan={5} className="border border-green-200 px-2 py-1.5 text-right text-xs">
-              TOTALES — {registros.length} registro{registros.length !== 1 ? 's' : ''}
+              TOTALES — {vigentes.length} vigente{vigentes.length !== 1 ? 's' : ''}{cantAnuladas > 0 ? ` (+ ${cantAnuladas} anulado${cantAnuladas !== 1 ? 's' : ''} excluido${cantAnuladas !== 1 ? 's' : ''})` : ''}
             </td>
             <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totNeto)}</td>
             <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totTotal)}</td>
@@ -363,6 +383,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     estadoSeleccionado: string
   } | null>(null)
   const [cargandoV2, setCargandoV2] = useState(false)
+  const [mostrarAnulados, setMostrarAnulados] = useState(false)
+  const [mostrarModalExport, setMostrarModalExport] = useState(false)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
   const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
@@ -2949,6 +2971,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         esNegativa: netoFactura < 0
       })
 
+      // Chequear estado_quincena ANTES de abrir el modal SICORE
+      const { data: qChk } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('estado_quincena')
+        .eq('quincena', quincena)
+        .eq('anulado', false)
+        .order('estado_quincena', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const estadoQ = (qChk?.estado_quincena as string | undefined) ?? null
+      if (estadoQ === 'declarada') {
+        alert(`🔒 La quincena ${quincena} ya fue declarada a AFIP. No se pueden agregar nuevas retenciones.\nDebés rectificar la DDJJ con tu contadora antes de poder modificar.`)
+        await cancelarGuardadoPendiente()
+        return
+      }
+      if (estadoQ === 'cerrada') {
+        const okWarn = window.confirm(
+          `⚠️ La quincena ${quincena} ya está cerrada (TXT generado).\nAl agregar esta retención tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?`
+        )
+        if (!okWarn) {
+          await cancelarGuardadoPendiente()
+          return
+        }
+      }
+
       // CASO ESPECIAL: Facturas negativas
       if (netoFactura < 0) {
         // Para facturas negativas, verificar si ya hay retención previa
@@ -3035,7 +3083,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Asignar nro_comprobante y nro_certificado al insertar (no esperar al cierre TXT)
       const anoActual = new Date().getFullYear()
 
-      // Verificar si ya existe otro registro del mismo grupo (cuit+tipo+quincena)
+      // Detectar estado actual de la quincena (mira registros NO anulados de esa quincena)
+      const { data: qInfo } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('estado_quincena')
+        .eq('quincena', params.quincena)
+        .eq('anulado', false)
+        .order('estado_quincena', { ascending: false }) // 'declarada' > 'cerrada' > 'abierta' alfabéticamente
+        .limit(1)
+        .maybeSingle()
+      const estadoQ = (qInfo?.estado_quincena as string | undefined) ?? null
+
+      // Defensivo: si la quincena ya fue declarada, no insertar nada.
+      // El confirm interactivo (cerrada→confirm, declarada→bloqueo) corre antes en el modal SICORE.
+      if (estadoQ === 'declarada') {
+        console.error('🔒 registrarEnSicoreRetenciones: quincena DECLARADA, insert bloqueado por seguridad', params.quincena)
+        return
+      }
+
+      // El nuevo registro hereda el estado actual de la quincena (cerrada o abierta)
+      const nuevoEstadoQ = estadoQ === 'cerrada' ? 'cerrada' : 'abierta'
+
+      // Verificar si ya existe otro registro NO anulado del mismo grupo (cuit+tipo+quincena)
       // En ese caso reutilizar sus números (ej: Alcorta con múltiples facturas)
       const { data: mismoGrupo } = await supabase
         .schema(schemaName)
@@ -3044,6 +3114,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .eq('cuit_emisor', params.cuit_emisor ?? '')
         .eq('tipo_sicore', params.tipo_sicore)
         .eq('quincena', params.quincena)
+        .eq('anulado', false)
         .not('nro_comprobante', 'is', null)
         .limit(1)
         .maybeSingle()
@@ -3057,6 +3128,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         nroCert = mismoGrupo.nro_certificado as string
       } else {
         // Nuevo grupo — asignar siguiente número perpetuo
+        // (incluye anulados para preservar cronología: el cert anulado conserva su nro)
         const { data: maxComp } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
@@ -3085,9 +3157,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const { error } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .insert({ ...params, nro_comprobante: nroComp, nro_certificado: nroCert })
+        .insert({
+          ...params,
+          nro_comprobante: nroComp,
+          nro_certificado: nroCert,
+          estado_quincena: nuevoEstadoQ,
+        })
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert}`)
+      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
     } catch (err) {
       console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
     }
@@ -3396,28 +3473,40 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!window.confirm(msg)) return
 
     try {
-      // 1. Verificar si la retención ya fue declarada (DDJJ confirmada)
+      // 1. Verificar estado_quincena del registro v2 (declarada→bloqueo, cerrada→confirm)
       if (factura.sicore || factura.monto_sicore) {
         const { data: retRows } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .select('ddjj_confirmada')
+          .select('estado_quincena')
           .eq('factura_id', factura.id)
-          .eq('ddjj_confirmada', true)
+          .eq('anulado', false)
           .limit(1)
-        if (retRows && retRows.length > 0) {
-          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+        const estado = retRows?.[0]?.estado_quincena as string | undefined
+        if (estado === 'declarada') {
+          alert('🔒 Esta retención ya fue declarada a AFIP. Para modificar debe rectificar la DDJJ.')
           return
+        }
+        if (estado === 'cerrada') {
+          const okWarn = window.confirm(
+            '⚠️ Esta quincena ya fue cerrada (TXT generado). Al anular tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?'
+          )
+          if (!okWarn) return
         }
       }
 
-      // 2. Borrar registro v2
-      const { error: errDel } = await supabase
+      // 2. Anular registro v2 (conserva nro_comprobante/nro_certificado para cronología)
+      const { error: errAnul } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .delete()
+        .update({
+          anulado: true,
+          fecha_anulacion: new Date().toISOString(),
+          motivo_anulacion: `Reset FC ${factura.numero_desde}`,
+        })
         .eq('factura_id', factura.id)
-      if (errDel) console.error('Error borrando sicore_retenciones:', errDel)
+        .eq('anulado', false)
+      if (errAnul) console.error('Error anulando sicore_retenciones:', errAnul)
 
       // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original)
       const updateData: any = {
@@ -3454,12 +3543,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Confirmar DDJJ SICORE — bloquea modificaciones de la quincena
   const confirmarDDJJSicore = async (quincena: string) => {
-    const registros = await buscarRetencionesV2(quincena)
+    const registros = await buscarRetencionesV2(quincena) // excluye anulados
     if (registros.length === 0) return
 
     const sinTXT = registros.some((r: any) => r.nro_comprobante == null)
     if (sinTXT) {
       alert('⚠️ Esta quincena aún no fue exportada (faltan números de comprobante). Generá el Export v2 antes de confirmar la DDJJ.')
+      return
+    }
+
+    // Requiere que la quincena esté CERRADA antes de poder declararla
+    const todasCerradas = registros.every((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+    if (!todasCerradas) {
+      alert('⚠️ Primero tenés que cerrar la quincena. Usá "Generar Export v2" y elegí "Descargar y cerrar".')
       return
     }
 
@@ -3473,10 +3569,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!ok) return
 
     const ids = registros.map((r: any) => r.id)
+    const ahora = new Date().toISOString()
     const { error } = await supabase
       .schema(schemaName)
       .from('sicore_retenciones')
-      .update({ ddjj_confirmada: true })
+      .update({
+        estado_quincena: 'declarada',
+        fecha_declarada: ahora,
+        ddjj_confirmada: true, // compat hasta cleanup
+      })
       .in('id', ids)
 
     if (error) {
@@ -3485,7 +3586,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
 
     // Actualizar estado local en registrosV2
-    setRegistrosV2(prev => prev.map((r: any) => ({ ...r, ddjj_confirmada: true })))
+    setRegistrosV2(prev => prev.map((r: any) => ids.includes(r.id)
+      ? { ...r, estado_quincena: 'declarada', fecha_declarada: ahora, ddjj_confirmada: true }
+      : r
+    ))
     alert(`✅ DDJJ SICORE confirmada — quincena ${quincena}`)
   }
 
@@ -3498,27 +3602,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!window.confirm(msg)) return
     try {
       if (tieneSicore) {
-        // Verificar si la retención ya fue declarada (DDJJ confirmada)
+        // Verificar estado_quincena del registro v2 (declarada→bloqueo, cerrada→confirm)
         const { data: retRows } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .select('ddjj_confirmada')
+          .select('estado_quincena')
           .eq('anticipo_id', anticipo.id)
-          .eq('ddjj_confirmada', true)
+          .eq('anulado', false)
           .limit(1)
-        if (retRows && retRows.length > 0) {
-          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+        const estado = retRows?.[0]?.estado_quincena as string | undefined
+        if (estado === 'declarada') {
+          alert('🔒 Esta retención ya fue declarada a AFIP. Para modificar debe rectificar la DDJJ.')
           return
         }
+        if (estado === 'cerrada') {
+          const okWarn = window.confirm(
+            '⚠️ Esta quincena ya fue cerrada (TXT generado). Al anular tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?'
+          )
+          if (!okWarn) return
+        }
 
-        // Borrar registro v2 solo si aún no está vinculado a una FC
-        const { error: errDel } = await supabase
+        // Anular registro v2 solo si aún no está vinculado a una FC
+        const { error: errAnul } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .delete()
+          .update({
+            anulado: true,
+            fecha_anulacion: new Date().toISOString(),
+            motivo_anulacion: 'Reset anticipo',
+          })
           .eq('anticipo_id', anticipo.id)
           .is('factura_id', null)
-        if (errDel) console.error('Error borrando sicore_retenciones anticipo:', errDel)
+          .eq('anulado', false)
+        if (errAnul) console.error('Error anulando sicore_retenciones anticipo:', errAnul)
       }
       const { error } = await supabase
         .from('anticipos_proveedores')
@@ -3858,6 +3974,28 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
     const saldoFinal = Math.round(((anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt) * 100) / 100
 
+    // Chequear estado_quincena antes de confirmar la retención
+    const { data: qChkAnt } = await supabase
+      .schema(schemaName)
+      .from('sicore_retenciones')
+      .select('estado_quincena')
+      .eq('quincena', quincena)
+      .eq('anulado', false)
+      .order('estado_quincena', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const estadoQAnt = (qChkAnt?.estado_quincena as string | undefined) ?? null
+    if (estadoQAnt === 'declarada') {
+      alert(`🔒 La quincena ${quincena} ya fue declarada a AFIP. No se pueden agregar nuevas retenciones.\nDebés rectificar la DDJJ con tu contadora antes de poder modificar.`)
+      return
+    }
+    if (estadoQAnt === 'cerrada') {
+      const okWarn = window.confirm(
+        `⚠️ La quincena ${quincena} ya está cerrada (TXT generado).\nAl agregar esta retención tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?`
+      )
+      if (!okWarn) return
+    }
+
     console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id, echeq: !!echeqPendienteRef.current })
 
     // Si viene de ECHEQ: estado 'echeq', guardar fechas y metodo_pago
@@ -4141,13 +4279,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   //  CIERRE QUINCENA V2 — lee de msa.sicore_retenciones
   // ══════════════════════════════════════════════════════════════
 
-  const buscarRetencionesV2 = async (quincena: string) => {
-    const { data, error } = await supabase
+  const buscarRetencionesV2 = async (quincena: string, incluirAnulados = false) => {
+    let query = supabase
       .schema(schemaName)
       .from('sicore_retenciones')
       .select('*')
       .eq('quincena', quincena)
-      .order('denominacion_emisor', { ascending: true })
+    if (!incluirAnulados) {
+      query = query.eq('anulado', false)
+    }
+    const { data, error } = await query.order('denominacion_emisor', { ascending: true })
     if (error) throw error
     return data || []
   }
@@ -4327,9 +4468,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const regimenesMap: Record<string, string> = {}
     tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
 
+    // Defensivo: filtrar anulados (no deberían venir, pero protegemos por si)
+    const registrosVigentes = registros.filter((r: any) => !r.anulado)
+
     // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
     const grupos: Record<string, any> = {}
-    for (const r of registros) {
+    for (const r of registrosVigentes) {
       const key = `${r.cuit_emisor}||${r.tipo_sicore}`
       if (!grupos[key]) {
         grupos[key] = {
@@ -4361,7 +4505,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Verificar si esta quincena ya fue cerrada (guard idempotencia)
     // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
-    const yaAsignados = registros.every((r: any) => r.nro_comprobante != null)
+    const yaAsignados = registrosVigentes.every((r: any) => r.nro_comprobante != null)
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
@@ -4380,7 +4524,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Quincena ya cerrada: usar números guardados en BD, no sobreescribir
       for (const g of gruposOrdenados) {
         // Tomar nro_comprobante/nro_certificado del primer registro del grupo (todos iguales)
-        const primerReg = registros.find((r: any) => g.ids.includes(r.id))
+        const primerReg = registrosVigentes.find((r: any) => g.ids.includes(r.id))
         const nroCompNum = Number(primerReg?.nro_comprobante ?? 0)
         const nroCert    = primerReg?.nro_certificado ?? ''
         const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
@@ -4570,10 +4714,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     })
   }
 
-  const procesarCierreV2 = async (quincena: string) => {
+  const procesarCierreV2 = async (quincena: string, opciones: { cerrar?: boolean } = {}) => {
     try {
       setProcesandoCierreV2(true)
-      const registros = await buscarRetencionesV2(quincena)
+      const registros = await buscarRetencionesV2(quincena) // excluye anulados por defecto
       if (registros.length === 0) {
         alert(`No hay registros en sicore_retenciones para la quincena ${quincena}`)
         return
@@ -4594,7 +4738,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const txtInfo = await generarTXTCierreV2(registros, quincena, subcarpeta)
       const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
-      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
+
+      // Si la opción "cerrar" fue elegida → marcar la quincena como cerrada
+      let mensajeCerrada = ''
+      if (opciones.cerrar) {
+        const { error: errCerrar } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .update({
+            estado_quincena: 'cerrada',
+            fecha_cerrada: new Date().toISOString(),
+          })
+          .eq('quincena', quincena)
+          .eq('anulado', false)
+          .neq('estado_quincena', 'declarada') // no tocar registros ya declarados
+        if (errCerrar) {
+          console.error('Error marcando quincena como cerrada:', errCerrar)
+          mensajeCerrada = '\n\n⚠️ Error marcando como cerrada — revisar consola.'
+        } else {
+          mensajeCerrada = '\n\n🔒 Quincena marcada como CERRADA.'
+          // Refrescar registros locales
+          setRegistrosV2(prev => prev.map((r: any) =>
+            r.quincena === quincena && !r.anulado && r.estado_quincena !== 'declarada'
+              ? { ...r, estado_quincena: 'cerrada', fecha_cerrada: new Date().toISOString() }
+              : r
+          ))
+        }
+      }
+
+      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}${mensajeCerrada}`)
 
       // Proponer actualizar cuota del template SICORE (abre modal con selector)
       await abrirModalAsignarCuota(quincena, totalRet)
@@ -4614,10 +4786,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!quincena) return
     setCargandoV2(true)
     try {
-      const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
+      let q = supabase.schema(schemaName).from('sicore_retenciones')
         .select('*')
         .eq('quincena', quincena)
-        .order('fecha_pago', { ascending: true })
+      if (!mostrarAnulados) {
+        q = q.eq('anulado', false)
+      }
+      const { data } = await q.order('fecha_pago', { ascending: true })
       if (data) {
         setRegistrosV2(data)
         setConteoV2({
@@ -5307,14 +5482,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   const descargarTodosLosCertificados = async () => {
     if (registrosV2.length === 0) return
+    // Excluir anulados de la descarga masiva — no se emite certificado de algo anulado
+    const registrosVigentes = registrosV2.filter((r: any) => !r.anulado)
+    if (registrosVigentes.length === 0) {
+      alert('No hay certificados vigentes para descargar (todos están anulados).')
+      return
+    }
     try {
       const dirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
       setDescargandoCerts(true)
       let count = 0
 
       // Agrupar por nro_certificado (mismo criterio de agrupación que el TXT)
-      const grupos = new Map<string, typeof registrosV2>()
-      for (const r of registrosV2) {
+      const grupos = new Map<string, typeof registrosVigentes>()
+      for (const r of registrosVigentes) {
         const key = r.nro_certificado || r.id || String(r.cuit_emisor)
         if (!grupos.has(String(key))) grupos.set(String(key), [])
         grupos.get(String(key))!.push(r)
@@ -8035,9 +8216,26 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
               )}
 
+              {/* Toggle "Mostrar anulados" + recargar */}
+              {quincenaSeleccionadaV2 && (
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={mostrarAnulados}
+                      onChange={e => {
+                        setMostrarAnulados(e.target.checked)
+                        if (quincenaSeleccionadaV2) previsualizarV2(quincenaSeleccionadaV2)
+                      }}
+                    />
+                    Mostrar registros anulados (tachados, no entran al TXT ni a totales)
+                  </label>
+                </div>
+              )}
+
               {/* Tabla de registros */}
               {registrosV2.length > 0 && (
-                <TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} />
+                <TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} mostrarAnulados={mostrarAnulados} />
               )}
 
               {conteoV2 !== null && conteoV2.cantidad === 0 && (
@@ -8046,40 +8244,67 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
               )}
 
-              {/* Estado DDJJ */}
+              {/* Estado quincena (abierta / cerrada / declarada) */}
               {registrosV2.length > 0 && (() => {
-                const ddjjConfirmada = registrosV2.every((r: any) => r.ddjj_confirmada)
-                const tieneTXT = registrosV2.some((r: any) => r.nro_comprobante != null)
-                if (ddjjConfirmada) {
+                const vigentes = registrosV2.filter((r: any) => !r.anulado)
+                if (vigentes.length === 0) return null
+                const todasDeclaradas = vigentes.every((r: any) => r.estado_quincena === 'declarada')
+                const todasCerradas = vigentes.every((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+                const algunaCerrada = vigentes.some((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+                const fechasCerrada = vigentes.map((r: any) => r.fecha_cerrada).filter(Boolean).sort()
+                const fechaCerradaMin = fechasCerrada[0]
+                const fechasDeclarada = vigentes.map((r: any) => r.fecha_declarada).filter(Boolean).sort()
+                const fechaDeclaradaMin = fechasDeclarada[0]
+                // ¿Hay registros agregados después de la primera fecha_cerrada?
+                const modificadaTrasCierre = fechaCerradaMin && vigentes.some((r: any) =>
+                  r.estado_quincena === 'abierta' || (r.created_at && r.created_at > fechaCerradaMin)
+                )
+                const fmtFC = (s: string | null) => s ? new Date(s).toLocaleString('es-AR') : ''
+
+                if (todasDeclaradas) {
                   return (
                     <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700">
                       <span>🔒</span>
                       <span className="font-medium">DDJJ Confirmada</span>
-                      <span className="text-gray-500">— esta quincena está declarada a AFIP</span>
+                      <span className="text-gray-500">— declarada a AFIP{fechaDeclaradaMin ? ` el ${fmtFC(fechaDeclaradaMin)}` : ''}</span>
                     </div>
                   )
                 }
-                if (tieneTXT) {
+                if (todasCerradas || algunaCerrada) {
                   return (
-                    <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-                      <span className="text-sm text-orange-700 flex-1">⚠️ TXT generado pero DDJJ aún no confirmada</span>
-                      <Button
-                        size="sm"
-                        onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
-                        className="bg-orange-600 hover:bg-orange-700 text-white"
-                      >
-                        ✅ Confirmar DDJJ
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                        <span className="text-sm text-yellow-800 flex-1">
+                          📤 Quincena cerrada{fechaCerradaMin ? ` el ${fmtFC(fechaCerradaMin)}` : ''} — pendiente confirmar DDJJ
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
+                          className="bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                          ✅ Confirmar DDJJ
+                        </Button>
+                      </div>
+                      {modificadaTrasCierre && (
+                        <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-sm text-orange-800">
+                          ⚠️ Hay registros modificados después del cierre — regenerá el TXT antes de declarar.
+                        </div>
+                      )}
                     </div>
                   )
                 }
-                return null
+                // Todo abierta
+                return (
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+                    🟢 Quincena abierta — modificable libremente. Cuando termines, generá el Export v2 y cerrá.
+                  </div>
+                )
               })()}
 
               {/* Botones acción */}
               <div className="flex gap-2">
                 <Button
-                  onClick={() => quincenaSeleccionadaV2 && procesarCierreV2(quincenaSeleccionadaV2)}
+                  onClick={() => quincenaSeleccionadaV2 && setMostrarModalExport(true)}
                   disabled={!quincenaSeleccionadaV2 || procesandoCierreV2 || registrosV2.length === 0}
                   className="bg-green-600 hover:bg-green-700 flex-1"
                 >
@@ -11195,6 +11420,53 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Modal Generar Export v2 — elegir si cerrar la quincena */}
+      <Dialog open={mostrarModalExport} onOpenChange={setMostrarModalExport}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📤 Generar Export v2 — {quincenaSeleccionadaV2}</DialogTitle>
+            <DialogDescription>
+              Se generarán Excel, PDF y TXT en la carpeta elegida.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <div className="bg-gray-50 rounded p-3 space-y-1">
+              <p>• <b>{conteoV2?.cantidad ?? registrosV2.filter((r:any)=>!r.anulado).length}</b> retenciones</p>
+              <p>• Total: <b>${(conteoV2?.totalRetencion ?? registrosV2.filter((r:any)=>!r.anulado).reduce((s:number,r:any)=>s+(Number(r.retencion)||0),0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></p>
+            </div>
+            <hr />
+            <p className="font-medium">¿Querés cerrar la quincena al descargar?</p>
+            <ul className="text-xs text-gray-600 list-disc ml-5 space-y-0.5">
+              <li><b>Cerrar</b> = la quincena queda bloqueada — modificaciones piden confirmación y obligan a regenerar TXT.</li>
+              <li><b>Sin cerrar</b> = podés seguir editando libremente.</li>
+            </ul>
+          </div>
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setMostrarModalExport(false)
+                if (quincenaSeleccionadaV2) await procesarCierreV2(quincenaSeleccionadaV2, { cerrar: false })
+              }}
+            >
+              Solo descargar
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              onClick={async () => {
+                setMostrarModalExport(false)
+                if (quincenaSeleccionadaV2) await procesarCierreV2(quincenaSeleccionadaV2, { cerrar: true })
+              }}
+            >
+              Descargar y cerrar
+            </Button>
+            <Button variant="ghost" onClick={() => setMostrarModalExport(false)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
