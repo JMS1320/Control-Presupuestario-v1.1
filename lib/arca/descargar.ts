@@ -255,15 +255,29 @@ export async function descargarMisComprobantes(
   // 1. SSO al servicio
   const htmlSelector = await ssoMisComprobantes(client, input.cuitPersonal)
 
-  // 2. Encontrar el id del contribuyente objetivo
+  // 2. Detectar modo
+  // - Modo "representado" (MSA): el usuario logueado representa a varios CUITs,
+  //   ARCA muestra un selector con la lista
+  // - Modo "individual" (MA): el usuario logueado NO representa a nadie,
+  //   ARCA entra directo a sus propias facturas (no hay selector)
   const contribuyentes = parsearContribuyentes(htmlSelector)
-  const objetivo = contribuyentes.find(c => c.cuit === input.cuitEmpresa)
-  if (!objetivo) {
-    throw new Error(`CUIT ${input.cuitEmpresa} no aparece en tus representados. Disponibles: ${contribuyentes.map(c => c.cuit).join(', ')}`)
-  }
+  const esModoIndividual = contribuyentes.length === 0 && input.cuitPersonal === input.cuitEmpresa
 
-  // 3. Seleccionar empresa
-  await seleccionarEmpresa(client, objetivo.id)
+  if (esModoIndividual) {
+    // Modo individual: no hay selector, ya estamos en la cuenta. Saltar paso 3.
+    // Solo aseguramos que la sesión del menú esté inicializada navegando a la pantalla.
+    await client.get('https://fes.afip.gob.ar/mcmp/jsp/comprobantesRecibidos.do', {
+      headers: { 'Referer': URL_MCMP_INDEX },
+      validateStatus: () => true,
+    })
+  } else {
+    // Modo representado: buscar el CUIT objetivo en la lista y seleccionarlo
+    const objetivo = contribuyentes.find(c => c.cuit === input.cuitEmpresa)
+    if (!objetivo) {
+      throw new Error(`CUIT ${input.cuitEmpresa} no aparece en tus representados. Disponibles: ${contribuyentes.map(c => c.cuit).join(', ') || '(ninguno)'}`)
+    }
+    await seleccionarEmpresa(client, objetivo.id)
+  }
 
   // 4. Generar consulta + descargar CSV adaptado
   const idConsulta = await generarConsulta(client, input.cuitEmpresa, input.fechaDesde, input.fechaHasta, input.tipo)
