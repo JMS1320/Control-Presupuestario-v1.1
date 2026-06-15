@@ -236,6 +236,7 @@ export interface DescargaInput {
   fechaDesde: string               // YYYY-MM-DD
   fechaHasta: string               // YYYY-MM-DD
   tipo: 'recibidos' | 'emitidos'
+  onDebugHtml?: (html: string) => Promise<void> | void  // callback diagnóstico opcional
 }
 
 export interface DescargaResult {
@@ -254,6 +255,11 @@ export async function descargarMisComprobantes(
 ): Promise<DescargaResult> {
   // 1. SSO al servicio
   const htmlSelector = await ssoMisComprobantes(client, input.cuitPersonal)
+
+  // Persistir HTML completo si hay callback de debug
+  if (input.onDebugHtml) {
+    try { await input.onDebugHtml(htmlSelector) } catch (e) { console.error('onDebugHtml failed:', e) }
+  }
 
   // ── LOGGING DIAGNÓSTICO TEMPORAL (quitar después) ──
   console.log('[ARCA DIAG] cuitPersonal=', input.cuitPersonal, 'cuitEmpresa=', input.cuitEmpresa)
