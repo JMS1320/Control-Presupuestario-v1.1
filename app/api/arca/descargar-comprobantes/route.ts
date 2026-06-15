@@ -92,15 +92,6 @@ export async function POST(request: Request) {
       fechaDesde,
       fechaHasta,
       tipo: (tipo as Tipo) || 'recibidos',
-      // DEBUG: guardar HTML del selector para diagnosticar MA
-      onDebugHtml: async (html: string) => {
-        if (logId) {
-          await supabase
-            .from('arca_descargas_log')
-            .update({ html_debug: html })
-            .eq('id', logId)
-        }
-      },
     })
 
     // Actualizar log con cantidad descargada

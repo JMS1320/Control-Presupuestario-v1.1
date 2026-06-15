@@ -24,7 +24,6 @@ export interface DescargarArcaInput {
   fechaDesde: string           // YYYY-MM-DD
   fechaHasta: string           // YYYY-MM-DD
   tipo?: Tipo                  // default: 'recibidos'
-  onDebugHtml?: (html: string) => Promise<void> | void  // callback diagnóstico
 }
 
 function getCuits(empresa: Empresa): { cuitPersonal: string; cuitEmpresa: string } {
@@ -71,7 +70,6 @@ export async function descargarComprobantesArca(input: DescargarArcaInput): Prom
     fechaDesde: input.fechaDesde,
     fechaHasta: input.fechaHasta,
     tipo: input.tipo || 'recibidos',
-    onDebugHtml: input.onDebugHtml,
   })
 
   return result

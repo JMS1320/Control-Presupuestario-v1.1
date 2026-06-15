@@ -108,10 +108,13 @@ function parsearContribuyentes(html: string): Contribuyente[] {
     const onclick = $(el).attr('onclick') || ''
     const idMatch = onclick.match(/idcontribuyente['"]?\)\.value\s*=\s*['"]?(\d+)/i)
     const id = idMatch ? idMatch[1] : null
-    const cuitText = $(el).find('small').first().text().trim()
-    const cuit = cuitText.replace(/-/g, '')
-    const nombre = $(el).find('h2, h3').first().text().trim()
-    if (id && cuit && !contribuyentes.find(c => c.cuit === cuit)) {
+    // CUIT puede estar en <small>, <p.text-muted> u otros tags → buscar regex en todo el texto del <a>
+    const textoCompleto = $(el).text()
+    const cuitMatch = textoCompleto.match(/(\d{2}-?\d{8}-?\d)/)
+    const cuit = cuitMatch ? cuitMatch[1].replace(/-/g, '') : null
+    const nombre = $(el).find('h1, h2, h3, h4').first().text().trim()
+    // id puede ser '0' (caso MA con un solo contribuyente) → comparar contra null explícito
+    if (id !== null && cuit && !contribuyentes.find(c => c.cuit === cuit)) {
       contribuyentes.push({ id, cuit, nombre })
     }
   })
@@ -236,7 +239,6 @@ export interface DescargaInput {
   fechaDesde: string               // YYYY-MM-DD
   fechaHasta: string               // YYYY-MM-DD
   tipo: 'recibidos' | 'emitidos'
-  onDebugHtml?: (html: string) => Promise<void> | void  // callback diagnóstico opcional
 }
 
 export interface DescargaResult {
@@ -256,71 +258,17 @@ export async function descargarMisComprobantes(
   // 1. SSO al servicio
   const htmlSelector = await ssoMisComprobantes(client, input.cuitPersonal)
 
-  // Persistir HTML completo si hay callback de debug
-  if (input.onDebugHtml) {
-    try { await input.onDebugHtml(htmlSelector) } catch (e) { console.error('onDebugHtml failed:', e) }
-  }
-
-  // ── LOGGING DIAGNÓSTICO TEMPORAL (quitar después) ──
-  console.log('[ARCA DIAG] cuitPersonal=', input.cuitPersonal, 'cuitEmpresa=', input.cuitEmpresa)
-  console.log('[ARCA DIAG] HTML length=', htmlSelector.length)
-  // Heurísticas
-  const tieneSelector = /idcontribuyente/i.test(htmlSelector)
-  const tieneFiltros  = /comprobantesRecibidos|generarConsulta|fechaEmision/i.test(htmlSelector)
-  const sesionExpirada = /sesi.+expirad|expirad.+sesi/i.test(htmlSelector)
-  console.log('[ARCA DIAG] heurísticas:', { tieneSelector, tieneFiltros, sesionExpirada })
-
-  // Extraer el contexto alrededor de "idcontribuyente" (±1000 chars cada match)
-  const reSelector = /idcontribuyente/gi
-  const matches: number[] = []
-  let m: RegExpExecArray | null
-  while ((m = reSelector.exec(htmlSelector)) !== null) matches.push(m.index)
-  console.log('[ARCA DIAG] cantidad de menciones idcontribuyente:', matches.length)
-  matches.slice(0, 5).forEach((idx, i) => {
-    const start = Math.max(0, idx - 500)
-    const end = Math.min(htmlSelector.length, idx + 1500)
-    console.log(`[ARCA DIAG] contexto match ${i + 1} (offset ${idx}):`)
-    console.log(htmlSelector.substring(start, end))
-    console.log('[ARCA DIAG] ──── fin match ' + (i + 1) + ' ────')
-  })
-
-  // También extraer cualquier <form> y <a onclick=...> del HTML
-  const forms = htmlSelector.match(/<form[\s\S]*?<\/form>/gi)
-  console.log('[ARCA DIAG] cantidad de <form>:', forms?.length ?? 0)
-  forms?.slice(0, 3).forEach((f, i) => {
-    console.log(`[ARCA DIAG] form ${i + 1}:`, f.substring(0, 1500))
-  })
-  // ────────────────────────────────────────────────
-
-  // 2. Detectar modo
-  // - Modo "representado" (MSA): el usuario logueado representa a varios CUITs,
-  //   ARCA muestra un selector con la lista
-  // - Modo "individual" (MA): el usuario logueado NO representa a nadie,
-  //   ARCA entra directo a sus propias facturas (no hay selector)
+  // 2. Buscar el CUIT objetivo en la lista de contribuyentes
+  //    - MSA: la lista trae varios (los representados de tu CUIT personal)
+  //    - MA: la lista trae uno solo (vos mismo, con idContribuyente='0')
   const contribuyentes = parsearContribuyentes(htmlSelector)
-  console.log('[ARCA DIAG] contribuyentes parseados:', contribuyentes)
-  const esModoIndividual = contribuyentes.length === 0 && input.cuitPersonal === input.cuitEmpresa
-
-  if (esModoIndividual) {
-    console.log('[ARCA DIAG] → MODO INDIVIDUAL (sin selector). Navegando a comprobantesRecibidos.do')
-    // Modo individual: no hay selector, ya estamos en la cuenta. Saltar paso 3.
-    // Solo aseguramos que la sesión del menú esté inicializada navegando a la pantalla.
-    const rNav = await client.get('https://fes.afip.gob.ar/mcmp/jsp/comprobantesRecibidos.do', {
-      headers: { 'Referer': URL_MCMP_INDEX },
-      validateStatus: () => true,
-    })
-    console.log('[ARCA DIAG] navegación post-individual status=', rNav.status, 'len=', String(rNav.data || '').length)
-    console.log('[ARCA DIAG] navegación primeros 800 chars:', String(rNav.data || '').substring(0, 800))
-  } else {
-    console.log('[ARCA DIAG] → MODO REPRESENTADO. Buscando CUIT objetivo en la lista')
-    // Modo representado: buscar el CUIT objetivo en la lista y seleccionarlo
-    const objetivo = contribuyentes.find(c => c.cuit === input.cuitEmpresa)
-    if (!objetivo) {
-      throw new Error(`CUIT ${input.cuitEmpresa} no aparece en tus representados. Disponibles: ${contribuyentes.map(c => c.cuit).join(', ') || '(ninguno)'}`)
-    }
-    console.log('[ARCA DIAG] seleccionando idContribuyente=', objetivo.id, 'cuit=', objetivo.cuit)
-    await seleccionarEmpresa(client, objetivo.id)
+  const objetivo = contribuyentes.find(c => c.cuit === input.cuitEmpresa)
+  if (!objetivo) {
+    throw new Error(`CUIT ${input.cuitEmpresa} no aparece en tus representados. Disponibles: ${contribuyentes.map(c => c.cuit).join(', ') || '(ninguno)'}`)
   }
+
+  // 3. Seleccionar la empresa (POST a setearContribuyente.do)
+  await seleccionarEmpresa(client, objetivo.id)
 
   // 4. Generar consulta + descargar CSV adaptado
   const idConsulta = await generarConsulta(client, input.cuitEmpresa, input.fechaDesde, input.fechaHasta, input.tipo)
