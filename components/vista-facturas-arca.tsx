@@ -7014,6 +7014,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   setArcaPassword('')  // borrar la clave de memoria
                   setMostrarImportadorArca(false)
                   setMostrarImportador(true)  // abre el wizard existente en paso 2 con el File precargado
+                  // Disparar preview automáticamente — el input file no se puede setear programáticamente
+                  await previsualizarImportacion(csvFile)
                 } catch (err) {
                   setArcaError((err as Error).message || 'Error de red')
                 } finally {
@@ -7089,18 +7091,26 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Archivo Excel (.xlsx / .xls)</Label>
-                  <Input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null
-                      setArchivoImportacion(file)
-                      setPreviewData(null)
-                      setResultadoImportacion(null)
-                      if (file) previsualizarImportacion(file)
-                    }}
-                  />
+                  <Label>{origenFactura === 'ARCA' ? 'Archivo descargado de ARCA' : 'Archivo Excel (.xlsx / .xls)'}</Label>
+                  {origenFactura === 'ARCA' && archivoImportacion ? (
+                    <div className="border rounded-md bg-blue-50 border-blue-200 px-3 py-2 text-sm text-blue-900 flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span className="font-medium truncate flex-1" title={archivoImportacion.name}>{archivoImportacion.name}</span>
+                      <span className="text-xs text-blue-700">{(archivoImportacion.size / 1024).toFixed(1)} KB</span>
+                    </div>
+                  ) : (
+                    <Input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null
+                        setArchivoImportacion(file)
+                        setPreviewData(null)
+                        setResultadoImportacion(null)
+                        if (file) previsualizarImportacion(file)
+                      }}
+                    />
+                  )}
                 </div>
 
                 {cargandoPreview && (
