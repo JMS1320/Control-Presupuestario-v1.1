@@ -255,27 +255,47 @@ export async function descargarMisComprobantes(
   // 1. SSO al servicio
   const htmlSelector = await ssoMisComprobantes(client, input.cuitPersonal)
 
+  // ── LOGGING DIAGNÓSTICO TEMPORAL (quitar después) ──
+  console.log('[ARCA DIAG] cuitPersonal=', input.cuitPersonal, 'cuitEmpresa=', input.cuitEmpresa)
+  console.log('[ARCA DIAG] HTML length=', htmlSelector.length)
+  console.log('[ARCA DIAG] HTML primeros 2000 chars:')
+  console.log(htmlSelector.substring(0, 2000))
+  console.log('[ARCA DIAG] HTML últimos 1500 chars:')
+  console.log(htmlSelector.substring(Math.max(0, htmlSelector.length - 1500)))
+  // Heurísticas
+  const tieneSelector = /idcontribuyente/i.test(htmlSelector)
+  const tieneFiltros  = /comprobantesRecibidos|generarConsulta|fechaEmision/i.test(htmlSelector)
+  const sesionExpirada = /sesi.+expirad|expirad.+sesi/i.test(htmlSelector)
+  console.log('[ARCA DIAG] heurísticas:', { tieneSelector, tieneFiltros, sesionExpirada })
+  // ────────────────────────────────────────────────
+
   // 2. Detectar modo
   // - Modo "representado" (MSA): el usuario logueado representa a varios CUITs,
   //   ARCA muestra un selector con la lista
   // - Modo "individual" (MA): el usuario logueado NO representa a nadie,
   //   ARCA entra directo a sus propias facturas (no hay selector)
   const contribuyentes = parsearContribuyentes(htmlSelector)
+  console.log('[ARCA DIAG] contribuyentes parseados:', contribuyentes)
   const esModoIndividual = contribuyentes.length === 0 && input.cuitPersonal === input.cuitEmpresa
 
   if (esModoIndividual) {
+    console.log('[ARCA DIAG] → MODO INDIVIDUAL (sin selector). Navegando a comprobantesRecibidos.do')
     // Modo individual: no hay selector, ya estamos en la cuenta. Saltar paso 3.
     // Solo aseguramos que la sesión del menú esté inicializada navegando a la pantalla.
-    await client.get('https://fes.afip.gob.ar/mcmp/jsp/comprobantesRecibidos.do', {
+    const rNav = await client.get('https://fes.afip.gob.ar/mcmp/jsp/comprobantesRecibidos.do', {
       headers: { 'Referer': URL_MCMP_INDEX },
       validateStatus: () => true,
     })
+    console.log('[ARCA DIAG] navegación post-individual status=', rNav.status, 'len=', String(rNav.data || '').length)
+    console.log('[ARCA DIAG] navegación primeros 800 chars:', String(rNav.data || '').substring(0, 800))
   } else {
+    console.log('[ARCA DIAG] → MODO REPRESENTADO. Buscando CUIT objetivo en la lista')
     // Modo representado: buscar el CUIT objetivo en la lista y seleccionarlo
     const objetivo = contribuyentes.find(c => c.cuit === input.cuitEmpresa)
     if (!objetivo) {
       throw new Error(`CUIT ${input.cuitEmpresa} no aparece en tus representados. Disponibles: ${contribuyentes.map(c => c.cuit).join(', ') || '(ninguno)'}`)
     }
+    console.log('[ARCA DIAG] seleccionando idContribuyente=', objetivo.id, 'cuit=', objetivo.cuit)
     await seleccionarEmpresa(client, objetivo.id)
   }
 
