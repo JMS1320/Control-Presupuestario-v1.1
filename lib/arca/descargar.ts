@@ -258,15 +258,32 @@ export async function descargarMisComprobantes(
   // ── LOGGING DIAGNÓSTICO TEMPORAL (quitar después) ──
   console.log('[ARCA DIAG] cuitPersonal=', input.cuitPersonal, 'cuitEmpresa=', input.cuitEmpresa)
   console.log('[ARCA DIAG] HTML length=', htmlSelector.length)
-  console.log('[ARCA DIAG] HTML primeros 2000 chars:')
-  console.log(htmlSelector.substring(0, 2000))
-  console.log('[ARCA DIAG] HTML últimos 1500 chars:')
-  console.log(htmlSelector.substring(Math.max(0, htmlSelector.length - 1500)))
   // Heurísticas
   const tieneSelector = /idcontribuyente/i.test(htmlSelector)
   const tieneFiltros  = /comprobantesRecibidos|generarConsulta|fechaEmision/i.test(htmlSelector)
   const sesionExpirada = /sesi.+expirad|expirad.+sesi/i.test(htmlSelector)
   console.log('[ARCA DIAG] heurísticas:', { tieneSelector, tieneFiltros, sesionExpirada })
+
+  // Extraer el contexto alrededor de "idcontribuyente" (±1000 chars cada match)
+  const reSelector = /idcontribuyente/gi
+  const matches: number[] = []
+  let m: RegExpExecArray | null
+  while ((m = reSelector.exec(htmlSelector)) !== null) matches.push(m.index)
+  console.log('[ARCA DIAG] cantidad de menciones idcontribuyente:', matches.length)
+  matches.slice(0, 5).forEach((idx, i) => {
+    const start = Math.max(0, idx - 500)
+    const end = Math.min(htmlSelector.length, idx + 1500)
+    console.log(`[ARCA DIAG] contexto match ${i + 1} (offset ${idx}):`)
+    console.log(htmlSelector.substring(start, end))
+    console.log('[ARCA DIAG] ──── fin match ' + (i + 1) + ' ────')
+  })
+
+  // También extraer cualquier <form> y <a onclick=...> del HTML
+  const forms = htmlSelector.match(/<form[\s\S]*?<\/form>/gi)
+  console.log('[ARCA DIAG] cantidad de <form>:', forms?.length ?? 0)
+  forms?.slice(0, 3).forEach((f, i) => {
+    console.log(`[ARCA DIAG] form ${i + 1}:`, f.substring(0, 1500))
+  })
   // ────────────────────────────────────────────────
 
   // 2. Detectar modo
