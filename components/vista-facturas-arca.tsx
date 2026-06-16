@@ -4779,17 +4779,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   // Previsualizar conteo v2 al seleccionar quincena
-  const previsualizarV2 = async (quincena: string) => {
+  // incluirAnuladosOverride: si se pasa, gana sobre el state mostrarAnulados (resuelve stale closure)
+  const previsualizarV2 = async (quincena: string, incluirAnuladosOverride?: boolean) => {
     setQuincenaSeleccionadaV2(quincena)
     setConteoV2(null)
     setRegistrosV2([])
     if (!quincena) return
     setCargandoV2(true)
     try {
+      const incluirAnulados = incluirAnuladosOverride !== undefined ? incluirAnuladosOverride : mostrarAnulados
       let q = supabase.schema(schemaName).from('sicore_retenciones')
         .select('*')
         .eq('quincena', quincena)
-      if (!mostrarAnulados) {
+      if (!incluirAnulados) {
         q = q.eq('anulado', false)
       }
       const { data } = await q.order('fecha_pago', { ascending: true })
@@ -8239,8 +8241,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       type="checkbox"
                       checked={mostrarAnulados}
                       onChange={e => {
-                        setMostrarAnulados(e.target.checked)
-                        if (quincenaSeleccionadaV2) previsualizarV2(quincenaSeleccionadaV2)
+                        const v = e.target.checked
+                        setMostrarAnulados(v)
+                        // Pasar el valor nuevo como override — sin esto, previsualizarV2
+                        // leería el state viejo (stale closure)
+                        if (quincenaSeleccionadaV2) previsualizarV2(quincenaSeleccionadaV2, v)
                       }}
                     />
                     Mostrar registros anulados (tachados, no entran al TXT ni a totales)
