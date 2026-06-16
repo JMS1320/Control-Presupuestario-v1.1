@@ -6052,9 +6052,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {!esContable && (
+                {!esContable && (empresa === 'MSA' || empresa === 'MA') && (
                   <DropdownMenuItem onClick={() => setMostrarImportadorArca(true)}>
-                    📥 Importar desde ARCA (automático)
+                    📥 Importar desde ARCA ({empresa})
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => setMostrarImportador(true)}>
@@ -6897,16 +6897,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Empresa */}
+            {/* Empresa — fija, viene de la tab activa para evitar errores de selección */}
             <div className="space-y-1">
               <Label className="text-xs">Empresa</Label>
-              <Select value={arcaEmpresa} onValueChange={(v) => setArcaEmpresa(v as 'MSA' | 'MA')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="MSA">MSA — Martinez Sobrado Agro</SelectItem>
-                  <SelectItem value="MA">MA — Otro CUIT</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="border rounded-md bg-blue-50 border-blue-200 px-3 py-2 text-sm font-medium text-blue-900 flex items-center gap-2">
+                <span className="text-blue-600">🏛️</span>
+                <span>{arcaEmpresa === 'MA' ? 'MA — Otro CUIT' : 'MSA — Martinez Sobrado Agro'}</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Para descargar de otra empresa, salí del modal y cambiá de tab.</p>
             </div>
 
             {/* Atajos de fecha */}
