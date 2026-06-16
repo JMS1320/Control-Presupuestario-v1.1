@@ -6053,7 +6053,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 {!esContable && (empresa === 'MSA' || empresa === 'MA') && (
-                  <DropdownMenuItem onClick={() => setMostrarImportadorArca(true)}>
+                  <DropdownMenuItem onClick={() => {
+                    // Pre-llenar empresa según la tab activa ANTES de abrir el modal
+                    // (no podemos confiar en onOpenChange del Dialog porque no se dispara
+                    // cuando seteamos open=true desde fuera del componente)
+                    setArcaEmpresa(empresa as 'MSA' | 'MA')
+                    setArcaError(null)
+                    setArcaPassword('')
+                    // Atajo por defecto: mes anterior
+                    const hoy = new Date()
+                    const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+                    const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+                    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                    setArcaFechaDesde(fmt(mesAnt))
+                    setArcaFechaHasta(fmt(finMesAnt))
+                    setMostrarImportadorArca(true)
+                  }}>
                     📥 Importar desde ARCA ({empresa})
                   </DropdownMenuItem>
                 )}
@@ -6875,18 +6890,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <Dialog open={mostrarImportadorArca} onOpenChange={(v) => {
         if (arcaCargando) return  // no cerrar mientras descarga
         setMostrarImportadorArca(v)
-        if (!v) { setArcaError(null); setArcaPassword('') }   // al cerrar, descartar la clave de memoria
-        if (v) {
-          // Precargar empresa según la tab actual del componente
-          setArcaEmpresa(empresa === 'MA' ? 'MA' : 'MSA')
-          // Atajo por defecto: mes anterior
-          const hoy = new Date()
-          const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
-          const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
-          const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-          setArcaFechaDesde(fmt(mesAnt))
-          setArcaFechaHasta(fmt(finMesAnt))
-        }
+        // Al cerrar, descartar clave y error de memoria.
+        // El pre-llenado de empresa/fechas se hace en el onClick del DropdownMenuItem
+        // porque onOpenChange NO se dispara cuando seteamos open=true desde fuera.
+        if (!v) { setArcaError(null); setArcaPassword('') }
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
