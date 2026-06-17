@@ -33,6 +33,7 @@ import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { ModalReglasImport } from "@/components/modal-reglas-import"
 import { NotificacionProgresoLote } from "@/components/gas-pdf/notificacion-progreso-lote"
 import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
+import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
 import { Paperclip } from "lucide-react"
 import { format } from "date-fns"
@@ -571,6 +572,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [progresoPdf, setProgresoPdf] = useState<ProgresoLote | null>(null)
   const [buscandoPdfs, setBuscandoPdfs] = useState(false)
   const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
+  const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
 
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
@@ -6181,6 +6183,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   <FileText className="mr-2 h-4 w-4" />
                   Historial PDFs
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setModalConfigProveedorPdf({ open: true })}
+                  title="Configurar proveedores para descarga automática"
+                >
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  Config PDFs
+                </Button>
               </>
             )}
 
@@ -11561,6 +11571,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         onClose={() => setModalHistorialPdf({ open: false })}
         loteId={modalHistorialPdf.loteId}
         facturaId={modalHistorialPdf.facturaId}
+      />
+
+      {/* Modal config proveedores PDF */}
+      <ModalConfigProveedor
+        open={modalConfigProveedorPdf.open}
+        onClose={() => setModalConfigProveedorPdf({ open: false })}
+        cuitInicial={modalConfigProveedorPdf.cuit}
       />
 
       {/* Modal Generar Export v2 — elegir si cerrar la quincena */}
