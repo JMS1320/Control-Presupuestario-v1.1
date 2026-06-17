@@ -31,6 +31,10 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { ModalReglasImport } from "@/components/modal-reglas-import"
+import { NotificacionProgresoLote } from "@/components/gas-pdf/notificacion-progreso-lote"
+import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
+import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
+import { Paperclip } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -94,6 +98,11 @@ interface FacturaArca {
   tc_pago: number | null
   // Origen de la factura
   origen_factura: string | null
+  // Búsqueda automática de PDF (módulo GAS)
+  pdf_drive_url?: string | null
+  pdf_estado?: string | null
+  pdf_ultimo_intento?: string | null
+  pdf_observaciones?: string | null
 }
 
 // Monto a pagar en pesos (Vista Pagos). Fuente única usada por display, subtotales y PDF.
@@ -558,6 +567,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modoEdicion, setModoEdicion] = useState(false)
   // Modo edición/eliminación admin: habilita edición libre de todos los campos + delete real
   const [modoEdicionAdmin, setModoEdicionAdmin] = useState(false)
+  // Módulo búsqueda PDFs vía GAS
+  const [progresoPdf, setProgresoPdf] = useState<ProgresoLote | null>(null)
+  const [buscandoPdfs, setBuscandoPdfs] = useState(false)
+  const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
+
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
   const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'MA'>('MSA')
@@ -1278,6 +1292,45 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
+
+    // Columna FC: mostrar valor + ícono PDF si tiene URL
+    if (columna === 'fc') {
+      const fcColor: Record<string, string> = {
+        'OK':      'bg-green-200 text-green-900',
+        'Sí':      'bg-green-100 text-green-800',
+        'APP':     'bg-blue-100 text-blue-800',
+        'VER':     'bg-yellow-100 text-yellow-800',
+        'Portal':  'bg-purple-100 text-purple-800',
+        'Buscar':  'bg-gray-100 text-gray-700',
+        'NO Mail': 'bg-orange-100 text-orange-800',
+        'No':      'bg-red-100 text-red-700',
+        'NO':      'bg-red-100 text-red-700',
+      }
+      const v = (valor as string | null) ?? ''
+      const cls = fcColor[v] || 'bg-gray-100 text-gray-600'
+      return (
+        <div className="flex items-center gap-1.5">
+          {v && (
+            <span className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cls}`}>
+              {v}
+            </span>
+          )}
+          {factura.pdf_drive_url && (
+            <a
+              href={factura.pdf_drive_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Ver PDF en Drive${factura.pdf_observaciones ? ' — ' + factura.pdf_observaciones : ''}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+      )
+    }
+
     // En modo admin TODOS los campos son editables (incluso facturas históricas)
     const esEditable = modoEdicionAdmin
       ? true
@@ -6079,6 +6132,57 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Búsqueda de PDFs vía GAS (solo admin) */}
+            {!esContable && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (buscandoPdfs) return
+                    // Tomar todas las FC que están en estados buscables
+                    const pendientes = facturas
+                      .filter(f => f.fc === 'Buscar' || f.fc === 'No' || f.fc === 'NO Mail' || f.fc === null)
+                      .map(f => f.id)
+                    if (pendientes.length === 0) {
+                      toast.info('No hay facturas pendientes de búsqueda de PDF')
+                      return
+                    }
+                    const ok = window.confirm(`Vas a buscar PDFs de ${pendientes.length} facturas en tu Gmail.\nEl proceso tarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)
+                    if (!ok) return
+
+                    setBuscandoPdfs(true)
+                    try {
+                      await buscarPdfLote({
+                        empresa: empresa as 'MSA' | 'PAM' | 'MA',
+                        facturaIds: pendientes,
+                        onProgreso: setProgresoPdf,
+                        delayMs: 1500,
+                      })
+                      // Refrescar grilla con los nuevos valores
+                      await cargarFacturas()
+                    } catch (err) {
+                      toast.error('Error en lote: ' + (err as Error).message)
+                    } finally {
+                      setBuscandoPdfs(false)
+                    }
+                  }}
+                  disabled={buscandoPdfs}
+                  title="Buscar PDFs en Gmail vía GAS para facturas pendientes"
+                >
+                  {buscandoPdfs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  Buscar PDFs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setModalHistorialPdf({ open: true })}
+                  title="Historial de búsquedas de PDFs"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Historial PDFs
+                </Button>
+              </>
+            )}
 
             <Button variant="outline" onClick={() => setMostrarReglasImport(true)}
               title="Reglas que asignan cuenta contable y estado por CUIT al importar">
@@ -11440,6 +11544,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Notificación flotante de progreso de búsqueda PDF */}
+      <NotificacionProgresoLote
+        progreso={progresoPdf}
+        onCerrar={() => setProgresoPdf(null)}
+        onVerDetalle={(loteId) => {
+          setProgresoPdf(null)
+          setModalHistorialPdf({ open: true, loteId })
+        }}
+      />
+
+      {/* Modal historial búsquedas PDF */}
+      <ModalHistorialPdf
+        open={modalHistorialPdf.open}
+        onClose={() => setModalHistorialPdf({ open: false })}
+        loteId={modalHistorialPdf.loteId}
+        facturaId={modalHistorialPdf.facturaId}
+      />
 
       {/* Modal Generar Export v2 — elegir si cerrar la quincena */}
       <Dialog open={mostrarModalExport} onOpenChange={setMostrarModalExport}>
