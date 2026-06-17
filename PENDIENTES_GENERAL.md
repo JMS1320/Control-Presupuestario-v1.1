@@ -1,7 +1,50 @@
 # Pendientes generales del sistema
 
 Documento consolidado de todo lo pendiente. Agrupado por área.
-Actualizado: 2026-06-14.
+Actualizado: 2026-06-16.
+
+---
+
+## 📎 GAS PDF — descarga automática (2026-06-16)
+
+App-side completo en `desarrollo` (commits 5a2a3f9, 74805b1, d9bd749).
+Detalle completo en `memory/project_gas_pdf_busqueda.md`.
+
+**Pendiente del usuario para activar**:
+1. Deploy GAS Web App (`clasp create + push` en `gas-buscar-pdf/`)
+2. Configurar `GAS_AUTH_TOKEN` en Script Properties del GAS
+3. Habilitar Drive API en Services del GAS
+4. Deploy → Web App, copiar URL
+5. Configurar env vars Vercel: `GAS_BUSCAR_PDF_URL`, `GAS_AUTH_TOKEN`,
+   `GAS_FOLDER_ID_MSA`, `GAS_FOLDER_ID_PAM`, `GAS_FOLDER_ID_MA`
+6. Cargar emails de proveedores desde modal "Config PDFs"
+
+Instrucciones detalladas en `gas-buscar-pdf/README.md`.
+
+**Pendiente de Claude (Fase 2)**:
+- Auto-disparo post-import (hook después del import ARCA)
+- Auto-crear proveedor cuando se importa FC de CUIT inexistente
+- Botón "Buscar PDF de esta FC" en menú 3 puntos
+- Módulo propaganda (mover/etiquetar mails) — postergado
+- Reportes periódicos GAS trigger semanal — postergado
+
+---
+
+## 🧾 SICORE — bugs caso Alcorta (2026-06-16)
+
+Ver detalle completo en `memory/project_grupos_pago_bugs.md` y `memory/project_sicore_estado_quincena.md`.
+
+**Bugs a revisar (no urgentes)**:
+1. Cancel del modal SICORE no siempre revierte estado a 'pendiente' — anotar próxima vez que pase
+2. Inline editing de `pagar→pendiente` no persiste en FC con `grupo_pago_id` — probablemente relacionado con grupo
+3. Dropdown 3 puntos vacío para FC en `pagar` sin SICORE — agregar item "↩ Volver a Pendiente"
+4. `resetearFactura` NO limpia `grupo_pago_id` — decisión 2026-06-16: dejar así (empíricamente útil)
+
+**Feature futura**:
+5. Vista "Grupos de Pago" desde Cash Flow — listar, agregar/quitar items, recalcular monto_total
+
+**En análisis**:
+6. `grupos_pago.monto_total` no se recalcula automáticamente al cambiar FC vinculadas — definir si trigger / on-demand / warning UI
 
 ---
 
