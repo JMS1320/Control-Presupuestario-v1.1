@@ -35,7 +35,9 @@ import { NotificacionProgresoLote } from "@/components/gas-pdf/notificacion-prog
 import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { Paperclip } from "lucide-react"
+import { Paperclip, Banknote } from "lucide-react"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -573,6 +575,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [buscandoPdfs, setBuscandoPdfs] = useState(false)
   const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
   const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
+
+  // Módulo lotes de transferencias Galicia
+  const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
 
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
@@ -8602,6 +8607,58 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               >
                 Deseleccionar
               </Button>
+              {/* Exportar lote a Excel banco Galicia */}
+              {!esContable && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const items: ItemSeleccionado[] = []
+                    const schema = empresa.toLowerCase()
+                    // FCs sueltas — pero si una FC tiene grupo_pago_id y el grupo está seleccionado, NO la agregamos como suelta
+                    const facturasIds = Array.from(facturasSeleccionadasPagos)
+                    const facturasObj = facturasPagos.filter(f => facturasIds.includes(f.id))
+                    // Detectar grupos: si varias FCs tienen mismo grupo_pago_id y están todas seleccionadas → grupo
+                    const gruposDetectados = new Set<string>()
+                    for (const f of facturasObj) {
+                      if (f.grupo_pago_id) {
+                        const todasDelGrupo = facturasPagos.filter((x: any) => x.grupo_pago_id === f.grupo_pago_id)
+                        const todasSeleccionadas = todasDelGrupo.every((x: any) => facturasSeleccionadasPagos.has(x.id))
+                        if (todasSeleccionadas) gruposDetectados.add(f.grupo_pago_id)
+                      }
+                    }
+                    // Agregar grupos
+                    gruposDetectados.forEach(gid => items.push({ tipo: 'grupo', id: gid, schema }))
+                    // FCs sueltas (que no estén en un grupo agregado)
+                    facturasObj.forEach(f => {
+                      if (!f.grupo_pago_id || !gruposDetectados.has(f.grupo_pago_id)) {
+                        items.push({ tipo: 'fc', id: f.id, schema })
+                      }
+                    })
+                    // Templates (cuotas) — igual lógica de grupo
+                    const templatesIds = Array.from(templatesSeleccionadosPagos)
+                    const templatesObj = templatesPagos.filter((t: any) => templatesIds.includes(t.id))
+                    templatesObj.forEach((t: any) => {
+                      if (!t.grupo_pago_id || !gruposDetectados.has(t.grupo_pago_id)) {
+                        items.push({ tipo: 'cuota_template', id: t.id })
+                      }
+                    })
+                    // Anticipos
+                    Array.from(anticiposSeleccionadosPagos).forEach(id => items.push({ tipo: 'anticipo', id }))
+                    // Sueldos
+                    Array.from(sueldosSeleccionadosPagos).forEach(id => items.push({ tipo: 'sueldo', id }))
+
+                    if (items.length === 0) {
+                      toast.error('Seleccioná al menos un ítem para exportar')
+                      return
+                    }
+                    setModalExportarLote({ open: true, items })
+                  }}
+                  className="text-xs bg-blue-600 hover:bg-blue-700"
+                >
+                  <Banknote className="mr-1 h-3.5 w-3.5" />
+                  Exportar lote Galicia
+                </Button>
+              )}
             </div>
           </div>
 
@@ -11578,6 +11635,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         open={modalConfigProveedorPdf.open}
         onClose={() => setModalConfigProveedorPdf({ open: false })}
         cuitInicial={modalConfigProveedorPdf.cuit}
+      />
+
+      {/* Modal exportar lote a Excel banco Galicia */}
+      <ModalExportarLote
+        open={modalExportarLote.open}
+        onClose={() => setModalExportarLote({ open: false, items: [] })}
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        items={modalExportarLote.items}
+        userRole={userRole}
       />
 
       {/* Modal Generar Export v2 — elegir si cerrar la quincena */}

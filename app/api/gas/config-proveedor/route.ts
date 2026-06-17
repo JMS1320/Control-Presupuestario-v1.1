@@ -16,6 +16,8 @@ export const runtime = 'nodejs'
 const CAMPOS_PERMITIDOS = [
   'fc_modo', 'email_facturacion', 'patron_asunto',
   'dias_busqueda', 'carpeta_drive_id', 'gas_habilitado',
+  // Para módulo lotes Galicia
+  'email_pagos', 'cbu', 'alias_cbu',
 ]
 
 export async function GET(request: Request) {
