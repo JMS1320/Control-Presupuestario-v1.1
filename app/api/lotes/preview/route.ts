@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     const cuits = [...new Set(rawItems.map(r => r.cuit).filter(Boolean) as string[])]
     const { data: proveedoresData } = await supabaseAdmin
       .from('proveedores')
-      .select('id, cuit, razon_social, email_pagos, email_facturacion, cbu, alias_cbu, ultimo_uso_bancario')
+      .select('id, cuit, razon_social, email_pagos, email_facturacion, cbu, alias_cbu, ultimo_uso_bancario, mensaje_transferencia')
       .in('cuit', cuits)
 
     const provMap = new Map<string, any>()
@@ -114,6 +114,7 @@ export async function POST(request: Request) {
         descripcion: raw.descripcion || '',
         motivo_sugerido: motivoSugerido(raw.tipo),
         moneda: raw.moneda || 'ARS',
+        mensaje: prov?.mensaje_transferencia || null,
         warnings,
         bloqueante,
         excluido_del_excel: excluido,

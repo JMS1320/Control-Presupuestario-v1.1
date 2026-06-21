@@ -34,7 +34,7 @@ const MAX_FILAS_POR_ARCHIVO = 50
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as GenerarLoteInput
-    const { empresa, fecha_pago, items, user_role } = body
+    const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje } = body
 
     if (!empresa || !['MSA', 'PAM', 'MA'].includes(empresa)) {
       return NextResponse.json({ ok: false, error: 'empresa requerida' }, { status: 400 })
@@ -84,6 +84,28 @@ export async function POST(request: Request) {
       }
       return true
     })
+
+    // ── 2b. Aplicar override de mensaje (lo que tipeó el usuario gana sobre el fijo del proveedor) ──
+    for (const it of [...pagosValidos, ...sueldosValidos]) {
+      if (mensajes && Object.prototype.hasOwnProperty.call(mensajes, it.id)) {
+        it.mensaje = mensajes[it.id]  // puede ser '' para limpiar
+      }
+    }
+
+    // ── 2c. Guardar como fijo los mensajes marcados (PATCH proveedores.mensaje_transferencia) ──
+    if (fijarMensaje && fijarMensaje.length > 0) {
+      const porProveedor = new Map<string, string>()  // proveedor_id → mensaje (último gana)
+      for (const it of [...pagosValidos, ...sueldosValidos]) {
+        if (fijarMensaje.includes(it.id) && it.proveedor_id) {
+          porProveedor.set(it.proveedor_id, mensajes?.[it.id] ?? it.mensaje ?? '')
+        }
+      }
+      for (const [provId, msg] of porProveedor) {
+        await supabaseAdmin.from('proveedores')
+          .update({ mensaje_transferencia: msg || null })
+          .eq('id', provId)
+      }
+    }
 
     // ── 3. Generar Excel(s) ──
     const archivosPagos = generarArchivos(pagosValidos, { empresa, fechaPago: fecha_pago, tipo: 'pagos' })
@@ -215,7 +237,7 @@ function generarExcelBuffer(items: ItemPreview[]): Buffer {
       motivo,
       descripcion,
       email,
-      '', // mensaje del email opcional, vacío por ahora
+      it.mensaje || '', // mensaje del email (fijo del proveedor u override del usuario)
     ])
   }
 

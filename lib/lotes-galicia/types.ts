@@ -12,6 +12,7 @@
  */
 
 import type { Empresa } from '@/lib/gas-pdf/types'
+export type { Empresa } // re-export para que preview/generar lo importen desde acá
 
 export type TipoItem = 'fc' | 'cuota_template' | 'anticipo' | 'grupo' | 'sueldo'
 export type TipoLote = 'pagos' | 'sueldos'
@@ -70,6 +71,7 @@ export interface ItemPreview {
   descripcion: string
   motivo_sugerido: string
   moneda: string
+  mensaje: string | null   // mensaje fijo del proveedor (proveedores.mensaje_transferencia) → col "Mensaje del email"
   warnings: string[]      // ej: ["Sin CBU", "Sin email", "Último uso hace 5 meses"]
   bloqueante: string | null  // si !== null, no puede exportar (ej: grupo con 2 CUITs)
   excluido_del_excel: boolean  // calculado: si no tiene CBU/Alias → quedará fuera
@@ -105,6 +107,8 @@ export interface GenerarLoteInput {
   fecha_pago: string  // YYYY-MM-DD
   items: ItemSeleccionado[]
   user_role?: string
+  mensajes?: Record<string, string>   // itemId → mensaje override (lo que tipeó el usuario para la col "Mensaje")
+  fijarMensaje?: string[]             // itemIds cuyo mensaje hay que guardar como fijo en el proveedor
 }
 
 /** Output del endpoint /api/lotes/generar */

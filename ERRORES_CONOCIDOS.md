@@ -39,7 +39,7 @@
 ```
 app/api/import-excel-dinamico/route.ts   ← parece archivo roto/stub (NextResponse, supabase, XLSX, parseNumber, parseDate "Cannot find name")
 app/api/import-excel/route.ts            ← rawHeaders unknown / map type
-app/api/lotes/preview/route.ts           ← 'Empresa' no exportado de types
+app/api/lotes/preview/route.ts           ← ✅ RESUELTO 2026-06-21 ('Empresa' re-exportado en lotes-galicia/types). Baseline ahora 118.
 app/importador-nuevo/page.tsx            ← boolean|null vs boolean|undefined
 components/reporte-detallado.tsx
 components/tab-terneros.tsx               ← 'SubTabRecria' no existe
@@ -58,3 +58,25 @@ hooks/useMultiCashFlowData.ts
 ```
 
 > Nota: muchos son `any`/uniones de tipos que funcionan en runtime. El más sospechoso es `app/api/import-excel-dinamico/route.ts` (parece un archivo a medio hacer — imports faltantes). Candidato a revisar si ese endpoint se usa o se borra.
+
+### 🔬 TRIAGE 1er análisis (2026-06-21) — de los 119, lo que importa
+
+**Grupo 1 — Crashes latentes (nombres indefinidos, TS2304). Rompen SI se ejecuta el path:**
+| Error | Archivo:línea | Impacto | Fix |
+|---|---|---|---|
+| `toast` no definido | `useMultiCashFlowData.ts:732` | **Bug confirmado**: editar categ de template normal desde Cash Flow → crashea el handler en vez de mostrar el toast de bloqueo | `import { toast } from 'sonner'` (o el que use) |
+| `setSoloSinRevisar` | `vista-extracto-bancario.tsx:1517` | Setter de filtro inexistente → crashea al togglear ese filtro | declarar el useState o sacar la llamada |
+| `setSoloActivos` | `vista-templates-egresos.tsx:507` | Ídem (filtro templates) | ídem |
+| `categorias` (×2) | `vista-sector-productivo.tsx:379,4506` | Nombre no definido → crash si se ejecuta | revisar de dónde sale `categorias` |
+| `SubTabRecria` | `tab-terneros.tsx:264` | Nombre/tipo no definido | revisar |
+
+**Grupo 2 — Endpoint roto/abandonado:**
+- `app/api/import-excel-dinamico/route.ts` (14 errores): faltan TODOS los imports (NextResponse, supabase, XLSX, parseNumber, parseDate). Enganchado a `app/importador-nuevo/page.tsx` + `components/importador-excel-dinamico.tsx`. Importador experimental **100% roto**. Los reales son `import-facturas-arca` + `import-excel`. → Candidato a **BORRAR** (endpoint + página + componente), confirmando que `/importador-nuevo` no esté linkeado.
+
+**Grupo 3 — Reporte con campos inexistentes (salida en blanco):**
+- `vista-facturas-arca.tsx:2675-2766`: función de export accede a `fecha_factura`/`razon_social`/`cuit_emisor`/`numero_factura`/`cai`/`categ` que NO existen en `FacturaArca` (reales: `fecha_emision`/`denominacion_emisor`/`cuit`/`numero_desde`...). Si esa función se usa → columnas en blanco. A verificar si está viva.
+
+**Grupo 4 — Ruido de tipos (~75, la mayoría). Funcionan en runtime:**
+- jsPDF (`'a4'` orientation, `lastAutoTable`, `undefined`→string en autoTable), Supabase joins (`egreso[]`), implicit any, uniones `'ANTICIPO'|'SUELDO'` vs `'ARCA'|'TEMPLATE'`, TS2737 (BigInt), TS18048 (posibles undefined). No rompen nada.
+
+**Quick win:** el `toast` de `useMultiCashFlowData` (1 import) arregla un bug real de UX.

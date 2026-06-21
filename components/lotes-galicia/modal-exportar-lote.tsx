@@ -42,6 +42,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   const [cargando, setCargando] = useState(false)
   const [fechaPago, setFechaPago] = useState('')
   const [generando, setGenerando] = useState(false)
+  const [mensajes, setMensajes] = useState<Record<string, string>>({}) // itemId → override de mensaje
+  const [fijar, setFijar] = useState<Set<string>>(new Set())            // itemIds a guardar como fijo
   const [modalCompletar, setModalCompletar] = useState<{
     open: boolean
     modo: 'email' | 'cbu'
@@ -53,6 +55,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   useEffect(() => {
     if (!open) return
     cargarPreview()
+    setMensajes({})
+    setFijar(new Set())
     // Default fecha de pago: hoy
     const hoy = new Date()
     const isoHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -74,7 +78,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     if (!preview) return
     setGenerando(true)
     try {
-      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole })
+      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar] })
       if (!out.ok) { toast.error('Error: ' + out.error); return }
 
       // Descargar archivos
@@ -207,6 +211,10 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     totalExcluidos={preview.pagos.cantidad_excluidos}
                     montoValido={preview.pagos.monto_total_valido}
                     montoExcluido={preview.pagos.monto_total_excluido}
+                    mensajes={mensajes}
+                    onMensaje={(id, v) => setMensajes(prev => ({ ...prev, [id]: v }))}
+                    fijar={fijar}
+                    onToggleFijar={(id) => setFijar(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
                   />
                 )}
                 {itemsSueldos.length > 0 && (
@@ -218,6 +226,10 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                       totalExcluidos={preview.sueldos.cantidad_excluidos}
                       montoValido={preview.sueldos.monto_total_valido}
                       montoExcluido={preview.sueldos.monto_total_excluido}
+                      mensajes={mensajes}
+                      onMensaje={(id, v) => setMensajes(prev => ({ ...prev, [id]: v }))}
+                      fijar={fijar}
+                      onToggleFijar={(id) => setFijar(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
                     />
                   </div>
                 )}
@@ -254,7 +266,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
 }
 
 function SectionTabla({
-  titulo, items, totalValidos, totalExcluidos, montoValido, montoExcluido
+  titulo, items, totalValidos, totalExcluidos, montoValido, montoExcluido,
+  mensajes, onMensaje, fijar, onToggleFijar,
 }: {
   titulo: string
   items: ItemPreview[]
@@ -262,6 +275,10 @@ function SectionTabla({
   totalExcluidos: number
   montoValido: number
   montoExcluido: number
+  mensajes: Record<string, string>
+  onMensaje: (id: string, v: string) => void
+  fijar: Set<string>
+  onToggleFijar: (id: string) => void
 }) {
   return (
     <div className="border rounded-md overflow-hidden">
@@ -285,6 +302,7 @@ function SectionTabla({
             <th className="px-2 py-1.5 text-right">Monto</th>
             <th className="px-2 py-1.5 text-left">Último uso</th>
             <th className="px-2 py-1.5 text-left">Warnings</th>
+            <th className="px-2 py-1.5 text-left">Mensaje del email</th>
           </tr>
         </thead>
         <tbody>
@@ -304,6 +322,24 @@ function SectionTabla({
               </td>
               <td className="px-2 py-1 text-orange-700 text-[10px] max-w-[200px] truncate" title={p.warnings.join(' / ')}>
                 {p.warnings.join(' / ')}
+              </td>
+              <td className="px-2 py-1">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    className="border rounded px-1 py-0.5 text-[11px] w-40"
+                    placeholder={p.mensaje ? '' : 'sin mensaje'}
+                    value={mensajes[p.id] ?? (p.mensaje ?? '')}
+                    onChange={e => onMensaje(p.id, e.target.value.slice(0, 200))}
+                    title={p.mensaje ? `Fijo del proveedor: ${p.mensaje}` : 'Sin mensaje fijo — podés escribir uno'}
+                  />
+                  {p.proveedor_id && (
+                    <label className="flex items-center gap-0.5 text-[10px] text-gray-500 whitespace-nowrap" title="Guardar este mensaje como fijo del proveedor">
+                      <input type="checkbox" checked={fijar.has(p.id)} onChange={() => onToggleFijar(p.id)} />
+                      fijar
+                    </label>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

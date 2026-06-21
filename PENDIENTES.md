@@ -310,9 +310,16 @@ Genera Excel formato banco Galicia desde Vista Pagos. Flujo: seleccionar FCs/cuo
 
 **Reglas clave:** FC suelta = 1 fila por item; grupo completo seleccionado = 1 fila total; grupo multi-CUIT = BLOQUEA; item sin CBU/Alias = excluido silencioso; moneda ≠ ARS = bloqueante; sueldos = Excel APARTE; >50 items = parte en N archivos. Excel: hoja "Formulario", 6 columnas (CBU/Alias · Importe · Motivo · Descripción ≤12 chars · Email · Mensaje). Migración `public.lotes_transferencias` aplicada (NO en backup).
 
-**Falta (usuario):** probar con datos reales vs formato del banco · decidir si llenar "Mensaje del email" · decidir motivos específicos para templates (Alquiler/Expensas) o dejar "Varios".
+**Falta (usuario):** probar con datos reales vs formato del banco · decidir motivos específicos para templates (Alquiler/Expensas) o dejar "Varios".
 **Fase 2 (Claude):** historial de lotes · vista config rápida CBU/email.
 Detalle completo: `memory/project_lotes_galicia.md`.
+
+**✅ IMPLEMENTADO (2026-06-21) — Mensaje del email por proveedor:**
+- Campo `proveedores.mensaje_transferencia VARCHAR(200)` (NO en backup).
+- Preview carga el mensaje fijo → modal muestra columna **"Mensaje del email"** editable por fila (pre-llena con el fijo, placeholder "sin mensaje").
+- Checkbox **"fijar"** por fila → guarda lo tipeado en `proveedores.mensaje_transferencia` (PATCH al generar).
+- Excel usa: override del usuario > mensaje fijo del proveedor > vacío (antes siempre vacío).
+- De paso: fix TS2459 `Empresa` re-exportado en `lotes-galicia/types` (baseline 119→118). 0 errores nuevos.
 
 ---
 
