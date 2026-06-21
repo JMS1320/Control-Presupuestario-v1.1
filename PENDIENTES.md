@@ -372,7 +372,7 @@ Type-check de A'+B+C: 119 errores preexistentes, 0 nuevos.
 
 ### ✅ Parte C completa (2026-06-21)
 - **Backfill:** 32 proveedores creados (de 118 CUITs distintos en facturas). SQL INSERT...SELECT con CUIT normalizado, `fc_modo='sin_config'`. NO en backup.
-- **Auto-disparo post-import:** implementado **gated/APAGADO** en `vista-facturas-arca.tsx` (`dispararBusquedaPostImport` + check `process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'`). Hoy NO corre (env no seteada). Cuando se active, busca toda la cola `fc='Buscar'` de la empresa. **Refinamiento futuro:** limitar a las recién importadas (hoy busca todo el backlog Buscar).
+- **Auto-disparo post-import:** implementado **gated/APAGADO** (`dispararBusquedaPostImport(ids)` + check `process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'`). ✅ **Refinado (2026-06-21):** el import devuelve `idsBuscar` (IDs de las nuevas en estado 'Buscar') y el auto-disparo busca **solo esas**, no todo el backlog.
 
 ---
 

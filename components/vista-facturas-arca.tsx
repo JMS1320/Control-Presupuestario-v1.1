@@ -1704,13 +1704,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Auto-disparo de búsqueda de PDFs después del import.
   // ⚠️ APAGADO por defecto. Se activa con env var NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'
-  // (configurar en Vercel SOLO cuando el GAS esté deployado). Busca toda la cola en estado 'Buscar'
-  // de la empresa actual. (Refinamiento futuro: limitar a las recién importadas.)
-  const dispararBusquedaPostImport = async () => {
+  // (configurar en Vercel SOLO cuando el GAS esté deployado).
+  // Busca SOLO las facturas recién importadas en estado 'Buscar' (IDs que devuelve el import).
+  const dispararBusquedaPostImport = async (ids: string[]) => {
     try {
-      const { data } = await supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('fc', 'Buscar')
-      const ids = (data || []).map((f: any) => f.id)
-      if (ids.length === 0) return
+      if (!ids || ids.length === 0) return
       cancelarPdfRef.current = false
       setBuscandoPdfs(true)
       await buscarPdfLote({
@@ -1757,9 +1755,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         setOrigenFactura('')
         setPasoImportacion('origen')
         setImputacionData([])
-        // Auto-disparo de búsqueda de PDFs — APAGADO salvo que la env var esté en 'true'
+        // Auto-disparo de búsqueda de PDFs (solo las recién importadas) — APAGADO salvo env var en 'true'
         if (process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true') {
-          dispararBusquedaPostImport()
+          dispararBusquedaPostImport(resultado.idsBuscar || [])
         }
       }
     } catch (error) {

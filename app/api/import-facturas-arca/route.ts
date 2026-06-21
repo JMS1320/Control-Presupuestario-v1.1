@@ -519,6 +519,7 @@ export async function POST(req: Request) {
     let filasIgnoradas = 0
     const errores: string[] = []
     const proveedoresVistos = new Map<string, string>() // cuit limpio → razon_social (auto-crear proveedores faltantes)
+    const idsImportadosBuscar: string[] = [] // IDs de las facturas nuevas en estado 'Buscar' (para auto-disparo acotado)
 
     // Procesar cada fila del CSV
     for (let indice = 0; indice < filasCSV.length; indice++) {
@@ -608,6 +609,8 @@ export async function POST(req: Request) {
             const cuitLimpio = String(filaParaBBDD.cuit).replace(/[-\s]/g, '')
             if (cuitLimpio) proveedoresVistos.set(cuitLimpio, filaParaBBDD.denominacion_emisor || cuitLimpio)
           }
+          // Recolectar ID si quedó en estado 'Buscar' (para auto-disparo acotado a las recién importadas)
+          if (filaParaBBDD.fc === 'Buscar' && data?.[0]?.id) idsImportadosBuscar.push(data[0].id)
           // Vinculación con anticipos: se hace manualmente desde Vista Principal (alerta "Anticipos sin vincular")
           // o desde Cash Flow, vía el flujo con confirmación de useVinculacionAnticipo.
         }
@@ -653,6 +656,7 @@ export async function POST(req: Request) {
       insertedCount: filasImportadas,
       ignoredCount: filasIgnoradas,
       proveedoresCreados,
+      idsBuscar: idsImportadosBuscar, // IDs de las nuevas en 'Buscar' — para auto-disparo acotado
       errores: errores,
       summary: {
         totalFilas: filasCSV.length,
