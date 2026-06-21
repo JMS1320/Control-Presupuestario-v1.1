@@ -296,6 +296,8 @@ export function VistaExtractoBancario() {
   const [importForzar, setImportForzar] = useState(false)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
+  // Detalle del último lote conciliado (para verificar cantidad/alcance procesado)
+  const [infoLote, setInfoLote] = useState<{ scope: 'filtrado' | 'todos'; cuenta: string; solicitados: number } | null>(null)
   const tablaActiva = cuentaSeleccionada || 'msa_galicia'
   const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
@@ -365,17 +367,42 @@ export function VistaExtractoBancario() {
   }, [modoEdicion])
 
   // Iniciar proceso de conciliación
+  // Si hay filtros activos → corre SOLO sobre los pendientes visibles (con aviso).
+  // Si no hay filtros → corre sobre TODOS los pendientes (el límite de filas NO cuenta como filtro).
   const iniciarConciliacion = async () => {
     if (!cuentaSeleccionada) {
       setSelectorAbierto(true)
       return
     }
-    
+
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
-    if (cuenta) {
+    if (!cuenta) return
+
+    // Filtro activo = cualquier acotamiento deliberado (NO el límite de carga)
+    const hayFiltroActivo =
+      categsFiltro !== null ||
+      busqueda.trim() !== '' ||
+      filtroCategEspecial !== null ||
+      filtroRevisado !== 'todas' ||
+      filtroEstado !== 'Todos'
+
+    if (hayFiltroActivo) {
+      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente')
+      if (pendientesVisibles.length === 0) {
+        alert('No hay movimientos pendientes en lo visible. Quitá los filtros para conciliar todo, o ajustalos.')
+        return
+      }
+      const ok = window.confirm(
+        `Hay filtros activos: se conciliará SOLO lo visible (${pendientesVisibles.length} movimiento(s) pendiente(s)), no todos los pendientes.\n\n¿Continuar?`
+      )
+      if (!ok) return
+      setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesVisibles.length })
+      await ejecutarConciliacion(cuenta, pendientesVisibles as any)
+    } else {
+      setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
       await ejecutarConciliacion(cuenta)
-      recargar()
     }
+    recargar()
   }
 
   // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación.
@@ -1587,42 +1614,60 @@ export function VistaExtractoBancario() {
         </Alert>
       )}
 
-      {/* Resultados del Proceso */}
+      {/* Resultados del Proceso — resumen del último lote conciliado */}
       {resultados && (
         <Card className="border-green-200 bg-green-50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="text-green-800 flex items-center gap-2">
               <CheckCircle className="h-5 w-5" />
-              Conciliación Completada
+              Conciliación completada
             </CardTitle>
+            {infoLote && (
+              <div className="text-sm text-green-900/80 mt-1">
+                Lote: <span className="font-semibold">{infoLote.cuenta}</span>
+                {' · '}
+                {infoLote.scope === 'filtrado'
+                  ? <span>solo lo filtrado (<span className="font-semibold">{infoLote.solicitados}</span> pendientes seleccionados)</span>
+                  : <span>todos los pendientes</span>}
+              </div>
+            )}
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-5 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-700">
+                  {resultados.total_movimientos}
+                </div>
+                <div className="text-sm text-gray-600">Procesados</div>
+              </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
                   {resultados.automaticos}
                 </div>
-                <div className="text-sm text-gray-600">Automáticos</div>
+                <div className="text-sm text-gray-600">Conciliados</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-yellow-600">
                   {resultados.revision_manual}
                 </div>
-                <div className="text-sm text-gray-600">Revisión Manual</div>
+                <div className="text-sm text-gray-600">A auditar</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
                   {resultados.sin_match}
                 </div>
-                <div className="text-sm text-gray-600">Sin Match</div>
+                <div className="text-sm text-gray-600">Sin match</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-600">
-                  {resultados.total_movimientos}
+                <div className={`text-2xl font-bold ${resultados.errores > 0 ? 'text-red-700' : 'text-gray-400'}`}>
+                  {resultados.errores}
                 </div>
-                <div className="text-sm text-gray-600">Total</div>
+                <div className="text-sm text-gray-600">Errores</div>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Procesados = Conciliados + A auditar + Sin match + Errores. Verificá que "Procesados" coincida con el lote que esperabas.
+            </p>
           </CardContent>
         </Card>
       )}

@@ -28,8 +28,33 @@
 
 ## 📋 Log de errores
 
-> Vacío — se empieza a llenar la próxima vez que desarrollemos y aparezcan errores preexistentes.
-
 | Estado | Firma (archivo:línea + mensaje corto) | Comando | 1ª vez | Última vez | Veces | Notas |
 |--------|----------------------------------------|---------|--------|------------|-------|-------|
-| — | _(sin entradas todavía)_ | — | — | — | — | — |
+| 🆕 | **`tsc --noEmit` → 119 errores TS preexistentes en 18 archivos** | `npx tsc --noEmit` | 2026-06-21 | 2026-06-21 | 1 | NO bloquean build: `next.config` tiene `typescript.ignoreBuildErrors=true`. Ver desglose abajo. Ninguno en código tocado en A-FEAT-01. |
+
+### Desglose del baseline TS (2026-06-21) — capturado, sin investigar
+
+18 archivos con errores TS (no bloqueantes por `ignoreBuildErrors`). Para triagear desde **A-OP-07**:
+
+```
+app/api/import-excel-dinamico/route.ts   ← parece archivo roto/stub (NextResponse, supabase, XLSX, parseNumber, parseDate "Cannot find name")
+app/api/import-excel/route.ts            ← rawHeaders unknown / map type
+app/api/lotes/preview/route.ts           ← 'Empresa' no exportado de types
+app/importador-nuevo/page.tsx            ← boolean|null vs boolean|undefined
+components/reporte-detallado.tsx
+components/tab-terneros.tsx               ← 'SubTabRecria' no existe
+components/vista-asignacion-arca.tsx     ← ParserError / Sugerencia vs CuentaSistema / 'usos'
+components/vista-cash-flow.tsx           ← uniones de campos/origen ('ANTICIPO'/'SUELDO' vs 'ARCA'|'TEMPLATE')
+components/vista-extracto-bancario.tsx   ← egreso[] (nombre_quien_cobra/responsable...), propuestas any[], setSoloSinRevisar, editData
+components/vista-facturas-arca.tsx
+components/vista-historico-facturas.tsx
+components/vista-sector-productivo.tsx
+components/vista-templates-egresos.tsx
+components/wizard-templates-egresos.tsx
+config/access-routes.ts
+hooks/useAlertasTemplates.ts
+hooks/useInlineEditor.ts
+hooks/useMultiCashFlowData.ts
+```
+
+> Nota: muchos son `any`/uniones de tipos que funcionan en runtime. El más sospechoso es `app/api/import-excel-dinamico/route.ts` (parece un archivo a medio hacer — imports faltantes). Candidato a revisar si ese endpoint se usa o se borra.

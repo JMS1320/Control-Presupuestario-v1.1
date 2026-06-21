@@ -80,6 +80,22 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-DAT-02 | 🔴 | Revisar 4 facturas excluidas del fix motor (ICT NET 10558/10661/10762 + FERNANDEZ 1168) |
 | A-DAT-03 | 🔴 | Revisar Excel jerarquía de cuentas (`Jerarquia_Cuentas_Contables.xlsx`) |
 
+### 🔬 Revisión Conciliación (2026-06-21) — SOLO ANÁLISIS (decidir qué hacer después)
+> 10 temas que el usuario pidió investigar. Estado: análisis en curso. NO tocar código todavía. Mapeo a la lista original del usuario entre paréntesis.
+
+| ID | Estado | Tipo | Tema (nº del usuario) | Detalle |
+|----|--------|------|------------------------|---------|
+| A-BUG-04 | 🔍 | Bug | Motor no concilia casi ningún sueldo (#1) | → [A-BUG-04](#a-bug-04) |
+| A-BUG-05 | 🔍 | Bug | Conciliación manual (reasignar) borra/no copia datos: nro_cuenta, proveedor, detalle (#2) | → [A-BUG-05](#a-bug-05) |
+| A-FEAT-01 | 🔴 | Feat | Correr el motor acotado a lo filtrado/en pantalla (#3) — ✅ IMPLEMENTADO, falta testear | → [A-FEAT-01](#a-feat-01) |
+| A-BUG-06 | 🔍 | Bug | Reasignar muestra a veces pocas y a veces muchas FC — lógica poco clara (#4) | → [A-BUG-06](#a-bug-06) |
+| A-BUG-07 | 🔍 | Bug | Detalle no homogéneo entre las formas de conciliar; templates ¿llenan detalle+cuota? (#5) | → [A-BUG-07](#a-bug-07) |
+| A-BUG-08 | 🔍 | Bug | Conciliación de sueldos ¿llena detalle? — verificar con la última conciliación (#6) | → [A-BUG-08](#a-bug-08) |
+| A-FEAT-02 | 🔍 | Feat | Editar extracto: ofrece cuentas contables pero NO templates (#7) | → [A-FEAT-02](#a-feat-02) |
+| A-FEAT-03 | 🔍 | Feat | Contable/Interno: mostrar los existentes para no duplicar parecidos (#8) | → [A-FEAT-03](#a-feat-03) |
+| A-FEAT-04 | 🔍 | Feat | DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (arquitectura) (#9) | → [A-FEAT-04](#a-feat-04) |
+| A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) |
+
 ---
 
 ## 🅱️ SECCIÓN B — PROBABLEMENTE PENDIENTES (recientes, sin re-verificar 1×1)
@@ -407,6 +423,153 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 
 > Transcripción verbatim del análisis completo (Respuesta 1 técnica amplia + Respuesta 2 con el foco del usuario): `memory/project_hardening_seguridad.md`.
 
+---
+
+---
+---
+
+# 🔬 DOSSIERS — Revisión Conciliación (2026-06-21, SOLO ANÁLISIS)
+
+> Investigación de los 10 temas del usuario. Estado: análisis hecho, **sin tocar código**. Refs: `hooks/useMotorConciliacion.ts` (motor) y `components/vista-extracto-bancario.tsx` (vista/modales). Evidencia de datos: queries a `public.msa_galicia` y `public.sueldos_pagos` (2026-06-21).
+
+## <a id="a-bug-04"></a>A-BUG-04 — Motor no concilia casi ningún sueldo (#1)
+
+**Cómo matchea el motor** (`buscarMatchCashFlow`, useMotorConciliacion.ts:265-355): compara **monto exacto** (`cf.debitos === movimiento.debitos`, l.296/326) + **fecha ≤5 días** (l.300-303). Si fecha exacta (0 días) → `conciliado`; si 1-5 días → `auditar` (l.313-320). Pre-filtro haberes (l.271): solo si el texto del banco contiene "haber" restringe el pool a `origen==='SUELDO'`.
+
+**Evidencia de datos (última conciliación):**
+- `sueldos_pagos`: 41 conciliado/banco · **9 `pagado`/banco SIN conciliar** · 11 `programado`/caja_sigot · 8 `anterior`/banco (excluidos del pool por `.neq('estado','anterior')`).
+- En `msa_galicia` hay 4 movimientos con `categ='Sueldos'` en estado **`auditar`** (ej. 02/06 $461.352,30 "Trf Orden Judic."): el motor SÍ los matcheó (asignó categ) pero la fecha no era exacta → quedaron en `auditar` esperando confirmación manual.
+- Varios **lumps de nómina** pendientes sin matchear: "Servicio Acreditamiento De Haberes" $870.581 / $1.028.648 / $1.050.958 / $1.020.347 (categ `INVALIDA:`).
+
+**Causas raíz (3):**
+1. **Pago en lote (lump) vs pagos individuales.** El banco deposita la nómina en uno o pocos importes ("Acreditamiento de Haberes" ~$1M), pero el sistema tiene **un `sueldos_pago` por empleado**. Ningún importe individual iguala el lump → no hay match → queda `pendiente`. Se arreglaría agrupando (`grupo_pago_id`) para sumar en una fila SUELDO única, pero **solo 2 de 41 pagos tienen grupo**.
+2. **Regla fecha exacta = conciliado / 1-5 días = auditar.** Sueldos que matchean por monto pero con 1-5 días de diferencia caen en `auditar` (no auto-conciliado) → el usuario los confirma a mano → se siente como "no concilió".
+3. **Pre-filtro "haber" demasiado estricto.** Solo dispara con la palabra "haber". Las transferencias individuales dicen "Trf Inmed Proveed" / "Trf Orden Judic." → no activan el pre-filtro de sueldos (igual pueden matchear por monto, pero pierden la restricción que evitaría falsos cruces).
+
+**Opciones a evaluar (no decidir aún):** (a) soportar match lump↔suma de pagos del período (agrupar sueldos automáticamente por fecha/período); (b) ampliar tolerancia de fecha o auto-conciliar sueldos con monto exacto aunque la fecha no sea exacta; (c) detectar "Acreditamiento de Haberes" como nómina y ofrecer reparto.
+
+---
+
+## <a id="a-bug-05"></a>A-BUG-05 — Conciliación manual (reasignar) borra/no copia datos (#2)
+
+**Aclaración de las 2 vías** (confirmado): el botón **Editar → cambiar estado** funciona bien. El problema está en **Reasignar** (modal de asignación, `ejecutarAsignacion`, vista-extracto-bancario.tsx:984-1320).
+
+**Bugs encontrados en `ejecutarAsignacion`:**
+1. **`detalle: null` hardcodeado en las 4 ramas** (template l.1093, ARCA l.1128, sueldo l.1199, grupo l.1262) → **siempre borra el detalle** del movimiento. En la rama sueldo incluso **computa `detalleSueldo`** (l.1175 "Anticipo X - …") **pero lo descarta** y escribe null → código muerto / regresión.
+2. **`nro_cuenta` no se copia en ARCA cuando la FC no lo tiene.** Lee `nro_cuenta` directo de la factura (l.1120) y solo lo setea si existe (l.1134). Si la FC tiene `cuenta_contable` (→ categ, sí se copia l.1133) pero `nro_cuenta` NULL → el extracto queda con categ y **sin nro_cuenta**. El **motor sí tiene fallback** (busca `nro_cuenta` en `cuentas_contables` por categ, useMotorConciliacion.ts:489-496); el manual **no**. ← esto es exactamente lo que reportó el usuario.
+3. **Rama TEMPLATE no llena `nro_cuenta`** en absoluto.
+4. **`proveedor_nombre` = lookup o null** (l.1095/1130/1201/1264): si el CUIT no está en `proveedores`, escribe null → **borra** el proveedor que hubiera.
+
+**Conclusión:** la asignación manual no quedó homogénea con el motor. Faltan: preservar/derivar detalle, fallback de nro_cuenta por categ, y no pisar proveedor con null.
+
+---
+
+## <a id="a-feat-01"></a>A-FEAT-01 — Correr el motor acotado a lo filtrado/en pantalla (#3)
+
+**Hoy:** `ejecutarConciliacion(cuenta)` (useMotorConciliacion.ts:358) carga **todos** los `estado='pendiente'` de la cuenta (`obtenerMovimientosBancarios`, l.169-174) y los procesa. No acepta subconjunto.
+
+**Lo que pide el usuario:** correr el motor solo sobre lo filtrado/visible (por categ, rango de fechas, o los 100 en pantalla) — útil para probar fallas/mejoras de a poco.
+
+**Factibilidad: BAJA complejidad.** El motor ya itera una lista de movimientos. Basta con que `ejecutarConciliacion` acepte un parámetro opcional `movimientosFiltrados?: MovimientoBancario[]` y, si viene, salte la carga y use esa lista. La vista ya tiene `movimientosVisibles` (lista filtrada en pantalla). Se conecta un botón "Conciliar solo lo filtrado" que pasa `movimientosVisibles.filter(estado==='pendiente')`.
+
+**Riesgo:** mínimo. Solo cambia el origen de la lista, no la lógica de match. Recomendable hacerlo — además sirve de herramienta de debug para el resto de los temas.
+
+**✅ IMPLEMENTADO (2026-06-21) — falta testear:**
+- `useMotorConciliacion.ts`: `ejecutarConciliacion(cuenta, movimientosOverride?)` — si viene la lista, corre solo sobre ella; sino carga todos los pendientes (igual que antes).
+- `vista-extracto-bancario.tsx` `iniciarConciliacion`: detecta `hayFiltroActivo` (`categsFiltro` / `busqueda` / `filtroCategEspecial` / `filtroRevisado≠'todas'` / `filtroEstado≠'Todos'`). Si hay filtro → confirm "se conciliará solo lo visible (N pendientes)" y pasa `movimientosVisibles` pendientes; si no → corre sobre todos. **El `limiteRegistros` NO cuenta como filtro** (decisión del usuario: sin filtro = corre sobre todo aunque muestre 100).
+- Si hay filtro pero 0 pendientes visibles → alert y aborta.
+- Type-check: sin errores nuevos (mis archivos limpios; 119 errores TS preexistentes ajenos, ver `ERRORES_CONOCIDOS.md`).
+- **A testear:** (1) sin filtro → corre todo; (2) con filtro categ → avisa y corre solo eso; (3) límite 100 sin filtro → corre todo; (4) viendo conciliados → avisa "0 pendientes".
+
+**✅ EXTRA (2026-06-21): resumen del último lote.** Al terminar la conciliación, el panel "Conciliación completada" ahora muestra: encabezado con la **cuenta + alcance** (todos / N filtrados) + 5 números: **Procesados · Conciliados · A auditar · Sin match · Errores** (antes faltaba Errores y el alcance). Estado nuevo `infoLote` en la vista. Permite verificar que "Procesados" coincida con el lote esperado. Type-check: 119 errores preexistentes, 0 nuevos.
+
+---
+
+## <a id="a-bug-06"></a>A-BUG-06 — Reasignar muestra a veces pocas y a veces muchas FC (#4)
+
+**Causa** (`generarPropuestasInteligentes`, vista-extracto-bancario.tsx:1323-1362): las propuestas se arman en 3 niveles:
+1. **Mismo monto exacto** (cualquier fecha) — l.1328.
+2. **Monto ±10% Y el proveedor aparece en la descripción del movimiento** — l.1338-1341 (`descripcion.includes(display_nombre.split(' ')[0])`).
+3. **Mismo proveedor en la descripción** (cualquier monto) — l.1350.
+
+**Por qué varía tanto:** el nivel 2 y 3 dependen de que el **nombre del proveedor aparezca literalmente en la descripción bancaria**. Galicia suele poner "Trf Inmed Proveed" (genérico, sin nombre) → niveles 2-3 no aportan nada → solo quedan las de **monto exacto** (pocas o ninguna). Cuando la descripción sí trae un nombre reconocible → aparecen muchas. Esa es "la lógica detrás" que el usuario no veía. Además el pool base (`cargarFacturasDisponibles`, l.724) trae **todas** las ARCA+templates no conciliadas, así que el buscador manual sí permite encontrarlas, pero las *propuestas automáticas* dependen del nombre en la descripción.
+
+**A evaluar:** usar CUIT bancario (`extraerCuitBancario`) para proponer por proveedor en vez de depender del texto; o mostrar siempre las de monto exacto + cercanas por fecha.
+
+---
+
+## <a id="a-bug-07"></a>A-BUG-07 — Detalle no homogéneo entre formas de conciliar; templates ¿llenan detalle/cuota? (#5)
+
+**Estado del campo `detalle` según vía:**
+- **Motor, match Cash Flow** (useMotorConciliacion.ts:501): `detalle = cashFlowRow.detalle_usuario || null`. Para templates/ARCA toma el detalle del Cash Flow si existe; **no agrega qué cuota**.
+- **Motor, reglas** (l.666): `detalle = extraAnticipo.detalle || null` (casi siempre null salvo anticipos).
+- **Manual (todas las ramas):** `detalle: null` → **siempre vacío** (ver A-BUG-05).
+- **`comprobantes_pagados`** (campo separado): manual template = `display_referencia`/`nombre_referencia` (l.1096), ARCA = `FC - nro` (l.1131). **No indica número de cuota** del template.
+
+**Templates:** la conciliación (motor o manual) vincula `template_id` + `template_cuota_id` y pone `comprobantes_pagados = nombre del template`, **pero no escribe en `detalle` ni dice "cuota N/total"**. Es decir: queda trazado por ID pero no legible en la grilla.
+
+**Conclusión:** el llenado de `detalle` NO está homogeneizado. Falta una convención única (ej. `detalle = "Nombre template — cuota X"` / `"FC nro — proveedor"`) aplicada igual en motor y manual.
+
+---
+
+## <a id="a-bug-08"></a>A-BUG-08 — Conciliación de sueldos: ¿llena detalle? — verificado con la última conciliación (#6)
+
+**Verificado con datos (msa_galicia, movimientos con `sueldo_pago_id`):** hay un **corte de fechas nítido**:
+- **≤ 28/04/2026**: `detalle` LLENO ("Anticipo Alondra Olivo - Anticipo Abr 2026"), `comprobantes_pagados` lleno ("Abr 2026"), `proveedor_nombre` lleno. ← formato idéntico al `detalleSueldo` del código manual.
+- **Mayo/junio 2026** (16/06, 09/06, 02/06, 01/06, 29/05, 04/05): `detalle = null`, `comprobantes_pagados = null`, `proveedor_nombre` mayormente null.
+
+**Diagnóstico:** las conciliaciones recientes de sueldos quedaron **sin detalle**. Coincide con A-BUG-05 punto 1 (la rama sueldo del manual ahora escribe `detalle: null` y descarta el `detalleSueldo` que calcula) y/o con que el **motor no llena detalle para sueldos** (`detalle_usuario` de las filas SUELDO viene null; el CUIT del empleado no está en `proveedores` → `proveedor_nombre` null; `comprobante_display` null). 
+
+**Anomalía detectada:** dos movimientos (08/04 y 06/04) comparten el **mismo `sueldo_pago_id`** (`8fd083cf…`) con categ distinta (Sueldos vs GASTOS VARIOS GANADERIA) — revisar si es correcto.
+
+**Conclusión:** la conciliación de sueldos **dejó de llenar detalle** en algún cambio reciente. Es una regresión, no falta de diseño (antes funcionaba).
+
+---
+
+## <a id="a-feat-02"></a>A-FEAT-02 — Editar extracto: ofrece cuentas contables pero NO templates (#7)
+
+**Confirmado** (vista-extracto-bancario.tsx): el panel **Edición Masiva** (l.2110-2152) ofrece `SelectorCuentaContable` (CATEG, l.2123), Centro de Costo, Estado, Contable, Interno — **pero ningún selector de template**. Para vincular un template hay que ir al modal **Asignar/Reasignar** (que sí tiene tab Template). 
+
+**Mejora pedida:** permitir elegir template también desde el flujo de Editar (o unificar). Factible reusando el `Tab Template` del modal de asignación. A definir si se agrega al panel masivo o se redirige al modal.
+
+---
+
+## <a id="a-feat-03"></a>A-FEAT-03 — Contable/Interno: mostrar los existentes para no duplicar (#8)
+
+**Confirmado:** `contableManual`/`internoManual` son `<Input>` de **texto libre** (modal l.3681-3695, placeholder "AP i" / "DIST MA"; e igual en panel masivo ~l.2154). No muestran los valores ya usados → riesgo de escribir variantes ("DIST MA" vs "Dist MA").
+
+**Solución (simple, sin tabla nueva — el usuario lo aceptó así):** poblar un `<datalist>` o combobox con los **valores distintos existentes**. Origen: `SELECT DISTINCT contable` y `SELECT DISTINCT interno` de las tablas de extracto (y/o `reglas_contable_interno.codigo_contable/interno`). Mostrar como sugerencias. Si más adelante se quiere control estricto → tabla maestra (como centros de costo), pero por ahora alcanza con listar las actuales.
+
+---
+
+## <a id="a-feat-04"></a>A-FEAT-04 — DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (#9, arquitectura)
+
+**Planteo del usuario:** pago una factura de MA con retención → pago el neto y anoto interno=`DIST MA`. Después **MSA paga la retención** al fisco, y ese pago **también debería ser `DIST MA`**. Pero SICORE **agrupa** las retenciones de muchos proveedores en un único pago (TXT/quincena) → se pierde el "dueño" interno de cada retención.
+
+**Dos caminos identificados (el usuario sabe que toca arquitectura):**
+- **A — Anotar en la factura/template** que fue `DIST MA` y **deducir el total** (neto + retención) como DIST MA desde ahí. Más simple, no toca SICORE.
+- **B — Identificar dentro de SICORE** qué parte de cada retención es `DIST MA` (campo interno por registro de `sicore_retenciones`) y desagregar el pago agrupado. Más preciso pero **modifica la arquitectura SICORE**.
+
+**Estado:** solo registrar el planteo. Decisión pendiente (puede que no se haga). Relacionado con `sicore_retenciones` y el reparto interno DIST MA.
+
+---
+
+## <a id="a-bug-09"></a>A-BUG-09 — No-conciliados que deberían haber conciliado + reglas a agregar (#10)
+
+**Datos `msa_galicia`:** 618 conciliado / 39 pendiente / 4 auditar. Revisión de los pendientes (casi todos con categ `INVALIDA:` = nunca tocados):
+
+**Candidatos a regla nueva (recurrentes mismo importe/descr):**
+- **"Deb. Autom. De Serv." $12.902** se repite 4 meses (18/02, 16/03, 15/04, 15/05) — débito automático mensual → regla/template claro. Hay otros "Deb. Autom. De Serv." recurrentes ($572.972 en 05/05 y 06/02; $32.634; $48.996; $16.982).
+- **ECHEQ sin regla:** $1.461.558,28 (16/06 "Echeq 48 Hs. Nro. 105") y $1.455.755,70 (26/05 "Echeq Nro 102"). No hay regla para "Echeq" → deberían cruzarse con FCs en estado `echeq`. 
+
+**Casos que NO son de regla sino de grupo/manual:**
+- **$4.165.672,09 (10/06 "Trf Inmed Proveed")** = total viejo del **grupo Alcorta** (ver A-BUG-01/A-BUG-02). El motor no concilia grupos → requiere Tab Grupo manual. (Ojo: ese total cambió a $4.161.192,09 tras re-imputar SICORE → además explica por qué no calza por monto exacto.)
+- Lumps de nómina "Acreditamiento de Haberes" ($870K-$1.05M) → ver A-BUG-04.
+- Grandes créditos "Transferencias Cash Proveedores" ($89,5M, $5M, $11,8M) → ingresos/movimientos entre cuentas, probablemente no son egresos conciliables por regla.
+
+**Pendiente de análisis profundo:** cruzar cada pendiente con su posible match (mismo monto en ARCA/template/sueldo no conciliado) para listar (a) los que deberían haber conciliado solos y por qué no, y (b) el set de reglas nuevas a proponer. Requiere una corrida de query de cruce monto↔candidatos.
+
+---
 ---
 
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
