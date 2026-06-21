@@ -575,6 +575,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [buscandoPdfs, setBuscandoPdfs] = useState(false)
   const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
   const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
+  // Modal de búsqueda de PDFs con selección (individual / todo-nada / rango fechas) + cancelar
+  const [modalBuscarPdf, setModalBuscarPdf] = useState(false)
+  const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
+  const [pdfDesde, setPdfDesde] = useState('')
+  const [pdfHasta, setPdfHasta] = useState('')
+  const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
+  const cancelarPdfRef = useRef(false)
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -1695,6 +1702,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setPasoImportacion('imputacion')
   }
 
+  // Auto-disparo de búsqueda de PDFs después del import.
+  // ⚠️ APAGADO por defecto. Se activa con env var NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'
+  // (configurar en Vercel SOLO cuando el GAS esté deployado). Busca toda la cola en estado 'Buscar'
+  // de la empresa actual. (Refinamiento futuro: limitar a las recién importadas.)
+  const dispararBusquedaPostImport = async () => {
+    try {
+      const { data } = await supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('fc', 'Buscar')
+      const ids = (data || []).map((f: any) => f.id)
+      if (ids.length === 0) return
+      cancelarPdfRef.current = false
+      setBuscandoPdfs(true)
+      await buscarPdfLote({
+        empresa: empresa as 'MSA' | 'PAM' | 'MA',
+        facturaIds: ids,
+        onProgreso: setProgresoPdf,
+        delayMs: 1500,
+        isCancelled: () => cancelarPdfRef.current,
+      })
+      await cargarFacturas()
+    } catch (e) {
+      console.error('Auto-disparo de búsqueda de PDFs falló (import OK igual):', e)
+    } finally {
+      setBuscandoPdfs(false)
+    }
+  }
+
   const manejarImportacionExcel = async () => {
     if (!archivoImportacion) return
 
@@ -1724,6 +1757,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         setOrigenFactura('')
         setPasoImportacion('origen')
         setImputacionData([])
+        // Auto-disparo de búsqueda de PDFs — APAGADO salvo que la env var esté en 'true'
+        if (process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true') {
+          dispararBusquedaPostImport()
+        }
       }
     } catch (error) {
       console.error('Error en importación:', error)
@@ -6145,37 +6182,18 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               <>
                 <Button
                   variant="outline"
-                  onClick={async () => {
-                    if (buscandoPdfs) return
-                    // Tomar todas las FC que están en estados buscables
-                    const pendientes = facturas
-                      .filter(f => f.fc === 'Buscar' || f.fc === 'No' || f.fc === 'NO Mail' || f.fc === null)
-                      .map(f => f.id)
-                    if (pendientes.length === 0) {
-                      toast.info('No hay facturas pendientes de búsqueda de PDF')
-                      return
-                    }
-                    const ok = window.confirm(`Vas a buscar PDFs de ${pendientes.length} facturas en tu Gmail.\nEl proceso tarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)
-                    if (!ok) return
-
-                    setBuscandoPdfs(true)
-                    try {
-                      await buscarPdfLote({
-                        empresa: empresa as 'MSA' | 'PAM' | 'MA',
-                        facturaIds: pendientes,
-                        onProgreso: setProgresoPdf,
-                        delayMs: 1500,
-                      })
-                      // Refrescar grilla con los nuevos valores
-                      await cargarFacturas()
-                    } catch (err) {
-                      toast.error('Error en lote: ' + (err as Error).message)
-                    } finally {
-                      setBuscandoPdfs(false)
-                    }
+                  onClick={() => {
+                    // Pre-seleccionar solo las auto-buscables (Buscar / null). El usuario puede
+                    // agregar/quitar a mano (incluso forzar NO Mail / No) desde el modal.
+                    const auto = facturas.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)
+                    setSeleccionPdf(new Set(auto))
+                    setPdfDesde('')
+                    setPdfHasta('')
+                    setFiltroTiposPdf(new Set())
+                    setModalBuscarPdf(true)
                   }}
                   disabled={buscandoPdfs}
-                  title="Buscar PDFs en Gmail vía GAS para facturas pendientes"
+                  title="Elegir qué facturas buscar (selección, rango de fechas)"
                 >
                   {buscandoPdfs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                   Buscar PDFs
@@ -11636,6 +11654,160 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         onClose={() => setModalConfigProveedorPdf({ open: false })}
         cuitInicial={modalConfigProveedorPdf.cuit}
       />
+
+      {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
+      <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Buscar PDFs en Gmail</DialogTitle>
+            <DialogDescription>
+              Elegí qué facturas buscar. Vienen marcadas las pendientes (estado "Buscar"). Podés agregar/quitar a mano y acotar por fecha de emisión.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            const candidatosFecha = facturas.filter(f => {
+              const fe = f.fecha_emision || ''
+              if (pdfDesde && fe < pdfDesde) return false
+              if (pdfHasta && fe > pdfHasta) return false
+              return true
+            })
+            const tiposPresentes = Array.from(new Set(candidatosFecha.map(f => f.fc ?? '(sin estado)')))
+            // candidatos = lo visible (acotado por chips de tipo). Todas/Ninguna/lista operan sobre esto.
+            const candidatos = filtroTiposPdf.size === 0
+              ? candidatosFecha
+              : candidatosFecha.filter(f => filtroTiposPdf.has(f.fc ?? '(sin estado)'))
+            const fcBadge = (fc: string | null) => {
+              const map: Record<string, string> = {
+                'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700',
+                'NO Mail': 'bg-orange-100 text-orange-700', 'Portal': 'bg-purple-100 text-purple-700',
+                'APP': 'bg-blue-100 text-blue-700', 'VER': 'bg-yellow-100 text-yellow-800',
+                'Sí': 'bg-green-100 text-green-700', 'OK': 'bg-green-100 text-green-700',
+              }
+              return <span className={`px-1.5 py-0.5 rounded text-[10px] ${map[fc || ''] || 'bg-gray-100 text-gray-500'}`}>{fc ?? '(sin estado)'}</span>
+            }
+            return (
+              <>
+                <div className="flex flex-wrap items-end gap-3 border-b pb-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-0.5">Desde (emisión)</label>
+                    <Input type="date" value={pdfDesde} onChange={e => setPdfDesde(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-0.5">Hasta (emisión)</label>
+                    <Input type="date" value={pdfHasta} onChange={e => setPdfHasta(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set(candidatos.map(f => f.id)))}>Todas ({candidatos.length})</Button>
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set())}>Ninguna</Button>
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)))}>Solo "Buscar"</Button>
+                  </div>
+                </div>
+
+                {tiposPresentes.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2 pb-1">
+                    <span className="text-xs text-gray-400 mr-1">Tipos:</span>
+                    {tiposPresentes.map(tipo => {
+                      const activo = filtroTiposPdf.has(tipo)
+                      return (
+                        <button key={tipo} type="button" disabled={buscandoPdfs}
+                          onClick={() => setFiltroTiposPdf(prev => { const n = new Set(prev); if (n.has(tipo)) n.delete(tipo); else n.add(tipo); return n })}
+                          className={`px-2 py-0.5 rounded text-[11px] border ${activo ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                          {tipo}
+                        </button>
+                      )
+                    })}
+                    {filtroTiposPdf.size > 0 && (
+                      <button type="button" className="text-[11px] text-gray-500 underline ml-1" onClick={() => setFiltroTiposPdf(new Set())}>limpiar</button>
+                    )}
+                  </div>
+                )}
+
+                <div className="overflow-y-auto flex-1 -mx-1 px-1" style={{ maxHeight: '45vh' }}>
+                  {candidatos.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-6 text-center">No hay facturas en ese rango.</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white border-b">
+                        <tr className="text-left text-gray-500">
+                          <th className="p-1 w-8"></th>
+                          <th className="p-1">Emisión</th>
+                          <th className="p-1">Proveedor</th>
+                          <th className="p-1 text-right">Importe</th>
+                          <th className="p-1">Estado FC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {candidatos.map(f => (
+                          <tr key={f.id} className="border-b hover:bg-gray-50">
+                            <td className="p-1">
+                              <Checkbox checked={seleccionPdf.has(f.id)} disabled={buscandoPdfs}
+                                onCheckedChange={(c) => {
+                                  setSeleccionPdf(prev => { const n = new Set(prev); if (c) n.add(f.id); else n.delete(f.id); return n })
+                                }} />
+                            </td>
+                            <td className="p-1">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
+                            <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
+                            <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                            <td className="p-1">{fcBadge(f.fc)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            )
+          })()}
+
+          <DialogFooter className="border-t pt-3">
+            <div className="flex items-center justify-between w-full gap-3">
+              <span className="text-xs text-gray-500">{seleccionPdf.size} seleccionada(s)</span>
+              <div className="flex gap-2">
+                {buscandoPdfs ? (
+                  <Button variant="destructive" onClick={() => { cancelarPdfRef.current = true }}>
+                    Cancelar búsqueda
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => setModalBuscarPdf(false)}>Cancelar</Button>
+                    <Button
+                      disabled={seleccionPdf.size === 0}
+                      onClick={async () => {
+                        const ids = Array.from(seleccionPdf)
+                        if (ids.length === 0) return
+                        if (!window.confirm(`Vas a buscar PDFs de ${ids.length} factura(s) en tu Gmail.\nTarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)) return
+                        cancelarPdfRef.current = false
+                        setBuscandoPdfs(true)
+                        try {
+                          await buscarPdfLote({
+                            empresa: empresa as 'MSA' | 'PAM' | 'MA',
+                            facturaIds: ids,
+                            onProgreso: setProgresoPdf,
+                            delayMs: 1500,
+                            isCancelled: () => cancelarPdfRef.current,
+                          })
+                          await cargarFacturas()
+                        } catch (err) {
+                          toast.error('Error en lote: ' + (err as Error).message)
+                        } finally {
+                          setBuscandoPdfs(false)
+                        }
+                      }}
+                    >
+                      <Search className="mr-2 h-4 w-4" />
+                      Buscar {seleccionPdf.size > 0 ? `(${seleccionPdf.size})` : ''}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal exportar lote a Excel banco Galicia */}
       <ModalExportarLote

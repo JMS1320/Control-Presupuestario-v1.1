@@ -316,7 +316,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
     año_contable: null, // Dejar en blanco (no usar default de BD)
-    fc: null,
+    fc: 'Buscar', // Default: queda para búsqueda automática de PDF. La imputación del usuario lo pisa si elige (Portal/No/Sí). Nulls viejos NO se migran (históricos).
     cuenta_contable: reglaCuit.cuenta_contable, // ← Aplicar regla CUIT si existe
     centro_costo: null,
     estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
@@ -518,6 +518,7 @@ export async function POST(req: Request) {
     let filasImportadas = 0
     let filasIgnoradas = 0
     const errores: string[] = []
+    const proveedoresVistos = new Map<string, string>() // cuit limpio → razon_social (auto-crear proveedores faltantes)
 
     // Procesar cada fila del CSV
     for (let indice = 0; indice < filasCSV.length; indice++) {
@@ -602,6 +603,11 @@ export async function POST(req: Request) {
         } else {
           console.log(`✅ Fila ${indice + 2} insertada correctamente:`, data)
           filasImportadas++
+          // Registrar proveedor (cuit limpio) para auto-creación posterior
+          if (filaParaBBDD.cuit) {
+            const cuitLimpio = String(filaParaBBDD.cuit).replace(/[-\s]/g, '')
+            if (cuitLimpio) proveedoresVistos.set(cuitLimpio, filaParaBBDD.denominacion_emisor || cuitLimpio)
+          }
           // Vinculación con anticipos: se hace manualmente desde Vista Principal (alerta "Anticipos sin vincular")
           // o desde Cash Flow, vía el flujo con confirmación de useVinculacionAnticipo.
         }
@@ -612,9 +618,33 @@ export async function POST(req: Request) {
       }
     }
 
+    // Auto-crear proveedores faltantes (en bloque, NO rompe el import si falla)
+    let proveedoresCreados = 0
+    try {
+      const cuits = Array.from(proveedoresVistos.keys())
+      if (cuits.length > 0) {
+        const { data: existentes } = await supabase
+          .from('proveedores')
+          .select('cuit')
+          .in('cuit', cuits)
+        const setExistentes = new Set((existentes || []).map((p: any) => p.cuit))
+        const nuevos = cuits
+          .filter(c => !setExistentes.has(c))
+          .map(c => ({ cuit: c, razon_social: proveedoresVistos.get(c) || c, fc_modo: 'sin_config' }))
+        if (nuevos.length > 0) {
+          const { error: errProv } = await supabase.from('proveedores').insert(nuevos)
+          if (errProv) console.error('⚠️ Error auto-creando proveedores:', errProv.message)
+          else { proveedoresCreados = nuevos.length; console.log(`👥 Proveedores auto-creados: ${proveedoresCreados}`) }
+        }
+      }
+    } catch (e) {
+      console.error('⚠️ Auto-creación de proveedores falló (import OK igual):', e)
+    }
+
     // Preparar respuesta con resumen de la importación
-    const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían`
-    
+    const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían` +
+      (proveedoresCreados > 0 ? ` · ${proveedoresCreados} proveedor(es) nuevo(s) creado(s)` : '')
+
     console.log(`📈 Resultado: ${filasImportadas} importadas, ${filasIgnoradas} ignoradas, ${errores.length} errores`)
 
     return NextResponse.json({
@@ -622,12 +652,14 @@ export async function POST(req: Request) {
       message: mensaje,
       insertedCount: filasImportadas,
       ignoredCount: filasIgnoradas,
+      proveedoresCreados,
       errores: errores,
       summary: {
         totalFilas: filasCSV.length,
         filasImportadas: filasImportadas,
         filasIgnoradas: filasIgnoradas,
-        erroresCount: errores.length
+        erroresCount: errores.length,
+        proveedoresCreados
       }
     })
 

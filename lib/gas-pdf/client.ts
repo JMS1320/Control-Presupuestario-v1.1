@@ -21,6 +21,8 @@ export interface BuscarPdfLoteOptions {
   delayMs?: number
   /** Timeout por factura (default 60s) */
   timeoutMsPorFactura?: number
+  /** Si devuelve true antes de procesar una factura, corta el lote (cancelación) */
+  isCancelled?: () => boolean
 }
 
 export interface ProgresoLote {
@@ -36,6 +38,7 @@ export interface ProgresoLote {
     resultado?: ApiBuscarPdfOutput
   }
   finalizado: boolean
+  cancelado?: boolean
 }
 
 /** Inicia ProgresoLote vacío */
@@ -97,6 +100,12 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   let progreso = nuevoProgreso(loteId, opts.facturaIds.length)
 
   for (let i = 0; i < opts.facturaIds.length; i++) {
+    // Cancelación: si el caller pide cortar, frenamos antes de procesar la siguiente
+    if (opts.isCancelled?.()) {
+      progreso = { ...progreso, cancelado: true, finalizado: true }
+      opts.onProgreso?.(progreso)
+      return progreso
+    }
     const facturaId = opts.facturaIds[i]
     const out = await buscarPdfFactura({ factura_id: facturaId, empresa: opts.empresa, lote_id: loteId }, timeout)
     progreso = actualizarProgreso(progreso, out)

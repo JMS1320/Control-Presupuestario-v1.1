@@ -96,6 +96,15 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-04 | 🔍 | Feat | DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (arquitectura) (#9) | → [A-FEAT-04](#a-feat-04) |
 | A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) |
 
+### 📎 GAS PDF — hallazgos 2026-06-21 (revisión del módulo)
+| ID | Estado | Tipo | Tema | Detalle |
+|----|--------|------|------|---------|
+| A-FEAT-06 | 🔴 | Feat | Modal Buscar PDFs con selección (individual/todo-nada/Solo Buscar) + rango fechas + cancelar — ✅ IMPLEMENTADO, falta testear | → [A-TEST-02](#a-test-02) |
+| A-BUG-10 | 🟡 | Bug | `fc='No'`/`NO Mail` ya NO se auto-buscan (modal pre-selecciona solo Buscar/null). Falta Parte B (import default) | → [A-TEST-02](#a-test-02) |
+| A-FEAT-05 | ⏸️ | Feat | Editor de `fc` solo ofrece Sí/No/Portal — no se puede marcar 'Buscar' (mitigado: el modal deja buscar cualquiera a mano) | → [A-TEST-02](#a-test-02) |
+| A-FEAT-07 | 🔴 | Feat | **Parte B** — import default `fc='Buscar'` — ✅ IMPLEMENTADO (nulls viejos NO se migran por decisión del usuario; Portal ya funcional vía imputación), falta testear | → [A-TEST-02](#a-test-02) |
+| A-FEAT-08 | 🔴 | Feat | **Parte C** — ✅ auto-crear proveedor al importar · ✅ backfill 32 proveedores creados (2026-06-21) · ✅ auto-disparo post-import gated APAGADO (`NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT`). Falta testear | → [A-TEST-02](#a-test-02) |
+
 ---
 
 ## 🅱️ SECCIÓN B — PROBABLEMENTE PENDIENTES (recientes, sin re-verificar 1×1)
@@ -321,6 +330,49 @@ Detalle completo: `memory/project_lotes_galicia.md`.
 
 Guía: `gas-buscar-pdf/README.md`. ⚠️ Seguridad: el scope GAS hoy es `drive` (full) — pasar a `drive.file` (ver [A-SEC-01](#a-sec-01)).
 **Fase 2 (Claude):** auto-disparo post-import · auto-crear proveedor en FC de CUIT inexistente · botón "Buscar PDF de esta FC". Detalle: `memory/project_gas_pdf_busqueda.md`.
+
+### 🔎 Hallazgos de la revisión 2026-06-21 (verificado en código)
+
+**Qué hace el botón "Buscar PDFs"** (`vista-facturas-arca.tsx:6146-6182`): NO muestra preview ni deja seleccionar. Filtra TODAS las facturas de la grilla/empresa con `fc ∈ {Buscar, No, NO Mail, null}` (l.6152), muestra un `window.confirm` con **solo la cantidad** ("Vas a buscar PDFs de N facturas…"), y al aceptar corre el lote **en segundo plano** (serie, 1,5s por factura, con notificación de progreso) y refresca. No hay selección por factura.
+
+**Estados de `fc` que SÍ se buscan:** `Buscar`, `No`, `NO Mail`, `null`. **NO se buscan:** `Sí`, `Portal`, `APP`, `OK`, `VER`.
+
+**⚠️ A-BUG-10 — `'No'` se busca igual.** Contra la intuición del usuario (y contra la tabla de diseño que dice `No` = "no tengo y NO busco"), el código **incluye `'No'` en el set buscable**. Además hay lugares que tratan `fc==='No'` como "pendiente de recibir" (l.949, 6617, 7519). Hay **conflación de significado**: ¿`No` = "no la tengo todavía, buscala" o "no busco"? **Decisión pendiente** del usuario. Hoy: marcar `No` NO excluye de la búsqueda.
+
+**⚠️ A-FEAT-05 — no se puede setear `'Buscar'` a mano.** El editor de `fc` solo ofrece **`Sí` / `No` / `Portal`** (l.7321, 7400-7402). No hay opción para volver a poner `'Buscar'` (re-encolar). El default al importar sí es `'Buscar'` (default de BD), así que las nuevas entran buscables; pero si una se marcó `Sí`/`Portal` no hay forma de volver a la cola por UI.
+
+**Auto-búsqueda en el import:** **NO existe** (el "auto-disparo post-import" es Fase 2, sin implementar). Hoy la búsqueda es **100% manual** vía el botón. No hay nada que busque "solo las de un código específico" al importar.
+
+**Conclusión sobre lo pendiente de Claude vs usuario:**
+- **NADA de Claude bloquea el uso.** El módulo manual está completo. Lo que falta para que FUNCIONE es 100% del usuario: (1) deploy GAS, (2) 5 env vars Vercel, (3) cargar emails en Config PDFs.
+- Pendientes de Claude = mejoras Fase 2 (opcionales): auto-disparo post-import, auto-crear proveedor, botón individual por FC + resolver A-BUG-10 / A-FEAT-05.
+
+### ✅ IMPLEMENTADO — Parte A (2026-06-21): modal Buscar PDFs con selección
+
+`vista-facturas-arca.tsx` + `lib/gas-pdf/client.ts`:
+- El botón "Buscar PDFs" ahora **abre un modal** (antes lanzaba directo). Modal con: rango de fechas (emisión Desde/Hasta), lista con checkboxes, botones **Todas / Ninguna / "Solo Buscar"**, contador de seleccionadas, badge del estado FC por fila.
+- **Pre-selecciona solo las auto-buscables** (`fc ∈ {Buscar, null}`). 'No', 'NO Mail', 'Portal', 'APP', 'Sí', 'VER' **ya NO se auto-buscan** — pero se pueden seleccionar a mano (resuelve "NO Mail solo manual" y "No no se busca solo").
+- **Cancelar:** botón "Cancelar búsqueda" durante la corrida (corta el lote en la próxima factura, vía `isCancelled` en `buscarPdfLote` + `cancelado` en `ProgresoLote`).
+- Type-check: 119 errores preexistentes, 0 nuevos.
+
+### Estados FC y auto-búsqueda (criterio del usuario, fijado 2026-06-21)
+- **Se auto-busca:** solo `Buscar` (+ `null` legacy, tratado como Buscar → migrar).
+- **NO se auto-busca (solo manual vía modal):** `No`, `NO Mail`, `Portal`, `APP`, `Sí`/`OK`, `VER`.
+- `null`: legacy → migrar a `Buscar` (Parte B).
+
+### ✅ IMPLEMENTADO — Parte A' (chips), B (import default), C (auto-crear proveedor) — 2026-06-21
+
+**A' (modal):** chips multi-toggle por estado FC (`filtroTiposPdf`) — apretás un tipo y la lista muestra solo esos; multi-unión; "limpiar". Botón footer renombrado a **"Cancelar"** (cierra sin buscar). Todas/Ninguna operan sobre lo visible (chips+fechas).
+
+**B (import default):** `import-facturas-arca/route.ts` l.319 ahora `fc: 'Buscar'` (antes `null`). La imputación del usuario lo pisa si elige (merge l.571-574 ya respeta override). **Nulls viejos NO se migran** (decisión del usuario: históricos, los trata aparte). Portal ya funcional vía imputación.
+
+**C (auto-crear proveedor):** al final del import, en bloque y en try/catch (NO rompe el import): junta los CUITs limpios importados, consulta `proveedores`, e inserta los faltantes (`cuit` + `razon_social=denominacion_emisor` + `fc_modo='sin_config'`). Devuelve `proveedoresCreados` en la respuesta. **Activo ya** aunque la búsqueda esté apagada.
+
+Type-check de A'+B+C: 119 errores preexistentes, 0 nuevos.
+
+### ✅ Parte C completa (2026-06-21)
+- **Backfill:** 32 proveedores creados (de 118 CUITs distintos en facturas). SQL INSERT...SELECT con CUIT normalizado, `fc_modo='sin_config'`. NO en backup.
+- **Auto-disparo post-import:** implementado **gated/APAGADO** en `vista-facturas-arca.tsx` (`dispararBusquedaPostImport` + check `process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'`). Hoy NO corre (env no seteada). Cuando se active, busca toda la cola `fc='Buscar'` de la empresa. **Refinamiento futuro:** limitar a las recién importadas (hoy busca todo el backlog Buscar).
 
 ---
 
