@@ -409,10 +409,10 @@ export async function POST(req: Request) {
     if (fechaMin) {
       const { data: ex } = await client
         .from(config.tabla)
-        .select("fecha, descripcion, debitos, creditos, comprobante")
+        .select("fecha, descripcion, debitos, creditos, comprobante, cuota")
         .gte("fecha", fechaMin)
       ex?.forEach((e: any) => {
-        const k = `${e.fecha}|${(e.descripcion || "").trim()}|${Number(e.debitos) || 0}|${Number(e.creditos) || 0}|${e.comprobante || ""}`
+        const k = `${e.fecha}|${(e.descripcion || "").trim()}|${Number(e.debitos) || 0}|${Number(e.creditos) || 0}|${e.comprobante || ""}|${e.cuota || ""}`
         existentes.add(k)
       })
     }
@@ -432,7 +432,7 @@ export async function POST(req: Request) {
       const creditos = m.pesos < 0 ? Math.abs(m.pesos) : 0
       const debitos_usd = m.dolares > 0 ? m.dolares : 0
       const creditos_usd = m.dolares < 0 ? Math.abs(m.dolares) : 0
-      const dedupKey = `${m.fecha}|${m.descripcion}|${debitos}|${creditos}|${m.comprobante || ""}`
+      const dedupKey = `${m.fecha}|${m.descripcion}|${debitos}|${creditos}|${m.comprobante || ""}|${m.cuota || ""}`
       if (existentes.has(dedupKey)) {
         duplicadosOmitidos++
         continue
