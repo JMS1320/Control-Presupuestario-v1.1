@@ -2853,7 +2853,7 @@ export function VistaExtractoBancario() {
                   if (importForzar) fd.append('forzar', 'true')
                   const res = await fetch(config.endpoint, { method: 'POST', body: fd })
                   const data = await res.json()
-                  setImportResult({ ...data, ok: res.ok && data.ok !== false })
+                  setImportResult({ ...data, ok: res.ok && data.ok !== false && data.success !== false })
                 }
               } catch {
                 setImportResult({ ok: false, message: 'Error de conexión al procesar el archivo' })
@@ -2936,8 +2936,8 @@ export function VistaExtractoBancario() {
                     )}
                   </div>
 
-                  {/* Checkbox "forzar" — solo modo PDF de tarjeta */}
-                  {config.modo === 'pdf' && (
+                  {/* Checkbox "forzar" — importadores con control de saldos (tarjeta PDF + banco) */}
+                  {['/api/import-pdf-tarjeta', '/api/import-excel', '/api/import-excel-ca'].includes(config.endpoint) && (
                     <label className="flex items-center gap-2 cursor-pointer text-sm">
                       <Checkbox checked={importForzar} onCheckedChange={(v) => setImportForzar(!!v)} disabled={importLoading} />
                       <span>Forzar importación aunque el control de saldos no cuadre</span>

@@ -231,6 +231,7 @@ export async function POST(req: Request) {
     const saldoInicialInput = formData.get("saldo_inicial")
     const saldoInicial = saldoInicialInput ? parseNumberCA(saldoInicialInput) : 0
     const cuentaBancariaId = (formData.get("tabla") as string | null)?.trim() || "pam_galicia"
+    const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 
     const TABLAS_CA_PERMITIDAS = ["pam_galicia", "ma_galicia"]
     if (!TABLAS_CA_PERMITIDAS.includes(cuentaBancariaId)) {
@@ -474,8 +475,24 @@ export async function POST(req: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // 6. Insertar
+    // 6. Insertar — pero NO si el control de saldos falla (salvo que se fuerce)
     // -----------------------------------------------------------------------
+    if (controlErrors.length > 0 && !forzar) {
+      return NextResponse.json({
+        success: false,
+        message: `Control de saldos NO cuadra en ${controlErrors.length} fila(s). NO se importó nada — revisá el saldo inicial o el archivo (o tildá "Forzar" para importar igual).`,
+        insertedCount: 0,
+        controlErrors,
+        errores,
+        summary: {
+          totalFilas: filas.length,
+          filasInsertadas: 0,
+          erroresControl: controlErrors.length,
+          erroresCategoria: errores.length,
+        },
+      })
+    }
+
     if (rowsParaInsertar.length > 0) {
       const { error } = await clientCA
         .from(cuentaBancariaId)

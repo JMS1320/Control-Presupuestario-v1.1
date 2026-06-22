@@ -83,6 +83,7 @@ export async function POST(req: Request) {
     const saldoInicialInput = formData.get("saldo_inicial")
     const saldoInicial = saldoInicialInput ? parseNumber(saldoInicialInput) : 0
     const tablaDestino = (formData.get("tabla") as string | null)?.trim() || "msa_galicia"
+    const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 
     // Tablas CC permitidas (formato Galicia CC)
     const TABLAS_CC_PERMITIDAS = ["msa_galicia", "pam_galicia_cc"]
@@ -252,6 +253,17 @@ export async function POST(req: Request) {
       saldoAnterior = saldo
       controlAnterior = control
       nextOrden++
+    }
+
+    // NO insertar si el control de saldos falla (salvo que se fuerce)
+    if (controlErrors.length > 0 && !forzar) {
+      return NextResponse.json({
+        success: false,
+        message: `Control de saldos NO cuadra en ${controlErrors.length} fila(s). NO se importó nada — revisá el saldo inicial o el archivo (o tildá "Forzar" para importar igual).`,
+        insertedCount: 0,
+        controlErrors,
+        summary: { totalFilas: rowsParaInsertar.length, filasInsertadas: 0, erroresControl: controlErrors.length },
+      })
     }
 
     // Insertar datos si hay filas válidas
