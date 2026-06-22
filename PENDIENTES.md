@@ -448,7 +448,7 @@ ORDER BY gap_dias DESC;
 - `vista-extracto-bancario.tsx`: separado `cuentaId` (id lógico) de `tablaActiva` (= `tabla_bd` real). `cuenta_bancaria_id`, lookup de config import y submit usan `cuentaId`; `.from()` usa `tablaActiva`.
 - `useMovimientosBancarios.ts`: useEffect ahora depende de `[tabla, schema]` (PAM↔MA tarjeta comparten tabla 'tarjeta_visa').
 - Resultado esperado: seleccionar una tarjeta ahora consulta la tabla real → muestra vacío (0 filas) en vez de quedarse en la cta cte. Type-check 118, 0 nuevos.
-- ⚠️ **Caveat (no bloqueante):** algunos `.from(tablaActiva)` inline (ediciones puntuales, ej. líneas ~1057) usan `supabase` plano sin aplicar `schemaActivo` → para tablas en schema ≠ public (tarjetas/cajas) esas operaciones de edición fallarían. El DISPLAY principal (vía hook) sí aplica schema. Es un patrón preexistente que también afecta cajas; revisar si molesta al editar tarjetas.
+- ✅ **Schema en operaciones de conciliación — RESUELTO (2026-06-22).** Se agregó helper `dbCuenta()` (aplica `.schema(schemaActivo)` para tarjetas/cajas) y se reemplazaron las ~8 operaciones que usaban `supabase` plano: marcar conciliado masivo (limpiar motivo_revision), vincular factura inline, y las 4 ramas de `ejecutarAsignacion` (template/ARCA/sueldo/grupo) + limpieza de vínculo. Ahora la conciliación manual de tarjetas escribe en el schema correcto. (El usuario confirmó que SÍ se debe poder conciliar: hay facturas en estado `credito` y reglas a cargar.) Esto también arregla el mismo gap para CAJAS (schema msa). Type-check 118, 0 nuevos.
 
 ### Lo que falta
 1. ~~Fix A-BUG-11~~ ✅ hecho — **testear** que al seleccionar la tarjeta cambie la vista.

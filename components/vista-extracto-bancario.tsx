@@ -305,6 +305,8 @@ export function VistaExtractoBancario() {
   const cuentaActivaObj = CUENTAS_BANCARIAS.find(c => c.id === cuentaId)
   const tablaActiva = cuentaActivaObj?.tabla_bd || cuentaId
   const schemaActivo = cuentaActivaObj?.schema_bd || 'public'
+  // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
+  const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
@@ -470,7 +472,7 @@ export function VistaExtractoBancario() {
         // Si se marcaron como "Conciliado", actualizar facturas vinculadas y limpiar motivo_revision
         if (editData.estado === 'conciliado') {
           // Limpiar motivo_revision para movimientos marcados como Conciliado
-          const { error: errorLimpiar } = await supabase
+          const { error: errorLimpiar } = await dbCuenta()
             .from(tablaActiva)
             .update({ motivo_revision: null })
             .in('id', ids)
@@ -562,7 +564,7 @@ export function VistaExtractoBancario() {
                 } else {
                   console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
                   // Guardar vínculo persistente en el movimiento bancario
-                  await supabase
+                  await dbCuenta()
                     .from(tablaActiva)
                     .update({ comprobante_arca_id: opcionId })
                     .eq('id', movimientoId)
@@ -1059,7 +1061,7 @@ export function VistaExtractoBancario() {
         }
         // Limpiar vínculo ARCA anterior si existía
         if (movimientoAsignando.comprobante_arca_id) {
-          await supabase.from(tablaActiva)
+          await dbCuenta().from(tablaActiva)
             .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
         }
 
@@ -1130,7 +1132,7 @@ export function VistaExtractoBancario() {
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateTemplate)
           .eq('id', movimientoAsignando.id)
@@ -1167,7 +1169,7 @@ export function VistaExtractoBancario() {
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
         if (internoManual.trim()) updateArca.interno = internoManual.trim()
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateArca)
           .eq('id', movimientoAsignando.id)
@@ -1198,7 +1200,7 @@ export function VistaExtractoBancario() {
             .delete().eq('id', movimientoAsignando.template_cuota_id)
         }
         if (movimientoAsignando.comprobante_arca_id) {
-          await supabase.from(tablaActiva)
+          await dbCuenta().from(tablaActiva)
             .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
         }
 
@@ -1240,7 +1242,7 @@ export function VistaExtractoBancario() {
         updateSueldo.contable = contableManual.trim() || codigosSueldo.contable || ''
         updateSueldo.interno  = internoManual.trim()  || codigosSueldo.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateSueldo)
           .eq('id', movimientoAsignando.id)
@@ -1329,7 +1331,7 @@ export function VistaExtractoBancario() {
         updateGrupo.contable = contableManual.trim() || codigos.contable || ''
         updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateGrupo)
           .eq('id', movimientoAsignando.id)
