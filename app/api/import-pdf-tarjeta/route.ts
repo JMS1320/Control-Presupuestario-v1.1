@@ -94,7 +94,11 @@ function parsearLineaMovimiento(raw: string): MovimientoParsed | null {
   const unMontoRegex = new RegExp(`(${NUM_AR})\\s*$`)
   let pesos = 0
   let dolares = 0
-  const m2 = resto.match(dosMontosRegex)
+  // Líneas de impuestos/percepciones (IVA, percepción, RG, IIBB, Sellos) con %: traen
+  // "base cargo" (dos números en PESOS). El cargo es el ÚLTIMO; el primero es base informativa.
+  // NO son consumos en USD → forzar parseo de un solo monto (pesos) para no inflar dólares.
+  const esTasaPesos = /%/.test(resto) && /(IVA|PERCEP|\bRG\b|IIBB|SELLOS)/i.test(resto)
+  const m2 = esTasaPesos ? null : resto.match(dosMontosRegex)
   if (m2) {
     pesos = parseNumAR(m2[1])
     dolares = parseNumAR(m2[2])
@@ -105,7 +109,7 @@ function parsearLineaMovimiento(raw: string): MovimientoParsed | null {
     const monto = parseNumAR(m1[1])
     // Heurística: si menciona USD o U$S o tiene "DÓLARES" cerca, es dólares
     // Si NO, asumimos pesos
-    if (/USD|U\$S/i.test(resto)) {
+    if (!esTasaPesos && /USD|U\$S/i.test(resto)) {
       dolares = monto
     } else {
       pesos = monto
