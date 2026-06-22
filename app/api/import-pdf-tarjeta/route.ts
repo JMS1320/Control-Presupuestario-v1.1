@@ -403,18 +403,24 @@ export async function POST(req: Request) {
     // Insertar en BD
     const client = supabase.schema(config.schema)
 
-    // Dedup contra existentes (por fecha + descripcion + débitos + créditos + comprobante)
-    const existentes = new Set<string>()
-    const fechaMin = resumen.movimientos.map((m) => m.fecha).sort()[0]
-    if (fechaMin) {
-      const { data: ex } = await client
+    // Dedup a nivel RESUMEN (no por movimiento). Cada resumen es un extracto self-contained:
+    // un cargo de un mes NUNCA es duplicado de otro mes, aunque coincidan fecha/desc/monto.
+    // Lo único duplicable es el resumen entero (mismo nro_resumen importado dos veces).
+    if (resumen.nro_resumen) {
+      const { data: yaImportado } = await client
         .from(config.tabla)
-        .select("fecha, descripcion, debitos, creditos, comprobante, cuota")
-        .gte("fecha", fechaMin)
-      ex?.forEach((e: any) => {
-        const k = `${e.fecha}|${(e.descripcion || "").trim()}|${Number(e.debitos) || 0}|${Number(e.creditos) || 0}|${e.comprobante || ""}|${e.cuota || ""}`
-        existentes.add(k)
-      })
+        .select("id")
+        .eq("nro_resumen", resumen.nro_resumen)
+        .limit(1)
+        .maybeSingle()
+      if (yaImportado) {
+        return NextResponse.json({
+          ok: false,
+          message: `El resumen ${resumen.nro_resumen} ya estaba importado. Para re-importarlo, borralo primero.`,
+          excel_base64: excelBase64,
+          control,
+        })
+      }
     }
 
     const { data: maxOrden } = await client
@@ -426,18 +432,11 @@ export async function POST(req: Request) {
     let nextOrden = (maxOrden?.orden ?? 0) + 1
 
     const paraInsertar: any[] = []
-    let duplicadosOmitidos = 0
     for (const m of resumen.movimientos) {
       const debitos = m.pesos > 0 ? m.pesos : 0
       const creditos = m.pesos < 0 ? Math.abs(m.pesos) : 0
       const debitos_usd = m.dolares > 0 ? m.dolares : 0
       const creditos_usd = m.dolares < 0 ? Math.abs(m.dolares) : 0
-      const dedupKey = `${m.fecha}|${m.descripcion}|${debitos}|${creditos}|${m.comprobante || ""}|${m.cuota || ""}`
-      if (existentes.has(dedupKey)) {
-        duplicadosOmitidos++
-        continue
-      }
-      existentes.add(dedupKey)
       paraInsertar.push({
         fecha: m.fecha,
         descripcion: m.descripcion,
@@ -469,10 +468,9 @@ export async function POST(req: Request) {
     if (paraInsertar.length === 0) {
       return NextResponse.json({
         ok: false,
-        message: `Todas las filas (${duplicadosOmitidos}) ya estaban importadas.`,
+        message: `No se detectaron movimientos en el PDF.`,
         excel_base64: excelBase64,
         control,
-        duplicados_omitidos: duplicadosOmitidos,
       })
     }
 
@@ -513,7 +511,6 @@ export async function POST(req: Request) {
       ok: true,
       message: `${paraInsertar.length} movimiento(s) importado(s) desde el PDF a ${config.schema}.${config.tabla}.`,
       insertados: paraInsertar.length,
-      duplicados_omitidos: duplicadosOmitidos,
       control,
       resumen: {
         nro_resumen: resumen.nro_resumen,
