@@ -2492,17 +2492,26 @@ export function VistaExtractoBancario() {
                             <div className="border-t bg-gray-50/50 px-3 py-2 overflow-auto max-h-72">
                               <table className="w-full text-xs">
                                 <thead><tr className="text-left text-gray-500">
-                                  <th className="py-1">Fecha</th><th>Descripción</th><th>Cuota</th><th className="text-right">Débito</th><th className="text-right">Crédito</th><th>Tipo</th>
+                                  <th className="py-1">Fecha</th><th>Descripción</th><th>Cuota</th><th className="text-right">Débito</th><th className="text-right">Crédito</th><th>Conciliación</th>
                                 </tr></thead>
                                 <tbody>
                                   {item.movs.map((m: any) => (
                                     <tr key={m.id} className="border-t border-gray-200">
-                                      <td className="py-1">{m.fecha?.split('-').reverse().join('/')}</td>
-                                      <td className="max-w-[260px] truncate" title={m.descripcion}>{m.descripcion}</td>
+                                      <td className="py-1 whitespace-nowrap">{m.fecha?.split('-').reverse().join('/')}</td>
+                                      <td className="max-w-[240px] truncate" title={m.descripcion}>{m.descripcion}</td>
                                       <td>{m.cuota || ''}</td>
-                                      <td className="text-right">{Number(m.debitos) ? formatCurrency(Number(m.debitos)) : ''}</td>
-                                      <td className="text-right">{Number(m.creditos) ? formatCurrency(Number(m.creditos)) : ''}</td>
-                                      <td>{m.tipo_fila === 'pago' ? <span className="text-blue-600">pago</span> : 'mov.'}</td>
+                                      <td className="text-right whitespace-nowrap">{Number(m.debitos) ? formatCurrency(Number(m.debitos)) : ''}</td>
+                                      <td className="text-right whitespace-nowrap">{Number(m.creditos) ? formatCurrency(Number(m.creditos)) : ''}</td>
+                                      <td className="whitespace-nowrap">
+                                        {m.tipo_fila === 'pago' ? (
+                                          <span className="text-gray-400 italic">pago → cta cte</span>
+                                        ) : m.estado === 'conciliado' ? (
+                                          <span className="text-green-700" title="Conciliado">✓ {m.detalle || m.proveedor_nombre || m.categ || 'conciliado'}</span>
+                                        ) : (
+                                          <button type="button" onClick={() => abrirModalAsignar(m)}
+                                            className="text-blue-600 hover:underline font-medium">Asignar</button>
+                                        )}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -2520,7 +2529,7 @@ export function VistaExtractoBancario() {
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
                   <p>Cargando movimientos...</p>
                 </div>
-              ) : movimientosVisibles.length === 0 ? (
+              ) : cuentaActivaObj?.tipo === 'tarjeta' ? null : movimientosVisibles.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                   <p className="text-lg mb-2">No se encontraron movimientos</p>
