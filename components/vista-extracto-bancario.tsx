@@ -2458,7 +2458,8 @@ export function VistaExtractoBancario() {
                   const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
                   const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
                   const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
-                  return { nr, total, viva, dif, movs: g.movs, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
+                  const movsOrd = [...g.movs].sort((a: any, b: any) => (Number(a.orden) || 0) - (Number(b.orden) || 0)) // orden del PDF
+                  return { nr, total, viva, dif, movs: movsOrd, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
                 }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
                 if (lista.length === 0) return null
                 return (
