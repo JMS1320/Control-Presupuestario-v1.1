@@ -2937,7 +2937,7 @@ export function VistaExtractoBancario() {
                   </div>
 
                   {/* Checkbox "forzar" — importadores con control de saldos (tarjeta PDF + banco) */}
-                  {['/api/import-pdf-tarjeta', '/api/import-excel', '/api/import-excel-ca'].includes(config.endpoint) && (
+                  {['/api/import-pdf-tarjeta', '/api/import-excel', '/api/import-excel-ca', '/api/import-excel-caja'].includes(config.endpoint) && (
                     <label className="flex items-center gap-2 cursor-pointer text-sm">
                       <Checkbox checked={importForzar} onCheckedChange={(v) => setImportForzar(!!v)} disabled={importLoading} />
                       <span>Forzar importación aunque el control de saldos no cuadre</span>
@@ -2997,7 +2997,7 @@ export function VistaExtractoBancario() {
                                   <span className="text-sm">
                                     <span className="font-medium">{r.fecha_cierre || '(sin fecha)'} — {r.file}</span>
                                     {r.ok
-                                      ? <span> · {r.insertados ?? 0} insertados{r.duplicados_omitidos ? `, ${r.duplicados_omitidos} dup.` : ''}{r.control && !r.control.ok ? ' · ⚠ control no cuadra' : ''}</span>
+                                      ? <span> · {r.insertados ?? 0} insertados{r.duplicados_omitidos ? `, ${r.duplicados_omitidos} ya estaban` : ''} · {r.control?.ok ? '✓ control OK' : '⚠ control NO cuadra'}</span>
                                       : <span> · {r.message}</span>}
                                   </span>
                                 </AlertDescription>
