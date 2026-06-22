@@ -7,6 +7,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Forzar runtime Node (no edge) — unpdf/pdfjs necesitan APIs de Node
+export const runtime = "nodejs"
+
 // Mapa cuenta → { schema, tabla }
 const CUENTAS_VALIDAS: Record<string, { schema: string; tabla: string }> = {
   tarjeta_visa_business_msa: { schema: "msa", tabla: "tarjeta_visa_business" },
@@ -328,13 +331,14 @@ export async function POST(req: Request) {
       )
     }
 
-    // Extraer texto del PDF (pdf-parse v2.x API)
+    // Extraer texto del PDF con unpdf (compatible con Node/serverless — evita el error
+    // "DOMMatrix is not defined" que da pdfjs-dist v5 fuera del navegador).
     const arrayBuffer = await file.arrayBuffer()
     const data = new Uint8Array(arrayBuffer)
-    const { PDFParse } = await import("pdf-parse")
-    const parser = new PDFParse({ data })
-    const textResult = await parser.getText()
-    const texto: string = (textResult as any)?.text || (textResult as any)?.pages?.map((p: any) => p.text).join("\n") || ""
+    const { extractText, getDocumentProxy } = await import("unpdf")
+    const pdf = await getDocumentProxy(data)
+    const extracted = await extractText(pdf, { mergePages: true })
+    const texto: string = Array.isArray(extracted.text) ? extracted.text.join("\n") : (extracted.text || "")
 
     if (!texto.trim()) {
       return NextResponse.json(
@@ -343,8 +347,16 @@ export async function POST(req: Request) {
       )
     }
 
+    // unpdf devuelve el texto concatenado (sin saltos entre movimientos). Reinsertamos saltos
+    // antes de cada fecha de movimiento (DD-MM-YY), subtotales por tarjeta y headers,
+    // para que el parser por líneas funcione.
+    const textoNorm = texto
+      .replace(/\s(?=\d{2}-\d{2}-\d{2}\s)/g, "\n")
+      .replace(/\s(?=TARJETA\s+\d+\s+Total\s+Consumos)/gi, "\n")
+      .replace(/\s(?=DETALLE\s+DEL\s+CONSUMO|Resumen\s+N[°º]|TOTAL\s+A\s+PAGAR|TOTAL\s+EN\s+(?:PESOS|D[ÓO]LARES))/gi, "\n")
+
     // Parsear
-    const resumen = parsearResumen(texto)
+    const resumen = parsearResumen(textoNorm)
     const control = calcularControl(resumen)
     const excelBase64 = generarExcelAuditoria(resumen, control, cuentaId)
 
