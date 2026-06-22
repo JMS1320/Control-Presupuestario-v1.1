@@ -416,6 +416,22 @@ export function VistaExtractoBancario() {
     recargar()
   }
 
+  // Conciliar UN resumen de tarjeta (corre el motor solo sobre los movimientos pendientes de ese mes)
+  const conciliarResumen = async (item: { nr: string; movs: any[]; cierre?: string }) => {
+    if (!cuentaSeleccionada) return
+    const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
+    if (!cuenta) return
+    const pend = item.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen')
+    if (pend.length === 0) {
+      alert('No hay movimientos pendientes para conciliar en este resumen.')
+      return
+    }
+    const etiqueta = item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)
+    setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: pend.length })
+    await ejecutarConciliacion(cuenta, pend as any)
+    recargar()
+  }
+
   // Seleccionar cuenta — solo cambia la cuenta activa, NO ejecuta conciliación.
   // El useEffect([tabla]) del hook dispara la recarga automáticamente al cambiar tablaActiva.
   const ejecutarConCuenta = (cuentaId: string) => {
@@ -2459,7 +2475,8 @@ export function VistaExtractoBancario() {
                   const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
                   const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
                   const movsOrd = [...g.movs].sort((a: any, b: any) => (Number(a.orden) || 0) - (Number(b.orden) || 0)) // orden del PDF
-                  return { nr, total, viva, dif, movs: movsOrd, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
+                  const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length
+                  return { nr, total, viva, dif, movs: movsOrd, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
                 }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
                 if (lista.length === 0) return null
                 return (
@@ -2470,14 +2487,14 @@ export function VistaExtractoBancario() {
                       const ok = item.dif != null && Math.abs(item.dif) < 0.5
                       return (
                         <div key={item.nr} className="border rounded">
-                          <button type="button"
-                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50"
-                            onClick={() => setResumenesExpandidos(prev => { const n = new Set(prev); n.has(item.nr) ? n.delete(item.nr) : n.add(item.nr); return n })}>
-                            <span className="flex items-center gap-2">
+                          <div className="w-full flex items-center justify-between px-3 py-2 text-sm">
+                            <button type="button"
+                              className="flex items-center gap-2 flex-1 text-left hover:opacity-70"
+                              onClick={() => setResumenesExpandidos(prev => { const n = new Set(prev); n.has(item.nr) ? n.delete(item.nr) : n.add(item.nr); return n })}>
                               <span>{exp ? '▼' : '▶'}</span>
                               <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
                               <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
-                            </span>
+                            </button>
                             <span className="flex items-center gap-3 text-xs">
                               <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
                               <span className="text-gray-500">Suma viva: {formatCurrency(item.viva)}</span>
@@ -2486,8 +2503,15 @@ export function VistaExtractoBancario() {
                                 : ok
                                   ? <span className="text-green-600 font-medium">✓ control OK</span>
                                   : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                              {item.pendientes > 0 && (
+                                <button type="button" disabled={procesoEnCurso}
+                                  onClick={() => conciliarResumen(item)}
+                                  className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                                  {procesoEnCurso ? 'Conciliando…' : `Conciliar (${item.pendientes})`}
+                                </button>
+                              )}
                             </span>
-                          </button>
+                          </div>
                           {exp && (
                             <div className="border-t bg-gray-50/50 px-3 py-2 overflow-auto max-h-72">
                               <table className="w-full text-xs">
