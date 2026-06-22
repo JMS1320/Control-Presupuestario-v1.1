@@ -286,6 +286,7 @@ export function VistaExtractoBancario() {
 
   // Estados importador
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [importFiles, setImportFiles] = useState<File[]>([]) // varios PDFs (tarjeta) — se ordenan por cierre
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
   const [importSaldoInicial, setImportSaldoInicial] = useState('')
@@ -2796,27 +2797,64 @@ export function VistaExtractoBancario() {
             }
 
             const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-              const f = e.target.files?.[0] ?? null
-              setImportFile(f)
+              const files = Array.from(e.target.files ?? [])
+              setImportFiles(files)
+              setImportFile(files[0] ?? null)
               setImportResult(null)
-              if (f) verificarSaldo()
+              if (files.length > 0) verificarSaldo()
             }
 
+            // Multi-PDF solo aplica al importador de tarjeta (PDF) con más de un archivo
+            const esMultiPdf = config.endpoint === '/api/import-pdf-tarjeta' && importFiles.length > 1
+
             const handleImport = async () => {
-              if (!importFile || !config) return
+              if (!config || (!importFile && importFiles.length === 0)) return
               setImportLoading(true)
               setImportResult(null)
               try {
-                const fd = new FormData()
-                fd.append('file', importFile)
-                fd.append('tabla', cuentaId)
-                if (importMostrarSaldo && importSaldoInicial.trim()) {
-                  fd.append('saldo_inicial', importSaldoInicial)
+                if (esMultiPdf) {
+                  // 1. Peek: parsear cada PDF para conocer su fecha de cierre (sin insertar)
+                  const peeks: { file: File; fecha_cierre: string; okPeek: boolean; msg?: string }[] = []
+                  for (const f of importFiles) {
+                    const fd = new FormData()
+                    fd.append('file', f); fd.append('tabla', cuentaId); fd.append('peek', 'true')
+                    const r = await fetch(config.endpoint, { method: 'POST', body: fd })
+                    const d = await r.json()
+                    peeks.push({ file: f, fecha_cierre: d.fecha_cierre || '', okPeek: !!d.ok, msg: d.message })
+                  }
+                  // 2. Ordenar por fecha de cierre ascendente (más viejo primero; sin fecha al final)
+                  peeks.sort((a, b) => (a.fecha_cierre || '9999-99-99').localeCompare(b.fecha_cierre || '9999-99-99'))
+                  // 3. Importar en orden (secuencial → la columna orden queda cronológica)
+                  const resultados: any[] = []
+                  for (const p of peeks) {
+                    if (!p.okPeek) { resultados.push({ file: p.file.name, fecha_cierre: p.fecha_cierre, ok: false, message: p.msg || 'No se pudo leer el PDF' }); continue }
+                    const fd = new FormData()
+                    fd.append('file', p.file); fd.append('tabla', cuentaId)
+                    if (importForzar) fd.append('forzar', 'true')
+                    const r = await fetch(config.endpoint, { method: 'POST', body: fd })
+                    const d = await r.json()
+                    resultados.push({ file: p.file.name, fecha_cierre: p.fecha_cierre, ...d, ok: r.ok && d.ok !== false })
+                  }
+                  const okCount = resultados.filter(x => x.ok).length
+                  setImportResult({
+                    ok: okCount === resultados.length,
+                    multi: true,
+                    resultados,
+                    message: `${okCount}/${resultados.length} resúmenes importados en orden (por fecha de cierre).`,
+                  })
+                  recargar()
+                } else {
+                  const fd = new FormData()
+                  fd.append('file', importFile!)
+                  fd.append('tabla', cuentaId)
+                  if (importMostrarSaldo && importSaldoInicial.trim()) {
+                    fd.append('saldo_inicial', importSaldoInicial)
+                  }
+                  if (importForzar) fd.append('forzar', 'true')
+                  const res = await fetch(config.endpoint, { method: 'POST', body: fd })
+                  const data = await res.json()
+                  setImportResult({ ...data, ok: res.ok && data.ok !== false })
                 }
-                if (importForzar) fd.append('forzar', 'true')
-                const res = await fetch(config.endpoint, { method: 'POST', body: fd })
-                const data = await res.json()
-                setImportResult({ ...data, ok: res.ok && data.ok !== false })
               } catch {
                 setImportResult({ ok: false, message: 'Error de conexión al procesar el archivo' })
               } finally {
@@ -2884,11 +2922,17 @@ export function VistaExtractoBancario() {
                       id="import-file-input"
                       type="file"
                       accept={config.accept}
+                      multiple={config.modo === 'pdf'}
                       onChange={handleFileChange}
                       disabled={importLoading}
                     />
-                    {importFile && (
+                    {importFiles.length > 1 ? (
+                      <p className="text-sm text-muted-foreground">✅ {importFiles.length} resúmenes seleccionados — se importan en orden por fecha de cierre</p>
+                    ) : importFile && (
                       <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
+                    )}
+                    {config.modo === 'pdf' && (
+                      <p className="text-xs text-muted-foreground">Podés seleccionar varios PDFs juntos; se ordenan e importan del más viejo al más nuevo.</p>
                     )}
                   </div>
 
@@ -2941,6 +2985,27 @@ export function VistaExtractoBancario() {
                           <AlertDescription>{importResult.message}</AlertDescription>
                         </div>
                       </Alert>
+
+                      {/* Resultado multi (varios PDFs, en orden por fecha de cierre) */}
+                      {importResult.multi && Array.isArray(importResult.resultados) && (
+                        <div className="space-y-2">
+                          {importResult.resultados.map((r: any, i: number) => (
+                            <Alert key={i} variant={r.ok ? 'default' : 'destructive'}>
+                              <div className="flex items-center gap-2">
+                                {r.ok ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                                <AlertDescription>
+                                  <span className="text-sm">
+                                    <span className="font-medium">{r.fecha_cierre || '(sin fecha)'} — {r.file}</span>
+                                    {r.ok
+                                      ? <span> · {r.insertados ?? 0} insertados{r.duplicados_omitidos ? `, ${r.duplicados_omitidos} dup.` : ''}{r.control && !r.control.ok ? ' · ⚠ control no cuadra' : ''}</span>
+                                      : <span> · {r.message}</span>}
+                                  </span>
+                                </AlertDescription>
+                              </div>
+                            </Alert>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Resumen de tarjeta (PDF) */}
                       {importResult.resumen && (

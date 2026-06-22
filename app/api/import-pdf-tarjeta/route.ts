@@ -323,6 +323,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File | null
     const cuentaId = (formData.get("tabla") as string | null)?.trim() || ""
     const forzar = (formData.get("forzar") as string | null) === "true"
+    const peek = (formData.get("peek") as string | null) === "true"  // solo parsear y devolver fecha_cierre (para ordenar multi)
 
     if (!file) {
       return NextResponse.json({ ok: false, message: "Falta el archivo PDF" }, { status: 400 })
@@ -362,6 +363,19 @@ export async function POST(req: Request) {
     // Parsear
     const resumen = parsearResumen(textoNorm)
     const control = calcularControl(resumen)
+
+    // Modo peek: solo devolver fecha de cierre + nro (para ordenar varios resúmenes). NO inserta.
+    if (peek) {
+      return NextResponse.json({
+        ok: true,
+        peek: true,
+        fecha_cierre: resumen.fecha_cierre,
+        nro_resumen: resumen.nro_resumen,
+        movimientos: resumen.movimientos.length,
+        control,
+      })
+    }
+
     const excelBase64 = generarExcelAuditoria(resumen, control, cuentaId)
 
     if (resumen.movimientos.length === 0) {
