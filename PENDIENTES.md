@@ -450,8 +450,15 @@ ORDER BY gap_dias DESC;
 - Resultado esperado: seleccionar una tarjeta ahora consulta la tabla real → muestra vacío (0 filas) en vez de quedarse en la cta cte. Type-check 118, 0 nuevos.
 - ✅ **Schema en operaciones de conciliación — RESUELTO (2026-06-22).** Se agregó helper `dbCuenta()` (aplica `.schema(schemaActivo)` para tarjetas/cajas) y se reemplazaron las ~8 operaciones que usaban `supabase` plano: marcar conciliado masivo (limpiar motivo_revision), vincular factura inline, y las 4 ramas de `ejecutarAsignacion` (template/ARCA/sueldo/grupo) + limpieza de vínculo. Ahora la conciliación manual de tarjetas escribe en el schema correcto. (El usuario confirmó que SÍ se debe poder conciliar: hay facturas en estado `credito` y reglas a cargar.) Esto también arregla el mismo gap para CAJAS (schema msa). Type-check 118, 0 nuevos.
 
+### ✅ Fix DOMMatrix (2026-06-22) — import PDF ahora corre
+- `pdf-parse` v2 / `pdfjs-dist` v5 exigía `DOMMatrix` (API navegador) inexistente en Node/serverless → crasheaba. Reemplazado por **`unpdf`** (`extractText` + `getDocumentProxy`), compatible con serverless. + `export const runtime='nodejs'`.
+- unpdf concatena el texto sin saltos → se normaliza (reinsertar saltos antes de fechas DD-MM-YY, subtotales `TARJETA … Total Consumos` y headers DETALLE/Resumen/TOTAL) para que el parser por líneas funcione.
+- Validado en seco: ambos PDFs extraen texto OK; **MSA: control cuadra exacto** (suma movs = total−saldo en pesos y USD). **PAM: desfase** (54 movs con cuotas/impuestos) → afinar regex de líneas raras cuando el usuario pase el Excel de auditoría.
+- Los 2 formatos (PAM y MSA Business) son el MISMO layout Galicia → un solo parser.
+
 ### Lo que falta
 1. ~~Fix A-BUG-11~~ ✅ hecho — **testear** que al seleccionar la tarjeta cambie la vista.
+1b. **Afinar parser PAM**: líneas de impuestos/percepciones (`DB IVA … base IVA`) y cuotas — el control no cuadra. Pasar el Excel de auditoría para ver las diferencias exactas.
 2. **(A evaluar) Display de columnas de tarjeta** (USD, nro_resumen, fecha_cierre, tarjeta_adicional) — la grilla hoy muestra columnas de cta cte; ver si se muestran las extra.
 3. **Importar un PDF real** y testear (parser, control, dedup, adicionales, reversos, forzar).
 4. **Reglas de conciliación de tarjeta** (no existen aún).
