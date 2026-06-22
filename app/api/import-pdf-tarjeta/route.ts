@@ -461,6 +461,8 @@ export async function POST(req: Request) {
         cuenta: config.tabla,
         orden: nextOrden++,
         estado: "pendiente",
+        // 'pago' (SU PAGO → concilia contra cta cte) | 'movimiento' (concilia contra template/factura)
+        tipo_fila: /SU\s+PAGO/i.test(m.descripcion) ? "pago" : "movimiento",
       })
     }
 
@@ -480,6 +482,31 @@ export async function POST(req: Request) {
         { ok: false, message: `Error al insertar: ${errInsert.message}`, excel_base64: excelBase64 },
         { status: 500 }
       )
+    }
+
+    // Fila "resumen": guarda el total a pagar + saldo anterior del PDF (para el audit y el desplegable).
+    // tipo_fila='resumen', estado='total' → excluida del motor y de las sumas de movimientos.
+    // Convención: debitos = total a pagar, creditos = saldo anterior (ídem USD).
+    if (resumen.nro_resumen) {
+      const { data: resExist } = await client.from(config.tabla)
+        .select("id").eq("nro_resumen", resumen.nro_resumen).eq("tipo_fila", "resumen").maybeSingle()
+      if (!resExist) {
+        await client.from(config.tabla).insert({
+          fecha: resumen.fecha_cierre,
+          descripcion: `RESUMEN ${resumen.nro_resumen}`,
+          debitos: resumen.total_a_pagar_pesos,
+          creditos: resumen.saldo_anterior_pesos,
+          debitos_usd: resumen.total_a_pagar_usd,
+          creditos_usd: resumen.saldo_anterior_usd,
+          nro_resumen: resumen.nro_resumen,
+          fecha_cierre: resumen.fecha_cierre,
+          fecha_vencimiento: resumen.fecha_vencimiento,
+          cuenta: config.tabla,
+          orden: nextOrden++,
+          estado: "total",
+          tipo_fila: "resumen",
+        })
+      }
     }
 
     return NextResponse.json({
