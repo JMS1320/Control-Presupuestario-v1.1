@@ -58,6 +58,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-BUG-01 | 🔴 | Media | Grupos de Pago — 6 bugs caso Alcorta | → [A-BUG-01](#a-bug-01) |
 | A-BUG-02 | 🔴 | Media | Grupo ARBA `a177c1fb` desfase $5.701,30 | → [A-BUG-02](#a-bug-02) |
 | A-BUG-03 | 🔴 | Media | Modo Admin facturas — modificar campos no funciona | → [A-BUG-03](#a-bug-03) |
+| A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -429,9 +430,33 @@ ORDER BY gap_dias DESC;
 
 ---
 
-## <a id="a-test-05"></a>A-TEST-05 — Tarjetas Fase 2 (testing PDF real)
+## <a id="a-test-05"></a>A-TEST-05 — Tarjetas (estado revisado 2026-06-22)
 
-**Estado:** implementado en main (`6906f49`, `8690bc0`). Parser PDF Galicia + Excel auditoría. **Sin probar con un PDF real:** parser de movimientos · control de saldo · deduplicación · tarjetas adicionales. Detalle: `memory/project_tarjetas_testing_pendiente.md`.
+### Importador — DESARROLLADO y en main (`6906f49`, `8690bc0`), sin testear
+- **PDF parser** `app/api/import-pdf-tarjeta/route.ts` (479 líneas): `CUENTAS_VALIDAS` mapea id→{schema,tabla} correctamente (`tarjeta_visa_business_msa`→`{msa,tarjeta_visa_business}`, `tarjeta_visa_pam`→`{pam,tarjeta_visa}`, `tarjeta_visa_ma`→`{ma,tarjeta_visa}`). Extrae nro_resumen/fechas/saldos, control de saldos, dedup, tarjetas adicionales, reversos; devuelve Excel de auditoría; checkbox "Forzar". El importador escribe en la tabla REAL (bien).
+- **Excel fallback** `app/api/import-excel-tarjeta/route.ts` (293 líneas).
+- UI en Extracto → Tarjetas → Importar (PDF default + Excel alt, selector tipo archivo, checkbox forzar, resumen).
+- Las 3 tablas (`msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa`) existen con estructura completa de cta cte + extras (`debitos_usd`, `creditos_usd`, `nro_resumen`, `fecha_cierre`, `fecha_vencimiento`, `tarjeta_adicional`, `titular_adicional`, `referencia`, `cuota`, `comprobante`). **Las 3 están VACÍAS (0 filas)** → nunca se importó.
+- → El parser PDF que el usuario creía "analizado pero no ejecutado" **SÍ está completo y en main**. Falta probarlo con un PDF real.
+
+### 🐞 A-BUG-11 — Visualización: seleccionar tarjeta no cambia la vista (CAUSA RAÍZ encontrada)
+`vista-extracto-bancario.tsx:301`: `const tablaActiva = cuentaSeleccionada || 'msa_galicia'` → usa el **ID** de la cuenta como nombre de tabla. Bancos/cajas OK (id == tabla_bd, ej. `msa_galicia`). **Tarjetas NO**: id `tarjeta_visa_business_msa` ≠ tabla_bd `tarjeta_visa_business` → el hook consulta una tabla inexistente → error → el `catch` de `cargarMovimientos` NO limpia los movimientos → **se queda mostrando la cuenta anterior (cta cte)**. Ese es el síntoma exacto reportado.
+- **Fix:** derivar `tablaActiva` de `CUENTAS_BANCARIAS.find(c=>c.id===cuentaSeleccionada).tabla_bd`, no del id.
+- **⚠️ Cuidado:** `tablaActiva` se usa con DOBLE propósito: (a) nombre de tabla real en `.from(tablaActiva)` (líneas 469/561/1057/1129/…) → necesita `tabla_bd`; (b) id lógico en `.eq('cuenta_bancaria_id', tablaActiva)` (config_parseo/reglas, líneas 1024/1037/1215) → necesita el `id`. Para bancos coinciden; para tarjetas hay que **separar los dos conceptos** (`tablaReal` vs `cuentaId`).
+
+### ✅ FIX A-BUG-11 aplicado (2026-06-22) — falta testear
+- `vista-extracto-bancario.tsx`: separado `cuentaId` (id lógico) de `tablaActiva` (= `tabla_bd` real). `cuenta_bancaria_id`, lookup de config import y submit usan `cuentaId`; `.from()` usa `tablaActiva`.
+- `useMovimientosBancarios.ts`: useEffect ahora depende de `[tabla, schema]` (PAM↔MA tarjeta comparten tabla 'tarjeta_visa').
+- Resultado esperado: seleccionar una tarjeta ahora consulta la tabla real → muestra vacío (0 filas) en vez de quedarse en la cta cte. Type-check 118, 0 nuevos.
+- ⚠️ **Caveat (no bloqueante):** algunos `.from(tablaActiva)` inline (ediciones puntuales, ej. líneas ~1057) usan `supabase` plano sin aplicar `schemaActivo` → para tablas en schema ≠ public (tarjetas/cajas) esas operaciones de edición fallarían. El DISPLAY principal (vía hook) sí aplica schema. Es un patrón preexistente que también afecta cajas; revisar si molesta al editar tarjetas.
+
+### Lo que falta
+1. ~~Fix A-BUG-11~~ ✅ hecho — **testear** que al seleccionar la tarjeta cambie la vista.
+2. **(A evaluar) Display de columnas de tarjeta** (USD, nro_resumen, fecha_cierre, tarjeta_adicional) — la grilla hoy muestra columnas de cta cte; ver si se muestran las extra.
+3. **Importar un PDF real** y testear (parser, control, dedup, adicionales, reversos, forzar).
+4. **Reglas de conciliación de tarjeta** (no existen aún).
+
+Detalle previo: `memory/project_tarjetas_testing_pendiente.md`.
 
 ---
 

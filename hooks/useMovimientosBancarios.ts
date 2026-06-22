@@ -180,11 +180,12 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     }
   }
 
-  // Cargar datos iniciales — se re-ejecuta cuando cambia la tabla (cuenta seleccionada)
+  // Cargar datos iniciales — se re-ejecuta al cambiar la tabla O el schema
+  // (PAM y MA tarjeta comparten tabla 'tarjeta_visa' con distinto schema)
   useEffect(() => {
     cargarMovimientos({ limite: 100 })
     cargarEstadisticas()
-  }, [tabla])
+  }, [tabla, schema])
 
   // Actualización masiva de movimientos
   const actualizarMasivo = async (

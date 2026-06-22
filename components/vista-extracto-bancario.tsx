@@ -298,8 +298,13 @@ export function VistaExtractoBancario() {
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   // Detalle del último lote conciliado (para verificar cantidad/alcance procesado)
   const [infoLote, setInfoLote] = useState<{ scope: 'filtrado' | 'todos'; cuenta: string; solicitados: number } | null>(null)
-  const tablaActiva = cuentaSeleccionada || 'msa_galicia'
-  const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
+  // cuentaId = id lógico de la cuenta (para cuenta_bancaria_id, config import, submit).
+  // tablaActiva = nombre REAL de la tabla en BD (para .from()). Para bancos/cajas coinciden;
+  // para tarjetas NO (id 'tarjeta_visa_business_msa' vs tabla 'tarjeta_visa_business').
+  const cuentaId = cuentaSeleccionada || 'msa_galicia'
+  const cuentaActivaObj = CUENTAS_BANCARIAS.find(c => c.id === cuentaId)
+  const tablaActiva = cuentaActivaObj?.tabla_bd || cuentaId
+  const schemaActivo = cuentaActivaObj?.schema_bd || 'public'
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
@@ -1021,7 +1026,7 @@ export function VistaExtractoBancario() {
           const { data } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'especifica')
             .eq('template_id', templateId)
             .eq('activo', true)
@@ -1034,7 +1039,7 @@ export function VistaExtractoBancario() {
           const { data } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'responsable')
             .eq('responsable', responsable)
             .eq('activo', true)
@@ -1212,7 +1217,7 @@ export function VistaExtractoBancario() {
           const { data: reglaEmp } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'empleado')
             .eq('empleado_id', empleadoId)
             .eq('activo', true)
@@ -2755,8 +2760,8 @@ export function VistaExtractoBancario() {
               },
             }
 
-            const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
-            const cfgBase = CONFIG_IMPORTADORES[tablaActiva]
+            const cuenta = CUENTAS_BANCARIAS.find(c => c.id === cuentaId)
+            const cfgBase = CONFIG_IMPORTADORES[cuentaId]
             // Si la cuenta soporta dos modos, elegir según importTipoArchivo (default = modo base)
             const config: ImpCfg | undefined = cfgBase
               ? (cfgBase.alt && importTipoArchivo === 'alt' ? cfgBase.alt : cfgBase)
@@ -2769,7 +2774,7 @@ export function VistaExtractoBancario() {
                   <CardContent>
                     <div className="text-center text-gray-400 py-10">
                       <Upload className="h-12 w-12 mx-auto mb-4 text-gray-200" />
-                      <p className="text-base font-medium mb-1">{cuenta?.nombre ?? tablaActiva}</p>
+                      <p className="text-base font-medium mb-1">{cuenta?.nombre ?? cuentaId}</p>
                       <p className="text-sm">Importador no disponible aún para esta cuenta.</p>
                     </div>
                   </CardContent>
@@ -2802,7 +2807,7 @@ export function VistaExtractoBancario() {
               try {
                 const fd = new FormData()
                 fd.append('file', importFile)
-                fd.append('tabla', tablaActiva)
+                fd.append('tabla', cuentaId)
                 if (importMostrarSaldo && importSaldoInicial.trim()) {
                   fd.append('saldo_inicial', importSaldoInicial)
                 }
@@ -2838,7 +2843,7 @@ export function VistaExtractoBancario() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="h-5 w-5" />
-                    Importar — {cuenta?.nombre ?? tablaActiva}
+                    Importar — {cuenta?.nombre ?? cuentaId}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
