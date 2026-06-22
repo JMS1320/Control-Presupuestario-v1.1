@@ -299,6 +299,7 @@ export function VistaExtractoBancario() {
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
   // Detalle del último lote conciliado (para verificar cantidad/alcance procesado)
   const [infoLote, setInfoLote] = useState<{ scope: 'filtrado' | 'todos'; cuenta: string; solicitados: number } | null>(null)
+  const [resumenesExpandidos, setResumenesExpandidos] = useState<Set<string>>(new Set()) // tarjeta: qué resúmenes están desplegados
   // cuentaId = id lógico de la cuenta (para cuenta_bancaria_id, config import, submit).
   // tablaActiva = nombre REAL de la tabla en BD (para .from()). Para bancos/cajas coinciden;
   // para tarjetas NO (id 'tarjeta_visa_business_msa' vs tabla 'tarjeta_visa_business').
@@ -350,9 +351,11 @@ export function VistaExtractoBancario() {
 
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   const movimientosVisibles = useMemo(() => {
+    // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
+    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen')
     let lista = categsFiltro
-      ? movimientos.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
-      : movimientos
+      ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
+      : base
     const q = normalizarBusqueda(busqueda)
     if (q) {
       lista = lista.filter(m => {
@@ -2440,6 +2443,77 @@ export function VistaExtractoBancario() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Panel resúmenes de tarjeta — agrupado por mes, con audit en vivo (total oficial vs suma de movimientos) */}
+              {cuentaActivaObj?.tipo === 'tarjeta' && (() => {
+                const grupos = new Map<string, { resumen: any; movs: any[] }>()
+                for (const m of movimientos as any[]) {
+                  const nr = m.nro_resumen || '(sin resumen)'
+                  if (!grupos.has(nr)) grupos.set(nr, { resumen: null, movs: [] })
+                  if (m.tipo_fila === 'resumen') grupos.get(nr)!.resumen = m
+                  else grupos.get(nr)!.movs.push(m)
+                }
+                const lista = Array.from(grupos.entries()).map(([nr, g]) => {
+                  const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
+                  const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
+                  const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
+                  const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+                  const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
+                  return { nr, total, viva, dif, movs: g.movs, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
+                }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
+                if (lista.length === 0) return null
+                return (
+                  <div className="mb-4 space-y-1">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control)</p>
+                    {lista.map(item => {
+                      const exp = resumenesExpandidos.has(item.nr)
+                      const ok = item.dif != null && Math.abs(item.dif) < 0.5
+                      return (
+                        <div key={item.nr} className="border rounded">
+                          <button type="button"
+                            className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50"
+                            onClick={() => setResumenesExpandidos(prev => { const n = new Set(prev); n.has(item.nr) ? n.delete(item.nr) : n.add(item.nr); return n })}>
+                            <span className="flex items-center gap-2">
+                              <span>{exp ? '▼' : '▶'}</span>
+                              <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
+                              <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
+                            </span>
+                            <span className="flex items-center gap-3 text-xs">
+                              <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
+                              <span className="text-gray-500">Suma viva: {formatCurrency(item.viva)}</span>
+                              {item.dif == null
+                                ? <span className="text-gray-400">sin total oficial</span>
+                                : ok
+                                  ? <span className="text-green-600 font-medium">✓ control OK</span>
+                                  : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                            </span>
+                          </button>
+                          {exp && (
+                            <div className="border-t bg-gray-50/50 px-3 py-2 overflow-auto max-h-72">
+                              <table className="w-full text-xs">
+                                <thead><tr className="text-left text-gray-500">
+                                  <th className="py-1">Fecha</th><th>Descripción</th><th>Cuota</th><th className="text-right">Débito</th><th className="text-right">Crédito</th><th>Tipo</th>
+                                </tr></thead>
+                                <tbody>
+                                  {item.movs.map((m: any) => (
+                                    <tr key={m.id} className="border-t border-gray-200">
+                                      <td className="py-1">{m.fecha?.split('-').reverse().join('/')}</td>
+                                      <td className="max-w-[260px] truncate" title={m.descripcion}>{m.descripcion}</td>
+                                      <td>{m.cuota || ''}</td>
+                                      <td className="text-right">{Number(m.debitos) ? formatCurrency(Number(m.debitos)) : ''}</td>
+                                      <td className="text-right">{Number(m.creditos) ? formatCurrency(Number(m.creditos)) : ''}</td>
+                                      <td>{m.tipo_fila === 'pago' ? <span className="text-blue-600">pago</span> : 'mov.'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
               {loading ? (
                 <div className="text-center text-gray-500 py-8">
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
