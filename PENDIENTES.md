@@ -458,7 +458,8 @@ ORDER BY gap_dias DESC;
 
 ### Lo que falta
 1. ~~Fix A-BUG-11~~ ✅ hecho — **testear** que al seleccionar la tarjeta cambie la vista.
-1b. **Afinar parser PAM**: líneas de impuestos/percepciones (`DB IVA … base IVA`) y cuotas — el control no cuadra. Pasar el Excel de auditoría para ver las diferencias exactas.
+1b. ~~Afinar parser~~ ✅ RESUELTO (commit 1c82a45): líneas de impuestos/percepciones (IVA/PERCEP/RG/IIBB/Sellos con %) traen "base cargo" en pesos; el parser las tomaba como pesos+USD. Ahora toma solo el último (pesos). MSA 25-07 pasa a cuadrar exacto. PAM ya cuadraba (base entre paréntesis). **Probado real: PAM control OK (53 movs); MSA 25-07 pendiente re-importar con el fix.**
+1c. **Limpieza datos:** el usuario importó PAM en `ma.tarjeta_visa` por error (53 movs). Borrar de MA y re-importar en PAM.
 2. **(A evaluar) Display de columnas de tarjeta** (USD, nro_resumen, fecha_cierre, tarjeta_adicional) — la grilla hoy muestra columnas de cta cte; ver si se muestran las extra.
 3. **Importar un PDF real** y testear (parser, control, dedup, adicionales, reversos, forzar).
 4. **Reglas de conciliación de tarjeta** (no existen aún).
