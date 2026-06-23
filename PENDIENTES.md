@@ -59,6 +59,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-BUG-02 | 🔴 | Media | Grupo ARBA `a177c1fb` desfase $5.701,30 | → [A-BUG-02](#a-bug-02) |
 | A-BUG-03 | 🔴 | Media | Modo Admin facturas — modificar campos no funciona | → [A-BUG-03](#a-bug-03) |
 | A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) |
+| A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -466,7 +467,47 @@ ORDER BY gap_dias DESC;
 3. **Importar un PDF real** y testear (parser, control, dedup, adicionales, reversos, forzar).
 4. **Reglas de conciliación de tarjeta** (no existen aún).
 
-Detalle previo: `memory/project_tarjetas_testing_pendiente.md`.
+Detalle previo: `memory/project_tarjetas_modulo.md`.
+
+---
+
+### 🐞 <a id="a-bug-12"></a>A-BUG-12 — Conciliación de tarjeta diverge del razonamiento del motor (2026-06-22)
+
+**Problema:** la conciliación automática de tarjeta (botón "Conciliar (N)" por resumen) usa un matcher **nuevo** que NO sigue la lógica del motor establecido. Se introdujo sin marcar el desvío. Riesgo principal: **puede conciliar con facturas de otro período** (no chequea fecha).
+
+**Cómo concilia el MOTOR** (`hooks/useMotorConciliacion.ts` → `buscarMatchCashFlow`, líneas 265-355):
+- **Pool** = cash flow (templates + facturas `pendiente`/`pagar`). Excluye `credito`/`conciliado`/`anterior`/`cuotas` (`useMultiCashFlowData.ts:454-457`).
+- **Pre-filtro CUIT**: saca el CUIT del banco de `leyendas_adicionales_2` y filtra por `cuit_proveedor` (fallback a todo si no hay candidatos). + pre-filtro haberes→sueldos.
+- **Match** = **monto EXACTO** (`cf.debitos !== mov.debitos` descarta) **+ `fecha_estimada` dentro de ±5 días**.
+- **Resultado**: fecha exacta (0 días) → **conciliado**; fecha ≤5 días no exacta → **auditar** (con `motivo_revision`).
+- Además: `reglas_conciliacion` (patrones de texto).
+
+**Lo que se metió para tarjeta** (`components/vista-extracto-bancario.tsx` → `conciliarResumen`):
+- Pool = facturas `credito` · **sin CUIT** · **monto ±1 peso** · **SIN fecha** · **conciliado directo** (sin estado auditar).
+
+**Divergencias:**
+| Criterio | Motor | Tarjeta (actual) | Nota |
+|---|---|---|---|
+| Pool | cashflow (sin credito) | `credito` | **Justificado** — las pagadas con tarjeta viven en `credito`, fuera del cashflow. Única diferencia legítima. |
+| CUIT | pre-filtra | no | La tarjeta no trae CUIT en leyendas (descripción tipo "AUTOPISTAS URBAN"). |
+| Monto | exacto | **±1 peso** | Aflojado por redondeo de centavos (TELECOM 164.259,82 vs ,83). Cambio no consultado. |
+| Fecha | **±5 días** (fecha_estimada) | **ninguna** | **El más grave** → riesgo de cruzar períodos si hay monto único de otro mes. |
+| No exacto | → **auditar** | no existe | Concilia directo aunque sea dudoso. |
+
+**Evidencia de que la fecha importa:** los 7 matches de mayo 2026 cayeron bien, pero por suerte (montos únicos). La factura `fecha_emision` cae 2-13 días ANTES del consumo de tarjeta (patrón natural: se emite y a los días llega el cargo).
+
+**A DECIDIR para alinear al motor:**
+1. **Fecha**: reincorporar. Para tarjeta el campo natural es factura `fecha_emision` vs fecha del consumo. ¿Ventana ±5 (como motor) o algo más por latencia de tarjeta?
+2. **Exacta→conciliado / dentro de ventana→auditar**: adoptar el estado intermedio `auditar` igual que el motor.
+3. **Monto**: ¿volver a exacto (y ±centavos → auditar) o mantener ±1?
+4. **CUIT**: la tarjeta no lo tiene; ¿matchear proveedor por otra vía o dejar sin pre-filtro?
+
+**Recomendación:** alinear al motor (monto exacto + fecha emisión con ventana + estado auditar para lo no-exacto), dejando el pool `credito` como única diferencia justificada. Idealmente **reusar `buscarMatchCashFlow`** parametrizando el pool + la fecha, en vez de mantener un matcher paralelo.
+
+**Gaps relacionados (mismo módulo):**
+- **`pago` (SU PAGO) → cta cte**: el pago de la tarjeta concilia contra el débito en cuenta corriente. No implementado (hoy se rotula "pago → cta cte").
+- **Caso agrupado FC−NC**: ej MEDICUS 807.028,07 = FC 850.818,25 − NC 43.790,18. No auto-matchea por monto único → manual.
+- **37 facturas MSA en `conciliado` sin link a ningún movimiento** ($4.7M) — NO son del bug de tarjeta (no matchean montos de tarjeta). Revisar aparte (históricas / cancelaciones FC-NC / echeq / externas).
 
 ---
 
