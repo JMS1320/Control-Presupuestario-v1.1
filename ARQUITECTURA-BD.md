@@ -1,8 +1,9 @@
 # 🏛️ ARQUITECTURA BASE DE DATOS — Referencia técnica
 
+> ⭐ **DOC CANÓNICO DE ARQUITECTURA.** Toda la doc de estructura/arquitectura de la BD vive **solo acá** (`ARQUITECTURA-BD.md`, maestro legible) + **`ESTRUCTURA_BD_COLUMNAS.md`** (apéndice de columnas). **REGLA ABSOLUTA: NO crear otros archivos de arquitectura.** Mejora o sección nueva de estructura → se agrega/actualiza acá. ALTERs que no estén en el backup → además a `RECONSTRUCCION_SUPABASE_2026-01-07.md` (§ CAMBIOS POST-RECONSTRUCCIÓN). Pendientes → `PENDIENTES.md`.
+>
 > **Estado:** al día con la BD viva al **2026-06-23** (regenerado desde `information_schema` + `pg_class`).
-> **Fuente de verdad = la BD en Supabase.** Este doc es la lectura humana; el dump exhaustivo de columnas está en **`ESTRUCTURA_BD_COLUMNAS.md`**.
-> Cambios estructurales no incluidos en el backup original → ver sección "CAMBIOS POST-RECONSTRUCCIÓN" en `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+> **Fuente de verdad = la BD en Supabase.** Este doc es la lectura humana.
 
 ---
 

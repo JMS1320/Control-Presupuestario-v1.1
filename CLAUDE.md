@@ -41,6 +41,8 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 
 # 📂 **NAVEGACIÓN A KNOWLEDGE.md**
 
+> 🏛️ **Arquitectura de BD** (canónico, único lugar): `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md`. NO crear otros archivos de arquitectura — toda mejora/sección de estructura va ahí. Pendientes → `PENDIENTES.md`.
+
 ## 🔍 **Búsqueda por Tags:**
 ```bash
 # Todo sobre Cash Flow:
