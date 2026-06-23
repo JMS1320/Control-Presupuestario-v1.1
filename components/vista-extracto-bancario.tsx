@@ -457,7 +457,8 @@ export function VistaExtractoBancario() {
           }
           if (f.cuenta_contable) upd.categ = f.cuenta_contable
           if (f.nro_cuenta) upd.nro_cuenta = f.nro_cuenta
-          await dbCuenta().from(tablaActiva).update(upd).eq('id', m.id)
+          const { error: errMov } = await dbCuenta().from(tablaActiva).update(upd).eq('id', m.id)
+          if (errMov) { console.error('Error conciliando movimiento tarjeta:', errMov); continue } // no concilia si falla el update
           await supabase.schema('msa').from('comprobantes_arca')
             .update({ estado: 'conciliado', fecha_vencimiento: m.fecha, monto_a_abonar: d })
             .eq('id', f.id)
