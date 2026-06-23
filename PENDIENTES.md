@@ -518,6 +518,8 @@ Detalle previo: `memory/project_tarjetas_modulo.md`.
 ### Hallazgo crítico — el rol `anon` puede BORRAR todo
 Scan: `anon` tiene `DELETE, INSERT, UPDATE, TRUNCATE` en **cada** tabla. Combinado con la `anon_key` expuesta en el bundle JS (es así por diseño), tablas expuestas en API, y mayoría sin RLS (o RLS "permissive" de 1 policy "allow all") → cualquiera con `curl + anon_key` puede borrar/truncar tablas. Es exactamente lo que el usuario quiere evitar.
 
+**Datos concretos (auditoría 2026-06-23):** `anon` = `authenticated` = `service_role` tienen `SELECT/INSERT/UPDATE/DELETE/TRUNCATE` sobre **los 72 objetos** (66 tablas + 6 vistas). Las **41 policies RLS son TODAS permisivas `allow all`** (`cmd=ALL`, `qual=true`) → la RLS no filtra nada. Varias tablas directamente sin RLS (incluido todo el schema `sueldos`). Detalle completo en `ARQUITECTURA-BD.md` §5.
+
 ### Aclaración: la clave ARCA NO queda en logs
 Un contacto le dijo que sí. Verificado que **no**: el endpoint recibe el password en body, lo usa para loguearse a ARCA y lo descarta; no se loguea ni se persiste; `arca_descargas_log` guarda empresa/fechas/status, no password; `console.error` sólo loguea texto genérico. Único residual: Vercel "Detailed Function Logs" (opt-in, OFF por default) podría capturar bodies → verificar Project Settings → Functions → Logging. (Aparte: `.mcp.json` con el token Supabase NO está trackeado y está en `.gitignore` ✅.)
 

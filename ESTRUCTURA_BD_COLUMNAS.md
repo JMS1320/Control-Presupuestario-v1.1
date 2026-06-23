@@ -5,7 +5,7 @@
 > Para la narrativa (propósito, permisos, jerarquías) ver **`ARQUITECTURA-BD.md`**.
 > Regenerar con la query del final de este archivo cuando cambie la estructura.
 
-Schemas de usuario: `public` (22 tablas) · `msa` (12) · `productivo` (19) · `ma` (4) · `pam` (3) = **60 tablas**.
+Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) · `productivo` (19) · `sueldos` (6) · `ma` (4) · `pam` (3) = **66 tablas base + 6 vistas**.
 
 ---
 
@@ -71,7 +71,7 @@ Schemas de usuario: `public` (22 tablas) · `msa` (12) · `productivo` (19) · `
 ### tipos_sicore_config
 `id int, tipo varchar, emoji varchar, minimo_no_imponible numeric, porcentaje_retencion numeric, activo boolean, created_at tstz, codigo_regimen varchar`
 
-### sueldos_* (módulo sueldos)
+### sueldos_* — **VISTAS** (passthrough de las tablas reales en el schema `sueldos`, ver más abajo)
 - **sueldos_campanas**: `id uuid, etiqueta varchar, fecha_inicio date, fecha_fin date, activa boolean, created_at tstz`
 - **sueldos_empleados**: `id uuid, nombre varchar, tipo_empleado varchar, empresa varchar, cuit_empleado varchar, francos_dias_promedio int, dias_promedio int, horas_promedio int, activo boolean, created_at tstz, fecha_ingreso date, fecha_egreso date`
 - **sueldos_componentes_salario**: `id uuid, empleado_id uuid, campana_id uuid, tipo_componente varchar, monto numeric, vigente_desde date, vigente_hasta date, created_at tstz`
@@ -145,13 +145,24 @@ Schemas de usuario: `public` (22 tablas) · `msa` (12) · `productivo` (19) · `
 
 ---
 
+## schema `sueldos`  (storage real del módulo sueldos; expuesto vía vistas `public.sueldos_*`)
+
+- **empleados**: `id uuid, nombre varchar, tipo_empleado varchar, empresa varchar, cuit_empleado varchar, francos_dias_promedio int, dias_promedio int, horas_promedio int, activo boolean, created_at tstz, fecha_ingreso date, fecha_egreso date`
+- **campanas**: `id uuid, etiqueta varchar, fecha_inicio date, fecha_fin date, activa boolean, created_at tstz`
+- **periodos**: `id uuid, empleado_id uuid, campana_id uuid, anio int, mes int, fecha_inicio_periodo date, fecha_fin_periodo date, bruto_calculado numeric, sueldo_x_ipc numeric, sueldo_pagado numeric, anticipos_descontados numeric, saldo_pendiente numeric, estado varchar, observaciones text, created_at tstz, monto_a numeric, monto_b numeric, francos_cantidad numeric, valor_por_dia numeric, dias_trabajados int, valor_por_hora numeric, horas_mes int, varios numeric, valor_franco numeric, vacaciones numeric, premio numeric`
+- **pagos**: `id uuid, periodo_id uuid, empleado_id uuid, tipo varchar, fecha date, monto numeric, cuenta_destino_id uuid, descripcion text, created_at tstz, estado varchar, medio_pago text, grupo_pago_id uuid, visible_contable boolean`
+- **componentes_salario**: `id uuid, empleado_id uuid, campana_id uuid, tipo_componente varchar, monto numeric, vigente_desde date, vigente_hasta date, created_at tstz`
+- **cuentas_empleado**: `id uuid, empleado_id uuid, banco varchar, alias varchar, activo boolean`
+
+---
+
 ## 🔄 Cómo regenerar este apéndice
 
 ```sql
 SELECT table_schema, table_name,
   string_agg(column_name || ' ' || data_type, ', ' ORDER BY ordinal_position) AS cols
 FROM information_schema.columns
-WHERE table_schema IN ('public','msa','pam','ma','productivo')
+WHERE table_schema IN ('public','msa','pam','ma','productivo','sueldos')
 GROUP BY table_schema, table_name
 ORDER BY table_schema, table_name;
 ```

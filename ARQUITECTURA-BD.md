@@ -10,8 +10,8 @@
 
 App de control presupuestario/contable + sector productivo agropecuario. Multi-empresa: **MSA**, **PAM**, **MA**. Backend Supabase (Postgres + PostgREST). Frontend Next.js (cliente supabase-js).
 
-- **60 tablas base** + **6 vistas** (sueldos), en **5 schemas de usuario**.
-- Cada empresa tiene su propio schema para lo contable/fiscal; lo **compartido** vive en `public`; lo **agropecuario** en `productivo`.
+- **66 tablas base** en **6 schemas de usuario** + **6 vistas** en `public` que exponen el schema `sueldos`.
+- Cada empresa tiene su propio schema para lo contable/fiscal; lo **compartido** vive en `public`; lo **agropecuario** en `productivo`; los **sueldos** en `sueldos` (no expuesto en API → se accede por vistas en `public`).
 
 ---
 
@@ -24,9 +24,10 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `pam` | 3 | Contable/fiscal **PAM**: facturas ARCA, históricos, tarjeta. |
 | `ma` | 4 | Contable/fiscal **MA**: facturas ARCA, ventas, banco (ma_galicia), tarjeta. |
 | `productivo` | 19 | **Sector agropecuario**: hacienda, cría/ciclos, terneros, sanidad/aplicaciones, agrícola, insumos. |
+| `sueldos` | 6 | **Sueldos** (storage real): empleados, campañas, períodos, pagos, componentes, cuentas. **No expuesto en API** → se lee/escribe vía las 6 vistas `public.sueldos_*` (passthrough auto-actualizables). |
 
 ### Exposición en API (PostgREST) y acceso desde código
-- Los schemas alcanzables por la API deben estar en `pgrst.db_schemas` (aparte de GRANTs/RLS). `public, msa, pam, ma` están expuestos. Ver memoria `reference_schemas_expuestos_api` (el fix de `ma` no está en el backup).
+- Los schemas alcanzables por la API deben estar en `pgrst.db_schemas` (aparte de GRANTs/RLS). Expuestos: `public, msa, pam, ma` y `productivo` (se accede directo). **`sueldos` NO está expuesto** → por eso existen las vistas `public.sueldos_*` que lo envuelven. Ver memoria `reference_schemas_expuestos_api` (el fix de `ma` no está en el backup).
 - Cliente: `lib/supabase.ts` crea el client simple. Para schema ≠ public:
   ```ts
   supabase.schema('msa').from('comprobantes_arca')   // ⚠️ .schema() ANTES de .from()
@@ -107,6 +108,17 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Agrícola** | `lotes_agricolas`, `ordenes_agricolas`, `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
 
+### `sueldos` — módulo sueldos (storage real, no expuesto en API)
+| Tabla | RLS | Filas~ | Propósito |
+|-------|:--:|:--:|-----------|
+| `empleados` | ❌ | — | Maestro de empleados (tipo, empresa, CUIT, fechas alta/baja). |
+| `campanas` | ❌ | — | Campañas/períodos de liquidación. |
+| `periodos` | ❌ | 44 | Liquidación por empleado/mes (bruto, IPC, días, francos, premios, saldo). |
+| `pagos` | ❌ | 71 | Pagos (anticipos + finales), vinculables a grupo de pago + `visible_contable`. |
+| `componentes_salario` | ❌ | — | Componentes del salario por empleado/campaña (vigencias). |
+| `cuentas_empleado` | ❌ | — | Cuentas bancarias del empleado. |
+> Se accede vía vistas `public.sueldos_*` (mismo nombre con prefijo). FKs lógicas: periodos/pagos/componentes/cuentas → empleados; periodos/componentes → campanas; pagos → periodos.
+
 ---
 
 ## 4. Patrones transversales
@@ -131,11 +143,15 @@ En las tablas de movimiento, al conciliar se llenan (según contra qué se conci
 
 ---
 
-## 5. Permisos y RLS  🔒
+## 5. Permisos y RLS  🔒  (auditado 2026-06-23)
 
-- **Rol `anon`** tiene `SELECT/INSERT/UPDATE/DELETE/TRUNCATE` en **todas** las tablas, y la `anon_key` está en el bundle JS (por diseño). La mayoría de las tablas con RLS ✅ tienen **una sola policy permisiva "allow all"** → **no protege**. Varias tablas directamente sin RLS (ver §3).
-- **Riesgo:** cualquiera con `anon_key + curl` puede borrar/truncar tablas. Es el hallazgo crítico de **A-SEC-01** en `PENDIENTES.md` (hardening pendiente).
-- Tablas sin RLS hoy: `pam_galicia_cc`, `anticipos_*`, `lotes_transferencias`, `arca_pdf_busqueda_log`, `reglas_ctas_import_arca`, todas las `caja_*`, `cheques`, `grupos_pago`, `comprobantes_historico` (msa/pam), `pam.comprobantes_arca`, todas las `tarjeta_*`, `productivo.terneros`, `productivo.pesadas_terneros`.
+**No hay protección a nivel de datos.** Relevamiento concreto:
+
+1. **Grants idénticos para los 3 roles**: `anon`, `authenticated` y `service_role` tienen **`SELECT, INSERT, UPDATE, DELETE, TRUNCATE`** sobre **los 72 objetos** (66 tablas + 6 vistas). La `anon_key` está en el bundle JS (por diseño de Supabase).
+2. **Las 41 policies RLS son TODAS "allow all"** (permisivas, `cmd=ALL`, `qual=true`) → **la RLS no filtra nada**. Da igual RLS on u off.
+3. **Tablas sin RLS** (sin siquiera policy): `pam_galicia_cc`, `anticipos_facturas`, `anticipos_proveedores`, `lotes_transferencias`, `arca_pdf_busqueda_log`, `reglas_ctas_import_arca`, todas las `caja_*`, `cheques`, `grupos_pago`, `comprobantes_historico` (msa/pam), `pam.comprobantes_arca`, todas las `tarjeta_*`, `productivo.terneros`, `productivo.pesadas_terneros`, **todo el schema `sueldos`**.
+
+**Consecuencia:** cualquiera con la `anon_key` (extraíble del frontend) + `curl` puede **leer, modificar, borrar o truncar cualquier tabla**. El único "control" actual es la ofuscación de rutas URL en el frontend (`adminjms1320`/`ulises`), que **no protege la API**. → Hallazgo crítico **A-SEC-01** en `PENDIENTES.md` (hardening pendiente).
 
 ---
 
