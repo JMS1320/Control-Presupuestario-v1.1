@@ -3317,6 +3317,47 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-22: Columnas de conciliación en tablas de TARJETA**
+
+Las 3 tablas de tarjeta (`msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa`) se crearon a medida (columnas propias: `cuota`, `nro_resumen`, `fecha_cierre`, `debitos_usd`, etc.) y **no recibieron** las columnas que a las tablas de banco se les fueron agregando por features posteriores (proveedores, sueldos, revisión, anticipos). Al conciliar tarjeta, el update fallaba en silencio (PostgREST devuelve `{error}` sin throw) → la factura quedaba conciliada pero el movimiento no se linkeaba. Se agregaron las columnas faltantes + `tipo_fila` (para el panel/audit por resumen).
+
+```sql
+-- Repetir el bloque para cada una de las 3 tablas de tarjeta:
+--   msa.tarjeta_visa_business · pam.tarjeta_visa · ma.tarjeta_visa
+ALTER TABLE msa.tarjeta_visa_business
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',  -- 'resumen' | 'pago' | 'movimiento'
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+
+ALTER TABLE pam.tarjeta_visa
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+
+ALTER TABLE ma.tarjeta_visa
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+```
+
+> Nota: si en una sesión el ALTER multi-columna falla raro por el MCP, ejecutarlos de a una sentencia.
+
+Estas columnas **NO están en el backup original**, ejecutar manualmente si se reconstruye la BD. Contexto y módulo completo: `memory/project_tarjetas_modulo.md`. Pendiente de diseño asociado: A-BUG-12 en `PENDIENTES.md` (conciliación de tarjeta vs motor).
+
+---
+
 ### **2026-06-12: Tabla `arca_descargas_log` (histórico descargas automáticas ARCA)**
 
 Para el módulo de descarga automática desde el portal de ARCA (Mis Comprobantes), se agregó una tabla de auditoría que registra cada descarga realizada.
