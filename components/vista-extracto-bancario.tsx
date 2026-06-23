@@ -371,6 +371,28 @@ export function VistaExtractoBancario() {
     return lista
   }, [movimientos, categsFiltro, busqueda])
 
+  // Info por resumen (tarjeta): total oficial, suma en vivo, control, pendientes — para las cabeceras agrupadas
+  const resumenInfoTarjeta = useMemo(() => {
+    const map = new Map<string, { total: number | null; viva: number; dif: number | null; pendientes: number; cierre: string }>()
+    const grupos = new Map<string, { resumen: any; movs: any[] }>()
+    for (const m of movimientos as any[]) {
+      const nr = m.nro_resumen || '(sin resumen)'
+      if (!grupos.has(nr)) grupos.set(nr, { resumen: null, movs: [] })
+      if (m.tipo_fila === 'resumen') grupos.get(nr)!.resumen = m
+      else grupos.get(nr)!.movs.push(m)
+    }
+    for (const [nr, g] of grupos) {
+      const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
+      const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
+      const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
+      const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+      const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
+      const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago').length
+      map.set(nr, { total, viva, dif, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' })
+    }
+    return map
+  }, [movimientos])
+
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
     if (modoEdicion) {
@@ -418,17 +440,17 @@ export function VistaExtractoBancario() {
   }
 
   // Conciliar UN resumen de tarjeta: (1) auto-match contra facturas crédito por monto, (2) motor de reglas con el resto
-  const conciliarResumen = async (item: { nr: string; movs: any[]; cierre?: string }) => {
+  const conciliarResumen = async (nr: string, cierre?: string) => {
     if (!cuentaSeleccionada) return
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
     if (!cuenta) return
-    const pend = item.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen')
+    const pend = (movimientos as any[]).filter((m: any) => m.nro_resumen === nr && m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen')
     if (pend.length === 0) {
       alert('No hay movimientos pendientes para conciliar en este resumen.')
       return
     }
-    const etiqueta = item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)
-    setConciliandoNr(item.nr)
+    const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
+    setConciliandoNr(nr)
     try {
       // 1) Auto-conciliar contra facturas en estado 'credito' por monto (tolerancia centavos)
       const { data: facturas } = await supabase.schema('msa')
@@ -2538,65 +2560,29 @@ export function VistaExtractoBancario() {
                   <div className="mb-4 space-y-1">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control)</p>
                     {lista.map(item => {
-                      const exp = resumenesExpandidos.has(item.nr)
                       const ok = item.dif != null && Math.abs(item.dif) < 0.5
                       return (
-                        <div key={item.nr} className="border rounded">
-                          <div className="w-full flex items-center justify-between px-3 py-2 text-sm">
-                            <button type="button"
-                              className="flex items-center gap-2 flex-1 text-left hover:opacity-70"
-                              onClick={() => setResumenesExpandidos(prev => { const n = new Set(prev); n.has(item.nr) ? n.delete(item.nr) : n.add(item.nr); return n })}>
-                              <span>{exp ? '▼' : '▶'}</span>
-                              <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
-                              <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
-                            </button>
-                            <span className="flex items-center gap-3 text-xs">
-                              <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
-                              <span className="text-gray-500">Suma viva: {formatCurrency(item.viva)}</span>
-                              {item.dif == null
-                                ? <span className="text-gray-400">sin total oficial</span>
-                                : ok
-                                  ? <span className="text-green-600 font-medium">✓ control OK</span>
-                                  : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
-                              {item.pendientes > 0 && (
-                                <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
-                                  onClick={() => conciliarResumen(item)}
-                                  className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
-                                  {conciliandoNr === item.nr ? 'Conciliando…' : `Conciliar (${item.pendientes})`}
-                                </button>
-                              )}
-                            </span>
-                          </div>
-                          {exp && (
-                            <div className="border-t bg-gray-50/50 px-3 py-2 overflow-auto max-h-72">
-                              <table className="w-full text-xs">
-                                <thead><tr className="text-left text-gray-500">
-                                  <th className="py-1">Fecha</th><th>Descripción</th><th>Cuota</th><th className="text-right">Débito</th><th className="text-right">Crédito</th><th>Conciliación</th>
-                                </tr></thead>
-                                <tbody>
-                                  {item.movs.map((m: any) => (
-                                    <tr key={m.id} className="border-t border-gray-200">
-                                      <td className="py-1 whitespace-nowrap">{m.fecha?.split('-').reverse().join('/')}</td>
-                                      <td className="max-w-[240px] truncate" title={m.descripcion}>{m.descripcion}</td>
-                                      <td>{m.cuota || ''}</td>
-                                      <td className="text-right whitespace-nowrap">{Number(m.debitos) ? formatCurrency(Number(m.debitos)) : ''}</td>
-                                      <td className="text-right whitespace-nowrap">{Number(m.creditos) ? formatCurrency(Number(m.creditos)) : ''}</td>
-                                      <td className="whitespace-nowrap">
-                                        {m.tipo_fila === 'pago' ? (
-                                          <span className="text-gray-400 italic">pago → cta cte</span>
-                                        ) : m.estado === 'conciliado' ? (
-                                          <span className="text-green-700" title="Conciliado">✓ {m.detalle || m.proveedor_nombre || m.categ || 'conciliado'}</span>
-                                        ) : (
-                                          <button type="button" onClick={() => abrirModalAsignar(m)}
-                                            className="text-blue-600 hover:underline font-medium">Asignar</button>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
+                        <div key={item.nr} className="border rounded flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
+                            <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
+                          </span>
+                          <span className="flex items-center gap-3 text-xs">
+                            <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
+                            <span className="text-gray-500">Suma viva: {formatCurrency(item.viva)}</span>
+                            {item.dif == null
+                              ? <span className="text-gray-400">sin total oficial</span>
+                              : ok
+                                ? <span className="text-green-600 font-medium">✓ control OK</span>
+                                : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                            {item.pendientes > 0 && (
+                              <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
+                                onClick={() => conciliarResumen(item.nr, item.cierre)}
+                                className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                                {conciliandoNr === item.nr ? 'Conciliando…' : `Conciliar (${item.pendientes})`}
+                              </button>
+                            )}
+                          </span>
                         </div>
                       )
                     })}
@@ -2608,7 +2594,7 @@ export function VistaExtractoBancario() {
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
                   <p>Cargando movimientos...</p>
                 </div>
-              ) : cuentaActivaObj?.tipo === 'tarjeta' ? null : movimientosVisibles.length === 0 ? (
+              ) : movimientosVisibles.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">
                   <FileSpreadsheet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                   <p className="text-lg mb-2">No se encontraron movimientos</p>
