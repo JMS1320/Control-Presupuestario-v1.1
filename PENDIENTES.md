@@ -124,6 +124,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-09 | 🔴 | Baja | Editar empleado existente (hoy sólo SQL) |
 | B-FEAT-10 | 🔴 | Baja | `formatoCantidad('L')` — muestra ml como L ("1122 L" vs "1,122 L") |
 | B-FEAT-11 | 🔴 | Media | **Extracto bancario de ECHEQs endosados** — los echeqs endosados entran y salen pero NUNCA se acreditan en cuenta bancaria → es el único medio de pago que queda sin conciliar. Hace falta un "extracto" propio (importar por Excel o carga directa) para registrarlos y conciliarlos. NO desarrollar ahora — pedido del usuario 2026-06-22. |
+| B-FEAT-12 | 🔴 | Baja | **Tarjeta — tabla colapsable por mes**: hoy es tira-resumen arriba + tabla plana completa abajo (commit 1c0ebc5). Mejora: unificar en una sola grilla colapsable por resumen (meses plegados → desplegar filas) manteniendo columnas/edición/selector. (2026-06-22) |
 
 ### Testing pendiente (commits de mayo, sin testear)
 | ID | Estado | Ítem |
