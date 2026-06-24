@@ -51,6 +51,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-OP-05 | 🔴 | Baja | Carpeta vacía `arca-poc/` — borrar a mano (Windows handle) | — |
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) |
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) |
+| A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) |
 
 ### Bugs (sesiones de junio)
 | ID | Estado | Prio | Ítem | Detalle |
@@ -222,6 +223,22 @@ Hay dos grupos de archivos sueltos en la raíz. **El usuario pidió que Claude l
 1. ¿Adoptamos la práctica del baseline barato?
 2. ¿Dónde vive el log? Recomendación de Claude: **archivo aparte `ERRORES_CONOCIDOS.md`** (es un log corriente, distinto naturaleza a esta lista de pendientes), no una sección de `PENDIENTES.md`.
 3. Si se adopta → se vuelve regla permanente (se anota en memoria como feedback).
+
+---
+
+## <a id="a-op-08"></a>A-OP-08 — Backup/restore Supabase confiable (A VERIFICAR — rescatado del CLAUDE histórico)
+
+**Origen:** el `CLAUDE.md` viejo (ahora `CLAUDE_HISTORICO.md`) repetía esto como **bloqueante de máxima prioridad** en varias sesiones (2025-08 → 2025-09):
+> "Sistema backup Supabase NO funciona — **nunca logramos subir un backup**. Es **prerequisito absoluto antes de usar la app con datos reales** en producción. El backup debería setear estructura + datos automáticamente. Prioridad MÁXIMA."
+
+**Estado incierto (por eso 🔍 verificar):** en enero 2026 se hizo una **reconstrucción que SÍ funcionó** vía scripts (`RECONSTRUCCION_SUPABASE_2026-01-07.md` + `RECONSTRUCCION_EXITOSA.md`). Es posible que eso cubra el "restore", pero el **backup/restore automático probado** quizás siga sin existir. Además, los ALTERs no-backup de la sesión (columnas tarjeta, etc.) muestran que el backup original **no captura todo**.
+
+**Qué hay que hacer:**
+1. **Verificar si sigue vigente**: ¿hoy hay un mecanismo de backup confiable y un restore probado? ¿O solo el camino manual de reconstrucción por scripts?
+2. Si NO hay backup/restore probado → lograrlo y testearlo (BD vacía → restore completo → verificar estructura + datos) **antes de cargar datos reales de producción**.
+3. Asegurar que el proceso incluya los **cambios no-backup** documentados en `RECONSTRUCCION_SUPABASE` § CAMBIOS POST-RECONSTRUCCIÓN.
+
+**Relación:** complementa A-SEC-01 (si `anon` puede truncar todo, un restore confiable es la red de seguridad).
 
 ---
 
