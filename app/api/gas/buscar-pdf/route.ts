@@ -157,13 +157,13 @@ export async function POST(request: Request) {
     // Recolectores (catch-all): Jose/Andrés que reenvían FC. Se buscan AUNQUE el proveedor no esté
     // configurado — por eso se consultan acá, antes del gate. La app los pasa al GAS (no hardcode).
     const { data: recolectoresData } = await supabase
-      .from('proveedores').select('email_facturacion').contains('tags', ['recolector'])
-    const mailsRecolectores = (recolectoresData || [])
-      .map((r) => r.email_facturacion as string | null)
-      .filter((e): e is string => !!e && e !== proveedor.email_facturacion)
+      .from('proveedores').select('email_facturacion, patron_asunto').contains('tags', ['recolector'])
+    const recolectores = (recolectoresData || [])
+      .filter((r) => r.email_facturacion && r.email_facturacion !== proveedor.email_facturacion && r.patron_asunto)
+      .map((r) => ({ email: r.email_facturacion as string, asunto: r.patron_asunto as string }))
     const puedeProveedor = !!(proveedor.gas_habilitado && proveedor.email_facturacion)
 
-    if (!puedeProveedor && mailsRecolectores.length === 0) {
+    if (!puedeProveedor && recolectores.length === 0) {
       // Ni el proveedor está configurado, ni hay recolectores → no hay dónde buscar
       await supabase.schema(schema).from('comprobantes_arca')
         .update({
@@ -213,8 +213,7 @@ export async function POST(request: Request) {
       dias_busqueda: proveedor.dias_busqueda || 30,   // default 30 días (configurable por proveedor; UI batch → pendiente)
       carpeta_drive_id: carpetaId,
       subcarpetas: computarSubcarpetas(empresa, factura.fecha_emision),
-      mails_recolectores: mailsRecolectores,         // catch-all: reenvíos de Jose/Andrés
-      asunto_recolector: 'Documento de Jose',        // mínimo para procesar un reenvío (normalizado en GAS)
+      recolectores,                                  // catch-all: cada reenviador con su propio asunto (Jose/Andrés)
     }
 
     let gasResp: GasBuscarResponse

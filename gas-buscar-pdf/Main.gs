@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.3.0'  // 0.3.0 = + OCR imágenes (fotos) + soft-match/advertencia | 0.2.0 = catch-all + etiquetar/leído + resumen + auto-archivado
+const VERSION = '0.4.0'  // 0.4.0 = asunto por-recolector (Jose "Documento de Jose", Andrés "FC") | 0.3.0 = OCR imágenes + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.3.0 con "ocr-imagenes" y "soft-match".'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.4.0 (asunto por-recolector).'
   })
 }
 
@@ -175,13 +175,17 @@ function buscarEnGmail(body) {
   const candidatos = []
   let threadsCant = 0
 
-  // 1) Catch-all reenvíos (Jose/Andrés): from:(recolectores) + asunto mínimo "Documento de Jose".
-  //    Se buscan PRIMERO. El asunto se exige también en código (normalizado: sin may/min ni tildes).
-  if (Array.isArray(body.mails_recolectores) && body.mails_recolectores.length > 0 && body.asunto_recolector) {
-    const qR = `from:(${body.mails_recolectores.join(' OR ')}) subject:("${body.asunto_recolector}") ${rango}`
-    Logger.log('Gmail query (recolectores): ' + qR)
-    const r = recolectarCandidatos(qR, body.asunto_recolector)
-    candidatos.push.apply(candidatos, r.candidatos); threadsCant += r.threadsCant
+  // 1) Catch-all reenvíos: cada recolector tiene su PROPIO asunto mínimo (Jose "Documento de Jose",
+  //    Andrés "FC"). Se busca por separado. El asunto se exige también en código (palabra normalizada).
+  if (Array.isArray(body.recolectores)) {
+    for (var ri = 0; ri < body.recolectores.length; ri++) {
+      const rec = body.recolectores[ri]
+      if (!rec || !rec.email || !rec.asunto) continue
+      const qR = `from:(${rec.email}) subject:("${rec.asunto}") ${rango}`
+      Logger.log('Gmail query (recolector): ' + qR)
+      const r = recolectarCandidatos(qR, rec.asunto)
+      candidatos.push.apply(candidatos, r.candidatos); threadsCant += r.threadsCant
+    }
   }
 
   // 2) Directo del proveedor (si tiene mail). Si patron_asunto vacío → no filtra asunto.
@@ -204,7 +208,7 @@ function recolectarCandidatos(query, asuntoMinimo) {
   const minNorm = asuntoMinimo ? normalizarTexto(asuntoMinimo) : null
   for (const thread of threads) {
     for (const msg of thread.getMessages()) {
-      if (minNorm && normalizarTexto(msg.getSubject() || '').indexOf(minNorm) < 0) continue
+      if (minNorm && !asuntoCoincide(msg.getSubject(), minNorm)) continue
       for (const att of msg.getAttachments()) {
         if (/\.(pdf|jpe?g|png|gif|webp|heic|tiff?)$/i.test(att.getName())) {  // PDF o imagen
           candidatos.push({
@@ -216,6 +220,13 @@ function recolectarCandidatos(query, asuntoMinimo) {
     }
   }
   return { threadsCant: threads.length, candidatos: candidatos }
+}
+
+// ¿El asunto (normalizado) contiene el patrón como PALABRA completa? Evita que "fc" matchee "fco".
+function asuntoCoincide(subject, patronNorm) {
+  const s = normalizarTexto(subject || '')
+  const re = new RegExp('\\b' + patronNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b')
+  return re.test(s)
 }
 
 // Normaliza para comparar asuntos sin distinguir mayúsculas/minúsculas ni tildes.
