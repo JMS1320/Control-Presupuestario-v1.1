@@ -1,11 +1,11 @@
 /**
- * POST /api/gas/auditar-periodo  (A-FEAT-AUDIT — parte 2)
- * Audita el registro digital de un período contable: trae las facturas del período, le pide al GAS
- * que releve la carpeta (OCR + match por CUIT+número), y agrega el link a las que matchearon sin link.
- * Devuelve el informe (matched / huérfanos / sin-PDF) para la UI.
+ * POST /api/gas/auditar-periodo  (A-FEAT-AUDIT — resumible por tandas)
+ * Procesa UNA tanda (≤ max_files archivos OCR) del relevamiento de un período y commitea sus links.
+ * El cliente (modal) loopea pasando `skip_file_ids` (archivos ya procesados) hasta `completo:true`,
+ * y al final manda `finalizar:true` con el resumen acumulado → el GAS deja el log + manda el mail.
  *
+ * Cada tanda es ≤60s. Resumible: los links se guardan por tanda; re-correr saltea lo ya hecho.
  * Env: GAS_BUSCAR_PDF_URL, GAS_AUTH_TOKEN, GAS_FOLDER_ID_{MSA,PAM,MA}.
- * Nota: el GAS OCR-ea cada archivo (1-3s c/u). Períodos chicos (≤~25 comprobantes) entran en 60s.
  */
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
@@ -24,7 +24,6 @@ function carpetaDe(e: Empresa): string | undefined {
     case 'MA': return process.env.GAS_FOLDER_ID_MA
   }
 }
-// Subcarpetas (campaña/aa-mm) calculadas desde el PERÍODO CONTABLE (no la emisión).
 function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
   const campania = empresa === 'MSA'
     ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
@@ -33,7 +32,7 @@ function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): strin
   return [campania, aaMm]
 }
 
-interface MatchItem { factura_id: string; drive_url: string; archivo: string }
+interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string }
 
 export async function POST(request: Request) {
   try {
@@ -43,7 +42,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'GAS_BUSCAR_PDF_URL o GAS_AUTH_TOKEN no configurados' }, { status: 500 })
     }
 
-    const { empresa, anio, mes } = (await request.json()) as { empresa: Empresa; anio: number; mes: number }
+    const body = (await request.json()) as {
+      empresa: Empresa; anio: number; mes: number
+      skip_file_ids?: string[]; max_files?: number
+      finalizar?: boolean; resumen?: unknown
+    }
+    const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
       return NextResponse.json({ ok: false, error: 'Faltan empresa / anio / mes' }, { status: 400 })
     }
@@ -51,11 +55,21 @@ export async function POST(request: Request) {
     if (!carpeta) {
       return NextResponse.json({ ok: false, error: `Sin GAS_FOLDER_ID_${empresa}` }, { status: 500 })
     }
-
     const schema = schemaDe(empresa)
     const periodo = `${anio}-${String(mes).padStart(2, '0')}`
+    const subcarpetas = computarSubcarpetas(empresa, anio, mes)
 
-    // Facturas del período contable (año_contable + mes_contable, con ñ)
+    // Cierre: deja el log + manda el mail con el resumen acumulado por el cliente.
+    if (body.finalizar) {
+      const r = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ _token: token, accion: 'auditar', empresa, periodo, carpeta_drive_id: carpeta, subcarpetas, finalizar: true, resumen: body.resumen }),
+      })
+      const g = (await r.json()) as { status?: string }
+      return NextResponse.json({ ok: g.status === 'ok', finalizado: true })
+    }
+
+    // Facturas del período contable
     const { data: facturas, error } = await supabaseAdmin
       .schema(schema)
       .from('comprobantes_arca')
@@ -71,22 +85,26 @@ export async function POST(request: Request) {
       numero_desde: f.numero_desde, denominacion: f.denominacion_emisor, fc: f.fc,
     }))
 
-    // Disparar el relevamiento en el GAS
+    // Una tanda
     const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         _token: token, accion: 'auditar', empresa, periodo,
-        carpeta_drive_id: carpeta, subcarpetas: computarSubcarpetas(empresa, anio, mes), facturas: payload,
+        carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
+        skip_file_ids: body.skip_file_ids || [], max_files: body.max_files || 10,
       }),
     })
     const audit = (await r.json()) as {
       status?: string; existe?: boolean; observaciones?: string
-      matched?: MatchItem[]; huerfanos?: { archivo: string; url: string }[]
-      sin_pdf?: { factura_id: string; denominacion?: string; numero?: string; fc?: string }[]
+      matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string }[]
+      procesados?: number; restantes?: number; completo?: boolean
     }
 
-    // Agregar link a las que matchearon por contenido y NO tenían (confirmadas por CUIT+número)
+    if (audit.existe === false) {
+      return NextResponse.json({ ok: true, empresa, periodo, existe: false, observaciones: audit.observaciones, completo: true, total_facturas: payload.length, matched: [], huerfanos: [], sin_pdf: [] })
+    }
+
+    // Agregar link a las matched que no lo tenían (confirmadas por contenido)
     let linksAgregados = 0
     for (const m of audit.matched || []) {
       const fact = (facturas || []).find((f) => f.id === m.factura_id)
@@ -98,14 +116,22 @@ export async function POST(request: Request) {
       }
     }
 
+    // Pendientes después de esta tanda (sin link y sin match): el cliente usa el de la última tanda
+    const yaLinkeadas = new Set((facturas || []).filter((f) => f.pdf_drive_url).map((f) => f.id))
+    for (const m of audit.matched || []) yaLinkeadas.add(m.factura_id)
+    const sin_pdf = (facturas || [])
+      .filter((f) => !yaLinkeadas.has(f.id))
+      .map((f) => ({ factura_id: f.id, denominacion: f.denominacion_emisor, numero: `${f.punto_venta}-${f.numero_desde}`, fc: f.fc }))
+
     return NextResponse.json({
-      ok: true, empresa, periodo,
-      existe: audit.existe ?? true,
-      observaciones: audit.observaciones,
+      ok: true, empresa, periodo, existe: true,
       total_facturas: payload.length,
       matched: audit.matched || [],
       huerfanos: audit.huerfanos || [],
-      sin_pdf: audit.sin_pdf || [],
+      sin_pdf,
+      procesados: audit.procesados || 0,
+      restantes: audit.restantes || 0,
+      completo: !!audit.completo,
       links_agregados: linksAgregados,
     })
   } catch (err) {

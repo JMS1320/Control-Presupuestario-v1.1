@@ -23,8 +23,8 @@ interface Resultado {
   observaciones?: string
   total_facturas?: number
   links_agregados?: number
-  matched?: { factura_id: string; archivo: string }[]
-  huerfanos?: { archivo: string; url: string }[]
+  matched?: { factura_id: string; archivo: string; file_id?: string }[]
+  huerfanos?: { archivo: string; url: string; file_id?: string }[]
   sin_pdf?: { numero?: string; denominacion?: string; fc?: string }[]
 }
 
@@ -33,23 +33,49 @@ export function ModalAuditarPeriodo({ empresa, open, onClose }: Props) {
   const [anio, setAnio] = useState(String(hoy.getFullYear()))
   const [mes, setMes] = useState(String(hoy.getMonth() + 1).padStart(2, '0'))
   const [cargando, setCargando] = useState(false)
+  const [progreso, setProgreso] = useState('')
   const [res, setRes] = useState<Resultado | null>(null)
 
-  const cerrar = () => { setRes(null); onClose() }
+  const cerrar = () => { setRes(null); setProgreso(''); onClose() }
 
+  // Loop por tandas: cada request procesa ≤10 archivos y commitea sus links; acumulamos los file_id
+  // procesados (skip) hasta completo. Luego un cierre que deja el log + manda el mail.
   const correr = async () => {
-    setCargando(true); setRes(null)
+    setCargando(true); setRes(null); setProgreso('')
+    const skip = new Set<string>()
+    const matchedAcc: NonNullable<Resultado['matched']> = []
+    const huerfanosAcc: NonNullable<Resultado['huerfanos']> = []
+    let sinPdf: Resultado['sin_pdf'] = []
+    let total = 0, links = 0, tanda = 0
     try {
-      const r = await fetch('/api/gas/auditar-periodo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa, anio: parseInt(anio), mes: parseInt(mes) }),
+      for (let guard = 0; guard < 500; guard++) {
+        tanda++
+        setProgreso(`Tanda ${tanda} — ${skip.size} archivo(s) procesados…`)
+        const r = await fetch('/api/gas/auditar-periodo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa, anio: parseInt(anio), mes: parseInt(mes), skip_file_ids: [...skip], max_files: 10 }),
+        })
+        const data = await r.json()
+        if (!data.ok) { setRes(data); return }
+        if (data.existe === false) { setRes(data); return }
+        total = data.total_facturas ?? total
+        links += data.links_agregados || 0
+        for (const m of (data.matched || [])) { matchedAcc.push(m); if (m.file_id) skip.add(m.file_id) }
+        for (const h of (data.huerfanos || [])) { huerfanosAcc.push(h); if (h.file_id) skip.add(h.file_id) }
+        sinPdf = data.sin_pdf || sinPdf
+        if (data.completo) break
+      }
+      // Cierre: log datado + mail con el acumulado
+      setProgreso('Cerrando (log + mail)…')
+      await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio: parseInt(anio), mes: parseInt(mes), finalizar: true, resumen: { matched: matchedAcc, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
       })
-      setRes(await r.json())
+      setRes({ ok: true, existe: true, total_facturas: total, matched: matchedAcc, huerfanos: huerfanosAcc, sin_pdf: sinPdf, links_agregados: links })
     } catch (e) {
       setRes({ ok: false, error: (e as Error).message })
     } finally {
-      setCargando(false)
+      setCargando(false); setProgreso('')
     }
   }
 
@@ -79,7 +105,7 @@ export function ModalAuditarPeriodo({ empresa, open, onClose }: Props) {
         </div>
 
         {cargando && (
-          <p className="text-sm text-gray-500">OCR de los archivos del período… puede tardar (no cierres).</p>
+          <p className="text-sm text-gray-500">{progreso || 'Procesando…'} — no cierres la ventana.</p>
         )}
 
         {res && !res.ok && <p className="text-sm text-red-600">Error: {res.error}</p>}

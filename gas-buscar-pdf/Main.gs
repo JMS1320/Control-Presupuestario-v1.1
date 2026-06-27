@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.8.0'  // 0.8.0 = acción 'confirmar' (mueve de _Revisar + renombra) | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + resumen
+const VERSION = '0.9.0'  // 0.9.0 = audit por TANDAS resumible (skip + max_files + finalizar) | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.8.0 (acción confirmar).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.0 (audit por tandas).'
   })
 }
 
@@ -542,6 +542,9 @@ function esc(s) {
 // 🔒 Releva la carpeta de un período contra las facturas esperadas. SOLO LECTURA sobre los archivos
 // del usuario: NO borra, NO mueve, NO renombra. Lo único que crea: los temporales de OCR (borrados por
 // su propio id) y un archivo de log _AUDIT (createFile nuevo). Nunca toca carpetas.
+// Resumible por TANDAS: procesa hasta `max_files` archivos NO salteados (skip_file_ids = ya
+// procesados/linkeados) y reporta cuántos quedan (`restantes`). El app loopea hasta completo=true,
+// acumulando los file_id procesados. Con `finalizar:true` escribe el log _AUDIT + manda el mail.
 function auditarPeriodo(body) {
   let carpeta = DriveApp.getFolderById(body.carpeta_drive_id)
   const subs = Array.isArray(body.subcarpetas) ? body.subcarpetas : []
@@ -553,50 +556,57 @@ function auditarPeriodo(body) {
       return responseJson({
         status: 'ok', existe: false,
         observaciones: 'La carpeta del período no existe: ' + subs.join('/'),
-        matched: [], huerfanos: [],
-        sin_pdf: (body.facturas || []).map(aSinPdf)
+        matched: [], huerfanos: [], procesados: 0, restantes: 0, completo: true
       })
     }
     carpeta = it.next()
   }
 
+  // Cierre: el app manda el resumen acumulado → dejamos log datado + mail (una sola vez).
+  if (body.finalizar) {
+    const res = body.resumen || {}
+    escribirLogAudit(carpeta, body, res.matched || [], res.huerfanos || [], res.sin_pdf || [])
+    enviarMailAudit(body, res.matched || [], res.huerfanos || [], res.sin_pdf || [])
+    return responseJson({ status: 'ok', finalizado: true })
+  }
+
   const facturas = Array.isArray(body.facturas) ? body.facturas : []
-  const matched = []     // {factura_id, drive_url, archivo}
-  const huerfanos = []   // {archivo, url}  (PDF sin factura)
-  const usados = {}
+  const skip = {}
+  if (Array.isArray(body.skip_file_ids)) body.skip_file_ids.forEach(function (id) { skip[id] = true })
+  const maxFiles = body.max_files || 10
+  const matched = []     // {factura_id, drive_url, archivo, file_id}
+  const huerfanos = []   // {archivo, url, file_id}
+  let procesados = 0
+  let restantes = 0
 
   const files = carpeta.getFiles()
   while (files.hasNext()) {
     const file = files.next()
     const nombre = file.getName()
-    if (/^_AUDIT_/i.test(nombre)) continue  // ignorar logs de audit previos
+    if (/^_AUDIT_/i.test(nombre)) continue            // ignorar logs de audit
+    const fileId = file.getId()
+    if (skip[fileId]) continue                         // ya procesado en una tanda previa
+    if (procesados >= maxFiles) { restantes++; continue }  // queda para la próxima tanda
+    procesados++
     let texto = ''
     try { texto = extraerTextoDeBlob(file.getBlob()) } catch (e) { texto = '' }
     const textoNum = texto.replace(/\D/g, '')
     let match = null
     for (var j = 0; j < facturas.length; j++) {
-      const f = facturas[j]
-      if (usados[f.factura_id]) continue
-      if (facturaCoincide(texto, textoNum, f)) { match = f; break }
+      if (facturaCoincide(texto, textoNum, facturas[j])) { match = facturas[j]; break }
     }
     if (match) {
-      usados[match.factura_id] = true
-      matched.push({ factura_id: match.factura_id, drive_url: file.getUrl(), archivo: nombre })
+      matched.push({ factura_id: match.factura_id, drive_url: file.getUrl(), archivo: nombre, file_id: fileId })
     } else {
-      huerfanos.push({ archivo: nombre, url: file.getUrl() })
+      huerfanos.push({ archivo: nombre, url: file.getUrl(), file_id: fileId })
     }
   }
 
-  const sin_pdf = facturas.filter(function (f) { return !usados[f.factura_id] }).map(aSinPdf)
-
-  escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf)
-  enviarMailAudit(body, matched, huerfanos, sin_pdf)
-
-  return responseJson({ status: 'ok', existe: true, matched: matched, huerfanos: huerfanos, sin_pdf: sin_pdf })
-}
-
-function aSinPdf(f) {
-  return { factura_id: f.factura_id, denominacion: f.denominacion, numero: f.punto_venta + '-' + f.numero_desde, fc: f.fc }
+  return responseJson({
+    status: 'ok', existe: true,
+    matched: matched, huerfanos: huerfanos,
+    procesados: procesados, restantes: restantes, completo: restantes === 0
+  })
 }
 
 // ¿El texto OCR de un archivo corresponde a esta factura? (CUIT + número presentes)
