@@ -44,6 +44,12 @@ function doPost(e) {
 
     // ── 2. Parsear body ──
     const body = JSON.parse(e.postData.contents)
+
+    // Acción 'resumen': manda el mail resumen del lote a sanmanuel y sale (no busca facturas).
+    if (body.accion === 'resumen') {
+      return enviarResumenMail(body)
+    }
+
     const required = ['factura_id', 'cuit_emisor', 'punto_venta', 'numero_desde', 'tipo_comprobante_desc', 'fecha_emision', 'imp_total', 'denominacion_emisor', 'email_proveedor', 'patron_asunto', 'dias_busqueda', 'carpeta_drive_id']
     for (const k of required) {
       if (body[k] === undefined || body[k] === null) {
@@ -381,6 +387,51 @@ function cuerpoMail(mensaje) {
     const t = (mensaje.getPlainBody() || '').trim()
     return t.length > 1500 ? t.substring(0, 1500) + '…' : t
   } catch (e) { return '' }
+}
+
+// Acción 'resumen': arma y envía UN mail con el resultado del lote, agrupado por empresa
+// (descargadas + a revisar, con asunto/remitente/cuerpo de cada uno). Lo dispara la app al cerrar el lote.
+function enviarResumenMail(body) {
+  const destinatario = body.destinatario || Session.getActiveUser().getEmail()
+  const resultados = Array.isArray(body.resultados) ? body.resultados : []
+  if (resultados.length === 0) {
+    return responseJson({ status: 'ok', observaciones: 'Resumen sin items, no se envía.' })
+  }
+
+  const porEmpresa = {}
+  resultados.forEach(function (r) {
+    const emp = r.empresa || '—'
+    if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [] }
+    ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
+  })
+
+  let html = '<h2>Resumen búsqueda de facturas</h2>'
+  Object.keys(porEmpresa).sort().forEach(function (emp) {
+    const g = porEmpresa[emp]
+    html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
+    ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar']].forEach(function (par) {
+      const lista = g[par[0]]
+      if (lista.length === 0) return
+      html += '<p><b>' + par[1] + ':</b></p><ul>'
+      lista.forEach(function (r) {
+        html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '')
+          + (r.drive_url ? ' (<a href="' + r.drive_url + '">PDF</a>)' : '')
+          + (r.observaciones ? ' <i>' + esc(r.observaciones) + '</i>' : '')
+          + '<br><small><b>Asunto:</b> ' + esc(r.asunto || '') + ' — <b>De:</b> ' + esc(r.remitente || '') + '</small>'
+          + (r.cuerpo ? '<br><pre style="white-space:pre-wrap;background:#f6f6f6;padding:6px;font-size:12px;">' + esc(r.cuerpo) + '</pre>' : '')
+          + '</li>'
+      })
+      html += '</ul>'
+    })
+  })
+
+  GmailApp.sendEmail(destinatario, 'Resumen FC — ' + new Date().toLocaleDateString(), 'Ver versión HTML.', { htmlBody: html })
+  return responseJson({ status: 'ok', observaciones: 'Resumen enviado a ' + destinatario + ' (' + resultados.length + ' items).' })
+}
+
+// Escapa HTML para el mail resumen.
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 /**

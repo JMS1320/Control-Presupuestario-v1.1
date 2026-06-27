@@ -59,6 +59,9 @@ export interface GasBuscarResponse {
   observaciones?: string
   monto_pdf?: number | null
   tiempo_ms?: number
+  asunto?: string        // del mail matcheado — para el resumen
+  remitente?: string     // del mail matcheado
+  cuerpo?: string        // cuerpo (recortado) del mail matcheado
 }
 
 /** Input al endpoint /api/gas/buscar-pdf desde el cliente Next.js */
@@ -77,6 +80,25 @@ export interface ApiBuscarPdfOutput {
   drive_url?: string
   observaciones?: string
   error?: string
+  // Para armar el mail resumen del lote:
+  asunto?: string
+  remitente?: string
+  cuerpo?: string
+  proveedor?: string
+  factura_label?: string
+}
+
+/** Un item del resumen del lote (lo arma el cliente, lo envía el GAS) */
+export interface ResumenItem {
+  empresa: Empresa
+  status: GasStatus
+  factura?: string
+  proveedor?: string
+  asunto?: string
+  remitente?: string
+  cuerpo?: string
+  drive_url?: string
+  observaciones?: string
 }
 
 /** Mapeo de status GAS → nuevo valor de fc y pdf_estado */

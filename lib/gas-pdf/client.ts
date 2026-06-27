@@ -8,6 +8,7 @@ import type {
   ApiBuscarPdfOutput,
   Empresa,
   FcEstado,
+  ResumenItem,
 } from './types'
 
 export interface BuscarPdfLoteOptions {
@@ -23,6 +24,8 @@ export interface BuscarPdfLoteOptions {
   timeoutMsPorFactura?: number
   /** Si devuelve true antes de procesar una factura, corta el lote (cancelación) */
   isCancelled?: () => boolean
+  /** Enviar el mail resumen al cerrar el lote (default true) */
+  enviarResumen?: boolean
 }
 
 export interface ProgresoLote {
@@ -93,22 +96,54 @@ export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 600
  * Procesa un lote en serie con delay entre llamadas.
  * El callback onProgreso se llama después de CADA factura.
  */
+/** Convierte un output en item de resumen (solo descargadas / a revisar) */
+function aResumenItem(out: ApiBuscarPdfOutput, empresa: Empresa): ResumenItem | null {
+  if (!out.ok || (out.resultado_gas !== 'ok' && out.resultado_gas !== 'revisar')) return null
+  return {
+    empresa,
+    status: out.resultado_gas,
+    factura: out.factura_label,
+    proveedor: out.proveedor,
+    asunto: out.asunto,
+    remitente: out.remitente,
+    cuerpo: out.cuerpo,
+    drive_url: out.drive_url,
+    observaciones: out.observaciones,
+  }
+}
+
+/** Manda el mail resumen del lote (best-effort: no rompe nada si falla) */
+async function enviarResumenLote(resultados: ResumenItem[]): Promise<void> {
+  if (resultados.length === 0) return
+  try {
+    await fetch('/api/gas/enviar-resumen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resultados }),
+    })
+  } catch { /* el resumen es secundario */ }
+}
+
 export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<ProgresoLote> {
   const loteId = opts.loteId || crypto.randomUUID()
   const delay = opts.delayMs ?? 1500
   const timeout = opts.timeoutMsPorFactura ?? 60000
   let progreso = nuevoProgreso(loteId, opts.facturaIds.length)
+  const resultados: ResumenItem[] = []
 
   for (let i = 0; i < opts.facturaIds.length; i++) {
     // Cancelación: si el caller pide cortar, frenamos antes de procesar la siguiente
     if (opts.isCancelled?.()) {
       progreso = { ...progreso, cancelado: true, finalizado: true }
+      if (opts.enviarResumen !== false) await enviarResumenLote(resultados)
       opts.onProgreso?.(progreso)
       return progreso
     }
     const facturaId = opts.facturaIds[i]
     const out = await buscarPdfFactura({ factura_id: facturaId, empresa: opts.empresa, lote_id: loteId }, timeout)
     progreso = actualizarProgreso(progreso, out)
+    const item = aResumenItem(out, opts.empresa)
+    if (item) resultados.push(item)
     opts.onProgreso?.(progreso)
 
     // Delay entre llamadas (no después de la última)
@@ -117,6 +152,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     }
   }
 
+  if (opts.enviarResumen !== false) await enviarResumenLote(resultados)
   progreso = { ...progreso, finalizado: true }
   opts.onProgreso?.(progreso)
   return progreso

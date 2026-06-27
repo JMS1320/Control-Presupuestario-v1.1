@@ -211,7 +211,7 @@ export async function POST(request: Request) {
       denominacion_emisor: factura.denominacion_emisor || proveedor.razon_social || '',
       email_proveedor: proveedor.email_facturacion,
       patron_asunto: proveedor.patron_asunto || '',
-      dias_busqueda: proveedor.dias_busqueda || 7,
+      dias_busqueda: proveedor.dias_busqueda || 30,   // default 30 días (configurable por proveedor; UI batch → pendiente)
       carpeta_drive_id: carpetaId,
       subcarpetas: computarSubcarpetas(empresa, factura.fecha_emision),
       mails_recolectores: mailsRecolectores,         // catch-all: reenvíos de Jose/Andrés
@@ -276,6 +276,12 @@ export async function POST(request: Request) {
       fc_nuevo: fcNuevo,
       drive_url: gasResp.drive_url,
       observaciones: gasResp.observaciones,
+      // Para el mail resumen del lote:
+      asunto: gasResp.asunto,
+      remitente: gasResp.remitente,
+      cuerpo: gasResp.cuerpo,
+      proveedor: factura.denominacion_emisor || proveedor.razon_social || '',
+      factura_label: `${factura.tipo_comprobante_desc || 'FC'} ${factura.punto_venta}-${factura.numero_desde}`,
     }
     return NextResponse.json(out)
 
