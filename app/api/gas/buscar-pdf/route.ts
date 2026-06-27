@@ -244,7 +244,9 @@ export async function POST(request: Request) {
 
     await supabase.schema(schema).from('comprobantes_arca').update({
       fc: fcNuevo,
-      pdf_drive_url: gasResp.drive_url ?? null,
+      // El link se guarda en la factura SOLO si está confirmada (match exacto 'ok'). Para 'revisar'
+      // (incierto) no se registra: el candidato queda en el log + mail + carpeta _Revisar hasta confirmar.
+      pdf_drive_url: gasResp.status === 'ok' ? (gasResp.drive_url ?? null) : null,
       pdf_estado,
       pdf_ultimo_intento: ahora,
       pdf_observaciones: gasResp.observaciones ?? null,

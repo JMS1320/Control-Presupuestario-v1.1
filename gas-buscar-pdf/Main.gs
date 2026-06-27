@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.5.0'  // 0.5.0 = fix: archivar conserva tipo/extensión real (foto no queda como .pdf roto) | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
+const VERSION = '0.6.0'  // 0.6.0 = sin confirmar (_Revisar) conserva nombre original y NO se registra link en la factura | 0.5.0 = archivar conserva tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.5.0 (archiva tipo/extensión real).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.6.0 (sin confirmar conserva nombre original).'
   })
 }
 
@@ -414,9 +414,12 @@ function archivarEnDrive(cand, body, esRevisar) {
     carpetaDestino = findOrCreateFolder(carpetaDestino, '_Revisar')
   }
 
-  const ext = extensionDe(cand.attachment)
-  const nombre = construirNombreArchivo(body, ext)
-  const blob = cand.attachment.copyBlob().setName(nombre)  // conserva el content-type real (PDF o imagen/foto)
+  // Confirmado (no esRevisar) → renombra al estándar. SIN confirmar (_Revisar) → conserva el nombre
+  // ORIGINAL: no se pisa el único dato seguro (cómo lo nombró quien lo mandó) cuando no hay certeza.
+  let blob = cand.attachment.copyBlob()  // conserva nombre y content-type reales
+  if (!esRevisar) {
+    blob = blob.setName(construirNombreArchivo(body, extensionDe(cand.attachment)))
+  }
   const file = carpetaDestino.createFile(blob)
   return file.getUrl()
 }
