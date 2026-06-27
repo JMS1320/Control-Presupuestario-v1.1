@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.4.0'  // 0.4.0 = asunto por-recolector (Jose "Documento de Jose", Andrés "FC") | 0.3.0 = OCR imágenes + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
+const VERSION = '0.5.0'  // 0.5.0 = fix: archivar conserva tipo/extensión real (foto no queda como .pdf roto) | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.4.0 (asunto por-recolector).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.5.0 (archiva tipo/extensión real).'
   })
 }
 
@@ -414,8 +414,9 @@ function archivarEnDrive(cand, body, esRevisar) {
     carpetaDestino = findOrCreateFolder(carpetaDestino, '_Revisar')
   }
 
-  const nombre = construirNombreArchivo(body)
-  const blob = cand.attachment.copyBlob().setName(nombre).setContentType('application/pdf')
+  const ext = extensionDe(cand.attachment)
+  const nombre = construirNombreArchivo(body, ext)
+  const blob = cand.attachment.copyBlob().setName(nombre)  // conserva el content-type real (PDF o imagen/foto)
   const file = carpetaDestino.createFile(blob)
   return file.getUrl()
 }
@@ -491,9 +492,10 @@ function esc(s) {
 }
 
 /**
- * Nombre estandarizado: "YY-MM-DD - Proveedor - Tipo PV-NRO_CUIT.pdf"
+ * Nombre estandarizado: "YY-MM-DD - Proveedor - Tipo PV-NRO_CUIT.<ext>"
+ * ext = extensión real del adjunto (pdf, jpg, png…); default 'pdf'.
  */
-function construirNombreArchivo(body) {
+function construirNombreArchivo(body, ext) {
   const f = new Date(body.fecha_emision)
   const yy = String(f.getFullYear()).slice(-2)
   const mm = String(f.getMonth() + 1).padStart(2, '0')
@@ -505,7 +507,13 @@ function construirNombreArchivo(body) {
   const nro = String(body.numero_desde).padStart(8, '0')
   const cuit = String(body.cuit_emisor).replace(/\D/g, '')
 
-  return `${yy}-${mm}-${dd} - ${proveedor} - ${tipo} ${pv}-${nro}_${cuit}.pdf`
+  return `${yy}-${mm}-${dd} - ${proveedor} - ${tipo} ${pv}-${nro}_${cuit}.${ext || 'pdf'}`
+}
+
+// Extensión real del adjunto (a partir de su nombre). Default 'pdf'.
+function extensionDe(att) {
+  const m = String(att.getName() || '').match(/\.([a-z0-9]+)$/i)
+  return m ? m[1].toLowerCase() : 'pdf'
 }
 
 function abreviarTipo(desc) {
