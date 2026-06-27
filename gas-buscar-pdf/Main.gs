@@ -20,7 +20,20 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'  // 0.2.0 = catch-all reenvíos + etiquetar/leído + mail resumen + auto-archivado
+
+/**
+ * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
+ * No requiere token (no expone datos — solo versión y capacidades).
+ */
+function doGet(e) {
+  return responseJson({
+    status: 'ok',
+    version: VERSION,
+    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen'],
+    mensaje: 'GAS Buscador PDF facturas — vivo. Si version=0.2.0 y aparece "mail-resumen", está la última.'
+  })
+}
 
 /**
  * Punto de entrada HTTP POST
