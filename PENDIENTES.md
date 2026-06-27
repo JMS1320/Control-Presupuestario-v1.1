@@ -403,8 +403,10 @@ Type-check de A'+B+C: 119 errores preexistentes, 0 nuevos.
 - **Backfill:** 32 proveedores creados (de 118 CUITs distintos en facturas). SQL INSERT...SELECT con CUIT normalizado, `fc_modo='sin_config'`. NO en backup.
 - **Auto-disparo post-import:** implementado **gated/APAGADO** (`dispararBusquedaPostImport(ids)` + check `process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'`). ✅ **Refinado (2026-06-21):** el import devuelve `idsBuscar` (IDs de las nuevas en estado 'Buscar') y el auto-disparo busca **solo esas**, no todo el backlog.
 
-### 🧩 Diseño catch-all + manejo de mails (acordado 2026-06-27, A IMPLEMENTAR)
-Hoy el GAS busca solo `from:(mail_proveedor) subject:(patrón)`. Falta el **catch-all de reenvíos**: muchas FC llegan porque el proveedor las manda por WhatsApp y el usuario (o Andrés) las **reenvía** desde el cel (asunto auto "Documento de Jose" + código `FC` agregado a mano).
+### 🧩 Catch-all + manejo de mails — ✅ IMPLEMENTADO 2026-06-27 (FALTA TESTEAR)
+Commits: `4f7f617` (catch-all + etiquetar/leído + cuerpo), `70dad84` (mail resumen + default 30d), `9717207` (scopes GAS). **Pendiente: que el usuario re-pegue `Main.gs` + `appsscript.json`, redeploy versión nueva, re-autorice (nuevos scopes gmail.modify/send) y pruebe.**
+
+Diseño base — muchas FC llegan porque el proveedor las manda por WhatsApp y el usuario (o Andrés) las **reenvía** desde el cel (asunto auto "Documento de Jose" + código `FC` agregado a mano).
 
 **Reenviadores (recolectores):** Jose `josemartinezsobrado@gmail.com` · Andrés `mailandres.12@gmail.com` (Andrés ADEMÁS es proveedor que emite FC → va también en `proveedores`). Asunto auto de Andrés: pendiente que lo pase el usuario.
 
@@ -427,15 +429,18 @@ Así los mails de **otros temas quedan sin tocar**.
 
 **Mail resumen → `sanmanuel.sp@gmail.com`** (lo manda el GAS): por empresa, las **descargadas** (exactos) + las **dudosas** (revisar) + el **cuerpo** de cada mail. Instancia de control.
 
-### 🔧 GAS PDF — qué falta CODEAR (consolidado, verificado 2026-06-27)
-Hoy el GAS solo busca por proveedor, archiva a Drive y devuelve status. **NO** etiqueta, **NO** marca leído, **NO** mueve, **NO** manda mail (única op Gmail = `search`). Falta:
-1. **Catch-all reenvíos** (Jose+Andrés desde proveedores con tag; orden FC → reenvíos → proveedores).
-2. **Etiquetar `Facturas Descargadas` + marcar leído** en match exacto (no mover). Sin match → intacto.
-3. **Mail resumen** a `sanmanuel.sp` (descargadas + dudosas + cuerpos, por empresa).
-4. **Reportar dudosos** + decidir `_Revisar` por-mes vs global.
-5. **Fecha configurable desde la app** (default 30 días; hoy solo `dias_busqueda` por proveedor).
-6. Pendientes ya listados: **A-BUG-10** (`'No'` se busca igual — decisión), **A-FEAT-05** (no se puede re-encolar a `'Buscar'` por UI), auto-disparo post-import (gated OFF).
-> No bloqueante: Andrés (su asunto auto) se suma después; el catch-all se arma/testea con el mail de Jose.
+### 🔧 GAS PDF — estado del paquete (2026-06-27)
+✅ **IMPLEMENTADO (commits `4f7f617`/`70dad84`/`9717207`, falta TESTEAR):**
+1. ✅ **Catch-all reenvíos** — `from:(recolectores) subject:"Documento de Jose"` (normalizado sin may/tildes) PRIMERO + proveedor directo. Jose taggeado `recolector` en BBDD; la app lee y pasa los mails.
+2. ✅ **Etiquetar `Facturas Descargadas` + marcar leído** en match exacto (NO mueve). Sin match → intacto.
+3. ✅ **Mail resumen** a sanmanuel (acción GAS `enviarResumenMail` + endpoint `/api/gas/enviar-resumen` + el cliente junta resultados): descargadas + a revisar + cuerpos, por empresa.
+4. ✅ **Dudosos → `_Revisar` por mes** (decidido) + incluidos en el resumen.
+5. 🟡 **Fecha**: default **30 días** ✅; el control por **UI de lote** (buscar más viejo) queda pendiente (menor).
+6. ✅ **Scopes GAS** ampliados a `gmail.modify` + `gmail.send` (para etiquetar/leído/enviar).
+
+⚠️ **Para activar (usuario):** re-pegar `Main.gs` + `appsscript.json` en el GAS → redeploy **versión nueva** → **re-autorizar** (nuevos permisos Gmail) → probar en preview de `desarrollo` (env vars cubren Preview).
+
+**Pendiente todavía:** UI de fecha por lote · **Andrés** (su asunto auto + tag) · **A-BUG-10** (`'No'` se busca igual — decisión) · **A-FEAT-05** (re-encolar a `'Buscar'` por UI) · auto-disparo post-import (gated OFF).
 
 ---
 
