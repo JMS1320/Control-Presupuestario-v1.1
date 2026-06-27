@@ -3317,6 +3317,18 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-27: Paridad de columnas en `pam.comprobantes_arca` (drift)**
+
+`pam.comprobantes_arca` quedó sin 3 columnas que `msa` y `ma` sí tenían (oversight al armar PAM). Al habilitar el import de ARCA para PAM, el insert mandaba `origen_factura='ARCA'` → fallaba (`0 importadas, 1 error`). Fix = paridad con MSA (aditivo, no destructivo):
+
+```sql
+ALTER TABLE pam.comprobantes_arca
+  ADD COLUMN IF NOT EXISTS medio_pago text NOT NULL DEFAULT 'banco',
+  ADD COLUMN IF NOT EXISTS origen_factura varchar,
+  ADD COLUMN IF NOT EXISTS visible_contable boolean DEFAULT false;
+```
+Verificado: tras el ALTER no falta ninguna columna de `msa` en `pam`. MA ya las tenía.
+
 ### **2026-06-22: Columnas de conciliación en tablas de TARJETA**
 
 Las 3 tablas de tarjeta (`msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa`) se crearon a medida (columnas propias: `cuota`, `nro_resumen`, `fecha_cierre`, `debitos_usd`, etc.) y **no recibieron** las columnas que a las tablas de banco se les fueron agregando por features posteriores (proveedores, sueldos, revisión, anticipos). Al conciliar tarjeta, el update fallaba en silencio (PostgREST devuelve `{error}` sin throw) → la factura quedaba conciliada pero el movimiento no se linkeaba. Se agregaron las columnas faltantes + `tipo_fila` (para el panel/audit por resumen).
