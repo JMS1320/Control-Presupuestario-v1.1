@@ -127,6 +127,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-10 | 🔴 | Baja | `formatoCantidad('L')` — muestra ml como L ("1122 L" vs "1,122 L") |
 | B-FEAT-11 | 🔴 | Media | **Extracto bancario de ECHEQs endosados** — los echeqs endosados entran y salen pero NUNCA se acreditan en cuenta bancaria → es el único medio de pago que queda sin conciliar. Hace falta un "extracto" propio (importar por Excel o carga directa) para registrarlos y conciliarlos. NO desarrollar ahora — pedido del usuario 2026-06-22. |
 | B-FEAT-12 | 🔴 | Baja | **Tarjeta — tabla colapsable por mes**: hoy es tira-resumen arriba + tabla plana completa abajo (commit 1c0ebc5). Mejora: unificar en una sola grilla colapsable por resumen (meses plegados → desplegar filas) manteniendo columnas/edición/selector. (2026-06-22) |
+| B-FEAT-13 | 🔴 | Media | **Organización de mails propaganda** (2º módulo de mail, junto al de FC). **Fase 1 REVISIÓN** = entender qué remitentes van a qué etiqueta/carpeta → herramienta **YA hecha**: `gas-buscar-pdf/ReporteEtiquetas.gs` (CSV label·remitente·count). **Fase 2 AUTO-MOVER** (sin desarrollar): replicar el movimiento manual (de:X → etiqueta Y + sacar de Recibidos). Luego se **desactiva la revisión** y queda solo el auto-mover. Reportes pueden ir a `sanmanuel.sp`. (2026-06-27) |
 
 ### Testing pendiente (commits de mayo, sin testear)
 | ID | Estado | Ítem |
@@ -420,7 +421,21 @@ Así los mails de **otros temas quedan sin tocar**.
 
 **Fechas:** default **30 días** (restrictivo), **configurable desde la app** para buscar más viejo.
 
-**Pendiente para construir:** asunto auto de Andrés + decidir dónde viven los mails reenviadores (global config / env var vs proveedores). Recién entonces se codea el catch-all + etiquetado/leído + mail resumen.
+**Reenviadores (decidido 2026-06-27):** van en **`proveedores`** (Jose y Andrés SON proveedores) marcados con un **tag** en el campo `tags` (ej. `recolector`, sin columna nueva). La **app** los lee y le pasa los mails al GAS. **NUNCA** hardcodear mails en el GAS; **NUNCA** que el GAS consulte la BD (metería una credencial Supabase = peor exposición).
+
+**Dudosos (verificado en código):** el GAS YA los archiva en subcarpeta **`_Revisar`** (status `revisar`): caso `monto difiere` o `múltiples candidatos`. Con el auto-archivado quedarían en `<empresa>/campaña/mes/_Revisar/`. **Decisión abierta:** `_Revisar` por-mes (como queda hoy) vs uno **global** por empresa. **Falta**: incluirlos en el mail resumen.
+
+**Mail resumen → `sanmanuel.sp@gmail.com`** (lo manda el GAS): por empresa, las **descargadas** (exactos) + las **dudosas** (revisar) + el **cuerpo** de cada mail. Instancia de control.
+
+### 🔧 GAS PDF — qué falta CODEAR (consolidado, verificado 2026-06-27)
+Hoy el GAS solo busca por proveedor, archiva a Drive y devuelve status. **NO** etiqueta, **NO** marca leído, **NO** mueve, **NO** manda mail (única op Gmail = `search`). Falta:
+1. **Catch-all reenvíos** (Jose+Andrés desde proveedores con tag; orden FC → reenvíos → proveedores).
+2. **Etiquetar `Facturas Descargadas` + marcar leído** en match exacto (no mover). Sin match → intacto.
+3. **Mail resumen** a `sanmanuel.sp` (descargadas + dudosas + cuerpos, por empresa).
+4. **Reportar dudosos** + decidir `_Revisar` por-mes vs global.
+5. **Fecha configurable desde la app** (default 30 días; hoy solo `dias_busqueda` por proveedor).
+6. Pendientes ya listados: **A-BUG-10** (`'No'` se busca igual — decisión), **A-FEAT-05** (no se puede re-encolar a `'Buscar'` por UI), auto-disparo post-import (gated OFF).
+> No bloqueante: Andrés (su asunto auto) se suma después; el catch-all se arma/testea con el mail de Jose.
 
 ---
 
