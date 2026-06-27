@@ -446,7 +446,21 @@ Así los mails de **otros temas quedan sin tocar**.
 
 **💡 Mejoras detectadas en testing (2026-06-27):**
 1. ✅ **IMPLEMENTADO (v0.3.0, commit `77fdf5b`, falta testear)** — Adjuntos no-PDF (foto de WhatsApp): búsqueda `has:attachment` (PDF + imágenes), OCR de imágenes vía Google Doc (valida CUIT/número como un PDF), y **soft-match**: si nada valida pero el asunto nombra al proveedor (palabra ≥4 letras) → `revisar` + archiva en `_Revisar`. Falta: re-pegar Main.gs + redeploy versión nueva (scopes ya OK) + probar el caso Luminatus.
-2. **Proveedor sin mail → carga orgánica.** Al buscar una FC cuyo proveedor no tiene mail: **avisar** ("Proveedor X sin mail"), **mostrar remitentes vistos en el período** (el GAS los devuelve como candidatos), **pedir + guardar** el mail elegido en `proveedores` (email + `gas_habilitado`). Se completa el padrón a medida que se busca, sin cargar todo de antemano. Conecta con el pendiente "carga orgánica" en [[proveedores-pendientes-post-implementaci-n]].
+2. **Proveedor sin mail → carga orgánica (Propuesta 2, PENDIENTE).** Al buscar una FC cuyo proveedor no tiene mail: **avisar** ("Proveedor X sin mail"), **mostrar remitentes vistos en el período** (el GAS los devuelve como candidatos), **pedir + guardar** el mail elegido en `proveedores` (email + `gas_habilitado`). Se completa el padrón a medida que se busca, sin cargar todo de antemano. Conecta con el pendiente "carga orgánica" en [[proveedores-pendientes-post-implementaci-n]].
+
+### 🔎 A-FEAT-AUDIT — Auditoría del registro digital (diseño acordado 2026-06-27, A CODEAR)
+**Problema:** períodos viejos tienen facturas en estado "Sí" pero **sin link** (PDFs cargados a mano), y no hay garantía de que el archivo digital esté completo/ordenado.
+
+**Qué hace:** input = **empresa + período contable** (`año_contable`+`mes_contable`). Va a `<empresa>/<campaña>/<aa-mm>/` en Drive, **OCR-ea cada PDF** (reusa `extraerTextoPdf`), extrae CUIT+número, y cruza contra las facturas del período:
+- PDF que matchea una factura **sin link** → le **agrega el link** (resuelve períodos viejos).
+- Factura con link → **verifica** que el archivo exista.
+- Factura "Sí" **sin PDF** → ⚠️ incongruencia. · PDF **sin factura** → ⚠️ huérfano.
+- **Informe** + permite **cambiar estados** post-relevamiento.
+
+**Decisiones (acordadas):**
+1. Matcheo por **OCR** (anda con PDFs viejos de nombre arbitrario). Volumen chico (≤30/período) → dosificar 1-2 períodos/día por quota.
+2. **Sin tabla nueva en la app.** Resultados (links/estados) quedan en las facturas; **el "datado" del audit = archivo `_AUDIT_<fecha>.txt` en la carpeta del mes** + **mail resumen** (reusa mecanismo). Si luego se quiere historial in-app, evaluar tablita.
+3. **"Confirmar VER"**: botón en la grilla (y el audit lo usa internamente) que pone FC=Sí + **mueve** el PDF de `_Revisar/` a la carpeta del mes + deja el link. Mover **archivo** es seguro (la regla es no destruir **carpetas**).
 
 ---
 
