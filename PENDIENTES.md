@@ -443,7 +443,7 @@ Así los mails de **otros temas quedan sin tocar**.
 **Pendiente todavía:** UI de fecha por lote · **Andrés** (su asunto auto + tag) · **A-BUG-10** (`'No'` se busca igual — decisión) · **A-FEAT-05** (re-encolar a `'Buscar'` por UI) · auto-disparo post-import (gated OFF).
 
 **💡 Mejoras detectadas en testing (2026-06-27):**
-1. **Adjuntos no-PDF (foto de WhatsApp).** La búsqueda exige `filename:pdf` → un mail con foto/imagen (asunto OK, ej. "Documento de Jose FC Luminatus sa") **ni se devuelve** → FC queda `NO Mail` sin pista. Propuesta: ampliar a `has:attachment` (cualquiera); para imágenes **OCR vía Google Doc** (el truco de `extraerTextoPdf` ya OCR-ea imágenes) → validar CUIT/número igual que un PDF. Si no valida → **soft-match / `revisar`** con link al mail + archivar a `_Revisar` para chequear a mano. Así las facturas en foto dejan de perderse.
+1. ✅ **IMPLEMENTADO (v0.3.0, commit `77fdf5b`, falta testear)** — Adjuntos no-PDF (foto de WhatsApp): búsqueda `has:attachment` (PDF + imágenes), OCR de imágenes vía Google Doc (valida CUIT/número como un PDF), y **soft-match**: si nada valida pero el asunto nombra al proveedor (palabra ≥4 letras) → `revisar` + archiva en `_Revisar`. Falta: re-pegar Main.gs + redeploy versión nueva (scopes ya OK) + probar el caso Luminatus.
 2. **Proveedor sin mail → carga orgánica.** Al buscar una FC cuyo proveedor no tiene mail: **avisar** ("Proveedor X sin mail"), **mostrar remitentes vistos en el período** (el GAS los devuelve como candidatos), **pedir + guardar** el mail elegido en `proveedores` (email + `gas_habilitado`). Se completa el padrón a medida que se busca, sin cargar todo de antemano. Conecta con el pendiente "carga orgánica" en [[proveedores-pendientes-post-implementaci-n]].
 
 ---
