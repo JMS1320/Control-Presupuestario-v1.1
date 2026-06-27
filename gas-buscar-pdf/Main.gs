@@ -51,7 +51,8 @@ function doPost(e) {
       }
     }
 
-    Logger.log(`[v${VERSION}] buscar: cuit=${body.cuit_emisor} pv=${body.punto_venta} nro=${body.numero_desde} monto=${body.imp_total}`)
+    // Nota: NO se loguea el monto a propósito (defensa en profundidad — ver A-SEC-01).
+    Logger.log(`[v${VERSION}] buscar: cuit=${body.cuit_emisor} pv=${body.punto_venta} nro=${body.numero_desde}`)
 
     // ── 3. Buscar en Gmail ──
     const resultadoBusqueda = buscarEnGmail(body)

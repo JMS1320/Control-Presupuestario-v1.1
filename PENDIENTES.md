@@ -402,6 +402,26 @@ Type-check de A'+B+C: 119 errores preexistentes, 0 nuevos.
 - **Backfill:** 32 proveedores creados (de 118 CUITs distintos en facturas). SQL INSERT...SELECT con CUIT normalizado, `fc_modo='sin_config'`. NO en backup.
 - **Auto-disparo post-import:** implementado **gated/APAGADO** (`dispararBusquedaPostImport(ids)` + check `process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'`). ✅ **Refinado (2026-06-21):** el import devuelve `idsBuscar` (IDs de las nuevas en estado 'Buscar') y el auto-disparo busca **solo esas**, no todo el backlog.
 
+### 🧩 Diseño catch-all + manejo de mails (acordado 2026-06-27, A IMPLEMENTAR)
+Hoy el GAS busca solo `from:(mail_proveedor) subject:(patrón)`. Falta el **catch-all de reenvíos**: muchas FC llegan porque el proveedor las manda por WhatsApp y el usuario (o Andrés) las **reenvía** desde el cel (asunto auto "Documento de Jose" + código `FC` agregado a mano).
+
+**Reenviadores (recolectores):** Jose `josemartinezsobrado@gmail.com` · Andrés `mailandres.12@gmail.com` (Andrés ADEMÁS es proveedor que emite FC → va también en `proveedores`). Asunto auto de Andrés: pendiente que lo pase el usuario.
+
+**Orden de búsqueda (validando siempre CUIT+número+monto dentro del PDF):**
+1. Reenvíos con `FC` → `from:(reenviadores) subject:(FC)` (señal más fuerte; `FC` sirve para diferenciar de remitos/otros).
+2. Reenvíos sin `FC` → `from:(reenviadores)` (asunto "Documento de Jose"/el de Andrés, aunque no diga FC → igual revisa).
+3. Directo de proveedores → `from:(mail_proveedor) subject:(patrón)`.
+Así los mails de **otros temas quedan sin tocar**.
+
+**Manejo de mails:**
+- **Match perfecto** → marca **leído** + etiqueta **`Facturas Descargadas`** + **NO mueve** + descarga a Drive (auto-archivado por campaña/mes, ya hecho).
+- **Sin match** → se deja **igual** (no cambia leído/no-leído, no etiqueta). Busca tanto en leídos como no leídos; lo ya leído por el humano queda intacto.
+- **Mail resumen** al usuario por corrida: FC descargadas **por empresa** + **el cuerpo** de cada mail (para no perder texto importante). Instancia de control. Lo manda el GAS.
+
+**Fechas:** default **30 días** (restrictivo), **configurable desde la app** para buscar más viejo.
+
+**Pendiente para construir:** asunto auto de Andrés + decidir dónde viven los mails reenviadores (global config / env var vs proveedores). Recién entonces se codea el catch-all + etiquetado/leído + mail resumen.
+
 ---
 
 ## <a id="a-test-03"></a>A-TEST-03 — Módulo ARCA (Mis Comprobantes)
@@ -536,6 +556,8 @@ Detalle previo: `memory/project_tarjetas_modulo.md`.
 Scan: `anon` tiene `DELETE, INSERT, UPDATE, TRUNCATE` en **cada** tabla. Combinado con la `anon_key` expuesta en el bundle JS (es así por diseño), tablas expuestas en API, y mayoría sin RLS (o RLS "permissive" de 1 policy "allow all") → cualquiera con `curl + anon_key` puede borrar/truncar tablas. Es exactamente lo que el usuario quiere evitar.
 
 **Datos concretos (auditoría 2026-06-23):** `anon` = `authenticated` = `service_role` tienen `SELECT/INSERT/UPDATE/DELETE/TRUNCATE` sobre **los 72 objetos** (66 tablas + 6 vistas). Las **41 policies RLS son TODAS permisivas `allow all`** (`cmd=ALL`, `qual=true`) → la RLS no filtra nada. Varias tablas directamente sin RLS (incluido todo el schema `sueldos`). Detalle completo en `ARQUITECTURA-BD.md` §5.
+
+**Motivo / dónde duele (registrado 2026-06-27, a pedido del usuario para poder priorizar):** lo expuesto NO es solo "metadata" — son los **montos, CUITs y números de toda la operación**. Ejemplos: `msa.comprobantes_arca` (todos los importes de facturas), `public.arca_pdf_busqueda_log` (montos por búsqueda de PDF, sin RLS). Cualquiera con la `anon_key` (que está en el bundle JS por diseño) puede leerlos con `curl`. **Importante para decidir:** cerrar `anon` es lo que mueve la aguja — protege TODO de una; mitigaciones puntuales (ej. no loguear montos en GAS, ya hecho) son defensa en profundidad pero NO sustituyen el fix. Los logs de GAS (Google) y Vercel están *gated* por esas cuentas → se cubren con **2FA** (parte del P0).
 
 ### Aclaración: la clave ARCA NO queda en logs
 Un contacto le dijo que sí. Verificado que **no**: el endpoint recibe el password en body, lo usa para loguearse a ARCA y lo descarta; no se loguea ni se persiste; `arca_descargas_log` guarda empresa/fechas/status, no password; `console.error` sólo loguea texto genérico. Único residual: Vercel "Detailed Function Logs" (opt-in, OFF por default) podría capturar bodies → verificar Project Settings → Functions → Logging. (Aparte: `.mcp.json` con el token Supabase NO está trackeado y está en `.gitignore` ✅.)
