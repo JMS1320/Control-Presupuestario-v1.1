@@ -28,7 +28,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `sueldos` | 6 | **Sueldos** (storage real): empleados, campañas, períodos, pagos, componentes, cuentas. **No expuesto en API** → se lee/escribe vía las 6 vistas `public.sueldos_*` (passthrough auto-actualizables). |
 
 ### Exposición en API (PostgREST) y acceso desde código
-- Los schemas alcanzables por la API deben estar en `pgrst.db_schemas` (aparte de GRANTs/RLS). Expuestos: `public, msa, pam, ma` y `productivo` (se accede directo). **`sueldos` NO está expuesto** → por eso existen las vistas `public.sueldos_*` que lo envuelven. Ver memoria `reference_schemas_expuestos_api` (el fix de `ma` no está en el backup).
+- Los schemas alcanzables por la API deben estar en `pgrst.db_schemas` (aparte de GRANTs/RLS). Expuestos (verificado 2026-06-27 en `pg_roles` rol `authenticator`): **`public, msa, productivo, sueldos, pam, ma`** — todos se acceden directo. Las vistas `public.sueldos_*` quedaron como acceso alternativo/legacy (`sueldos` ya está expuesto directo). Ver memoria `reference_schemas_expuestos_api` (el fix de `ma` no está en el backup).
 - Cliente: `lib/supabase.ts` crea el client simple. Para schema ≠ public:
   ```ts
   supabase.schema('msa').from('comprobantes_arca')   // ⚠️ .schema() ANTES de .from()
