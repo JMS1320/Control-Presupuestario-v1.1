@@ -62,40 +62,46 @@ function doPost(e) {
 
     // ── 5. Decidir resultado ──
     if (verificados.exactos.length === 1) {
-      // Match único — archivar OK
-      const driveUrl = archivarEnDrive(verificados.exactos[0], body, false)
-      const observaciones = verificados.exactos[0]._observaciones || 'Match exacto CUIT+nro+monto'
+      // Match único — archivar OK + etiquetar 'Facturas Descargadas' + marcar leído (NO mover)
+      const cand = verificados.exactos[0]
+      const driveUrl = archivarEnDrive(cand, body, false)
+      etiquetarYLeer(cand.mensaje, 'Facturas Descargadas')
       return responseJson({
         status: 'ok',
         drive_url: driveUrl,
         confianza: 'alta',
-        observaciones: observaciones,
-        monto_pdf: verificados.exactos[0]._montoExtraido || null,
+        observaciones: cand._observaciones || 'Match exacto CUIT+nro+monto',
+        monto_pdf: cand._montoExtraido || null,
+        asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
         tiempo_ms: Date.now() - startTime
       })
     }
 
     if (verificados.exactos.length > 1) {
-      // Múltiples matches — todos a "Revisar"
+      // Múltiples matches — todos a "Revisar". NO se marca leído/etiqueta (necesita revisión).
       const urls = verificados.exactos.map(c => archivarEnDrive(c, body, true))
+      const cand = verificados.exactos[0]
       return responseJson({
         status: 'revisar',
         drive_url: urls[0],
         confianza: 'media',
         observaciones: `Múltiples PDFs candidatos (${verificados.exactos.length}). Archivados en /Revisar.`,
+        asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
         tiempo_ms: Date.now() - startTime
       })
     }
 
     if (verificados.dudosos.length > 0) {
-      // Match parcial (CUIT+nro pero monto fuera de tolerancia)
-      const driveUrl = archivarEnDrive(verificados.dudosos[0], body, true)
+      // Match parcial (CUIT+nro pero monto difiere) → a "Revisar". NO se marca leído/etiqueta.
+      const cand = verificados.dudosos[0]
+      const driveUrl = archivarEnDrive(cand, body, true)
       return responseJson({
         status: 'revisar',
         drive_url: driveUrl,
         confianza: 'baja',
-        observaciones: verificados.dudosos[0]._observaciones || 'Match CUIT+nro pero monto difiere',
-        monto_pdf: verificados.dudosos[0]._montoExtraido || null,
+        observaciones: cand._observaciones || 'Match CUIT+nro pero monto difiere',
+        monto_pdf: cand._montoExtraido || null,
+        asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
         tiempo_ms: Date.now() - startTime
       })
     }
@@ -127,46 +133,59 @@ function buscarEnGmail(body) {
   fechaDesde.setDate(fechaDesde.getDate() - 2) // pequeño margen anterior por si llega antes
   const fechaHasta = new Date(fechaEmision)
   fechaHasta.setDate(fechaHasta.getDate() + (body.dias_busqueda || 7))
+  const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} has:attachment filename:pdf`
 
-  const fechaDesdeStr = formatDateGmail(fechaDesde)
-  const fechaHastaStr = formatDateGmail(fechaHasta)
+  const candidatos = []
+  let threadsCant = 0
 
-  // Construir query
-  // Notas:
-  //   - `from:` admite múltiples emails separados por OR
-  //   - Si patron_asunto está vacío, no filtramos por asunto (más recall, menos precision)
-  let query = `from:(${body.email_proveedor}) `
-              + `after:${fechaDesdeStr} `
-              + `before:${fechaHastaStr} `
-              + `has:attachment filename:pdf`
-  if (body.patron_asunto && body.patron_asunto.trim().length > 0) {
-    query += ` subject:(${body.patron_asunto})`
+  // 1) Catch-all reenvíos (Jose/Andrés): from:(recolectores) + asunto mínimo "Documento de Jose".
+  //    Se buscan PRIMERO. El asunto se exige también en código (normalizado: sin may/min ni tildes).
+  if (Array.isArray(body.mails_recolectores) && body.mails_recolectores.length > 0 && body.asunto_recolector) {
+    const qR = `from:(${body.mails_recolectores.join(' OR ')}) subject:("${body.asunto_recolector}") ${rango}`
+    Logger.log('Gmail query (recolectores): ' + qR)
+    const r = recolectarCandidatos(qR, body.asunto_recolector)
+    candidatos.push.apply(candidatos, r.candidatos); threadsCant += r.threadsCant
   }
 
-  Logger.log('Gmail query: ' + query)
+  // 2) Directo del proveedor (si tiene mail). Si patron_asunto vacío → no filtra asunto.
+  if (body.email_proveedor && String(body.email_proveedor).trim()) {
+    let qP = `from:(${body.email_proveedor}) ${rango}`
+    if (body.patron_asunto && body.patron_asunto.trim().length > 0) qP += ` subject:(${body.patron_asunto})`
+    Logger.log('Gmail query (proveedor): ' + qP)
+    const p = recolectarCandidatos(qP, null)
+    candidatos.push.apply(candidatos, p.candidatos); threadsCant += p.threadsCant
+  }
 
+  return { threadsCant: threadsCant, candidatos: candidatos }
+}
+
+// Corre una query Gmail y junta los PDF adjuntos. Si `asuntoMinimo` != null, exige que el asunto
+// (normalizado: minúsculas + sin tildes) lo contenga — sin ese asunto, el mail NO se procesa.
+function recolectarCandidatos(query, asuntoMinimo) {
   const threads = GmailApp.search(query, 0, 50)
   const candidatos = []
-
+  const minNorm = asuntoMinimo ? normalizarTexto(asuntoMinimo) : null
   for (const thread of threads) {
     for (const msg of thread.getMessages()) {
+      if (minNorm && normalizarTexto(msg.getSubject() || '').indexOf(minNorm) < 0) continue
       for (const att of msg.getAttachments()) {
-        const name = att.getName().toLowerCase()
-        if (name.endsWith('.pdf')) {
+        if (att.getName().toLowerCase().endsWith('.pdf')) {
           candidatos.push({
-            thread: thread,
-            mensaje: msg,
-            attachment: att,
-            fechaMail: msg.getDate(),
-            asunto: msg.getSubject(),
-            remitente: msg.getFrom()
+            thread: thread, mensaje: msg, attachment: att,
+            fechaMail: msg.getDate(), asunto: msg.getSubject(), remitente: msg.getFrom()
           })
         }
       }
     }
   }
-
   return { threadsCant: threads.length, candidatos: candidatos }
+}
+
+// Normaliza para comparar asuntos sin distinguir mayúsculas/minúsculas ni tildes.
+function normalizarTexto(s) {
+  return String(s).toLowerCase()
+    .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+    .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u').replace(/ñ/g, 'n').trim()
 }
 
 /**
@@ -343,6 +362,25 @@ function archivarEnDrive(cand, body, esRevisar) {
 function findOrCreateFolder(parent, name) {
   const it = parent.getFoldersByName(name)
   return it.hasNext() ? it.next() : parent.createFolder(name)
+}
+
+// Match exacto: aplica la etiqueta al hilo (la crea si no existe) y marca el mensaje como leído.
+// NO mueve nada. Defensivo: si falla, no rompe el flujo (la descarga a Drive ya se hizo).
+function etiquetarYLeer(mensaje, nombreEtiqueta) {
+  try {
+    let label = GmailApp.getUserLabelByName(nombreEtiqueta)
+    if (!label) label = GmailApp.createLabel(nombreEtiqueta)
+    mensaje.getThread().addLabel(label)
+    mensaje.markRead()
+  } catch (e) { Logger.log('etiquetarYLeer no crítico: ' + e) }
+}
+
+// Cuerpo del mail (texto plano, recortado a 1500) — para incluirlo en el mail resumen.
+function cuerpoMail(mensaje) {
+  try {
+    const t = (mensaje.getPlainBody() || '').trim()
+    return t.length > 1500 ? t.substring(0, 1500) + '…' : t
+  } catch (e) { return '' }
 }
 
 /**

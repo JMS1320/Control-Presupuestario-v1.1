@@ -47,6 +47,8 @@ export interface GasBuscarRequest {
   dias_busqueda: number              // ventana en días (default 7)
   carpeta_drive_id: string           // ID Drive folder (de la empresa) donde archivar
   subcarpetas?: string[]             // ruta de subcarpetas a crear/usar bajo la anterior, ej. ["2025-2026","26-06"]
+  mails_recolectores?: string[]      // catch-all: mails que reenvían FC (Jose/Andrés). Se buscan además del proveedor
+  asunto_recolector?: string         // asunto mínimo para procesar un reenvío, ej. "Documento de Jose"
 }
 
 /** Respuesta del GAS Web App */

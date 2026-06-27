@@ -189,6 +189,16 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
+    // Mails recolectores (Jose/Andrés): proveedores con tag 'recolector' que reenvían FC desde el cel.
+    // La app los consulta y se los pasa al GAS — nunca hardcodeados ni el GAS consultando la BD.
+    const { data: recolectoresData } = await supabase
+      .from('proveedores')
+      .select('email_facturacion')
+      .contains('tags', ['recolector'])
+    const mailsRecolectores = (recolectoresData || [])
+      .map((r) => r.email_facturacion as string | null)
+      .filter((e): e is string => !!e && e !== proveedor.email_facturacion)
+
     const gasRequest: GasBuscarRequest = {
       _token: token,
       factura_id,
@@ -204,6 +214,8 @@ export async function POST(request: Request) {
       dias_busqueda: proveedor.dias_busqueda || 7,
       carpeta_drive_id: carpetaId,
       subcarpetas: computarSubcarpetas(empresa, factura.fecha_emision),
+      mails_recolectores: mailsRecolectores,         // catch-all: reenvíos de Jose/Andrés
+      asunto_recolector: 'Documento de Jose',        // mínimo para procesar un reenvío (normalizado en GAS)
     }
 
     let gasResp: GasBuscarResponse
