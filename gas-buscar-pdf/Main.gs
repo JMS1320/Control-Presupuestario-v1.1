@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.2.0'  // 0.2.0 = catch-all reenvíos + etiquetar/leído + mail resumen + auto-archivado
+const VERSION = '0.3.0'  // 0.3.0 = + OCR imágenes (fotos) + soft-match/advertencia | 0.2.0 = catch-all + etiquetar/leído + resumen + auto-archivado
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -30,8 +30,8 @@ function doGet(e) {
   return responseJson({
     status: 'ok',
     version: VERSION,
-    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Si version=0.2.0 y aparece "mail-resumen", está la última.'
+    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match'],
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.3.0 con "ocr-imagenes" y "soft-match".'
   })
 }
 
@@ -125,10 +125,27 @@ function doPost(e) {
       })
     }
 
+    // Soft-match: ningún match validado, pero hay un adjunto en un mail cuyo ASUNTO nombra al
+    // proveedor (ej. "Documento de Jose FC Luminatus") → muy probablemente ES la factura pero no
+    // se pudo validar (foto ilegible / OCR pobre / número no detectado). Dejar 'revisar' con
+    // advertencia + archivar a _Revisar para chequear a mano. Nunca se pierde.
+    const sospechoso = encontrarSospechoso(verificados.descartados, body)
+    if (sospechoso) {
+      const driveUrl = archivarEnDrive(sospechoso, body, true)
+      return responseJson({
+        status: 'revisar',
+        drive_url: driveUrl,
+        confianza: 'baja',
+        observaciones: '⚠️ Posible factura: el asunto nombra al proveedor pero no se pudo validar el adjunto (foto/PDF ilegible). Archivado en _Revisar — chequear a mano.',
+        asunto: sospechoso.asunto, remitente: sospechoso.remitente, cuerpo: cuerpoMail(sospechoso.mensaje),
+        tiempo_ms: Date.now() - startTime
+      })
+    }
+
     // No encontrado
     return responseJson({
       status: 'no_encontrada',
-      observaciones: `No se encontró PDF que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} PDFs adjuntos analizados.`,
+      observaciones: `No se encontró adjunto que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} adjuntos analizados.`,
       tiempo_ms: Date.now() - startTime
     })
 
@@ -152,7 +169,8 @@ function buscarEnGmail(body) {
   fechaDesde.setDate(fechaDesde.getDate() - 2) // pequeño margen anterior por si llega antes
   const fechaHasta = new Date(fechaEmision)
   fechaHasta.setDate(fechaHasta.getDate() + (body.dias_busqueda || 7))
-  const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} has:attachment filename:pdf`
+  // has:attachment (cualquier adjunto: PDF o imagen/foto de WhatsApp). El filtro por tipo se hace al juntar candidatos.
+  const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} has:attachment`
 
   const candidatos = []
   let threadsCant = 0
@@ -188,7 +206,7 @@ function recolectarCandidatos(query, asuntoMinimo) {
     for (const msg of thread.getMessages()) {
       if (minNorm && normalizarTexto(msg.getSubject() || '').indexOf(minNorm) < 0) continue
       for (const att of msg.getAttachments()) {
-        if (att.getName().toLowerCase().endsWith('.pdf')) {
+        if (/\.(pdf|jpe?g|png|gif|webp|heic|tiff?)$/i.test(att.getName())) {  // PDF o imagen
           candidatos.push({
             thread: thread, mensaje: msg, attachment: att,
             fechaMail: msg.getDate(), asunto: msg.getSubject(), remitente: msg.getFrom()
@@ -287,13 +305,27 @@ function verificarCandidatos(candidatos, body) {
   return { exactos, dudosos, descartados }
 }
 
+// Soft-match: entre los descartados, devuelve uno cuyo ASUNTO contenga (normalizado) una palabra
+// significativa (>=4 letras) del nombre del proveedor. Evita falsos por "sa/srl/de". null si ninguno.
+function encontrarSospechoso(descartados, body) {
+  const palabras = normalizarTexto(body.denominacion_emisor || '').split(/\s+/).filter(function (w) { return w.length >= 4 })
+  if (palabras.length === 0) return null
+  for (var i = 0; i < descartados.length; i++) {
+    const asunto = normalizarTexto(descartados[i].asunto || '')
+    for (var j = 0; j < palabras.length; j++) {
+      if (asunto.indexOf(palabras[j]) >= 0) return descartados[i]
+    }
+  }
+  return null
+}
+
 /**
- * Extrae texto de un PDF adjunto.
- * Truco GAS: subir el blob a Drive como Google Doc temporal (OCR + texto),
- * leer el texto, y borrar el archivo.
+ * Extrae texto de un adjunto (PDF o IMAGEN/foto).
+ * Truco GAS: subir el blob a Drive como Google Doc temporal → Google lo convierte/OCR-ea
+ * (sirve para PDF y también imágenes), leer el texto, y borrar el temporal.
  */
 function extraerTextoPdf(attachment) {
-  const blob = attachment.copyBlob().setContentType('application/pdf')
+  const blob = attachment.copyBlob()  // conserva el content-type real (PDF o imagen) para que el OCR funcione
   const tempName = '_temp_extract_' + new Date().getTime()
 
   try {
