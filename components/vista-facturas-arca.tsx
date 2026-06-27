@@ -588,7 +588,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
-  const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'MA'>('MSA')
+  const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'PAM' | 'MA'>('MSA')
   const [arcaPassword, setArcaPassword] = useState('')         // se ingresa cada vez, no se guarda
   const [arcaFechaDesde, setArcaFechaDesde] = useState('')
   const [arcaFechaHasta, setArcaFechaHasta] = useState('')
@@ -6149,12 +6149,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {!esContable && (empresa === 'MSA' || empresa === 'MA') && (
+                {!esContable && (empresa === 'MSA' || empresa === 'PAM' || empresa === 'MA') && (
                   <DropdownMenuItem onClick={() => {
                     // Pre-llenar empresa según la tab activa ANTES de abrir el modal
                     // (no podemos confiar en onOpenChange del Dialog porque no se dispara
                     // cuando seteamos open=true desde fuera del componente)
-                    setArcaEmpresa(empresa as 'MSA' | 'MA')
+                    setArcaEmpresa(empresa as 'MSA' | 'PAM' | 'MA')
                     setArcaError(null)
                     setArcaPassword('')
                     // Atajo por defecto: mes anterior
@@ -7046,7 +7046,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               <Label className="text-xs">Empresa</Label>
               <div className="border rounded-md bg-blue-50 border-blue-200 px-3 py-2 text-sm font-medium text-blue-900 flex items-center gap-2">
                 <span className="text-blue-600">🏛️</span>
-                <span>{arcaEmpresa === 'MA' ? 'MA — Otro CUIT' : 'MSA — Martinez Sobrado Agro'}</span>
+                <span>{arcaEmpresa === 'MA' ? 'MA — Otro CUIT' : arcaEmpresa === 'PAM' ? 'PAM — CUIT 20044390222' : 'MSA — Martinez Sobrado Agro'}</span>
               </div>
               <p className="text-[10px] text-gray-500 mt-1">Para descargar de otra empresa, salí del modal y cambiá de tab.</p>
             </div>

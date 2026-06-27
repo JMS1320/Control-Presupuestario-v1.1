@@ -47,8 +47,8 @@ export async function POST(request: Request) {
     }
 
     // ── Validaciones ────────────────────────────────────────────
-    if (!empresa || !['MSA', 'MA'].includes(empresa)) {
-      return NextResponse.json({ error: 'empresa debe ser MSA o MA' }, { status: 400 })
+    if (!empresa || !['MSA', 'PAM', 'MA'].includes(empresa)) {
+      return NextResponse.json({ error: 'empresa debe ser MSA, PAM o MA' }, { status: 400 })
     }
     if (!password || password.trim().length === 0) {
       return NextResponse.json({ error: 'Ingresá tu clave fiscal de ARCA' }, { status: 400 })
