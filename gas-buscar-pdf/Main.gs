@@ -267,8 +267,9 @@ function extraerTextoPdf(attachment) {
     const doc = DocumentApp.openById(file.id)
     const text = doc.getBody().getText()
 
-    // Cleanup
-    Drive.Files.remove(file.id)
+    // Cleanup — borra SOLO el temporal recién creado, por su propio ID. Nunca toca carpetas
+    // ni archivos del usuario. Defensivo: si fallara, no rompe el flujo (no es crítico).
+    try { if (file && file.id) Drive.Files.remove(file.id) } catch (e) { Logger.log('cleanup temp no crítico: ' + e) }
     return text
   } catch (err) {
     Logger.log('Error extraerTextoPdf: ' + err.toString())
@@ -307,6 +308,13 @@ function extraerMontosPdf(texto) {
  *
  * Si esRevisar=true, archiva en subcarpeta "_Revisar".
  */
+// 🔒 INVARIANTE DE SEGURIDAD (no romper en futuros cambios):
+//   Este GAS NUNCA borra, vacía, reemplaza ni sobrescribe carpetas o archivos del usuario.
+//   - createFolder/createFile en Drive NO reemplazan: ante mismo nombre, crean uno nuevo aparte.
+//   - findOrCreateFolder reusa la carpeta existente; solo crea si falta.
+//   - La única eliminación en todo el script es el Google Doc TEMPORAL de extracción de texto
+//     (extraerTextoPdf), borrado por su propio ID. Jamás se borra una carpeta.
+//   PROHIBIDO agregar: setTrashed, removeFile/removeFolder sobre carpetas, o cualquier "replace".
 function archivarEnDrive(cand, body, esRevisar) {
   let carpetaDestino = DriveApp.getFolderById(body.carpeta_drive_id)
 
