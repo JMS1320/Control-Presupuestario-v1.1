@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.6.0'  // 0.6.0 = sin confirmar (_Revisar) conserva nombre original y NO se registra link en la factura | 0.5.0 = archivar conserva tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + etiquetar/leído + resumen
+const VERSION = '0.7.0'  // 0.7.0 = acción 'auditar' (releva carpeta del período vs facturas) | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + resumen
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -30,8 +30,8 @@ function doGet(e) {
   return responseJson({
     status: 'ok',
     version: VERSION,
-    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.6.0 (sin confirmar conserva nombre original).'
+    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar'],
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.7.0 (acción auditar).'
   })
 }
 
@@ -61,6 +61,11 @@ function doPost(e) {
     // Acción 'resumen': manda el mail resumen del lote a sanmanuel y sale (no busca facturas).
     if (body.accion === 'resumen') {
       return enviarResumenMail(body)
+    }
+
+    // Acción 'auditar': releva la carpeta de un período contra las facturas esperadas y sale.
+    if (body.accion === 'auditar') {
+      return auditarPeriodo(body)
     }
 
     const required = ['factura_id', 'cuit_emisor', 'punto_venta', 'numero_desde', 'tipo_comprobante_desc', 'fecha_emision', 'imp_total', 'denominacion_emisor', 'email_proveedor', 'patron_asunto', 'dias_busqueda', 'carpeta_drive_id']
@@ -336,15 +341,16 @@ function encontrarSospechoso(descartados, body) {
  * (sirve para PDF y también imágenes), leer el texto, y borrar el temporal.
  */
 function extraerTextoPdf(attachment) {
-  const blob = attachment.copyBlob()  // conserva el content-type real (PDF o imagen) para que el OCR funcione
-  const tempName = '_temp_extract_' + new Date().getTime()
+  return extraerTextoDeBlob(attachment.copyBlob())  // conserva el content-type real (PDF o imagen)
+}
 
+// Extrae texto de un blob (PDF o imagen) vía Google Doc temporal (OCR). Reusable por el audit
+// (que lee archivos ya en Drive). Lanza error si falla.
+function extraerTextoDeBlob(blob) {
+  const tempName = '_temp_extract_' + new Date().getTime()
   try {
-    // Crear como Google Doc → fuerza conversión / extracción de texto
-    const resource = {
-      name: tempName,
-      mimeType: 'application/vnd.google-apps.document'
-    }
+    // Crear como Google Doc → fuerza conversión / extracción de texto (OCR para imágenes)
+    const resource = { name: tempName, mimeType: 'application/vnd.google-apps.document' }
     const file = Drive.Files.create(resource, blob)
     const doc = DocumentApp.openById(file.id)
     const text = doc.getBody().getText()
@@ -354,7 +360,7 @@ function extraerTextoPdf(attachment) {
     try { if (file && file.id) Drive.Files.remove(file.id) } catch (e) { Logger.log('cleanup temp no crítico: ' + e) }
     return text
   } catch (err) {
-    Logger.log('Error extraerTextoPdf: ' + err.toString())
+    Logger.log('Error extraerTextoDeBlob: ' + err.toString())
     throw err
   }
 }
@@ -492,6 +498,115 @@ function enviarResumenMail(body) {
 // Escapa HTML para el mail resumen.
 function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// ── Acción 'auditar' (A-FEAT-AUDIT) ──────────────────────────────────────────────────────────
+// 🔒 Releva la carpeta de un período contra las facturas esperadas. SOLO LECTURA sobre los archivos
+// del usuario: NO borra, NO mueve, NO renombra. Lo único que crea: los temporales de OCR (borrados por
+// su propio id) y un archivo de log _AUDIT (createFile nuevo). Nunca toca carpetas.
+function auditarPeriodo(body) {
+  let carpeta = DriveApp.getFolderById(body.carpeta_drive_id)
+  const subs = Array.isArray(body.subcarpetas) ? body.subcarpetas : []
+  for (var i = 0; i < subs.length; i++) {
+    const n = String(subs[i] || '').trim()
+    if (!n) continue
+    const it = carpeta.getFoldersByName(n)
+    if (!it.hasNext()) {
+      return responseJson({
+        status: 'ok', existe: false,
+        observaciones: 'La carpeta del período no existe: ' + subs.join('/'),
+        matched: [], huerfanos: [],
+        sin_pdf: (body.facturas || []).map(aSinPdf)
+      })
+    }
+    carpeta = it.next()
+  }
+
+  const facturas = Array.isArray(body.facturas) ? body.facturas : []
+  const matched = []     // {factura_id, drive_url, archivo}
+  const huerfanos = []   // {archivo, url}  (PDF sin factura)
+  const usados = {}
+
+  const files = carpeta.getFiles()
+  while (files.hasNext()) {
+    const file = files.next()
+    const nombre = file.getName()
+    if (/^_AUDIT_/i.test(nombre)) continue  // ignorar logs de audit previos
+    let texto = ''
+    try { texto = extraerTextoDeBlob(file.getBlob()) } catch (e) { texto = '' }
+    const textoNum = texto.replace(/\D/g, '')
+    let match = null
+    for (var j = 0; j < facturas.length; j++) {
+      const f = facturas[j]
+      if (usados[f.factura_id]) continue
+      if (facturaCoincide(texto, textoNum, f)) { match = f; break }
+    }
+    if (match) {
+      usados[match.factura_id] = true
+      matched.push({ factura_id: match.factura_id, drive_url: file.getUrl(), archivo: nombre })
+    } else {
+      huerfanos.push({ archivo: nombre, url: file.getUrl() })
+    }
+  }
+
+  const sin_pdf = facturas.filter(function (f) { return !usados[f.factura_id] }).map(aSinPdf)
+
+  escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf)
+  enviarMailAudit(body, matched, huerfanos, sin_pdf)
+
+  return responseJson({ status: 'ok', existe: true, matched: matched, huerfanos: huerfanos, sin_pdf: sin_pdf })
+}
+
+function aSinPdf(f) {
+  return { factura_id: f.factura_id, denominacion: f.denominacion, numero: f.punto_venta + '-' + f.numero_desde, fc: f.fc }
+}
+
+// ¿El texto OCR de un archivo corresponde a esta factura? (CUIT + número presentes)
+function facturaCoincide(texto, textoNum, f) {
+  const cuit = String(f.cuit || '').replace(/\D/g, '')
+  if (cuit && textoNum.indexOf(cuit) < 0) return false
+  const pv = String(f.punto_venta).padStart(5, '0')
+  const nro = String(f.numero_desde).padStart(8, '0')
+  return texto.indexOf(pv + '-' + nro) >= 0
+      || texto.indexOf(pv + ' ' + nro) >= 0
+      || texto.indexOf(String(f.numero_desde)) >= 0
+}
+
+// Deja un log datado del audit EN la carpeta del período (createFile nuevo por corrida — nunca reemplaza).
+function escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf) {
+  try {
+    const tz = Session.getScriptTimeZone()
+    const sello = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm')
+    let txt = '=== AUDIT ' + sello + ' — ' + (body.empresa || '') + ' ' + (body.periodo || '') + ' ===\n'
+    txt += 'Con PDF (matched): ' + matched.length + '\n'
+    matched.forEach(function (m) { txt += '  OK  ' + m.archivo + '\n' })
+    txt += 'SIN PDF: ' + sin_pdf.length + '\n'
+    sin_pdf.forEach(function (s) { txt += '  !!  ' + s.numero + ' ' + (s.denominacion || '') + ' (fc=' + (s.fc || '') + ')\n' })
+    txt += 'Huerfanos (PDF sin factura): ' + huerfanos.length + '\n'
+    huerfanos.forEach(function (h) { txt += '  ??  ' + h.archivo + '\n' })
+    const nombreLog = '_AUDIT_' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd_HHmm') + '.txt'
+    carpeta.createFile(nombreLog, txt, 'text/plain')
+  } catch (e) { Logger.log('log audit no crítico: ' + e) }
+}
+
+// Manda el mail resumen del audit (al usuario activo del GAS / sanmanuel).
+function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
+  try {
+    const destinatario = body.destinatario || Session.getActiveUser().getEmail()
+    let html = '<h2>Auditoría de registro — ' + esc(body.empresa || '') + ' ' + esc(body.periodo || '') + '</h2>'
+    html += '<p>✅ Con PDF: <b>' + matched.length + '</b> · ⚠️ Sin PDF: <b>' + sin_pdf.length + '</b> · ❓ Huérfanos: <b>' + huerfanos.length + '</b></p>'
+    if (sin_pdf.length) {
+      html += '<h3>⚠️ Facturas sin PDF en la carpeta</h3><ul>'
+      sin_pdf.forEach(function (s) { html += '<li>' + esc(s.numero) + ' — ' + esc(s.denominacion || '') + ' (fc=' + esc(s.fc || '') + ')</li>' })
+      html += '</ul>'
+    }
+    if (huerfanos.length) {
+      html += '<h3>❓ PDFs sin factura (huérfanos)</h3><ul>'
+      huerfanos.forEach(function (h) { html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a></li>' })
+      html += '</ul>'
+    }
+    GmailApp.sendEmail(destinatario, 'Auditoría ' + (body.empresa || '') + ' ' + (body.periodo || ''), 'Ver versión HTML.', { htmlBody: html })
+  } catch (e) { Logger.log('mail audit no crítico: ' + e) }
 }
 
 /**
