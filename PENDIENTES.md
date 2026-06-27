@@ -450,7 +450,8 @@ Así los mails de **otros temas quedan sin tocar**.
 
 ### 🔎 A-FEAT-AUDIT — Auditoría del registro digital (✅ IMPLEMENTADO 2026-06-27, falta testear)
 **Commits:** `93c6752` (GAS acción `auditar` v0.7.0) · `aafb51c` (endpoint `/api/gas/auditar-periodo`) · `914afd5` (UI modal + botón "Auditar período"). **Activar:** re-pegar `Main.gs` → redeploy versión nueva (`/exec`=0.7.0) → probar en preview de `desarrollo`.
-**Falta (siguiente iteración):** botón **"Confirmar VER"** (decisión 3: mover de `_Revisar` + renombrar + link) — el audit hoy reporta incongruencias pero los cambios de estado son a mano. · Nuance **emisión vs contable**: el folder se calcula por período contable; si auto-archivaste por emisión y difieren, puede dar "sin PDF". · `maxDuration 60s`: períodos grandes (>~25 archivos OCR) pueden cortar — dosificar.
+**✅ Resuelto después:** **"Confirmar VER"** (commit `a2a63be`, GAS v0.8.0 — botón ✓ en grilla, mueve de `_Revisar` + link). · **Audit resumible por tandas** (commit `5607757`, GAS v0.9.0 — procesa ≤10 archivos/request, commit incremental, idempotente; el modal loopea hasta completo → ya NO corta por los 60s). · **Propuesta 2 mínima** (commit `b2e7b20` — avisa proveedor sin mail en el resultado; el alta se hace en Config PDFs).
+**Falta (menor):** nuance **emisión vs contable** del folder (si auto-archivás por emisión y el período contable difiere, puede dar "sin PDF" — confirmar cómo organiza el usuario las carpetas).
 
 
 **Problema:** períodos viejos tienen facturas en estado "Sí" pero **sin link** (PDFs cargados a mano), y no hay garantía de que el archivo digital esté completo/ordenado.
