@@ -448,7 +448,11 @@ Así los mails de **otros temas quedan sin tocar**.
 1. ✅ **IMPLEMENTADO (v0.3.0, commit `77fdf5b`, falta testear)** — Adjuntos no-PDF (foto de WhatsApp): búsqueda `has:attachment` (PDF + imágenes), OCR de imágenes vía Google Doc (valida CUIT/número como un PDF), y **soft-match**: si nada valida pero el asunto nombra al proveedor (palabra ≥4 letras) → `revisar` + archiva en `_Revisar`. Falta: re-pegar Main.gs + redeploy versión nueva (scopes ya OK) + probar el caso Luminatus.
 2. **Proveedor sin mail → carga orgánica (Propuesta 2, PENDIENTE).** Al buscar una FC cuyo proveedor no tiene mail: **avisar** ("Proveedor X sin mail"), **mostrar remitentes vistos en el período** (el GAS los devuelve como candidatos), **pedir + guardar** el mail elegido en `proveedores` (email + `gas_habilitado`). Se completa el padrón a medida que se busca, sin cargar todo de antemano. Conecta con el pendiente "carga orgánica" en [[proveedores-pendientes-post-implementaci-n]].
 
-### 🔎 A-FEAT-AUDIT — Auditoría del registro digital (diseño acordado 2026-06-27, A CODEAR)
+### 🔎 A-FEAT-AUDIT — Auditoría del registro digital (✅ IMPLEMENTADO 2026-06-27, falta testear)
+**Commits:** `93c6752` (GAS acción `auditar` v0.7.0) · `aafb51c` (endpoint `/api/gas/auditar-periodo`) · `914afd5` (UI modal + botón "Auditar período"). **Activar:** re-pegar `Main.gs` → redeploy versión nueva (`/exec`=0.7.0) → probar en preview de `desarrollo`.
+**Falta (siguiente iteración):** botón **"Confirmar VER"** (decisión 3: mover de `_Revisar` + renombrar + link) — el audit hoy reporta incongruencias pero los cambios de estado son a mano. · Nuance **emisión vs contable**: el folder se calcula por período contable; si auto-archivaste por emisión y difieren, puede dar "sin PDF". · `maxDuration 60s`: períodos grandes (>~25 archivos OCR) pueden cortar — dosificar.
+
+
 **Problema:** períodos viejos tienen facturas en estado "Sí" pero **sin link** (PDFs cargados a mano), y no hay garantía de que el archivo digital esté completo/ordenado.
 
 **Qué hace:** input = **empresa + período contable** (`año_contable`+`mes_contable`). Va a `<empresa>/<campaña>/<aa-mm>/` en Drive, **OCR-ea cada PDF** (reusa `extraerTextoPdf`), extrae CUIT+número, y cruza contra las facturas del período:
