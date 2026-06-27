@@ -34,6 +34,7 @@ import { ModalReglasImport } from "@/components/modal-reglas-import"
 import { NotificacionProgresoLote } from "@/components/gas-pdf/notificacion-progreso-lote"
 import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
+import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -575,6 +576,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [buscandoPdfs, setBuscandoPdfs] = useState(false)
   const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
   const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
+  const [auditarPeriodoOpen, setAuditarPeriodoOpen] = useState(false)
   // Modal de búsqueda de PDFs con selección (individual / todo-nada / rango fechas) + cancelar
   const [modalBuscarPdf, setModalBuscarPdf] = useState(false)
   const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
@@ -6212,6 +6214,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   <Settings2 className="mr-2 h-4 w-4" />
                   Config PDFs
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setAuditarPeriodoOpen(true)}
+                  title="Auditar el registro digital de un período contable (agrega links + marca incongruencias)"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Auditar período
+                </Button>
               </>
             )}
 
@@ -11651,6 +11661,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         open={modalConfigProveedorPdf.open}
         onClose={() => setModalConfigProveedorPdf({ open: false })}
         cuitInicial={modalConfigProveedorPdf.cuit}
+      />
+
+      {/* Modal auditar registro digital de un período */}
+      <ModalAuditarPeriodo
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        open={auditarPeriodoOpen}
+        onClose={() => setAuditarPeriodoOpen(false)}
       />
 
       {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
