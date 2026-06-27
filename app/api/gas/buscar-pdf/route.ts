@@ -154,20 +154,29 @@ export async function POST(request: Request) {
         observaciones: 'Proveedor marcado como Portal — no se busca automáticamente'
       } as ApiBuscarPdfOutput)
     }
-    if (!proveedor.gas_habilitado || !proveedor.email_facturacion) {
-      // Sin config para GAS
+    // Recolectores (catch-all): Jose/Andrés que reenvían FC. Se buscan AUNQUE el proveedor no esté
+    // configurado — por eso se consultan acá, antes del gate. La app los pasa al GAS (no hardcode).
+    const { data: recolectoresData } = await supabase
+      .from('proveedores').select('email_facturacion').contains('tags', ['recolector'])
+    const mailsRecolectores = (recolectoresData || [])
+      .map((r) => r.email_facturacion as string | null)
+      .filter((e): e is string => !!e && e !== proveedor.email_facturacion)
+    const puedeProveedor = !!(proveedor.gas_habilitado && proveedor.email_facturacion)
+
+    if (!puedeProveedor && mailsRecolectores.length === 0) {
+      // Ni el proveedor está configurado, ni hay recolectores → no hay dónde buscar
       await supabase.schema(schema).from('comprobantes_arca')
         .update({
           fc: 'Buscar',
           pdf_estado: 'pendiente',
-          pdf_observaciones: 'Proveedor sin gas_habilitado o sin email_facturacion',
+          pdf_observaciones: 'Proveedor sin gas_habilitado/email y no hay recolectores',
           pdf_ultimo_intento: new Date().toISOString(),
         })
         .eq('id', factura_id)
       await logBusqueda(supabase, {
         factura_id, schema, lote_id,
         resultado: 'pendiente',
-        observaciones: 'Proveedor sin config GAS (gas_habilitado=false o sin email)',
+        observaciones: 'Sin fuente de búsqueda (proveedor sin config y sin recolectores)',
         tiempo_ms: Date.now() - tStart,
         cuit_emisor: factura.cuit,
         numero_comprobante: `${factura.punto_venta}-${factura.numero_desde}`,
@@ -189,16 +198,6 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
-    // Mails recolectores (Jose/Andrés): proveedores con tag 'recolector' que reenvían FC desde el cel.
-    // La app los consulta y se los pasa al GAS — nunca hardcodeados ni el GAS consultando la BD.
-    const { data: recolectoresData } = await supabase
-      .from('proveedores')
-      .select('email_facturacion')
-      .contains('tags', ['recolector'])
-    const mailsRecolectores = (recolectoresData || [])
-      .map((r) => r.email_facturacion as string | null)
-      .filter((e): e is string => !!e && e !== proveedor.email_facturacion)
-
     const gasRequest: GasBuscarRequest = {
       _token: token,
       factura_id,
@@ -209,7 +208,7 @@ export async function POST(request: Request) {
       fecha_emision: factura.fecha_emision,
       imp_total: Number(factura.imp_total),
       denominacion_emisor: factura.denominacion_emisor || proveedor.razon_social || '',
-      email_proveedor: proveedor.email_facturacion,
+      email_proveedor: puedeProveedor ? proveedor.email_facturacion : '',  // si no, igual corre el catch-all por recolectores
       patron_asunto: proveedor.patron_asunto || '',
       dias_busqueda: proveedor.dias_busqueda || 30,   // default 30 días (configurable por proveedor; UI batch → pendiente)
       carpeta_drive_id: carpetaId,
