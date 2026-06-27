@@ -440,7 +440,9 @@ Así los mails de **otros temas quedan sin tocar**.
 
 ⚠️ **Para activar (usuario):** re-pegar `Main.gs` + `appsscript.json` en el GAS → redeploy **versión nueva** → **re-autorizar** (nuevos permisos Gmail) → probar en preview de `desarrollo` (env vars cubren Preview).
 
-**Pendiente todavía:** UI de fecha por lote · **Andrés** (su asunto auto + tag) · **A-BUG-10** (`'No'` se busca igual — decisión) · **A-FEAT-05** (re-encolar a `'Buscar'` por UI) · auto-disparo post-import (gated OFF).
+**Pendiente todavía:** UI de fecha por lote · **A-BUG-10** (`'No'` se busca igual — decisión) · **A-FEAT-05** (re-encolar a `'Buscar'` por UI) · auto-disparo post-import (gated OFF).
+
+**Configurado 2026-06-27:** asunto **por-recolector** (`proveedores.patron_asunto`): Jose "Documento de Jose", **Andrés** (`mailandres.12`, cuit 20287492546) "FC" (+ tag recolector). Falta solo que Andrés opere reenviando con "FC" en el asunto. · **PAM Importar-desde-ARCA habilitado** (commit `d438a56`) — requiere env `ARCA_CUIT_EMPRESA_PAM=20044390222` en Vercel.
 
 **💡 Mejoras detectadas en testing (2026-06-27):**
 1. ✅ **IMPLEMENTADO (v0.3.0, commit `77fdf5b`, falta testear)** — Adjuntos no-PDF (foto de WhatsApp): búsqueda `has:attachment` (PDF + imágenes), OCR de imágenes vía Google Doc (valida CUIT/número como un PDF), y **soft-match**: si nada valida pero el asunto nombra al proveedor (palabra ≥4 letras) → `revisar` + archiva en `_Revisar`. Falta: re-pegar Main.gs + redeploy versión nueva (scopes ya OK) + probar el caso Luminatus.
