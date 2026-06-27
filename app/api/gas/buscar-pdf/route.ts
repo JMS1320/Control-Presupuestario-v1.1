@@ -242,6 +242,13 @@ export async function POST(request: Request) {
     const { fc: fcNuevo, pdf_estado } = gasStatusToFc(gasResp.status)
     const ahora = new Date().toISOString()
 
+    // Propuesta 2 (aviso mínimo): proveedor sin mail propio y no se encontró → avisar que solo se
+    // buscó por reenvíos y que puede cargar el mail en "Config PDFs" para búsqueda directa.
+    const avisoSinMail = (!puedeProveedor && gasResp.status === 'no_encontrada')
+      ? ' ⚠️ Proveedor sin mail propio: solo se buscó por reenvíos. Cargá su mail en "Config PDFs" para búsqueda directa.'
+      : ''
+    const observacionesFinal = ((gasResp.observaciones ?? '') + avisoSinMail) || null
+
     await supabase.schema(schema).from('comprobantes_arca').update({
       fc: fcNuevo,
       // El link se guarda en la factura SOLO si está confirmada (match exacto 'ok'). Para 'revisar'
@@ -249,7 +256,7 @@ export async function POST(request: Request) {
       pdf_drive_url: gasResp.status === 'ok' ? (gasResp.drive_url ?? null) : null,
       pdf_estado,
       pdf_ultimo_intento: ahora,
-      pdf_observaciones: gasResp.observaciones ?? null,
+      pdf_observaciones: observacionesFinal,
     }).eq('id', factura_id)
 
     // Update también pdf_ultimo_intento en proveedores
@@ -261,7 +268,7 @@ export async function POST(request: Request) {
       factura_id, schema, lote_id,
       resultado: gasResp.status === 'ok' ? 'descargado' : gasResp.status === 'revisar' ? 'revisar' : gasResp.status === 'no_encontrada' ? 'no_encontrado' : 'error',
       drive_url: gasResp.drive_url,
-      observaciones: gasResp.observaciones,
+      observaciones: observacionesFinal ?? undefined,
       tiempo_ms: gasResp.tiempo_ms ?? Date.now() - tStart,
       cuit_emisor: factura.cuit,
       numero_comprobante: `${factura.punto_venta}-${factura.numero_desde}`,
@@ -275,7 +282,7 @@ export async function POST(request: Request) {
       resultado_gas: gasResp.status,
       fc_nuevo: fcNuevo,
       drive_url: gasResp.drive_url,
-      observaciones: gasResp.observaciones,
+      observaciones: observacionesFinal ?? undefined,
       // Para el mail resumen del lote:
       asunto: gasResp.asunto,
       remitente: gasResp.remitente,
