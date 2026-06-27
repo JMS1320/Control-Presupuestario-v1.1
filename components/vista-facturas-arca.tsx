@@ -577,6 +577,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
   const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
   const [auditarPeriodoOpen, setAuditarPeriodoOpen] = useState(false)
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   // Modal de búsqueda de PDFs con selección (individual / todo-nada / rango fechas) + cancelar
   const [modalBuscarPdf, setModalBuscarPdf] = useState(false)
   const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
@@ -1305,6 +1306,26 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }
 
+  // Confirmar una factura en VER: el candidato en _Revisar ES esta factura → mueve + marca Sí + link.
+  const confirmarVer = async (factura: FacturaArca) => {
+    if (!confirm(`¿Confirmás que el PDF encontrado es la factura ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nSe mueve de _Revisar a la carpeta del mes y queda como "Sí".`)) return
+    setConfirmandoId(factura.id)
+    try {
+      const r = await fetch('/api/gas/confirmar-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factura_id: factura.id, empresa }),
+      })
+      const data = await r.json()
+      if (!data.ok) { alert('No se pudo confirmar: ' + (data.error || '')); return }
+      setFacturas(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
+      setFacturasOriginales(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
+    } catch (e) {
+      alert('Error confirmando: ' + (e as Error).message)
+    } finally {
+      setConfirmandoId(null)
+    }
+  }
+
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
@@ -1342,6 +1363,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             >
               <Paperclip className="h-3.5 w-3.5" />
             </a>
+          )}
+          {v === 'VER' && (
+            <button
+              type="button"
+              title="Confirmar: el PDF encontrado ES esta factura → mover de _Revisar a la carpeta del mes + marcar Sí"
+              onClick={(e) => { e.stopPropagation(); confirmarVer(factura) }}
+              disabled={confirmandoId === factura.id}
+              className="text-green-600 hover:text-green-800 disabled:opacity-40 text-xs font-bold leading-none"
+            >
+              {confirmandoId === factura.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '✓'}
+            </button>
           )}
         </div>
       )

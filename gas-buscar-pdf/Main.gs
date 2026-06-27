@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.7.0'  // 0.7.0 = acción 'auditar' (releva carpeta del período vs facturas) | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + resumen
+const VERSION = '0.8.0'  // 0.8.0 = acción 'confirmar' (mueve de _Revisar + renombra) | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all + resumen
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -30,8 +30,8 @@ function doGet(e) {
   return responseJson({
     status: 'ok',
     version: VERSION,
-    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.7.0 (acción auditar).'
+    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.8.0 (acción confirmar).'
   })
 }
 
@@ -66,6 +66,11 @@ function doPost(e) {
     // Acción 'auditar': releva la carpeta de un período contra las facturas esperadas y sale.
     if (body.accion === 'auditar') {
       return auditarPeriodo(body)
+    }
+
+    // Acción 'confirmar': mueve un PDF de _Revisar a la carpeta del mes + lo renombra al estándar.
+    if (body.accion === 'confirmar') {
+      return confirmarFactura(body)
     }
 
     const required = ['factura_id', 'cuit_emisor', 'punto_venta', 'numero_desde', 'tipo_comprobante_desc', 'fecha_emision', 'imp_total', 'denominacion_emisor', 'email_proveedor', 'patron_asunto', 'dias_busqueda', 'carpeta_drive_id']
@@ -434,6 +439,39 @@ function archivarEnDrive(cand, body, esRevisar) {
 function findOrCreateFolder(parent, name) {
   const it = parent.getFoldersByName(name)
   return it.hasNext() ? it.next() : parent.createFolder(name)
+}
+
+// Acción 'confirmar': el usuario confirma que el PDF en _Revisar ES esta factura.
+// 🔒 Mueve y renombra un ARCHIVO puntual por su id (el id no cambia → el link sigue válido).
+// NUNCA toca/borra/reemplaza carpetas; el destino se obtiene con find-or-create.
+function confirmarFactura(body) {
+  const fileId = extraerFileId(body.file_url || body.file_id)
+  if (!fileId) return responseJson({ status: 'error', observaciones: 'Falta file_url/file_id del candidato' }, 400)
+
+  let file
+  try { file = DriveApp.getFileById(fileId) }
+  catch (e) { return responseJson({ status: 'error', observaciones: 'No se encontró el archivo: ' + e }, 404) }
+
+  // Carpeta destino = empresa/subcarpetas (SIN _Revisar) — find-or-create
+  let destino = DriveApp.getFolderById(body.carpeta_drive_id)
+  if (Array.isArray(body.subcarpetas)) {
+    body.subcarpetas.forEach(function (n) {
+      if (n && String(n).trim()) destino = findOrCreateFolder(destino, String(n).trim())
+    })
+  }
+
+  // Renombrar al estándar (ya confirmada) + mover el archivo a la carpeta del mes
+  try { file.setName(construirNombreArchivo(body, extensionDe(file))) } catch (e) { Logger.log('rename no crítico: ' + e) }
+  file.moveTo(destino)
+
+  return responseJson({ status: 'ok', drive_url: file.getUrl() })
+}
+
+// Extrae el id de Drive de una URL (o lo devuelve si ya es un id).
+function extraerFileId(s) {
+  if (!s) return null
+  const m = String(s).match(/[-\w]{25,}/)
+  return m ? m[0] : null
 }
 
 // Match exacto: aplica la etiqueta al hilo (la crea si no existe) y marca el mensaje como leído.
