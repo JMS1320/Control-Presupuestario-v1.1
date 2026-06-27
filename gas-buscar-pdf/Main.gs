@@ -308,19 +308,32 @@ function extraerMontosPdf(texto) {
  * Si esRevisar=true, archiva en subcarpeta "_Revisar".
  */
 function archivarEnDrive(cand, body, esRevisar) {
-  const carpetaBase = DriveApp.getFolderById(body.carpeta_drive_id)
-  let carpetaDestino = carpetaBase
+  let carpetaDestino = DriveApp.getFolderById(body.carpeta_drive_id)
+
+  // Navegar/crear la ruta de subcarpetas (campaña / mes / [ventas]) que manda la app.
+  // Si la app no la manda (body.subcarpetas vacío) → guarda en la carpeta de la empresa (como antes).
+  if (Array.isArray(body.subcarpetas)) {
+    body.subcarpetas.forEach(function (nombre) {
+      if (nombre && String(nombre).trim()) {
+        carpetaDestino = findOrCreateFolder(carpetaDestino, String(nombre).trim())
+      }
+    })
+  }
 
   if (esRevisar) {
-    // Buscar o crear subcarpeta "_Revisar"
-    const it = carpetaBase.getFoldersByName('_Revisar')
-    carpetaDestino = it.hasNext() ? it.next() : carpetaBase.createFolder('_Revisar')
+    carpetaDestino = findOrCreateFolder(carpetaDestino, '_Revisar')
   }
 
   const nombre = construirNombreArchivo(body)
   const blob = cand.attachment.copyBlob().setName(nombre).setContentType('application/pdf')
   const file = carpetaDestino.createFile(blob)
   return file.getUrl()
+}
+
+// Busca una subcarpeta por nombre dentro de `parent`; si no existe la crea. Devuelve la carpeta.
+function findOrCreateFolder(parent, name) {
+  const it = parent.getFoldersByName(name)
+  return it.hasNext() ? it.next() : parent.createFolder(name)
 }
 
 /**

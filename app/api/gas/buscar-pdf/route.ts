@@ -42,6 +42,21 @@ function carpetaDriveDefault(empresa: Empresa): string | undefined {
   }
 }
 
+// Ruta de subcarpetas (bajo la carpeta de la empresa) donde el GAS archiva la FC.
+// MSA: campaña agrícola AAAA-AAAA (corte 1/7–30/6). PAM/MA: año calendario AAAA.
+// Dentro: subcarpeta del mes "aa-mm". Estas FC son de COMPRAS → van en el mes directo.
+// (Para ventas, a futuro, se agregaría 'ventas' como último nivel.)
+function computarSubcarpetas(empresa: Empresa, fechaEmision: string): string[] {
+  const f = new Date(`${fechaEmision}T12:00:00`) // mediodía evita corrimiento por timezone
+  const anio = f.getFullYear()
+  const mes = f.getMonth() + 1 // 1-12
+  const campania = empresa === 'MSA'
+    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
+    : String(anio)
+  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
+  return [campania, aaMm]
+}
+
 function empresaToSchema(e: Empresa): SchemaEmpresa {
   return e.toLowerCase() as SchemaEmpresa
 }
@@ -188,6 +203,7 @@ export async function POST(request: Request) {
       patron_asunto: proveedor.patron_asunto || '',
       dias_busqueda: proveedor.dias_busqueda || 7,
       carpeta_drive_id: carpetaId,
+      subcarpetas: computarSubcarpetas(empresa, factura.fecha_emision),
     }
 
     let gasResp: GasBuscarResponse

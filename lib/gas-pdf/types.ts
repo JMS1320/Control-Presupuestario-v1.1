@@ -45,7 +45,8 @@ export interface GasBuscarRequest {
   email_proveedor: string
   patron_asunto: string              // ej. "Factura" — puede ser ''
   dias_busqueda: number              // ventana en días (default 7)
-  carpeta_drive_id: string           // ID Drive folder donde archivar
+  carpeta_drive_id: string           // ID Drive folder (de la empresa) donde archivar
+  subcarpetas?: string[]             // ruta de subcarpetas a crear/usar bajo la anterior, ej. ["2025-2026","26-06"]
 }
 
 /** Respuesta del GAS Web App */
