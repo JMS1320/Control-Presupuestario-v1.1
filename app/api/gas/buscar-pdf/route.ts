@@ -274,6 +274,7 @@ export async function POST(request: Request) {
       numero_comprobante: `${factura.punto_venta}-${factura.numero_desde}`,
       monto_factura: Number(factura.imp_total),
       monto_pdf: gasResp.monto_pdf ?? null,
+      gmail_message_id: gasResp.gmail_message_id ?? null,  // candidato 'revisar' → para etiquetar el mail al Confirmar
     })
 
     const out: ApiBuscarPdfOutput = {
@@ -314,6 +315,7 @@ async function logBusqueda(supabase: any, datos: {
   numero_comprobante?: string
   monto_factura?: number
   monto_pdf?: number | null
+  gmail_message_id?: string | null
 }) {
   await supabase.from('arca_pdf_busqueda_log').insert({
     factura_id: datos.factura_id,
@@ -327,5 +329,6 @@ async function logBusqueda(supabase: any, datos: {
     numero_comprobante: datos.numero_comprobante ?? null,
     monto_factura: datos.monto_factura ?? null,
     monto_pdf: datos.monto_pdf ?? null,
+    gmail_message_id: datos.gmail_message_id ?? null,
   })
 }

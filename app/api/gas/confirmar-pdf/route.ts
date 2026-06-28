@@ -60,10 +60,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Factura no encontrada' }, { status: 404 })
     }
 
-    // Candidato en el log (último con drive_url)
+    // Candidato en el log (último con drive_url). gmail_message_id permite etiquetar el mail al confirmar.
     const { data: log } = await supabaseAdmin
       .from('arca_pdf_busqueda_log')
-      .select('drive_url')
+      .select('drive_url, gmail_message_id')
       .eq('factura_id', factura_id)
       .not('drive_url', 'is', null)
       .order('fecha_hora', { ascending: false })
@@ -73,19 +73,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'No hay un PDF candidato en el log para confirmar' }, { status: 412 })
     }
 
-    // GAS: mover de _Revisar a la carpeta del mes + renombrar
+    // GAS: mover de _Revisar a la carpeta del mes + renombrar + (si hay message id) etiquetar el mail
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         _token: token, accion: 'confirmar', file_url: log.drive_url,
+        gmail_message_id: log.gmail_message_id ?? undefined,
         carpeta_drive_id: carpeta, subcarpetas: computarSubcarpetas(empresa, f.fecha_emision),
         cuit_emisor: f.cuit, punto_venta: f.punto_venta, numero_desde: f.numero_desde,
         tipo_comprobante_desc: f.tipo_comprobante_desc || 'Factura A',
         fecha_emision: f.fecha_emision, denominacion_emisor: f.denominacion_emisor || '',
       }),
     })
-    const gas = (await r.json()) as { status?: string; drive_url?: string; observaciones?: string }
+    const gas = (await r.json()) as { status?: string; drive_url?: string; observaciones?: string; mail_etiquetado?: boolean }
     if (gas.status !== 'ok') {
       return NextResponse.json({ ok: false, error: gas.observaciones || 'El GAS no pudo mover el archivo' }, { status: 502 })
     }
@@ -100,7 +101,7 @@ export async function POST(request: Request) {
       })
       .eq('id', factura_id)
 
-    return NextResponse.json({ ok: true, drive_url: gas.drive_url })
+    return NextResponse.json({ ok: true, drive_url: gas.drive_url, mail_etiquetado: !!gas.mail_etiquetado })
   } catch (err) {
     return NextResponse.json({ ok: false, error: (err as Error).message || 'Error confirmando' }, { status: 502 })
   }

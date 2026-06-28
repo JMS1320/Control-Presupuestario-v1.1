@@ -61,6 +61,7 @@ export interface GasBuscarResponse {
   asunto?: string        // del mail matcheado — para el resumen
   remitente?: string     // del mail matcheado
   cuerpo?: string        // cuerpo (recortado) del mail matcheado
+  gmail_message_id?: string  // id del mail candidato (revisar) → para etiquetar/marcar leído al Confirmar
 }
 
 /** Input al endpoint /api/gas/buscar-pdf desde el cliente Next.js */

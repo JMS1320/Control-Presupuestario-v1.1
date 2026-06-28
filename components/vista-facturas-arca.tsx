@@ -1319,6 +1319,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (!data.ok) { alert('No se pudo confirmar: ' + (data.error || '')); return }
       setFacturas(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
       setFacturasOriginales(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
+      toast.success(data.mail_etiquetado
+        ? 'Confirmada: archivo movido + mail etiquetado y marcado leído.'
+        : 'Confirmada: archivo movido. (El mail no se pudo etiquetar — sin id o ya no existe.)')
     } catch (e) {
       alert('Error confirmando: ' + (e as Error).message)
     } finally {

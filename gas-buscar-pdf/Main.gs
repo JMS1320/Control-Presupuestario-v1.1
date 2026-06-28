@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.6'  // 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.7'  // 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.4 (mail con sección debug).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Confirmar VER etiqueta + marca leído el mail.'
   })
 }
 
@@ -116,6 +116,7 @@ function doPost(e) {
         confianza: 'media',
         observaciones: `Múltiples PDFs candidatos (${verificados.exactos.length}). Archivados en /Revisar.`,
         asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
+        gmail_message_id: cand.mensaje.getId(),
         tiempo_ms: Date.now() - startTime
       })
     }
@@ -131,6 +132,7 @@ function doPost(e) {
         observaciones: cand._observaciones || 'Match CUIT+nro pero monto difiere',
         monto_pdf: cand._montoExtraido || null,
         asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
+        gmail_message_id: cand.mensaje.getId(),
         tiempo_ms: Date.now() - startTime
       })
     }
@@ -148,6 +150,7 @@ function doPost(e) {
         confianza: 'baja',
         observaciones: '⚠️ Posible factura: el asunto nombra al proveedor pero no se pudo validar el adjunto (foto/PDF ilegible). Archivado en _Revisar — chequear a mano.',
         asunto: sospechoso.asunto, remitente: sospechoso.remitente, cuerpo: cuerpoMail(sospechoso.mensaje),
+        gmail_message_id: sospechoso.mensaje.getId(),
         tiempo_ms: Date.now() - startTime
       })
     }
@@ -490,7 +493,18 @@ function confirmarFactura(body) {
   try { file.setName(construirNombreArchivo(body, extensionDe(file))) } catch (e) { Logger.log('rename no crítico: ' + e) }
   file.moveTo(destino)
 
-  return responseJson({ status: 'ok', drive_url: file.getUrl() })
+  // Al confirmar, replicar lo del match exacto sobre el MAIL: etiquetar 'Facturas Descargadas'
+  // + marcar leído. Requiere el gmail_message_id que la búsqueda guardó en el log. Defensivo:
+  // si no llega el id o el mail ya no existe, no rompe la confirmación (el archivo ya se movió).
+  let mailEtiquetado = false
+  if (body.gmail_message_id) {
+    try {
+      const msg = GmailApp.getMessageById(body.gmail_message_id)
+      if (msg) { etiquetarYLeer(msg, 'Facturas Descargadas'); mailEtiquetado = true }
+    } catch (e) { Logger.log('etiquetar al confirmar no crítico: ' + e) }
+  }
+
+  return responseJson({ status: 'ok', drive_url: file.getUrl(), mail_etiquetado: mailEtiquetado })
 }
 
 // Extrae el id de Drive de una URL (o lo devuelve si ya es un id).
