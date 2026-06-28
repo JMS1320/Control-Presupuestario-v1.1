@@ -431,8 +431,11 @@ Así los mails de **otros temas quedan sin tocar**.
 
 ### 🔧 GAS PDF — estado del paquete
 
-#### ⭐ ESTADO ACTUAL — 2026-06-28, GAS **v0.9.4** (todo en `desarrollo`, en testing)
+#### ⭐ ESTADO ACTUAL — 2026-06-28 (tarde), GAS **v0.9.8** (todo en `desarrollo`, en testing)
 Handoff de testing en memoria [[gas-pdf-testing-handoff]]. Progresión de versiones (cada una = un commit):
+- **0.9.8** — adjunto del **mail OFICIAL del proveedor** que no valida (OCR pobre, ej. facturas de servicios) va a **`_Revisar`** en vez de `no_encontrada` (señal fuerte por remitente; elige PDF más grande para no archivar un logo) + motivo de descarte detallado en el debug. *(Caso Coopser.)*
+- **0.9.7** — **Confirmar VER** también etiqueta `Facturas Descargadas` + marca leído el mail (vía `gmail_message_id` persistido en `arca_pdf_busqueda_log` durante la búsqueda).
+- **0.9.6** — `resolverDestinatario` con cascada (body → Script Property `RESUMEN_DESTINATARIO` → getEffectiveUser → getActiveUser): **arregla el "no recipient"** del mail resumen (Access:Anyone hacía `getActiveUser`="").
 - **0.9.4** — mail resumen con **sección DEBUG por factura** (queries Gmail + threads + resultado), para diagnosticar desde el mail.
 - **0.9.3** — eficiencia: prioriza candidatos que **nombran al proveedor** + **corta al 1er match** exacto.
 - **0.9.2** — **FIX fechas reenvíos**: ventana del catch-all hasta **HOY** (antes emisión+30 → un reenvío tardío quedaba afuera = causa de "no encontró Luminatus").
@@ -442,12 +445,19 @@ Handoff de testing en memoria [[gas-pdf-testing-handoff]]. Progresión de versio
 **Testing en curso:** caso testigo **Luminatus** (MSA, emisión 18/05, reenviado 28/06 como foto). Esperando que el usuario corra y pegue el **mail de debug** (llega a `sanmanuel.sp`) para interpretar. Pendiente menor: **reglas de nombres clave** como validación (no solo prioridad); audit nuance emisión-vs-contable; cargar mails de proveedores.
 
 #### 💬 Feedback de testing 2026-06-28 (CAPTURADO tal cual, a responder/resolver)
-1. **UX bloqueante**: el cartel de progreso **bloquea la actividad** mientras busca — debía ser **2do plano** (no bloqueante). Hoy "Buscar"→"Buscando", solo deja Cancelar y tapa todo.
-2. **No llegó el mail** (otra vez): la búsqueda terminó y no llegó resumen. Investigar (¿v0.9.4 desplegado? ¿`gmail.send` autorizado? ¿inbox `sanmanuel.sp`?).
-3. ✅ **Luminatus → `_Revisar` OK**: tras el fix de fechas (v0.9.2) la encontró y la archivó en `_Revisar` (soft-match). Aparece el **✓** para confirmar. *(Avance real.)*
-4. **Falta VER la foto/candidato**: no hay forma de **ver el adjunto** antes de confirmar (VER no guarda link en la factura). Agregar un "ver candidato" (el candidato está en el **log** + carpeta `_Revisar`).
-5. **Etiqueta/leído en VER**: el mail NO quedó etiquetado ni leído → **es por diseño** (solo el match EXACTO etiqueta+marca leído; `revisar` queda intacto para revisión). Confirmar con el usuario si está OK así.
-6. **Mejora — Confirmar VER debe hacer lo del match exacto**: al **confirmar** una VER, anclar: **marcar leído + etiquetar `Facturas Descargadas` + incluir el cuerpo en el reporte** (porque al confirmar, ES la factura). Hoy "Confirmar" solo mueve de `_Revisar` + link.
+1. ✅ **RESUELTO (commit `4a33b85`, app-side)**: UX no bloqueante — el modal Buscar se cierra al arrancar, la búsqueda corre en 2do plano, el avance va en la notificación flotante (con su propio Cancelar). + fix: la notificación reaparece en la 2da búsqueda.
+2. ✅ **RESUELTO (commits `4a33b85` + GAS v0.9.6 `46d75c5`)**: el mail no llegaba por dos motivos encadenados → (a) el envío fallaba en silencio (`catch {}` vacío) ahora reporta {enviado,error}; (b) causa raíz: `getActiveUser`="" con Access:Anyone → `resolverDestinatario` + Script Property `RESUMEN_DESTINATARIO`. **Mail resumen llega OK.**
+3. ✅ **Luminatus → `_Revisar` OK** (soft-match v0.9.2). Confirmada y movida con link (testeado). *(Avance real.)*
+4. ⏳ **Falta VER la foto/candidato** antes de confirmar (VER no guarda link en la factura). Agregar un "ver candidato" (está en el **log** + carpeta `_Revisar`). *(El usuario lo dejó de lado por ahora.)*
+5. ⏳ **Etiqueta/leído en VER**: por diseño solo el match exacto etiquetaba; con v0.9.7 el **Confirmar** ya etiqueta. Punto cerrado vía #6.
+6. ✅ **RESUELTO (GAS v0.9.7 `3b421eb`)**: Confirmar VER ahora **marca leído + etiqueta `Facturas Descargadas`** (vía `gmail_message_id`). *(El "cuerpo al reporte" NO se hizo — no hay reporte por-confirmación; fuera de alcance.)* Requiere búsqueda NUEVA post-v0.9.7 (las viejas tienen el id NULL).
+
+**Extra implementado fuera de los 6:** columna **"Mail proveedor"** editable (ver/cargar el que falta + guardar) en el modal Buscar PDFs (commit `eb37feb`); si el proveedor no tenía mail, al guardarlo se habilita para búsqueda. Reusa `/api/gas/config-proveedor`.
+
+#### 🔮 Ideas futuras del buscador (2026-06-28, NO implementar aún — feedback del usuario)
+- **A-RISK-GAS-01 — Riesgo introducido por v0.9.8 (mes equivocado)**: la rama "adjunto del mail oficial del proveedor → `_Revisar`" puede archivar **otra factura del mismo proveedor pero de otro mes** si cae en la ventana y la correcta no validó. Hoy mitigado en parte (ventana emisión−2 a emisión+`dias_busqueda`, y elige PDF más grande). **Mejora**: usar el **período del asunto** (ej. "5/2026") y/o el cuerpo para confirmar que el candidato es del mes de la emisión antes de mandarlo a `_Revisar`. El usuario lo asume por ahora ("lo iremos resolviendo").
+- **B-FEAT-GAS-RIQUEZA — Matcher más rico (asunto + cuerpo + nombre de adjunto)**: hoy la validación es casi solo OCR del PDF (CUIT+nro+monto). Sumar como **señales ponderadas**: (1) **asunto** (período mm/aaaa, nombre corto/`nombre_fantasia` del proveedor, nº de factura), (2) **cuerpo del mail** (a veces trae CUIT/nº/monto en texto aunque el PDF sea ilegible), (3) **nombre del adjunto**. Decidir exacto/revisar/descartar y elegir entre varios candidatos combinando estas señales (no solo el OCR). Mejora el soft-match (caso "Servicio Eléctrico - Coopser" singular vs razón social plural).
+- **B-FEAT-GAS-TEMPLATES — Modelos de extracción por proveedor (para carga posterior)**: para proveedores recurrentes con **formato fijo**, un "modelo"/parser que sepa dónde está el **importe** (y otros campos) y lo **extraiga** para una carga posterior automática (no solo descargar el PDF, sino tomar los datos). Conecta con el subdiario/imputación. Feature grande, fase 2+.
 
 ---
 *(Lo de abajo es el estado de la primera tanda 2026-06-27 — sigue válido como base, las versiones posteriores lo extienden.)*
