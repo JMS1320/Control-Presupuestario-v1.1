@@ -6,7 +6,12 @@ informados por ARCA, y archiva el PDF en Drive.
 Vive **fuera** de la app Next.js — corre en tu cuenta Google porque necesita
 acceso a TU Gmail / TU Drive.
 
-## Versión actual: **v0.9.8** (verificable con un GET a la URL `/exec` → `{version}`)
+## Versión actual: **v0.9.9** (verificable con un GET a la URL `/exec` → `{version}`)
+
+> **v0.9.9 — IMPORTANTE para la auditoría**: la extracción de texto (OCR) ahora soporta el servicio
+> avanzado **Drive API v2 y v3**. Si la auditoría reportaba 0 matches con `OCR: 0 chars`, era porque
+> el código antiguo solo usaba v3. Asegurate de tener **"Drive API" habilitado** (Services del editor)
+> y re-autorizar si hace falta.
 
 Capacidades acumuladas (más allá del "buscar y archivar" original):
 - **Catch-all de reenvíos** (`recolectores`: Jose/Andrés reenvían FC con su asunto).
