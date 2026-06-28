@@ -6,12 +6,12 @@ informados por ARCA, y archiva el PDF en Drive.
 Vive **fuera** de la app Next.js — corre en tu cuenta Google porque necesita
 acceso a TU Gmail / TU Drive.
 
-## Versión actual: **v0.9.9** (verificable con un GET a la URL `/exec` → `{version}`)
+## Versión actual: **v0.9.10** (verificable con un GET a la URL `/exec` → `{version}`)
 
-> **v0.9.9 — IMPORTANTE para la auditoría**: la extracción de texto (OCR) ahora soporta el servicio
-> avanzado **Drive API v2 y v3**. Si la auditoría reportaba 0 matches con `OCR: 0 chars`, era porque
-> el código antiguo solo usaba v3. Asegurate de tener **"Drive API" habilitado** (Services del editor)
-> y re-autorizar si hace falta.
+> **v0.9.10 — FIX OCR definitivo**: la extracción de texto se hace **100% por la API REST de Drive**
+> (`UrlFetchApp` + token del script). **Ya NO requiere** habilitar el servicio avanzado "Drive API"
+> (que daba `ReferenceError: Drive is not defined` = causa real del `OCR: 0 chars`). No usa scopes
+> nuevos (alcanza con `drive` + `script.external_request`), así que **no hay que re-autorizar**.
 
 Capacidades acumuladas (más allá del "buscar y archivar" original):
 - **Catch-all de reenvíos** (`recolectores`: Jose/Andrés reenvían FC con su asunto).
@@ -80,10 +80,10 @@ Project Settings (engranaje) → Script Properties → **Add script property** (
   Access:Anyone `getActiveUser()` devuelve vacío). Es a prueba de scopes — el GAS lo
   usa antes de intentar `getEffectiveUser`.
 
-### 5. Habilitar Drive Advanced Service
+### 5. ~~Habilitar Drive Advanced Service~~ — YA NO HACE FALTA (desde v0.9.10)
 
-En el editor GAS → menú "Services" (lateral) → **+ Add a service** → seleccionar
-"Drive API" → Add. Esto habilita la API avanzada necesaria para `Drive.Files.create`.
+La extracción de texto/OCR ahora va por la **API REST de Drive** (`UrlFetchApp`), así que **no**
+necesitás agregar el servicio avanzado "Drive API" en Services. (Si lo tenías agregado, no molesta.)
 
 ### 6. Deploy como Web App
 

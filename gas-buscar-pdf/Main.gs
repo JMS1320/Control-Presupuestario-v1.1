@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.9'  // 0.9.9 = FIX extracción de texto robusta a Drive API v2/v3 (era la causa del 0 matches en auditoría) + patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.10'  // 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -416,39 +416,48 @@ function extraerTextoPdf(attachment) {
   return extraerTextoDeBlob(attachment.copyBlob())  // conserva el content-type real (PDF o imagen)
 }
 
-// Extrae texto de un blob (PDF o imagen) vía Google Doc temporal (OCR). Reusable por el audit
-// (que lee archivos ya en Drive). Lanza error si falla.
-// 🔧 ROBUSTO a la versión del servicio avanzado de Drive: v3 usa Drive.Files.create({name},blob);
-// v2 usa Drive.Files.insert({title},blob,{convert:true,ocr:true}). Si el GAS tiene habilitada la v2
-// (lo más común), llamar create() devolvía undefined → texto vacío → la auditoría daba 0 matches.
+// Extrae texto de un blob (PDF o imagen) convirtiéndolo a Google Doc (con OCR) y exportándolo a texto.
+// 🔧 100% vía API REST de Drive (UrlFetchApp + token del propio script). NO usa el servicio avanzado
+// "Drive" (que daba "ReferenceError: Drive is not defined" si no estaba habilitado = causa real del
+// OCR vacío) NI DocumentApp (evita el scope 'documents'). Solo scopes ya presentes: drive + external_request.
+// Pasos: 1) subir como Google Doc (convierte/OCR) · 2) exportar a text/plain · 3) borrar el temporal.
 function extraerTextoDeBlob(blob) {
-  const tempName = '_temp_extract_' + new Date().getTime()
-  let fileId = null
+  const token = ScriptApp.getOAuthToken()
+  const meta = { name: '_temp_extract_' + new Date().getTime(), mimeType: 'application/vnd.google-apps.document' }
+  const boundary = 'gasBoundary' + new Date().getTime()
+  // multipart/related: 1ra parte = metadata JSON · 2da parte = bytes del archivo
+  const payload = Utilities.newBlob(
+    '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta)
+    + '\r\n--' + boundary + '\r\nContent-Type: ' + (blob.getContentType() || 'application/octet-stream') + '\r\n\r\n'
+  ).getBytes().concat(blob.getBytes()).concat(Utilities.newBlob('\r\n--' + boundary + '--').getBytes())
+
+  const up = UrlFetchApp.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&ocrLanguage=es', {
+    method: 'post',
+    contentType: 'multipart/related; boundary=' + boundary,
+    payload: payload,
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true,
+  })
+  if (up.getResponseCode() < 200 || up.getResponseCode() >= 300) {
+    throw new Error('Drive upload HTTP ' + up.getResponseCode() + ': ' + up.getContentText().slice(0, 300))
+  }
+  const id = JSON.parse(up.getContentText()).id
+
   try {
-    if (Drive.Files && typeof Drive.Files.create === 'function') {
-      // v3
-      const f = Drive.Files.create({ name: tempName, mimeType: 'application/vnd.google-apps.document' }, blob, { ocrLanguage: 'es' })
-      fileId = f.id
-    } else if (Drive.Files && typeof Drive.Files.insert === 'function') {
-      // v2 (convierte el PDF/imagen a Doc + OCR en español)
-      const f = Drive.Files.insert({ title: tempName, mimeType: 'application/vnd.google-apps.document' }, blob, { convert: true, ocr: true, ocrLanguage: 'es' })
-      fileId = f.id
-    } else {
-      throw new Error('Servicio avanzado de Drive no disponible (ni Files.create ni Files.insert). Habilitá "Drive API" en Services del GAS.')
+    const ex = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '/export?mimeType=text/plain', {
+      method: 'get', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true,
+    })
+    if (ex.getResponseCode() < 200 || ex.getResponseCode() >= 300) {
+      throw new Error('Drive export HTTP ' + ex.getResponseCode() + ': ' + ex.getContentText().slice(0, 200))
     }
-    const text = DocumentApp.openById(fileId).getBody().getText()
-    return text
-  } catch (err) {
-    Logger.log('Error extraerTextoDeBlob: ' + err.toString())
-    throw err
+    return ex.getContentText()
   } finally {
-    // Cleanup — borra SOLO el temporal recién creado, por su propio ID. Nunca toca carpetas ni
-    // archivos del usuario. Defensivo: si fallara, no rompe el flujo (no es crítico).
+    // Cleanup — borra SOLO el Doc temporal recién creado, por su propio id. Nunca toca otros archivos
+    // ni carpetas. Defensivo: si fallara, no rompe el flujo.
     try {
-      if (fileId) {
-        if (Drive.Files && typeof Drive.Files.remove === 'function') Drive.Files.remove(fileId)
-        else if (Drive.Files && typeof Drive.Files.delete === 'function') Drive.Files.delete(fileId)
-      }
+      UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id, {
+        method: 'delete', headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true,
+      })
     } catch (e) { Logger.log('cleanup temp no crítico: ' + e) }
   }
 }
