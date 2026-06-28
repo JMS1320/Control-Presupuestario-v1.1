@@ -346,6 +346,50 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
+  // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
+  const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+
+  // Sugiere qué factura "falta" del período corresponde a un PDF huérfano, por NOMBRE de archivo
+  // (sin OCR): coincide palabras del proveedor + desempata por la fecha del nombre (MM-DD).
+  const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    const arch = norm(nombreArchivo)
+    const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+    const conScore = faltantes.map(f => {
+      const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
+      const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
+      return { f, hits }
+    }).filter(x => x.hits > 0)
+    if (conScore.length === 0) return []
+    const maxHits = Math.max(...conScore.map(x => x.hits))
+    let candidatos = conScore.filter(x => x.hits === maxHits).map(x => x.f)
+    if (candidatos.length > 1) {
+      const m = nombreArchivo.match(/^(\d{2})-(\d{2})/) // "MM-DD" al inicio del nombre
+      if (m) {
+        const porFecha = candidatos.filter(f => {
+          const fe = f.fecha_emision || '' // YYYY-MM-DD
+          return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
+        })
+        if (porFecha.length >= 1) candidatos = porFecha
+      }
+    }
+    return candidatos
+  }
+
+  // Vincula un PDF huérfano a la factura elegida (solo enlaza: setea pdf_drive_url; no toca el archivo).
+  const vincularHuerfano = async (factura: FacturaArca, h: { archivo: string; url: string }) => {
+    try {
+      const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+        .update({ pdf_drive_url: h.url, pdf_estado: 'descargado', pdf_observaciones: `Vinculado manualmente desde supervisión (archivo: ${h.archivo})` })
+        .eq('id', factura.id)
+      if (error) { toast.error('No se pudo vincular: ' + error.message); return }
+      setHuerfanosSupervision(prev => prev.filter(x => x.url !== h.url))
+      await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips
+      toast.success(`Vinculado: ${factura.denominacion_emisor} ${factura.punto_venta}-${factura.numero_desde}`)
+    } catch (e) {
+      toast.error('Error al vincular: ' + (e as Error).message)
+    }
+  }
   
   // Estados para flujo SICORE - Retenciones Ganancias
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -6292,15 +6336,44 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             </p>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-1 text-sm max-h-72 overflow-auto">
-              {huerfanosSupervision.map((h, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate">{h.archivo}</a>
-                  {typeof h.chars === 'number' && (
-                    <span className={`text-xs ${h.chars === 0 ? 'text-red-500' : 'text-gray-400'}`}>(OCR: {h.chars} chars)</span>
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
+              {huerfanosSupervision.map((h, i) => {
+                const candidatos = sugerirFacturasHuerfano(h.archivo)
+                const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id
+                const sel = candidatos.find(c => c.id === selId) || candidatos[0]
+                return (
+                  <li key={i} className="flex items-center gap-2 flex-wrap border-b pb-1.5">
+                    <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[280px]">{h.archivo}</a>
+                    {typeof h.chars === 'number' && (
+                      <span className={`text-xs ${h.chars === 0 ? 'text-red-500' : 'text-gray-400'}`}>(OCR: {h.chars})</span>
+                    )}
+                    {candidatos.length === 0 ? (
+                      <span className="text-xs text-gray-400 italic">sin sugerencia</span>
+                    ) : (
+                      <>
+                        <span className="text-xs text-gray-500">→ sugerida:</span>
+                        {candidatos.length === 1 ? (
+                          <span className="text-xs font-medium">{sel.denominacion_emisor} {sel.punto_venta}-{sel.numero_desde}</span>
+                        ) : (
+                          <select
+                            value={selId}
+                            onChange={e => setVinculoHuerfanoSel(prev => ({ ...prev, [h.url]: e.target.value }))}
+                            className="text-xs border rounded px-1 py-0.5 max-w-[260px]"
+                          >
+                            {candidatos.map(c => (
+                              <option key={c.id} value={c.id}>{c.denominacion_emisor} {c.punto_venta}-{c.numero_desde}</option>
+                            ))}
+                          </select>
+                        )}
+                        <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                          onClick={() => sel && vincularHuerfano(sel, h)}>
+                          Vincular
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </CardContent>
         </Card>
