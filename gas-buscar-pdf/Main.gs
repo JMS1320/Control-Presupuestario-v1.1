@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.4'  // 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.5'  // 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -522,7 +522,12 @@ function cuerpoMail(mensaje) {
 // Acción 'resumen': arma y envía UN mail con el resultado del lote, agrupado por empresa
 // (descargadas + a revisar, con asunto/remitente/cuerpo de cada uno). Lo dispara la app al cerrar el lote.
 function enviarResumenMail(body) {
-  const destinatario = body.destinatario || Session.getActiveUser().getEmail()
+  // getEffectiveUser = dueño del script (corre como USER_DEPLOYING). getActiveUser devuelve
+  // vacío cuando el web app tiene Access: Anyone → causaba "Failed to send email: no recipient".
+  const destinatario = body.destinatario || Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail()
+  if (!destinatario) {
+    return responseJson({ status: 'error', observaciones: 'No se pudo resolver el destinatario del resumen (getEffectiveUser vacío)' }, 500)
+  }
   const resultados = Array.isArray(body.resultados) ? body.resultados : []
   const t = body.totales || null
   if (resultados.length === 0 && !t) {
@@ -696,7 +701,7 @@ function escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf) {
 // Manda el mail resumen del audit (al usuario activo del GAS / sanmanuel).
 function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
   try {
-    const destinatario = body.destinatario || Session.getActiveUser().getEmail()
+    const destinatario = body.destinatario || Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail()
     let html = '<h2>Auditoría de registro — ' + esc(body.empresa || '') + ' ' + esc(body.periodo || '') + '</h2>'
     html += '<p>✅ Con PDF: <b>' + matched.length + '</b> · ⚠️ Sin PDF: <b>' + sin_pdf.length + '</b> · ❓ Huérfanos: <b>' + huerfanos.length + '</b></p>'
     if (sin_pdf.length) {
