@@ -344,6 +344,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+  // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
+  const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   
   // Estados para flujo SICORE - Retenciones Ganancias
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -1894,6 +1896,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
+    setHuerfanosSupervision([])
     const tId = toast.loading('Supervisando archivo digital del período…')
     const skip = new Set<string>()
     const matchedAcc: any[] = [], huerfanosAcc: any[] = []
@@ -1921,6 +1924,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedAcc, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
       })
       await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
+      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
       toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
     } catch (e) {
       toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
@@ -6273,6 +6277,31 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PDFs en la carpeta que no matchearon ninguna factura (huérfanos) — última supervisión */}
+      {huerfanosSupervision.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Archivos en la carpeta del período que la supervisión no pudo asociar a una factura
+              (típicamente fotos: el OCR no leyó el contenido). El nombre suele tener el proveedor.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-sm max-h-72 overflow-auto">
+              {huerfanosSupervision.map((h, i) => (
+                <li key={i} className="flex items-center gap-2">
+                  <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate">{h.archivo}</a>
+                  {typeof h.chars === 'number' && (
+                    <span className={`text-xs ${h.chars === 0 ? 'text-red-500' : 'text-gray-400'}`}>(OCR: {h.chars} chars)</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
       )}
