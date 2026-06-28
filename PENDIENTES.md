@@ -441,6 +441,14 @@ Handoff de testing en memoria [[gas-pdf-testing-handoff]]. Progresión de versio
 
 **Testing en curso:** caso testigo **Luminatus** (MSA, emisión 18/05, reenviado 28/06 como foto). Esperando que el usuario corra y pegue el **mail de debug** (llega a `sanmanuel.sp`) para interpretar. Pendiente menor: **reglas de nombres clave** como validación (no solo prioridad); audit nuance emisión-vs-contable; cargar mails de proveedores.
 
+#### 💬 Feedback de testing 2026-06-28 (CAPTURADO tal cual, a responder/resolver)
+1. **UX bloqueante**: el cartel de progreso **bloquea la actividad** mientras busca — debía ser **2do plano** (no bloqueante). Hoy "Buscar"→"Buscando", solo deja Cancelar y tapa todo.
+2. **No llegó el mail** (otra vez): la búsqueda terminó y no llegó resumen. Investigar (¿v0.9.4 desplegado? ¿`gmail.send` autorizado? ¿inbox `sanmanuel.sp`?).
+3. ✅ **Luminatus → `_Revisar` OK**: tras el fix de fechas (v0.9.2) la encontró y la archivó en `_Revisar` (soft-match). Aparece el **✓** para confirmar. *(Avance real.)*
+4. **Falta VER la foto/candidato**: no hay forma de **ver el adjunto** antes de confirmar (VER no guarda link en la factura). Agregar un "ver candidato" (el candidato está en el **log** + carpeta `_Revisar`).
+5. **Etiqueta/leído en VER**: el mail NO quedó etiquetado ni leído → **es por diseño** (solo el match EXACTO etiqueta+marca leído; `revisar` queda intacto para revisión). Confirmar con el usuario si está OK así.
+6. **Mejora — Confirmar VER debe hacer lo del match exacto**: al **confirmar** una VER, anclar: **marcar leído + etiquetar `Facturas Descargadas` + incluir el cuerpo en el reporte** (porque al confirmar, ES la factura). Hoy "Confirmar" solo mueve de `_Revisar` + link.
+
 ---
 *(Lo de abajo es el estado de la primera tanda 2026-06-27 — sigue válido como base, las versiones posteriores lo extienden.)*
 
