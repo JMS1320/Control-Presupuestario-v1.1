@@ -336,6 +336,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estado para mostrar columnas detalladas en Subdiarios
   const [mostrarColumnasDetalladas, setMostrarColumnasDetalladas] = useState(false)
+  // Subdiarios: filtro por estado de archivo digital (PDF). Chips 'con' / 'falta' / 'portal'.
+  const [filtroArchivoPdf, setFiltroArchivoPdf] = useState<Set<'con' | 'falta' | 'portal'>>(new Set())
+  // Categoría de archivo digital de una factura (para íconos, chips y filtro del subdiario).
+  // 'con' = tiene PDF · 'portal' = sin PDF pero es de Portal (esperable) · 'falta' = sin PDF y debería tenerlo.
+  const categoriaArchivo = (f: FacturaArca): 'con' | 'falta' | 'portal' =>
+    f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
   
   // Estados para flujo SICORE - Retenciones Ganancias
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -5946,6 +5952,37 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
               </Button>
             </div>
+
+            {/* 🗂️ Resumen de archivo digital (PDF) — chips clickeables que filtran la tabla */}
+            {(() => {
+              const con = facturasPeriodo.filter(f => categoriaArchivo(f) === 'con').length
+              const falta = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta').length
+              const portal = facturasPeriodo.filter(f => categoriaArchivo(f) === 'portal').length
+              const toggle = (cat: 'con' | 'falta' | 'portal') =>
+                setFiltroArchivoPdf(prev => { const n = new Set(prev); if (n.has(cat)) n.delete(cat); else n.add(cat); return n })
+              const chip = (cat: 'con' | 'falta' | 'portal', label: string, color: string) => {
+                const activo = filtroArchivoPdf.has(cat)
+                return (
+                  <button type="button" onClick={() => toggle(cat)}
+                    className={`px-2 py-0.5 rounded-full text-xs border transition ${activo ? color + ' ring-2 ring-offset-1' : color + ' opacity-80 hover:opacity-100'}`}>
+                    {label}
+                  </button>
+                )
+              }
+              return (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs text-muted-foreground">🗂️ Archivo digital:</span>
+                  {chip('con', `📎 ${con} con PDF`, 'bg-green-100 text-green-800 border-green-300')}
+                  {chip('falta', `❌ ${falta} faltantes`, 'bg-red-100 text-red-800 border-red-300')}
+                  {chip('portal', `🌐 ${portal} Portal`, 'bg-gray-100 text-gray-700 border-gray-300')}
+                  {filtroArchivoPdf.size > 0 && (
+                    <button type="button" className="text-xs text-blue-600 underline ml-1" onClick={() => setFiltroArchivoPdf(new Set())}>
+                      limpiar filtro
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </CardHeader>
           <CardContent>
             <div className="overflow-auto max-h-96">
@@ -5972,6 +6009,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         />
                       </TableHead>
                     )}
+                    <TableHead className="w-16 text-center">Archivo</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
@@ -6011,7 +6049,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {facturasPeriodo.map(factura => {
+                  {facturasPeriodo
+                    .filter(factura => filtroArchivoPdf.size === 0 || filtroArchivoPdf.has(categoriaArchivo(factura)))
+                    .map(factura => {
                     const tc = Number(factura.tipo_cambio) || 1
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
@@ -6040,6 +6080,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           )}
                         </TableCell>
                       )}
+                      <TableCell className="text-center">
+                        {(() => {
+                          const cat = categoriaArchivo(factura)
+                          if (cat === 'con') return (
+                            <a href={factura.pdf_drive_url!} target="_blank" rel="noreferrer" title="Ver PDF en Drive" className="text-green-600">📎</a>
+                          )
+                          if (cat === 'portal') return <span title="De Portal — no se archiva por mail" className="text-gray-400">🌐</span>
+                          return <span title="Falta el PDF en el archivo digital" className="text-red-600">❌</span>
+                        })()}
+                      </TableCell>
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
                       <TableCell className="max-w-48 truncate">
                         {esUSD && <span className="text-xs mr-1 text-amber-600">💵</span>}
