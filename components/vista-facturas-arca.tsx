@@ -585,6 +585,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [pdfHasta, setPdfHasta] = useState('')
   const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
   const cancelarPdfRef = useRef(false)
+  // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
+  // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
+  const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
+  const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
+  const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -1760,6 +1765,49 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       console.error('Auto-disparo de búsqueda de PDFs falló (import OK igual):', e)
     } finally {
       setBuscandoPdfs(false)
+    }
+  }
+
+  // Carga el mail (y estado GAS) de los proveedores de las facturas visibles, indexado por CUIT.
+  // Se llama al abrir el modal Buscar PDFs para mostrar/editar el mail ahí mismo.
+  const cargarMailesProveedores = async (cuits: string[]) => {
+    const unicos = Array.from(new Set(cuits.filter(Boolean)))
+    if (unicos.length === 0) { setProvPorCuit({}); return }
+    const { data } = await supabase
+      .from('proveedores')
+      .select('id, cuit, email_facturacion, gas_habilitado, fc_modo')
+      .in('cuit', unicos)
+    const mapa: Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }> = {}
+    ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
+    setProvPorCuit(mapa)
+    setProvEditMail({})
+  }
+
+  // Guarda el mail del proveedor (por CUIT) desde el modal Buscar PDFs vía el endpoint de config.
+  // Si el proveedor no tenía mail, además lo habilita para búsqueda (gas_habilitado + fc_modo='mail')
+  // para que el mail recién cargado se use de verdad; si no, quedaría cosmético.
+  const guardarMailProveedor = async (cuit: string) => {
+    const prov = provPorCuit[cuit]
+    if (!prov) { toast.error('No existe el proveedor para ese CUIT (cargalo en Config PDFs)'); return }
+    const nuevo = (provEditMail[cuit] ?? '').trim()
+    const eraVacio = !prov.email_facturacion
+    setGuardandoMailCuit(cuit)
+    try {
+      const payload: any = { proveedor_id: prov.id, email_facturacion: nuevo || null }
+      if (nuevo && eraVacio) { payload.gas_habilitado = true; payload.fc_modo = 'mail' }
+      const r = await fetch('/api/gas/config-proveedor', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('Error guardando mail: ' + (d.error || '')); return }
+      setProvPorCuit(prev => ({ ...prev, [cuit]: { ...prev[cuit], email_facturacion: nuevo || null, ...(nuevo && eraVacio ? { gas_habilitado: true, fc_modo: 'mail' } : {}) } }))
+      setProvEditMail(prev => { const n = { ...prev }; delete n[cuit]; return n })
+      toast.success(nuevo && eraVacio ? 'Mail guardado y proveedor habilitado para búsqueda.' : 'Mail del proveedor guardado.')
+    } catch (e) {
+      toast.error('Error de red: ' + (e as Error).message)
+    } finally {
+      setGuardandoMailCuit(null)
     }
   }
 
@@ -6226,6 +6274,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     setPdfHasta('')
                     setFiltroTiposPdf(new Set())
                     setModalBuscarPdf(true)
+                    cargarMailesProveedores(facturas.map(f => f.cuit))
                   }}
                   disabled={buscandoPdfs}
                   title="Elegir qué facturas buscar (selección, rango de fechas)"
@@ -11789,10 +11838,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           <th className="p-1">Proveedor</th>
                           <th className="p-1 text-right">Importe</th>
                           <th className="p-1">Estado FC</th>
+                          <th className="p-1 w-[240px]">Mail proveedor</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {candidatos.map(f => (
+                        {candidatos.map(f => {
+                          const cuit = f.cuit
+                          const prov = provPorCuit[cuit]
+                          const editando = provEditMail[cuit] !== undefined
+                          const valorMail = editando ? provEditMail[cuit] : (prov?.email_facturacion ?? '')
+                          const cambiado = editando && (provEditMail[cuit] ?? '') !== (prov?.email_facturacion ?? '')
+                          return (
                           <tr key={f.id} className="border-b hover:bg-gray-50">
                             <td className="p-1">
                               <Checkbox checked={seleccionPdf.has(f.id)} disabled={buscandoPdfs}
@@ -11804,8 +11860,36 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
                             <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
                             <td className="p-1">{fcBadge(f.fc)}</td>
+                            <td className="p-1">
+                              {!prov ? (
+                                <span className="text-[10px] text-gray-400 italic" title="No existe el proveedor en la BD. Cargalo desde 'Config PDFs'.">sin proveedor</span>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="email"
+                                    value={valorMail}
+                                    disabled={buscandoPdfs || guardandoMailCuit === cuit}
+                                    placeholder="⚠ sin mail — agregar"
+                                    onChange={(e) => setProvEditMail(prev => ({ ...prev, [cuit]: e.target.value }))}
+                                    className={`w-full text-[11px] border rounded px-1 py-0.5 ${!valorMail ? 'border-orange-300 placeholder-orange-500' : 'border-gray-200'}`}
+                                  />
+                                  {cambiado && (
+                                    <button type="button" title="Guardar mail"
+                                      disabled={guardandoMailCuit === cuit}
+                                      onClick={() => guardarMailProveedor(cuit)}
+                                      className="shrink-0 text-blue-600 hover:text-blue-800">
+                                      {guardandoMailCuit === cuit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  {!cambiado && prov.email_facturacion && !prov.gas_habilitado && (
+                                    <span className="shrink-0 text-[9px] text-orange-500" title="Tiene mail pero GAS está deshabilitado para este proveedor (no se busca por su mail). Habilitalo en Config PDFs.">GAS off</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   )}
