@@ -46,15 +46,23 @@ function carpetaDriveDefault(empresa: Empresa): string | undefined {
 // MSA: campaña agrícola AAAA-AAAA (corte 1/7–30/6). PAM/MA: año calendario AAAA.
 // Dentro: subcarpeta del mes "aa-mm". Estas FC son de COMPRAS → van en el mes directo.
 // (Para ventas, a futuro, se agregaría 'ventas' como último nivel.)
-function computarSubcarpetas(empresa: Empresa, fechaEmision: string): string[] {
-  const f = new Date(`${fechaEmision}T12:00:00`) // mediodía evita corrimiento por timezone
-  const anio = f.getFullYear()
-  const mes = f.getMonth() + 1 // 1-12
+function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
   const campania = empresa === 'MSA'
     ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
     : String(anio)
   const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
   return [campania, aaMm]
+}
+
+// El archivo se organiza por PERÍODO CONTABLE (mes/año en que se declara), NO por la emisión:
+// una FC de marzo declarada en mayo va a la carpeta de mayo. Si todavía no está imputada (sin
+// período contable), se usa la EMISIÓN como provisional (decisión acordada 2026-06-29).
+function periodoArchivo(factura: any): { anio: number; mes: number } {
+  const ac = factura['año_contable']
+  const mc = factura['mes_contable']
+  if (ac && mc) return { anio: Number(ac), mes: Number(mc) }
+  const f = new Date(`${factura.fecha_emision}T12:00:00`) // mediodía evita corrimiento por timezone
+  return { anio: f.getFullYear(), mes: f.getMonth() + 1 }
 }
 
 function empresaToSchema(e: Empresa): SchemaEmpresa {
@@ -92,7 +100,7 @@ export async function POST(request: Request) {
     const { data: factura, error: errFc } = await supabase
       .schema(schema)
       .from('comprobantes_arca')
-      .select('id, cuit, denominacion_emisor, fecha_emision, tipo_comprobante, tipo_comprobante_desc, punto_venta, numero_desde, imp_total, fc, pdf_drive_url')
+      .select('*')  // '*' evita el ParserError de supabase-js con la columna `año_contable` (ñ); trae año_contable/mes_contable para el período de archivo
       .eq('id', factura_id)
       .single()
 
@@ -212,7 +220,7 @@ export async function POST(request: Request) {
       patron_asunto: proveedor.patron_asunto || '',
       dias_busqueda: proveedor.dias_busqueda || 30,   // default 30 días (configurable por proveedor; UI batch → pendiente)
       carpeta_drive_id: carpetaId,
-      subcarpetas: computarSubcarpetas(empresa, factura.fecha_emision),
+      subcarpetas: (() => { const { anio, mes } = periodoArchivo(factura); return computarSubcarpetas(empresa, anio, mes) })(),
       recolectores,                                  // catch-all: cada reenviador con su propio asunto (Jose/Andrés)
     }
 

@@ -20,15 +20,21 @@ function carpetaDe(e: Empresa): string | undefined {
     case 'MA': return process.env.GAS_FOLDER_ID_MA
   }
 }
-function computarSubcarpetas(empresa: Empresa, fechaEmision: string): string[] {
-  const f = new Date(`${fechaEmision}T12:00:00`)
-  const anio = f.getFullYear()
-  const mes = f.getMonth() + 1
+function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
   const campania = empresa === 'MSA'
     ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
     : String(anio)
   const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
   return [campania, aaMm]
+}
+
+// Archivo por PERÍODO CONTABLE (no emisión); si no está imputada, emisión como provisional.
+function periodoArchivo(factura: any): { anio: number; mes: number } {
+  const ac = factura['año_contable']
+  const mc = factura['mes_contable']
+  if (ac && mc) return { anio: Number(ac), mes: Number(mc) }
+  const f = new Date(`${factura.fecha_emision}T12:00:00`)
+  return { anio: f.getFullYear(), mes: f.getMonth() + 1 }
 }
 
 export async function POST(request: Request) {
@@ -53,7 +59,7 @@ export async function POST(request: Request) {
     const { data: f, error: errF } = await supabaseAdmin
       .schema(schema)
       .from('comprobantes_arca')
-      .select('cuit, punto_venta, numero_desde, tipo_comprobante_desc, fecha_emision, denominacion_emisor')
+      .select('*')  // '*' evita el ParserError de supabase-js con la columna `año_contable` (ñ); trae año_contable/mes_contable para el período de archivo
       .eq('id', factura_id)
       .maybeSingle()
     if (errF || !f) {
@@ -80,7 +86,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         _token: token, accion: 'confirmar', file_url: log.drive_url,
         gmail_message_id: log.gmail_message_id ?? undefined,
-        carpeta_drive_id: carpeta, subcarpetas: computarSubcarpetas(empresa, f.fecha_emision),
+        carpeta_drive_id: carpeta, subcarpetas: (() => { const { anio, mes } = periodoArchivo(f); return computarSubcarpetas(empresa, anio, mes) })(),
         cuit_emisor: f.cuit, punto_venta: f.punto_venta, numero_desde: f.numero_desde,
         tipo_comprobante_desc: f.tipo_comprobante_desc || 'Factura A',
         fecha_emision: f.fecha_emision, denominacion_emisor: f.denominacion_emisor || '',
