@@ -24,7 +24,7 @@ interface Resultado {
   total_facturas?: number
   links_agregados?: number
   matched?: { factura_id: string; archivo: string; file_id?: string }[]
-  huerfanos?: { archivo: string; url: string; file_id?: string }[]
+  huerfanos?: { archivo: string; url: string; file_id?: string; chars?: number; ocr_error?: string }[]
   sin_pdf?: { numero?: string; denominacion?: string; fc?: string }[]
 }
 
@@ -138,10 +138,16 @@ export function ModalAuditarPeriodo({ empresa, open, onClose }: Props) {
             {(res.huerfanos?.length ?? 0) > 0 && (
               <div>
                 <p className="font-medium text-gray-700">❓ PDFs sin factura (huérfanos)</p>
+                <p className="text-xs text-gray-400">OCR: caracteres leídos por archivo. <b>0 = no se pudo extraer texto</b> (PDF imagen o servicio Drive mal configurado).</p>
                 <ul className="list-disc pl-5">
                   {res.huerfanos!.map((h, i) => (
                     <li key={i}>
                       <a className="text-blue-600 underline" href={h.url} target="_blank" rel="noreferrer">{h.archivo}</a>
+                      {typeof h.chars === 'number' && (
+                        <span className={`ml-2 text-xs ${h.chars === 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          (OCR: {h.chars} chars{h.ocr_error ? `, error: ${h.ocr_error}` : ''})
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>

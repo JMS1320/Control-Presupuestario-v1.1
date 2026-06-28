@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.8'  // 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.9'  // 0.9.9 = FIX extracción de texto robusta a Drive API v2/v3 (era la causa del 0 matches en auditoría) + patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -418,22 +418,38 @@ function extraerTextoPdf(attachment) {
 
 // Extrae texto de un blob (PDF o imagen) vía Google Doc temporal (OCR). Reusable por el audit
 // (que lee archivos ya en Drive). Lanza error si falla.
+// 🔧 ROBUSTO a la versión del servicio avanzado de Drive: v3 usa Drive.Files.create({name},blob);
+// v2 usa Drive.Files.insert({title},blob,{convert:true,ocr:true}). Si el GAS tiene habilitada la v2
+// (lo más común), llamar create() devolvía undefined → texto vacío → la auditoría daba 0 matches.
 function extraerTextoDeBlob(blob) {
   const tempName = '_temp_extract_' + new Date().getTime()
+  let fileId = null
   try {
-    // Crear como Google Doc → fuerza conversión / extracción de texto (OCR para imágenes)
-    const resource = { name: tempName, mimeType: 'application/vnd.google-apps.document' }
-    const file = Drive.Files.create(resource, blob)
-    const doc = DocumentApp.openById(file.id)
-    const text = doc.getBody().getText()
-
-    // Cleanup — borra SOLO el temporal recién creado, por su propio ID. Nunca toca carpetas
-    // ni archivos del usuario. Defensivo: si fallara, no rompe el flujo (no es crítico).
-    try { if (file && file.id) Drive.Files.remove(file.id) } catch (e) { Logger.log('cleanup temp no crítico: ' + e) }
+    if (Drive.Files && typeof Drive.Files.create === 'function') {
+      // v3
+      const f = Drive.Files.create({ name: tempName, mimeType: 'application/vnd.google-apps.document' }, blob, { ocrLanguage: 'es' })
+      fileId = f.id
+    } else if (Drive.Files && typeof Drive.Files.insert === 'function') {
+      // v2 (convierte el PDF/imagen a Doc + OCR en español)
+      const f = Drive.Files.insert({ title: tempName, mimeType: 'application/vnd.google-apps.document' }, blob, { convert: true, ocr: true, ocrLanguage: 'es' })
+      fileId = f.id
+    } else {
+      throw new Error('Servicio avanzado de Drive no disponible (ni Files.create ni Files.insert). Habilitá "Drive API" en Services del GAS.')
+    }
+    const text = DocumentApp.openById(fileId).getBody().getText()
     return text
   } catch (err) {
     Logger.log('Error extraerTextoDeBlob: ' + err.toString())
     throw err
+  } finally {
+    // Cleanup — borra SOLO el temporal recién creado, por su propio ID. Nunca toca carpetas ni
+    // archivos del usuario. Defensivo: si fallara, no rompe el flujo (no es crítico).
+    try {
+      if (fileId) {
+        if (Drive.Files && typeof Drive.Files.remove === 'function') Drive.Files.remove(fileId)
+        else if (Drive.Files && typeof Drive.Files.delete === 'function') Drive.Files.delete(fileId)
+      }
+    } catch (e) { Logger.log('cleanup temp no crítico: ' + e) }
   }
 }
 
@@ -722,7 +738,8 @@ function auditarPeriodo(body) {
     if (procesados >= maxFiles) { restantes++; continue }  // queda para la próxima tanda
     procesados++
     let texto = ''
-    try { texto = extraerTextoDeBlob(file.getBlob()) } catch (e) { texto = '' }
+    let ocrErr = ''
+    try { texto = extraerTextoDeBlob(file.getBlob()) } catch (e) { texto = ''; ocrErr = String(e) }
     const textoNum = texto.replace(/\D/g, '')
     let match = null
     for (var j = 0; j < facturas.length; j++) {
@@ -731,7 +748,8 @@ function auditarPeriodo(body) {
     if (match) {
       matched.push({ factura_id: match.factura_id, drive_url: file.getUrl(), archivo: nombre, file_id: fileId })
     } else {
-      huerfanos.push({ archivo: nombre, url: file.getUrl(), file_id: fileId })
+      // Diagnóstico: chars leídos por el OCR (0 = no se pudo extraer texto) + error si lo hubo.
+      huerfanos.push({ archivo: nombre, url: file.getUrl(), file_id: fileId, chars: texto.length, ocr_error: ocrErr || undefined })
     }
   }
 
@@ -746,11 +764,13 @@ function auditarPeriodo(body) {
 function facturaCoincide(texto, textoNum, f) {
   const cuit = String(f.cuit || '').replace(/\D/g, '')
   if (cuit && textoNum.indexOf(cuit) < 0) return false
-  const pv = String(f.punto_venta).padStart(5, '0')
-  const nro = String(f.numero_desde).padStart(8, '0')
-  return texto.indexOf(pv + '-' + nro) >= 0
-      || texto.indexOf(pv + ' ' + nro) >= 0
-      || texto.indexOf(String(f.numero_desde)) >= 0
+  const pv5 = String(f.punto_venta).padStart(5, '0')
+  const nro8 = String(f.numero_desde).padStart(8, '0')
+  return texto.indexOf(pv5 + '-' + nro8) >= 0                                       // 00002-00002021
+      || texto.indexOf(pv5 + ' ' + nro8) >= 0                                       // 00002 00002021
+      || texto.indexOf(nro8) >= 0                                                   // 00002021 (ARCA "Comp. Nro:")
+      || textoNum.indexOf(pv5 + nro8) >= 0                                          // por si el OCR mete espacios/saltos
+      || texto.indexOf(parseInt(f.punto_venta, 10) + '-' + parseInt(f.numero_desde, 10)) >= 0  // 2-2021
 }
 
 // Deja un log datado del audit EN la carpeta del período (createFile nuevo por corrida — nunca reemplaza).
@@ -782,8 +802,12 @@ function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
       html += '</ul>'
     }
     if (huerfanos.length) {
-      html += '<h3>❓ PDFs sin factura (huérfanos)</h3><ul>'
-      huerfanos.forEach(function (h) { html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a></li>' })
+      html += '<h3>❓ PDFs sin factura (huérfanos)</h3>'
+      html += '<p style="font-size:11px;color:#888">OCR: caracteres leídos por archivo. <b>0 = no se pudo extraer texto</b> (PDF imagen o servicio Drive mal configurado).</p><ul>'
+      huerfanos.forEach(function (h) {
+        const diag = (typeof h.chars === 'number') ? ' <small style="color:#888">(OCR: ' + h.chars + ' chars' + (h.ocr_error ? ', error: ' + esc(h.ocr_error) : '') + ')</small>' : ''
+        html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a>' + diag + '</li>'
+      })
       html += '</ul>'
     }
     GmailApp.sendEmail(destinatario, 'Auditoría ' + (body.empresa || '') + ' ' + (body.periodo || ''), 'Ver versión HTML.', { htmlBody: html })

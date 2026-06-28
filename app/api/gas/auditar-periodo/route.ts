@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     })
     const audit = (await r.json()) as {
       status?: string; existe?: boolean; observaciones?: string
-      matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string }[]
+      matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]
       procesados?: number; restantes?: number; completo?: boolean
     }
 
