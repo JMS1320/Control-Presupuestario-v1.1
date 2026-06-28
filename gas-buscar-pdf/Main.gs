@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.7'  // 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.8'  // 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -155,6 +155,23 @@ function doPost(e) {
       })
     }
 
+    // Vino del mail OFICIAL del proveedor (su dirección de facturación configurada) pero el OCR no
+    // pudo validar el contenido (típico de facturas de servicios: PDF escaneado/ilegible). El
+    // remitente es señal fuerte por sí solo → NO se pierde: a _Revisar para chequear/confirmar a mano.
+    const directo = elegirDirectoProveedor(verificados.descartados)
+    if (directo) {
+      const driveUrl = archivarEnDrive(directo, body, true)
+      return responseJson({
+        status: 'revisar',
+        drive_url: driveUrl,
+        confianza: 'baja',
+        observaciones: '⚠️ Vino del mail oficial del proveedor pero no se pudo validar el contenido (PDF/escaneo ilegible). Archivado en _Revisar — chequear a mano.',
+        asunto: directo.asunto, remitente: directo.remitente, cuerpo: cuerpoMail(directo.mensaje),
+        gmail_message_id: directo.mensaje.getId(),
+        tiempo_ms: Date.now() - startTime
+      })
+    }
+
     // No encontrado
     return responseJson({
       status: 'no_encontrada',
@@ -215,6 +232,9 @@ function buscarEnGmail(body) {
     queries.push(qP)
     Logger.log('Gmail query (proveedor): ' + qP)
     const p = recolectarCandidatos(qP, null)
+    // Marca: vino del mail OFICIAL del proveedor. Señal fuerte por sí sola (≠ reenvío) → si el OCR
+    // no logra validar (PDF de servicios ilegible), igual se trata como sospechoso (a _Revisar).
+    p.candidatos.forEach(function (c) { c._directoProveedor = true })
     candidatos.push.apply(candidatos, p.candidatos); threadsCant += p.threadsCant
   }
 
@@ -296,6 +316,8 @@ function verificarCandidatos(candidatos, body) {
       const numeroEnPdf = patrones.some(p => texto.includes(p))
 
       if (!cuitEnPdf || !numeroEnPdf) {
+        const faltan = [!cuitEnPdf ? 'CUIT' : null, !numeroEnPdf ? 'número' : null].filter(Boolean).join(' + ')
+        cand._observaciones = `Descartado: no se halló ${faltan} en el texto extraído (${texto.length} chars OCR).`
         descartados.push(cand)
         continue
       }
@@ -356,6 +378,22 @@ function encontrarSospechoso(descartados, body) {
     }
   }
   return null
+}
+
+// Entre los descartados, elige el que vino del mail OFICIAL del proveedor (_directoProveedor).
+// Si hay varios adjuntos (ej. logo de la firma + la factura), prefiere PDF y el más grande
+// (el logo suele ser una imagen chica) para no archivar el adjunto equivocado. null si no hay.
+function elegirDirectoProveedor(descartados) {
+  const dir = descartados.filter(function (c) { return c._directoProveedor })
+  if (dir.length === 0) return null
+  const pdfs = dir.filter(function (c) { return /\.pdf$/i.test(c.attachment.getName()) })
+  const pool = pdfs.length > 0 ? pdfs : dir
+  pool.sort(function (a, b) {
+    const sa = a.attachment.getSize ? a.attachment.getSize() : 0
+    const sb = b.attachment.getSize ? b.attachment.getSize() : 0
+    return sb - sa
+  })
+  return pool[0]
 }
 
 // ¿El asunto o el nombre del archivo del candidato NOMBRA al proveedor? (palabra ≥4 letras).
