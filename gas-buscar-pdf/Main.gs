@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.5'  // 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.6'  // 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -519,14 +519,34 @@ function cuerpoMail(mensaje) {
   } catch (e) { return '' }
 }
 
+// Resuelve a QUIÉN se manda el mail, con cascada robusta de fallbacks:
+//  1) body.destinatario (si la app lo manda)
+//  2) Script Property RESUMEN_DESTINATARIO (recomendado: NO depende de scopes — cargar una vez)
+//  3) Session.getEffectiveUser() (requiere scope userinfo.email; tira excepción si no está → try/catch)
+//  4) Session.getActiveUser() (devuelve "" con Access:Anyone, pero no rompe)
+function resolverDestinatario(body) {
+  if (body && body.destinatario) return body.destinatario
+  try {
+    const prop = PropertiesService.getScriptProperties().getProperty('RESUMEN_DESTINATARIO')
+    if (prop) return prop
+  } catch (e) { /* sin properties, seguimos */ }
+  try {
+    const eff = Session.getEffectiveUser().getEmail()
+    if (eff) return eff
+  } catch (e) { /* falta scope userinfo.email */ }
+  try {
+    const act = Session.getActiveUser().getEmail()
+    if (act) return act
+  } catch (e) { /* anónimo */ }
+  return ''
+}
+
 // Acción 'resumen': arma y envía UN mail con el resultado del lote, agrupado por empresa
 // (descargadas + a revisar, con asunto/remitente/cuerpo de cada uno). Lo dispara la app al cerrar el lote.
 function enviarResumenMail(body) {
-  // getEffectiveUser = dueño del script (corre como USER_DEPLOYING). getActiveUser devuelve
-  // vacío cuando el web app tiene Access: Anyone → causaba "Failed to send email: no recipient".
-  const destinatario = body.destinatario || Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail()
+  const destinatario = resolverDestinatario(body)
   if (!destinatario) {
-    return responseJson({ status: 'error', observaciones: 'No se pudo resolver el destinatario del resumen (getEffectiveUser vacío)' }, 500)
+    return responseJson({ status: 'error', observaciones: 'No se pudo resolver el destinatario. Cargá la Script Property RESUMEN_DESTINATARIO con tu email.' }, 500)
   }
   const resultados = Array.isArray(body.resultados) ? body.resultados : []
   const t = body.totales || null
@@ -701,7 +721,7 @@ function escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf) {
 // Manda el mail resumen del audit (al usuario activo del GAS / sanmanuel).
 function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
   try {
-    const destinatario = body.destinatario || Session.getEffectiveUser().getEmail() || Session.getActiveUser().getEmail()
+    const destinatario = resolverDestinatario(body)
     let html = '<h2>Auditoría de registro — ' + esc(body.empresa || '') + ' ' + esc(body.periodo || '') + '</h2>'
     html += '<p>✅ Con PDF: <b>' + matched.length + '</b> · ⚠️ Sin PDF: <b>' + sin_pdf.length + '</b> · ❓ Huérfanos: <b>' + huerfanos.length + '</b></p>'
     if (sin_pdf.length) {
