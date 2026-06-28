@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.2'  // 0.9.2 = FIX reenvíos: ventana del catch-all hasta HOY (el reenvío llega cuando lo reenviás, no en emisión) | 0.9.1 = mail resumen siempre | 0.9.0 = audit por tandas | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.3'  // 0.9.3 = eficiencia: prioriza candidatos que nombran al proveedor + corta al 1er match exacto | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.2 (fix ventana reenvíos hasta hoy).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.3 (prioriza por nombre + corta al 1er match).'
   })
 }
 
@@ -267,6 +267,11 @@ function verificarCandidatos(candidatos, body) {
   const numeroFc = String(body.numero_desde).padStart(8, '0')
   const ptoVenta = String(body.punto_venta).padStart(5, '0')
 
+  // Eficiencia: primero los candidatos cuyo ASUNTO o NOMBRE DE ARCHIVO nombra al proveedor (más
+  // probable que sean la factura) → OCR-ea la correcta antes y corta al primer match exacto.
+  candidatos.sort(function (a, b) { return (nombraProveedor(b, body) ? 1 : 0) - (nombraProveedor(a, body) ? 1 : 0) })
+  Logger.log('verificarCandidatos: ' + candidatos.length + ' candidato(s) a analizar')
+
   for (const cand of candidatos) {
     try {
       const texto = extraerTextoPdf(cand.attachment)
@@ -314,6 +319,8 @@ function verificarCandidatos(candidatos, body) {
       if (montoMatch) {
         cand._observaciones = `Match exacto: CUIT+nro+monto (PDF=${montoExtraido}, factura=${montoEsperado})`
         exactos.push(cand)
+        Logger.log('Match exacto → corto (no analizo el resto)')
+        return { exactos, dudosos, descartados }  // early-stop: ya tenemos la factura
       } else {
         const diff = montoExtraido !== null ? Math.abs(montoExtraido - montoEsperado).toFixed(2) : '?'
         cand._observaciones = `Match CUIT+nro pero monto difiere: PDF=${montoExtraido ?? '?'}, factura=${montoEsperado}, diferencia=$${diff}`
@@ -343,6 +350,17 @@ function encontrarSospechoso(descartados, body) {
     }
   }
   return null
+}
+
+// ¿El asunto o el nombre del archivo del candidato NOMBRA al proveedor? (palabra ≥4 letras).
+// Se usa para priorizar a cuál OCR-ear primero (eficiencia + tu idea de "nombres clave").
+function nombraProveedor(cand, body) {
+  const palabras = normalizarTexto(body.denominacion_emisor || '').split(/\s+/).filter(function (w) { return w.length >= 4 })
+  if (palabras.length === 0) return false
+  const nombreArch = (cand.attachment && cand.attachment.getName) ? cand.attachment.getName() : ''
+  const txt = normalizarTexto((cand.asunto || '') + ' ' + nombreArch)
+  for (var i = 0; i < palabras.length; i++) if (txt.indexOf(palabras[i]) >= 0) return true
+  return false
 }
 
 /**
