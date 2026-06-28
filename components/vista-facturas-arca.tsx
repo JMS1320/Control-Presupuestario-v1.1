@@ -342,6 +342,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // 'con' = tiene PDF · 'portal' = sin PDF pero es de Portal (esperable) · 'falta' = sin PDF y debería tenerlo.
   const categoriaArchivo = (f: FacturaArca): 'con' | 'falta' | 'portal' =>
     f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
+  // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
+  const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
   
   // Estados para flujo SICORE - Retenciones Ganancias
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -1881,6 +1883,49 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       })
     } finally {
       setImportandoExcel(false)
+    }
+  }
+
+  // Supervisión del archivo digital del período (Subdiarios): corre la auditoría OCR por tandas
+  // EN 2DO PLANO (no bloquea: avance por toast, refresca la tabla al terminar). Reusa /api/gas/auditar-periodo.
+  const supervisarArchivoPeriodo = async () => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/') // formato MM/YYYY
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    const tId = toast.loading('Supervisando archivo digital del período…')
+    const skip = new Set<string>()
+    const matchedAcc: any[] = [], huerfanosAcc: any[] = []
+    let sinPdf: any[] = [], links = 0, tanda = 0
+    try {
+      for (let guard = 0; guard < 500; guard++) {
+        tanda++
+        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
+        const r = await fetch('/api/gas/auditar-periodo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 10 }),
+        })
+        const data = await r.json()
+        if (!data.ok) { toast.error('Supervisión: ' + (data.error || 'error'), { id: tId }); return }
+        if (data.existe === false) { toast.warning(data.observaciones || 'La carpeta del período no existe', { id: tId }); return }
+        links += data.links_agregados || 0
+        for (const m of (data.matched || [])) { matchedAcc.push(m); if (m.file_id) skip.add(m.file_id) }
+        for (const h of (data.huerfanos || [])) { huerfanosAcc.push(h); if (h.file_id) skip.add(h.file_id) }
+        sinPdf = data.sin_pdf || sinPdf
+        if (data.completo) break
+      }
+      // Cierre: log + mail con el acumulado
+      await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedAcc, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
+      })
+      await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
+      toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
+    } catch (e) {
+      toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
     }
   }
 
@@ -5942,15 +5987,28 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   {facturasPeriodo.length} facturas encontradas
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMostrarColumnasDetalladas(!mostrarColumnasDetalladas)}
-                className="flex items-center gap-2"
-              >
-                {mostrarColumnasDetalladas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={supervisarArchivoPeriodo}
+                  disabled={supervisandoArchivo}
+                  title="Releva la carpeta del período: vincula los PDF faltantes y marca incongruencias (corre en 2do plano)"
+                  className="flex items-center gap-2"
+                >
+                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {supervisandoArchivo ? 'Supervisando…' : '🗂️ Supervisar archivo'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMostrarColumnasDetalladas(!mostrarColumnasDetalladas)}
+                  className="flex items-center gap-2"
+                >
+                  {mostrarColumnasDetalladas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
+                </Button>
+              </div>
             </div>
 
             {/* 🗂️ Resumen de archivo digital (PDF) — chips clickeables que filtran la tabla */}
