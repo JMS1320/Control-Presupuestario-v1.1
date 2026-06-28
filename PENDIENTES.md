@@ -429,7 +429,21 @@ Así los mails de **otros temas quedan sin tocar**.
 
 **Mail resumen → `sanmanuel.sp@gmail.com`** (lo manda el GAS): por empresa, las **descargadas** (exactos) + las **dudosas** (revisar) + el **cuerpo** de cada mail. Instancia de control.
 
-### 🔧 GAS PDF — estado del paquete (2026-06-27)
+### 🔧 GAS PDF — estado del paquete
+
+#### ⭐ ESTADO ACTUAL — 2026-06-28, GAS **v0.9.4** (todo en `desarrollo`, en testing)
+Handoff de testing en memoria [[gas-pdf-testing-handoff]]. Progresión de versiones (cada una = un commit):
+- **0.9.4** — mail resumen con **sección DEBUG por factura** (queries Gmail + threads + resultado), para diagnosticar desde el mail.
+- **0.9.3** — eficiencia: prioriza candidatos que **nombran al proveedor** + **corta al 1er match** exacto.
+- **0.9.2** — **FIX fechas reenvíos**: ventana del catch-all hasta **HOY** (antes emisión+30 → un reenvío tardío quedaba afuera = causa de "no encontró Luminatus").
+- **0.9.1** — mail resumen **SIEMPRE** (aunque 0 hallazgos, con totales) como instancia de control.
+- **0.9.0** — audit **resumible por tandas** (≤10 archivos/request, idempotente). 0.8.0 — **Confirmar VER** (mueve de `_Revisar` + link). 0.7.0 — **auditar período**. 0.6.0 — sin confirmar conserva nombre/sin link. 0.5.0 — tipo/ext real. 0.4.0 — **asunto por-recolector** (Jose "Documento de Jose" / Andrés "FC").
+
+**Testing en curso:** caso testigo **Luminatus** (MSA, emisión 18/05, reenviado 28/06 como foto). Esperando que el usuario corra y pegue el **mail de debug** (llega a `sanmanuel.sp`) para interpretar. Pendiente menor: **reglas de nombres clave** como validación (no solo prioridad); audit nuance emisión-vs-contable; cargar mails de proveedores.
+
+---
+*(Lo de abajo es el estado de la primera tanda 2026-06-27 — sigue válido como base, las versiones posteriores lo extienden.)*
+
 ✅ **IMPLEMENTADO (commits `4f7f617`/`70dad84`/`9717207`, falta TESTEAR):**
 1. ✅ **Catch-all reenvíos** — `from:(recolectores) subject:"Documento de Jose"` (normalizado sin may/tildes) PRIMERO + proveedor directo. Jose taggeado `recolector` en BBDD; la app lee y pasa los mails.
 2. ✅ **Etiquetar `Facturas Descargadas` + marcar leído** en match exacto (NO mueve). Sin match → intacto.
