@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.1'  // 0.9.1 = mail resumen SIEMPRE (aunque 0 hallazgos, con totales) | 0.9.0 = audit por tandas | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.2'  // 0.9.2 = FIX reenvíos: ventana del catch-all hasta HOY (el reenvío llega cuando lo reenviás, no en emisión) | 0.9.1 = mail resumen siempre | 0.9.0 = audit por tandas | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.1 (mail resumen siempre).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.2 (fix ventana reenvíos hasta hoy).'
   })
 }
 
@@ -182,6 +182,11 @@ function buscarEnGmail(body) {
   // has:attachment (cualquier adjunto: PDF o imagen/foto de WhatsApp). El filtro por tipo se hace al juntar candidatos.
   const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} has:attachment`
 
+  // REENVÍOS: la fecha del mail NO es la de emisión — el usuario reenvía cuando quiere (días/semanas
+  // después). Por eso el catch-all busca desde un poco antes de la emisión hasta HOY (mañana, exclusivo).
+  const manana = new Date(); manana.setDate(manana.getDate() + 1)
+  const rangoRecolector = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(manana)} has:attachment`
+
   const candidatos = []
   let threadsCant = 0
 
@@ -191,7 +196,7 @@ function buscarEnGmail(body) {
     for (var ri = 0; ri < body.recolectores.length; ri++) {
       const rec = body.recolectores[ri]
       if (!rec || !rec.email || !rec.asunto) continue
-      const qR = `from:(${rec.email}) subject:("${rec.asunto}") ${rango}`
+      const qR = `from:(${rec.email}) subject:("${rec.asunto}") ${rangoRecolector}`
       Logger.log('Gmail query (recolector): ' + qR)
       const r = recolectarCandidatos(qR, rec.asunto)
       candidatos.push.apply(candidatos, r.candidatos); threadsCant += r.threadsCant
