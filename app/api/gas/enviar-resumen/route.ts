@@ -17,17 +17,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'GAS_BUSCAR_PDF_URL o GAS_AUTH_TOKEN no configurados' }, { status: 500 })
     }
 
-    const body = (await request.json()) as { resultados?: ResumenItem[]; destinatario?: string }
+    const body = (await request.json()) as { resultados?: ResumenItem[]; destinatario?: string; totales?: unknown }
     const resultados = Array.isArray(body.resultados) ? body.resultados : []
-    if (resultados.length === 0) {
-      return NextResponse.json({ ok: true, enviado: false, observaciones: 'Sin items, no se envía resumen.' })
+    if (resultados.length === 0 && !body.totales) {
+      return NextResponse.json({ ok: true, enviado: false, observaciones: 'Sin items ni totales, no se envía resumen.' })
     }
 
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // destinatario omitido → el GAS lo manda al usuario activo (sanmanuel.sp, que es quien corre el GAS)
-      body: JSON.stringify({ _token: token, accion: 'resumen', resultados, destinatario: body.destinatario }),
+      body: JSON.stringify({ _token: token, accion: 'resumen', resultados, totales: body.totales, destinatario: body.destinatario }),
     })
     const data = (await r.json()) as { status?: string; observaciones?: string }
     return NextResponse.json({ ok: data.status === 'ok', enviado: data.status === 'ok', observaciones: data.observaciones })

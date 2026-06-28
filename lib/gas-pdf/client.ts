@@ -112,14 +112,23 @@ function aResumenItem(out: ApiBuscarPdfOutput, empresa: Empresa): ResumenItem | 
   }
 }
 
-/** Manda el mail resumen del lote (best-effort: no rompe nada si falla) */
-async function enviarResumenLote(resultados: ResumenItem[]): Promise<void> {
-  if (resultados.length === 0) return
+/** Manda el mail resumen del lote SIEMPRE (aunque 0 hallazgos: incluye totales como instancia de
+ *  control). Best-effort: no rompe nada si falla. */
+async function enviarResumenLote(resultados: ResumenItem[], progreso: ProgresoLote): Promise<void> {
   try {
     await fetch('/api/gas/enviar-resumen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resultados }),
+      body: JSON.stringify({
+        resultados,
+        totales: {
+          total: progreso.total,
+          encontradas: progreso.encontradas,
+          paraRevisar: progreso.paraRevisar,
+          noEncontradas: progreso.noEncontradas,
+          errores: progreso.errores,
+        },
+      }),
     })
   } catch { /* el resumen es secundario */ }
 }
@@ -135,7 +144,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     // Cancelación: si el caller pide cortar, frenamos antes de procesar la siguiente
     if (opts.isCancelled?.()) {
       progreso = { ...progreso, cancelado: true, finalizado: true }
-      if (opts.enviarResumen !== false) await enviarResumenLote(resultados)
+      if (opts.enviarResumen !== false) await enviarResumenLote(resultados, progreso)
       opts.onProgreso?.(progreso)
       return progreso
     }
@@ -152,7 +161,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     }
   }
 
-  if (opts.enviarResumen !== false) await enviarResumenLote(resultados)
+  if (opts.enviarResumen !== false) await enviarResumenLote(resultados, progreso)
   progreso = { ...progreso, finalizado: true }
   opts.onProgreso?.(progreso)
   return progreso

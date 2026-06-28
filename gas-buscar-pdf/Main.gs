@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.0'  // 0.9.0 = audit por TANDAS resumible (skip + max_files + finalizar) | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.1'  // 0.9.1 = mail resumen SIEMPRE (aunque 0 hallazgos, con totales) | 0.9.0 = audit por tandas | 0.8.0 = 'confirmar' | 0.7.0 = 'auditar' | 0.6.0 = sin confirmar conserva nombre/sin link | 0.5.0 = tipo/ext real | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.0 (audit por tandas).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.1 (mail resumen siempre).'
   })
 }
 
@@ -498,8 +498,21 @@ function cuerpoMail(mensaje) {
 function enviarResumenMail(body) {
   const destinatario = body.destinatario || Session.getActiveUser().getEmail()
   const resultados = Array.isArray(body.resultados) ? body.resultados : []
+  const t = body.totales || null
+  if (resultados.length === 0 && !t) {
+    return responseJson({ status: 'ok', observaciones: 'Resumen sin items ni totales, no se envía.' })
+  }
+
+  let html = '<h2>Resumen búsqueda de facturas</h2>'
+  if (t) {
+    html += '<p><b>Buscadas:</b> ' + (t.total || 0) + ' · ✅ ' + (t.encontradas || 0) + ' descargadas · ⚠️ '
+      + (t.paraRevisar || 0) + ' a revisar · ❌ ' + (t.noEncontradas || 0) + ' no encontradas · '
+      + (t.errores || 0) + ' errores</p>'
+  }
   if (resultados.length === 0) {
-    return responseJson({ status: 'ok', observaciones: 'Resumen sin items, no se envía.' })
+    html += '<p>No se descargó ni quedó a revisar ninguna factura en esta corrida.</p>'
+    GmailApp.sendEmail(destinatario, 'Resumen FC — ' + new Date().toLocaleDateString(), 'Ver versión HTML.', { htmlBody: html })
+    return responseJson({ status: 'ok', observaciones: 'Resumen (sin hallazgos) enviado a ' + destinatario })
   }
 
   const porEmpresa = {}
@@ -509,7 +522,6 @@ function enviarResumenMail(body) {
     ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
   })
 
-  let html = '<h2>Resumen búsqueda de facturas</h2>'
   Object.keys(porEmpresa).sort().forEach(function (emp) {
     const g = porEmpresa[emp]
     html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
