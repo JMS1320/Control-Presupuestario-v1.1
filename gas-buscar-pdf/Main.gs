@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.10'  // 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.11'  // 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -742,6 +742,7 @@ function auditarPeriodo(body) {
     const file = files.next()
     const nombre = file.getName()
     if (/^_AUDIT_/i.test(nombre)) continue            // ignorar logs de audit
+    if (!/\.(pdf|jpe?g|png|gif|webp|heic|tiff?)$/i.test(nombre)) continue  // ignorar no-documentos (xlsx, etc.)
     const fileId = file.getId()
     if (skip[fileId]) continue                         // ya procesado en una tanda previa
     if (procesados >= maxFiles) { restantes++; continue }  // queda para la próxima tanda
@@ -803,7 +804,7 @@ function escribirLogAudit(carpeta, body, matched, huerfanos, sin_pdf) {
 function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
   try {
     const destinatario = resolverDestinatario(body)
-    let html = '<h2>Auditoría de registro — ' + esc(body.empresa || '') + ' ' + esc(body.periodo || '') + '</h2>'
+    let html = '<h2>Supervisión de facturas en archivo digital (subdiarios) — ' + esc(body.empresa || '') + ' ' + esc(body.periodo || '') + '</h2>'
     html += '<p>✅ Con PDF: <b>' + matched.length + '</b> · ⚠️ Sin PDF: <b>' + sin_pdf.length + '</b> · ❓ Huérfanos: <b>' + huerfanos.length + '</b></p>'
     if (sin_pdf.length) {
       html += '<h3>⚠️ Facturas sin PDF en la carpeta</h3><ul>'
@@ -819,7 +820,7 @@ function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
       })
       html += '</ul>'
     }
-    GmailApp.sendEmail(destinatario, 'Auditoría ' + (body.empresa || '') + ' ' + (body.periodo || ''), 'Ver versión HTML.', { htmlBody: html })
+    GmailApp.sendEmail(destinatario, 'Supervisión facturas archivo digital (subdiarios) — ' + (body.empresa || '') + ' ' + (body.periodo || ''), 'Ver versión HTML.', { htmlBody: html })
   } catch (e) { Logger.log('mail audit no crítico: ' + e) }
 }
 
