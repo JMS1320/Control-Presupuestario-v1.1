@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.11'  // 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.12'  // 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -30,7 +30,7 @@ function doGet(e) {
   return responseJson({
     status: 'ok',
     version: VERSION,
-    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
+    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar', 'renombrar'],
     mensaje: 'GAS Buscador PDF facturas — vivo. Confirmar VER etiqueta + marca leído el mail.'
   })
 }
@@ -71,6 +71,11 @@ function doPost(e) {
     // Acción 'confirmar': mueve un PDF de _Revisar a la carpeta del mes + lo renombra al estándar.
     if (body.accion === 'confirmar') {
       return confirmarFactura(body)
+    }
+
+    // Acción 'renombrar': cambia el nombre de UN archivo puntual por su id (no mueve, no toca carpetas).
+    if (body.accion === 'renombrar') {
+      return renombrarArchivo(body)
     }
 
     const required = ['factura_id', 'cuit_emisor', 'punto_venta', 'numero_desde', 'tipo_comprobante_desc', 'fecha_emision', 'imp_total', 'denominacion_emisor', 'email_proveedor', 'patron_asunto', 'dias_busqueda', 'carpeta_drive_id']
@@ -568,6 +573,20 @@ function confirmarFactura(body) {
   }
 
   return responseJson({ status: 'ok', drive_url: file.getUrl(), mail_etiquetado: mailEtiquetado })
+}
+
+// Acción 'renombrar': cambia el nombre de UN archivo por su id (huérfano mal nombrado).
+// 🔒 Solo setName sobre un archivo puntual por id. NUNCA mueve/borra/toca carpetas.
+function renombrarArchivo(body) {
+  const fileId = extraerFileId(body.file_url || body.file_id)
+  if (!fileId) return responseJson({ status: 'error', observaciones: 'Falta file_url/file_id' }, 400)
+  const nombre = String(body.nombre || '').trim()
+  if (!nombre) return responseJson({ status: 'error', observaciones: 'Falta el nombre nuevo' }, 400)
+  let file
+  try { file = DriveApp.getFileById(fileId) }
+  catch (e) { return responseJson({ status: 'error', observaciones: 'No se encontró el archivo: ' + e }, 404) }
+  file.setName(nombre)
+  return responseJson({ status: 'ok', nombre: file.getName(), drive_url: file.getUrl() })
 }
 
 // Extrae el id de Drive de una URL (o lo devuelve si ya es un id).

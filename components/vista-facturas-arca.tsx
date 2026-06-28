@@ -348,6 +348,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
   const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+  // Renombrar huérfano: url del PDF en edición + valor del nombre nuevo + flag guardando.
+  const [editNombreUrl, setEditNombreUrl] = useState<string | null>(null)
+  const [editNombreVal, setEditNombreVal] = useState('')
+  const [guardandoNombreUrl, setGuardandoNombreUrl] = useState<string | null>(null)
+
+  // Renombra un PDF huérfano en Drive (para los mal nombrados) vía /api/gas/renombrar-pdf.
+  const renombrarHuerfano = async (h: { archivo: string; url: string }) => {
+    const nuevo = editNombreVal.trim()
+    if (!nuevo || nuevo === h.archivo) { setEditNombreUrl(null); return }
+    setGuardandoNombreUrl(h.url)
+    try {
+      const r = await fetch('/api/gas/renombrar-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_url: h.url, nombre: nuevo }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo renombrar: ' + (d.error || '')); return }
+      // Actualiza el nombre en el panel (con el nuevo nombre puede aparecer una sugerencia).
+      setHuerfanosSupervision(prev => prev.map(x => x.url === h.url ? { ...x, archivo: d.nombre || nuevo } : x))
+      setEditNombreUrl(null)
+      toast.success('Archivo renombrado.')
+    } catch (e) {
+      toast.error('Error al renombrar: ' + (e as Error).message)
+    } finally {
+      setGuardandoNombreUrl(null)
+    }
+  }
 
   // Sugiere qué factura "falta" del período corresponde a un PDF huérfano, por NOMBRE de archivo
   // (sin OCR): coincide palabras del proveedor + desempata por la fecha del nombre (MM-DD).
@@ -6368,33 +6395,61 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
               {huerfanosSupervision.map((h, i) => {
                 const candidatos = sugerirFacturasHuerfano(h.archivo)
-                const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id
-                const sel = candidatos.find(c => c.id === selId) || candidatos[0]
+                const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+                const sugeridosIds = new Set(candidatos.map(c => c.id))
+                const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id ?? ''
+                const sel = faltantes.find(f => f.id === selId)
                 return (
                   <li key={i} className="flex items-center gap-2 flex-wrap border-b pb-1.5">
-                    <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[280px]">{h.archivo}</a>
+                    {editNombreUrl === h.url ? (
+                      <>
+                        <input
+                          value={editNombreVal}
+                          onChange={e => setEditNombreVal(e.target.value)}
+                          className="text-xs border rounded px-1 py-0.5 w-[280px]"
+                          disabled={guardandoNombreUrl === h.url}
+                          autoFocus
+                        />
+                        <button type="button" title="Guardar nombre" className="text-green-600"
+                          disabled={guardandoNombreUrl === h.url}
+                          onClick={() => renombrarHuerfano(h)}>
+                          {guardandoNombreUrl === h.url ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </button>
+                        <button type="button" title="Cancelar" className="text-gray-400" onClick={() => setEditNombreUrl(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[280px]">{h.archivo}</a>
+                        <button type="button" title="Renombrar archivo (si está mal nombrado)" className="text-gray-400 hover:text-gray-600"
+                          onClick={() => { setEditNombreUrl(h.url); setEditNombreVal(h.archivo) }}>
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
                     {typeof h.chars === 'number' && (
                       <span className={`text-xs ${h.chars === 0 ? 'text-red-500' : 'text-gray-400'}`}>(OCR: {h.chars})</span>
                     )}
-                    {candidatos.length === 0 ? (
-                      <span className="text-xs text-gray-400 italic">sin sugerencia</span>
+                    <span className="text-xs text-gray-500">{candidatos.length > 0 ? '→ sugerida:' : '→ elegir:'}</span>
+                    {faltantes.length === 0 ? (
+                      <span className="text-xs text-gray-400 italic">no quedan facturas sin PDF</span>
                     ) : (
                       <>
-                        <span className="text-xs text-gray-500">→ sugerida:</span>
-                        {candidatos.length === 1 ? (
-                          <span className="text-xs font-medium">{sel.denominacion_emisor} {sel.punto_venta}-{sel.numero_desde}</span>
-                        ) : (
-                          <select
-                            value={selId}
-                            onChange={e => setVinculoHuerfanoSel(prev => ({ ...prev, [h.url]: e.target.value }))}
-                            className="text-xs border rounded px-1 py-0.5 max-w-[260px]"
-                          >
-                            {candidatos.map(c => (
-                              <option key={c.id} value={c.id}>{c.denominacion_emisor} {c.punto_venta}-{c.numero_desde}</option>
-                            ))}
-                          </select>
-                        )}
+                        <select
+                          value={selId}
+                          onChange={e => setVinculoHuerfanoSel(prev => ({ ...prev, [h.url]: e.target.value }))}
+                          className="text-xs border rounded px-1 py-0.5 max-w-[280px]"
+                        >
+                          <option value="">— elegir factura —</option>
+                          {faltantes.map(f => (
+                            <option key={f.id} value={f.id}>
+                              {sugeridosIds.has(f.id) ? '⭐ ' : ''}{f.denominacion_emisor} {f.punto_venta}-{f.numero_desde}
+                            </option>
+                          ))}
+                        </select>
                         <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                          disabled={!sel}
                           onClick={() => sel && vincularHuerfano(sel, h)}>
                           Vincular
                         </Button>
