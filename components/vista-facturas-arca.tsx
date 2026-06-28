@@ -1932,17 +1932,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
+  // Extrae el file_id de Drive de una URL (mismo criterio que el GAS).
+  const extraerFileIdDrive = (url?: string | null): string | null => {
+    if (!url) return null
+    const m = String(url).match(/[-\w]{25,}/)
+    return m ? m[0] : null
+  }
+
   // Supervisión del archivo digital del período (Subdiarios): corre la auditoría OCR por tandas
   // EN 2DO PLANO (no bloquea: avance por toast, refresca la tabla al terminar). Reusa /api/gas/auditar-periodo.
-  const supervisarArchivoPeriodo = async () => {
+  // soloNoAdjudicados=true → saltea los archivos YA vinculados a una factura (re-corrida rápida).
+  const supervisarArchivoPeriodo = async (soloNoAdjudicados = false) => {
     if (!periodoConsulta || supervisandoArchivo) return
     const [mesStr, anioStr] = periodoConsulta.split('/') // formato MM/YYYY
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
     setHuerfanosSupervision([])
-    const tId = toast.loading('Supervisando archivo digital del período…')
+    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
     const skip = new Set<string>()
+    // Modo rápido: pre-cargar como "ya procesados" los archivos cuyos links ya están en una factura.
+    if (soloNoAdjudicados) {
+      facturasPeriodo.forEach(f => { const fid = extraerFileIdDrive(f.pdf_drive_url); if (fid) skip.add(fid) })
+    }
     const matchedAcc: any[] = [], huerfanosAcc: any[] = []
     let sinPdf: any[] = [], links = 0, tanda = 0
     try {
@@ -6039,13 +6051,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={supervisarArchivoPeriodo}
+                  onClick={() => supervisarArchivoPeriodo(false)}
                   disabled={supervisandoArchivo}
-                  title="Releva la carpeta del período: vincula los PDF faltantes y marca incongruencias (corre en 2do plano)"
+                  title="Releva TODA la carpeta del período: vincula los PDF faltantes y marca incongruencias (corre en 2do plano)"
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                   {supervisandoArchivo ? 'Supervisando…' : '🗂️ Supervisar archivo'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => supervisarArchivoPeriodo(true)}
+                  disabled={supervisandoArchivo}
+                  title="Re-supervisa SOLO los PDF que aún no están vinculados (salta los ya vinculados → más rápido)"
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Solo sin adjudicar
                 </Button>
                 <Button
                   variant="outline"
