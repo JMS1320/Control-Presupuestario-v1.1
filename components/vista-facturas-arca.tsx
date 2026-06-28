@@ -6081,6 +6081,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   {chip('con', `📎 ${con} con PDF`, 'bg-green-100 text-green-800 border-green-300')}
                   {chip('falta', `❌ ${falta} faltantes`, 'bg-red-100 text-red-800 border-red-300')}
                   {chip('portal', `🌐 ${portal} Portal`, 'bg-gray-100 text-gray-700 border-gray-300')}
+                  {huerfanosSupervision.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs border bg-amber-100 text-amber-800 border-amber-300"
+                      title="PDFs en la carpeta del período que no están asociados a ninguna factura (ver panel abajo)">
+                      🖼️ {huerfanosSupervision.length} PDF sin adjudicar
+                    </span>
+                  )}
                   {filtroArchivoPdf.size > 0 && (
                     <button type="button" className="text-xs text-blue-600 underline ml-1" onClick={() => setFiltroArchivoPdf(new Set())}>
                       limpiar filtro
