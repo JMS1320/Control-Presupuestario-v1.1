@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.3'  // 0.9.3 = eficiencia: prioriza candidatos que nombran al proveedor + corta al 1er match exacto | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.4'  // 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -31,7 +31,7 @@ function doGet(e) {
     status: 'ok',
     version: VERSION,
     capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar'],
-    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.3 (prioriza por nombre + corta al 1er match).'
+    mensaje: 'GAS Buscador PDF facturas — vivo. Última = version 0.9.4 (mail con sección debug).'
   })
 }
 
@@ -155,7 +155,7 @@ function doPost(e) {
     // No encontrado
     return responseJson({
       status: 'no_encontrada',
-      observaciones: `No se encontró adjunto que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} adjuntos analizados.`,
+      observaciones: `No se encontró adjunto que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} adjuntos analizados. Queries: ${(resultadoBusqueda.queries || []).join('  ||  ')}`,
       tiempo_ms: Date.now() - startTime
     })
 
@@ -188,6 +188,7 @@ function buscarEnGmail(body) {
   const rangoRecolector = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(manana)} has:attachment`
 
   const candidatos = []
+  const queries = []   // para debug en el mail resumen
   let threadsCant = 0
 
   // 1) Catch-all reenvíos: cada recolector tiene su PROPIO asunto mínimo (Jose "Documento de Jose",
@@ -197,6 +198,7 @@ function buscarEnGmail(body) {
       const rec = body.recolectores[ri]
       if (!rec || !rec.email || !rec.asunto) continue
       const qR = `from:(${rec.email}) subject:("${rec.asunto}") ${rangoRecolector}`
+      queries.push(qR)
       Logger.log('Gmail query (recolector): ' + qR)
       const r = recolectarCandidatos(qR, rec.asunto)
       candidatos.push.apply(candidatos, r.candidatos); threadsCant += r.threadsCant
@@ -207,12 +209,13 @@ function buscarEnGmail(body) {
   if (body.email_proveedor && String(body.email_proveedor).trim()) {
     let qP = `from:(${body.email_proveedor}) ${rango}`
     if (body.patron_asunto && body.patron_asunto.trim().length > 0) qP += ` subject:(${body.patron_asunto})`
+    queries.push(qP)
     Logger.log('Gmail query (proveedor): ' + qP)
     const p = recolectarCandidatos(qP, null)
     candidatos.push.apply(candidatos, p.candidatos); threadsCant += p.threadsCant
   }
 
-  return { threadsCant: threadsCant, candidatos: candidatos }
+  return { threadsCant: threadsCant, candidatos: candidatos, queries: queries }
 }
 
 // Corre una query Gmail y junta los PDF adjuntos. Si `asuntoMinimo` != null, exige que el asunto
@@ -526,46 +529,64 @@ function enviarResumenMail(body) {
     return responseJson({ status: 'ok', observaciones: 'Resumen sin items ni totales, no se envía.' })
   }
 
+  const debug = Array.isArray(body.debug) ? body.debug : []
+  if (resultados.length === 0 && !t && debug.length === 0) {
+    return responseJson({ status: 'ok', observaciones: 'Resumen vacío, no se envía.' })
+  }
+
   let html = '<h2>Resumen búsqueda de facturas</h2>'
   if (t) {
     html += '<p><b>Buscadas:</b> ' + (t.total || 0) + ' · ✅ ' + (t.encontradas || 0) + ' descargadas · ⚠️ '
       + (t.paraRevisar || 0) + ' a revisar · ❌ ' + (t.noEncontradas || 0) + ' no encontradas · '
       + (t.errores || 0) + ' errores</p>'
   }
+
   if (resultados.length === 0) {
     html += '<p>No se descargó ni quedó a revisar ninguna factura en esta corrida.</p>'
-    GmailApp.sendEmail(destinatario, 'Resumen FC — ' + new Date().toLocaleDateString(), 'Ver versión HTML.', { htmlBody: html })
-    return responseJson({ status: 'ok', observaciones: 'Resumen (sin hallazgos) enviado a ' + destinatario })
+  } else {
+    const porEmpresa = {}
+    resultados.forEach(function (r) {
+      const emp = r.empresa || '—'
+      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [] }
+      ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
+    })
+    Object.keys(porEmpresa).sort().forEach(function (emp) {
+      const g = porEmpresa[emp]
+      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
+      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar']].forEach(function (par) {
+        const lista = g[par[0]]
+        if (lista.length === 0) return
+        html += '<p><b>' + par[1] + ':</b></p><ul>'
+        lista.forEach(function (r) {
+          html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '')
+            + (r.drive_url ? ' (<a href="' + r.drive_url + '">PDF</a>)' : '')
+            + (r.observaciones ? ' <i>' + esc(r.observaciones) + '</i>' : '')
+            + '<br><small><b>Asunto:</b> ' + esc(r.asunto || '') + ' — <b>De:</b> ' + esc(r.remitente || '') + '</small>'
+            + (r.cuerpo ? '<br><pre style="white-space:pre-wrap;background:#f6f6f6;padding:6px;font-size:12px;">' + esc(r.cuerpo) + '</pre>' : '')
+            + '</li>'
+        })
+        html += '</ul>'
+      })
+    })
   }
 
-  const porEmpresa = {}
-  resultados.forEach(function (r) {
-    const emp = r.empresa || '—'
-    if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [] }
-    ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
-  })
-
-  Object.keys(porEmpresa).sort().forEach(function (emp) {
-    const g = porEmpresa[emp]
-    html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
-    ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar']].forEach(function (par) {
-      const lista = g[par[0]]
-      if (lista.length === 0) return
-      html += '<p><b>' + par[1] + ':</b></p><ul>'
-      lista.forEach(function (r) {
-        html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '')
-          + (r.drive_url ? ' (<a href="' + r.drive_url + '">PDF</a>)' : '')
-          + (r.observaciones ? ' <i>' + esc(r.observaciones) + '</i>' : '')
-          + '<br><small><b>Asunto:</b> ' + esc(r.asunto || '') + ' — <b>De:</b> ' + esc(r.remitente || '') + '</small>'
-          + (r.cuerpo ? '<br><pre style="white-space:pre-wrap;background:#f6f6f6;padding:6px;font-size:12px;">' + esc(r.cuerpo) + '</pre>' : '')
-          + '</li>'
-      })
-      html += '</ul>'
+  // 🔧 Debug por factura (resultado + observación con queries/threads) — para diagnosticar.
+  if (debug.length > 0) {
+    html += '<hr><h3>🔧 Debug por factura (' + debug.length + ')</h3>'
+    html += '<table style="font-size:11px;border-collapse:collapse;width:100%;">'
+    html += '<tr><th align="left">Factura</th><th align="left">Resultado</th><th align="left">Detalle</th></tr>'
+    debug.forEach(function (d) {
+      html += '<tr>'
+        + '<td style="padding:2px 6px;border-top:1px solid #eee;vertical-align:top;">' + esc(d.factura || '') + '</td>'
+        + '<td style="padding:2px 6px;border-top:1px solid #eee;vertical-align:top;">' + esc(d.resultado || '') + '</td>'
+        + '<td style="padding:2px 6px;border-top:1px solid #eee;font-family:monospace;word-break:break-all;">' + esc(d.obs || '') + '</td>'
+        + '</tr>'
     })
-  })
+    html += '</table>'
+  }
 
   GmailApp.sendEmail(destinatario, 'Resumen FC — ' + new Date().toLocaleDateString(), 'Ver versión HTML.', { htmlBody: html })
-  return responseJson({ status: 'ok', observaciones: 'Resumen enviado a ' + destinatario + ' (' + resultados.length + ' items).' })
+  return responseJson({ status: 'ok', observaciones: 'Resumen enviado a ' + destinatario })
 }
 
 // Escapa HTML para el mail resumen.
