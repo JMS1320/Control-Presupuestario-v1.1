@@ -42,6 +42,9 @@ export interface ProgresoLote {
   }
   finalizado: boolean
   cancelado?: boolean
+  /** Resultado del envío del mail resumen al cerrar el lote (para no fallar en silencio) */
+  resumenEnviado?: boolean
+  resumenError?: string
 }
 
 /** Inicia ProgresoLote vacío */
@@ -115,10 +118,11 @@ function aResumenItem(out: ApiBuscarPdfOutput, empresa: Empresa): ResumenItem | 
 interface DebugItem { factura?: string; resultado?: string; obs?: string }
 
 /** Manda el mail resumen del lote SIEMPRE (aunque 0 hallazgos: incluye totales como instancia de
- *  control + una sección de debug por factura). Best-effort: no rompe nada si falla. */
-async function enviarResumenLote(resultados: ResumenItem[], progreso: ProgresoLote, debug: DebugItem[]): Promise<void> {
+ *  control + una sección de debug por factura). No rompe el lote si falla, pero REPORTA el estado
+ *  (antes se tragaba el error en silencio → imposible saber por qué no llegaba el mail). */
+async function enviarResumenLote(resultados: ResumenItem[], progreso: ProgresoLote, debug: DebugItem[]): Promise<{ enviado: boolean; error?: string }> {
   try {
-    await fetch('/api/gas/enviar-resumen', {
+    const r = await fetch('/api/gas/enviar-resumen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -133,7 +137,13 @@ async function enviarResumenLote(resultados: ResumenItem[], progreso: ProgresoLo
         debug,
       }),
     })
-  } catch { /* el resumen es secundario */ }
+    const data = (await r.json().catch(() => ({}))) as { ok?: boolean; enviado?: boolean; error?: string; observaciones?: string }
+    if (!r.ok) return { enviado: false, error: data?.error || data?.observaciones || `HTTP ${r.status}` }
+    if (!data?.enviado) return { enviado: false, error: data?.observaciones || data?.error || 'El GAS no confirmó el envío' }
+    return { enviado: true }
+  } catch (err) {
+    return { enviado: false, error: (err as Error).message || 'Error de red al enviar el resumen' }
+  }
 }
 
 export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<ProgresoLote> {
@@ -148,7 +158,10 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     // Cancelación: si el caller pide cortar, frenamos antes de procesar la siguiente
     if (opts.isCancelled?.()) {
       progreso = { ...progreso, cancelado: true, finalizado: true }
-      if (opts.enviarResumen !== false) await enviarResumenLote(resultados, progreso, debug)
+      if (opts.enviarResumen !== false) {
+        const res = await enviarResumenLote(resultados, progreso, debug)
+        progreso = { ...progreso, resumenEnviado: res.enviado, resumenError: res.error }
+      }
       opts.onProgreso?.(progreso)
       return progreso
     }
@@ -166,7 +179,10 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     }
   }
 
-  if (opts.enviarResumen !== false) await enviarResumenLote(resultados, progreso, debug)
+  if (opts.enviarResumen !== false) {
+    const res = await enviarResumenLote(resultados, progreso, debug)
+    progreso = { ...progreso, resumenEnviado: res.enviado, resumenError: res.error }
+  }
   progreso = { ...progreso, finalizado: true }
   opts.onProgreso?.(progreso)
   return progreso

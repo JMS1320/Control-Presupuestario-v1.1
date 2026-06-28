@@ -20,17 +20,26 @@ interface Props {
   progreso: ProgresoLote | null
   onCerrar: () => void
   onVerDetalle?: (loteId: string) => void
+  /** Cancela el lote en curso (la búsqueda corre en 2do plano; este es el único punto de corte) */
+  onCancelar?: () => void
 }
 
-export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle }: Props) {
+export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onCancelar }: Props) {
   const [visible, setVisible] = useState(true)
 
-  // Auto-cierre 8s después de finalizar
+  // Reabrir al iniciar un lote nuevo (sin esto, tras el 1er auto-cierre visible queda en false
+  // y la notificación no reaparecería en la 2da búsqueda de la misma sesión).
+  useEffect(() => {
+    if (progreso?.loteId) setVisible(true)
+  }, [progreso?.loteId])
+
+  // Auto-cierre: 8s si todo OK; 20s si el mail resumen falló (para que llegues a leer el error)
   useEffect(() => {
     if (!progreso?.finalizado) return
-    const t = setTimeout(() => { setVisible(false); onCerrar() }, 8000)
+    const ms = progreso.resumenError ? 20000 : 8000
+    const t = setTimeout(() => { setVisible(false); onCerrar() }, ms)
     return () => clearTimeout(t)
-  }, [progreso?.finalizado, onCerrar])
+  }, [progreso?.finalizado, progreso?.resumenError, onCerrar])
 
   if (!progreso || !visible) return null
 
@@ -86,6 +95,17 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle }: P
         </div>
       </div>
 
+      {/* Estado del mail resumen (solo al finalizar) — antes fallaba en silencio */}
+      {progreso.finalizado && (
+        progreso.resumenError ? (
+          <div className="mt-3 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded p-2">
+            ✉️ El mail resumen NO se envió: {progreso.resumenError}
+          </div>
+        ) : progreso.resumenEnviado ? (
+          <div className="mt-3 text-[11px] text-green-700">✉️ Mail resumen enviado.</div>
+        ) : null
+      )}
+
       {progreso.finalizado && onVerDetalle && (
         <Button
           size="sm" variant="outline"
@@ -93,6 +113,17 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle }: P
           onClick={() => onVerDetalle(progreso.loteId)}
         >
           Ver detalle del lote
+        </Button>
+      )}
+
+      {/* Cancelar — la búsqueda corre en 2do plano, este es el único punto de corte */}
+      {!progreso.finalizado && onCancelar && (
+        <Button
+          size="sm" variant="ghost"
+          className="w-full mt-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+          onClick={onCancelar}
+        >
+          Cancelar búsqueda
         </Button>
       )}
 

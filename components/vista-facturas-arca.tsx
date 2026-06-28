@@ -11674,6 +11674,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <NotificacionProgresoLote
         progreso={progresoPdf}
         onCerrar={() => setProgresoPdf(null)}
+        onCancelar={() => { cancelarPdfRef.current = true }}
         onVerDetalle={(loteId) => {
           setProgresoPdf(null)
           setModalHistorialPdf({ open: true, loteId })
@@ -11829,8 +11830,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         if (!window.confirm(`Vas a buscar PDFs de ${ids.length} factura(s) en tu Gmail.\nTarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)) return
                         cancelarPdfRef.current = false
                         setBuscandoPdfs(true)
+                        // Cerrar el modal al arrancar: la búsqueda corre en 2do plano y el avance
+                        // se ve en la notificación flotante (con su propio botón Cancelar).
+                        setModalBuscarPdf(false)
                         try {
-                          await buscarPdfLote({
+                          const res = await buscarPdfLote({
                             empresa: empresa as 'MSA' | 'PAM' | 'MA',
                             facturaIds: ids,
                             onProgreso: setProgresoPdf,
@@ -11838,6 +11842,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             isCancelled: () => cancelarPdfRef.current,
                           })
                           await cargarFacturas()
+                          // Reportar el envío del mail resumen (antes fallaba en silencio).
+                          if (res.resumenError) {
+                            toast.error('Búsqueda lista, pero el mail resumen NO se envió: ' + res.resumenError)
+                          } else if (res.resumenEnviado) {
+                            toast.success('Búsqueda lista. Mail resumen enviado.')
+                          }
                         } catch (err) {
                           toast.error('Error en lote: ' + (err as Error).message)
                         } finally {
