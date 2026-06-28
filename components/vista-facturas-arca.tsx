@@ -6176,6 +6176,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
                     <TableHead>Tipo</TableHead>
+                    <TableHead>Nº Comp.</TableHead>
                     {mostrarColumnasDetalladas ? (
                       <>
                         {/* Columnas detalladas de Netos por Alícuota */}
@@ -6259,6 +6260,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       </TableCell>
                       <TableCell>{factura.cuit}</TableCell>
                       <TableCell>{factura.tipo_comprobante}</TableCell>
+                      <TableCell className="whitespace-nowrap font-medium">{factura.punto_venta}-{factura.numero_desde}</TableCell>
                       {mostrarColumnasDetalladas ? (
                         <>
                           {/* Columnas detalladas de Netos por Alícuota */}
@@ -6444,7 +6446,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           <option value="">— elegir factura —</option>
                           {faltantes.map(f => (
                             <option key={f.id} value={f.id}>
-                              {sugeridosIds.has(f.id) ? '⭐ ' : ''}{f.denominacion_emisor} {f.punto_venta}-{f.numero_desde}
+                              {sugeridosIds.has(f.id) ? '⭐ ' : ''}{f.denominacion_emisor} · {f.punto_venta}-{f.numero_desde} · {formatearFecha(f.fecha_emision)} · ${(Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                             </option>
                           ))}
                         </select>

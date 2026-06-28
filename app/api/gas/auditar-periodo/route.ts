@@ -123,11 +123,17 @@ export async function POST(request: Request) {
       .filter((f) => !yaLinkeadas.has(f.id))
       .map((f) => ({ factura_id: f.id, denominacion: f.denominacion_emisor, numero: `${f.punto_venta}-${f.numero_desde}`, fc: f.fc }))
 
+    // Un archivo que YA está vinculado a una factura NO es huérfano, aunque el OCR no lo haya podido
+    // leer en esta corrida (típico de fotos). Lo excluimos comparando su file_id con los de los links.
+    const fileIdDe = (u?: string | null) => { const m = String(u || '').match(/[-\w]{25,}/); return m ? m[0] : null }
+    const linkedFileIds = new Set((facturas || []).map((f) => fileIdDe(f.pdf_drive_url)).filter(Boolean) as string[])
+    const huerfanosReales = (audit.huerfanos || []).filter((h) => !linkedFileIds.has(h.file_id))
+
     return NextResponse.json({
       ok: true, empresa, periodo, existe: true,
       total_facturas: payload.length,
       matched: audit.matched || [],
-      huerfanos: audit.huerfanos || [],
+      huerfanos: huerfanosReales,
       sin_pdf,
       procesados: audit.procesados || 0,
       restantes: audit.restantes || 0,
