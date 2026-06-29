@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -2011,6 +2011,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
     } catch (e) {
       toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
+    }
+  }
+
+  // Conciliar saldos del archivo (RÁPIDO, SIN OCR): lista la carpeta y la cruza contra los links
+  // de las facturas → huérfanos (archivos sin factura) + cuántas facturas no-Portal quedan sin PDF.
+  const conciliarSaldos = async () => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/')
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    setHuerfanosSupervision([])
+    const tId = toast.loading('Conciliando saldos del archivo…')
+    try {
+      const r = await fetch('/api/gas/conciliar-archivo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('Conciliación: ' + (d.error || 'error'), { id: tId }); return }
+      if (d.existe === false) { toast.warning('La carpeta del período no existe', { id: tId }); return }
+      setHuerfanosSupervision((d.huerfanos || []).map((h: any) => ({ archivo: h.archivo, url: h.url })))
+      toast.success(`Saldos: ${d.total_archivos} archivos · ${d.con_link} vinculados · ${(d.huerfanos || []).length} sin vincular · ${d.faltantes} facturas sin PDF.`, { id: tId })
+    } catch (e) {
+      toast.error('Error al conciliar: ' + (e as Error).message, { id: tId })
     } finally {
       setSupervisandoArchivo(false)
     }
@@ -6078,13 +6105,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={conciliarSaldos}
+                  disabled={supervisandoArchivo}
+                  title="Rápido, sin OCR: lista la carpeta y muestra el balance (archivos sin vincular vs facturas sin PDF)"
+                  className="flex items-center gap-2"
+                >
+                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                  📊 Conciliar saldos
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => supervisarArchivoPeriodo(false)}
                   disabled={supervisandoArchivo}
-                  title="Releva TODA la carpeta del período: vincula los PDF faltantes y marca incongruencias (corre en 2do plano)"
+                  title="Releva TODA la carpeta del período con OCR: vincula los PDF que matcheen por contenido (corre en 2do plano)"
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {supervisandoArchivo ? 'Supervisando…' : '🗂️ Supervisar archivo'}
+                  {supervisandoArchivo ? 'Procesando…' : '🗂️ Supervisar (OCR)'}
                 </Button>
                 <Button
                   variant="outline"
