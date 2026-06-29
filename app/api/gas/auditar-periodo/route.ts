@@ -104,30 +104,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, empresa, periodo, existe: false, observaciones: audit.observaciones, completo: true, total_facturas: payload.length, matched: [], huerfanos: [], sin_pdf: [] })
     }
 
-    // Agregar link a las matched que no lo tenían (confirmadas por contenido)
+    // Agregar link a las matched que no lo tenían (confirmadas por contenido).
+    // Si DOS archivos matchean la misma factura (ej. 2 NC parecidas, o 1 factura ya cubierta por otro
+    // archivo), el segundo queda SUELTO → lo mandamos a huérfanos para que se pueda asignar a mano a
+    // la factura que realmente le corresponde (la que sigue sin PDF).
     let linksAgregados = 0
+    const yaCubiertas = new Set((facturas || []).filter((f) => f.pdf_drive_url).map((f) => f.id))
+    const matchedSueltos: { archivo: string; url: string; file_id: string }[] = []
     for (const m of audit.matched || []) {
-      const fact = (facturas || []).find((f) => f.id === m.factura_id)
-      if (fact && !fact.pdf_drive_url) {
+      if (!yaCubiertas.has(m.factura_id)) {
         await supabaseAdmin.schema(schema).from('comprobantes_arca')
           .update({ pdf_drive_url: m.drive_url, pdf_estado: 'descargado' })
           .eq('id', m.factura_id)
+        yaCubiertas.add(m.factura_id)
         linksAgregados++
+      } else {
+        matchedSueltos.push({ archivo: m.archivo, url: m.drive_url, file_id: m.file_id })
       }
     }
 
     // Pendientes después de esta tanda (sin link y sin match): el cliente usa el de la última tanda
-    const yaLinkeadas = new Set((facturas || []).filter((f) => f.pdf_drive_url).map((f) => f.id))
-    for (const m of audit.matched || []) yaLinkeadas.add(m.factura_id)
     const sin_pdf = (facturas || [])
-      .filter((f) => !yaLinkeadas.has(f.id))
+      .filter((f) => !yaCubiertas.has(f.id))
       .map((f) => ({ factura_id: f.id, denominacion: f.denominacion_emisor, numero: `${f.punto_venta}-${f.numero_desde}`, fc: f.fc }))
 
     // Un archivo que YA está vinculado a una factura NO es huérfano, aunque el OCR no lo haya podido
     // leer en esta corrida (típico de fotos). Lo excluimos comparando su file_id con los de los links.
+    // A los huérfanos reales les sumamos los "matchedSueltos" (matchearon una factura ya cubierta).
     const fileIdDe = (u?: string | null) => { const m = String(u || '').match(/[-\w]{25,}/); return m ? m[0] : null }
     const linkedFileIds = new Set((facturas || []).map((f) => fileIdDe(f.pdf_drive_url)).filter(Boolean) as string[])
-    const huerfanosReales = (audit.huerfanos || []).filter((h) => !linkedFileIds.has(h.file_id))
+    const huerfanosReales = [...(audit.huerfanos || []), ...matchedSueltos]
+      .filter((h) => !linkedFileIds.has(h.file_id))
 
     return NextResponse.json({
       ok: true, empresa, periodo, existe: true,
