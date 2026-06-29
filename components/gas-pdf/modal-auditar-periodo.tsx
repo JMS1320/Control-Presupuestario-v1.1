@@ -53,7 +53,7 @@ export function ModalAuditarPeriodo({ empresa, open, onClose }: Props) {
         setProgreso(`Tanda ${tanda} — ${skip.size} archivo(s) procesados…`)
         const r = await fetch('/api/gas/auditar-periodo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ empresa, anio: parseInt(anio), mes: parseInt(mes), skip_file_ids: [...skip], max_files: 10 }),
+          body: JSON.stringify({ empresa, anio: parseInt(anio), mes: parseInt(mes), skip_file_ids: [...skip], max_files: 4 }),
         })
         const data = await r.json()
         if (!data.ok) { setRes(data); return }

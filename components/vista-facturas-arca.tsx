@@ -1990,7 +1990,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
         const r = await fetch('/api/gas/auditar-periodo', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 10 }),
+          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 4 }),
         })
         const data = await r.json()
         if (!data.ok) { toast.error('Supervisión: ' + (data.error || 'error'), { id: tId }); return }
