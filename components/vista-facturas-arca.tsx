@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3 } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -348,6 +348,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
   const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+  // Debug de conciliación: cada archivo de la carpeta + su file_id + a qué factura está vinculado.
+  const [detalleConciliacion, setDetalleConciliacion] = useState<{ archivo: string; file_id: string; factura: string | null }[]>([])
   // Renombrar huérfano: url del PDF en edición + valor del nombre nuevo + flag guardando.
   const [editNombreUrl, setEditNombreUrl] = useState<string | null>(null)
   const [editNombreVal, setEditNombreVal] = useState('')
@@ -390,15 +392,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (conScore.length === 0) return []
     const maxHits = Math.max(...conScore.map(x => x.hits))
     let candidatos = conScore.filter(x => x.hits === maxHits).map(x => x.f)
-    if (candidatos.length > 1) {
-      const m = nombreArchivo.match(/^(\d{2})-(\d{2})/) // "MM-DD" al inicio del nombre
-      if (m) {
-        const porFecha = candidatos.filter(f => {
-          const fe = f.fecha_emision || '' // YYYY-MM-DD
-          return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
-        })
-        if (porFecha.length >= 1) candidatos = porFecha
-      }
+    // Si el nombre trae fecha (MM-DD al inicio), EXIGIR que coincida con la emisión del candidato.
+    // Evita sugerir una factura de otra fecha (ej. un duplicado "04-01" contra la única faltante,
+    // que es del 04-09). Si ninguna coincide la fecha → sin sugerencia (probable duplicado).
+    const m = nombreArchivo.match(/^(\d{2})-(\d{2})/)
+    if (m) {
+      candidatos = candidatos.filter(f => {
+        const fe = f.fecha_emision || '' // YYYY-MM-DD
+        return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
+      })
     }
     return candidatos
   }
@@ -2025,6 +2027,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
     setHuerfanosSupervision([])
+    setDetalleConciliacion([])
     const tId = toast.loading('Conciliando saldos del archivo…')
     try {
       const r = await fetch('/api/gas/conciliar-archivo', {
@@ -2035,6 +2038,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (!d.ok) { toast.error('Conciliación: ' + (d.error || 'error'), { id: tId }); return }
       if (d.existe === false) { toast.warning('La carpeta del período no existe', { id: tId }); return }
       setHuerfanosSupervision((d.huerfanos || []).map((h: any) => ({ archivo: h.archivo, url: h.url })))
+      setDetalleConciliacion(d.detalle || [])
       toast.success(`Saldos: ${d.total_archivos} archivos · ${d.con_link} vinculados · ${(d.huerfanos || []).length} sin vincular · ${d.faltantes} facturas sin PDF.`, { id: tId })
     } catch (e) {
       toast.error('Error al conciliar: ' + (e as Error).message, { id: tId })
@@ -6498,6 +6502,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </li>
                 )
               })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 🔧 Detalle técnico de la conciliación (para diagnóstico): todos los archivos de la carpeta */}
+      {detalleConciliacion.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-gray-600">🔧 Detalle de archivos en la carpeta ({detalleConciliacion.length})</CardTitle>
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                onClick={() => {
+                  const txt = detalleConciliacion.map(d => `${d.factura ? '✓ ' + d.factura : '— SIN VINCULAR'}\t${d.archivo}\t${d.file_id}`).join('\n')
+                  navigator.clipboard?.writeText(txt)
+                  toast.success('Detalle copiado al portapapeles')
+                }}>
+                <Copy className="h-3.5 w-3.5 mr-1" /> Copiar
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Cada archivo con su file_id y la factura a la que está vinculado (o "sin vincular"). Pegámelo para diagnosticar.</p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-0.5 text-[11px] font-mono max-h-80 overflow-auto">
+              {detalleConciliacion.map((d, i) => (
+                <li key={i} className={d.factura ? 'text-green-700' : 'text-red-600'}>
+                  {d.factura ? `✓ ${d.factura}` : '— SIN VINCULAR'} · {d.archivo} · <span className="text-gray-400">{d.file_id}</span>
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>

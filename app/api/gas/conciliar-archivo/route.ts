@@ -80,12 +80,26 @@ export async function POST(request: Request) {
     const faltantes = (facturas || []).filter((f) => !f.pdf_drive_url && f.fc !== 'Portal').length
     const conLink = (facturas || []).filter((f) => f.pdf_drive_url).length
 
+    // Detalle técnico: cada archivo de la carpeta, su file_id y a qué factura está vinculado (o no).
+    // Sirve para diagnosticar por qué un archivo aparece o no como huérfano.
+    const linkedMap = new Map<string, string>()
+    for (const f of facturas || []) {
+      const id = fileIdDe(f.pdf_drive_url)
+      if (id) linkedMap.set(id, `${f.punto_venta}-${f.numero_desde} ${f.denominacion_emisor || ''}`.trim())
+    }
+    const detalle = archivos.map((a) => ({
+      archivo: a.archivo,
+      file_id: a.file_id,
+      factura: linkedMap.get(a.file_id) || null,
+    }))
+
     return NextResponse.json({
       ok: true, existe: true,
       total_archivos: archivos.length,
       con_link: conLink,
       faltantes,
       huerfanos,
+      detalle,
     })
   } catch (err) {
     return NextResponse.json({ ok: false, error: (err as Error).message || 'Error conciliando' }, { status: 502 })
