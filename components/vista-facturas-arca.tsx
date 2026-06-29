@@ -2019,10 +2019,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         sinPdf = data.sin_pdf || sinPdf
         if (data.completo) break
       }
+      // Enriquecer las vinculadas con proveedor·nº·monto (para que el mail muestre QUÉ vinculó, no solo el nombre de archivo).
+      const matchedMail = matchedAcc.map((m: any) => {
+        const f = facturasPeriodo.find(x => x.id === m.factura_id)
+        return { ...m, numero: f ? `${f.punto_venta}-${f.numero_desde}` : '', proveedor: f?.denominacion_emisor || '', monto: f?.imp_total ?? null }
+      })
       // Cierre: log + mail con el acumulado
       await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedAcc, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
       })
       await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
       setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
