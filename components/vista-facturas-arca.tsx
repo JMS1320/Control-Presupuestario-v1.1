@@ -405,6 +405,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return candidatos
   }
 
+  // Desvincula el PDF de una factura (para re-asignar uno mal puesto). NO borra el archivo de Drive,
+  // solo limpia el link → el archivo vuelve a quedar disponible como huérfano en la próxima conciliación.
+  const desvincularPdf = async (factura: FacturaArca) => {
+    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar (corré "Conciliar saldos").`)) return
+    try {
+      const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+        .update({ pdf_drive_url: null, pdf_estado: null, pdf_observaciones: 'Desvinculado manualmente para re-asignar' })
+        .eq('id', factura.id)
+      if (error) { toast.error('No se pudo desvincular: ' + error.message); return }
+      await cargarFacturasPeriodo(periodoConsulta)
+      toast.success('PDF desvinculado. Corré "Conciliar saldos" para re-asignarlo.')
+    } catch (e) {
+      toast.error('Error al desvincular: ' + (e as Error).message)
+    }
+  }
+
   // Vincula un PDF huérfano a la factura elegida (solo enlaza: setea pdf_drive_url; no toca el archivo).
   const vincularHuerfano = async (factura: FacturaArca, h: { archivo: string; url: string }) => {
     try {
@@ -6213,7 +6229,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         />
                       </TableHead>
                     )}
-                    <TableHead className="w-16 text-center">Archivo</TableHead>
+                    <TableHead className="w-28 text-center">Archivo / FC</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
@@ -6286,14 +6302,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         </TableCell>
                       )}
                       <TableCell className="text-center">
-                        {(() => {
-                          const cat = categoriaArchivo(factura)
-                          if (cat === 'con') return (
-                            <a href={factura.pdf_drive_url!} target="_blank" rel="noreferrer" title="Ver PDF en Drive" className="text-green-600">📎</a>
-                          )
-                          if (cat === 'portal') return <span title="De Portal — no se archiva por mail" className="text-gray-400">🌐</span>
-                          return <span title="Falta el PDF en el archivo digital" className="text-red-600">❌</span>
-                        })()}
+                        <div className="flex items-center justify-center gap-1">
+                          {(() => {
+                            const cat = categoriaArchivo(factura)
+                            if (cat === 'con') return (
+                              <a href={factura.pdf_drive_url!} target="_blank" rel="noreferrer" title="Ver PDF en Drive" className="text-green-600">📎</a>
+                            )
+                            if (cat === 'portal') return <span title="De Portal — no se archiva por mail" className="text-gray-400">🌐</span>
+                            return <span title="Falta el PDF en el archivo digital" className="text-red-600">❌</span>
+                          })()}
+                          {factura.fc && (
+                            <span className={`px-1 rounded text-[9px] ${
+                              { 'OK': 'bg-green-200 text-green-900', 'Sí': 'bg-green-100 text-green-800', 'APP': 'bg-blue-100 text-blue-800',
+                                'VER': 'bg-yellow-100 text-yellow-800', 'Portal': 'bg-purple-100 text-purple-700',
+                                'NO Mail': 'bg-orange-100 text-orange-700', 'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700' }[factura.fc] || 'bg-gray-100 text-gray-500'
+                            }`}>{factura.fc}</span>
+                          )}
+                          {categoriaArchivo(factura) === 'con' && (
+                            <button type="button" onClick={() => desvincularPdf(factura)}
+                              title="Desvincular PDF (para re-asignar)" className="text-gray-300 hover:text-red-600">
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
                       <TableCell className="max-w-48 truncate">
