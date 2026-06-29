@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     const { data: facturas, error } = await supabaseAdmin
       .schema(schema)
       .from('comprobantes_arca')
-      .select('id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url')
+      .select('id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total')
       .eq('año_contable', anio)
       .eq('mes_contable', mes)
     if (error) {
@@ -83,6 +83,7 @@ export async function POST(request: Request) {
     const payload = (facturas || []).map((f) => ({
       factura_id: f.id, cuit: f.cuit, punto_venta: f.punto_venta,
       numero_desde: f.numero_desde, denominacion: f.denominacion_emisor, fc: f.fc,
+      imp_total: f.imp_total, // para el chequeo de monto en el matcher (evita falsos positivos)
     }))
 
     // Una tanda
