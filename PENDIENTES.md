@@ -431,9 +431,12 @@ Así los mails de **otros temas quedan sin tocar**.
 
 ### 🔧 GAS PDF — estado del paquete
 
-#### ⭐ ESTADO ACTUAL — 2026-06-28 (noche), GAS **v0.9.9** (todo en `desarrollo`, en testing)
-Handoff de testing en memoria [[gas-pdf-testing-handoff]]. Progresión de versiones (cada una = un commit):
-- **0.9.9** — 🔑 **FIX OCR roto** (causa raíz de matches fallidos): `extraerTextoDeBlob` llamaba `Drive.Files.create` (API v3); si el servicio Drive del GAS está en **v2**, daba undefined → texto vacío → ni búsqueda ni auditoría validaban por contenido. Ahora robusto a v2 (`Files.insert` convert+ocr) y v3. + patrón nro ARCA "00002021" + la auditoría reporta **chars OCR por archivo** (0 = no leyó). Diagnosticado con PDF real (`exports_app/04-07 - La Mercure.pdf`, texto nativo, debía matchear y daba 0/34).
+#### ⭐ ESTADO ACTUAL — 2026-06-29, GAS **v0.9.14** (todo en `desarrollo`). Módulo "archivo digital" andando en Subdiarios.
+Handoff completo + plan de registro integral en memoria [[gas-pdf-testing-handoff]]. **Vive en: Egresos → Facturas MSA → Subdiarios → Consultar Período** (columna "Archivo / FC" 📎/❌/🌐 + estado FC + ✕ desvincular; chips que filtran; botones 📊 Conciliar saldos / 🗂️ Supervisar OCR / 🔄 Solo sin adjudicar; panel "PDFs sin vincular" con sugerencia ⭐ por nombre+fecha + Vincular + ✏️ renombrar + 🔧 Detalle debug). Progresión de versiones:
+- **0.9.14** — el matcher de la auditoría exige **MONTO** (valor abs, tol $1) además de CUIT+número → **corta falsos positivos** (un archivo de NC Rigo se cruzaba con una FC por compartir CUIT; "Coop tala x2" se cruzaba con ICT NET).
+- **0.9.13** — acción `listar` (Conciliar saldos: balance huérfanos/faltantes SIN OCR, instantáneo).
+- **0.9.12** — acción `renombrar` (renombrar un PDF huérfano mal nombrado).
+- **0.9.10** — 🔑 **FIX OCR DEFINITIVO**: extracción 100% por **REST de Drive** (UrlFetchApp + token); el servicio avanzado "Drive" NO estaba habilitado (`ReferenceError: Drive is not defined`) = causa raíz del OCR vacío. El usuario pegó `appsscript.json` (scopes drive+script.external_request+userinfo.email) y re-autorizó. *(0.9.11 = ignora xlsx + asunto mail "Supervisión…"; 0.9.9/0.9.8 intermedios.)*
 - **0.9.8** — adjunto del **mail OFICIAL del proveedor** que no valida (OCR pobre, ej. facturas de servicios) va a **`_Revisar`** en vez de `no_encontrada` (señal fuerte por remitente; elige PDF más grande para no archivar un logo) + motivo de descarte detallado en el debug. *(Caso Coopser.)*
 - **0.9.7** — **Confirmar VER** también etiqueta `Facturas Descargadas` + marca leído el mail (vía `gmail_message_id` persistido en `arca_pdf_busqueda_log` durante la búsqueda).
 - **0.9.6** — `resolverDestinatario` con cascada (body → Script Property `RESUMEN_DESTINATARIO` → getEffectiveUser → getActiveUser): **arregla el "no recipient"** del mail resumen (Access:Anyone hacía `getActiveUser`="").

@@ -6,12 +6,18 @@ informados por ARCA, y archiva el PDF en Drive.
 Vive **fuera** de la app Next.js — corre en tu cuenta Google porque necesita
 acceso a TU Gmail / TU Drive.
 
-## Versión actual: **v0.9.10** (verificable con un GET a la URL `/exec` → `{version}`)
+## Versión actual: **v0.9.14** (verificable con un GET a la URL `/exec` → `{version}`)
 
-> **v0.9.10 — FIX OCR definitivo**: la extracción de texto se hace **100% por la API REST de Drive**
-> (`UrlFetchApp` + token del script). **Ya NO requiere** habilitar el servicio avanzado "Drive API"
-> (que daba `ReferenceError: Drive is not defined` = causa real del `OCR: 0 chars`). No usa scopes
-> nuevos (alcanza con `drive` + `script.external_request`), así que **no hay que re-autorizar**.
+> **OCR (v0.9.10)**: extracción **100% por la API REST de Drive** (`UrlFetchApp` + token). NO requiere
+> habilitar el servicio avanzado "Drive API" (daba `ReferenceError: Drive is not defined`). Scopes:
+> `drive` + `script.external_request` (+ `userinfo.email`).
+>
+> **Anti falsos-positivos (v0.9.14)**: la auditoría (`facturaCoincide`) exige **CUIT + número + MONTO**
+> (valor absoluto, tolerancia $1). Antes validaba solo CUIT+número y se cruzaban comprobantes que
+> comparten CUIT (ej. NC vs FC del mismo proveedor). El endpoint manda `imp_total` en el payload.
+>
+> **Acciones nuevas**: `listar` (v0.9.13 — enumera la carpeta SIN OCR, para "Conciliar saldos") ·
+> `renombrar` (v0.9.12 — cambia el nombre de un archivo por id, sin mover).
 
 Capacidades acumuladas (más allá del "buscar y archivar" original):
 - **Catch-all de reenvíos** (`recolectores`: Jose/Andrés reenvían FC con su asunto).
