@@ -431,8 +431,10 @@ Así los mails de **otros temas quedan sin tocar**.
 
 ### 🔧 GAS PDF — estado del paquete
 
-#### ⭐ ESTADO ACTUAL — 2026-06-29, GAS **v0.9.14** (todo en `desarrollo`). Módulo "archivo digital" andando en Subdiarios.
-Handoff completo + plan de registro integral en memoria [[gas-pdf-testing-handoff]]. **Vive en: Egresos → Facturas MSA → Subdiarios → Consultar Período** (columna "Archivo / FC" 📎/❌/🌐 + estado FC + ✕ desvincular; chips que filtran; botones 📊 Conciliar saldos / 🗂️ Supervisar OCR / 🔄 Solo sin adjudicar; panel "PDFs sin vincular" con sugerencia ⭐ por nombre+fecha + Vincular + ✏️ renombrar + 🔧 Detalle debug). Progresión de versiones:
+#### ⭐ ESTADO ACTUAL — 2026-06-29, GAS **v0.9.16** (todo en `desarrollo`). Módulo "archivo digital" VALIDADO (período 5). **Tema pausado** (el user pasó a otro).
+Handoff completo + qué quedó pausado en memoria [[gas-pdf-testing-handoff]]. **Vive en: Egresos → Facturas MSA → Subdiarios → Consultar Período** (columna "Archivo / FC" 📎/❌/🌐 + estado FC + ✕ desvincular; chips que filtran; botones 📊 Conciliar saldos / 🗂️ Supervisar OCR / 🔄 Solo sin adjudicar; panel "PDFs sin vincular" con sugerencia ⭐ por nombre+fecha + Vincular + ✏️ renombrar + 🔧 Detalle debug). Progresión de versiones:
+- **0.9.16** — el mail de supervisión muestra **"✅ Vinculadas"** (proveedor·nº·monto·link), no solo lo que falta.
+- **0.9.15** — 🔑 **FIX extraerMontosPdf**: leía montos solo CON separadores ("1.312.600,00"); ARCA expone SIN ("1312600,00") → capturaba "600,00" y el chequeo de monto rechazaba estándar (muchas huérfanas con buen OCR). Ahora ambos formatos. **Validado período 5: ~26 auto-match correctos, sin falsos positivos.**
 - **0.9.14** — el matcher de la auditoría exige **MONTO** (valor abs, tol $1) además de CUIT+número → **corta falsos positivos** (un archivo de NC Rigo se cruzaba con una FC por compartir CUIT; "Coop tala x2" se cruzaba con ICT NET).
 - **0.9.13** — acción `listar` (Conciliar saldos: balance huérfanos/faltantes SIN OCR, instantáneo).
 - **0.9.12** — acción `renombrar` (renombrar un PDF huérfano mal nombrado).
