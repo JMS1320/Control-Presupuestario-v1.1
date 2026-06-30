@@ -473,6 +473,9 @@ Handoff completo + qué quedó pausado en memoria [[gas-pdf-testing-handoff]]. *
 - 🔴 **HUECOS en la secuencia de certificados 2026: faltan cert 24 y 26** (no existen, ni anulados → se borraron antes del fix "anular en vez de borrar"). SICORE exige numeración continua → revisar/recrear como anulados antes de declarar. (Aparte: cert 31 = Alcorta FC 6115, anulado en May 2da, intercalado con junio — la FC 6115 se movió May→Jun, confirmar pago 10/06.)
 - 🐞 **"Descargar comprobante" no aparece en estado `pagar`** (vista Facturas ARCA, factura del grupo Alcorta): solo da "resetear a importado". Quedó a medio investigar el panel SICORE/acciones según estado. Retomar.
 
+#### 💼 Sueldos — el alta/edición de empleado debe capturar los datos del export (2026-06-30)
+- **B-FEAT-EMPLEADO-EXPORT — Cargar requisitos de export al crear el empleado**: al crear/editar un empleado debe poder cargarse TODO lo que el export Galicia necesita: **cuenta(s) bancaria(s)** con **alias/CBU real**, **`grupo_export`** (a qué archivo Excel va) y **`concepto`** (motivo, ej. Honorarios). **Problema a evitar:** crear el empleado y después NO poder sacarle el pago por faltar esos requisitos de arquitectura. **Hoy** eso se carga *inline en el modal de export* (workaround que ya funciona), pero el modal **no debería** mostrar la config de grupos (es demasiado para ese contexto). **Mejora:** mover ese ABM a la pantalla de empleados (gestión de `cuentas_empleado` con alias/grupo/concepto), y dejar el modal de export solo para validar/completar excepciones. Detalle del mecanismo en memoria [[export-sueldos-galicia-grupos]] + ver `sueldos.cuentas_empleado` (cols `grupo_export`, `concepto`).
+
 ---
 *(Lo de abajo es el estado de la primera tanda 2026-06-27 — sigue válido como base, las versiones posteriores lo extienden.)*
 
