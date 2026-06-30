@@ -36,10 +36,8 @@ export function obtenerDestinatarioValido(prov: {
  * - Coma para miles
  */
 export function formatearImporteGalicia(monto: number): string {
-  return monto.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  // Galicia exige: SIN separador de miles y coma como decimal. Ej: 1234567,89
+  return (Number(monto) || 0).toFixed(2).replace('.', ',')
 }
 
 /**
