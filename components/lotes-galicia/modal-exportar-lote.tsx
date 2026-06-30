@@ -50,6 +50,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   // Edición inline de cuenta de empleado por fila de sueldo (clave = item.id del pago)
   const [edSueldo, setEdSueldo] = useState<Record<string, { alias?: string; grupo?: string; concepto?: string }>>({})
   const [guardandoSueldo, setGuardandoSueldo] = useState<string | null>(null)
+  // Mail por export para filas de sueldo (los empleados no tienen email persistido; va al Excel) — clave = item.id
+  const [emailsSueldo, setEmailsSueldo] = useState<Record<string, string>>({})
   const [modalCompletar, setModalCompletar] = useState<{
     open: boolean
     modo: 'email' | 'cbu'
@@ -65,6 +67,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     setFijar(new Set())
     setEdDatos({})
     setEdSueldo({})
+    setEmailsSueldo({})
     // Default fecha de pago: hoy
     const hoy = new Date()
     const isoHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -86,7 +89,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     if (!preview) return
     setGenerando(true)
     try {
-      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar] })
+      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar], emailsSueldo })
       if (!out.ok) { toast.error('Error: ' + out.error); return }
 
       // Descargar archivos
@@ -273,6 +276,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     setEdSueldo={setEdSueldo}
                     guardarDatosSueldo={guardarDatosSueldo}
                     guardandoSueldo={guardandoSueldo}
+                    emailsSueldo={emailsSueldo}
+                    setEmailsSueldo={setEmailsSueldo}
                   />
                 )}
                 {itemsSueldos.length > 0 && (
@@ -296,6 +301,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     setEdSueldo={setEdSueldo}
                     guardarDatosSueldo={guardarDatosSueldo}
                     guardandoSueldo={guardandoSueldo}
+                    emailsSueldo={emailsSueldo}
+                    setEmailsSueldo={setEmailsSueldo}
                     />
                   </div>
                 )}
@@ -336,6 +343,7 @@ function SectionTabla({
   mensajes, onMensaje, fijar, onToggleFijar,
   edDatos, setEdDatos, guardarDatosProv, guardandoProv,
   edSueldo, setEdSueldo, guardarDatosSueldo, guardandoSueldo,
+  emailsSueldo, setEmailsSueldo,
 }: {
   titulo: string
   items: ItemPreview[]
@@ -355,6 +363,8 @@ function SectionTabla({
   setEdSueldo: (fn: (prev: Record<string, { alias?: string; grupo?: string; concepto?: string }>) => Record<string, { alias?: string; grupo?: string; concepto?: string }>) => void
   guardarDatosSueldo: (item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null }) => void
   guardandoSueldo: string | null
+  emailsSueldo: Record<string, string>
+  setEmailsSueldo: (fn: (prev: Record<string, string>) => Record<string, string>) => void
 }) {
   return (
     <div className="border rounded-md overflow-hidden">
@@ -387,9 +397,14 @@ function SectionTabla({
               <td className="px-2 py-1 uppercase">{p.tipo}</td>
               <td className="px-2 py-1 max-w-[200px] truncate" title={p.razon_social}>{p.razon_social}</td>
               <td className="px-2 py-1 font-mono">{p.cuit}</td>
-              {/* Mail (email_pagos) — editable inline, guarda en proveedores. Sueldos no llevan mail. */}
+              {/* Mail — pagos: email_pagos del proveedor (persistente). Sueldos: mail por export (va al Excel junto a sanmanuel). */}
               <td className="px-2 py-1">
-                {p.tipo === 'sueldo' ? <span className="text-gray-400">—</span> : p.proveedor_id ? (() => {
+                {p.tipo === 'sueldo' ? (
+                  <input type="email" placeholder="mail (opcional)"
+                    className="border rounded px-1 py-0.5 text-[11px] w-36"
+                    value={emailsSueldo[p.id] ?? ''}
+                    onChange={e => setEmailsSueldo(prev => ({ ...prev, [p.id]: e.target.value }))} />
+                ) : p.proveedor_id ? (() => {
                   const stored = p.email_pagos ?? ''
                   const val = edDatos[p.proveedor_id]?.email ?? stored
                   const cambiado = val !== stored
@@ -412,21 +427,41 @@ function SectionTabla({
               {/* CBU/Alias — editable inline. Sueldos: alias de cuenta_empleado. Pagos: CBU/Alias del proveedor. */}
               <td className="px-2 py-1">
                 {p.tipo === 'sueldo' ? (() => {
-                  const stored = p.cbu ?? p.alias_cbu ?? ''
-                  const val = edSueldo[p.id]?.alias ?? stored
-                  const cambiado = val !== stored
+                  const storedAlias = p.cbu ?? p.alias_cbu ?? ''
+                  const storedGrupo = p.grupo_export ?? ''
+                  const storedConcepto = p.concepto ?? ''
+                  const valAlias = edSueldo[p.id]?.alias ?? storedAlias
+                  const valGrupo = edSueldo[p.id]?.grupo ?? storedGrupo
+                  const valConcepto = edSueldo[p.id]?.concepto ?? storedConcepto
+                  const cambiado = valAlias !== storedAlias || valGrupo !== storedGrupo || valConcepto !== storedConcepto
+                  const setF = (k: 'alias' | 'grupo' | 'concepto', v: string) =>
+                    setEdSueldo(prev => ({ ...prev, [p.id]: { ...prev[p.id], [k]: v } }))
                   return (
-                    <div className="flex items-center gap-1">
-                      <input type="text" placeholder="CBU o alias"
-                        className={`border rounded px-1 py-0.5 text-[11px] w-40 ${stored ? '' : 'border-orange-300 placeholder-orange-500'}`}
-                        value={val} disabled={guardandoSueldo === p.id}
-                        onChange={e => setEdSueldo(prev => ({ ...prev, [p.id]: { ...prev[p.id], alias: e.target.value } }))} />
-                      {cambiado && (
-                        <button type="button" title="Guardar alias de la cuenta" className="text-blue-600 shrink-0" disabled={guardandoSueldo === p.id}
-                          onClick={() => guardarDatosSueldo(p, { alias: val.trim() || null })}>
-                          {guardandoSueldo === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                        </button>
-                      )}
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1">
+                        <input type="text" placeholder="CBU o alias"
+                          className={`border rounded px-1 py-0.5 text-[11px] w-44 ${storedAlias ? '' : 'border-orange-300 placeholder-orange-500'}`}
+                          value={valAlias} disabled={guardandoSueldo === p.id}
+                          onChange={e => setF('alias', e.target.value)} />
+                        {cambiado && (
+                          <button type="button" title="Guardar cuenta del empleado (alias + grupo + concepto)" className="text-blue-600 shrink-0" disabled={guardandoSueldo === p.id}
+                            onClick={() => guardarDatosSueldo(p, { alias: valAlias.trim() || null, grupo_export: valGrupo.trim() || null, concepto: valConcepto.trim() || null })}>
+                            {guardandoSueldo === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input type="text" placeholder="grupo archivo"
+                          className={`border rounded px-1 py-0.5 text-[10px] w-24 ${storedGrupo ? '' : 'border-orange-300 placeholder-orange-500'}`}
+                          value={valGrupo} disabled={guardandoSueldo === p.id}
+                          title="Agrupa el archivo Excel (ej. sigot_gs, sigot_lucresia, general)"
+                          onChange={e => setF('grupo', e.target.value)} />
+                        <input type="text" placeholder="concepto"
+                          className="border rounded px-1 py-0.5 text-[10px] w-24"
+                          value={valConcepto} disabled={guardandoSueldo === p.id}
+                          title="Motivo del Excel (ej. Honorarios). Vacío = sin concepto"
+                          onChange={e => setF('concepto', e.target.value)} />
+                      </div>
                     </div>
                   )
                 })() : p.proveedor_id ? (() => {
@@ -463,52 +498,24 @@ function SectionTabla({
               <td className="px-2 py-1 text-orange-700 text-[10px] max-w-[200px] truncate" title={p.warnings.join(' / ')}>
                 {p.warnings.join(' / ')}
               </td>
-              {/* Última col: pagos = mensaje del email; sueldos = grupo de archivo + concepto (guardan en cuenta_empleado) */}
+              {/* Mensaje del email — igual para pagos y sueldos (va al Excel). "fijar" solo cuando hay proveedor. */}
               <td className="px-2 py-1">
-                {p.tipo === 'sueldo' ? (() => {
-                  const storedG = p.grupo_export ?? ''
-                  const storedC = p.concepto ?? ''
-                  const valG = edSueldo[p.id]?.grupo ?? storedG
-                  const valC = edSueldo[p.id]?.concepto ?? storedC
-                  const cambiado = valG !== storedG || valC !== storedC
-                  return (
-                    <div className="flex items-center gap-1">
-                      <input type="text" placeholder="grupo archivo"
-                        className={`border rounded px-1 py-0.5 text-[11px] w-28 ${storedG ? '' : 'border-orange-300 placeholder-orange-500'}`}
-                        value={valG} disabled={guardandoSueldo === p.id}
-                        title="Agrupa el sueldo en su archivo Excel (ej. sigot_lucresia, sigot_gs, general)"
-                        onChange={e => setEdSueldo(prev => ({ ...prev, [p.id]: { ...prev[p.id], grupo: e.target.value } }))} />
-                      <input type="text" placeholder="concepto"
-                        className="border rounded px-1 py-0.5 text-[11px] w-24"
-                        value={valC} disabled={guardandoSueldo === p.id}
-                        title="Motivo del Excel (ej. Honorarios). Vacío = sin concepto"
-                        onChange={e => setEdSueldo(prev => ({ ...prev, [p.id]: { ...prev[p.id], concepto: e.target.value } }))} />
-                      {cambiado && (
-                        <button type="button" title="Guardar grupo/concepto" className="text-blue-600 shrink-0" disabled={guardandoSueldo === p.id}
-                          onClick={() => guardarDatosSueldo(p, { grupo_export: valG.trim() || null, concepto: valC.trim() || null })}>
-                          {guardandoSueldo === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                        </button>
-                      )}
-                    </div>
-                  )
-                })() : (
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      className="border rounded px-1 py-0.5 text-[11px] w-40"
-                      placeholder={p.mensaje ? '' : 'sin mensaje'}
-                      value={mensajes[p.id] ?? (p.mensaje ?? '')}
-                      onChange={e => onMensaje(p.id, e.target.value.slice(0, 200))}
-                      title={p.mensaje ? `Fijo del proveedor: ${p.mensaje}` : 'Sin mensaje fijo — podés escribir uno'}
-                    />
-                    {p.proveedor_id && (
-                      <label className="flex items-center gap-0.5 text-[10px] text-gray-500 whitespace-nowrap" title="Guardar este mensaje como fijo del proveedor">
-                        <input type="checkbox" checked={fijar.has(p.id)} onChange={() => onToggleFijar(p.id)} />
-                        fijar
-                      </label>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    className="border rounded px-1 py-0.5 text-[11px] w-40"
+                    placeholder={p.mensaje ? '' : 'sin mensaje'}
+                    value={mensajes[p.id] ?? (p.mensaje ?? '')}
+                    onChange={e => onMensaje(p.id, e.target.value.slice(0, 200))}
+                    title={p.mensaje ? `Fijo del proveedor: ${p.mensaje}` : 'Sin mensaje fijo — podés escribir uno'}
+                  />
+                  {p.proveedor_id && (
+                    <label className="flex items-center gap-0.5 text-[10px] text-gray-500 whitespace-nowrap" title="Guardar este mensaje como fijo del proveedor">
+                      <input type="checkbox" checked={fijar.has(p.id)} onChange={() => onToggleFijar(p.id)} />
+                      fijar
+                    </label>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

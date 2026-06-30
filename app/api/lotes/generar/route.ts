@@ -35,7 +35,7 @@ const MAX_FILAS_POR_ARCHIVO = 50
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as GenerarLoteInput
-    const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje } = body
+    const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje, emailsSueldo } = body
 
     if (!empresa || !['MSA', 'PAM', 'MA'].includes(empresa)) {
       return NextResponse.json({ ok: false, error: 'empresa requerida' }, { status: 400 })
@@ -81,6 +81,13 @@ export async function POST(request: Request) {
     for (const it of [...pagosValidos, ...sueldosValidos]) {
       if (mensajes && Object.prototype.hasOwnProperty.call(mensajes, it.id)) {
         it.mensaje = mensajes[it.id]  // puede ser '' para limpiar
+      }
+    }
+
+    // ── 2b'. Mail por export de sueldos (los empleados no tienen email persistido) → al campo email_pagos ──
+    for (const it of sueldosValidos) {
+      if (emailsSueldo && emailsSueldo[it.id]?.trim()) {
+        it.email_pagos = emailsSueldo[it.id].trim()
       }
     }
 
