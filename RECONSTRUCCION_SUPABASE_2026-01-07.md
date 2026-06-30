@@ -3330,6 +3330,8 @@ Seed inicial: Sigot Lucresia → `sigot_lucresia`; Sigot Galicia/Santander → `
 
 También se relajó `banco` a **nullable** (`ALTER TABLE sueldos.cuentas_empleado ALTER COLUMN banco DROP NOT NULL`): al crear una cuenta inline solo se carga el alias/CBU; `banco` es etiqueta opcional, no se usa para transferir.
 
+Y se agregó **`email`** a `cuentas_empleado` (`ADD COLUMN IF NOT EXISTS email varchar`): mail del empleado para el comprobante del Excel. Persistente (se auto-completa en el modal y se puede editar/guardar, igual que el mail de proveedor). El generar usa `it.email_pagos` (= ese email) → `sanmanuel.sp@gmail.com;<email>`. Seed inicial: AMS y JMS → `concepto='Honorarios'`; grupos default `general` (Wilson → `sigot_gs`).
+
 ### **2026-06-30: `aguinaldo_a` / `aguinaldo_b` en `sueldos.periodos` (carga manual del aguinaldo)**
 
 El módulo de sueldos no contemplaba aguinaldo. Como los demás conceptos (vacaciones, premio, varios) son **columnas del período**, se agregan 2 columnas para el aguinaldo con sus categorías A y B (carga manual, sin cálculo automático). Suman al `bruto_calculado` (vía `extras` en `calcularBruto`) → el `saldo_pendiente` lo contempla. El pago se deja como está (no se agregó tipo 'aguinaldo' en `pagos`). La **vista** `public.sueldos_periodos` se recreó para exponer las columnas (lista columnas explícitas, no `SELECT *`).

@@ -48,10 +48,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   const [edDatos, setEdDatos] = useState<Record<string, { email?: string; cbuAlias?: string }>>({})
   const [guardandoProv, setGuardandoProv] = useState<string | null>(null)
   // Edición inline de cuenta de empleado por fila de sueldo (clave = item.id del pago)
-  const [edSueldo, setEdSueldo] = useState<Record<string, { alias?: string; grupo?: string; concepto?: string }>>({})
+  const [edSueldo, setEdSueldo] = useState<Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>>({})
   const [guardandoSueldo, setGuardandoSueldo] = useState<string | null>(null)
-  // Mail por export para filas de sueldo (los empleados no tienen email persistido; va al Excel) — clave = item.id
-  const [emailsSueldo, setEmailsSueldo] = useState<Record<string, string>>({})
   const [modalCompletar, setModalCompletar] = useState<{
     open: boolean
     modo: 'email' | 'cbu'
@@ -67,7 +65,6 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     setFijar(new Set())
     setEdDatos({})
     setEdSueldo({})
-    setEmailsSueldo({})
     // Default fecha de pago: hoy
     const hoy = new Date()
     const isoHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -89,7 +86,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     if (!preview) return
     setGenerando(true)
     try {
-      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar], emailsSueldo })
+      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar] })
       if (!out.ok) { toast.error('Error: ' + out.error); return }
 
       // Descargar archivos
@@ -140,7 +137,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   }
 
   // Guarda alias/grupo/concepto de la cuenta del empleado (sueldos.cuentas_empleado) y refresca el preview.
-  async function guardarDatosSueldo(item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null }) {
+  async function guardarDatosSueldo(item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null; email?: string | null }) {
     if (!item.empleado_id) { toast.error('Falta el empleado de este pago'); return }
     setGuardandoSueldo(item.id)
     try {
@@ -276,8 +273,6 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     setEdSueldo={setEdSueldo}
                     guardarDatosSueldo={guardarDatosSueldo}
                     guardandoSueldo={guardandoSueldo}
-                    emailsSueldo={emailsSueldo}
-                    setEmailsSueldo={setEmailsSueldo}
                   />
                 )}
                 {itemsSueldos.length > 0 && (
@@ -301,8 +296,6 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     setEdSueldo={setEdSueldo}
                     guardarDatosSueldo={guardarDatosSueldo}
                     guardandoSueldo={guardandoSueldo}
-                    emailsSueldo={emailsSueldo}
-                    setEmailsSueldo={setEmailsSueldo}
                     />
                   </div>
                 )}
@@ -343,7 +336,6 @@ function SectionTabla({
   mensajes, onMensaje, fijar, onToggleFijar,
   edDatos, setEdDatos, guardarDatosProv, guardandoProv,
   edSueldo, setEdSueldo, guardarDatosSueldo, guardandoSueldo,
-  emailsSueldo, setEmailsSueldo,
 }: {
   titulo: string
   items: ItemPreview[]
@@ -359,12 +351,10 @@ function SectionTabla({
   setEdDatos: (fn: (prev: Record<string, { email?: string; cbuAlias?: string }>) => Record<string, { email?: string; cbuAlias?: string }>) => void
   guardarDatosProv: (proveedorId: string, campos: { email_pagos?: string | null; cbu?: string | null; alias_cbu?: string | null }) => void
   guardandoProv: string | null
-  edSueldo: Record<string, { alias?: string; grupo?: string; concepto?: string }>
-  setEdSueldo: (fn: (prev: Record<string, { alias?: string; grupo?: string; concepto?: string }>) => Record<string, { alias?: string; grupo?: string; concepto?: string }>) => void
-  guardarDatosSueldo: (item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null }) => void
+  edSueldo: Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>
+  setEdSueldo: (fn: (prev: Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>) => Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>) => void
+  guardarDatosSueldo: (item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null; email?: string | null }) => void
   guardandoSueldo: string | null
-  emailsSueldo: Record<string, string>
-  setEmailsSueldo: (fn: (prev: Record<string, string>) => Record<string, string>) => void
 }) {
   return (
     <div className="border rounded-md overflow-hidden">
@@ -399,12 +389,25 @@ function SectionTabla({
               <td className="px-2 py-1 font-mono">{p.cuit}</td>
               {/* Mail — pagos: email_pagos del proveedor (persistente). Sueldos: mail por export (va al Excel junto a sanmanuel). */}
               <td className="px-2 py-1">
-                {p.tipo === 'sueldo' ? (
-                  <input type="email" placeholder="mail (opcional)"
-                    className="border rounded px-1 py-0.5 text-[11px] w-36"
-                    value={emailsSueldo[p.id] ?? ''}
-                    onChange={e => setEmailsSueldo(prev => ({ ...prev, [p.id]: e.target.value }))} />
-                ) : p.proveedor_id ? (() => {
+                {p.tipo === 'sueldo' ? (() => {
+                  const stored = p.email_pagos ?? ''
+                  const val = edSueldo[p.id]?.email ?? stored
+                  const cambiado = val !== stored
+                  return (
+                    <div className="flex items-center gap-1">
+                      <input type="email" placeholder="mail (opcional)"
+                        className="border rounded px-1 py-0.5 text-[11px] w-36"
+                        value={val} disabled={guardandoSueldo === p.id}
+                        onChange={e => setEdSueldo(prev => ({ ...prev, [p.id]: { ...prev[p.id], email: e.target.value } }))} />
+                      {cambiado && (
+                        <button type="button" title="Guardar mail del empleado" className="text-blue-600 shrink-0" disabled={guardandoSueldo === p.id}
+                          onClick={() => guardarDatosSueldo(p, { email: val.trim() || null })}>
+                          {guardandoSueldo === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })() : p.proveedor_id ? (() => {
                   const stored = p.email_pagos ?? ''
                   const val = edDatos[p.proveedor_id]?.email ?? stored
                   const cambiado = val !== stored

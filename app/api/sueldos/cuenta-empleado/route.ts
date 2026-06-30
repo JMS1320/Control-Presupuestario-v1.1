@@ -18,7 +18,7 @@ export const runtime = 'nodejs'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { empleado_id, cuenta_id, banco, alias, grupo_export, concepto } = body
+    const { empleado_id, cuenta_id, banco, alias, grupo_export, concepto, email } = body
     if (!empleado_id) {
       return NextResponse.json({ ok: false, error: 'empleado_id requerido' }, { status: 400 })
     }
@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     if (alias !== undefined) campos.alias = alias ? String(alias).trim() : null
     if (grupo_export !== undefined) campos.grupo_export = grupo_export ? String(grupo_export).trim() : null
     if (concepto !== undefined) campos.concepto = concepto ? String(concepto).trim() : null
+    if (email !== undefined) campos.email = email ? String(email).trim() : null
 
     const db = supabaseAdmin.schema('sueldos')
 

@@ -115,7 +115,6 @@ export interface GenerarLoteInput {
   user_role?: string
   mensajes?: Record<string, string>   // itemId → mensaje override (lo que tipeó el usuario para la col "Mensaje")
   fijarMensaje?: string[]             // itemIds cuyo mensaje hay que guardar como fijo en el proveedor
-  emailsSueldo?: Record<string, string>  // itemId (pago sueldo) → mail por export (los empleados no tienen email persistido)
 }
 
 /** Output del endpoint /api/lotes/generar */

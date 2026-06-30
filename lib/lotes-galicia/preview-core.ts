@@ -28,6 +28,7 @@ interface ItemRaw {
   alias_cuenta?: string | null
   grupo_export?: string | null
   concepto?: string | null
+  email_cuenta?: string | null
 }
 
 /** Carga + valida los items y devuelve el PreviewLoteOutput. Lanza error si algo falla (lo captura el endpoint). */
@@ -172,7 +173,7 @@ function construirPreviewSueldo(raw: ItemRaw): ItemPreview {
     proveedor_id: null,
     cuit: raw.cuit || '',
     razon_social: raw.razon_social || '(sin nombre)',
-    email_pagos: null,
+    email_pagos: raw.email_cuenta || null,
     cbu: esCbu ? String(dest).replace(/\s/g, '') : null,
     alias_cbu: esCbu ? null : dest,
     ultimo_uso_bancario: null,
@@ -306,7 +307,7 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
     // Cuentas de esos empleados (para resolver el destino: alias, grupo_export, concepto)
     const { data: cuentas } = empIds.length
       ? await supabaseAdmin.schema('sueldos').from('cuentas_empleado')
-          .select('id, empleado_id, banco, alias, grupo_export, concepto, activo')
+          .select('id, empleado_id, banco, alias, grupo_export, concepto, email, activo')
           .in('empleado_id', empIds)
       : { data: [] }
     const empMap = new Map<string, any>()
@@ -338,6 +339,7 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
         alias_cuenta: cuenta?.alias || null,
         grupo_export: cuenta?.grupo_export || null,
         concepto: cuenta?.concepto || null,
+        email_cuenta: cuenta?.email || null,
       })
     })
   }
