@@ -3317,6 +3317,18 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-30: `aguinaldo_a` / `aguinaldo_b` en `sueldos.periodos` (carga manual del aguinaldo)**
+
+El módulo de sueldos no contemplaba aguinaldo. Como los demás conceptos (vacaciones, premio, varios) son **columnas del período**, se agregan 2 columnas para el aguinaldo con sus categorías A y B (carga manual, sin cálculo automático). Suman al `bruto_calculado` (vía `extras` en `calcularBruto`) → el `saldo_pendiente` lo contempla. El pago se deja como está (no se agregó tipo 'aguinaldo' en `pagos`). La **vista** `public.sueldos_periodos` se recreó para exponer las columnas (lista columnas explícitas, no `SELECT *`).
+
+```sql
+ALTER TABLE sueldos.periodos
+  ADD COLUMN IF NOT EXISTS aguinaldo_a numeric,
+  ADD COLUMN IF NOT EXISTS aguinaldo_b numeric;
+-- + CREATE OR REPLACE VIEW public.sueldos_periodos (agregando aguinaldo_a, aguinaldo_b al final del SELECT).
+```
+UI: `tab-sueldos.tsx` — inputs "Aguinaldo A/B" en el modal de edición del período + badge en la tabla. Empleados sin aguinaldo (Elvio, Fabian) quedan en NULL.
+
 ### **2026-06-30: `fc` en `reglas_ctas_import_arca` (unificar "portal" en la regla de import)**
 
 "Portal" estaba partido en 3 lugares sin sincronizar (la regla de import seteaba `estado`+`cuenta` pero NO el `fc`, que quedaba hardcodeado en `'Buscar'`). Se agrega `fc` a la regla para que el import lo aplique → una regla puede decir "Autopistas → cuenta PEAJES, estado credito, **fc Portal**" y se setea solo al importar. Aditivo, nullable (NULL = `'Buscar'`, comportamiento previo). El configurador `ModalReglasImport` tiene ahora el campo FC.

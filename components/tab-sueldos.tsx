@@ -63,6 +63,8 @@ interface Periodo {
   valor_franco: number | null
   vacaciones: number | null
   premio: number | null
+  aguinaldo_a: number | null
+  aguinaldo_b: number | null
   observaciones: string | null
 }
 
@@ -200,6 +202,8 @@ export function TabSueldos() {
   const [francoAutoSync, setFrancoAutoSync] = useState(true)
   const [edVacaciones, setEdVacaciones] = useState('')
   const [edPremio, setEdPremio] = useState('')
+  const [edAguinaldoA, setEdAguinaldoA] = useState('')
+  const [edAguinaldoB, setEdAguinaldoB] = useState('')
   const [edObservaciones, setEdObservaciones] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
@@ -509,8 +513,8 @@ export function TabSueldos() {
 
   const num = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
 
-  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0) => {
-    const extras = varios + vacaciones + premio
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0, aguinaldoA = 0, aguinaldoB = 0) => {
+    const extras = varios + vacaciones + premio + aguinaldoA + aguinaldoB
     switch (tipo) {
       case 'ab_francos':   return (a + b) + (valorFranco * francos) + extras
       case 'por_dia':      return vdia * dias + extras
@@ -537,6 +541,8 @@ export function TabSueldos() {
     setEdVarios(p.varios !== null && p.varios !== 0 ? fmt(p.varios) : '')
     setEdVacaciones(p.vacaciones !== null && p.vacaciones !== 0 ? fmt(p.vacaciones) : '')
     setEdPremio(p.premio !== null && p.premio !== 0 ? fmt(p.premio) : '')
+    setEdAguinaldoA(p.aguinaldo_a !== null && p.aguinaldo_a !== 0 ? fmt(p.aguinaldo_a) : '')
+    setEdAguinaldoB(p.aguinaldo_b !== null && p.aguinaldo_b !== 0 ? fmt(p.aguinaldo_b) : '')
     setEdObservaciones(p.observaciones ?? '')
     // Valor franco: si tiene uno guardado, usarlo; sino calcular de A+B
     if (p.valor_franco !== null && p.valor_franco !== undefined) {
@@ -593,14 +599,18 @@ export function TabSueldos() {
     const varios    = num(edVarios)
     const vacaciones = num(edVacaciones)
     const premio    = num(edPremio)
+    const aguinaldoA = num(edAguinaldoA)
+    const aguinaldoB = num(edAguinaldoB)
 
-    const nuevoBruto = calcularBruto(tipo, a, b, francos, vf, vdia, dias, vhora, horas, varios, vacaciones, premio)
+    const nuevoBruto = calcularBruto(tipo, a, b, francos, vf, vdia, dias, vhora, horas, varios, vacaciones, premio, aguinaldoA, aguinaldoB)
     const nuevoSaldo = nuevoBruto - (edPeriodo.anticipos_descontados ?? 0)
 
     const updateData: Record<string, any> = {
       varios,
       vacaciones: vacaciones || null,
       premio: premio || null,
+      aguinaldo_a: aguinaldoA || null,
+      aguinaldo_b: aguinaldoB || null,
       observaciones: edObservaciones.trim() || null,
       bruto_calculado: nuevoBruto,
       saldo_pendiente: nuevoSaldo,
@@ -661,6 +671,7 @@ export function TabSueldos() {
         num(edValorDia), parseInt(edDias) || 0,
         num(edValorHora), parseInt(edHoras) || 0,
         num(edVarios), num(edVacaciones), num(edPremio),
+        num(edAguinaldoA), num(edAguinaldoB),
       )
     : 0
 
@@ -1096,6 +1107,12 @@ export function TabSueldos() {
                             Premio +{formatoMoneda(p.premio)}
                           </span>
                         ) : null}
+                        {(p.aguinaldo_a || p.aguinaldo_b) ? (
+                          <span className="text-xs bg-green-50 text-green-700 px-1.5 py-0 rounded"
+                            title={`Aguinaldo A ${formatoMoneda(p.aguinaldo_a ?? 0)} · B ${formatoMoneda(p.aguinaldo_b ?? 0)}`}>
+                            Aguinaldo +{formatoMoneda((p.aguinaldo_a ?? 0) + (p.aguinaldo_b ?? 0))}
+                          </span>
+                        ) : null}
                         {p.observaciones ? (
                           <span className="text-xs text-gray-400 italic" title={p.observaciones}>
                             {p.observaciones.length > 40 ? p.observaciones.slice(0, 40) + '…' : p.observaciones}
@@ -1416,6 +1433,28 @@ export function TabSueldos() {
                     placeholder="0,00"
                     value={edPremio}
                     onChange={e => setEdPremio(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Aguinaldo — categorías A y B (carga manual; suma al bruto/saldo) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Aguinaldo A</Label>
+                  <Input
+                    type="text"
+                    placeholder="0,00"
+                    value={edAguinaldoA}
+                    onChange={e => setEdAguinaldoA(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label>Aguinaldo B</Label>
+                  <Input
+                    type="text"
+                    placeholder="0,00"
+                    value={edAguinaldoB}
+                    onChange={e => setEdAguinaldoB(e.target.value)}
                   />
                 </div>
               </div>
