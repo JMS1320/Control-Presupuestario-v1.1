@@ -221,8 +221,9 @@ function generarExcelBuffer(items: ItemPreview[]): Buffer {
     const importeStr = formatearImporteGalicia(it.monto)
     const motivo = it.motivo_sugerido || motivoSugerido(it.tipo)
     const descripcion = abreviarDescripcion(it.tipo, it.descripcion)
-    // Si el proveedor no tiene mail cargado, el comprobante igual se envía a una casilla de control.
-    const email = it.email_pagos || 'sanmanuel.sp@gmail.com'
+    // Galicia acepta varios mails separados por ";". SIEMPRE va la casilla de control (sanmanuel)
+    // y, si el proveedor tiene mail, se le SUMA (no reemplaza). Ej: "sanmanuel.sp@gmail.com;prov@x.com".
+    const email = 'sanmanuel.sp@gmail.com' + (it.email_pagos ? ';' + it.email_pagos : '')
 
     filas.push([
       dest.valor,
