@@ -3317,6 +3317,16 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-30: `fc` en `reglas_ctas_import_arca` (unificar "portal" en la regla de import)**
+
+"Portal" estaba partido en 3 lugares sin sincronizar (la regla de import seteaba `estado`+`cuenta` pero NO el `fc`, que quedaba hardcodeado en `'Buscar'`). Se agrega `fc` a la regla para que el import lo aplique → una regla puede decir "Autopistas → cuenta PEAJES, estado credito, **fc Portal**" y se setea solo al importar. Aditivo, nullable (NULL = `'Buscar'`, comportamiento previo). El configurador `ModalReglasImport` tiene ahora el campo FC.
+
+```sql
+ALTER TABLE public.reglas_ctas_import_arca
+  ADD COLUMN IF NOT EXISTS fc varchar;  -- NULL = Buscar (default)
+```
+`buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
+
 ### **2026-06-28: `gmail_message_id` en `arca_pdf_busqueda_log` (GAS PDF — Confirmar etiqueta el mail)**
 
 Para que al **Confirmar** una factura en VER/`_Revisar` el GAS pueda etiquetar (`Facturas Descargadas`) + marcar leído el mail de Gmail —igual que el match exacto—, hay que persistir el id del mensaje de Gmail entre la búsqueda (soft-match) y la confirmación (otra request, días después). Se guarda en el log de búsqueda, junto al `drive_url` del candidato. Aditivo, nullable, bajo riesgo (tabla de auditoría). GAS v0.9.7.

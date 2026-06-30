@@ -22,10 +22,11 @@ interface Regla {
   denominacion_emisor: string | null
   cuenta_contable: string
   estado: string
+  fc: string | null
   activo: boolean
 }
 
-const FORM_VACIO = { cuit: '', denominacion_emisor: '', cuenta_contable: '', estado: 'pendiente', activo: true }
+const FORM_VACIO = { cuit: '', denominacion_emisor: '', cuenta_contable: '', estado: 'pendiente', fc: 'Buscar', activo: true }
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente: 'bg-gray-100 text-gray-700',
@@ -64,6 +65,7 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
       denominacion_emisor: r.denominacion_emisor || '',
       cuenta_contable: r.cuenta_contable,
       estado: r.estado || 'pendiente',
+      fc: r.fc || 'Buscar',
       activo: r.activo !== false,
     })
     setEditId(r.id)
@@ -79,6 +81,7 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
       denominacion_emisor: form.denominacion_emisor.trim() || null,
       cuenta_contable: form.cuenta_contable,
       estado: form.estado,
+      fc: form.fc,
       activo: form.activo,
       updated_at: new Date().toISOString(),
     }
@@ -103,7 +106,7 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
   const filtradas = reglas.filter(r => {
     const q = normalizarBusqueda(busqueda)
     if (!q) return true
-    return [r.cuit, r.denominacion_emisor, r.cuenta_contable, r.estado]
+    return [r.cuit, r.denominacion_emisor, r.cuenta_contable, r.estado, r.fc]
       .some(c => normalizarBusqueda(c || '').includes(q))
   })
 
@@ -113,8 +116,8 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
         <DialogHeader>
           <DialogTitle>Reglas de importación ARCA</DialogTitle>
           <DialogDescription>
-            Al importar facturas, si el CUIT coincide se asigna automáticamente la cuenta contable y el estado.
-            Las reglas son únicas por CUIT (aplican a todas las empresas).
+            Al importar facturas, si el CUIT coincide se asigna automáticamente la cuenta contable, el estado y el FC
+            (ej. Portal para los que vienen del portal del proveedor). Las reglas son únicas por CUIT (aplican a todas las empresas).
           </DialogDescription>
         </DialogHeader>
 
@@ -165,6 +168,18 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex-1">
+                <Label className="text-xs">FC (archivo PDF)</Label>
+                <Select value={form.fc} onValueChange={v => setForm(f => ({ ...f, fc: v }))}>
+                  <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Buscar">Buscar (busca el PDF)</SelectItem>
+                    <SelectItem value="Portal">Portal (no busca)</SelectItem>
+                    <SelectItem value="NO">NO (no tengo)</SelectItem>
+                    <SelectItem value="Sí">Sí</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <label className="flex items-center gap-2 text-sm pb-2 cursor-pointer">
                 <Checkbox checked={form.activo} onCheckedChange={c => setForm(f => ({ ...f, activo: !!c }))} />
                 Activa
@@ -194,13 +209,14 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
                   <TableHead className="text-xs">Proveedor</TableHead>
                   <TableHead className="text-xs">Cuenta contable</TableHead>
                   <TableHead className="text-xs">Estado</TableHead>
+                  <TableHead className="text-xs">FC</TableHead>
                   <TableHead className="text-xs">Activa</TableHead>
                   <TableHead className="text-xs w-[90px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtradas.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="h-20 text-center text-muted-foreground text-sm">Sin reglas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="h-20 text-center text-muted-foreground text-sm">Sin reglas</TableCell></TableRow>
                 ) : filtradas.map(r => (
                   <TableRow key={r.id} className={r.activo === false ? 'opacity-50' : ''}>
                     <TableCell className="text-sm font-mono">{r.cuit}</TableCell>
@@ -209,6 +225,7 @@ export function ModalReglasImport({ open, onClose }: { open: boolean; onClose: (
                     <TableCell>
                       <Badge variant="outline" className={`text-xs ${ESTADO_BADGE[r.estado] || ''}`}>{r.estado}</Badge>
                     </TableCell>
+                    <TableCell className="text-sm">{r.fc || 'Buscar'}</TableCell>
                     <TableCell className="text-sm">{r.activo === false ? 'No' : 'Sí'}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">

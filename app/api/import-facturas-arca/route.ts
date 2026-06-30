@@ -137,25 +137,25 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
  * Busca regla de asignación automática por CUIT
  * Si existe regla, devuelve cuenta_contable y estado a asignar
  */
-async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string}> {
+async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string, fc: string | null}> {
   try {
     const { data, error } = await supabase
       .from('reglas_ctas_import_arca')
-      .select('cuenta_contable, estado')
+      .select('cuenta_contable, estado, fc')
       .eq('cuit', cuit)
       .eq('activo', true)
       .single()
 
     if (error || !data) {
       // No hay regla para este CUIT - usar valores por defecto
-      return { cuenta_contable: null, estado: 'pendiente' }
+      return { cuenta_contable: null, estado: 'pendiente', fc: null }
     }
 
-    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}`)
-    return data
+    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}, fc=${data.fc || '(default Buscar)'}`)
+    return { cuenta_contable: data.cuenta_contable, estado: data.estado, fc: data.fc ?? null }
   } catch (err) {
     console.error(`❌ Error buscando regla CUIT ${cuit}:`, err)
-    return { cuenta_contable: null, estado: 'pendiente' }
+    return { cuenta_contable: null, estado: 'pendiente', fc: null }
   }
 }
 
@@ -316,7 +316,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
     año_contable: null, // Dejar en blanco (no usar default de BD)
-    fc: 'Buscar', // Default: queda para búsqueda automática de PDF. La imputación del usuario lo pisa si elige (Portal/No/Sí). Nulls viejos NO se migran (históricos).
+    fc: reglaCuit.fc || 'Buscar', // De la regla del CUIT si existe (ej. Portal); si no, 'Buscar'. La imputación del usuario lo pisa si elige (Portal/No/Sí).
     cuenta_contable: reglaCuit.cuenta_contable, // ← Aplicar regla CUIT si existe
     centro_costo: null,
     estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
