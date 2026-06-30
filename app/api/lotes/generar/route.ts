@@ -232,7 +232,8 @@ function generarExcelBuffer(items: ItemPreview[]): Buffer {
     const importeStr = formatearImporteGalicia(it.monto)
     // Sueldos: el motivo es el concepto de la cuenta (puede quedar VACÍO a propósito). Resto: motivo sugerido.
     const motivo = it.tipo === 'sueldo' ? (it.concepto || '') : (it.motivo_sugerido || motivoSugerido(it.tipo))
-    const descripcion = abreviarDescripcion(it.tipo, it.descripcion)
+    // Sueldos: descripción vacía. Resto: descripción abreviada (12 chars).
+    const descripcion = it.tipo === 'sueldo' ? '' : abreviarDescripcion(it.tipo, it.descripcion)
     // Galicia acepta varios mails separados por ";". SIEMPRE va la casilla de control (sanmanuel)
     // y, si el proveedor tiene mail, se le SUMA (no reemplaza). Ej: "sanmanuel.sp@gmail.com;prov@x.com".
     const email = 'sanmanuel.sp@gmail.com' + (it.email_pagos ? ';' + it.email_pagos : '')
