@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, AlertTriangle, Mail, CreditCard } from 'lucide-react'
+import { Loader2, AlertTriangle, Mail, CreditCard, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   llamarPreview, llamarGenerar, descargarArchivosLote,
@@ -44,6 +44,9 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   const [generando, setGenerando] = useState(false)
   const [mensajes, setMensajes] = useState<Record<string, string>>({}) // itemId → override de mensaje
   const [fijar, setFijar] = useState<Set<string>>(new Set())            // itemIds a guardar como fijo
+  // Edición inline de mail/CBU/Alias por proveedor (clave = proveedor_id)
+  const [edDatos, setEdDatos] = useState<Record<string, { email?: string; cbuAlias?: string }>>({})
+  const [guardandoProv, setGuardandoProv] = useState<string | null>(null)
   const [modalCompletar, setModalCompletar] = useState<{
     open: boolean
     modo: 'email' | 'cbu'
@@ -57,6 +60,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     cargarPreview()
     setMensajes({})
     setFijar(new Set())
+    setEdDatos({})
     // Default fecha de pago: hoy
     const hoy = new Date()
     const isoHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -104,6 +108,27 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
       toast.error('Error: ' + (err as Error).message)
     } finally {
       setGenerando(false)
+    }
+  }
+
+  // Guarda mail (email_pagos) y/o CBU/Alias de un proveedor en la BBDD (proveedores) y refresca el preview.
+  // El CBU/Alias se detecta: 22 dígitos → cbu, si no → alias_cbu.
+  async function guardarDatosProv(proveedorId: string, campos: { email_pagos?: string | null; cbu?: string | null; alias_cbu?: string | null }) {
+    setGuardandoProv(proveedorId)
+    try {
+      const r = await fetch('/api/gas/config-proveedor', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proveedor_id: proveedorId, ...campos }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo guardar: ' + (d.error || '')); return }
+      toast.success('Datos del proveedor guardados')
+      setEdDatos(prev => { const n = { ...prev }; delete n[proveedorId]; return n })
+      await cargarPreview() // refresca ✓/falta y los valores
+    } catch (e) {
+      toast.error('Error al guardar: ' + (e as Error).message)
+    } finally {
+      setGuardandoProv(null)
     }
   }
 
@@ -215,6 +240,10 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                     onMensaje={(id, v) => setMensajes(prev => ({ ...prev, [id]: v }))}
                     fijar={fijar}
                     onToggleFijar={(id) => setFijar(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
+                    edDatos={edDatos}
+                    setEdDatos={setEdDatos}
+                    guardarDatosProv={guardarDatosProv}
+                    guardandoProv={guardandoProv}
                   />
                 )}
                 {itemsSueldos.length > 0 && (
@@ -230,6 +259,10 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                       onMensaje={(id, v) => setMensajes(prev => ({ ...prev, [id]: v }))}
                       fijar={fijar}
                       onToggleFijar={(id) => setFijar(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })}
+                      edDatos={edDatos}
+                      setEdDatos={setEdDatos}
+                      guardarDatosProv={guardarDatosProv}
+                      guardandoProv={guardandoProv}
                     />
                   </div>
                 )}
@@ -268,6 +301,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
 function SectionTabla({
   titulo, items, totalValidos, totalExcluidos, montoValido, montoExcluido,
   mensajes, onMensaje, fijar, onToggleFijar,
+  edDatos, setEdDatos, guardarDatosProv, guardandoProv,
 }: {
   titulo: string
   items: ItemPreview[]
@@ -279,6 +313,10 @@ function SectionTabla({
   onMensaje: (id: string, v: string) => void
   fijar: Set<string>
   onToggleFijar: (id: string) => void
+  edDatos: Record<string, { email?: string; cbuAlias?: string }>
+  setEdDatos: (fn: (prev: Record<string, { email?: string; cbuAlias?: string }>) => Record<string, { email?: string; cbuAlias?: string }>) => void
+  guardarDatosProv: (proveedorId: string, campos: { email_pagos?: string | null; cbu?: string | null; alias_cbu?: string | null }) => void
+  guardandoProv: string | null
 }) {
   return (
     <div className="border rounded-md overflow-hidden">
@@ -311,9 +349,55 @@ function SectionTabla({
               <td className="px-2 py-1 uppercase">{p.tipo}</td>
               <td className="px-2 py-1 max-w-[200px] truncate" title={p.razon_social}>{p.razon_social}</td>
               <td className="px-2 py-1 font-mono">{p.cuit}</td>
-              <td className="px-2 py-1">{p.email_pagos ? '✅' : <span className="text-red-600">❌ falta</span>}</td>
+              {/* Mail (email_pagos) — editable inline, guarda en proveedores */}
               <td className="px-2 py-1">
-                {p.cbu ? <span title={p.cbu}>CBU ✓</span> : p.alias_cbu ? <span title={p.alias_cbu}>Alias ✓</span> : <span className="text-red-600">❌ falta</span>}
+                {p.proveedor_id ? (() => {
+                  const stored = p.email_pagos ?? ''
+                  const val = edDatos[p.proveedor_id]?.email ?? stored
+                  const cambiado = val !== stored
+                  return (
+                    <div className="flex items-center gap-1">
+                      <input type="email" placeholder="agregar mail"
+                        className={`border rounded px-1 py-0.5 text-[11px] w-36 ${stored ? '' : 'border-orange-300 placeholder-orange-500'}`}
+                        value={val} disabled={guardandoProv === p.proveedor_id}
+                        onChange={e => setEdDatos(prev => ({ ...prev, [p.proveedor_id!]: { ...prev[p.proveedor_id!], email: e.target.value } }))} />
+                      {cambiado && (
+                        <button type="button" title="Guardar mail" className="text-blue-600 shrink-0" disabled={guardandoProv === p.proveedor_id}
+                          onClick={() => guardarDatosProv(p.proveedor_id!, { email_pagos: val.trim() || null })}>
+                          {guardandoProv === p.proveedor_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })() : (p.email_pagos || <span className="text-red-600">❌ falta</span>)}
+              </td>
+              {/* CBU/Alias — editable inline (22 dígitos = CBU, si no = Alias), guarda en proveedores */}
+              <td className="px-2 py-1">
+                {p.proveedor_id ? (() => {
+                  const stored = p.cbu ?? p.alias_cbu ?? ''
+                  const val = edDatos[p.proveedor_id]?.cbuAlias ?? stored
+                  const cambiado = val !== stored
+                  const guardar = () => {
+                    const limpio = val.replace(/\s/g, '')
+                    if (!limpio) return guardarDatosProv(p.proveedor_id!, { cbu: null, alias_cbu: null })
+                    if (/^\d{22}$/.test(limpio)) return guardarDatosProv(p.proveedor_id!, { cbu: limpio, alias_cbu: null })
+                    return guardarDatosProv(p.proveedor_id!, { alias_cbu: val.trim(), cbu: null })
+                  }
+                  return (
+                    <div className="flex items-center gap-1">
+                      <input type="text" placeholder="CBU o Alias"
+                        className={`border rounded px-1 py-0.5 text-[11px] w-40 ${stored ? '' : 'border-orange-300 placeholder-orange-500'}`}
+                        value={val} disabled={guardandoProv === p.proveedor_id}
+                        onChange={e => setEdDatos(prev => ({ ...prev, [p.proveedor_id!]: { ...prev[p.proveedor_id!], cbuAlias: e.target.value } }))} />
+                      {cambiado && (
+                        <button type="button" title="Guardar CBU/Alias" className="text-blue-600 shrink-0" disabled={guardandoProv === p.proveedor_id}
+                          onClick={guardar}>
+                          {guardandoProv === p.proveedor_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })() : (p.cbu ? 'CBU ✓' : p.alias_cbu ? 'Alias ✓' : <span className="text-red-600">❌ falta</span>)}
               </td>
               <td className="px-2 py-1 text-right">{fmtMonto(p.monto)}</td>
               <td className={`px-2 py-1 ${p.ultimo_uso_warning ? 'text-orange-700 font-medium' : ''}`}>
