@@ -3328,6 +3328,8 @@ ALTER TABLE sueldos.cuentas_empleado
 ```
 Seed inicial: Sigot Lucresia → `sigot_lucresia`; Sigot Galicia/Santander → `sigot_gs`. El modal de export permite cargar al vuelo alias/grupo/concepto (endpoint `POST /api/sueldos/cuenta-empleado`) cuando faltan datos. Lógica en `lib/lotes-galicia/preview-core.ts` (`construirPreviewSueldo`) + `app/api/lotes/generar`.
 
+También se relajó `banco` a **nullable** (`ALTER TABLE sueldos.cuentas_empleado ALTER COLUMN banco DROP NOT NULL`): al crear una cuenta inline solo se carga el alias/CBU; `banco` es etiqueta opcional, no se usa para transferir.
+
 ### **2026-06-30: `aguinaldo_a` / `aguinaldo_b` en `sueldos.periodos` (carga manual del aguinaldo)**
 
 El módulo de sueldos no contemplaba aguinaldo. Como los demás conceptos (vacaciones, premio, varios) son **columnas del período**, se agregan 2 columnas para el aguinaldo con sus categorías A y B (carga manual, sin cálculo automático). Suman al `bruto_calculado` (vía `extras` en `calcularBruto`) → el `saldo_pendiente` lo contempla. El pago se deja como está (no se agregó tipo 'aguinaldo' en `pagos`). La **vista** `public.sueldos_periodos` se recreó para exponer las columnas (lista columnas explícitas, no `SELECT *`).
