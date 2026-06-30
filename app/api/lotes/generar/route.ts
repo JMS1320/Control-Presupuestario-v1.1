@@ -229,7 +229,8 @@ function generarExcelBuffer(items: ItemPreview[]): Buffer {
     const importeStr = formatearImporteGalicia(it.monto)
     const motivo = it.motivo_sugerido || motivoSugerido(it.tipo)
     const descripcion = abreviarDescripcion(it.tipo, it.descripcion)
-    const email = it.email_pagos || ''
+    // Si el proveedor no tiene mail cargado, el comprobante igual se envía a una casilla de control.
+    const email = it.email_pagos || 'sanmanuel.sp@gmail.com'
 
     filas.push([
       dest.valor,
