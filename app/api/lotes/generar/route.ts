@@ -19,13 +19,14 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import * as XLSX from 'xlsx'
 import type {
-  GenerarLoteInput, GenerarLoteOutput, ItemPreview,
+  GenerarLoteInput, GenerarLoteOutput, ItemPreview, Empresa,
 } from '@/lib/lotes-galicia/types'
 import {
   validarCBU, validarAlias, obtenerDestinatarioValido,
   formatearImporteGalicia, motivoSugerido, abreviarDescripcion,
   nombreArchivoLote, empresaToSchema,
 } from '@/lib/lotes-galicia/helpers'
+import { computarPreview } from '@/lib/lotes-galicia/preview-core'
 
 export const runtime = 'nodejs'
 
@@ -46,18 +47,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'items vacío' }, { status: 400 })
     }
 
-    // ── 1. Llamar al preview internamente para obtener los ItemPreview validados ──
-    // Reutilizamos la lógica via fetch a /api/lotes/preview
-    const previewUrl = new URL('/api/lotes/preview', request.url)
-    const previewResp = await fetch(previewUrl.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ empresa, items }),
-    })
-    const previewData = await previewResp.json()
-    if (!previewData.ok) {
-      return NextResponse.json({ ok: false, error: previewData.error || 'preview falló' }, { status: 500 })
-    }
+    // ── 1. Calcular el preview con la MISMA lógica compartida (sin fetch HTTP: el server-to-server
+    //      fetch al endpoint preview devolvía la página de protección de Vercel en el preview deploy → HTML). ──
+    const previewData = await computarPreview(empresa as Empresa, items)
     if (previewData.bloqueantes?.length > 0) {
       return NextResponse.json({
         ok: false,
