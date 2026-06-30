@@ -91,13 +91,18 @@ export function nombreArchivoLote(opts: {
   empresa: string
   fechaPago: string         // YYYY-MM-DD
   tipo: 'pagos' | 'sueldos'
+  grupo?: string            // grupo_export de sueldos (va al nombre para distinguir archivos)
   parteN?: number           // si se parte por límite 50
   parteTotal?: number
 }): string {
   const fechaCorta = opts.fechaPago.replace(/-/g, '')
   const tipoTxt = opts.tipo === 'sueldos' ? 'Sueldos' : 'Pagos'
+  // El grupo "general" (o vacío) no se nombra; los demás sí, para distinguir los archivos.
+  const grupoTxt = opts.grupo && opts.grupo !== 'general'
+    ? ` ${opts.grupo.charAt(0).toUpperCase()}${opts.grupo.slice(1)}`
+    : ''
   const parte = opts.parteTotal && opts.parteTotal > 1
     ? ` (${opts.parteN}-${opts.parteTotal})`
     : ''
-  return `Galicia ${opts.empresa} ${tipoTxt} ${fechaCorta}${parte}.xlsx`
+  return `Galicia ${opts.empresa} ${tipoTxt}${grupoTxt} ${fechaCorta}${parte}.xlsx`
 }

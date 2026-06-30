@@ -75,6 +75,12 @@ export interface ItemPreview {
   warnings: string[]      // ej: ["Sin CBU", "Sin email", "Último uso hace 5 meses"]
   bloqueante: string | null  // si !== null, no puede exportar (ej: grupo con 2 CUITs)
   excluido_del_excel: boolean  // calculado: si no tiene CBU/Alias → quedará fuera
+  // ── Solo SUELDOS: datos de la cuenta del empleado (sueldos.cuentas_empleado) ──
+  empleado_id?: string | null
+  cuenta_destino_id?: string | null   // cuenta a la que se acredita este pago (puede ser null si el empleado tiene 1 sola)
+  banco?: string | null
+  grupo_export?: string | null        // agrupa el sueldo en su archivo Excel
+  concepto?: string | null            // motivo del Excel (ej. Honorarios); null = sin concepto
 }
 
 /** Output del endpoint /api/lotes/preview */

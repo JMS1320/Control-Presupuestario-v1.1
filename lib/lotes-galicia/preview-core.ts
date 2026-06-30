@@ -21,6 +21,13 @@ interface ItemRaw {
   descripcion?: string
   moneda?: string
   bloqueante?: string
+  // ── Solo sueldos: cuenta del empleado ya resuelta ──
+  empleado_id?: string
+  cuenta_destino_id?: string | null
+  banco?: string | null
+  alias_cuenta?: string | null
+  grupo_export?: string | null
+  concepto?: string | null
 }
 
 /** Carga + valida los items y devuelve el PreviewLoteOutput. Lanza error si algo falla (lo captura el endpoint). */
@@ -43,6 +50,9 @@ export async function computarPreview(
 
   // ── 3. Construir ItemPreview para cada item ──
   const previews: ItemPreview[] = rawItems.map(raw => {
+    // SUELDOS: el destino sale de la cuenta del empleado (cuentas_empleado), no de proveedores.
+    if (raw.tipo === 'sueldo') return construirPreviewSueldo(raw)
+
     const prov = raw.cuit ? provMap.get(raw.cuit) : null
     const warnings: string[] = []
     let bloqueante: string | null = raw.bloqueante || null
@@ -140,6 +150,47 @@ export async function computarPreview(
     bloqueantes,
     proveedores_sin_email: [...sinEmailMap.values()],
     proveedores_sin_cbu: [...sinCbuMap.values()],
+  }
+}
+
+// Construye el ItemPreview de un sueldo: el destino es la cuenta del empleado (CBU o alias).
+function construirPreviewSueldo(raw: ItemRaw): ItemPreview {
+  const dest = raw.alias_cuenta || null            // el campo "alias" de cuentas_empleado puede tener un CBU o un alias real
+  const esCbu = validarCBU(dest)
+  const esAlias = validarAlias(dest)
+  const valido = esCbu || esAlias
+  const excluido = !valido
+  const warnings: string[] = []
+  if (!dest) warnings.push('Sin cuenta (CBU/alias)')
+  else if (!valido) warnings.push('CBU/alias formato inválido')
+  if (!raw.grupo_export) warnings.push('Sin grupo de archivo')
+
+  return {
+    tipo: 'sueldo',
+    id: raw.id,
+    schema: raw.schema,
+    proveedor_id: null,
+    cuit: raw.cuit || '',
+    razon_social: raw.razon_social || '(sin nombre)',
+    email_pagos: null,
+    cbu: esCbu ? String(dest).replace(/\s/g, '') : null,
+    alias_cbu: esCbu ? null : dest,
+    ultimo_uso_bancario: null,
+    ultimo_uso_dias: null,
+    ultimo_uso_warning: false,
+    monto: raw.monto || 0,
+    descripcion: raw.descripcion || '',
+    motivo_sugerido: raw.concepto || '', // motivo del Excel = concepto (puede quedar vacío)
+    moneda: 'ARS',
+    mensaje: null,
+    warnings,
+    bloqueante: raw.bloqueante || null,
+    excluido_del_excel: excluido,
+    empleado_id: raw.empleado_id || null,
+    cuenta_destino_id: raw.cuenta_destino_id || null,
+    banco: raw.banco || null,
+    grupo_export: raw.grupo_export || null,
+    concepto: raw.concepto || null,
   }
 }
 
@@ -244,7 +295,7 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
   // Sueldos
   if (porTipo['sueldo']?.length) {
     const { data: pagos } = await supabaseAdmin.schema('sueldos').from('pagos')
-      .select('id, empleado_id, monto, descripcion, tipo')
+      .select('id, empleado_id, monto, descripcion, tipo, cuenta_destino_id')
       .in('id', porTipo['sueldo'])
     const empIds = [...new Set((pagos || []).map((p: any) => p.empleado_id))]
     const { data: empleados } = empIds.length
@@ -252,15 +303,41 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
           .select('id, nombre, cuit_empleado')
           .in('id', empIds)
       : { data: [] }
+    // Cuentas de esos empleados (para resolver el destino: alias, grupo_export, concepto)
+    const { data: cuentas } = empIds.length
+      ? await supabaseAdmin.schema('sueldos').from('cuentas_empleado')
+          .select('id, empleado_id, banco, alias, grupo_export, concepto, activo')
+          .in('empleado_id', empIds)
+      : { data: [] }
     const empMap = new Map<string, any>()
     ;(empleados || []).forEach((e: any) => empMap.set(e.id, e))
+    const cuentaById = new Map<string, any>()
+    const cuentasByEmpleado = new Map<string, any[]>()
+    ;(cuentas || []).forEach((c: any) => {
+      cuentaById.set(c.id, c)
+      const arr = cuentasByEmpleado.get(c.empleado_id) || []
+      arr.push(c)
+      cuentasByEmpleado.set(c.empleado_id, arr)
+    })
     ;(pagos || []).forEach((p: any) => {
       const e = empMap.get(p.empleado_id)
       const cuit = (e?.cuit_empleado || '').replace(/\D/g, '')
+      // Resolver cuenta: la del pago (cuenta_destino_id) o, si no, la única activa del empleado.
+      let cuenta = p.cuenta_destino_id ? cuentaById.get(p.cuenta_destino_id) : null
+      if (!cuenta) {
+        const activas = (cuentasByEmpleado.get(p.empleado_id) || []).filter((c: any) => c.activo !== false)
+        if (activas.length === 1) cuenta = activas[0]
+      }
       out.push({
         tipo: 'sueldo', id: p.id, cuit, razon_social: e?.nombre,
         monto: Number(p.monto || 0),
         descripcion: `SLDO ${e?.nombre?.split(' ')[0] || ''}`.trim(), moneda: 'ARS',
+        empleado_id: p.empleado_id,
+        cuenta_destino_id: p.cuenta_destino_id || cuenta?.id || null,
+        banco: cuenta?.banco || null,
+        alias_cuenta: cuenta?.alias || null,
+        grupo_export: cuenta?.grupo_export || null,
+        concepto: cuenta?.concepto || null,
       })
     })
   }

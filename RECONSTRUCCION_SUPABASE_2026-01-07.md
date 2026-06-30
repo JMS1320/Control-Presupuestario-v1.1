@@ -3317,6 +3317,17 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
+
+El export de sueldos a Galicia ahora: (1) toma el destino de **`cuentas_empleado`** (alias/CBU, vía `pago.cuenta_destino_id` o la única cuenta activa del empleado) en vez de `proveedores`; (2) genera **un Excel por `grupo_export`** (ej. Sigot Lucresia en archivo propio; Sigot Galicia+Santander+Wilson juntos; el resto general); (3) usa `concepto` como "Motivo" del Excel (ej. Honorarios; vacío permitido).
+
+```sql
+ALTER TABLE sueldos.cuentas_empleado
+  ADD COLUMN IF NOT EXISTS grupo_export varchar,  -- agrupa el archivo Excel (NULL/'general' = archivo general)
+  ADD COLUMN IF NOT EXISTS concepto varchar;       -- motivo del Excel (NULL = sin concepto)
+```
+Seed inicial: Sigot Lucresia → `sigot_lucresia`; Sigot Galicia/Santander → `sigot_gs`. El modal de export permite cargar al vuelo alias/grupo/concepto (endpoint `POST /api/sueldos/cuenta-empleado`) cuando faltan datos. Lógica en `lib/lotes-galicia/preview-core.ts` (`construirPreviewSueldo`) + `app/api/lotes/generar`.
+
 ### **2026-06-30: `aguinaldo_a` / `aguinaldo_b` en `sueldos.periodos` (carga manual del aguinaldo)**
 
 El módulo de sueldos no contemplaba aguinaldo. Como los demás conceptos (vacaciones, premio, varios) son **columnas del período**, se agregan 2 columnas para el aguinaldo con sus categorías A y B (carga manual, sin cálculo automático). Suman al `bruto_calculado` (vía `extras` en `calcularBruto`) → el `saldo_pendiente` lo contempla. El pago se deja como está (no se agregó tipo 'aguinaldo' en `pagos`). La **vista** `public.sueldos_periodos` se recreó para exponer las columnas (lista columnas explícitas, no `SELECT *`).

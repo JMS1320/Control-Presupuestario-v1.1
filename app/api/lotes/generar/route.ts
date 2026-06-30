@@ -101,7 +101,17 @@ export async function POST(request: Request) {
 
     // ── 3. Generar Excel(s) ──
     const archivosPagos = generarArchivos(pagosValidos, { empresa, fechaPago: fecha_pago, tipo: 'pagos' })
-    const archivosSueldos = generarArchivos(sueldosValidos, { empresa, fechaPago: fecha_pago, tipo: 'sueldos' })
+    // Sueldos: un archivo (o más, por límite de 50) POR grupo_export → distintos grupos = distintos Excel.
+    const sueldosPorGrupo = new Map<string, ItemPreview[]>()
+    for (const s of sueldosValidos) {
+      const g = s.grupo_export || 'general'
+      const arr = sueldosPorGrupo.get(g) || []
+      arr.push(s)
+      sueldosPorGrupo.set(g, arr)
+    }
+    const archivosSueldos = [...sueldosPorGrupo.entries()].flatMap(([grupo, items]) =>
+      generarArchivos(items, { empresa, fechaPago: fecha_pago, tipo: 'sueldos', grupo })
+    )
 
     // ── 4. UPDATE proveedores.ultimo_uso_bancario ──
     const provIds = [...new Set([...pagosValidos, ...sueldosValidos].map(p => p.proveedor_id).filter(Boolean) as string[])]
@@ -170,7 +180,7 @@ export async function POST(request: Request) {
 // Generación del Excel formato Galicia
 // ─────────────────────────────────────────────────────────────────
 
-function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPago: string; tipo: 'pagos' | 'sueldos' }) {
+function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPago: string; tipo: 'pagos' | 'sueldos'; grupo?: string }) {
   if (items.length === 0) return []
 
   // Partir en chunks de MAX_FILAS_POR_ARCHIVO
@@ -184,6 +194,7 @@ function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPag
       empresa: opts.empresa,
       fechaPago: opts.fechaPago,
       tipo: opts.tipo,
+      grupo: opts.grupo,
       parteN: idx + 1,
       parteTotal: chunks.length,
     })
@@ -219,7 +230,8 @@ function generarExcelBuffer(items: ItemPreview[]): Buffer {
     if (!dest) continue // no debería pasar (filtrado antes), pero defensivo
 
     const importeStr = formatearImporteGalicia(it.monto)
-    const motivo = it.motivo_sugerido || motivoSugerido(it.tipo)
+    // Sueldos: el motivo es el concepto de la cuenta (puede quedar VACÍO a propósito). Resto: motivo sugerido.
+    const motivo = it.tipo === 'sueldo' ? (it.concepto || '') : (it.motivo_sugerido || motivoSugerido(it.tipo))
     const descripcion = abreviarDescripcion(it.tipo, it.descripcion)
     // Galicia acepta varios mails separados por ";". SIEMPRE va la casilla de control (sanmanuel)
     // y, si el proveedor tiene mail, se le SUMA (no reemplaza). Ej: "sanmanuel.sp@gmail.com;prov@x.com".
