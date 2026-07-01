@@ -286,6 +286,7 @@ export function VistaExtractoBancario() {
 
   // Estados importador
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [importFiles, setImportFiles] = useState<File[]>([]) // varios PDFs (tarjeta) — se ordenan por cierre
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState<any>(null)
   const [importSaldoInicial, setImportSaldoInicial] = useState('')
@@ -296,8 +297,19 @@ export function VistaExtractoBancario() {
   const [importForzar, setImportForzar] = useState(false)
 
   const { procesoEnCurso, error, resultados, ejecutarConciliacion, cuentasDisponibles } = useMotorConciliacion()
-  const tablaActiva = cuentaSeleccionada || 'msa_galicia'
-  const schemaActivo = CUENTAS_BANCARIAS.find(c => c.id === (cuentaSeleccionada || 'msa_galicia'))?.schema_bd || 'public'
+  // Detalle del último lote conciliado (para verificar cantidad/alcance procesado)
+  const [infoLote, setInfoLote] = useState<{ scope: 'filtrado' | 'todos'; cuenta: string; solicitados: number } | null>(null)
+  const [resumenesExpandidos, setResumenesExpandidos] = useState<Set<string>>(new Set()) // tarjeta: qué resúmenes están desplegados
+  const [conciliandoNr, setConciliandoNr] = useState<string | null>(null) // tarjeta: resumen que se está conciliando
+  // cuentaId = id lógico de la cuenta (para cuenta_bancaria_id, config import, submit).
+  // tablaActiva = nombre REAL de la tabla en BD (para .from()). Para bancos/cajas coinciden;
+  // para tarjetas NO (id 'tarjeta_visa_business_msa' vs tabla 'tarjeta_visa_business').
+  const cuentaId = cuentaSeleccionada || 'msa_galicia'
+  const cuentaActivaObj = CUENTAS_BANCARIAS.find(c => c.id === cuentaId)
+  const tablaActiva = cuentaActivaObj?.tabla_bd || cuentaId
+  const schemaActivo = cuentaActivaObj?.schema_bd || 'public'
+  // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
+  const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
@@ -340,9 +352,11 @@ export function VistaExtractoBancario() {
 
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   const movimientosVisibles = useMemo(() => {
+    // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
+    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen')
     let lista = categsFiltro
-      ? movimientos.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
-      : movimientos
+      ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
+      : base
     const q = normalizarBusqueda(busqueda)
     if (q) {
       lista = lista.filter(m => {
@@ -357,6 +371,28 @@ export function VistaExtractoBancario() {
     return lista
   }, [movimientos, categsFiltro, busqueda])
 
+  // Info por resumen (tarjeta): total oficial, suma en vivo, control, pendientes — para las cabeceras agrupadas
+  const resumenInfoTarjeta = useMemo(() => {
+    const map = new Map<string, { total: number | null; viva: number; dif: number | null; pendientes: number; cierre: string }>()
+    const grupos = new Map<string, { resumen: any; movs: any[] }>()
+    for (const m of movimientos as any[]) {
+      const nr = m.nro_resumen || '(sin resumen)'
+      if (!grupos.has(nr)) grupos.set(nr, { resumen: null, movs: [] })
+      if (m.tipo_fila === 'resumen') grupos.get(nr)!.resumen = m
+      else grupos.get(nr)!.movs.push(m)
+    }
+    for (const [nr, g] of grupos) {
+      const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
+      const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
+      const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
+      const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+      const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
+      const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago').length
+      map.set(nr, { total, viva, dif, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' })
+    }
+    return map
+  }, [movimientos])
+
   // Cargar facturas cuando se activa modo edición
   useEffect(() => {
     if (modoEdicion) {
@@ -365,16 +401,111 @@ export function VistaExtractoBancario() {
   }, [modoEdicion])
 
   // Iniciar proceso de conciliación
+  // Si hay filtros activos → corre SOLO sobre los pendientes visibles (con aviso).
+  // Si no hay filtros → corre sobre TODOS los pendientes (el límite de filas NO cuenta como filtro).
   const iniciarConciliacion = async () => {
     if (!cuentaSeleccionada) {
       setSelectorAbierto(true)
       return
     }
-    
+
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
-    if (cuenta) {
+    if (!cuenta) return
+
+    // Filtro activo = cualquier acotamiento deliberado (NO el límite de carga)
+    const hayFiltroActivo =
+      categsFiltro !== null ||
+      busqueda.trim() !== '' ||
+      filtroCategEspecial !== null ||
+      filtroRevisado !== 'todas' ||
+      filtroEstado !== 'Todos'
+
+    if (hayFiltroActivo) {
+      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente')
+      if (pendientesVisibles.length === 0) {
+        alert('No hay movimientos pendientes en lo visible. Quitá los filtros para conciliar todo, o ajustalos.')
+        return
+      }
+      const ok = window.confirm(
+        `Hay filtros activos: se conciliará SOLO lo visible (${pendientesVisibles.length} movimiento(s) pendiente(s)), no todos los pendientes.\n\n¿Continuar?`
+      )
+      if (!ok) return
+      setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesVisibles.length })
+      await ejecutarConciliacion(cuenta, pendientesVisibles as any)
+    } else {
+      setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
       await ejecutarConciliacion(cuenta)
+    }
+    recargar()
+  }
+
+  // Conciliar UN resumen de tarjeta: (1) auto-match contra facturas crédito por monto, (2) motor de reglas con el resto
+  const conciliarResumen = async (nr: string, cierre?: string) => {
+    if (!cuentaSeleccionada) return
+    const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
+    if (!cuenta) return
+    const pend = (movimientos as any[]).filter((m: any) => m.nro_resumen === nr && m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen')
+    if (pend.length === 0) {
+      alert('No hay movimientos pendientes para conciliar en este resumen.')
+      return
+    }
+    const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
+    setConciliandoNr(nr)
+    try {
+      // 1) Auto-conciliar contra facturas en estado 'credito' por monto (tolerancia centavos)
+      const { data: facturas } = await supabase.schema('msa')
+        .from('comprobantes_arca')
+        .select('id, cuit, imp_total, cuenta_contable, nro_cuenta, denominacion_emisor')
+        .eq('estado', 'credito')
+      let pool = [...(facturas || [])]
+      const matchedIds = new Set<string>()
+      let conc = 0, amb = 0
+      for (const m of pend) {
+        const d = Number(m.debitos) || 0
+        if (d <= 0) continue
+        const cands = pool.filter((f: any) => Math.abs((Number(f.imp_total) || 0) - d) <= 1)
+        if (cands.length === 1) {
+          const f: any = cands[0]
+          const cuit = (f.cuit || '').replace(/[-\s]/g, '')
+          const { data: prov } = cuit
+            ? await supabase.from('proveedores').select('razon_social').eq('cuit', cuit).maybeSingle()
+            : { data: null }
+          const upd: Record<string, any> = {
+            comprobante_arca_id: f.id,
+            detalle: null,
+            estado: 'conciliado',
+            proveedor_nombre: prov?.razon_social || f.denominacion_emisor || null,
+            comprobantes_pagados: f.denominacion_emisor || null,
+          }
+          if (f.cuenta_contable) upd.categ = f.cuenta_contable
+          if (f.nro_cuenta) upd.nro_cuenta = f.nro_cuenta
+          const { error: errMov } = await dbCuenta().from(tablaActiva).update(upd).eq('id', m.id)
+          if (errMov) { console.error('Error conciliando movimiento tarjeta:', errMov); continue } // no concilia si falla el update
+          await supabase.schema('msa').from('comprobantes_arca')
+            .update({ estado: 'conciliado', fecha_vencimiento: m.fecha, monto_a_abonar: d })
+            .eq('id', f.id)
+          actualizarLocal(m.id, upd)
+          pool = pool.filter((x: any) => x.id !== f.id)
+          matchedIds.add(m.id)
+          conc++
+        } else if (cands.length > 1) {
+          amb++
+        }
+      }
+
+      // 2) Motor de reglas sobre lo que quedó pendiente
+      const restantes = pend.filter((m: any) => !matchedIds.has(m.id))
+      setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: restantes.length })
+      if (restantes.length > 0) await ejecutarConciliacion(cuenta, restantes as any)
       recargar()
+      alert(
+        `Resumen ${etiqueta}:\n` +
+        `✅ ${conc} conciliada(s) contra factura crédito\n` +
+        (amb ? `⚠️ ${amb} con varias facturas del mismo monto (resolver a mano)\n` : '') +
+        `— ${restantes.length} pasaron al motor de reglas`
+      )
+    } finally {
+      setConciliandoNr(null)
     }
   }
 
@@ -438,7 +569,7 @@ export function VistaExtractoBancario() {
         // Si se marcaron como "Conciliado", actualizar facturas vinculadas y limpiar motivo_revision
         if (editData.estado === 'conciliado') {
           // Limpiar motivo_revision para movimientos marcados como Conciliado
-          const { error: errorLimpiar } = await supabase
+          const { error: errorLimpiar } = await dbCuenta()
             .from(tablaActiva)
             .update({ motivo_revision: null })
             .in('id', ids)
@@ -530,7 +661,7 @@ export function VistaExtractoBancario() {
                 } else {
                   console.log(`✅ Factura ARCA ${opcionId} actualizada:`, updateData)
                   // Guardar vínculo persistente en el movimiento bancario
-                  await supabase
+                  await dbCuenta()
                     .from(tablaActiva)
                     .update({ comprobante_arca_id: opcionId })
                     .eq('id', movimientoId)
@@ -994,7 +1125,7 @@ export function VistaExtractoBancario() {
           const { data } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'especifica')
             .eq('template_id', templateId)
             .eq('activo', true)
@@ -1007,7 +1138,7 @@ export function VistaExtractoBancario() {
           const { data } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'responsable')
             .eq('responsable', responsable)
             .eq('activo', true)
@@ -1027,7 +1158,7 @@ export function VistaExtractoBancario() {
         }
         // Limpiar vínculo ARCA anterior si existía
         if (movimientoAsignando.comprobante_arca_id) {
-          await supabase.from(tablaActiva)
+          await dbCuenta().from(tablaActiva)
             .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
         }
 
@@ -1098,7 +1229,7 @@ export function VistaExtractoBancario() {
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateTemplate)
           .eq('id', movimientoAsignando.id)
@@ -1135,7 +1266,7 @@ export function VistaExtractoBancario() {
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
         if (internoManual.trim()) updateArca.interno = internoManual.trim()
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateArca)
           .eq('id', movimientoAsignando.id)
@@ -1166,7 +1297,7 @@ export function VistaExtractoBancario() {
             .delete().eq('id', movimientoAsignando.template_cuota_id)
         }
         if (movimientoAsignando.comprobante_arca_id) {
-          await supabase.from(tablaActiva)
+          await dbCuenta().from(tablaActiva)
             .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
         }
 
@@ -1185,7 +1316,7 @@ export function VistaExtractoBancario() {
           const { data: reglaEmp } = await supabase
             .from('reglas_contable_interno')
             .select('codigo_contable, codigo_interno')
-            .eq('cuenta_bancaria_id', tablaActiva)
+            .eq('cuenta_bancaria_id', cuentaId)
             .eq('tipo_regla', 'empleado')
             .eq('empleado_id', empleadoId)
             .eq('activo', true)
@@ -1208,7 +1339,7 @@ export function VistaExtractoBancario() {
         updateSueldo.contable = contableManual.trim() || codigosSueldo.contable || ''
         updateSueldo.interno  = internoManual.trim()  || codigosSueldo.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateSueldo)
           .eq('id', movimientoAsignando.id)
@@ -1297,7 +1428,7 @@ export function VistaExtractoBancario() {
         updateGrupo.contable = contableManual.trim() || codigos.contable || ''
         updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
 
-        const { error: errExt } = await supabase
+        const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
           .update(updateGrupo)
           .eq('id', movimientoAsignando.id)
@@ -1587,42 +1718,60 @@ export function VistaExtractoBancario() {
         </Alert>
       )}
 
-      {/* Resultados del Proceso */}
+      {/* Resultados del Proceso — resumen del último lote conciliado */}
       {resultados && (
         <Card className="border-green-200 bg-green-50">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="text-green-800 flex items-center gap-2">
               <CheckCircle className="h-5 w-5" />
-              Conciliación Completada
+              Conciliación completada
             </CardTitle>
+            {infoLote && (
+              <div className="text-sm text-green-900/80 mt-1">
+                Lote: <span className="font-semibold">{infoLote.cuenta}</span>
+                {' · '}
+                {infoLote.scope === 'filtrado'
+                  ? <span>solo lo filtrado (<span className="font-semibold">{infoLote.solicitados}</span> pendientes seleccionados)</span>
+                  : <span>todos los pendientes</span>}
+              </div>
+            )}
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-5 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-700">
+                  {resultados.total_movimientos}
+                </div>
+                <div className="text-sm text-gray-600">Procesados</div>
+              </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
                   {resultados.automaticos}
                 </div>
-                <div className="text-sm text-gray-600">Automáticos</div>
+                <div className="text-sm text-gray-600">Conciliados</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-yellow-600">
                   {resultados.revision_manual}
                 </div>
-                <div className="text-sm text-gray-600">Revisión Manual</div>
+                <div className="text-sm text-gray-600">A auditar</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
                   {resultados.sin_match}
                 </div>
-                <div className="text-sm text-gray-600">Sin Match</div>
+                <div className="text-sm text-gray-600">Sin match</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-600">
-                  {resultados.total_movimientos}
+                <div className={`text-2xl font-bold ${resultados.errores > 0 ? 'text-red-700' : 'text-gray-400'}`}>
+                  {resultados.errores}
                 </div>
-                <div className="text-sm text-gray-600">Total</div>
+                <div className="text-sm text-gray-600">Errores</div>
               </div>
             </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Procesados = Conciliados + A auditar + Sin match + Errores. Verificá que "Procesados" coincida con el lote que esperabas.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -2387,6 +2536,59 @@ export function VistaExtractoBancario() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Panel resúmenes de tarjeta — agrupado por mes, con audit en vivo (total oficial vs suma de movimientos) */}
+              {cuentaActivaObj?.tipo === 'tarjeta' && (() => {
+                const grupos = new Map<string, { resumen: any; movs: any[] }>()
+                for (const m of movimientos as any[]) {
+                  const nr = m.nro_resumen || '(sin resumen)'
+                  if (!grupos.has(nr)) grupos.set(nr, { resumen: null, movs: [] })
+                  if (m.tipo_fila === 'resumen') grupos.get(nr)!.resumen = m
+                  else grupos.get(nr)!.movs.push(m)
+                }
+                const lista = Array.from(grupos.entries()).map(([nr, g]) => {
+                  const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
+                  const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
+                  const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
+                  const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+                  const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
+                  const movsOrd = [...g.movs].sort((a: any, b: any) => (Number(a.orden) || 0) - (Number(b.orden) || 0)) // orden del PDF
+                  const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length
+                  return { nr, total, viva, dif, movs: movsOrd, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
+                }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
+                if (lista.length === 0) return null
+                return (
+                  <div className="mb-4 space-y-1">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control)</p>
+                    {lista.map(item => {
+                      const ok = item.dif != null && Math.abs(item.dif) < 0.5
+                      return (
+                        <div key={item.nr} className="border rounded flex items-center justify-between px-3 py-2 text-sm">
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
+                            <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
+                          </span>
+                          <span className="flex items-center gap-3 text-xs">
+                            <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
+                            <span className="text-gray-500">Suma viva: {formatCurrency(item.viva)}</span>
+                            {item.dif == null
+                              ? <span className="text-gray-400">sin total oficial</span>
+                              : ok
+                                ? <span className="text-green-600 font-medium">✓ control OK</span>
+                                : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                            {item.pendientes > 0 && (
+                              <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
+                                onClick={() => conciliarResumen(item.nr, item.cierre)}
+                                className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
+                                {conciliandoNr === item.nr ? 'Conciliando…' : `Conciliar (${item.pendientes})`}
+                              </button>
+                            )}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
               {loading ? (
                 <div className="text-center text-gray-500 py-8">
                   <RotateCcw className="h-8 w-8 mx-auto mb-4 animate-spin text-gray-300" />
@@ -2710,8 +2912,8 @@ export function VistaExtractoBancario() {
               },
             }
 
-            const cuenta = CUENTAS_BANCARIAS.find(c => c.id === tablaActiva)
-            const cfgBase = CONFIG_IMPORTADORES[tablaActiva]
+            const cuenta = CUENTAS_BANCARIAS.find(c => c.id === cuentaId)
+            const cfgBase = CONFIG_IMPORTADORES[cuentaId]
             // Si la cuenta soporta dos modos, elegir según importTipoArchivo (default = modo base)
             const config: ImpCfg | undefined = cfgBase
               ? (cfgBase.alt && importTipoArchivo === 'alt' ? cfgBase.alt : cfgBase)
@@ -2724,7 +2926,7 @@ export function VistaExtractoBancario() {
                   <CardContent>
                     <div className="text-center text-gray-400 py-10">
                       <Upload className="h-12 w-12 mx-auto mb-4 text-gray-200" />
-                      <p className="text-base font-medium mb-1">{cuenta?.nombre ?? tablaActiva}</p>
+                      <p className="text-base font-medium mb-1">{cuenta?.nombre ?? cuentaId}</p>
                       <p className="text-sm">Importador no disponible aún para esta cuenta.</p>
                     </div>
                   </CardContent>
@@ -2744,27 +2946,64 @@ export function VistaExtractoBancario() {
             }
 
             const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-              const f = e.target.files?.[0] ?? null
-              setImportFile(f)
+              const files = Array.from(e.target.files ?? [])
+              setImportFiles(files)
+              setImportFile(files[0] ?? null)
               setImportResult(null)
-              if (f) verificarSaldo()
+              if (files.length > 0) verificarSaldo()
             }
 
+            // Multi-PDF solo aplica al importador de tarjeta (PDF) con más de un archivo
+            const esMultiPdf = config.endpoint === '/api/import-pdf-tarjeta' && importFiles.length > 1
+
             const handleImport = async () => {
-              if (!importFile || !config) return
+              if (!config || (!importFile && importFiles.length === 0)) return
               setImportLoading(true)
               setImportResult(null)
               try {
-                const fd = new FormData()
-                fd.append('file', importFile)
-                fd.append('tabla', tablaActiva)
-                if (importMostrarSaldo && importSaldoInicial.trim()) {
-                  fd.append('saldo_inicial', importSaldoInicial)
+                if (esMultiPdf) {
+                  // 1. Peek: parsear cada PDF para conocer su fecha de cierre (sin insertar)
+                  const peeks: { file: File; fecha_cierre: string; okPeek: boolean; msg?: string }[] = []
+                  for (const f of importFiles) {
+                    const fd = new FormData()
+                    fd.append('file', f); fd.append('tabla', cuentaId); fd.append('peek', 'true')
+                    const r = await fetch(config.endpoint, { method: 'POST', body: fd })
+                    const d = await r.json()
+                    peeks.push({ file: f, fecha_cierre: d.fecha_cierre || '', okPeek: !!d.ok, msg: d.message })
+                  }
+                  // 2. Ordenar por fecha de cierre ascendente (más viejo primero; sin fecha al final)
+                  peeks.sort((a, b) => (a.fecha_cierre || '9999-99-99').localeCompare(b.fecha_cierre || '9999-99-99'))
+                  // 3. Importar en orden (secuencial → la columna orden queda cronológica)
+                  const resultados: any[] = []
+                  for (const p of peeks) {
+                    if (!p.okPeek) { resultados.push({ file: p.file.name, fecha_cierre: p.fecha_cierre, ok: false, message: p.msg || 'No se pudo leer el PDF' }); continue }
+                    const fd = new FormData()
+                    fd.append('file', p.file); fd.append('tabla', cuentaId)
+                    if (importForzar) fd.append('forzar', 'true')
+                    const r = await fetch(config.endpoint, { method: 'POST', body: fd })
+                    const d = await r.json()
+                    resultados.push({ file: p.file.name, fecha_cierre: p.fecha_cierre, ...d, ok: r.ok && d.ok !== false })
+                  }
+                  const okCount = resultados.filter(x => x.ok).length
+                  setImportResult({
+                    ok: okCount === resultados.length,
+                    multi: true,
+                    resultados,
+                    message: `${okCount}/${resultados.length} resúmenes importados en orden (por fecha de cierre).`,
+                  })
+                  recargar()
+                } else {
+                  const fd = new FormData()
+                  fd.append('file', importFile!)
+                  fd.append('tabla', cuentaId)
+                  if (importMostrarSaldo && importSaldoInicial.trim()) {
+                    fd.append('saldo_inicial', importSaldoInicial)
+                  }
+                  if (importForzar) fd.append('forzar', 'true')
+                  const res = await fetch(config.endpoint, { method: 'POST', body: fd })
+                  const data = await res.json()
+                  setImportResult({ ...data, ok: res.ok && data.ok !== false && data.success !== false })
                 }
-                if (importForzar) fd.append('forzar', 'true')
-                const res = await fetch(config.endpoint, { method: 'POST', body: fd })
-                const data = await res.json()
-                setImportResult({ ...data, ok: res.ok && data.ok !== false })
               } catch {
                 setImportResult({ ok: false, message: 'Error de conexión al procesar el archivo' })
               } finally {
@@ -2793,7 +3032,7 @@ export function VistaExtractoBancario() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="h-5 w-5" />
-                    Importar — {cuenta?.nombre ?? tablaActiva}
+                    Importar — {cuenta?.nombre ?? cuentaId}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2832,16 +3071,22 @@ export function VistaExtractoBancario() {
                       id="import-file-input"
                       type="file"
                       accept={config.accept}
+                      multiple={config.modo === 'pdf'}
                       onChange={handleFileChange}
                       disabled={importLoading}
                     />
-                    {importFile && (
+                    {importFiles.length > 1 ? (
+                      <p className="text-sm text-muted-foreground">✅ {importFiles.length} resúmenes seleccionados — se importan en orden por fecha de cierre</p>
+                    ) : importFile && (
                       <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
+                    )}
+                    {config.modo === 'pdf' && (
+                      <p className="text-xs text-muted-foreground">Podés seleccionar varios PDFs juntos; se ordenan e importan del más viejo al más nuevo.</p>
                     )}
                   </div>
 
-                  {/* Checkbox "forzar" — solo modo PDF de tarjeta */}
-                  {config.modo === 'pdf' && (
+                  {/* Checkbox "forzar" — importadores con control de saldos (tarjeta PDF + banco) */}
+                  {['/api/import-pdf-tarjeta', '/api/import-excel', '/api/import-excel-ca', '/api/import-excel-caja'].includes(config.endpoint) && (
                     <label className="flex items-center gap-2 cursor-pointer text-sm">
                       <Checkbox checked={importForzar} onCheckedChange={(v) => setImportForzar(!!v)} disabled={importLoading} />
                       <span>Forzar importación aunque el control de saldos no cuadre</span>
@@ -2889,6 +3134,27 @@ export function VistaExtractoBancario() {
                           <AlertDescription>{importResult.message}</AlertDescription>
                         </div>
                       </Alert>
+
+                      {/* Resultado multi (varios PDFs, en orden por fecha de cierre) */}
+                      {importResult.multi && Array.isArray(importResult.resultados) && (
+                        <div className="space-y-2">
+                          {importResult.resultados.map((r: any, i: number) => (
+                            <Alert key={i} variant={r.ok ? 'default' : 'destructive'}>
+                              <div className="flex items-center gap-2">
+                                {r.ok ? <CheckCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                                <AlertDescription>
+                                  <span className="text-sm">
+                                    <span className="font-medium">{r.fecha_cierre || '(sin fecha)'} — {r.file}</span>
+                                    {r.ok
+                                      ? <span> · {r.insertados ?? 0} insertados{r.duplicados_omitidos ? `, ${r.duplicados_omitidos} ya estaban` : ''} · {r.control?.ok ? '✓ control OK' : '⚠ control NO cuadra'}</span>
+                                      : <span> · {r.message}</span>}
+                                  </span>
+                                </AlertDescription>
+                              </div>
+                            </Alert>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Resumen de tarjeta (PDF) */}
                       {importResult.resumen && (

@@ -7,6 +7,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Forzar runtime Node (no edge) — unpdf/pdfjs necesitan APIs de Node
+export const runtime = "nodejs"
+
 // Mapa cuenta → { schema, tabla }
 const CUENTAS_VALIDAS: Record<string, { schema: string; tabla: string }> = {
   tarjeta_visa_business_msa: { schema: "msa", tabla: "tarjeta_visa_business" },
@@ -91,7 +94,11 @@ function parsearLineaMovimiento(raw: string): MovimientoParsed | null {
   const unMontoRegex = new RegExp(`(${NUM_AR})\\s*$`)
   let pesos = 0
   let dolares = 0
-  const m2 = resto.match(dosMontosRegex)
+  // Líneas de impuestos/percepciones (IVA, percepción, RG, IIBB, Sellos) con %: traen
+  // "base cargo" (dos números en PESOS). El cargo es el ÚLTIMO; el primero es base informativa.
+  // NO son consumos en USD → forzar parseo de un solo monto (pesos) para no inflar dólares.
+  const esTasaPesos = /%/.test(resto) && /(IVA|PERCEP|\bRG\b|IIBB|SELLOS)/i.test(resto)
+  const m2 = esTasaPesos ? null : resto.match(dosMontosRegex)
   if (m2) {
     pesos = parseNumAR(m2[1])
     dolares = parseNumAR(m2[2])
@@ -102,7 +109,7 @@ function parsearLineaMovimiento(raw: string): MovimientoParsed | null {
     const monto = parseNumAR(m1[1])
     // Heurística: si menciona USD o U$S o tiene "DÓLARES" cerca, es dólares
     // Si NO, asumimos pesos
-    if (/USD|U\$S/i.test(resto)) {
+    if (!esTasaPesos && /USD|U\$S/i.test(resto)) {
       dolares = monto
     } else {
       pesos = monto
@@ -316,6 +323,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File | null
     const cuentaId = (formData.get("tabla") as string | null)?.trim() || ""
     const forzar = (formData.get("forzar") as string | null) === "true"
+    const peek = (formData.get("peek") as string | null) === "true"  // solo parsear y devolver fecha_cierre (para ordenar multi)
 
     if (!file) {
       return NextResponse.json({ ok: false, message: "Falta el archivo PDF" }, { status: 400 })
@@ -328,13 +336,14 @@ export async function POST(req: Request) {
       )
     }
 
-    // Extraer texto del PDF (pdf-parse v2.x API)
+    // Extraer texto del PDF con unpdf (compatible con Node/serverless — evita el error
+    // "DOMMatrix is not defined" que da pdfjs-dist v5 fuera del navegador).
     const arrayBuffer = await file.arrayBuffer()
     const data = new Uint8Array(arrayBuffer)
-    const { PDFParse } = await import("pdf-parse")
-    const parser = new PDFParse({ data })
-    const textResult = await parser.getText()
-    const texto: string = (textResult as any)?.text || (textResult as any)?.pages?.map((p: any) => p.text).join("\n") || ""
+    const { extractText, getDocumentProxy } = await import("unpdf")
+    const pdf = await getDocumentProxy(data)
+    const extracted = await extractText(pdf, { mergePages: true })
+    const texto: string = Array.isArray(extracted.text) ? extracted.text.join("\n") : (extracted.text || "")
 
     if (!texto.trim()) {
       return NextResponse.json(
@@ -343,9 +352,30 @@ export async function POST(req: Request) {
       )
     }
 
+    // unpdf devuelve el texto concatenado (sin saltos entre movimientos). Reinsertamos saltos
+    // antes de cada fecha de movimiento (DD-MM-YY), subtotales por tarjeta y headers,
+    // para que el parser por líneas funcione.
+    const textoNorm = texto
+      .replace(/\s(?=\d{2}-\d{2}-\d{2}\s)/g, "\n")
+      .replace(/\s(?=TARJETA\s+\d+\s+Total\s+Consumos)/gi, "\n")
+      .replace(/\s(?=DETALLE\s+DEL\s+CONSUMO|Resumen\s+N[°º]|TOTAL\s+A\s+PAGAR|TOTAL\s+EN\s+(?:PESOS|D[ÓO]LARES))/gi, "\n")
+
     // Parsear
-    const resumen = parsearResumen(texto)
+    const resumen = parsearResumen(textoNorm)
     const control = calcularControl(resumen)
+
+    // Modo peek: solo devolver fecha de cierre + nro (para ordenar varios resúmenes). NO inserta.
+    if (peek) {
+      return NextResponse.json({
+        ok: true,
+        peek: true,
+        fecha_cierre: resumen.fecha_cierre,
+        nro_resumen: resumen.nro_resumen,
+        movimientos: resumen.movimientos.length,
+        control,
+      })
+    }
+
     const excelBase64 = generarExcelAuditoria(resumen, control, cuentaId)
 
     if (resumen.movimientos.length === 0) {
@@ -373,18 +403,24 @@ export async function POST(req: Request) {
     // Insertar en BD
     const client = supabase.schema(config.schema)
 
-    // Dedup contra existentes (por fecha + descripcion + débitos + créditos + comprobante)
-    const existentes = new Set<string>()
-    const fechaMin = resumen.movimientos.map((m) => m.fecha).sort()[0]
-    if (fechaMin) {
-      const { data: ex } = await client
+    // Dedup a nivel RESUMEN (no por movimiento). Cada resumen es un extracto self-contained:
+    // un cargo de un mes NUNCA es duplicado de otro mes, aunque coincidan fecha/desc/monto.
+    // Lo único duplicable es el resumen entero (mismo nro_resumen importado dos veces).
+    if (resumen.nro_resumen) {
+      const { data: yaImportado } = await client
         .from(config.tabla)
-        .select("fecha, descripcion, debitos, creditos, comprobante")
-        .gte("fecha", fechaMin)
-      ex?.forEach((e: any) => {
-        const k = `${e.fecha}|${(e.descripcion || "").trim()}|${Number(e.debitos) || 0}|${Number(e.creditos) || 0}|${e.comprobante || ""}`
-        existentes.add(k)
-      })
+        .select("id")
+        .eq("nro_resumen", resumen.nro_resumen)
+        .limit(1)
+        .maybeSingle()
+      if (yaImportado) {
+        return NextResponse.json({
+          ok: false,
+          message: `El resumen ${resumen.nro_resumen} ya estaba importado. Para re-importarlo, borralo primero.`,
+          excel_base64: excelBase64,
+          control,
+        })
+      }
     }
 
     const { data: maxOrden } = await client
@@ -396,18 +432,11 @@ export async function POST(req: Request) {
     let nextOrden = (maxOrden?.orden ?? 0) + 1
 
     const paraInsertar: any[] = []
-    let duplicadosOmitidos = 0
     for (const m of resumen.movimientos) {
       const debitos = m.pesos > 0 ? m.pesos : 0
       const creditos = m.pesos < 0 ? Math.abs(m.pesos) : 0
       const debitos_usd = m.dolares > 0 ? m.dolares : 0
       const creditos_usd = m.dolares < 0 ? Math.abs(m.dolares) : 0
-      const dedupKey = `${m.fecha}|${m.descripcion}|${debitos}|${creditos}|${m.comprobante || ""}`
-      if (existentes.has(dedupKey)) {
-        duplicadosOmitidos++
-        continue
-      }
-      existentes.add(dedupKey)
       paraInsertar.push({
         fecha: m.fecha,
         descripcion: m.descripcion,
@@ -431,16 +460,17 @@ export async function POST(req: Request) {
         cuenta: config.tabla,
         orden: nextOrden++,
         estado: "pendiente",
+        // 'pago' (SU PAGO → concilia contra cta cte) | 'movimiento' (concilia contra template/factura)
+        tipo_fila: /SU\s+PAGO/i.test(m.descripcion) ? "pago" : "movimiento",
       })
     }
 
     if (paraInsertar.length === 0) {
       return NextResponse.json({
         ok: false,
-        message: `Todas las filas (${duplicadosOmitidos}) ya estaban importadas.`,
+        message: `No se detectaron movimientos en el PDF.`,
         excel_base64: excelBase64,
         control,
-        duplicados_omitidos: duplicadosOmitidos,
       })
     }
 
@@ -452,11 +482,35 @@ export async function POST(req: Request) {
       )
     }
 
+    // Fila "resumen": guarda el total a pagar + saldo anterior del PDF (para el audit y el desplegable).
+    // tipo_fila='resumen', estado='total' → excluida del motor y de las sumas de movimientos.
+    // Convención: debitos = total a pagar, creditos = saldo anterior (ídem USD).
+    if (resumen.nro_resumen) {
+      const { data: resExist } = await client.from(config.tabla)
+        .select("id").eq("nro_resumen", resumen.nro_resumen).eq("tipo_fila", "resumen").maybeSingle()
+      if (!resExist) {
+        await client.from(config.tabla).insert({
+          fecha: resumen.fecha_cierre,
+          descripcion: `RESUMEN ${resumen.nro_resumen}`,
+          debitos: resumen.total_a_pagar_pesos,
+          creditos: resumen.saldo_anterior_pesos,
+          debitos_usd: resumen.total_a_pagar_usd,
+          creditos_usd: resumen.saldo_anterior_usd,
+          nro_resumen: resumen.nro_resumen,
+          fecha_cierre: resumen.fecha_cierre,
+          fecha_vencimiento: resumen.fecha_vencimiento,
+          cuenta: config.tabla,
+          orden: nextOrden++,
+          estado: "total",
+          tipo_fila: "resumen",
+        })
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       message: `${paraInsertar.length} movimiento(s) importado(s) desde el PDF a ${config.schema}.${config.tabla}.`,
       insertados: paraInsertar.length,
-      duplicados_omitidos: duplicadosOmitidos,
       control,
       resumen: {
         nro_resumen: resumen.nro_resumen,

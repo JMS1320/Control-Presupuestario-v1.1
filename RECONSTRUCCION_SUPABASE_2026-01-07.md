@@ -3317,6 +3317,143 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
+
+El export de sueldos a Galicia ahora: (1) toma el destino de **`cuentas_empleado`** (alias/CBU, vía `pago.cuenta_destino_id` o la única cuenta activa del empleado) en vez de `proveedores`; (2) genera **un Excel por `grupo_export`** (ej. Sigot Lucresia en archivo propio; Sigot Galicia+Santander+Wilson juntos; el resto general); (3) usa `concepto` como "Motivo" del Excel (ej. Honorarios; vacío permitido).
+
+```sql
+ALTER TABLE sueldos.cuentas_empleado
+  ADD COLUMN IF NOT EXISTS grupo_export varchar,  -- agrupa el archivo Excel (NULL/'general' = archivo general)
+  ADD COLUMN IF NOT EXISTS concepto varchar;       -- motivo del Excel (NULL = sin concepto)
+```
+Seed inicial: Sigot Lucresia → `sigot_lucresia`; Sigot Galicia/Santander → `sigot_gs`. El modal de export permite cargar al vuelo alias/grupo/concepto (endpoint `POST /api/sueldos/cuenta-empleado`) cuando faltan datos. Lógica en `lib/lotes-galicia/preview-core.ts` (`construirPreviewSueldo`) + `app/api/lotes/generar`.
+
+También se relajó `banco` a **nullable** (`ALTER TABLE sueldos.cuentas_empleado ALTER COLUMN banco DROP NOT NULL`): al crear una cuenta inline solo se carga el alias/CBU; `banco` es etiqueta opcional, no se usa para transferir.
+
+Y se agregó **`email`** a `cuentas_empleado` (`ADD COLUMN IF NOT EXISTS email varchar`): mail del empleado para el comprobante del Excel. Persistente (se auto-completa en el modal y se puede editar/guardar, igual que el mail de proveedor). El generar usa `it.email_pagos` (= ese email) → `sanmanuel.sp@gmail.com;<email>`. Seed inicial: AMS y JMS → `concepto='Honorarios'`; grupos default `general` (Wilson → `sigot_gs`).
+
+### **2026-06-30: `aguinaldo_a` / `aguinaldo_b` en `sueldos.periodos` (carga manual del aguinaldo)**
+
+El módulo de sueldos no contemplaba aguinaldo. Como los demás conceptos (vacaciones, premio, varios) son **columnas del período**, se agregan 2 columnas para el aguinaldo con sus categorías A y B (carga manual, sin cálculo automático). Suman al `bruto_calculado` (vía `extras` en `calcularBruto`) → el `saldo_pendiente` lo contempla. El pago se deja como está (no se agregó tipo 'aguinaldo' en `pagos`). La **vista** `public.sueldos_periodos` se recreó para exponer las columnas (lista columnas explícitas, no `SELECT *`).
+
+```sql
+ALTER TABLE sueldos.periodos
+  ADD COLUMN IF NOT EXISTS aguinaldo_a numeric,
+  ADD COLUMN IF NOT EXISTS aguinaldo_b numeric;
+-- + CREATE OR REPLACE VIEW public.sueldos_periodos (agregando aguinaldo_a, aguinaldo_b al final del SELECT).
+```
+UI: `tab-sueldos.tsx` — inputs "Aguinaldo A/B" en el modal de edición del período + badge en la tabla. Empleados sin aguinaldo (Elvio, Fabian) quedan en NULL.
+
+### **2026-06-30: `fc` en `reglas_ctas_import_arca` (unificar "portal" en la regla de import)**
+
+"Portal" estaba partido en 3 lugares sin sincronizar (la regla de import seteaba `estado`+`cuenta` pero NO el `fc`, que quedaba hardcodeado en `'Buscar'`). Se agrega `fc` a la regla para que el import lo aplique → una regla puede decir "Autopistas → cuenta PEAJES, estado credito, **fc Portal**" y se setea solo al importar. Aditivo, nullable (NULL = `'Buscar'`, comportamiento previo). El configurador `ModalReglasImport` tiene ahora el campo FC.
+
+```sql
+ALTER TABLE public.reglas_ctas_import_arca
+  ADD COLUMN IF NOT EXISTS fc varchar;  -- NULL = Buscar (default)
+```
+`buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
+
+### **2026-06-28: `gmail_message_id` en `arca_pdf_busqueda_log` (GAS PDF — Confirmar etiqueta el mail)**
+
+Para que al **Confirmar** una factura en VER/`_Revisar` el GAS pueda etiquetar (`Facturas Descargadas`) + marcar leído el mail de Gmail —igual que el match exacto—, hay que persistir el id del mensaje de Gmail entre la búsqueda (soft-match) y la confirmación (otra request, días después). Se guarda en el log de búsqueda, junto al `drive_url` del candidato. Aditivo, nullable, bajo riesgo (tabla de auditoría). GAS v0.9.7.
+
+```sql
+ALTER TABLE public.arca_pdf_busqueda_log
+  ADD COLUMN IF NOT EXISTS gmail_message_id text;
+```
+Flujo: búsqueda `revisar` → GAS devuelve `gmail_message_id` → se guarda en el log → al Confirmar, `confirmar-pdf` lo lee y lo manda al GAS → `confirmarFactura` hace `GmailApp.getMessageById(id)` + `etiquetarYLeer` (defensivo: si falta el id o el mail no existe, no rompe la confirmación).
+
+### **2026-06-27: Paridad de columnas en `pam.comprobantes_arca` (drift)**
+
+`pam.comprobantes_arca` quedó sin 3 columnas que `msa` y `ma` sí tenían (oversight al armar PAM). Al habilitar el import de ARCA para PAM, el insert mandaba `origen_factura='ARCA'` → fallaba (`0 importadas, 1 error`). Fix = paridad con MSA (aditivo, no destructivo):
+
+```sql
+ALTER TABLE pam.comprobantes_arca
+  ADD COLUMN IF NOT EXISTS medio_pago text NOT NULL DEFAULT 'banco',
+  ADD COLUMN IF NOT EXISTS origen_factura varchar,
+  ADD COLUMN IF NOT EXISTS visible_contable boolean DEFAULT false;
+```
+Verificado: tras el ALTER no falta ninguna columna de `msa` en `pam`. MA ya las tenía.
+
+### **2026-06-22: Columnas de conciliación en tablas de TARJETA**
+
+Las 3 tablas de tarjeta (`msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa`) se crearon a medida (columnas propias: `cuota`, `nro_resumen`, `fecha_cierre`, `debitos_usd`, etc.) y **no recibieron** las columnas que a las tablas de banco se les fueron agregando por features posteriores (proveedores, sueldos, revisión, anticipos). Al conciliar tarjeta, el update fallaba en silencio (PostgREST devuelve `{error}` sin throw) → la factura quedaba conciliada pero el movimiento no se linkeaba. Se agregaron las columnas faltantes + `tipo_fila` (para el panel/audit por resumen).
+
+```sql
+-- Repetir el bloque para cada una de las 3 tablas de tarjeta:
+--   msa.tarjeta_visa_business · pam.tarjeta_visa · ma.tarjeta_visa
+ALTER TABLE msa.tarjeta_visa_business
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',  -- 'resumen' | 'pago' | 'movimiento'
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+
+ALTER TABLE pam.tarjeta_visa
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+
+ALTER TABLE ma.tarjeta_visa
+  ADD COLUMN IF NOT EXISTS tipo_fila VARCHAR(20) DEFAULT 'movimiento',
+  ADD COLUMN IF NOT EXISTS proveedor_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS comprobantes_pagados TEXT,
+  ADD COLUMN IF NOT EXISTS sueldo_pago_id UUID,
+  ADD COLUMN IF NOT EXISTS revisado BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS nota_operador TEXT,
+  ADD COLUMN IF NOT EXISTS anticipo_id UUID;
+```
+
+> Nota: si en una sesión el ALTER multi-columna falla raro por el MCP, ejecutarlos de a una sentencia.
+
+Estas columnas **NO están en el backup original**, ejecutar manualmente si se reconstruye la BD. Contexto y módulo completo: `memory/project_tarjetas_modulo.md`. Pendiente de diseño asociado: A-BUG-12 en `PENDIENTES.md` (conciliación de tarjeta vs motor).
+
+---
+
+### **2026-06-12: Tabla `arca_descargas_log` (histórico descargas automáticas ARCA)**
+
+Para el módulo de descarga automática desde el portal de ARCA (Mis Comprobantes), se agregó una tabla de auditoría que registra cada descarga realizada.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.arca_descargas_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha_hora TIMESTAMPTZ NOT NULL DEFAULT now(),
+  user_role VARCHAR(20),
+  empresa VARCHAR(10) NOT NULL,                -- 'MSA' | 'MA'
+  tipo VARCHAR(20) NOT NULL,                   -- 'recibidos' | 'emitidos'
+  fecha_desde DATE NOT NULL,
+  fecha_hasta DATE NOT NULL,
+  comprobantes_descargados INT,
+  comprobantes_importados INT,
+  duplicados INT,
+  errores INT,
+  status VARCHAR(20) NOT NULL,                 -- 'ok' | 'error' | 'cancelado'
+  error_mensaje TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_arca_log_fecha ON public.arca_descargas_log(fecha_hora DESC);
+CREATE INDEX idx_arca_log_empresa ON public.arca_descargas_log(empresa, fecha_desde, fecha_hasta);
+ALTER TABLE public.arca_descargas_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY allow_all_arca_log ON public.arca_descargas_log FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.arca_descargas_log TO anon, authenticated;
+```
+
+Esta tabla **NO está en el backup original**, ejecutar manualmente si se reconstruye la BD.
+
+Variables de entorno requeridas (en Vercel):
+- `ARCA_CUIT_PERSONAL`, `ARCA_PASSWORD_PERSONAL` (loguea MSA)
+- `ARCA_CUIT_EMPRESA_MSA` (CUIT a representar)
+- `ARCA_CUIT_PERSONAL_MA`, `ARCA_PASSWORD_PERSONAL_MA`, `ARCA_CUIT_EMPRESA_MA` (para MA)
+
+---
+
 ### **2026-06-10: Cuenta contable + centro costo en comprobantes_venta**
 
 Para que las ventas se imputen contablemente igual que las facturas de compra.

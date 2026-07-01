@@ -355,15 +355,20 @@ export function useMotorConciliacion() {
   }
 
   // Función principal de conciliación
-  const ejecutarConciliacion = async (cuenta: CuentaBancaria) => {
+  // movimientosOverride: si se pasa, el motor corre SOLO sobre esa lista (ej. lo filtrado/visible
+  // en la vista). Si no se pasa, carga todos los pendientes de la cuenta (comportamiento por defecto).
+  const ejecutarConciliacion = async (cuenta: CuentaBancaria, movimientosOverride?: MovimientoBancario[]) => {
     try {
       setProcesoEnCurso(true)
       setError(null)
-      
+
       console.log(`🚀 Iniciando conciliación para ${cuenta.nombre}...`)
 
-      // 1. Cargar datos
-      const movimientos = await obtenerMovimientosBancarios(cuenta)
+      // 1. Cargar datos — usar la lista acotada si vino, sino todos los pendientes de la cuenta
+      const movimientos = movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)
+      if (movimientosOverride) {
+        console.log(`🎯 Modo acotado: conciliando solo ${movimientos.length} movimiento(s) filtrado(s)`)
+      }
       const reglas = await cargarReglasActivas(cuenta.id)
       
       console.log(`📊 Datos cargados:`)

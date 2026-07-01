@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
-import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw } from "lucide-react"
+import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -31,6 +31,14 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { ModalReglasImport } from "@/components/modal-reglas-import"
+import { NotificacionProgresoLote } from "@/components/gas-pdf/notificacion-progreso-lote"
+import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
+import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
+import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
+import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
+import { Paperclip, Banknote } from "lucide-react"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -94,6 +102,11 @@ interface FacturaArca {
   tc_pago: number | null
   // Origen de la factura
   origen_factura: string | null
+  // Búsqueda automática de PDF (módulo GAS)
+  pdf_drive_url?: string | null
+  pdf_estado?: string | null
+  pdf_ultimo_intento?: string | null
+  pdf_observaciones?: string | null
 }
 
 // Monto a pagar en pesos (Vista Pagos). Fuente única usada por display, subtotales y PDF.
@@ -157,7 +170,7 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
-function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCertificado?: (registros: any[]) => void }) {
+function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }: { registros: any[], onCertificado?: (registros: any[]) => void, mostrarAnulados?: boolean }) {
   const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
   const fmtFecha = (f: string | null) => {
     if (!f) return '-'
@@ -169,11 +182,15 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
     anticipo: 'bg-purple-100 text-purple-700',
     agrupacion: 'bg-orange-100 text-orange-700',
   }
-  const totRet   = registros.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
-  const totPago  = registros.reduce((s, r) => s + (Number(r.pago) || 0), 0)
-  const totTotal = registros.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
-  const totBase  = registros.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
-  const totNeto  = registros.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
+  // Filas visibles según toggle; filas vigentes (no anuladas) para totales
+  const filasVisibles = mostrarAnulados ? registros : registros.filter(r => !r.anulado)
+  const vigentes = registros.filter(r => !r.anulado)
+  const cantAnuladas = registros.length - vigentes.length
+  const totRet   = vigentes.reduce((s, r) => s + (Number(r.retencion) || 0), 0)
+  const totPago  = vigentes.reduce((s, r) => s + (Number(r.pago) || 0), 0)
+  const totTotal = vigentes.reduce((s, r) => s + (Number(r.total_pagado) || 0), 0)
+  const totBase  = vigentes.reduce((s, r) => s + (Number(r.base_imponible) || 0), 0)
+  const totNeto  = vigentes.reduce((s, r) => s + (Number(r.neto_gravado_pagado) || 0), 0)
 
   return (
     <div className="overflow-x-auto rounded border border-green-200 max-h-[350px] overflow-y-auto">
@@ -195,50 +212,66 @@ function TablaRegistrosV2({ registros, onCertificado }: { registros: any[], onCe
           </tr>
         </thead>
         <tbody>
-          {registros.map((r, i) => (
-            <tr key={r.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-green-50/30'}>
-              <td className="border border-green-100 px-2 py-1">
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${origenColor[r.origen] || 'bg-gray-100 text-gray-700'}`}>
-                  {r.origen || '-'}
-                </span>
+          {filasVisibles.map((r, i) => {
+            const tachado = r.anulado ? 'line-through opacity-50' : ''
+            const rowBg = r.anulado ? 'bg-gray-100' : (i % 2 === 0 ? 'bg-white' : 'bg-green-50/30')
+            return (
+            <tr key={r.id || i} className={rowBg}>
+              <td className={`border border-green-100 px-2 py-1 ${tachado}`}>
+                {r.anulado ? (
+                  <span
+                    className="text-xs px-1.5 py-0.5 rounded font-medium bg-orange-200 text-orange-800"
+                    title={`Anulado el ${r.fecha_anulacion ? new Date(r.fecha_anulacion).toLocaleString('es-AR') : '?'}\nMotivo: ${r.motivo_anulacion || '-'}`}
+                  >
+                    ANULADO
+                  </span>
+                ) : (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${origenColor[r.origen] || 'bg-gray-100 text-gray-700'}`}>
+                    {r.origen || '-'}
+                  </span>
+                )}
               </td>
-              <td className="border border-green-100 px-2 py-1">{r.tipo_sicore || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{fmtFecha(r.fecha_pago)}</td>
-              <td className="border border-green-100 px-2 py-1 whitespace-nowrap">{r.cuit_emisor || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 max-w-[150px] truncate" title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.neto_gravado_pagado)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.total_pagado)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">{fmt(r.base_imponible)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right">
+              <td className={`border border-green-100 px-2 py-1 ${tachado}`}>{r.tipo_sicore || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 whitespace-nowrap ${tachado}`}>{fmtFecha(r.fecha_pago)}</td>
+              <td className={`border border-green-100 px-2 py-1 whitespace-nowrap ${tachado}`}>{r.cuit_emisor || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 max-w-[150px] truncate ${tachado}`} title={r.denominacion_emisor || ''}>{r.denominacion_emisor || '-'}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.neto_gravado_pagado)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.total_pagado)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>{fmt(r.base_imponible)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right ${tachado}`}>
                 {r.alicuota != null ? `${(Number(r.alicuota) * 100).toFixed(2).replace(".", ",")}%` : '-'}
               </td>
-              <td className="border border-green-100 px-2 py-1 text-right font-medium text-red-700">{fmt(r.retencion)}</td>
-              <td className="border border-green-100 px-2 py-1 text-right font-medium text-green-700">{fmt(r.pago)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right font-medium text-red-700 ${tachado}`}>{fmt(r.retencion)}</td>
+              <td className={`border border-green-100 px-2 py-1 text-right font-medium text-green-700 ${tachado}`}>{fmt(r.pago)}</td>
               {onCertificado && (
                 <td className="border border-green-100 px-2 py-1 text-center">
-                  <button
-                    onClick={() => {
-                      // Agrupar todos los registros con el mismo nro_certificado
-                      const key = r.nro_certificado || r.id
-                      const grupo = r.nro_certificado
-                        ? registros.filter(x => x.nro_certificado === r.nro_certificado)
-                        : [r]
-                      onCertificado(grupo)
-                    }}
-                    title="Descargar Certificado de Retención"
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </button>
+                  {r.anulado ? (
+                    <span className="text-gray-400 text-xs">—</span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        // Agrupar todos los registros NO anulados con el mismo nro_certificado
+                        const grupo = r.nro_certificado
+                          ? registros.filter(x => !x.anulado && x.nro_certificado === r.nro_certificado)
+                          : [r]
+                        onCertificado(grupo)
+                      }}
+                      title="Descargar Certificado de Retención"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </td>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
         <tfoot className="bg-green-100 font-semibold sticky bottom-0">
           <tr>
             <td colSpan={5} className="border border-green-200 px-2 py-1.5 text-right text-xs">
-              TOTALES — {registros.length} registro{registros.length !== 1 ? 's' : ''}
+              TOTALES — {vigentes.length} vigente{vigentes.length !== 1 ? 's' : ''}{cantAnuladas > 0 ? ` (+ ${cantAnuladas} anulado${cantAnuladas !== 1 ? 's' : ''} excluido${cantAnuladas !== 1 ? 's' : ''})` : ''}
             </td>
             <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totNeto)}</td>
             <td className="border border-green-200 px-2 py-1.5 text-right">{fmt(totTotal)}</td>
@@ -303,6 +336,105 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estado para mostrar columnas detalladas en Subdiarios
   const [mostrarColumnasDetalladas, setMostrarColumnasDetalladas] = useState(false)
+  // Subdiarios: filtro por estado de archivo digital (PDF). Chips 'con' / 'falta' / 'portal'.
+  const [filtroArchivoPdf, setFiltroArchivoPdf] = useState<Set<'con' | 'falta' | 'portal'>>(new Set())
+  // Categoría de archivo digital de una factura (para íconos, chips y filtro del subdiario).
+  // 'con' = tiene PDF · 'portal' = sin PDF pero es de Portal (esperable) · 'falta' = sin PDF y debería tenerlo.
+  const categoriaArchivo = (f: FacturaArca): 'con' | 'falta' | 'portal' =>
+    f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
+  // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
+  const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+  // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
+  const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
+  // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
+  const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+  // Debug de conciliación: cada archivo de la carpeta + su file_id + a qué factura está vinculado.
+  const [detalleConciliacion, setDetalleConciliacion] = useState<{ archivo: string; file_id: string; factura: string | null }[]>([])
+  // Renombrar huérfano: url del PDF en edición + valor del nombre nuevo + flag guardando.
+  const [editNombreUrl, setEditNombreUrl] = useState<string | null>(null)
+  const [editNombreVal, setEditNombreVal] = useState('')
+  const [guardandoNombreUrl, setGuardandoNombreUrl] = useState<string | null>(null)
+
+  // Renombra un PDF huérfano en Drive (para los mal nombrados) vía /api/gas/renombrar-pdf.
+  const renombrarHuerfano = async (h: { archivo: string; url: string }) => {
+    const nuevo = editNombreVal.trim()
+    if (!nuevo || nuevo === h.archivo) { setEditNombreUrl(null); return }
+    setGuardandoNombreUrl(h.url)
+    try {
+      const r = await fetch('/api/gas/renombrar-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_url: h.url, nombre: nuevo }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo renombrar: ' + (d.error || '')); return }
+      // Actualiza el nombre en el panel (con el nuevo nombre puede aparecer una sugerencia).
+      setHuerfanosSupervision(prev => prev.map(x => x.url === h.url ? { ...x, archivo: d.nombre || nuevo } : x))
+      setEditNombreUrl(null)
+      toast.success('Archivo renombrado.')
+    } catch (e) {
+      toast.error('Error al renombrar: ' + (e as Error).message)
+    } finally {
+      setGuardandoNombreUrl(null)
+    }
+  }
+
+  // Sugiere qué factura "falta" del período corresponde a un PDF huérfano, por NOMBRE de archivo
+  // (sin OCR): coincide palabras del proveedor + desempata por la fecha del nombre (MM-DD).
+  const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    const arch = norm(nombreArchivo)
+    const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+    const conScore = faltantes.map(f => {
+      const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
+      const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
+      return { f, hits }
+    }).filter(x => x.hits > 0)
+    if (conScore.length === 0) return []
+    const maxHits = Math.max(...conScore.map(x => x.hits))
+    let candidatos = conScore.filter(x => x.hits === maxHits).map(x => x.f)
+    // Si el nombre trae fecha (MM-DD al inicio), EXIGIR que coincida con la emisión del candidato.
+    // Evita sugerir una factura de otra fecha (ej. un duplicado "04-01" contra la única faltante,
+    // que es del 04-09). Si ninguna coincide la fecha → sin sugerencia (probable duplicado).
+    const m = nombreArchivo.match(/^(\d{2})-(\d{2})/)
+    if (m) {
+      candidatos = candidatos.filter(f => {
+        const fe = f.fecha_emision || '' // YYYY-MM-DD
+        return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
+      })
+    }
+    return candidatos
+  }
+
+  // Desvincula el PDF de una factura (para re-asignar uno mal puesto). NO borra el archivo de Drive,
+  // solo limpia el link → el archivo vuelve a quedar disponible como huérfano en la próxima conciliación.
+  const desvincularPdf = async (factura: FacturaArca) => {
+    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar (corré "Conciliar saldos").`)) return
+    try {
+      const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+        .update({ pdf_drive_url: null, pdf_estado: null, pdf_observaciones: 'Desvinculado manualmente para re-asignar' })
+        .eq('id', factura.id)
+      if (error) { toast.error('No se pudo desvincular: ' + error.message); return }
+      await cargarFacturasPeriodo(periodoConsulta)
+      toast.success('PDF desvinculado. Corré "Conciliar saldos" para re-asignarlo.')
+    } catch (e) {
+      toast.error('Error al desvincular: ' + (e as Error).message)
+    }
+  }
+
+  // Vincula un PDF huérfano a la factura elegida (solo enlaza: setea pdf_drive_url; no toca el archivo).
+  const vincularHuerfano = async (factura: FacturaArca, h: { archivo: string; url: string }) => {
+    try {
+      const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+        .update({ pdf_drive_url: h.url, pdf_estado: 'descargado', pdf_observaciones: `Vinculado manualmente desde supervisión (archivo: ${h.archivo})` })
+        .eq('id', factura.id)
+      if (error) { toast.error('No se pudo vincular: ' + error.message); return }
+      setHuerfanosSupervision(prev => prev.filter(x => x.url !== h.url))
+      await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips
+      toast.success(`Vinculado: ${factura.denominacion_emisor} ${factura.punto_venta}-${factura.numero_desde}`)
+    } catch (e) {
+      toast.error('Error al vincular: ' + (e as Error).message)
+    }
+  }
   
   // Estados para flujo SICORE - Retenciones Ganancias
   const [mostrarModalSicore, setMostrarModalSicore] = useState(false)
@@ -363,6 +495,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     estadoSeleccionado: string
   } | null>(null)
   const [cargandoV2, setCargandoV2] = useState(false)
+  const [mostrarAnulados, setMostrarAnulados] = useState(false)
+  const [mostrarModalExport, setMostrarModalExport] = useState(false)
   const [quincenaVerRetenciones, setQuincenaVerRetenciones] = useState('')
   const [retencionesVer, setRetencionesVer] = useState<any[]>([])
   const [cargandoRetencionesVer, setCargandoRetencionesVer] = useState(false)
@@ -536,6 +670,59 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modoEdicion, setModoEdicion] = useState(false)
   // Modo edición/eliminación admin: habilita edición libre de todos los campos + delete real
   const [modoEdicionAdmin, setModoEdicionAdmin] = useState(false)
+  // Módulo búsqueda PDFs vía GAS
+  const [progresoPdf, setProgresoPdf] = useState<ProgresoLote | null>(null)
+  const [buscandoPdfs, setBuscandoPdfs] = useState(false)
+  const [modalHistorialPdf, setModalHistorialPdf] = useState<{ open: boolean; loteId?: string; facturaId?: string }>({ open: false })
+  const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
+  const [auditarPeriodoOpen, setAuditarPeriodoOpen] = useState(false)
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
+  // Modal de búsqueda de PDFs con selección (individual / todo-nada / rango fechas) + cancelar
+  const [modalBuscarPdf, setModalBuscarPdf] = useState(false)
+  const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
+  const [pdfDesde, setPdfDesde] = useState('')
+  const [pdfHasta, setPdfHasta] = useState('')
+  const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
+  const cancelarPdfRef = useRef(false)
+  // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
+  // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
+  const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
+  const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
+  const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
+
+  // Modal Buscar PDFs: al cambiar el filtro de fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
+  // Sin esto, "Hasta"/"Desde" achican la tabla pero las facturas ocultas seguían seleccionadas y se
+  // buscaban igual (la búsqueda usa seleccionPdf, no lo visible) → el filtro "no parecía funcionar".
+  useEffect(() => {
+    if (!modalBuscarPdf) return
+    const visibles = new Set(
+      facturas.filter(f => {
+        const fe = f.fecha_emision || ''
+        if (pdfDesde && fe < pdfDesde) return false
+        if (pdfHasta && fe > pdfHasta) return false
+        if (filtroTiposPdf.size > 0 && !filtroTiposPdf.has(f.fc ?? '(sin estado)')) return false
+        return true
+      }).map(f => f.id)
+    )
+    setSeleccionPdf(prev => {
+      let cambio = false
+      const next = new Set<string>()
+      prev.forEach(id => { if (visibles.has(id)) next.add(id); else cambio = true })
+      return cambio ? next : prev
+    })
+  }, [pdfDesde, pdfHasta, filtroTiposPdf, modalBuscarPdf, facturas])
+
+  // Módulo lotes de transferencias Galicia
+  const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+
+  // Modal de descarga automática desde ARCA (solo admin)
+  const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
+  const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'PAM' | 'MA'>('MSA')
+  const [arcaPassword, setArcaPassword] = useState('')         // se ingresa cada vez, no se guarda
+  const [arcaFechaDesde, setArcaFechaDesde] = useState('')
+  const [arcaFechaHasta, setArcaFechaHasta] = useState('')
+  const [arcaCargando, setArcaCargando] = useState(false)
+  const [arcaError, setArcaError] = useState<string | null>(null)
   const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
   const [textoConfirmarEliminar, setTextoConfirmarEliminar] = useState('')
   const [depsParaEliminar, setDepsParaEliminar] = useState<Map<string, any>>(new Map())
@@ -1245,9 +1432,82 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }
 
+  // Confirmar una factura en VER: el candidato en _Revisar ES esta factura → mueve + marca Sí + link.
+  const confirmarVer = async (factura: FacturaArca) => {
+    if (!confirm(`¿Confirmás que el PDF encontrado es la factura ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nSe mueve de _Revisar a la carpeta del mes y queda como "Sí".`)) return
+    setConfirmandoId(factura.id)
+    try {
+      const r = await fetch('/api/gas/confirmar-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factura_id: factura.id, empresa }),
+      })
+      const data = await r.json()
+      if (!data.ok) { alert('No se pudo confirmar: ' + (data.error || '')); return }
+      setFacturas(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
+      setFacturasOriginales(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
+      toast.success(data.mail_etiquetado
+        ? 'Confirmada: archivo movido + mail etiquetado y marcado leído.'
+        : 'Confirmada: archivo movido. (El mail no se pudo etiquetar — sin id o ya no existe.)')
+    } catch (e) {
+      alert('Error confirmando: ' + (e as Error).message)
+    } finally {
+      setConfirmandoId(null)
+    }
+  }
+
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
+
+    // Columna FC: mostrar valor + ícono PDF si tiene URL
+    if (columna === 'fc') {
+      const fcColor: Record<string, string> = {
+        'OK':      'bg-green-200 text-green-900',
+        'Sí':      'bg-green-100 text-green-800',
+        'APP':     'bg-blue-100 text-blue-800',
+        'VER':     'bg-yellow-100 text-yellow-800',
+        'Portal':  'bg-purple-100 text-purple-800',
+        'Buscar':  'bg-gray-100 text-gray-700',
+        'NO Mail': 'bg-orange-100 text-orange-800',
+        'No':      'bg-red-100 text-red-700',
+        'NO':      'bg-red-100 text-red-700',
+      }
+      const v = (valor as string | null) ?? ''
+      const cls = fcColor[v] || 'bg-gray-100 text-gray-600'
+      return (
+        <div className="flex items-center gap-1.5">
+          {v && (
+            <span className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cls}`}>
+              {v}
+            </span>
+          )}
+          {factura.pdf_drive_url && (
+            <a
+              href={factura.pdf_drive_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Ver PDF en Drive${factura.pdf_observaciones ? ' — ' + factura.pdf_observaciones : ''}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-blue-600 hover:text-blue-800"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {v === 'VER' && (
+            <button
+              type="button"
+              title="Confirmar: el PDF encontrado ES esta factura → mover de _Revisar a la carpeta del mes + marcar Sí"
+              onClick={(e) => { e.stopPropagation(); confirmarVer(factura) }}
+              disabled={confirmandoId === factura.id}
+              className="text-green-600 hover:text-green-800 disabled:opacity-40 text-xs font-bold leading-none"
+            >
+              {confirmandoId === factura.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '✓'}
+            </button>
+          )}
+        </div>
+      )
+    }
+
     // En modo admin TODOS los campos son editables (incluso facturas históricas)
     const esEditable = modoEdicionAdmin
       ? true
@@ -1605,6 +1865,73 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setPasoImportacion('imputacion')
   }
 
+  // Auto-disparo de búsqueda de PDFs después del import.
+  // ⚠️ APAGADO por defecto. Se activa con env var NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'
+  // (configurar en Vercel SOLO cuando el GAS esté deployado).
+  // Busca SOLO las facturas recién importadas en estado 'Buscar' (IDs que devuelve el import).
+  const dispararBusquedaPostImport = async (ids: string[]) => {
+    try {
+      if (!ids || ids.length === 0) return
+      cancelarPdfRef.current = false
+      setBuscandoPdfs(true)
+      await buscarPdfLote({
+        empresa: empresa as 'MSA' | 'PAM' | 'MA',
+        facturaIds: ids,
+        onProgreso: setProgresoPdf,
+        delayMs: 1500,
+        isCancelled: () => cancelarPdfRef.current,
+      })
+      await cargarFacturas()
+    } catch (e) {
+      console.error('Auto-disparo de búsqueda de PDFs falló (import OK igual):', e)
+    } finally {
+      setBuscandoPdfs(false)
+    }
+  }
+
+  // Carga el mail (y estado GAS) de los proveedores de las facturas visibles, indexado por CUIT.
+  // Se llama al abrir el modal Buscar PDFs para mostrar/editar el mail ahí mismo.
+  const cargarMailesProveedores = async (cuits: string[]) => {
+    const unicos = Array.from(new Set(cuits.filter(Boolean)))
+    if (unicos.length === 0) { setProvPorCuit({}); return }
+    const { data } = await supabase
+      .from('proveedores')
+      .select('id, cuit, email_facturacion, gas_habilitado, fc_modo')
+      .in('cuit', unicos)
+    const mapa: Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }> = {}
+    ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
+    setProvPorCuit(mapa)
+    setProvEditMail({})
+  }
+
+  // Guarda el mail del proveedor (por CUIT) desde el modal Buscar PDFs vía el endpoint de config.
+  // Si el proveedor no tenía mail, además lo habilita para búsqueda (gas_habilitado + fc_modo='mail')
+  // para que el mail recién cargado se use de verdad; si no, quedaría cosmético.
+  const guardarMailProveedor = async (cuit: string) => {
+    const prov = provPorCuit[cuit]
+    if (!prov) { toast.error('No existe el proveedor para ese CUIT (cargalo en Config PDFs)'); return }
+    const nuevo = (provEditMail[cuit] ?? '').trim()
+    const eraVacio = !prov.email_facturacion
+    setGuardandoMailCuit(cuit)
+    try {
+      const payload: any = { proveedor_id: prov.id, email_facturacion: nuevo || null }
+      if (nuevo && eraVacio) { payload.gas_habilitado = true; payload.fc_modo = 'mail' }
+      const r = await fetch('/api/gas/config-proveedor', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('Error guardando mail: ' + (d.error || '')); return }
+      setProvPorCuit(prev => ({ ...prev, [cuit]: { ...prev[cuit], email_facturacion: nuevo || null, ...(nuevo && eraVacio ? { gas_habilitado: true, fc_modo: 'mail' } : {}) } }))
+      setProvEditMail(prev => { const n = { ...prev }; delete n[cuit]; return n })
+      toast.success(nuevo && eraVacio ? 'Mail guardado y proveedor habilitado para búsqueda.' : 'Mail del proveedor guardado.')
+    } catch (e) {
+      toast.error('Error de red: ' + (e as Error).message)
+    } finally {
+      setGuardandoMailCuit(null)
+    }
+  }
+
   const manejarImportacionExcel = async () => {
     if (!archivoImportacion) return
 
@@ -1634,6 +1961,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         setOrigenFactura('')
         setPasoImportacion('origen')
         setImputacionData([])
+        // Auto-disparo de búsqueda de PDFs (solo las recién importadas) — APAGADO salvo env var en 'true'
+        if (process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true') {
+          dispararBusquedaPostImport(resultado.idsBuscar || [])
+        }
       }
     } catch (error) {
       console.error('Error en importación:', error)
@@ -1643,6 +1974,97 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       })
     } finally {
       setImportandoExcel(false)
+    }
+  }
+
+  // Extrae el file_id de Drive de una URL (mismo criterio que el GAS).
+  const extraerFileIdDrive = (url?: string | null): string | null => {
+    if (!url) return null
+    const m = String(url).match(/[-\w]{25,}/)
+    return m ? m[0] : null
+  }
+
+  // Supervisión del archivo digital del período (Subdiarios): corre la auditoría OCR por tandas
+  // EN 2DO PLANO (no bloquea: avance por toast, refresca la tabla al terminar). Reusa /api/gas/auditar-periodo.
+  // soloNoAdjudicados=true → saltea los archivos YA vinculados a una factura (re-corrida rápida).
+  const supervisarArchivoPeriodo = async (soloNoAdjudicados = false) => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/') // formato MM/YYYY
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    setHuerfanosSupervision([])
+    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
+    const skip = new Set<string>()
+    // Modo rápido: pre-cargar como "ya procesados" los archivos cuyos links ya están en una factura.
+    if (soloNoAdjudicados) {
+      facturasPeriodo.forEach(f => { const fid = extraerFileIdDrive(f.pdf_drive_url); if (fid) skip.add(fid) })
+    }
+    const matchedAcc: any[] = [], huerfanosAcc: any[] = []
+    let sinPdf: any[] = [], links = 0, tanda = 0
+    try {
+      for (let guard = 0; guard < 500; guard++) {
+        tanda++
+        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
+        const r = await fetch('/api/gas/auditar-periodo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 4 }),
+        })
+        const data = await r.json()
+        if (!data.ok) { toast.error('Supervisión: ' + (data.error || 'error'), { id: tId }); return }
+        if (data.existe === false) { toast.warning(data.observaciones || 'La carpeta del período no existe', { id: tId }); return }
+        links += data.links_agregados || 0
+        for (const m of (data.matched || [])) { matchedAcc.push(m); if (m.file_id) skip.add(m.file_id) }
+        for (const h of (data.huerfanos || [])) { huerfanosAcc.push(h); if (h.file_id) skip.add(h.file_id) }
+        sinPdf = data.sin_pdf || sinPdf
+        if (data.completo) break
+      }
+      // Enriquecer las vinculadas con proveedor·nº·monto (para que el mail muestre QUÉ vinculó, no solo el nombre de archivo).
+      const matchedMail = matchedAcc.map((m: any) => {
+        const f = facturasPeriodo.find(x => x.id === m.factura_id)
+        return { ...m, numero: f ? `${f.punto_venta}-${f.numero_desde}` : '', proveedor: f?.denominacion_emisor || '', monto: f?.imp_total ?? null }
+      })
+      // Cierre: log + mail con el acumulado
+      await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
+      })
+      await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
+      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
+      toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
+    } catch (e) {
+      toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
+    }
+  }
+
+  // Conciliar saldos del archivo (RÁPIDO, SIN OCR): lista la carpeta y la cruza contra los links
+  // de las facturas → huérfanos (archivos sin factura) + cuántas facturas no-Portal quedan sin PDF.
+  const conciliarSaldos = async () => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/')
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    setHuerfanosSupervision([])
+    setDetalleConciliacion([])
+    const tId = toast.loading('Conciliando saldos del archivo…')
+    try {
+      const r = await fetch('/api/gas/conciliar-archivo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('Conciliación: ' + (d.error || 'error'), { id: tId }); return }
+      if (d.existe === false) { toast.warning('La carpeta del período no existe', { id: tId }); return }
+      setHuerfanosSupervision((d.huerfanos || []).map((h: any) => ({ archivo: h.archivo, url: h.url })))
+      setDetalleConciliacion(d.detalle || [])
+      toast.success(`Saldos: ${d.total_archivos} archivos · ${d.con_link} vinculados · ${(d.huerfanos || []).length} sin vincular · ${d.faltantes} facturas sin PDF.`, { id: tId })
+    } catch (e) {
+      toast.error('Error al conciliar: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
     }
   }
 
@@ -2941,6 +3363,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         esNegativa: netoFactura < 0
       })
 
+      // Chequear estado_quincena ANTES de abrir el modal SICORE
+      const { data: qChk } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('estado_quincena')
+        .eq('quincena', quincena)
+        .eq('anulado', false)
+        .order('estado_quincena', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const estadoQ = (qChk?.estado_quincena as string | undefined) ?? null
+      if (estadoQ === 'declarada') {
+        alert(`🔒 La quincena ${quincena} ya fue declarada a AFIP. No se pueden agregar nuevas retenciones.\nDebés rectificar la DDJJ con tu contadora antes de poder modificar.`)
+        await cancelarGuardadoPendiente()
+        return
+      }
+      if (estadoQ === 'cerrada') {
+        const okWarn = window.confirm(
+          `⚠️ La quincena ${quincena} ya está cerrada (TXT generado).\nAl agregar esta retención tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?`
+        )
+        if (!okWarn) {
+          await cancelarGuardadoPendiente()
+          return
+        }
+      }
+
       // CASO ESPECIAL: Facturas negativas
       if (netoFactura < 0) {
         // Para facturas negativas, verificar si ya hay retención previa
@@ -3027,7 +3475,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Asignar nro_comprobante y nro_certificado al insertar (no esperar al cierre TXT)
       const anoActual = new Date().getFullYear()
 
-      // Verificar si ya existe otro registro del mismo grupo (cuit+tipo+quincena)
+      // Detectar estado actual de la quincena (mira registros NO anulados de esa quincena)
+      const { data: qInfo } = await supabase
+        .schema(schemaName)
+        .from('sicore_retenciones')
+        .select('estado_quincena')
+        .eq('quincena', params.quincena)
+        .eq('anulado', false)
+        .order('estado_quincena', { ascending: false }) // 'declarada' > 'cerrada' > 'abierta' alfabéticamente
+        .limit(1)
+        .maybeSingle()
+      const estadoQ = (qInfo?.estado_quincena as string | undefined) ?? null
+
+      // Defensivo: si la quincena ya fue declarada, no insertar nada.
+      // El confirm interactivo (cerrada→confirm, declarada→bloqueo) corre antes en el modal SICORE.
+      if (estadoQ === 'declarada') {
+        console.error('🔒 registrarEnSicoreRetenciones: quincena DECLARADA, insert bloqueado por seguridad', params.quincena)
+        return
+      }
+
+      // El nuevo registro hereda el estado actual de la quincena (cerrada o abierta)
+      const nuevoEstadoQ = estadoQ === 'cerrada' ? 'cerrada' : 'abierta'
+
+      // Verificar si ya existe otro registro NO anulado del mismo grupo (cuit+tipo+quincena)
       // En ese caso reutilizar sus números (ej: Alcorta con múltiples facturas)
       const { data: mismoGrupo } = await supabase
         .schema(schemaName)
@@ -3036,6 +3506,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .eq('cuit_emisor', params.cuit_emisor ?? '')
         .eq('tipo_sicore', params.tipo_sicore)
         .eq('quincena', params.quincena)
+        .eq('anulado', false)
         .not('nro_comprobante', 'is', null)
         .limit(1)
         .maybeSingle()
@@ -3049,6 +3520,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         nroCert = mismoGrupo.nro_certificado as string
       } else {
         // Nuevo grupo — asignar siguiente número perpetuo
+        // (incluye anulados para preservar cronología: el cert anulado conserva su nro)
         const { data: maxComp } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
@@ -3077,9 +3549,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const { error } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .insert({ ...params, nro_comprobante: nroComp, nro_certificado: nroCert })
+        .insert({
+          ...params,
+          nro_comprobante: nroComp,
+          nro_certificado: nroCert,
+          estado_quincena: nuevoEstadoQ,
+        })
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert}`)
+      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
     } catch (err) {
       console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
     }
@@ -3388,28 +3865,40 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!window.confirm(msg)) return
 
     try {
-      // 1. Verificar si la retención ya fue declarada (DDJJ confirmada)
+      // 1. Verificar estado_quincena del registro v2 (declarada→bloqueo, cerrada→confirm)
       if (factura.sicore || factura.monto_sicore) {
         const { data: retRows } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .select('ddjj_confirmada')
+          .select('estado_quincena')
           .eq('factura_id', factura.id)
-          .eq('ddjj_confirmada', true)
+          .eq('anulado', false)
           .limit(1)
-        if (retRows && retRows.length > 0) {
-          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+        const estado = retRows?.[0]?.estado_quincena as string | undefined
+        if (estado === 'declarada') {
+          alert('🔒 Esta retención ya fue declarada a AFIP. Para modificar debe rectificar la DDJJ.')
           return
+        }
+        if (estado === 'cerrada') {
+          const okWarn = window.confirm(
+            '⚠️ Esta quincena ya fue cerrada (TXT generado). Al anular tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?'
+          )
+          if (!okWarn) return
         }
       }
 
-      // 2. Borrar registro v2
-      const { error: errDel } = await supabase
+      // 2. Anular registro v2 (conserva nro_comprobante/nro_certificado para cronología)
+      const { error: errAnul } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
-        .delete()
+        .update({
+          anulado: true,
+          fecha_anulacion: new Date().toISOString(),
+          motivo_anulacion: `Reset FC ${factura.numero_desde}`,
+        })
         .eq('factura_id', factura.id)
-      if (errDel) console.error('Error borrando sicore_retenciones:', errDel)
+        .eq('anulado', false)
+      if (errAnul) console.error('Error anulando sicore_retenciones:', errAnul)
 
       // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original)
       const updateData: any = {
@@ -3446,12 +3935,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Confirmar DDJJ SICORE — bloquea modificaciones de la quincena
   const confirmarDDJJSicore = async (quincena: string) => {
-    const registros = await buscarRetencionesV2(quincena)
+    const registros = await buscarRetencionesV2(quincena) // excluye anulados
     if (registros.length === 0) return
 
     const sinTXT = registros.some((r: any) => r.nro_comprobante == null)
     if (sinTXT) {
       alert('⚠️ Esta quincena aún no fue exportada (faltan números de comprobante). Generá el Export v2 antes de confirmar la DDJJ.')
+      return
+    }
+
+    // Requiere que la quincena esté CERRADA antes de poder declararla
+    const todasCerradas = registros.every((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+    if (!todasCerradas) {
+      alert('⚠️ Primero tenés que cerrar la quincena. Usá "Generar Export v2" y elegí "Descargar y cerrar".')
       return
     }
 
@@ -3465,10 +3961,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!ok) return
 
     const ids = registros.map((r: any) => r.id)
+    const ahora = new Date().toISOString()
     const { error } = await supabase
       .schema(schemaName)
       .from('sicore_retenciones')
-      .update({ ddjj_confirmada: true })
+      .update({
+        estado_quincena: 'declarada',
+        fecha_declarada: ahora,
+        ddjj_confirmada: true, // compat hasta cleanup
+      })
       .in('id', ids)
 
     if (error) {
@@ -3477,7 +3978,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
 
     // Actualizar estado local en registrosV2
-    setRegistrosV2(prev => prev.map((r: any) => ({ ...r, ddjj_confirmada: true })))
+    setRegistrosV2(prev => prev.map((r: any) => ids.includes(r.id)
+      ? { ...r, estado_quincena: 'declarada', fecha_declarada: ahora, ddjj_confirmada: true }
+      : r
+    ))
     alert(`✅ DDJJ SICORE confirmada — quincena ${quincena}`)
   }
 
@@ -3490,27 +3994,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (!window.confirm(msg)) return
     try {
       if (tieneSicore) {
-        // Verificar si la retención ya fue declarada (DDJJ confirmada)
+        // Verificar estado_quincena del registro v2 (declarada→bloqueo, cerrada→confirm)
         const { data: retRows } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .select('ddjj_confirmada')
+          .select('estado_quincena')
           .eq('anticipo_id', anticipo.id)
-          .eq('ddjj_confirmada', true)
+          .eq('anulado', false)
           .limit(1)
-        if (retRows && retRows.length > 0) {
-          alert('🔒 Esta retención ya fue declarada a AFIP (DDJJ confirmada). Para modificar debe rectificar la DDJJ.')
+        const estado = retRows?.[0]?.estado_quincena as string | undefined
+        if (estado === 'declarada') {
+          alert('🔒 Esta retención ya fue declarada a AFIP. Para modificar debe rectificar la DDJJ.')
           return
         }
+        if (estado === 'cerrada') {
+          const okWarn = window.confirm(
+            '⚠️ Esta quincena ya fue cerrada (TXT generado). Al anular tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?'
+          )
+          if (!okWarn) return
+        }
 
-        // Borrar registro v2 solo si aún no está vinculado a una FC
-        const { error: errDel } = await supabase
+        // Anular registro v2 solo si aún no está vinculado a una FC
+        const { error: errAnul } = await supabase
           .schema(schemaName)
           .from('sicore_retenciones')
-          .delete()
+          .update({
+            anulado: true,
+            fecha_anulacion: new Date().toISOString(),
+            motivo_anulacion: 'Reset anticipo',
+          })
           .eq('anticipo_id', anticipo.id)
           .is('factura_id', null)
-        if (errDel) console.error('Error borrando sicore_retenciones anticipo:', errDel)
+          .eq('anulado', false)
+        if (errAnul) console.error('Error anulando sicore_retenciones anticipo:', errAnul)
       }
       const { error } = await supabase
         .from('anticipos_proveedores')
@@ -3850,6 +4366,28 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const neto = parseFloat(netoGravadoAnt.replace(/\./g, '').replace(',', '.')) || 0
     const saldoFinal = Math.round(((anticipoSicoreEnProceso.monto || 0) - montoSicoreAnt - descuentoAnt) * 100) / 100
 
+    // Chequear estado_quincena antes de confirmar la retención
+    const { data: qChkAnt } = await supabase
+      .schema(schemaName)
+      .from('sicore_retenciones')
+      .select('estado_quincena')
+      .eq('quincena', quincena)
+      .eq('anulado', false)
+      .order('estado_quincena', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const estadoQAnt = (qChkAnt?.estado_quincena as string | undefined) ?? null
+    if (estadoQAnt === 'declarada') {
+      alert(`🔒 La quincena ${quincena} ya fue declarada a AFIP. No se pueden agregar nuevas retenciones.\nDebés rectificar la DDJJ con tu contadora antes de poder modificar.`)
+      return
+    }
+    if (estadoQAnt === 'cerrada') {
+      const okWarn = window.confirm(
+        `⚠️ La quincena ${quincena} ya está cerrada (TXT generado).\nAl agregar esta retención tendrás que regenerar el TXT y enviarlo de nuevo a tu contadora.\n\n¿Continuar?`
+      )
+      if (!okWarn) return
+    }
+
     console.log('[SICORE ANT] update:', { quincena, montoSicoreAnt, saldoFinal, id: anticipoSicoreEnProceso.id, echeq: !!echeqPendienteRef.current })
 
     // Si viene de ECHEQ: estado 'echeq', guardar fechas y metodo_pago
@@ -4133,13 +4671,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   //  CIERRE QUINCENA V2 — lee de msa.sicore_retenciones
   // ══════════════════════════════════════════════════════════════
 
-  const buscarRetencionesV2 = async (quincena: string) => {
-    const { data, error } = await supabase
+  const buscarRetencionesV2 = async (quincena: string, incluirAnulados = false) => {
+    let query = supabase
       .schema(schemaName)
       .from('sicore_retenciones')
       .select('*')
       .eq('quincena', quincena)
-      .order('denominacion_emisor', { ascending: true })
+    if (!incluirAnulados) {
+      query = query.eq('anulado', false)
+    }
+    const { data, error } = await query.order('denominacion_emisor', { ascending: true })
     if (error) throw error
     return data || []
   }
@@ -4319,9 +4860,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const regimenesMap: Record<string, string> = {}
     tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
 
+    // Defensivo: filtrar anulados (no deberían venir, pero protegemos por si)
+    const registrosVigentes = registros.filter((r: any) => !r.anulado)
+
     // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
     const grupos: Record<string, any> = {}
-    for (const r of registros) {
+    for (const r of registrosVigentes) {
       const key = `${r.cuit_emisor}||${r.tipo_sicore}`
       if (!grupos[key]) {
         grupos[key] = {
@@ -4353,7 +4897,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Verificar si esta quincena ya fue cerrada (guard idempotencia)
     // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
-    const yaAsignados = registros.every((r: any) => r.nro_comprobante != null)
+    const yaAsignados = registrosVigentes.every((r: any) => r.nro_comprobante != null)
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
@@ -4372,7 +4916,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Quincena ya cerrada: usar números guardados en BD, no sobreescribir
       for (const g of gruposOrdenados) {
         // Tomar nro_comprobante/nro_certificado del primer registro del grupo (todos iguales)
-        const primerReg = registros.find((r: any) => g.ids.includes(r.id))
+        const primerReg = registrosVigentes.find((r: any) => g.ids.includes(r.id))
         const nroCompNum = Number(primerReg?.nro_comprobante ?? 0)
         const nroCert    = primerReg?.nro_certificado ?? ''
         const codigoRegimen = regimenesMap[g.tipo_sicore] || '000'
@@ -4562,10 +5106,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     })
   }
 
-  const procesarCierreV2 = async (quincena: string) => {
+  const procesarCierreV2 = async (quincena: string, opciones: { cerrar?: boolean } = {}) => {
     try {
       setProcesandoCierreV2(true)
-      const registros = await buscarRetencionesV2(quincena)
+      const registros = await buscarRetencionesV2(quincena) // excluye anulados por defecto
       if (registros.length === 0) {
         alert(`No hay registros en sicore_retenciones para la quincena ${quincena}`)
         return
@@ -4586,7 +5130,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const txtInfo = await generarTXTCierreV2(registros, quincena, subcarpeta)
       const totalRet = registros.reduce((s: number, r: any) => s + (Number(r.retencion) || 0), 0)
       const totalPago = registros.reduce((s: number, r: any) => s + (Number(r.pago) || 0), 0)
-      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}`)
+
+      // Si la opción "cerrar" fue elegida → marcar la quincena como cerrada
+      let mensajeCerrada = ''
+      if (opciones.cerrar) {
+        const { error: errCerrar } = await supabase
+          .schema(schemaName)
+          .from('sicore_retenciones')
+          .update({
+            estado_quincena: 'cerrada',
+            fecha_cerrada: new Date().toISOString(),
+          })
+          .eq('quincena', quincena)
+          .eq('anulado', false)
+          .neq('estado_quincena', 'declarada') // no tocar registros ya declarados
+        if (errCerrar) {
+          console.error('Error marcando quincena como cerrada:', errCerrar)
+          mensajeCerrada = '\n\n⚠️ Error marcando como cerrada — revisar consola.'
+        } else {
+          mensajeCerrada = '\n\n🔒 Quincena marcada como CERRADA.'
+          // Refrescar registros locales
+          setRegistrosV2(prev => prev.map((r: any) =>
+            r.quincena === quincena && !r.anulado && r.estado_quincena !== 'declarada'
+              ? { ...r, estado_quincena: 'cerrada', fecha_cerrada: new Date().toISOString() }
+              : r
+          ))
+        }
+      }
+
+      alert(`✅ Cierre v2 generado — quincena ${quincena}\n\n• ${registros.length} registros (${txtInfo?.grupos} líneas TXT agrupadas)\n• Total retenciones: $${totalRet.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• Total pagos netos: $${totalPago.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n• TXT ARCA: ${txtInfo?.nombreArchivo}${mensajeCerrada}`)
 
       // Proponer actualizar cuota del template SICORE (abre modal con selector)
       await abrirModalAsignarCuota(quincena, totalRet)
@@ -4599,17 +5171,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   // Previsualizar conteo v2 al seleccionar quincena
-  const previsualizarV2 = async (quincena: string) => {
+  // incluirAnuladosOverride: si se pasa, gana sobre el state mostrarAnulados (resuelve stale closure)
+  const previsualizarV2 = async (quincena: string, incluirAnuladosOverride?: boolean) => {
     setQuincenaSeleccionadaV2(quincena)
     setConteoV2(null)
     setRegistrosV2([])
     if (!quincena) return
     setCargandoV2(true)
     try {
-      const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
+      const incluirAnulados = incluirAnuladosOverride !== undefined ? incluirAnuladosOverride : mostrarAnulados
+      let q = supabase.schema(schemaName).from('sicore_retenciones')
         .select('*')
         .eq('quincena', quincena)
-        .order('fecha_pago', { ascending: true })
+      if (!incluirAnulados) {
+        q = q.eq('anulado', false)
+      }
+      const { data } = await q.order('fecha_pago', { ascending: true })
       if (data) {
         setRegistrosV2(data)
         setConteoV2({
@@ -5299,14 +5876,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   const descargarTodosLosCertificados = async () => {
     if (registrosV2.length === 0) return
+    // Excluir anulados de la descarga masiva — no se emite certificado de algo anulado
+    const registrosVigentes = registrosV2.filter((r: any) => !r.anulado)
+    if (registrosVigentes.length === 0) {
+      alert('No hay certificados vigentes para descargar (todos están anulados).')
+      return
+    }
     try {
       const dirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' })
       setDescargandoCerts(true)
       let count = 0
 
       // Agrupar por nro_certificado (mismo criterio de agrupación que el TXT)
-      const grupos = new Map<string, typeof registrosV2>()
-      for (const r of registrosV2) {
+      const grupos = new Map<string, typeof registrosVigentes>()
+      for (const r of registrosVigentes) {
         const key = r.nro_certificado || r.id || String(r.cuit_emisor)
         if (!grupos.has(String(key))) grupos.set(String(key), [])
         grupos.get(String(key))!.push(r)
@@ -5543,16 +6126,88 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   {facturasPeriodo.length} facturas encontradas
                 </p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMostrarColumnasDetalladas(!mostrarColumnasDetalladas)}
-                className="flex items-center gap-2"
-              >
-                {mostrarColumnasDetalladas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={conciliarSaldos}
+                  disabled={supervisandoArchivo}
+                  title="Rápido, sin OCR: lista la carpeta y muestra el balance (archivos sin vincular vs facturas sin PDF)"
+                  className="flex items-center gap-2"
+                >
+                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                  📊 Conciliar saldos
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => supervisarArchivoPeriodo(false)}
+                  disabled={supervisandoArchivo}
+                  title="Releva TODA la carpeta del período con OCR: vincula los PDF que matcheen por contenido (corre en 2do plano)"
+                  className="flex items-center gap-2"
+                >
+                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {supervisandoArchivo ? 'Procesando…' : '🗂️ Supervisar (OCR)'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => supervisarArchivoPeriodo(true)}
+                  disabled={supervisandoArchivo}
+                  title="Re-supervisa SOLO los PDF que aún no están vinculados (salta los ya vinculados → más rápido)"
+                  className="flex items-center gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Solo sin adjudicar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMostrarColumnasDetalladas(!mostrarColumnasDetalladas)}
+                  className="flex items-center gap-2"
+                >
+                  {mostrarColumnasDetalladas ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {mostrarColumnasDetalladas ? 'Ocultar Detalle' : 'Mostrar Detalle IVA'}
+                </Button>
+              </div>
             </div>
+
+            {/* 🗂️ Resumen de archivo digital (PDF) — chips clickeables que filtran la tabla */}
+            {(() => {
+              const con = facturasPeriodo.filter(f => categoriaArchivo(f) === 'con').length
+              const falta = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta').length
+              const portal = facturasPeriodo.filter(f => categoriaArchivo(f) === 'portal').length
+              const toggle = (cat: 'con' | 'falta' | 'portal') =>
+                setFiltroArchivoPdf(prev => { const n = new Set(prev); if (n.has(cat)) n.delete(cat); else n.add(cat); return n })
+              const chip = (cat: 'con' | 'falta' | 'portal', label: string, color: string) => {
+                const activo = filtroArchivoPdf.has(cat)
+                return (
+                  <button type="button" onClick={() => toggle(cat)}
+                    className={`px-2 py-0.5 rounded-full text-xs border transition ${activo ? color + ' ring-2 ring-offset-1' : color + ' opacity-80 hover:opacity-100'}`}>
+                    {label}
+                  </button>
+                )
+              }
+              return (
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="text-xs text-muted-foreground">🗂️ Archivo digital:</span>
+                  {chip('con', `📎 ${con} con PDF`, 'bg-green-100 text-green-800 border-green-300')}
+                  {chip('falta', `❌ ${falta} faltantes`, 'bg-red-100 text-red-800 border-red-300')}
+                  {chip('portal', `🌐 ${portal} Portal`, 'bg-gray-100 text-gray-700 border-gray-300')}
+                  {huerfanosSupervision.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-xs border bg-amber-100 text-amber-800 border-amber-300"
+                      title="PDFs en la carpeta del período que no están asociados a ninguna factura (ver panel abajo)">
+                      🖼️ {huerfanosSupervision.length} PDF sin adjudicar
+                    </span>
+                  )}
+                  {filtroArchivoPdf.size > 0 && (
+                    <button type="button" className="text-xs text-blue-600 underline ml-1" onClick={() => setFiltroArchivoPdf(new Set())}>
+                      limpiar filtro
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
           </CardHeader>
           <CardContent>
             <div className="overflow-auto max-h-96">
@@ -5579,10 +6234,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         />
                       </TableHead>
                     )}
+                    <TableHead className="w-28 text-center">Archivo / FC</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Proveedor</TableHead>
                     <TableHead>CUIT</TableHead>
                     <TableHead>Tipo</TableHead>
+                    <TableHead>Nº Comp.</TableHead>
                     {mostrarColumnasDetalladas ? (
                       <>
                         {/* Columnas detalladas de Netos por Alícuota */}
@@ -5618,7 +6275,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {facturasPeriodo.map(factura => {
+                  {facturasPeriodo
+                    .filter(factura => filtroArchivoPdf.size === 0 || filtroArchivoPdf.has(categoriaArchivo(factura)))
+                    .map(factura => {
                     const tc = Number(factura.tipo_cambio) || 1
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
@@ -5647,6 +6306,31 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           )}
                         </TableCell>
                       )}
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {(() => {
+                            const cat = categoriaArchivo(factura)
+                            if (cat === 'con') return (
+                              <a href={factura.pdf_drive_url!} target="_blank" rel="noreferrer" title="Ver PDF en Drive" className="text-green-600">📎</a>
+                            )
+                            if (cat === 'portal') return <span title="De Portal — no se archiva por mail" className="text-gray-400">🌐</span>
+                            return <span title="Falta el PDF en el archivo digital" className="text-red-600">❌</span>
+                          })()}
+                          {factura.fc && (
+                            <span className={`px-1 rounded text-[9px] ${
+                              { 'OK': 'bg-green-200 text-green-900', 'Sí': 'bg-green-100 text-green-800', 'APP': 'bg-blue-100 text-blue-800',
+                                'VER': 'bg-yellow-100 text-yellow-800', 'Portal': 'bg-purple-100 text-purple-700',
+                                'NO Mail': 'bg-orange-100 text-orange-700', 'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700' }[factura.fc] || 'bg-gray-100 text-gray-500'
+                            }`}>{factura.fc}</span>
+                          )}
+                          {categoriaArchivo(factura) === 'con' && (
+                            <button type="button" onClick={() => desvincularPdf(factura)}
+                              title="Desvincular PDF (para re-asignar)" className="text-gray-300 hover:text-red-600">
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{formatearFecha(factura.fecha_emision)}</TableCell>
                       <TableCell className="max-w-48 truncate">
                         {esUSD && <span className="text-xs mr-1 text-amber-600">💵</span>}
@@ -5654,6 +6338,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       </TableCell>
                       <TableCell>{factura.cuit}</TableCell>
                       <TableCell>{factura.tipo_comprobante}</TableCell>
+                      <TableCell className="whitespace-nowrap font-medium">{factura.punto_venta}-{factura.numero_desde}</TableCell>
                       {mostrarColumnasDetalladas ? (
                         <>
                           {/* Columnas detalladas de Netos por Alícuota */}
@@ -5775,6 +6460,117 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </CardContent>
         </Card>
       )}
+
+      {/* PDFs en la carpeta que no matchearon ninguna factura (huérfanos) — última supervisión */}
+      {huerfanosSupervision.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Archivos en la carpeta del período que la supervisión no pudo asociar a una factura
+              (típicamente fotos: el OCR no leyó el contenido). El nombre suele tener el proveedor.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
+              {huerfanosSupervision.map((h, i) => {
+                const candidatos = sugerirFacturasHuerfano(h.archivo)
+                const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+                const sugeridosIds = new Set(candidatos.map(c => c.id))
+                const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id ?? ''
+                const sel = faltantes.find(f => f.id === selId)
+                return (
+                  <li key={i} className="flex items-center gap-2 flex-wrap border-b pb-1.5">
+                    {editNombreUrl === h.url ? (
+                      <>
+                        <input
+                          value={editNombreVal}
+                          onChange={e => setEditNombreVal(e.target.value)}
+                          className="text-xs border rounded px-1 py-0.5 w-[280px]"
+                          disabled={guardandoNombreUrl === h.url}
+                          autoFocus
+                        />
+                        <button type="button" title="Guardar nombre" className="text-green-600"
+                          disabled={guardandoNombreUrl === h.url}
+                          onClick={() => renombrarHuerfano(h)}>
+                          {guardandoNombreUrl === h.url ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </button>
+                        <button type="button" title="Cancelar" className="text-gray-400" onClick={() => setEditNombreUrl(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[280px]">{h.archivo}</a>
+                        <button type="button" title="Renombrar archivo (si está mal nombrado)" className="text-gray-400 hover:text-gray-600"
+                          onClick={() => { setEditNombreUrl(h.url); setEditNombreVal(h.archivo) }}>
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                    {typeof h.chars === 'number' && (
+                      <span className={`text-xs ${h.chars === 0 ? 'text-red-500' : 'text-gray-400'}`}>(OCR: {h.chars})</span>
+                    )}
+                    <span className="text-xs text-gray-500">{candidatos.length > 0 ? '→ sugerida:' : '→ elegir:'}</span>
+                    {faltantes.length === 0 ? (
+                      <span className="text-xs text-gray-400 italic">no quedan facturas sin PDF</span>
+                    ) : (
+                      <>
+                        <select
+                          value={selId}
+                          onChange={e => setVinculoHuerfanoSel(prev => ({ ...prev, [h.url]: e.target.value }))}
+                          className="text-xs border rounded px-1 py-0.5 max-w-[280px]"
+                        >
+                          <option value="">— elegir factura —</option>
+                          {faltantes.map(f => (
+                            <option key={f.id} value={f.id}>
+                              {sugeridosIds.has(f.id) ? '⭐ ' : ''}{f.denominacion_emisor} · {f.punto_venta}-{f.numero_desde} · {formatearFecha(f.fecha_emision)} · ${(Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                            </option>
+                          ))}
+                        </select>
+                        <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                          disabled={!sel}
+                          onClick={() => sel && vincularHuerfano(sel, h)}>
+                          Vincular
+                        </Button>
+                      </>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 🔧 Detalle técnico de la conciliación (para diagnóstico): todos los archivos de la carpeta */}
+      {detalleConciliacion.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm text-gray-600">🔧 Detalle de archivos en la carpeta ({detalleConciliacion.length})</CardTitle>
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                onClick={() => {
+                  const txt = detalleConciliacion.map(d => `${d.factura ? '✓ ' + d.factura : '— SIN VINCULAR'}\t${d.archivo}\t${d.file_id}`).join('\n')
+                  navigator.clipboard?.writeText(txt)
+                  toast.success('Detalle copiado al portapapeles')
+                }}>
+                <Copy className="h-3.5 w-3.5 mr-1" /> Copiar
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Cada archivo con su file_id y la factura a la que está vinculado (o "sin vincular"). Pegámelo para diagnosticar.</p>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-0.5 text-[11px] font-mono max-h-80 overflow-auto">
+              {detalleConciliacion.map((d, i) => (
+                <li key={i} className={d.factura ? 'text-green-700' : 'text-red-600'}>
+                  {d.factura ? `✓ ${d.factura}` : '— SIN VINCULAR'} · {d.archivo} · <span className="text-gray-400">{d.file_id}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 
@@ -5841,109 +6637,173 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
             </div>
           )}
-          <div className="flex items-center gap-3">
-            {/* Búsqueda rápida */}
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar emisor, CUIT, cuenta..."
-                value={busquedaRapida}
-                onChange={e => setBusquedaRapida(e.target.value)}
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
-            <div className="flex gap-2 ml-auto">
-          {/* Botón importar Excel */}
-          <Button
-            variant="outline"
-            onClick={() => setMostrarImportador(true)}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Importar Excel
-          </Button>
+          {/* ───────────── Fila 0: Búsqueda (ancho completo) ───────────── */}
+          <div className="relative w-full">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Buscar emisor, CUIT, cuenta..."
+              value={busquedaRapida}
+              onChange={e => setBusquedaRapida(e.target.value)}
+              className="pl-8 h-9 text-sm"
+            />
+          </div>
 
-          {/* Botón reglas de importación */}
-          <Button
-            variant="outline"
-            onClick={() => setMostrarReglasImport(true)}
-            title="Reglas que asignan cuenta contable y estado por CUIT al importar"
-          >
-            <Settings2 className="mr-2 h-4 w-4" />
-            Reglas Import
-          </Button>
+          {/* ───────────── Fila 1: Datos (importar / reglas / actualizar / filtros) ───────────── */}
+          <div className="flex flex-wrap gap-2">
+            {/* Importar FC (dropdown: ARCA solo admin, Excel para todos) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar FC
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {!esContable && (empresa === 'MSA' || empresa === 'PAM' || empresa === 'MA') && (
+                  <DropdownMenuItem onClick={() => {
+                    // Pre-llenar empresa según la tab activa ANTES de abrir el modal
+                    // (no podemos confiar en onOpenChange del Dialog porque no se dispara
+                    // cuando seteamos open=true desde fuera del componente)
+                    setArcaEmpresa(empresa as 'MSA' | 'PAM' | 'MA')
+                    setArcaError(null)
+                    setArcaPassword('')
+                    // Atajo por defecto: mes anterior
+                    const hoy = new Date()
+                    const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+                    const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+                    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                    setArcaFechaDesde(fmt(mesAnt))
+                    setArcaFechaHasta(fmt(finMesAnt))
+                    setMostrarImportadorArca(true)
+                  }}>
+                    📥 Importar desde ARCA ({empresa})
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => setMostrarImportador(true)}>
+                  📂 Importar Excel manual
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          {/* Botón de filtros */}
-          <Button 
-            variant={mostrarFiltros ? "default" : "outline"}
-            onClick={() => setMostrarFiltros(!mostrarFiltros)}
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Filtros
-          </Button>
-          
-          {/* Botón actualizar */}
-          <Button
-            variant="outline"
-            onClick={() => cargarFacturas()}
-            title="Recargar datos desde BD"
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Actualizar
-          </Button>
+            {/* Búsqueda de PDFs vía GAS (solo admin) */}
+            {!esContable && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Pre-seleccionar solo las auto-buscables (Buscar / null). El usuario puede
+                    // agregar/quitar a mano (incluso forzar NO Mail / No) desde el modal.
+                    const auto = facturas.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)
+                    setSeleccionPdf(new Set(auto))
+                    setPdfDesde('')
+                    setPdfHasta('')
+                    setFiltroTiposPdf(new Set())
+                    setModalBuscarPdf(true)
+                    cargarMailesProveedores(facturas.map(f => f.cuit))
+                  }}
+                  disabled={buscandoPdfs}
+                  title="Elegir qué facturas buscar (selección, rango de fechas)"
+                >
+                  {buscandoPdfs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                  Buscar PDFs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setModalHistorialPdf({ open: true })}
+                  title="Historial de búsquedas de PDFs"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Historial PDFs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setModalConfigProveedorPdf({ open: true })}
+                  title="Configurar proveedores para descarga automática"
+                >
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  Config PDFs
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setAuditarPeriodoOpen(true)}
+                  title="Auditar el registro digital de un período contable (agrega links + marca incongruencias)"
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Auditar período
+                </Button>
+              </>
+            )}
 
-          {/* Botón modo edición */}
-          <Button
-            variant={modoEdicion ? "default" : "outline"}
-            onClick={() => setModoEdicion(!modoEdicion)}
-          >
-            <Edit3 className="mr-2 h-4 w-4" />
-            {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
-          </Button>
-
-          {/* Botón edición masiva */}
-          <Button
-            variant={modoEdicionMasiva ? "default" : "outline"}
-            onClick={() => {
-              setModoEdicionMasiva(!modoEdicionMasiva)
-              if (modoEdicionMasiva) {
-                setFacturasSeleccionadasMasiva(new Set())
-                setNuevoEstadoMasivo('')
-              }
-            }}
-            className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
-          >
-            <Check className="mr-2 h-4 w-4" />
-            {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
-          </Button>
-
-          {/* Botón modo edición/eliminación admin (solo admin) */}
-          {!esContable && (
-            <Button
-              variant={modoEdicionAdmin ? "default" : "outline"}
-              onClick={() => {
-                if (modoEdicionAdmin) {
-                  setModoEdicionAdmin(false)
-                  setFacturasSeleccionadasMasiva(new Set())
-                  return
-                }
-                const ok = window.confirm(
-                  '⚠️ MODO EDICIÓN / ELIMINACIÓN ADMIN\n\n' +
-                  'Vas a habilitar la posibilidad de modificar TODOS los campos de las facturas y de ELIMINARLAS permanentemente.\n\n' +
-                  'Las facturas son la fuente de verdad fiscal y contable. Modificarlas o borrarlas puede romper:\n' +
-                  '  • Vinculaciones con anticipos\n' +
-                  '  • Retenciones SICORE\n' +
-                  '  • Conciliación bancaria\n' +
-                  '  • Declaraciones de IVA ya cerradas\n\n' +
-                  '¿Confirmás activar el modo?'
-                )
-                if (ok) setModoEdicionAdmin(true)
-              }}
-              className={modoEdicionAdmin ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-300 text-red-700 hover:bg-red-50"}
-              title="Solo admin — modifica o elimina facturas"
-            >
-              {modoEdicionAdmin ? '🔧 Salir Modo Admin' : '🔧 Modo Admin'}
+            <Button variant="outline" onClick={() => setMostrarReglasImport(true)}
+              title="Reglas que asignan cuenta contable y estado por CUIT al importar">
+              <Settings2 className="mr-2 h-4 w-4" />
+              Reglas Import
             </Button>
-          )}
+
+            <Button variant="outline" onClick={() => cargarFacturas()} title="Recargar datos desde BD">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Actualizar
+            </Button>
+
+            <Button variant={mostrarFiltros ? "default" : "outline"} onClick={() => setMostrarFiltros(!mostrarFiltros)}>
+              <Filter className="mr-2 h-4 w-4" />
+              Filtros
+            </Button>
+          </div>
+
+          {/* ───────────── Fila 2: Acciones (edición + SICORE + Pagos) ───────────── */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Grupo edición */}
+            <Button variant={modoEdicion ? "default" : "outline"} onClick={() => setModoEdicion(!modoEdicion)}>
+              <Edit3 className="mr-2 h-4 w-4" />
+              {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
+            </Button>
+
+            <Button
+              variant={modoEdicionMasiva ? "default" : "outline"}
+              onClick={() => {
+                setModoEdicionMasiva(!modoEdicionMasiva)
+                if (modoEdicionMasiva) {
+                  setFacturasSeleccionadasMasiva(new Set())
+                  setNuevoEstadoMasivo('')
+                }
+              }}
+              className={modoEdicionMasiva ? "bg-purple-600 hover:bg-purple-700" : ""}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
+            </Button>
+
+            {!esContable && (
+              <Button
+                variant={modoEdicionAdmin ? "default" : "outline"}
+                onClick={() => {
+                  if (modoEdicionAdmin) {
+                    setModoEdicionAdmin(false)
+                    setFacturasSeleccionadasMasiva(new Set())
+                    return
+                  }
+                  const ok = window.confirm(
+                    '⚠️ MODO EDICIÓN / ELIMINACIÓN ADMIN\n\n' +
+                    'Vas a habilitar la posibilidad de modificar TODOS los campos de las facturas y de ELIMINARLAS permanentemente.\n\n' +
+                    'Las facturas son la fuente de verdad fiscal y contable. Modificarlas o borrarlas puede romper:\n' +
+                    '  • Vinculaciones con anticipos\n' +
+                    '  • Retenciones SICORE\n' +
+                    '  • Conciliación bancaria\n' +
+                    '  • Declaraciones de IVA ya cerradas\n\n' +
+                    '¿Confirmás activar el modo?'
+                  )
+                  if (ok) setModoEdicionAdmin(true)
+                }}
+                className={modoEdicionAdmin ? "bg-red-600 hover:bg-red-700 text-white" : "border-red-300 text-red-700 hover:bg-red-50"}
+                title="Solo admin — modifica o elimina facturas"
+              >
+                {modoEdicionAdmin ? '🔧 Salir Modo Admin' : '🔧 Modo Admin'}
+              </Button>
+            )}
+
+            {/* Separador visual */}
+            <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
           {/* Botón Panel SICORE */}
           <Button
@@ -6087,7 +6947,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             </div>
           </PopoverContent>
         </Popover>
-        </div>
           </div>
 
       {/* Panel de filtros */}
@@ -6683,6 +7542,156 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         </DialogContent>
       </Dialog>
 
+      {/* Modal Importar desde ARCA (descarga automática) — solo admin */}
+      <Dialog open={mostrarImportadorArca} onOpenChange={(v) => {
+        if (arcaCargando) return  // no cerrar mientras descarga
+        setMostrarImportadorArca(v)
+        // Al cerrar, descartar clave y error de memoria.
+        // El pre-llenado de empresa/fechas se hace en el onClick del DropdownMenuItem
+        // porque onOpenChange NO se dispara cuando seteamos open=true desde fuera.
+        if (!v) { setArcaError(null); setArcaPassword('') }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📥 Importar desde ARCA</DialogTitle>
+            <DialogDescription>
+              Descarga automática de Mis Comprobantes. Después revisás e imputás antes del INSERT final.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Empresa — fija, viene de la tab activa para evitar errores de selección */}
+            <div className="space-y-1">
+              <Label className="text-xs">Empresa</Label>
+              <div className="border rounded-md bg-blue-50 border-blue-200 px-3 py-2 text-sm font-medium text-blue-900 flex items-center gap-2">
+                <span className="text-blue-600">🏛️</span>
+                <span>{arcaEmpresa === 'MA' ? 'MA — Otro CUIT' : arcaEmpresa === 'PAM' ? 'PAM — CUIT 20044390222' : 'MSA — Martinez Sobrado Agro'}</span>
+              </div>
+              <p className="text-[10px] text-gray-500 mt-1">Para descargar de otra empresa, salí del modal y cambiá de tab.</p>
+            </div>
+
+            {/* Atajos de fecha */}
+            <div className="space-y-1">
+              <Label className="text-xs">Atajos rápidos</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const mes = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+                  const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(mes)); setArcaFechaHasta(fmt(fin))
+                }}>Mes anterior</Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const hace30 = new Date(hoy); hace30.setDate(hace30.getDate() - 30)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(hace30)); setArcaFechaHasta(fmt(hoy))
+                }}>Últimos 30 días</Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  const hoy = new Date()
+                  const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+                  const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1)
+                  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  setArcaFechaDesde(fmt(inicio)); setArcaFechaHasta(fmt(ayer))
+                }}>Este mes hasta ayer</Button>
+              </div>
+            </div>
+
+            {/* Fechas custom */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Fecha desde *</Label>
+                <Input type="date" value={arcaFechaDesde} onChange={e => setArcaFechaDesde(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Fecha hasta *</Label>
+                <Input type="date" value={arcaFechaHasta} onChange={e => setArcaFechaHasta(e.target.value)} />
+              </div>
+            </div>
+
+            {/* Clave fiscal (input password, no se ve, no se guarda) */}
+            <div className="space-y-1">
+              <Label className="text-xs">Clave fiscal de ARCA *</Label>
+              <Input
+                type="password"
+                value={arcaPassword}
+                onChange={e => setArcaPassword(e.target.value)}
+                placeholder="Ingresá tu clave fiscal"
+                autoComplete="current-password"
+              />
+              <p className="text-[10px] text-gray-500">
+                La clave se usa una sola vez para esta descarga. No se guarda en el servidor.
+              </p>
+            </div>
+
+            {arcaError && (
+              <div className="bg-red-50 border border-red-300 rounded p-3 text-sm text-red-900">
+                ❌ {arcaError}
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs text-blue-900">
+              ℹ️ La descarga puede tardar 10-20 segundos (login + SSO + consulta + descarga).
+              Después vas al wizard de imputación para revisar antes de importar a BD.
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMostrarImportadorArca(false)} disabled={arcaCargando}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={async () => {
+                setArcaError(null)
+                if (!arcaPassword || arcaPassword.trim().length === 0) { setArcaError('Ingresá tu clave fiscal'); return }
+                if (!arcaFechaDesde || !arcaFechaHasta) { setArcaError('Completá ambas fechas'); return }
+                if (arcaFechaDesde > arcaFechaHasta) { setArcaError('Fecha desde debe ser anterior o igual a fecha hasta'); return }
+                setArcaCargando(true)
+                try {
+                  const resp = await fetch('/api/arca/descargar-comprobantes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      empresa: arcaEmpresa,
+                      password: arcaPassword,
+                      fechaDesde: arcaFechaDesde,
+                      fechaHasta: arcaFechaHasta,
+                      tipo: 'recibidos',
+                      userRole,
+                    }),
+                  })
+                  const data = await resp.json()
+                  if (!resp.ok) {
+                    setArcaError(data.error || `Error ${resp.status}`)
+                    return
+                  }
+                  // Crear File con el CSV adaptado y delegar al wizard de Excel
+                  const csvBlob = new Blob([data.csvText], { type: 'text/csv;charset=utf-8' })
+                  const fileName = `arca-${arcaEmpresa}-${arcaFechaDesde}-a-${arcaFechaHasta}.csv`
+                  const csvFile = new File([csvBlob], fileName, { type: 'text/csv' })
+                  setArchivoImportacion(csvFile)
+                  setOrigenFactura('ARCA')
+                  setPasoImportacion('archivo')
+                  setArcaPassword('')  // borrar la clave de memoria
+                  setMostrarImportadorArca(false)
+                  setMostrarImportador(true)  // abre el wizard existente en paso 2 con el File precargado
+                  // Disparar preview automáticamente — el input file no se puede setear programáticamente
+                  await previsualizarImportacion(csvFile)
+                } catch (err) {
+                  setArcaError((err as Error).message || 'Error de red')
+                } finally {
+                  setArcaCargando(false)
+                }
+              }}
+              disabled={arcaCargando || !arcaPassword}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {arcaCargando ? '⏳ Descargando...' : '📥 Descargar de ARCA'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal para importación de Excel — 3 pasos */}
       <Dialog open={mostrarImportador} onOpenChange={(v) => {
         setMostrarImportador(v)
@@ -6743,18 +7752,26 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Archivo Excel (.xlsx / .xls)</Label>
-                  <Input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null
-                      setArchivoImportacion(file)
-                      setPreviewData(null)
-                      setResultadoImportacion(null)
-                      if (file) previsualizarImportacion(file)
-                    }}
-                  />
+                  <Label>{origenFactura === 'ARCA' ? 'Archivo descargado de ARCA' : 'Archivo Excel (.xlsx / .xls)'}</Label>
+                  {origenFactura === 'ARCA' && archivoImportacion ? (
+                    <div className="border rounded-md bg-blue-50 border-blue-200 px-3 py-2 text-sm text-blue-900 flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span className="font-medium truncate flex-1" title={archivoImportacion.name}>{archivoImportacion.name}</span>
+                      <span className="text-xs text-blue-700">{(archivoImportacion.size / 1024).toFixed(1)} KB</span>
+                    </div>
+                  ) : (
+                    <Input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null
+                        setArchivoImportacion(file)
+                        setPreviewData(null)
+                        setResultadoImportacion(null)
+                        if (file) previsualizarImportacion(file)
+                      }}
+                    />
+                  )}
                 </div>
 
                 {cargandoPreview && (
@@ -7870,9 +8887,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
               )}
 
+              {/* Toggle "Mostrar anulados" + recargar */}
+              {quincenaSeleccionadaV2 && (
+                <div className="flex items-center gap-3 text-sm text-gray-600">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={mostrarAnulados}
+                      onChange={e => {
+                        const v = e.target.checked
+                        setMostrarAnulados(v)
+                        // Pasar el valor nuevo como override — sin esto, previsualizarV2
+                        // leería el state viejo (stale closure)
+                        if (quincenaSeleccionadaV2) previsualizarV2(quincenaSeleccionadaV2, v)
+                      }}
+                    />
+                    Mostrar registros anulados (tachados, no entran al TXT ni a totales)
+                  </label>
+                </div>
+              )}
+
               {/* Tabla de registros */}
               {registrosV2.length > 0 && (
-                <TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} />
+                <TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} mostrarAnulados={mostrarAnulados} />
               )}
 
               {conteoV2 !== null && conteoV2.cantidad === 0 && (
@@ -7881,40 +8918,67 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </div>
               )}
 
-              {/* Estado DDJJ */}
+              {/* Estado quincena (abierta / cerrada / declarada) */}
               {registrosV2.length > 0 && (() => {
-                const ddjjConfirmada = registrosV2.every((r: any) => r.ddjj_confirmada)
-                const tieneTXT = registrosV2.some((r: any) => r.nro_comprobante != null)
-                if (ddjjConfirmada) {
+                const vigentes = registrosV2.filter((r: any) => !r.anulado)
+                if (vigentes.length === 0) return null
+                const todasDeclaradas = vigentes.every((r: any) => r.estado_quincena === 'declarada')
+                const todasCerradas = vigentes.every((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+                const algunaCerrada = vigentes.some((r: any) => r.estado_quincena === 'cerrada' || r.estado_quincena === 'declarada')
+                const fechasCerrada = vigentes.map((r: any) => r.fecha_cerrada).filter(Boolean).sort()
+                const fechaCerradaMin = fechasCerrada[0]
+                const fechasDeclarada = vigentes.map((r: any) => r.fecha_declarada).filter(Boolean).sort()
+                const fechaDeclaradaMin = fechasDeclarada[0]
+                // ¿Hay registros agregados después de la primera fecha_cerrada?
+                const modificadaTrasCierre = fechaCerradaMin && vigentes.some((r: any) =>
+                  r.estado_quincena === 'abierta' || (r.created_at && r.created_at > fechaCerradaMin)
+                )
+                const fmtFC = (s: string | null) => s ? new Date(s).toLocaleString('es-AR') : ''
+
+                if (todasDeclaradas) {
                   return (
                     <div className="flex items-center gap-2 bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700">
                       <span>🔒</span>
                       <span className="font-medium">DDJJ Confirmada</span>
-                      <span className="text-gray-500">— esta quincena está declarada a AFIP</span>
+                      <span className="text-gray-500">— declarada a AFIP{fechaDeclaradaMin ? ` el ${fmtFC(fechaDeclaradaMin)}` : ''}</span>
                     </div>
                   )
                 }
-                if (tieneTXT) {
+                if (todasCerradas || algunaCerrada) {
                   return (
-                    <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-                      <span className="text-sm text-orange-700 flex-1">⚠️ TXT generado pero DDJJ aún no confirmada</span>
-                      <Button
-                        size="sm"
-                        onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
-                        className="bg-orange-600 hover:bg-orange-700 text-white"
-                      >
-                        ✅ Confirmar DDJJ
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                        <span className="text-sm text-yellow-800 flex-1">
+                          📤 Quincena cerrada{fechaCerradaMin ? ` el ${fmtFC(fechaCerradaMin)}` : ''} — pendiente confirmar DDJJ
+                        </span>
+                        <Button
+                          size="sm"
+                          onClick={() => quincenaSeleccionadaV2 && confirmarDDJJSicore(quincenaSeleccionadaV2)}
+                          className="bg-orange-600 hover:bg-orange-700 text-white"
+                        >
+                          ✅ Confirmar DDJJ
+                        </Button>
+                      </div>
+                      {modificadaTrasCierre && (
+                        <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-sm text-orange-800">
+                          ⚠️ Hay registros modificados después del cierre — regenerá el TXT antes de declarar.
+                        </div>
+                      )}
                     </div>
                   )
                 }
-                return null
+                // Todo abierta
+                return (
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+                    🟢 Quincena abierta — modificable libremente. Cuando termines, generá el Export v2 y cerrá.
+                  </div>
+                )
               })()}
 
               {/* Botones acción */}
               <div className="flex gap-2">
                 <Button
-                  onClick={() => quincenaSeleccionadaV2 && procesarCierreV2(quincenaSeleccionadaV2)}
+                  onClick={() => quincenaSeleccionadaV2 && setMostrarModalExport(true)}
                   disabled={!quincenaSeleccionadaV2 || procesandoCierreV2 || registrosV2.length === 0}
                   className="bg-green-600 hover:bg-green-700 flex-1"
                 >
@@ -8078,6 +9142,58 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               >
                 Deseleccionar
               </Button>
+              {/* Exportar lote a Excel banco Galicia */}
+              {!esContable && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const items: ItemSeleccionado[] = []
+                    const schema = empresa.toLowerCase()
+                    // FCs sueltas — pero si una FC tiene grupo_pago_id y el grupo está seleccionado, NO la agregamos como suelta
+                    const facturasIds = Array.from(facturasSeleccionadasPagos)
+                    const facturasObj = facturasPagos.filter(f => facturasIds.includes(f.id))
+                    // Detectar grupos: si varias FCs tienen mismo grupo_pago_id y están todas seleccionadas → grupo
+                    const gruposDetectados = new Set<string>()
+                    for (const f of facturasObj) {
+                      if (f.grupo_pago_id) {
+                        const todasDelGrupo = facturasPagos.filter((x: any) => x.grupo_pago_id === f.grupo_pago_id)
+                        const todasSeleccionadas = todasDelGrupo.every((x: any) => facturasSeleccionadasPagos.has(x.id))
+                        if (todasSeleccionadas) gruposDetectados.add(f.grupo_pago_id)
+                      }
+                    }
+                    // Agregar grupos
+                    gruposDetectados.forEach(gid => items.push({ tipo: 'grupo', id: gid, schema }))
+                    // FCs sueltas (que no estén en un grupo agregado)
+                    facturasObj.forEach(f => {
+                      if (!f.grupo_pago_id || !gruposDetectados.has(f.grupo_pago_id)) {
+                        items.push({ tipo: 'fc', id: f.id, schema })
+                      }
+                    })
+                    // Templates (cuotas) — igual lógica de grupo
+                    const templatesIds = Array.from(templatesSeleccionadosPagos)
+                    const templatesObj = templatesPagos.filter((t: any) => templatesIds.includes(t.id))
+                    templatesObj.forEach((t: any) => {
+                      if (!t.grupo_pago_id || !gruposDetectados.has(t.grupo_pago_id)) {
+                        items.push({ tipo: 'cuota_template', id: t.id })
+                      }
+                    })
+                    // Anticipos
+                    Array.from(anticiposSeleccionadosPagos).forEach(id => items.push({ tipo: 'anticipo', id }))
+                    // Sueldos
+                    Array.from(sueldosSeleccionadosPagos).forEach(id => items.push({ tipo: 'sueldo', id }))
+
+                    if (items.length === 0) {
+                      toast.error('Seleccioná al menos un ítem para exportar')
+                      return
+                    }
+                    setModalExportarLote({ open: true, items })
+                  }}
+                  className="text-xs bg-blue-600 hover:bg-blue-700"
+                >
+                  <Banknote className="mr-1 h-3.5 w-3.5" />
+                  Exportar lote Galicia
+                </Button>
+              )}
             </div>
           </div>
 
@@ -11030,6 +12146,293 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Notificación flotante de progreso de búsqueda PDF */}
+      <NotificacionProgresoLote
+        progreso={progresoPdf}
+        onCerrar={() => setProgresoPdf(null)}
+        onCancelar={() => { cancelarPdfRef.current = true }}
+        onVerDetalle={(loteId) => {
+          setProgresoPdf(null)
+          setModalHistorialPdf({ open: true, loteId })
+        }}
+      />
+
+      {/* Modal historial búsquedas PDF */}
+      <ModalHistorialPdf
+        open={modalHistorialPdf.open}
+        onClose={() => setModalHistorialPdf({ open: false })}
+        loteId={modalHistorialPdf.loteId}
+        facturaId={modalHistorialPdf.facturaId}
+      />
+
+      {/* Modal config proveedores PDF */}
+      <ModalConfigProveedor
+        open={modalConfigProveedorPdf.open}
+        onClose={() => setModalConfigProveedorPdf({ open: false })}
+        cuitInicial={modalConfigProveedorPdf.cuit}
+      />
+
+      {/* Modal auditar registro digital de un período */}
+      <ModalAuditarPeriodo
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        open={auditarPeriodoOpen}
+        onClose={() => setAuditarPeriodoOpen(false)}
+      />
+
+      {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
+      <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Buscar PDFs en Gmail</DialogTitle>
+            <DialogDescription>
+              Elegí qué facturas buscar. Vienen marcadas las pendientes (estado "Buscar"). Podés agregar/quitar a mano y acotar por fecha de emisión.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            const candidatosFecha = facturas.filter(f => {
+              const fe = f.fecha_emision || ''
+              if (pdfDesde && fe < pdfDesde) return false
+              if (pdfHasta && fe > pdfHasta) return false
+              return true
+            })
+            const tiposPresentes = Array.from(new Set(candidatosFecha.map(f => f.fc ?? '(sin estado)')))
+            // candidatos = lo visible (acotado por chips de tipo). Todas/Ninguna/lista operan sobre esto.
+            const candidatos = filtroTiposPdf.size === 0
+              ? candidatosFecha
+              : candidatosFecha.filter(f => filtroTiposPdf.has(f.fc ?? '(sin estado)'))
+            const fcBadge = (fc: string | null) => {
+              const map: Record<string, string> = {
+                'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700',
+                'NO Mail': 'bg-orange-100 text-orange-700', 'Portal': 'bg-purple-100 text-purple-700',
+                'APP': 'bg-blue-100 text-blue-700', 'VER': 'bg-yellow-100 text-yellow-800',
+                'Sí': 'bg-green-100 text-green-700', 'OK': 'bg-green-100 text-green-700',
+              }
+              return <span className={`px-1.5 py-0.5 rounded text-[10px] ${map[fc || ''] || 'bg-gray-100 text-gray-500'}`}>{fc ?? '(sin estado)'}</span>
+            }
+            return (
+              <>
+                <div className="flex flex-wrap items-end gap-3 border-b pb-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-0.5">Desde (emisión)</label>
+                    <Input type="date" value={pdfDesde} onChange={e => setPdfDesde(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-0.5">Hasta (emisión)</label>
+                    <Input type="date" value={pdfHasta} onChange={e => setPdfHasta(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set(candidatos.map(f => f.id)))}>Todas ({candidatos.length})</Button>
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set())}>Ninguna</Button>
+                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
+                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)))}>Solo "Buscar"</Button>
+                  </div>
+                </div>
+
+                {tiposPresentes.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-2 pb-1">
+                    <span className="text-xs text-gray-400 mr-1">Tipos:</span>
+                    {tiposPresentes.map(tipo => {
+                      const activo = filtroTiposPdf.has(tipo)
+                      return (
+                        <button key={tipo} type="button" disabled={buscandoPdfs}
+                          onClick={() => setFiltroTiposPdf(prev => { const n = new Set(prev); if (n.has(tipo)) n.delete(tipo); else n.add(tipo); return n })}
+                          className={`px-2 py-0.5 rounded text-[11px] border ${activo ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                          {tipo}
+                        </button>
+                      )
+                    })}
+                    {filtroTiposPdf.size > 0 && (
+                      <button type="button" className="text-[11px] text-gray-500 underline ml-1" onClick={() => setFiltroTiposPdf(new Set())}>limpiar</button>
+                    )}
+                  </div>
+                )}
+
+                <div className="overflow-y-auto flex-1 -mx-1 px-1" style={{ maxHeight: '45vh' }}>
+                  {candidatos.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-6 text-center">No hay facturas en ese rango.</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white border-b">
+                        <tr className="text-left text-gray-500">
+                          <th className="p-1 w-8"></th>
+                          <th className="p-1">Emisión</th>
+                          <th className="p-1">Proveedor</th>
+                          <th className="p-1 text-right">Importe</th>
+                          <th className="p-1">Estado FC</th>
+                          <th className="p-1 w-[240px]">Mail proveedor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {candidatos.map(f => {
+                          const cuit = f.cuit
+                          const prov = provPorCuit[cuit]
+                          const editando = provEditMail[cuit] !== undefined
+                          const valorMail = editando ? provEditMail[cuit] : (prov?.email_facturacion ?? '')
+                          const cambiado = editando && (provEditMail[cuit] ?? '') !== (prov?.email_facturacion ?? '')
+                          return (
+                          <tr key={f.id} className="border-b hover:bg-gray-50">
+                            <td className="p-1">
+                              <Checkbox checked={seleccionPdf.has(f.id)} disabled={buscandoPdfs}
+                                onCheckedChange={(c) => {
+                                  setSeleccionPdf(prev => { const n = new Set(prev); if (c) n.add(f.id); else n.delete(f.id); return n })
+                                }} />
+                            </td>
+                            <td className="p-1">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
+                            <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
+                            <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
+                            <td className="p-1">{fcBadge(f.fc)}</td>
+                            <td className="p-1">
+                              {!prov ? (
+                                <span className="text-[10px] text-gray-400 italic" title="No existe el proveedor en la BD. Cargalo desde 'Config PDFs'.">sin proveedor</span>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="email"
+                                    value={valorMail}
+                                    disabled={buscandoPdfs || guardandoMailCuit === cuit}
+                                    placeholder="⚠ sin mail — agregar"
+                                    onChange={(e) => setProvEditMail(prev => ({ ...prev, [cuit]: e.target.value }))}
+                                    className={`w-full text-[11px] border rounded px-1 py-0.5 ${!valorMail ? 'border-orange-300 placeholder-orange-500' : 'border-gray-200'}`}
+                                  />
+                                  {cambiado && (
+                                    <button type="button" title="Guardar mail"
+                                      disabled={guardandoMailCuit === cuit}
+                                      onClick={() => guardarMailProveedor(cuit)}
+                                      className="shrink-0 text-blue-600 hover:text-blue-800">
+                                      {guardandoMailCuit === cuit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  {!cambiado && prov.email_facturacion && !prov.gas_habilitado && (
+                                    <span className="shrink-0 text-[9px] text-orange-500" title="Tiene mail pero GAS está deshabilitado para este proveedor (no se busca por su mail). Habilitalo en Config PDFs.">GAS off</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            )
+          })()}
+
+          <DialogFooter className="border-t pt-3">
+            <div className="flex items-center justify-between w-full gap-3">
+              <span className="text-xs text-gray-500">{seleccionPdf.size} seleccionada(s)</span>
+              <div className="flex gap-2">
+                {buscandoPdfs ? (
+                  <Button variant="destructive" onClick={() => { cancelarPdfRef.current = true }}>
+                    Cancelar búsqueda
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => setModalBuscarPdf(false)}>Cancelar</Button>
+                    <Button
+                      disabled={seleccionPdf.size === 0}
+                      onClick={async () => {
+                        const ids = Array.from(seleccionPdf)
+                        if (ids.length === 0) return
+                        if (!window.confirm(`Vas a buscar PDFs de ${ids.length} factura(s) en tu Gmail.\nTarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)) return
+                        cancelarPdfRef.current = false
+                        setBuscandoPdfs(true)
+                        // Cerrar el modal al arrancar: la búsqueda corre en 2do plano y el avance
+                        // se ve en la notificación flotante (con su propio botón Cancelar).
+                        setModalBuscarPdf(false)
+                        try {
+                          const res = await buscarPdfLote({
+                            empresa: empresa as 'MSA' | 'PAM' | 'MA',
+                            facturaIds: ids,
+                            onProgreso: setProgresoPdf,
+                            delayMs: 1500,
+                            isCancelled: () => cancelarPdfRef.current,
+                          })
+                          await cargarFacturas()
+                          // Reportar el envío del mail resumen (antes fallaba en silencio).
+                          if (res.resumenError) {
+                            toast.error('Búsqueda lista, pero el mail resumen NO se envió: ' + res.resumenError)
+                          } else if (res.resumenEnviado) {
+                            toast.success('Búsqueda lista. Mail resumen enviado.')
+                          }
+                        } catch (err) {
+                          toast.error('Error en lote: ' + (err as Error).message)
+                        } finally {
+                          setBuscandoPdfs(false)
+                        }
+                      }}
+                    >
+                      <Search className="mr-2 h-4 w-4" />
+                      Buscar {seleccionPdf.size > 0 ? `(${seleccionPdf.size})` : ''}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal exportar lote a Excel banco Galicia */}
+      <ModalExportarLote
+        open={modalExportarLote.open}
+        onClose={() => setModalExportarLote({ open: false, items: [] })}
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        items={modalExportarLote.items}
+        userRole={userRole}
+      />
+
+      {/* Modal Generar Export v2 — elegir si cerrar la quincena */}
+      <Dialog open={mostrarModalExport} onOpenChange={setMostrarModalExport}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📤 Generar Export v2 — {quincenaSeleccionadaV2}</DialogTitle>
+            <DialogDescription>
+              Se generarán Excel, PDF y TXT en la carpeta elegida.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            <div className="bg-gray-50 rounded p-3 space-y-1">
+              <p>• <b>{conteoV2?.cantidad ?? registrosV2.filter((r:any)=>!r.anulado).length}</b> retenciones</p>
+              <p>• Total: <b>${(conteoV2?.totalRetencion ?? registrosV2.filter((r:any)=>!r.anulado).reduce((s:number,r:any)=>s+(Number(r.retencion)||0),0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></p>
+            </div>
+            <hr />
+            <p className="font-medium">¿Querés cerrar la quincena al descargar?</p>
+            <ul className="text-xs text-gray-600 list-disc ml-5 space-y-0.5">
+              <li><b>Cerrar</b> = la quincena queda bloqueada — modificaciones piden confirmación y obligan a regenerar TXT.</li>
+              <li><b>Sin cerrar</b> = podés seguir editando libremente.</li>
+            </ul>
+          </div>
+          <DialogFooter className="gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                setMostrarModalExport(false)
+                if (quincenaSeleccionadaV2) await procesarCierreV2(quincenaSeleccionadaV2, { cerrar: false })
+              }}
+            >
+              Solo descargar
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              onClick={async () => {
+                setMostrarModalExport(false)
+                if (quincenaSeleccionadaV2) await procesarCierreV2(quincenaSeleccionadaV2, { cerrar: true })
+              }}
+            >
+              Descargar y cerrar
+            </Button>
+            <Button variant="ghost" onClick={() => setMostrarModalExport(false)}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

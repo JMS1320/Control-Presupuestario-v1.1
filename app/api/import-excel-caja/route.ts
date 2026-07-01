@@ -112,6 +112,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File | null
     const tabla = (formData.get("tabla") as string | null)?.trim() || ""
     const saldoInicialInput = formData.get("saldo_inicial") as string | null
+    const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 
     if (!file) {
       return NextResponse.json({ ok: false, message: "Falta el archivo" }, { status: 400 })
@@ -287,6 +288,17 @@ export async function POST(req: Request) {
         },
         { status: 400 }
       )
+    }
+
+    // NO insertar si el control de saldos falla (salvo que se fuerce)
+    if (erroresControl.length > 0 && !forzar) {
+      return NextResponse.json({
+        ok: false,
+        message: `Control de saldos NO cuadra en ${erroresControl.length} fila(s). NO se importó nada — revisá el saldo inicial o el archivo (o tildá "Forzar").`,
+        insertados: 0,
+        errores_control: erroresControl.length,
+        detalle_errores_control: erroresControl.slice(0, 10),
+      })
     }
 
     // Insertar

@@ -137,25 +137,25 @@ function calcularFechaEstimada(fechaEmision: string | null): string | null {
  * Busca regla de asignación automática por CUIT
  * Si existe regla, devuelve cuenta_contable y estado a asignar
  */
-async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string}> {
+async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string, fc: string | null}> {
   try {
     const { data, error } = await supabase
       .from('reglas_ctas_import_arca')
-      .select('cuenta_contable, estado')
+      .select('cuenta_contable, estado, fc')
       .eq('cuit', cuit)
       .eq('activo', true)
       .single()
 
     if (error || !data) {
       // No hay regla para este CUIT - usar valores por defecto
-      return { cuenta_contable: null, estado: 'pendiente' }
+      return { cuenta_contable: null, estado: 'pendiente', fc: null }
     }
 
-    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}`)
-    return data
+    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}, fc=${data.fc || '(default Buscar)'}`)
+    return { cuenta_contable: data.cuenta_contable, estado: data.estado, fc: data.fc ?? null }
   } catch (err) {
     console.error(`❌ Error buscando regla CUIT ${cuit}:`, err)
-    return { cuenta_contable: null, estado: 'pendiente' }
+    return { cuenta_contable: null, estado: 'pendiente', fc: null }
   }
 }
 
@@ -316,7 +316,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     // Campos adicionales con valores por defecto (PRESERVAR)
     campana: null,
     año_contable: null, // Dejar en blanco (no usar default de BD)
-    fc: null,
+    fc: reglaCuit.fc || 'Buscar', // De la regla del CUIT si existe (ej. Portal); si no, 'Buscar'. La imputación del usuario lo pisa si elige (Portal/No/Sí).
     cuenta_contable: reglaCuit.cuenta_contable, // ← Aplicar regla CUIT si existe
     centro_costo: null,
     estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
@@ -518,6 +518,8 @@ export async function POST(req: Request) {
     let filasImportadas = 0
     let filasIgnoradas = 0
     const errores: string[] = []
+    const proveedoresVistos = new Map<string, string>() // cuit limpio → razon_social (auto-crear proveedores faltantes)
+    const idsImportadosBuscar: string[] = [] // IDs de las facturas nuevas en estado 'Buscar' (para auto-disparo acotado)
 
     // Procesar cada fila del CSV
     for (let indice = 0; indice < filasCSV.length; indice++) {
@@ -602,6 +604,13 @@ export async function POST(req: Request) {
         } else {
           console.log(`✅ Fila ${indice + 2} insertada correctamente:`, data)
           filasImportadas++
+          // Registrar proveedor (cuit limpio) para auto-creación posterior
+          if (filaParaBBDD.cuit) {
+            const cuitLimpio = String(filaParaBBDD.cuit).replace(/[-\s]/g, '')
+            if (cuitLimpio) proveedoresVistos.set(cuitLimpio, filaParaBBDD.denominacion_emisor || cuitLimpio)
+          }
+          // Recolectar ID si quedó en estado 'Buscar' (para auto-disparo acotado a las recién importadas)
+          if (filaParaBBDD.fc === 'Buscar' && data?.[0]?.id) idsImportadosBuscar.push(data[0].id)
           // Vinculación con anticipos: se hace manualmente desde Vista Principal (alerta "Anticipos sin vincular")
           // o desde Cash Flow, vía el flujo con confirmación de useVinculacionAnticipo.
         }
@@ -612,9 +621,33 @@ export async function POST(req: Request) {
       }
     }
 
+    // Auto-crear proveedores faltantes (en bloque, NO rompe el import si falla)
+    let proveedoresCreados = 0
+    try {
+      const cuits = Array.from(proveedoresVistos.keys())
+      if (cuits.length > 0) {
+        const { data: existentes } = await supabase
+          .from('proveedores')
+          .select('cuit')
+          .in('cuit', cuits)
+        const setExistentes = new Set((existentes || []).map((p: any) => p.cuit))
+        const nuevos = cuits
+          .filter(c => !setExistentes.has(c))
+          .map(c => ({ cuit: c, razon_social: proveedoresVistos.get(c) || c, fc_modo: 'sin_config' }))
+        if (nuevos.length > 0) {
+          const { error: errProv } = await supabase.from('proveedores').insert(nuevos)
+          if (errProv) console.error('⚠️ Error auto-creando proveedores:', errProv.message)
+          else { proveedoresCreados = nuevos.length; console.log(`👥 Proveedores auto-creados: ${proveedoresCreados}`) }
+        }
+      }
+    } catch (e) {
+      console.error('⚠️ Auto-creación de proveedores falló (import OK igual):', e)
+    }
+
     // Preparar respuesta con resumen de la importación
-    const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían`
-    
+    const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían` +
+      (proveedoresCreados > 0 ? ` · ${proveedoresCreados} proveedor(es) nuevo(s) creado(s)` : '')
+
     console.log(`📈 Resultado: ${filasImportadas} importadas, ${filasIgnoradas} ignoradas, ${errores.length} errores`)
 
     return NextResponse.json({
@@ -622,12 +655,15 @@ export async function POST(req: Request) {
       message: mensaje,
       insertedCount: filasImportadas,
       ignoredCount: filasIgnoradas,
+      proveedoresCreados,
+      idsBuscar: idsImportadosBuscar, // IDs de las nuevas en 'Buscar' — para auto-disparo acotado
       errores: errores,
       summary: {
         totalFilas: filasCSV.length,
         filasImportadas: filasImportadas,
         filasIgnoradas: filasIgnoradas,
-        erroresCount: errores.length
+        erroresCount: errores.length,
+        proveedoresCreados
       }
     })
 
