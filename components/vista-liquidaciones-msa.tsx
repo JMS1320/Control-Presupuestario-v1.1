@@ -6,7 +6,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Search, Pencil, Trash2, Link2 } from "lucide-react"
+import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, FileSpreadsheet } from "lucide-react"
+import { ModalImportVentas } from "./modal-import-ventas"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-msa"
@@ -53,6 +54,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
   const [busqueda, setBusqueda] = useState('')
   const [modalAbierto, setModalAbierto] = useState(false)
   const [liqEditando, setLiqEditando] = useState<LiquidacionMsa | null>(null)
+  const [modalImport, setModalImport] = useState(false)
 
   const cargar = async () => {
     setLoading(true)
@@ -153,6 +155,11 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
             <RefreshCw className="mr-2 h-4 w-4" />Actualizar
           </Button>
           {esAdmin && (
+            <Button variant="outline" onClick={() => setModalImport(true)}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />Importar ventas
+            </Button>
+          )}
+          {esAdmin && (
             <Button onClick={abrirAlta} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />Nueva liquidación
             </Button>
@@ -238,6 +245,11 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         onOpenChange={setModalAbierto}
         liquidacionInicial={liqEditando}
         onGuardado={cargar}
+      />
+      <ModalImportVentas
+        open={modalImport}
+        onClose={() => setModalImport(false)}
+        onImportado={cargar}
       />
     </div>
   )
