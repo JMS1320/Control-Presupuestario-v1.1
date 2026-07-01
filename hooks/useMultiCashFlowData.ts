@@ -42,7 +42,7 @@ const extraerPrefijoComun = (nombres: string[]): string => {
 // Interface unificada para Cash Flow (10 columnas finales)
 export interface CashFlowRow {
   id: string
-  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO'
+  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
   origen_tabla: string // Para identificar tabla específica al editar
   egreso_id?: string // Para templates: ID del egreso padre
   es_multi_cuenta?: boolean // Para templates: indica categ por cuota
@@ -89,7 +89,7 @@ export interface CashFlowFilters {
   fechaHasta?: string
   responsables?: string[]
   estados?: string[]
-  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO')[]
+  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA')[]
   empresas?: ('MSA' | 'PAM')[]
   busquedaDetalle?: string
   busquedaCateg?: string
@@ -377,6 +377,34 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     })
   }
 
+  // Mapear ventas (comprobantes_venta 'a cobrar') a formato Cash Flow.
+  // El ingreso esperado en banco = imp_total − retenciones (las retenciones no entran al banco).
+  const mapearVentas = (comprobantes: any[], retencionesPorComp: Map<string, number>): CashFlowRow[] => {
+    return comprobantes.map(c => {
+      const total = Number(c.imp_total) || 0
+      const retenciones = retencionesPorComp.get(c.id) || 0
+      const netoACobrar = total - retenciones
+      return {
+        id: c.id,
+        origen: 'VENTA' as const,
+        origen_tabla: 'msa.comprobantes_venta',
+        fecha_estimada: c.fecha_cobro_estimada || c.fecha_liquidacion,
+        fecha_vencimiento: null,
+        categ: 'VENTAS',
+        centro_costo: c.centro_costo || '',
+        cuit_proveedor: c.cuit_cliente || '',
+        nombre_proveedor: c.denominacion_cliente || '',
+        detalle: `Venta ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim() + (retenciones > 0 ? ` (neto: total ${total} − ret ${retenciones})` : ''),
+        debitos: 0,
+        creditos: netoACobrar,   // Cobro = crédito (dinero entra al banco)
+        saldo_cta_cte: 0,
+        estado: c.estado || 'a cobrar',
+        imp_total: total,
+        comprobante_display: c.nro_comprobante || null,
+      }
+    })
+  }
+
   // Calcular saldos acumulativos
   const calcularSaldosAcumulativos = (filas: CashFlowRow[]): CashFlowRow[] => {
     let saldoAcumulado = 0
@@ -521,6 +549,29 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         console.error('Error cargando anticipos sueldos:', errorAntSueldos)
       }
 
+      // 5b. Cargar facturas de venta 'a cobrar' + sus retenciones (ingreso esperado = total − retenciones)
+      const { data: ventasACobrar, error: errorVentas } = await supabase
+        .schema('msa')
+        .from('comprobantes_venta')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado')
+        .eq('estado', 'a cobrar')
+        .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
+      if (errorVentas) console.error('Error cargando ventas a cobrar:', errorVentas)
+
+      const idsVentas = (ventasACobrar || []).map(v => v.id)
+      const retencionesPorComp = new Map<string, number>()
+      if (idsVentas.length > 0) {
+        const { data: retenciones } = await supabase
+          .schema('msa')
+          .from('retenciones_recibidas')
+          .select('comprobante_venta_id, monto')
+          .in('comprobante_venta_id', idsVentas)
+        ;(retenciones || []).forEach((r: any) => {
+          if (!r.comprobante_venta_id) return
+          retencionesPorComp.set(r.comprobante_venta_id, (retencionesPorComp.get(r.comprobante_venta_id) || 0) + (Number(r.monto) || 0))
+        })
+      }
+
       // 6. Mapear todas las fuentes a formato unificado
       const filasArca = mapearFacturasArca(facturasArca || [])
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
@@ -593,7 +644,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos]
+      const filasVentas = mapearVentas(ventasACobrar || [], retencionesPorComp)
+      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros
