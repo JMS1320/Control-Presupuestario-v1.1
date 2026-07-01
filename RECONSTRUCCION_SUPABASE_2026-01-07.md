@@ -3317,6 +3317,22 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-07-01: Ventas — cobros + retenciones recibidas (base)**
+
+Módulo de cobros de ventas (espejo del pago de compras). El cobro NO se asume: la factura/liquidación se concilia contra el **extracto** (transferencias) y las **retenciones sufridas** (IVA/IIBB/Ganancias, que no entran al banco) se asientan en su cuenta contable. NO hay tabla de "cobros": el cobro = extracto + retenciones vinculados a la factura. Se reusa el motor de conciliación (ya maneja `creditos`/ingresos) agregando origen `VENTA` al cash flow.
+
+```sql
+CREATE TABLE msa.retenciones_recibidas (
+  id uuid PK, tipo varchar, monto numeric, cuenta_contable varchar,
+  comprobante_venta_id uuid FK->comprobantes_venta (NULL=pendiente de vincular),
+  cuit_cliente varchar, denominacion_cliente varchar, fecha date,
+  nro_certificado varchar, observaciones text, created_at, updated_at );
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN estado varchar DEFAULT 'a cobrar',   -- a cobrar -> cobrado
+  ADD COLUMN fecha_cobro_estimada date;           -- Cash Flow (se pide al importar)
+```
+NO en backup. Falta (build en curso): import fac venta (ARCA Emitidos + Excel), origen VENTA en cash flow (creditos = imp_total − retenciones), rama VENTA en el motor, UI de retenciones + vínculo por CUIT, indicador "ventas pendientes" separado de compras. Ver [[B-FEAT-VENTAS-COBROS]].
+
 ### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
 
 El export de sueldos a Galicia ahora: (1) toma el destino de **`cuentas_empleado`** (alias/CBU, vía `pago.cuenta_destino_id` o la única cuenta activa del empleado) en vez de `proveedores`; (2) genera **un Excel por `grupo_export`** (ej. Sigot Lucresia en archivo propio; Sigot Galicia+Santander+Wilson juntos; el resto general); (3) usa `concepto` como "Motivo" del Excel (ej. Honorarios; vacío permitido).
