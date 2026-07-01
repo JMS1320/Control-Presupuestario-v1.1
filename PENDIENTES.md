@@ -727,6 +727,8 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 
 **Opciones a evaluar (no decidir aún):** (a) soportar match lump↔suma de pagos del período (agrupar sueldos automáticamente por fecha/período); (b) ampliar tolerancia de fecha o auto-conciliar sueldos con monto exacto aunque la fecha no sea exacta; (c) detectar "Acreditamiento de Haberes" como nómina y ofrecer reparto.
 
+**⚠️ CORRECCIÓN DEL USUARIO (2026-07-01) — la causa NO es el matching del motor (mi lectura de arriba fue errada):** el problema es **upstream**: el pago de sueldo **se registra directamente con estado `conciliado` al pagarlo** (no pasa por la conciliación real). Evidencia: el usuario va a Sueldos, ve los pagos por empleado del período, y **los que pagó AYER ya figuran `conciliado`** — pero **la última conciliación fue anterior y esos movimientos todavía NI están en el extracto**. → Es imposible que estén conciliados; quedaron marcados así al crear/pagar el pago. Por eso el motor "no los concilia": ya salen del pool por estar en `conciliado`. **Fix a mirar:** dónde se setea el estado del `sueldos_pago` al pagar/registrar — debe quedar `pagado` (pendiente de conciliar contra el extracto), NO `conciliado`. Recién el motor/extracto lo pasa a `conciliado` cuando aparece el movimiento real. (Esto explica los "41 conciliado/banco" del análisis de arriba: muchos nunca se matchearon, se marcaron solos.)
+
 ---
 
 ## <a id="a-bug-05"></a>A-BUG-05 — Conciliación manual (reasignar) borra/no copia datos (#2)
