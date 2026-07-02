@@ -3337,7 +3337,9 @@ NO en backup.
 ```sql
 ALTER TABLE public.msa_galicia ADD COLUMN comprobante_venta_id uuid;  -- espejo de comprobante_arca_id
 ```
-**Ciclo de estado (igual compras):** `a cobrar` (=pendiente) → `cobrado` (=pagado, SIGUE en cash flow) → `conciliado` (sale del cash flow, lo pone el motor al matchear la transferencia). ⏳ Falta: UI de retenciones + vínculo por CUIT, indicador "ventas pendientes" separado, wiring descarga automática ARCA. Ver [[B-FEAT-VENTAS-COBROS]].
+**Ciclo de estado (igual compras):** `a cobrar` (=pendiente) → `cobrado` (=pagado, SIGUE en cash flow) → `conciliado` (sale del cash flow, lo pone el motor al matchear la transferencia).
+
+**2026-07-02 (fix import):** `comprobantes_venta` no tenía columna `moneda` y el import fallaba (`Could not find the 'moneda' column ... in the schema cache`). Agregada: `ALTER TABLE msa.comprobantes_venta ADD COLUMN moneda varchar DEFAULT 'PES'` + `NOTIFY pgrst, 'reload schema'`. Ver [[B-FEAT-VENTAS-COBROS]].
 
 ### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
 
