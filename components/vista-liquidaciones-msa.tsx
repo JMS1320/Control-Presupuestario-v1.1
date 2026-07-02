@@ -255,6 +255,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         open={modalImport}
         onClose={() => setModalImport(false)}
         onImportado={cargar}
+        userRole={userRole}
       />
       <ModalRetencionesVenta
         open={!!retencionesDe}

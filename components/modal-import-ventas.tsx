@@ -12,7 +12,7 @@ import { toast } from "sonner"
  * Modal para importar facturas de venta (ARCA "Mis Comprobantes Emitidos" o Excel del mismo formato)
  * a msa.comprobantes_venta vía /api/import-ventas. Pide la fecha de cobro estimada (para el Cash Flow).
  */
-export function ModalImportVentas({ open, onClose, onImportado }: { open: boolean; onClose: () => void; onImportado: () => void }) {
+export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admin' }: { open: boolean; onClose: () => void; onImportado: () => void; userRole?: 'admin' | 'contable' }) {
   const [file, setFile] = useState<File | null>(null)
   const [fechaCobro, setFechaCobro] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -33,7 +33,7 @@ export function ModalImportVentas({ open, onClose, onImportado }: { open: boolea
     try {
       const r = await fetch('/api/arca/descargar-comprobantes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa: 'MSA', password: arcaPassword, fechaDesde: arcaDesde, fechaHasta: arcaHasta, tipo: 'emitidos' }),
+        body: JSON.stringify({ empresa: 'MSA', password: arcaPassword, fechaDesde: arcaDesde, fechaHasta: arcaHasta, tipo: 'emitidos', userRole }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error('ARCA: ' + (d.error || `Error ${r.status}`)); return }
