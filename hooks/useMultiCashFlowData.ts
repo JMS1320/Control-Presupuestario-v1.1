@@ -549,12 +549,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         console.error('Error cargando anticipos sueldos:', errorAntSueldos)
       }
 
-      // 5b. Cargar facturas de venta 'a cobrar' + sus retenciones (ingreso esperado = total − retenciones)
+      // 5b. Cargar facturas de venta pendientes de cobrar/conciliar + sus retenciones.
+      //     Como compras: 'a cobrar' y 'cobrado' (=pagado) SIGUEN en cash flow; solo 'conciliado'/'anterior' salen.
       const { data: ventasACobrar, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
         .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado')
-        .eq('estado', 'a cobrar')
+        .neq('estado', 'conciliado')
+        .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
       if (errorVentas) console.error('Error cargando ventas a cobrar:', errorVentas)
 

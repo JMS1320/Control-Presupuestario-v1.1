@@ -3331,7 +3331,13 @@ ALTER TABLE msa.comprobantes_venta
   ADD COLUMN estado varchar DEFAULT 'a cobrar',   -- a cobrar -> cobrado
   ADD COLUMN fecha_cobro_estimada date;           -- Cash Flow (se pide al importar)
 ```
-NO en backup. Falta (build en curso): import fac venta (ARCA Emitidos + Excel), origen VENTA en cash flow (creditos = imp_total − retenciones), rama VENTA en el motor, UI de retenciones + vínculo por CUIT, indicador "ventas pendientes" separado de compras. Ver [[B-FEAT-VENTAS-COBROS]].
+NO en backup.
+
+**Avance:** ✅ import fac venta (`/api/import-ventas`, Excel/CSV, cliente=Receptor). ✅ origen VENTA en cash flow (`useMultiCashFlowData`: creditos = imp_total − retenciones; incluye `a cobrar` y `cobrado`, excluye `conciliado`/`anterior` — igual que compras). ✅ rama VENTA en el motor (`useMotorConciliacion`: al conciliar setea `comprobantes_venta.estado='conciliado'` + linkea el movimiento). Para el link se agregó:
+```sql
+ALTER TABLE public.msa_galicia ADD COLUMN comprobante_venta_id uuid;  -- espejo de comprobante_arca_id
+```
+**Ciclo de estado (igual compras):** `a cobrar` (=pendiente) → `cobrado` (=pagado, SIGUE en cash flow) → `conciliado` (sale del cash flow, lo pone el motor al matchear la transferencia). ⏳ Falta: UI de retenciones + vínculo por CUIT, indicador "ventas pendientes" separado, wiring descarga automática ARCA. Ver [[B-FEAT-VENTAS-COBROS]].
 
 ### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
 
