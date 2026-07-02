@@ -6,8 +6,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, FileSpreadsheet } from "lucide-react"
+import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, FileSpreadsheet, Percent } from "lucide-react"
 import { ModalImportVentas } from "./modal-import-ventas"
+import { ModalRetencionesVenta } from "./modal-retenciones-venta"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-msa"
@@ -55,6 +56,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
   const [modalAbierto, setModalAbierto] = useState(false)
   const [liqEditando, setLiqEditando] = useState<LiquidacionMsa | null>(null)
   const [modalImport, setModalImport] = useState(false)
+  const [retencionesDe, setRetencionesDe] = useState<any | null>(null)
 
   const cargar = async () => {
     setLoading(true)
@@ -221,6 +223,9 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
                         <div className="flex justify-end gap-1">
                           {esAdmin && (
                             <>
+                              <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
+                                <Percent className="h-3.5 w-3.5 text-orange-600" />
+                              </Button>
                               <Button size="sm" variant="ghost" onClick={() => abrirEdicion(l)} title="Editar">
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -250,6 +255,12 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         open={modalImport}
         onClose={() => setModalImport(false)}
         onImportado={cargar}
+      />
+      <ModalRetencionesVenta
+        open={!!retencionesDe}
+        comprobante={retencionesDe}
+        onClose={() => setRetencionesDe(null)}
+        onGuardado={cargar}
       />
     </div>
   )
