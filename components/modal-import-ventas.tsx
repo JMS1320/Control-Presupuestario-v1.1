@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Upload, FileSpreadsheet } from "lucide-react"
+import { Loader2, Upload, FileSpreadsheet, Download } from "lucide-react"
 import { toast } from "sonner"
 
 /**
@@ -17,8 +17,38 @@ export function ModalImportVentas({ open, onClose, onImportado }: { open: boolea
   const [fechaCobro, setFechaCobro] = useState('')
   const [cargando, setCargando] = useState(false)
   const [preview, setPreview] = useState<any>(null)
+  // Descarga directa de ARCA (emitidos)
+  const [arcaPassword, setArcaPassword] = useState('')
+  const [arcaDesde, setArcaDesde] = useState('')
+  const [arcaHasta, setArcaHasta] = useState('')
+  const [descargando, setDescargando] = useState(false)
 
-  const reset = () => { setFile(null); setFechaCobro(''); setPreview(null) }
+  const reset = () => { setFile(null); setFechaCobro(''); setPreview(null); setArcaPassword(''); setArcaDesde(''); setArcaHasta('') }
+
+  // Baja "Mis Comprobantes Emitidos" de ARCA y lo deja cargado como archivo (luego Previsualizar/Importar).
+  const descargarDeArca = async () => {
+    if (!arcaPassword.trim()) { toast.error('Ingresá tu clave fiscal de ARCA'); return }
+    if (!arcaDesde || !arcaHasta) { toast.error('Completá ambas fechas'); return }
+    setDescargando(true)
+    try {
+      const r = await fetch('/api/arca/descargar-comprobantes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa: 'MSA', password: arcaPassword, fechaDesde: arcaDesde, fechaHasta: arcaHasta, tipo: 'emitidos' }),
+      })
+      const d = await r.json()
+      if (!r.ok) { toast.error('ARCA: ' + (d.error || `Error ${r.status}`)); return }
+      const blob = new Blob([d.csvText], { type: 'text/csv;charset=utf-8' })
+      const f = new File([blob], `arca-emitidos-${arcaDesde}-a-${arcaHasta}.csv`, { type: 'text/csv' })
+      setFile(f)
+      setArcaPassword('') // borrar clave de memoria
+      setPreview(null)
+      toast.success(`Descargadas ${d.cantidad ?? ''} de ARCA. Revisá la fecha de cobro y Previsualizá.`)
+    } catch (e) {
+      toast.error('Error de red: ' + (e as Error).message)
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   const llamar = async (modoPreview: boolean) => {
     if (!file) { toast.error('Elegí un archivo'); return }
@@ -57,9 +87,25 @@ export function ModalImportVentas({ open, onClose, onImportado }: { open: boolea
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Opción A: descargar directo de ARCA (emitidos) */}
+          <div className="rounded border bg-blue-50/50 p-2 space-y-2">
+            <div className="text-xs font-medium text-blue-800 flex items-center gap-1"><Download className="h-3.5 w-3.5" />Descargar directo de ARCA (Emitidos)</div>
+            <div className="grid grid-cols-3 gap-2">
+              <Input type="password" placeholder="Clave fiscal" value={arcaPassword} onChange={e => setArcaPassword(e.target.value)} className="text-sm" />
+              <Input type="date" value={arcaDesde} onChange={e => setArcaDesde(e.target.value)} className="text-sm" title="Desde" />
+              <Input type="date" value={arcaHasta} onChange={e => setArcaHasta(e.target.value)} className="text-sm" title="Hasta" />
+            </div>
+            <Button size="sm" variant="outline" className="w-full" onClick={descargarDeArca} disabled={descargando}>
+              {descargando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Bajar de ARCA
+            </Button>
+          </div>
+
+          <div className="text-center text-[11px] text-gray-400">— o subí un archivo —</div>
+
           <div>
             <Label className="text-xs">Archivo (.xlsx / .xls / .csv)</Label>
             <Input type="file" accept=".xlsx,.xls,.csv" onChange={e => { setFile(e.target.files?.[0] || null); setPreview(null) }} />
+            {file && <div className="text-[11px] text-green-700 mt-0.5">Archivo listo: {file.name}</div>}
           </div>
           <div>
             <Label className="text-xs">Fecha de cobro estimada (para el Cash Flow)</Label>
