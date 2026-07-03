@@ -680,7 +680,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     id: string,
     campo: string,
     valor: any,
-    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO',
+    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA',
     egresoId?: string
   ): Promise<boolean> => {
     // Períodos de sueldo son de solo lectura (se gestionan en Tab Sueldos)
