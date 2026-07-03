@@ -39,6 +39,8 @@ export interface LiquidacionMsa {
   // Tipo de comprobante (332=liquidación granos; FC/ND/NC=factura de venta) + totales absolutos
   tipo_comprobante: number | null
   imp_neto_gravado: number | null
+  imp_neto_no_gravado: number | null
+  imp_op_exentas: number | null
   imp_total: number | null
   estado: string | null
   // Importes operación (persistidos)
@@ -104,6 +106,9 @@ const ALICUOTAS_IVA = ['0', '10.5', '21'] as const
 
 export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, onGuardado }: Props) {
   const esEdicion = !!liquidacionInicial?.id
+  // Detección: la edición es de una FACTURA de venta (FC/ND/NC) vs liquidación de granos (332)
+  const CODS_FACTURA = [1, 2, 3, 6, 7, 8, 11, 12, 13, 51, 52, 53, 201, 202, 203, 206, 207, 208, 211, 212, 213]
+  const esFacturaEdit = esEdicion && liquidacionInicial?.tipo_comprobante != null && CODS_FACTURA.includes(liquidacionInicial.tipo_comprobante)
 
   // ─── Identificación ────────────────────────────────────────────
   const [fechaLiq, setFechaLiq] = useState('')
@@ -446,6 +451,19 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
   // ════════════════════════════════════════════════════════════
 
   const guardar = async () => {
+    // FACTURA de venta: montos importados de AFIP (read-only). Solo se guarda la imputación.
+    if (esFacturaEdit && liquidacionInicial) {
+      setGuardando(true)
+      const { error } = await supabase.schema('msa').from('comprobantes_venta')
+        .update({ cuenta_contable: cuentaContable || null, nro_cuenta: nroCuenta || null, centro_costo: centroCosto || null })
+        .eq('id', liquidacionInicial.id)
+      setGuardando(false)
+      if (error) { toast.error('Error: ' + error.message); return }
+      toast.success('Imputación guardada')
+      onGuardado?.()
+      onOpenChange(false)
+      return
+    }
     if (!fechaLiq) return toast.error('Falta fecha de liquidación')
     if (!cliente.cuit || !cliente.nombre) return toast.error('Falta seleccionar comprador')
     if (parsearAR(subtotal) <= 0) return toast.error('Subtotal debe ser > 0')
@@ -581,6 +599,23 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
 
         <div className="flex-1 overflow-y-auto space-y-4 px-1">
 
+          {/* FACTURA de venta (importada): montos en solo lectura */}
+          {esFacturaEdit && liquidacionInicial && (
+            <div className="rounded-lg border bg-purple-50/40 p-3 space-y-2">
+              <div className="text-sm font-semibold text-purple-800">Factura de venta (importada) — montos solo lectura</div>
+              <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
+                <div><span className="text-gray-500 text-xs block">Fecha</span>{liquidacionInicial.fecha_liquidacion || '—'}</div>
+                <div><span className="text-gray-500 text-xs block">Nº Comprobante</span>{liquidacionInicial.nro_comprobante || '—'}</div>
+                <div><span className="text-gray-500 text-xs block">Cliente</span>{liquidacionInicial.denominacion_cliente || '—'}</div>
+                <div><span className="text-gray-500 text-xs block">Neto</span>${((Number(liquidacionInicial.imp_neto_gravado) || 0) + (Number(liquidacionInicial.imp_neto_no_gravado) || 0) + (Number(liquidacionInicial.imp_op_exentas) || 0)).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                <div><span className="text-gray-500 text-xs block">IVA</span>${(Number(liquidacionInicial.iva) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
+                <div><span className="text-gray-500 text-xs block">Total</span><b>${(Number(liquidacionInicial.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></div>
+              </div>
+              <div className="text-xs text-gray-500">Los montos vienen de AFIP y no se editan. Editá solo la imputación contable de abajo.</div>
+            </div>
+          )}
+
+          {!esFacturaEdit && (<>
           {/* ════ 1. IDENTIFICACIÓN ════ */}
           <Section title="1. Identificación">
             <div className="grid grid-cols-4 gap-3">
@@ -779,6 +814,8 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
             </div>
           </Section>
 
+          </>)}
+
           {/* ════ 12b. IMPUTACIÓN CONTABLE ════ */}
           <Section title="12b. Imputación contable">
             <div className="grid grid-cols-2 gap-3">
@@ -812,7 +849,8 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
             </div>
           </Section>
 
-          {/* ════ 13. VINCULACIÓN CON VENTAS ════ */}
+          {/* ════ 13. VINCULACIÓN CON VENTAS ════ (solo liquidaciones; las facturas no vinculan desde acá por ahora) */}
+          {!esFacturaEdit && (
           <Section title="13. Ventas vinculadas" subtitle={`Seleccionadas: ${seleccionadas.size}`}>
             <Input
               placeholder="Buscar venta por cliente, CUIT, grano..."
@@ -852,6 +890,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
               </table>
             </div>
           </Section>
+          )}
         </div>
 
         <DialogFooter>

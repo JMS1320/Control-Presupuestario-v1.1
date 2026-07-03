@@ -45,7 +45,9 @@ const esFactura = (t: number | null | undefined) =>
 // facturas y liquidaciones. Neto equivalente: subtotal_neto (granos) o imp_neto_gravado (factura).
 // retRecibidas = suma de retenciones_recibidas imputadas aparte (sobre todo facturas).
 function calcular(l: LiquidacionMsa, retRecibidas = 0) {
-  const neto = Number(l.subtotal_neto) || Number(l.imp_neto_gravado) || 0
+  // Neto (base antes de IVA): liquidación usa subtotal_neto; factura = gravado + no gravado + exento
+  const neto = Number(l.subtotal_neto)
+    || ((Number(l.imp_neto_gravado) || 0) + (Number(l.imp_neto_no_gravado) || 0) + (Number(l.imp_op_exentas) || 0))
   const ivaV = Number(l.iva) || 0
   const comNeto = Number(l.comision_neto) || 0
   const comIva = Number(l.comision_iva) || 0
