@@ -161,7 +161,11 @@ export function SelectorCuentaContable({
   const [jerarquia, setJerarquia] = useState<Map<string, string>>(new Map())
   const [busqueda, setBusqueda] = useState('')
   const [cargando, setCargando] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // En modo 'dropdown' la lista arranca COLAPSADA y se abre al click. 'inline'/'modal-list' siempre visibles.
+  const dropdownMode = modo === 'dropdown'
+  const listaVisible = !dropdownMode || isOpen
 
   useEffect(() => {
     if (cuentasPrecargadas) {
@@ -246,12 +250,13 @@ export function SelectorCuentaContable({
 
   const handleSelect = (cuenta: CuentaContableItem | null) => {
     onSelect(cuenta)
+    if (dropdownMode) { setIsOpen(false); setBusqueda('') } // cierra al elegir
   }
 
   const maxHeight = modo === 'modal-list' ? 'max-h-[400px]' : 'max-h-[300px]'
 
   return (
-    <div className={`${className}`}>
+    <div className={`relative ${className}`}>
       {/* Input búsqueda */}
       <div className="relative">
         <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-gray-400" />
@@ -260,10 +265,12 @@ export function SelectorCuentaContable({
           type="text"
           className="w-full border rounded px-7 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
           placeholder={placeholder}
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
+          value={dropdownMode && !isOpen ? (value ?? '') : busqueda}
+          onChange={(e) => { setBusqueda(e.target.value); if (dropdownMode) setIsOpen(true) }}
+          onClick={() => { if (dropdownMode && !isOpen) { setIsOpen(true); setBusqueda('') } }}
+          onBlur={() => { if (dropdownMode) setTimeout(() => setIsOpen(false), 150) }}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') onCancel?.()
+            if (e.key === 'Escape') { setIsOpen(false); onCancel?.() }
           }}
         />
         {busqueda && (
@@ -274,8 +281,9 @@ export function SelectorCuentaContable({
         )}
       </div>
 
-      {/* Lista de opciones */}
-      <div className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white`}>
+      {/* Lista de opciones — colapsada en modo dropdown hasta hacer click */}
+      {listaVisible && (
+      <div className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white ${dropdownMode ? 'absolute z-50 w-full shadow-lg' : ''}`}>
         {/* Opción sin asignar */}
         {mostrarSinAsignar && (
           <button
@@ -344,6 +352,7 @@ export function SelectorCuentaContable({
           <div className="px-2 py-3 text-center text-xs text-gray-400">Sin resultados</div>
         )}
       </div>
+      )}
     </div>
   )
 }
