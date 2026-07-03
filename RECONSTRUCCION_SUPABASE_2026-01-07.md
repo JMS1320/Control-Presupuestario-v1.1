@@ -3339,7 +3339,9 @@ ALTER TABLE public.msa_galicia ADD COLUMN comprobante_venta_id uuid;  -- espejo 
 ```
 **Ciclo de estado (igual compras):** `a cobrar` (=pendiente) → `cobrado` (=pagado, SIGUE en cash flow) → `conciliado` (sale del cash flow, lo pone el motor al matchear la transferencia).
 
-**2026-07-02 (fix import):** `comprobantes_venta` no tenía columna `moneda` y el import fallaba (`Could not find the 'moneda' column ... in the schema cache`). Agregada: `ALTER TABLE msa.comprobantes_venta ADD COLUMN moneda varchar DEFAULT 'PES'` + `NOTIFY pgrst, 'reload schema'`. Ver [[B-FEAT-VENTAS-COBROS]].
+**2026-07-02 (fix import):** `comprobantes_venta` no tenía columna `moneda` y el import fallaba (`Could not find the 'moneda' column ... in the schema cache`). Agregada: `ALTER TABLE msa.comprobantes_venta ADD COLUMN moneda varchar DEFAULT 'PES'` + `NOTIFY pgrst, 'reload schema'`.
+
+**2026-07-03 (fix permisos):** `retenciones_recibidas` se creó sin GRANTs → el cliente (anon) daba `permission denied for table retenciones_recibidas`. Agregado: `GRANT SELECT, INSERT, UPDATE, DELETE ON msa.retenciones_recibidas TO anon, authenticated, service_role` (igual que el resto de las tablas msa). Recordar al crear tablas nuevas usadas desde el cliente. Ver [[B-FEAT-VENTAS-COBROS]].
 
 ### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
 
