@@ -161,6 +161,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
 
   // ─── Imputación contable ─────────────────────────────────────
   const [cuentaContable, setCuentaContable] = useState<string | null>(null)
+  const [pickCuenta, setPickCuenta] = useState(false)
   const [nroCuenta, setNroCuenta] = useState<string | null>(null)
   const [centroCosto, setCentroCosto] = useState('')
 
@@ -232,6 +233,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         setCuentaContable(l.cuenta_contable || null)
         setNroCuenta(l.nro_cuenta || null)
         setCentroCosto(l.centro_costo || '')
+        setPickCuenta(false)
       } else {
         // Alta — reset
         setSeleccionadas(new Set())
@@ -247,7 +249,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
         setAlmacenajeNeto(''); setAlmacenajePct(''); setAlmacenajeAlicIva('10.5'); setAlmacenajeIva('')
         setRetIva(''); setRetIibb('')
         setFechaAcred(''); setPuerto(''); setProcedencia(''); setCosecha(''); setPesoKg(''); setDatosAdic('')
-        setCuentaContable(null); setNroCuenta(null); setCentroCosto('')
+        setCuentaContable(null); setNroCuenta(null); setCentroCosto(''); setPickCuenta(false)
       }
       setBusquedaVenta('')
     }
@@ -781,16 +783,24 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
           <Section title="12b. Imputación contable">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Cuenta contable">
-                <SelectorCuentaContable
-                  value={cuentaContable}
-                  onSelect={(cta) => {
-                    setCuentaContable(cta?.categ || null)
-                    setNroCuenta(cta?.nro_cuenta || null)
-                  }}
-                  cuitProveedor={cliente.cuit || null}
-                  mostrarSinAsignar={true}
-                  placeholder="Sin cuenta — clic para asignar"
-                />
+                {cuentaContable && !pickCuenta ? (
+                  <div className="flex items-center gap-2 border rounded px-2 py-1.5 text-sm bg-gray-50">
+                    <span className="flex-1 truncate" title={cuentaContable}>{cuentaContable}</span>
+                    <button type="button" className="text-blue-600 text-xs shrink-0" onClick={() => setPickCuenta(true)}>Cambiar</button>
+                  </div>
+                ) : (
+                  <SelectorCuentaContable
+                    value={cuentaContable}
+                    onSelect={(cta) => {
+                      setCuentaContable(cta?.categ || null)
+                      setNroCuenta(cta?.nro_cuenta || null)
+                      setPickCuenta(false)
+                    }}
+                    cuitProveedor={cliente.cuit || null}
+                    mostrarSinAsignar={true}
+                    placeholder="Sin cuenta — clic para asignar"
+                  />
+                )}
               </Field>
               <Field label="Centro de costo">
                 <CentroCostoCombobox
