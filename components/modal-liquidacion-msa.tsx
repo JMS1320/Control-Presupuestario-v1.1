@@ -36,6 +36,11 @@ export interface LiquidacionMsa {
   tc: number | null
   precio_pesos: number | null
   precio_final_pesos: number | null
+  // Tipo de comprobante (332=liquidación granos; FC/ND/NC=factura de venta) + totales absolutos
+  tipo_comprobante: number | null
+  imp_neto_gravado: number | null
+  imp_total: number | null
+  estado: string | null
   // Importes operación (persistidos)
   subtotal_neto: number | null
   alicuota_iva: number | null

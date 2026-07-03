@@ -37,7 +37,7 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
               </TabsTrigger>
               <TabsTrigger value="liquidaciones-msa" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Liquidaciones MSA
+                Comprobantes MSA
               </TabsTrigger>
               <TabsTrigger value="cobros-msa" className="flex items-center gap-2">
                 <Landmark className="h-4 w-4" />
