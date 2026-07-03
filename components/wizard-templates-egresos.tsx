@@ -290,7 +290,7 @@ export function WizardTemplatesEgresos() {
           nombre_quien_cobra: state.datos_basicos.nombre_quien_cobra || null,
           tipo_recurrencia: esMultiCuenta ? 'abierto' : (esAbierto ? 'abierto' : state.configuracion.tipo),
           tipo_template: esMultiCuenta ? 'abierto' : state.datos_basicos.tipo_template,
-          es_bidireccional: esMultiCuenta ? false : state.datos_basicos.es_bidireccional,
+          es_bidireccional: state.datos_basicos.es_bidireccional, // multi-cuenta + bidireccional ahora conviven (cobros con sub-cuentas)
           es_multi_cuenta: esMultiCuenta,
           configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
           año: año_actual,
@@ -500,7 +500,7 @@ export function WizardTemplatesEgresos() {
                           if (checked) {
                             actualizarDatosBasicos('categ', '')
                             actualizarDatosBasicos('cuenta_agrupadora', '')
-                            actualizarDatosBasicos('es_bidireccional', false)
+                            // (ya NO se apaga bidireccional: multi-cuenta puede aceptar cobros)
                           }
                         }}
                       />
