@@ -50,6 +50,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
   const [tipo, setTipo] = useState('iva')
   const [monto, setMonto] = useState('')
   const [cuenta, setCuenta] = useState('')
+  const [pickingCuenta, setPickingCuenta] = useState(false)
   const [fecha, setFecha] = useState('')
   const [nroCert, setNroCert] = useState('')
 
@@ -66,7 +67,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
   }
 
   useEffect(() => {
-    if (open && comprobante) { cargar(); setTipo('iva'); setMonto(''); setCuenta(''); setFecha(''); setNroCert('') }
+    if (open && comprobante) { cargar(); setTipo('iva'); setMonto(''); setCuenta(''); setPickingCuenta(false); setFecha(''); setNroCert('') }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, comprobante?.id])
 
@@ -152,13 +153,20 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
           </div>
           <div>
             <Label className="text-xs">Cuenta contable *</Label>
-            <SelectorCuentaContable
-              value={cuenta}
-              onSelect={(c: any) => setCuenta(c?.categ || '')}
-              placeholder="Buscar cuenta del plan..."
-              mostrarSinAsignar={false}
-              className="w-full"
-            />
+            {cuenta && !pickingCuenta ? (
+              <div className="flex items-center gap-2 border rounded px-2 py-1.5 text-sm bg-gray-50">
+                <span className="flex-1 truncate" title={cuenta}>{cuenta}</span>
+                <button type="button" className="text-blue-600 text-xs shrink-0" onClick={() => setPickingCuenta(true)}>Cambiar</button>
+              </div>
+            ) : (
+              <SelectorCuentaContable
+                value={cuenta}
+                onSelect={(c: any) => { setCuenta(c?.categ || ''); setPickingCuenta(false) }}
+                placeholder="Buscar cuenta del plan..."
+                mostrarSinAsignar={false}
+                className="w-full"
+              />
+            )}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

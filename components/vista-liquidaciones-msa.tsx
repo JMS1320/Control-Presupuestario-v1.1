@@ -151,6 +151,17 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     setModalAbierto(true)
   }
 
+  // Marcar cobrado / volver a cobrar (igual que compras pagado). Conciliado lo controla el motor.
+  const toggleCobrado = async (l: LiquidacionMsa) => {
+    if (l.estado === 'conciliado') { toast.error('Ya está conciliado (lo controla el motor de conciliación)'); return }
+    const nuevo = l.estado === 'cobrado' ? 'a cobrar' : 'cobrado'
+    const { error } = await supabase.schema('msa').from('comprobantes_venta')
+      .update({ estado: nuevo }).eq('id', l.id)
+    if (error) { toast.error('Error: ' + error.message); return }
+    toast.success(nuevo === 'cobrado' ? 'Marcado como cobrado' : 'Vuelto a "a cobrar"')
+    cargar()
+  }
+
   const eliminar = async (l: LiquidacionMsa) => {
     const v = ventasPorLiq.get(l.id)
     let mensaje = `¿Eliminar la liquidación ${l.nro_comprobante || ''} del ${fmtFecha(l.fecha_liquidacion)}?`
@@ -261,7 +272,21 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
                         ) : <span className="text-xs text-gray-400">sin vincular</span>}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex justify-end items-center gap-1">
+                          {/* Estado / marcar cobrado (conciliado = bloqueado, lo pone el motor) */}
+                          {l.estado === 'conciliado' ? (
+                            <Badge variant="outline" className="text-xs bg-green-100 text-green-800">conciliado</Badge>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => esAdmin && toggleCobrado(l)}
+                              disabled={!esAdmin}
+                              title={l.estado === 'cobrado' ? 'Cobrado — clic para volver a "a cobrar"' : 'Clic para marcar cobrado'}
+                              className={`text-[11px] px-2 py-0.5 rounded border ${l.estado === 'cobrado' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                            >
+                              {l.estado === 'cobrado' ? '✓ cobrado' : 'a cobrar'}
+                            </button>
+                          )}
                           {esAdmin && (
                             <>
                               <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
