@@ -3317,6 +3317,32 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-07-01: Ventas — cobros + retenciones recibidas (base)**
+
+Módulo de cobros de ventas (espejo del pago de compras). El cobro NO se asume: la factura/liquidación se concilia contra el **extracto** (transferencias) y las **retenciones sufridas** (IVA/IIBB/Ganancias, que no entran al banco) se asientan en su cuenta contable. NO hay tabla de "cobros": el cobro = extracto + retenciones vinculados a la factura. Se reusa el motor de conciliación (ya maneja `creditos`/ingresos) agregando origen `VENTA` al cash flow.
+
+```sql
+CREATE TABLE msa.retenciones_recibidas (
+  id uuid PK, tipo varchar, monto numeric, cuenta_contable varchar,
+  comprobante_venta_id uuid FK->comprobantes_venta (NULL=pendiente de vincular),
+  cuit_cliente varchar, denominacion_cliente varchar, fecha date,
+  nro_certificado varchar, observaciones text, created_at, updated_at );
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN estado varchar DEFAULT 'a cobrar',   -- a cobrar -> cobrado
+  ADD COLUMN fecha_cobro_estimada date;           -- Cash Flow (se pide al importar)
+```
+NO en backup.
+
+**Avance:** ✅ import fac venta (`/api/import-ventas`, Excel/CSV, cliente=Receptor). ✅ origen VENTA en cash flow (`useMultiCashFlowData`: creditos = imp_total − retenciones; incluye `a cobrar` y `cobrado`, excluye `conciliado`/`anterior` — igual que compras). ✅ rama VENTA en el motor (`useMotorConciliacion`: al conciliar setea `comprobantes_venta.estado='conciliado'` + linkea el movimiento). Para el link se agregó:
+```sql
+ALTER TABLE public.msa_galicia ADD COLUMN comprobante_venta_id uuid;  -- espejo de comprobante_arca_id
+```
+**Ciclo de estado (igual compras):** `a cobrar` (=pendiente) → `cobrado` (=pagado, SIGUE en cash flow) → `conciliado` (sale del cash flow, lo pone el motor al matchear la transferencia).
+
+**2026-07-02 (fix import):** `comprobantes_venta` no tenía columna `moneda` y el import fallaba (`Could not find the 'moneda' column ... in the schema cache`). Agregada: `ALTER TABLE msa.comprobantes_venta ADD COLUMN moneda varchar DEFAULT 'PES'` + `NOTIFY pgrst, 'reload schema'`.
+
+**2026-07-03 (fix permisos):** `retenciones_recibidas` se creó sin GRANTs → el cliente (anon) daba `permission denied for table retenciones_recibidas`. Agregado: `GRANT SELECT, INSERT, UPDATE, DELETE ON msa.retenciones_recibidas TO anon, authenticated, service_role` (igual que el resto de las tablas msa). Recordar al crear tablas nuevas usadas desde el cliente. Ver [[B-FEAT-VENTAS-COBROS]].
+
 ### **2026-06-30: `grupo_export` + `concepto` en `sueldos.cuentas_empleado` (export Galicia de sueldos en varios archivos)**
 
 El export de sueldos a Galicia ahora: (1) toma el destino de **`cuentas_empleado`** (alias/CBU, vía `pago.cuenta_destino_id` o la única cuenta activa del empleado) en vez de `proveedores`; (2) genera **un Excel por `grupo_export`** (ej. Sigot Lucresia en archivo propio; Sigot Galicia+Santander+Wilson juntos; el resto general); (3) usa `concepto` como "Motivo" del Excel (ej. Honorarios; vacío permitido).

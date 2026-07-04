@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Search, Pencil, Trash2, Link2 } from "lucide-react"
+import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, CheckCircle2, AlertTriangle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalVentaMsa, type VentaMsa } from "./modal-venta-msa"
@@ -50,6 +50,8 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const esAdmin = userRole === 'admin'
   const [ventas, setVentas] = useState<VentaMsa[]>([])
   const [conteoLiq, setConteoLiq] = useState<Map<string, number>>(new Map())
+  // Agregado de facturas vinculadas por venta (para el control Venta↔Factura)
+  const [aggLiq, setAggLiq] = useState<Map<string, { count: number; ton: number; total: number }>>(new Map())
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [modalAbierto, setModalAbierto] = useState(false)
@@ -70,12 +72,26 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       const { data: pivot } = await supabase
         .schema('msa')
         .from('ventas_comprobantes')
-        .select('venta_id')
+        .select('venta_id, comprobante_id')
+      // Traer datos de las facturas vinculadas para el control (toneladas + total)
+      const compIds = [...new Set((pivot || []).map((r: any) => r.comprobante_id).filter(Boolean))]
+      const { data: comps } = compIds.length
+        ? await supabase.schema('msa').from('comprobantes_venta').select('id, toneladas, imp_total').in('id', compIds)
+        : { data: [] }
+      const compMap = new Map<string, any>((comps || []).map((c: any) => [c.id, c]))
       const conteo = new Map<string, number>()
-      for (const row of (pivot || []) as { venta_id: string }[]) {
+      const agg = new Map<string, { count: number; ton: number; total: number }>()
+      for (const row of (pivot || []) as { venta_id: string; comprobante_id: string }[]) {
         conteo.set(row.venta_id, (conteo.get(row.venta_id) || 0) + 1)
+        const a = agg.get(row.venta_id) || { count: 0, ton: 0, total: 0 }
+        const comp = compMap.get(row.comprobante_id)
+        a.count += 1
+        a.ton += Number(comp?.toneladas) || 0
+        a.total += Number(comp?.imp_total) || 0
+        agg.set(row.venta_id, a)
       }
       setConteoLiq(conteo)
+      setAggLiq(agg)
     } catch (err) {
       toast.error('Error cargando ventas: ' + (err as Error).message)
     } finally {
@@ -167,7 +183,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                   <TableHead className="text-right">Total op.</TableHead>
                   <TableHead className="text-right">Gravado Neto</TableHead>
                   <TableHead className="text-right">IVA Total</TableHead>
-                  <TableHead className="text-center">Liq.</TableHead>
+                  <TableHead className="text-center">Control fact.</TableHead>
                   <TableHead className="text-right" style={{ width: 110 }}>Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -197,11 +213,25 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                       <TableCell className="text-right whitespace-nowrap">{fmtMoney(c.gravadoNeto)}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">{fmtMoney(c.ivaTotal)}</TableCell>
                       <TableCell className="text-center">
-                        {nLiq > 0
-                          ? <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                              <Link2 className="h-3 w-3 mr-1" />{nLiq}
+                        {(() => {
+                          const agg = aggLiq.get(v.id)
+                          if (!agg || agg.count === 0) return <span className="text-xs text-gray-400" title="Venta sin facturar">— sin facturar</span>
+                          const ventaTon = Number(v.toneladas) || 0
+                          const ventaTotal = c.total
+                          const difTon = Math.abs(ventaTon - agg.ton)
+                          const difTotal = Math.abs(ventaTotal - agg.total)
+                          const tonOk = difTon < 0.5
+                          const totalOk = difTotal < Math.max(ventaTotal * 0.01, 100)
+                          const cuadra = tonOk && totalOk
+                          const tip = `Venta: ${fmtAR(ventaTon)} tn · ${fmtMoney(ventaTotal)}\nFacturado: ${fmtAR(agg.ton)} tn · ${fmtMoney(agg.total)}` +
+                            (cuadra ? '' : `\n${!tonOk ? `Δ ton ${fmtAR(difTon)} ` : ''}${!totalOk ? `Δ total ${fmtMoney(difTotal)}` : ''}`)
+                          return (
+                            <Badge variant="outline" className={cuadra ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'} title={tip}>
+                              {cuadra ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <AlertTriangle className="h-3 w-3 mr-1" />}
+                              {nLiq} {cuadra ? 'cuadra' : 'revisar'}
                             </Badge>
-                          : <span className="text-xs text-gray-400">—</span>}
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">

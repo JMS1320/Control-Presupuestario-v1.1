@@ -34,6 +34,33 @@ export function VistaPrincipal() {
   // Wizard de vinculación — lógica compartida en useVinculacionAnticipo
   const v = useVinculacionAnticipo(() => cargarAlertasSicore())
 
+  // Alertas de VENTAS (separadas de compras): facturas a cobrar/cobrado + retenciones sin vincular
+  const [ventasPendientes, setVentasPendientes] = useState<any[]>([])
+  const [retencionesSinVincular, setRetencionesSinVincular] = useState<any[]>([])
+  const [cargandoVentas, setCargandoVentas] = useState(false)
+
+  const cargarAlertasVentas = useCallback(async () => {
+    setCargandoVentas(true)
+    try {
+      const [{ data: facturas }, { data: rets }] = await Promise.all([
+        supabase.schema('msa').from('comprobantes_venta')
+          .select('id, nro_comprobante, denominacion_cliente, imp_total, estado, fecha_cobro_estimada')
+          .neq('estado', 'conciliado').neq('estado', 'anterior')
+          .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false }),
+        supabase.schema('msa').from('retenciones_recibidas')
+          .select('id, tipo, monto, denominacion_cliente, cuit_cliente')
+          .is('comprobante_venta_id', null)
+          .order('created_at', { ascending: false }),
+      ])
+      setVentasPendientes(facturas || [])
+      setRetencionesSinVincular(rets || [])
+    } catch (err) {
+      console.error('Error cargando alertas de ventas:', err)
+    } finally {
+      setCargandoVentas(false)
+    }
+  }, [])
+
   const meses = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -101,7 +128,8 @@ export function VistaPrincipal() {
   useEffect(() => {
     cargarUltimoIPC()
     cargarAlertasSicore()
-  }, [cargarAlertasSicore])
+    cargarAlertasVentas()
+  }, [cargarAlertasSicore, cargarAlertasVentas])
 
   // Eliminar anticipo (solo si no está conciliado en banco)
   const eliminarAnticipo = async (anticipo: AnticipoSicore) => {
@@ -283,6 +311,73 @@ export function VistaPrincipal() {
               </div>
             )
           })()}
+        </CardContent>
+      </Card>
+
+      {/* Alertas de VENTAS — separadas de compras */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-emerald-600" />
+            Alertas de Ventas
+            {ventasPendientes.length > 0 && (
+              <span className="ml-2 bg-emerald-100 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {ventasPendientes.length} a cobrar
+              </span>
+            )}
+            {retencionesSinVincular.length > 0 && (
+              <span className="ml-1 bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {retencionesSinVincular.length} ret. sin vincular
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cargandoVentas ? (
+            <div className="flex items-center gap-2 py-6 justify-center text-gray-500">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"></div>
+              <span className="text-sm">Cargando alertas...</span>
+            </div>
+          ) : ventasPendientes.length === 0 && retencionesSinVincular.length === 0 ? (
+            <div className="text-center py-10 text-gray-500">
+              <CheckCircle2 className="h-12 w-12 mx-auto mb-3 text-green-300" />
+              <p className="text-sm">Sin ventas pendientes</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* Retenciones cargadas sin factura (esperando vincular por CUIT) */}
+              {retencionesSinVincular.length > 0 && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2">
+                  <div className="text-xs font-medium text-orange-800 mb-1">
+                    Retenciones sin factura (se vinculan al importar la venta con ese CUIT):
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {retencionesSinVincular.map(r => (
+                      <span key={r.id} className="text-xs bg-white border border-orange-200 rounded px-2 py-0.5">
+                        {r.tipo?.toUpperCase()} {fmt(r.monto)} · {r.denominacion_cliente || r.cuit_cliente || 's/cliente'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Facturas de venta a cobrar / cobrado (pendientes de conciliar) */}
+              {ventasPendientes.map(f => (
+                <div key={f.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-900">{f.denominacion_cliente || 's/cliente'}</span>
+                      <span className="text-xs text-gray-500">{f.nro_comprobante || ''}</span>
+                      <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">{fmt(f.imp_total || 0)}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${f.estado === 'cobrado' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{f.estado}</span>
+                    </div>
+                    {f.fecha_cobro_estimada && (
+                      <div className="mt-0.5 text-xs text-gray-400">Cobro estimado: {fmtFecha(f.fecha_cobro_estimada)}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

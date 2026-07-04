@@ -2742,11 +2742,12 @@ export function VistaCashFlow() {
                           </div>
                         </div>
                       )}
-                      {/* Templates existentes agrupados por cuenta_agrupadora */}
+                      {/* Templates existentes — colapsado hasta que el usuario escriba (no auto-desplegar) */}
                       {(() => {
+                        if (!nuevaCuota.categ.trim()) return null
                         const filtrados = templatesAbiertos
                           .filter(t => t.id !== templateSeleccionado && t.nombre_referencia)
-                          .filter(t => !nuevaCuota.categ.trim() || t.nombre_referencia.toLowerCase().includes(nuevaCuota.categ.toLowerCase()) || (t.cuenta_agrupadora || '').toLowerCase().includes(nuevaCuota.categ.toLowerCase()))
+                          .filter(t => t.nombre_referencia.toLowerCase().includes(nuevaCuota.categ.toLowerCase()) || (t.cuenta_agrupadora || '').toLowerCase().includes(nuevaCuota.categ.toLowerCase()))
                         if (filtrados.length === 0) return null
                         const grupos = new Map<string, typeof filtrados>()
                         filtrados.forEach(t => {

@@ -417,6 +417,8 @@ export function useMotorConciliacion() {
               if (matchCF.cashFlowRow.nro_cuenta) extraIdsCF.nro_cuenta = matchCF.cashFlowRow.nro_cuenta
             } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
               extraIdsCF.sueldo_pago_id = matchCF.cashFlowRow.id
+            } else if (matchCF.cashFlowRow.origen === 'VENTA') {
+              extraIdsCF.comprobante_venta_id = matchCF.cashFlowRow.id
             }
             // Obtener contable/interno: Tab2 TipoA→TipoB > Tab1 regla con código
             const extraCF: any = {}
@@ -534,6 +536,12 @@ export function useMotorConciliacion() {
               } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
                 await supabase
                   .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', matchCF.cashFlowRow.id)
+              } else if (matchCF.cashFlowRow.origen === 'VENTA') {
+                await supabase
+                  .schema('msa')
+                  .from('comprobantes_venta')
                   .update({ estado: 'conciliado' })
                   .eq('id', matchCF.cashFlowRow.id)
               }
