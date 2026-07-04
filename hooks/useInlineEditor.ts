@@ -103,6 +103,12 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
         updateData.fecha_estimada = valorProcesado
         console.log(`🔄 Auto-actualización ${celda.origen}: fecha_vencimiento = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
       }
+
+      // Regla automática: fecha_pago también arrastra a fecha_estimada (ordena el cash flow)
+      if (celda.columna === 'fecha_pago' && valorProcesado !== null) {
+        updateData.fecha_estimada = valorProcesado
+        console.log(`🔄 Auto-actualización ${celda.origen}: fecha_pago = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
+      }
     }
 
     Object.keys(updateData).forEach(key => {

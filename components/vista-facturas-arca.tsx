@@ -10564,9 +10564,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onKeyDown={async (e) => {
                                           if (e.key === 'Enter' && editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .in('id', row.ids)
-                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                             setEditandoFechaPagosId(null)
                                           }
                                           if (e.key === 'Escape') setEditandoFechaPagosId(null)
@@ -10574,9 +10574,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onBlur={async () => {
                                           if (editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .in('id', row.ids)
-                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                           }
                                           setEditandoFechaPagosId(null)
                                         }}
@@ -10589,7 +10589,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         title="Click para cambiar fecha de pago del grupo (propaga a todas las cuotas)"
                                         onClick={() => {
                                           setEditandoFechaPagosId(row.grupoPagoId)
-                                          setEditandoFechaPagosVal(row.fecha || tsGrupo[0]?.fecha_vencimiento || tsGrupo[0]?.fecha_estimada || '')
+                                          setEditandoFechaPagosVal(row.fecha || tsGrupo[0]?.fecha_pago || tsGrupo[0]?.fecha_estimada || '')
                                         }}
                                       >
                                         {row.fecha || '-'}
@@ -10653,9 +10653,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onKeyDown={async (e) => {
                                           if (e.key === 'Enter' && editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .eq('id', t.id)
-                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                             setEditandoFechaPagosId(null)
                                           }
                                           if (e.key === 'Escape') setEditandoFechaPagosId(null)
@@ -10663,9 +10663,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onBlur={async () => {
                                           if (editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .eq('id', t.id)
-                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                           }
                                           setEditandoFechaPagosId(null)
                                         }}
@@ -10678,10 +10678,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         title="Click para cambiar fecha de pago"
                                         onClick={() => {
                                           setEditandoFechaPagosId(t.id)
-                                          setEditandoFechaPagosVal(t.fecha_estimada || t.fecha_vencimiento || '')
+                                          setEditandoFechaPagosVal(t.fecha_pago || t.fecha_estimada || '')
                                         }}
                                       >
-                                        {t.fecha_vencimiento || t.fecha_estimada || '-'}
+                                        {t.fecha_pago || t.fecha_estimada || '-'}
                                       </span>
                                     )}
                                   </TableCell>

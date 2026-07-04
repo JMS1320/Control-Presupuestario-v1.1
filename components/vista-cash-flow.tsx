@@ -29,6 +29,7 @@ import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculab
 const columnasDefinicion = [
   { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32', editable: true },
   { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32', editable: true },
+  { key: 'fecha_pago', label: 'Fecha Pago', type: 'date', width: 'w-32', editable: true },
   { key: 'categ', label: 'CATEG', type: 'text', width: 'w-24', editable: true },
   { key: 'centro_costo', label: 'Centro Costo', type: 'text', width: 'w-28', editable: true },
   { key: 'cuit_proveedor', label: 'CUIT Proveedor', type: 'text', width: 'w-32', editable: false }, // Solo lectura (viene de fuente)
@@ -271,7 +272,7 @@ export function VistaCashFlow() {
       if (filaActual?.ids_grupo && filaActual.ids_grupo.length > 0) {
         let valorFinal: any = celda.valor
         // Procesar fechas: convertir DD/MM/AAAA → YYYY-MM-DD si corresponde
-        if (['fecha_estimada', 'fecha_vencimiento'].includes(celda.columna)) {
+        if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(celda.columna)) {
           const fechaStr = String(valorFinal).trim()
           if (fechaStr.includes('/')) {
             const [d, m, y] = fechaStr.split('/')
@@ -403,8 +404,17 @@ export function VistaCashFlow() {
     }
     
     // Verificar si la columna es editable para este origen
-    const esEditable = columna.editable
-    
+    let esEditable = columna.editable
+    // La fecha de vencimiento de templates es de solo-lectura acá:
+    // solo se edita desde "Egresos sin Factura" (el guardián de BD lo bloquea igual si se intenta).
+    if (columna.key === 'fecha_vencimiento' && fila.origen !== 'ARCA') {
+      esEditable = false
+    }
+    // fecha_pago editable solo para templates (FC se habilita en la fase ARCA)
+    if (columna.key === 'fecha_pago' && fila.origen !== 'TEMPLATE') {
+      esEditable = false
+    }
+
     // Ctrl+Click normal = editar campo
     if (!event.ctrlKey || !esEditable) return
     

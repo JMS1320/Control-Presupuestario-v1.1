@@ -212,10 +212,11 @@ export function useTemplateValidator() {
       const nuevaFechaVencimiento = '2026-12-25'
 
       // Test: Cambiar fecha_vencimiento debe actualizar fecha_estimada
-      const { error } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update({ fecha_vencimiento: nuevaFechaVencimiento })
-        .eq('id', cuota.id)
+      // (vía RPC: único camino autorizado por el guardián de BD)
+      const { error } = await supabase.rpc('actualizar_venc_cuota', {
+        p_cuota_id: cuota.id,
+        p_fecha: nuevaFechaVencimiento,
+      })
 
       if (error) {
         results.push({
@@ -248,13 +249,14 @@ export function useTemplateValidator() {
           })
         }
 
-        // Revertir cambio
+        // Revertir cambio (venc vía RPC; estimada por si difería del venc original)
+        await supabase.rpc('actualizar_venc_cuota', {
+          p_cuota_id: cuota.id,
+          p_fecha: cuota.fecha_vencimiento,
+        })
         await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ 
-            fecha_vencimiento: cuota.fecha_vencimiento,
-            fecha_estimada: cuota.fecha_estimada 
-          })
+          .update({ fecha_estimada: cuota.fecha_estimada })
           .eq('id', cuota.id)
       }
 

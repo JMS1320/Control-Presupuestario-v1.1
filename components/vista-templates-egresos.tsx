@@ -35,6 +35,7 @@ interface CuotaEgresoSinFactura {
   egreso_id: string
   fecha_estimada: string
   fecha_vencimiento: string | null
+  fecha_pago: string | null
   monto: number
   descripcion: string | null
   estado: string
@@ -64,6 +65,7 @@ interface CuotaEgresoSinFactura {
 const COLUMNAS_CONFIG = {
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
+  fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto: { label: "Monto", visible: true, width: "130px" },
   descripcion: { label: "Descripción", visible: true, width: "200px" },
   estado: { label: "Estado", visible: true, width: "100px" },
@@ -729,11 +731,22 @@ export function VistaTemplatesEgresos() {
         console.log(`🔄 Auto-actualización Templates: fecha_vencimiento = ${valorFinal} → fecha_estimada = ${valorFinal}`)
       }
       
-      // Guardado simple directo en cuotas (igual que ARCA)
-      const { error } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update(updateData)
-        .eq('id', datosEdicion.cuotaId)
+      // Guardado: fecha_vencimiento pasa SÍ o SÍ por el RPC (único camino autorizado por el guardián).
+      // El resto de los campos, update directo como siempre.
+      let error: any = null
+      if (datosEdicion.columna === 'fecha_vencimiento') {
+        const { error: rpcError } = await supabase.rpc('actualizar_venc_cuota', {
+          p_cuota_id: datosEdicion.cuotaId,
+          p_fecha: valorFinal || null,
+        })
+        error = rpcError
+      } else {
+        const res = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update(updateData)
+          .eq('id', datosEdicion.cuotaId)
+        error = res.error
+      }
 
       if (error) {
         console.error('Error actualizando cuota:', error)
@@ -1147,10 +1160,17 @@ export function VistaTemplatesEgresos() {
     const contenidoCelda = (() => {
       switch (columna) {
         case 'fecha_estimada':
-        case 'fecha_vencimiento':
         case 'created_at':
         case 'updated_at':
           return formatearFecha(valor as string)
+
+        case 'fecha_vencimiento':
+          // Venc firme → azul; distingue de la estimada
+          return <span className="text-blue-600 font-medium">{formatearFecha(valor as string)}</span>
+
+        case 'fecha_pago':
+          // Fecha real de pago → verde
+          return <span className="text-green-700 font-medium">{formatearFecha(valor as string)}</span>
         
         case 'monto':
           return formatearNumero(valor as number)
