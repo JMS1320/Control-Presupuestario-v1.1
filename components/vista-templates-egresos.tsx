@@ -526,7 +526,7 @@ export function VistaTemplatesEgresos() {
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'monto', 'descripcion', 'estado',
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'estado',
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
@@ -563,11 +563,11 @@ export function VistaTemplatesEgresos() {
     event.stopPropagation()
     
     // APPROACH HÍBRIDO: Usar hook solo para fechas (migración gradual)
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       console.log('🔄 Templates: Usando hook para fecha:', columna)
       // Convertir fecha BD (YYYY-MM-DD) a formato input date
       let valorFormateado = valor || ''
-      if (['fecha_estimada', 'fecha_vencimiento'].includes(columna) && valor) {
+      if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna) && valor) {
         // Si viene fecha de BD (YYYY-MM-DD), mantener ese formato para input type="date"
         valorFormateado = String(valor).includes('-') ? valor : valor
         console.log('🗓️ Templates iniciarEdicion valor original:', valor, '→ formateado:', valorFormateado)

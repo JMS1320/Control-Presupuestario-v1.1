@@ -140,17 +140,27 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       const tabla = celdaEnEdicion.tableName || 'cuotas_egresos_sin_factura'
       const filtro = { id: celdaEnEdicion.filaId }
 
-      const query = celdaEnEdicion.origen === 'ARCA'
-        ? supabase.schema('msa').from(tabla)
-        : celdaEnEdicion.origen === 'PRODUCTIVO'
-        ? supabase.schema('productivo').from(tabla)
-        : supabase.from(tabla)
-      
-      console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
-      
-      const { error } = await query
-        .update(updateData)
-        .match(filtro)
+      // Venc de templates: SÍ o SÍ por el RPC (único camino autorizado por el guardián de BD).
+      // El RPC ya setea fecha_vencimiento + fecha_estimada.
+      let error: any
+      if (celdaEnEdicion.columna === 'fecha_vencimiento' && tabla === 'cuotas_egresos_sin_factura') {
+        const res = await supabase.rpc('actualizar_venc_cuota', {
+          p_cuota_id: celdaEnEdicion.filaId,
+          p_fecha: valorProcesado || null,
+        })
+        error = res.error
+      } else {
+        const query = celdaEnEdicion.origen === 'ARCA'
+          ? supabase.schema('msa').from(tabla)
+          : celdaEnEdicion.origen === 'PRODUCTIVO'
+          ? supabase.schema('productivo').from(tabla)
+          : supabase.from(tabla)
+
+        console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
+
+        const res = await query.update(updateData).match(filtro)
+        error = res.error
+      }
 
       if (error) {
         console.error(`Error actualizando ${tabla}:`, error)
