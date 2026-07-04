@@ -39,7 +39,7 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
   }, [])
 
   const procesarValor = useCallback((valor: any, columna: string): any => {
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       if (!valor || String(valor).trim() === '') {
         return null
       }

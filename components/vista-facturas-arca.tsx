@@ -10536,7 +10536,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <TableHeader className="sticky top-0 z-10 bg-white border-b">
                           <TableRow>
                             {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
-                            <TableHead>Fecha Vto.</TableHead>
+                            <TableHead>Fecha Pago</TableHead>
                             <TableHead>Referencia</TableHead>
                             <TableHead>Proveedor</TableHead>
                             <TableHead>Cuenta</TableHead>
