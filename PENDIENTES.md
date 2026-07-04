@@ -669,6 +669,15 @@ Modelo de edición acordado:
 
 > El **guardián** (bloqueo con error al tocar venc fuera de Egresos) **no se puede probar aún** — se arma post-merge. Cuando esté: intentar cambiar venc de template desde Cash Flow/Pagos debe **fallar con mensaje**.
 
+### ✅ Testing fase templates (2026-07-04) — bugs encontrados y arreglados
+- **Columna Fecha Pago no aparecía en Egresos** → localStorage tenía config vieja; fix: mergear defaults en el init de `columnasVisibles`/`anchosColumnas` (commit `602e8c7`).
+- **Display: fecha_pago siempre vacía en la grilla** → `renderizarCelda` leía `fecha_pago` del template **padre** (no la tiene) en vez de la cuota; faltaba en la lista de campos de la cuota (l.998). Fix `86c4e30`. **Era la causa del síntoma "edito en Cash Flow y no se ve en grilla"** (la escritura andaba; el display la tapaba).
+- **Vista Pagos: header decía "Fecha Vto."** pero la celda edita `fecha_pago` → renombrado a "Fecha Pago" (`3bff698`). Es seguro: escribe fecha_pago, no toca venc.
+- **`fecha_pago` ahora editable desde la grilla** (Ctrl+click, pedido del usuario) + `procesarValor` trata fecha_pago como fecha (`3bff698` / `df59342`).
+- **⚠️ Bug del guardián evitado:** la grilla edita fechas por el **hook** (`useInlineEditor`), no por el `guardarEdicion` donde estaba el RPC → el venc de la grilla hacía UPDATE directo y **habría fallado con el guardián**. Fix: el hook rutea `fecha_vencimiento` de `cuotas_egresos_sin_factura` por el RPC (`df59342`). ARCA sigue update directo.
+- **Propagación fecha_pago → Cash Flow:** automática vía `fecha_estimada` (arrastre) + orden del cash flow por estimada. Se refleja al refrescar.
+- Estado: falta que el usuario pruebe editar fecha_pago desde la grilla (deploy `df59342`). **Decisión del usuario: NO mergear ni armar guardián hasta terminar TODO (templates + ARCA).**
+
 ---
 
 ### 🐞 <a id="a-bug-12"></a>A-BUG-12 — Conciliación de tarjeta diverge del razonamiento del motor (2026-06-22)
