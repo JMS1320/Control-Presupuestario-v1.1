@@ -177,34 +177,36 @@ export function VistaTemplatesEgresos() {
 
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
+    )
+    // Cargar desde localStorage, mergeando sobre los defaults para que las columnas
+    // nuevas (agregadas después de guardar la config) aparezcan con su default.
     const saved = localStorage.getItem('templates-egresos-columnas-visibles')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
-    )
+    return defaults
   })
 
   // Estado para anchos de columnas personalizables con persistencia
   const [anchosColumnas, setAnchosColumnas] = useState<Record<string, string>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
+    )
     const saved = localStorage.getItem('templates-egresos-anchos-columnas')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
-    )
+    return defaults
   })
 
   // Guardar cambios de columnas visibles en localStorage
