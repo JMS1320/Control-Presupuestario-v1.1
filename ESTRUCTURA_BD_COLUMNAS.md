@@ -33,7 +33,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, categ text, cuenta_contable text, tipo USER-DEFINED(enum), activo boolean, created_at tstz, nro_cuenta text, imputable boolean, cta_totalizadora text, nombre_totalizadora text, cambio_nombre_cta text, grupo_cuenta text`
 
 ### cuotas_egresos_sin_factura
-`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean`
+`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, fecha_pago date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean`
+
+> `fecha_pago` (2026-07-04): fecha real de pago, separada del vencimiento firme. Editable en Vista Pagos / Cash Flow; propaga a `fecha_estimada`. Venc solo editable vía RPC `actualizar_venc_cuota` (desde Egresos sin Factura). Ver PENDIENTES A-TEST-06.
 
 ### distribucion_socios
 `id uuid, interno text, concepto text, created_at tstz, updated_at tstz, orden int, seccion int, empresa_destino text`

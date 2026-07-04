@@ -70,6 +70,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-03 | 🔴 | Módulo ARCA Mis Comprobantes | → [A-TEST-03](#a-test-03) |
 | A-TEST-04 | 🔴 | SICORE estado_quincena + anulación | → [A-TEST-04](#a-test-04) |
 | A-TEST-05 | 🔴 | Tarjetas — probar PDF real | → [A-TEST-05](#a-test-05) |
+| A-TEST-06 | 🟡 | Refactor fechas FASE TEMPLATES (`fecha_pago` separado de venc) — testear en preview ANTES de fase ARCA | → [A-TEST-06](#a-test-06) |
 
 ### Seguridad
 | ID | Estado | Prio | Ítem | Detalle |
@@ -630,6 +631,42 @@ ORDER BY gap_dias DESC;
 4. **Reglas de conciliación de tarjeta** (no existen aún).
 
 Detalle previo: `memory/project_tarjetas_modulo.md`.
+
+---
+
+## <a id="a-test-06"></a>A-TEST-06 — Refactor fechas: FASE TEMPLATES (2026-07-04)
+
+### Contexto / por qué
+`fecha_vencimiento` cumplía **dos roles** (vencimiento firme **y** fecha real de pago), y al pagar se pisaba el vencimiento → se perdía la fecha firme. Se separa en **4 fechas**: `fecha_emision` (solo FC) · `fecha_estimada` (interna, ordena el Cash Flow) · `fecha_vencimiento` (firme) · **`fecha_pago`** (NUEVA, fecha real de pago). Propagaciones: `fecha_pago → estimada` y `fecha_vencimiento → estimada` (el orden del cash flow sigue por estimada, sin cambios).
+
+Modelo de edición acordado:
+- **Templates:** venc **solo** editable desde "Egresos sin Factura". En Vista Pagos y Cash Flow, venc **read-only**; se edita **`fecha_pago`**.
+- **FC (ARCA):** venc queda libremente editable (fase ARCA, aún NO hecha).
+
+### Qué se hizo (fase templates — commit `de5eac3`, en `desarrollo`)
+1. **BD:** `public.cuotas_egresos_sin_factura.fecha_pago date` + RPC `actualizar_venc_cuota(uuid,date)` (único camino autorizado para cambiar venc). Ver RECONSTRUCCION § 2026-07-04.
+2. **Vista Pagos templates** (`vista-facturas-arca.tsx` ~l.10567-10668): la "fecha de pago" escribe `fecha_pago` (+ estimada), **ya no pisa venc**. Display/seed muestran `fecha_pago`.
+3. **Egresos sin Factura** (`vista-templates-egresos.tsx` ~l.732): el edit de venc pasa por el **RPC**.
+4. **Auto-sync `fecha_pago → estimada`** en `useInlineEditor.ts` (l.~106) y `useMultiCashFlowData.ts` (l.~700).
+5. **Cash Flow** (`vista-cash-flow.tsx`): venc **read-only para templates** (l.~410); nueva **columna `fecha_pago`** editable para templates.
+6. **Grillas:** columna `fecha_pago` (verde) + venc coloreado (azul=firme) en `vista-templates-egresos`.
+7. `useTemplateValidator.ts`: test de venc vía RPC.
+
+### ⚠️ PENDIENTE (NO hacer hasta testear + merge)
+- **Guardián (trigger `trg_guard_venc_cuota`)**: bloquea cambios de venc de templates fuera del RPC. **Se arma POST-MERGE** (la BD es compartida prod/preview; prenderlo antes rompe prod, que aún corre código viejo). SQL listo en RECONSTRUCCION § 2026-07-04.
+- **Fase ARCA** (columna `comprobantes_arca.fecha_pago` + Vista Pagos FC + venc editable FC + **SICORE `fecha_pago`** + display FC). Parte de cambios ya redactado.
+
+### 🧪 Cómo testear (preview de `desarrollo`, guardián OFF todavía)
+1. **Egresos sin Factura:** editar `fecha_vencimiento` de una cuota → debe arrastrar a `fecha_estimada` (quedan iguales); venc se ve azul; columna "Fecha Pago" (verde) vacía.
+2. **Vista Pagos** (botón Pagos → solapa Facturas, filas TEMPLATE moradas): click en la fecha → poner fecha de pago → Enter. Verificar: (a) guarda en `fecha_pago`; (b) la cuota se reubica en el Cash Flow (estimada sigue al pago); (c) **el vencimiento NO cambió** (chequear en Egresos que el venc quedó igual). ← núcleo del fix.
+3. **Cash Flow:**
+   - Ctrl+click en "Fecha Vencimiento" de una fila **TEMPLATE** → **no debe dejar editar** (read-only).
+   - Ctrl+click en "Fecha Pago" de una fila TEMPLATE → guarda `fecha_pago` + reubica la fila.
+   - Fila **ARCA (FC)**: venc **sigue editable** (ARCA no se tocó aún).
+4. **Motor conciliación:** conciliar una cuota → sigue matcheando por estimada, pasa a `conciliado`.
+5. **Data vieja:** una cuota pagada de antes no se rompió (su venc histórico sigue).
+
+> El **guardián** (bloqueo con error al tocar venc fuera de Egresos) **no se puede probar aún** — se arma post-merge. Cuando esté: intentar cambiar venc de template desde Cash Flow/Pagos debe **fallar con mensaje**.
 
 ---
 
