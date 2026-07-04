@@ -995,7 +995,7 @@ export function VistaTemplatesEgresos() {
     let valor: any
 
     // Obtener valor según la columna
-    if (['fecha_estimada', 'fecha_vencimiento', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
     } else if (columna === 'categ') {
       // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
