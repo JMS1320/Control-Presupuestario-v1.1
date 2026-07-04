@@ -34,6 +34,12 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 - **Diseños de módulo** → `DISEÑO_*.md`, `CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`, etc.
 - **Conocimiento general** (funcionando / descartado / troubleshooting) → `KNOWLEDGE.md`.
 
+### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
+- **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
+- Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).
+- Esto es distinto de los cambios de **estructura** (columnas/RPC/trigger acordados) — ver [[feedback_no_modificar_bd_sin_acuerdo]]: los de estructura también se avisan; los de **datos** se preguntan SÍ o SÍ.
+- Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
+
 ### 🔧 Git
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
 - Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
