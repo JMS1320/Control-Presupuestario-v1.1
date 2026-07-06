@@ -7,6 +7,8 @@ import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
+import { generarQuincenaSicore } from "@/lib/sicore/quincena"
+import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -1249,7 +1251,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
     const minimoServicios = 67170
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicoreLocal(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     console.log('🔍 SICORE CF: Evaluando fila', {
       id: fila.id,
@@ -1303,7 +1305,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
     const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicoreLocal(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
@@ -1343,15 +1345,42 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // - ARS (tc=1): saldoPesos / 1 = saldoPesos ✓
       // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
       const montoAAbona = saldoPesos / tc
-      const quincena = generarQuincenaSicoreLocal(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
+      // Quincena desde fecha_pago (fecha real de pago); fallback venc/estimada
+      const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString().split('T')[0]
+      const quincena = generarQuincenaSicore(fechaSicore)
 
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
-      // 2. Actualizar datos SICORE (monto_sicore siempre en pesos)
+      // 2. Estampar datos SICORE en la FC (compat con v1)
       await supabase.schema('msa').from('comprobantes_arca')
         .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
         .eq('id', guardadoPendienteCF.filaId)
+
+      // 3. Registrar en SICORE v2 (sicore_retenciones) — capa compartida, mismo registro que el Modal
+      const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
+      const fa = facturaEnProceso as any
+      await registrarEnSicoreRetenciones('msa', {
+        origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
+        quincena,
+        fecha_pago: fechaSicore,
+        factura_id: guardadoPendienteCF.filaId,
+        fecha_emision: fa.fecha_emision ?? null,
+        tipo_comprobante: fa.tipo_comprobante ?? null,
+        punto_venta: fa.punto_venta ?? null,
+        numero_desde: fa.numero_desde ?? null,
+        cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
+        denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
+        tipo_sicore: tipoSeleccionado.tipo,
+        alicuota: tipoSeleccionado.porcentaje_retencion,
+        neto_gravado_pagado: datosSicoreCalculo?.netoFactura ?? 0,
+        total_pagado: totalPagado,
+        descuento_aplicado: descuentoAdicional,
+        minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
+        base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
+        retencion: montoRetencion,
+        pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
+      })
 
       toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
 
