@@ -100,3 +100,7 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - **E4 — Centralizar `generarQuincenaSicore`** (un solo helper, borrar duplicado).
 - **E5 — Deprecar/borrar el Modal de Pagos** cuando Cash Flow cubra el 100%.
 - **E6 (posterior, baja prio) — migrar "otros campos" de las grillas al hook.**
+
+**Estado de ejecución:**
+- **E1 implementado** (commit `b0028d3`, pend. test). Flecos abiertos (estéticos, cerrar después): (1) arreglar el "filtro avanzado" (falta que el user diga qué falla); (2) sacar el filtro viejo de "Modo Pagos" (arca/template/anticipo), redundante con los chips; (3) revisar labels de los chips de estado.
+- **⚠️ SICORE en Cash Flow = v1 INCOMPLETA** (estampa el campo pero NO crea el registro v2). Hasta E3: **pagar FC con retención → desde el Modal** (v2), sino se sub-declara. Cash Flow OK para ver + pagar templates/anticipos/sueldos. SICORE completo = **E3**.
