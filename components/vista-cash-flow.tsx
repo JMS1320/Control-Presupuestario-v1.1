@@ -6,6 +6,7 @@ import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
+import { agruparPagos } from "@/lib/pagos/agrupar"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -943,6 +944,38 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
     if (items.length === 0) { toast.error('Ninguna fila seleccionada es exportable como pago'); return }
     setModalExportarLote({ open: true, items })
+  }
+
+  // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
+  const agruparSeleccionados = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && (f.facturas_agrupadas ?? 0) <= 1)
+    if (filas.length < 2) { toast.error('Seleccioná al menos 2 filas individuales del mismo proveedor'); return }
+    const origenes = new Set(filas.map(f => f.origen))
+    if (origenes.size > 1) { toast.error('Agrupá filas del mismo origen (todas FC o todas templates)'); return }
+    const origen = filas[0].origen
+    if (origen !== 'ARCA' && origen !== 'TEMPLATE') { toast.error('Agrupar disponible para FC (ARCA) y templates'); return }
+    if (filas.some(f => f.grupo_pago_id)) { toast.error('Alguna fila ya pertenece a un grupo (desagrupá primero desde el Modal)'); return }
+    const cuits = new Set(filas.map(f => f.cuit_proveedor || ''))
+    if (cuits.size > 1) {
+      if (!window.confirm('⚠️ Las filas seleccionadas tienen CUITs diferentes. ¿Agrupar igual?')) return
+    }
+    try {
+      await agruparPagos({
+        schema: 'msa',
+        origen: origen as 'ARCA' | 'TEMPLATE',
+        ids: filas.map(f => f.id),
+        cuit: filas[0].cuit_proveedor || null,
+        proveedor: filas[0].nombre_proveedor || '',
+        monto_total: filas.reduce((s, f) => s + (f.debitos || 0), 0),
+        estado: origen === 'ARCA' ? 'pagar' : (filas[0].estado || 'pendiente'),
+        observaciones: cuits.size > 1 ? 'Multi-CUIT' : null,
+      })
+      toast.success(`${filas.length} pagos agrupados`)
+      setFilasSeleccionadas(new Set())
+      await cargarDatos()
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al agrupar')
+    }
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
@@ -2239,6 +2272,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       🏦 Exportar lote Galicia
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={agruparSeleccionados}
+                      className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
+                      disabled={filasSeleccionadas.size < 2}
+                    >
+                      🔗 Agrupar
                     </Button>
                   </div>
                 </div>
