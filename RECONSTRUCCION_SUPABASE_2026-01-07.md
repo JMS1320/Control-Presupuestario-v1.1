@@ -11019,6 +11019,11 @@ CREATE TRIGGER trg_guard_venc_cuota
   FOR EACH ROW EXECUTE FUNCTION public.guard_venc_cuota();
 ```
 
-### FASE ARCA — ⏳ PENDIENTE (no aplicado)
-- `ALTER TABLE {msa,pam,ma}.comprobantes_arca ADD COLUMN fecha_pago date;` (aditivo).
-- SICORE pasa a usar `fecha_pago` (fiscal — solo hacia adelante). Ver A-TEST-06 / parte de cambios fase ARCA.
+### FASE ARCA — columna aplicada 2026-07-05; SICORE ⏳ pendiente
+```sql
+-- Aplicado 2026-07-05 (aditivo)
+ALTER TABLE msa.comprobantes_arca ADD COLUMN IF NOT EXISTS fecha_pago date;
+ALTER TABLE pam.comprobantes_arca ADD COLUMN IF NOT EXISTS fecha_pago date;
+ALTER TABLE ma.comprobantes_arca  ADD COLUMN IF NOT EXISTS fecha_pago date;
+```
+- ⏳ **PENDIENTE (no código aún):** SICORE pasa a usar `fecha_pago` (`generarQuincenaSicore` + fila `sicore_retenciones.fecha_pago`), fiscal, solo hacia adelante. + que el pago escriba `fecha_pago` (depende de decisión base operativa Modal vs Cash Flow — ver PENDIENTES B-FEAT-BASE-OPERATIVA / MANUAL-USO).
