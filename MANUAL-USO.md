@@ -93,7 +93,7 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 **Complejidad honesta:** la mayoría son funciones que **ya existen** → se **extraen a un módulo/util compartido** y ambas pantallas las usan (mover, no reescribir; mecánico, riesgo bajo-medio). La excepción es **SICORE v2**: ahí la clave es **separar registración (compartir/disparar desde Cash Flow) de gestión (dejarla en su vista)** — así no hay que mudar todo el subsistema.
 
 ### 🪜 Plan de migración por etapas (Cash Flow como base)
-- **E0 — cerrar refactor `fecha_pago`** (en curso): templates ✅; backend ARCA (pago-write + SICORE→fecha_pago).
+- **E0 — refactor `fecha_pago`**: templates ✅ completo. ARCA = **solo la columna creada**; el pago-write FC + SICORE→fecha_pago **se pliegan a E2/E3** (capa compartida / Cash Flow), **NO se construyen en el Modal** (se deprecará). Para FC no es bug urgente (venc≈fecha a pagar hoy). Guardián templates + merge = al final.
 - **E1 — Vista operativa del Cash Flow** (bajo riesgo, alto valor): default "impagos: vencidos + hoy en adelante, nunca conciliado" (usa `aplicarFiltros` que ya existe) + **chips estado/origen con Todos/Ninguno** + arreglar el filtro avanzado. Con esto ya ves lo mismo que el Modal.
 - **E2 — Paridad de funciones de pago:** subtotales + agrupar + PDF detalle + export Excel pagos → **extraer a utils compartidas**.
 - **E3 — SICORE v2 en Cash Flow** (pesada, fiscal): reemplazar el estampado v1 por la **registración v2 compartida**; la gestión SICORE queda en su vista. Testear a fondo.
