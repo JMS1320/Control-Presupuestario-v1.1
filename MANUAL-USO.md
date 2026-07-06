@@ -70,3 +70,33 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
 **⚠️ AVISOS del usuario (no relajarse):**
 - **a) Las grillas tienen código propio.** Aunque el foco sea Cash Flow, cuando el usuario edite en la grilla ARCA/templates, features nuevas (ej. `fecha_pago`) **NO estarán ahí salvo que las agreguemos explícitamente**. Riesgo de "en Cash Flow anda pero en la grilla no". Mantener las grillas **consistentes** (o saber que están incompletas) — no darlas por hechas.
 - **b) El "Modo Pagos" del Cash Flow** usa el mismo código (no es flanco aparte), pero **estudiar al final** si el usuario lo usa o se descarta.
+
+### ⚠️ SICORE — v1 vs v2 (CRÍTICO, verificado 2026-07-06)
+Hay **dos "SICORE" en el código, NO son lo mismo**:
+- **v2 (correcta, en uso):** sistema completo → tabla `msa.sicore_retenciones` + `estado_quincena` (abierta/cerrada/declarada) + certificados perpetuos + anulación (no DELETE) + Export v2 + `TablaRegistrosV2` + DDJJ. **Vive TODO en `vista-facturas-arca`** (el Modal / vista ARCA). Es la que usa el usuario y funciona.
+- **v1 (vieja/deprecada):** solo estampa `sicore`/`monto_sicore`/`tipo_sicore` en la FC. **Es lo único que hace el Cash Flow** (`evaluarRetencionSicoreCF` → `.update({sicore})`; NO escribe `sicore_retenciones`). Por eso pagar SICORE desde Cash Flow queda **incompleto/con bugs**.
+- Lo único común: el helper `generarQuincenaSicore` (Modal) = `generarQuincenaSicoreLocal` (Cash Flow) = **misma fórmula duplicada** (centralizar).
+- **Implicancia:** para que Cash Flow sea la base, su pago debe llamar a la **registración v2** (no al estampado v1). Es la pieza más pesada de la migración.
+
+### Inventario de funciones del Modal (qué debe existir en el "centro de mandos")
+| Función | Hoy dónde | ¿En Cash Flow? |
+|---|---|---|
+| Subtotales por estado (preparado/pagar/pendiente) | Modal (l.9271, 10037…) | ❌ portar |
+| Agrupar pagos/templates/sueldos | Modal (l.9293/9381/9445) | 🟡 parcial |
+| PDF detalle de pago | `generarPDFDetallePago` (l.5505) | ❌ extraer a util |
+| Export Excel de pagos | Modal | ❌ extraer a util |
+| Cambiar estado (pagar/preparado/pagado) | ambos | ✅ ya |
+| Editar fechas/campos | hook | ✅ ya (fecha_pago incl.) |
+| **SICORE v2 (registración)** | Modal, embebido | ❌ **compartir el registro** |
+| SICORE v2 GESTIÓN (TablaRegistrosV2, cierre/declaración, certificados, export, DDJJ) | Modal / vista SICORE | ⏸️ **NO mover** → queda en vista SICORE dedicada; Cash Flow solo dispara el registro |
+
+**Complejidad honesta:** la mayoría son funciones que **ya existen** → se **extraen a un módulo/util compartido** y ambas pantallas las usan (mover, no reescribir; mecánico, riesgo bajo-medio). La excepción es **SICORE v2**: ahí la clave es **separar registración (compartir/disparar desde Cash Flow) de gestión (dejarla en su vista)** — así no hay que mudar todo el subsistema.
+
+### 🪜 Plan de migración por etapas (Cash Flow como base)
+- **E0 — cerrar refactor `fecha_pago`** (en curso): templates ✅; backend ARCA (pago-write + SICORE→fecha_pago).
+- **E1 — Vista operativa del Cash Flow** (bajo riesgo, alto valor): default "impagos: vencidos + hoy en adelante, nunca conciliado" (usa `aplicarFiltros` que ya existe) + **chips estado/origen con Todos/Ninguno** + arreglar el filtro avanzado. Con esto ya ves lo mismo que el Modal.
+- **E2 — Paridad de funciones de pago:** subtotales + agrupar + PDF detalle + export Excel pagos → **extraer a utils compartidas**.
+- **E3 — SICORE v2 en Cash Flow** (pesada, fiscal): reemplazar el estampado v1 por la **registración v2 compartida**; la gestión SICORE queda en su vista. Testear a fondo.
+- **E4 — Centralizar `generarQuincenaSicore`** (un solo helper, borrar duplicado).
+- **E5 — Deprecar/borrar el Modal de Pagos** cuando Cash Flow cubra el 100%.
+- **E6 (posterior, baja prio) — migrar "otros campos" de las grillas al hook.**
