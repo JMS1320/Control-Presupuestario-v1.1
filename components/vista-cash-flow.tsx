@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
+import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -858,6 +859,9 @@ export function VistaCashFlow() {
     setChipsEstados(new Set(estadosDisponibles))
     setChipsOrigenes(new Set(origenesDisponibles))
   }
+  // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
+  const subtotales = calcularSubtotales(datosOperativos)
+  const fmtMonto = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   const datosFiltradosPagos = modoPagos ? datosOperativos.filter(fila => {
     if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
@@ -2299,6 +2303,26 @@ export function VistaCashFlow() {
               <button onClick={() => setChipsOrigenes(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
             </div>
             <button onClick={verTodo} className="text-xs px-2.5 py-0.5 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700 ml-auto">Ver todo</button>
+          </div>
+
+          {/* E2.1: barra de subtotales (respeta chips/filtros) */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-slate-50 rounded-lg border text-sm">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-gray-500">{subtotales.cantidad} filas</span>
+              <span>Débitos: <b className="text-red-700">${fmtMonto(subtotales.totalDebitos)}</b></span>
+              <span>Créditos: <b className="text-green-700">${fmtMonto(subtotales.totalCreditos)}</b></span>
+              <span>Neto: <b className={subtotales.neto >= 0 ? 'text-green-700' : 'text-red-700'}>${fmtMonto(subtotales.neto)}</b></span>
+            </div>
+            {subtotales.porEstado.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
+                <span className="text-xs font-semibold text-gray-500">por estado:</span>
+                {subtotales.porEstado.map(s => (
+                  <span key={s.clave} className="text-xs bg-white border rounded px-2 py-0.5">
+                    {s.clave}: <b>${fmtMonto(s.debitos + s.creditos)}</b> ({s.cantidad})
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Tabla Cash Flow */}
