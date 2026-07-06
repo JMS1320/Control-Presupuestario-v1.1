@@ -243,7 +243,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
 
           {/* CASH FLOW */}
           <TabsContent value="cashflow" className="space-y-6">
-            <VistaCashFlow />
+            <VistaCashFlow userRole={userRole} />
           </TabsContent>
 
           {/* EXTRACTO BANCARIO */}

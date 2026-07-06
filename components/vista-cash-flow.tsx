@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -82,7 +84,7 @@ interface CeldaEnEdicion {
   valor: string | number
 }
 
-export function VistaCashFlow() {
+export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [busquedaRapida, setBusquedaRapida] = useState('')
@@ -256,6 +258,7 @@ export function VistaCashFlow() {
   const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
   const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
   const [chipsInit, setChipsInit] = useState(false)
+  const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
     setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
@@ -916,6 +919,30 @@ export function VistaCashFlow() {
       generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null)
     })
     toast.success(`${grupos.size} comprobante(s) PDF generado(s)`)
+  }
+
+  // E2.4: Exportar lote Galicia sobre las filas seleccionadas. Reusa el módulo lotes-galicia (CBU/mail/agendar proveedores).
+  const exportarLoteSeleccionados = () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const items: ItemSeleccionado[] = []
+    for (const f of filas) {
+      const schema = (f.origen_tabla?.split('.')[0]) || 'msa'
+      if ((f.facturas_agrupadas ?? 0) > 1) {
+        items.push({ tipo: 'grupo', id: (f.grupo_pago_id || f.id) as string, schema })
+      } else if (f.origen === 'ARCA') {
+        items.push({ tipo: 'fc', id: f.id, schema })
+      } else if (f.origen === 'TEMPLATE') {
+        items.push({ tipo: 'cuota_template', id: f.id })
+      } else if (f.origen === 'ANTICIPO') {
+        items.push({ tipo: 'anticipo', id: f.id, schema })
+      } else if (f.origen === 'SUELDO') {
+        items.push({ tipo: 'sueldo', id: f.id })
+      }
+      // VENTA: es ingreso, no se exporta como pago
+    }
+    if (items.length === 0) { toast.error('Ninguna fila seleccionada es exportable como pago'); return }
+    setModalExportarLote({ open: true, items })
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
@@ -2204,6 +2231,14 @@ export function VistaCashFlow() {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       📄 Comprobante PDF
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={exportarLoteSeleccionados}
+                      className="text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      🏦 Exportar lote Galicia
                     </Button>
                   </div>
                 </div>
@@ -3640,6 +3675,15 @@ export function VistaCashFlow() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* E2.4: Export lote Galicia (módulo reusado) */}
+      <ModalExportarLote
+        open={modalExportarLote.open}
+        onClose={() => setModalExportarLote({ open: false, items: [] })}
+        empresa="MSA"
+        items={modalExportarLote.items}
+        userRole={userRole}
+      />
     </div>
   )
 }
