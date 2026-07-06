@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
+import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -879,6 +880,42 @@ export function VistaCashFlow() {
 
   const deseleccionarTodas = () => {
     setFilasSeleccionadas(new Set())
+  }
+
+  // E2.3: Comprobante de pago PDF sobre las filas seleccionadas (agrupa por proveedor). Reusa lib/pagos/pdf-detalle-pago.
+  const generarPDFPagosSeleccionados = () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const fmtFecha = (s?: string | null) => {
+      if (!s) return ''
+      const d = new Date(s + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
+    }
+    const grupos = new Map<string, CashFlowRow[]>()
+    for (const f of filas) {
+      const k = `${f.cuit_proveedor || ''}||${f.nombre_proveedor || ''}`
+      const arr = grupos.get(k) || []
+      arr.push(f)
+      grupos.set(k, arr)
+    }
+    grupos.forEach((fs, k) => {
+      const [cuit, proveedor] = k.split('||')
+      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      const items = fs.map(f => {
+        const fa = f as any
+        return {
+          comprobante: f.detalle || fa.comprobante_display || '-',
+          fecha: fmtFecha(f.fecha_estimada),
+          fecha_estimada: f.fecha_estimada,
+          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          monto_sicore: fa.monto_sicore ?? null,
+          descuento_aplicado: fa.descuento_aplicado ?? null,
+          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+        }
+      })
+      generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null)
+    })
+    toast.success(`${grupos.size} comprobante(s) PDF generado(s)`)
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
@@ -2158,6 +2195,15 @@ export function VistaCashFlow() {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       Deseleccionar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generarPDFPagosSeleccionados}
+                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      📄 Comprobante PDF
                     </Button>
                   </div>
                 </div>
