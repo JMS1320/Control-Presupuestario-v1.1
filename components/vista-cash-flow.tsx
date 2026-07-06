@@ -250,6 +250,17 @@ export function VistaCashFlow() {
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
+  // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
+  const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
+  const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
+  const [chipsInit, setChipsInit] = useState(false)
+  useEffect(() => {
+    if (chipsInit || !data || data.length === 0) return
+    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
+    setChipsOrigenes(new Set(data.map(f => f.origen)))
+    setChipsInit(true)
+  }, [data, chipsInit])
+
   // Ref para poder cerrar el editor del hook desde dentro de customValidations
   const hookEditorRef = useRef<{ setCeldaEnEdicion: (v: any) => void } | null>(null)
 
@@ -834,12 +845,26 @@ export function VistaCashFlow() {
       })
     : data
 
-  const datosFiltradosPagos = modoPagos ? datosConBusqueda.filter(fila => {
+  // E1: valores disponibles para los chips + filtro operativo (siempre activo tras inicializar)
+  const estadosDisponibles = Array.from(new Set(data.map(f => f.estado))).sort()
+  const origenesDisponibles = Array.from(new Set(data.map(f => f.origen))).sort()
+  const datosOperativos = !chipsInit
+    ? datosConBusqueda
+    : datosConBusqueda.filter(fila => chipsOrigenes.has(fila.origen) && chipsEstados.has(fila.estado))
+  const toggleChip = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, val: string) => {
+    setter(prev => { const n = new Set(prev); n.has(val) ? n.delete(val) : n.add(val); return n })
+  }
+  const verTodo = () => {
+    setChipsEstados(new Set(estadosDisponibles))
+    setChipsOrigenes(new Set(origenesDisponibles))
+  }
+
+  const datosFiltradosPagos = modoPagos ? datosOperativos.filter(fila => {
     if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
     if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
     if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
     return true
-  }) : datosConBusqueda
+  }) : datosOperativos
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
@@ -2243,6 +2268,39 @@ export function VistaCashFlow() {
             </div>
           )}
 
+          {/* E1: barra de chips operativos (siempre visible) — Estado + Origen */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-white rounded-lg border">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Estado:</span>
+              {estadosDisponibles.map(e => (
+                <button
+                  key={e}
+                  onClick={() => toggleChip(setChipsEstados, e)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsEstados.has(e) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {e} ({data.filter(f => f.estado === e).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsEstados(new Set(estadosDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+              <button onClick={() => setChipsEstados(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Origen:</span>
+              {origenesDisponibles.map(o => (
+                <button
+                  key={o}
+                  onClick={() => toggleChip(setChipsOrigenes, o)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsOrigenes.has(o) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {o} ({data.filter(f => f.origen === o).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsOrigenes(new Set(origenesDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+              <button onClick={() => setChipsOrigenes(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+            </div>
+            <button onClick={verTodo} className="text-xs px-2.5 py-0.5 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700 ml-auto">Ver todo</button>
+          </div>
+
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-auto max-h-[600px]">
@@ -2270,7 +2328,7 @@ export function VistaCashFlow() {
 
                 {/* Body */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {(modoPagos ? datosFiltradosPagos : datosConBusqueda).length === 0 ? (
+                  {(modoPagos ? datosFiltradosPagos : datosOperativos).length === 0 ? (
                     <tr>
                       <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
@@ -2281,7 +2339,7 @@ export function VistaCashFlow() {
                       </td>
                     </tr>
                   ) : (
-                    (modoPagos ? datosFiltradosPagos : datosConBusqueda).map((fila, index) => {
+                    (modoPagos ? datosFiltradosPagos : datosOperativos).map((fila, index) => {
                       const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
                       return (
                       <tr
