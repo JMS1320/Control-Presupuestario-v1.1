@@ -261,6 +261,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
   const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
   const [chipsInit, setChipsInit] = useState(false)
+  const [verDebitosVencidos, setVerDebitosVencidos] = useState(false) // débitos auto: ocultar los ya vencidos (se asumen pagados)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
@@ -537,6 +538,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         // Abrir modal de TC de pago; al guardar, continuar automáticamente con SICORE
         setTcPagoOrigenPagar(true)
         abrirModalTcPago(filaParaCambioEstado)
+        return
+      }
+
+      // ENFORCE fecha_pago - para pagar una FC hay que tener la Fecha de Pago cargada
+      // (la quincena SICORE sale de esa fecha). Bloquea el paso a pagar si falta.
+      if (
+        filaParaCambioEstado.origen === 'ARCA' &&
+        nuevoEstado === 'pagar' &&
+        filaParaCambioEstado.estado !== 'pagar' &&
+        !filaParaCambioEstado.fecha_pago
+      ) {
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        toast.error('Cargá la Fecha de Pago de la FC antes de pasarla a pagar (la retención SICORE se calcula por esa fecha).')
         return
       }
 
@@ -856,9 +871,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // E1: valores disponibles para los chips + filtro operativo (siempre activo tras inicializar)
   const estadosDisponibles = Array.from(new Set(data.map(f => f.estado))).sort()
   const origenesDisponibles = Array.from(new Set(data.map(f => f.origen))).sort()
+  // Débitos automáticos: los anteriores a hoy se asumen pagados. Ocultar los previos a (hoy − 7 días) salvo que se pidan.
+  const corteDebitoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
   const datosOperativos = !chipsInit
     ? datosConBusqueda
-    : datosConBusqueda.filter(fila => chipsOrigenes.has(fila.origen) && chipsEstados.has(fila.estado))
+    : datosConBusqueda.filter(fila => {
+        if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
+        if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
+        return true
+      })
   const toggleChip = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, val: string) => {
     setter(prev => { const n = new Set(prev); n.has(val) ? n.delete(val) : n.add(val); return n })
   }
@@ -2448,7 +2469,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               <button onClick={() => setChipsOrigenes(new Set(origenesDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
               <button onClick={() => setChipsOrigenes(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
             </div>
-            <button onClick={verTodo} className="text-xs px-2.5 py-0.5 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700 ml-auto">Ver todo</button>
+            <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
+              <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />
+              ver débitos vencidos
+            </label>
+            <button onClick={verTodo} className="text-xs px-2.5 py-0.5 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700">Ver todo</button>
           </div>
 
           {/* E2.1: barra de subtotales (respeta chips/filtros) */}
