@@ -76,6 +76,7 @@ interface FacturaArca {
   fecha_modificacion: string | null
   fecha_estimada: string | null
   fecha_vencimiento: string | null
+  fecha_pago: string | null
   monto_a_abonar: number | null
   ddjj_iva: string
   created_at: string
@@ -164,6 +165,7 @@ const COLUMNAS_CONFIG = {
   fecha_modificacion: { label: "Fecha Modificación", visible: false, width: "150px" },
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
+  fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
   ddjj_iva: { label: "DDJJ IVA", visible: true, width: "100px" },
   medio_pago: { label: "Medio Pago", visible: false, width: "120px" },
@@ -760,18 +762,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
+    )
+    // Mergear sobre defaults para que columnas nuevas (ej. fecha_pago) aparezcan aunque haya config guardada.
     const saved = localStorage.getItem('facturas-arca-columnas-visibles')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
-    )
+    return defaults
   })
 
   // Estado para anchos de columnas personalizables con persistencia
@@ -1115,7 +1118,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     event.stopPropagation()
     
     // TESTING: Usar hook solo para fechas (approach gradual)
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       console.log('🔄 Usando hook para fecha:', columna)
       const celdaHook: CeldaEnEdicion = {
         filaId: facturaId,
@@ -1409,7 +1412,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Campos editables en ARCA
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'monto_a_abonar', 'cuenta_contable', 
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto_a_abonar', 'cuenta_contable',
     'centro_costo', 'estado', 'observaciones_pago', 'detalle', 'campana'
   ]
 
@@ -1519,7 +1522,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
 
     // Si esta celda está en edición (hook) para fechas, mostrar input del hook
-    const esCeldaHookEnEdicion = (['fecha_estimada', 'fecha_vencimiento'].includes(columna as string)) && 
+    const esCeldaHookEnEdicion = (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna as string)) &&
                                 hookEditor.celdaEnEdicion?.filaId === factura.id && 
                                 hookEditor.celdaEnEdicion?.columna === columna
     
@@ -1699,6 +1702,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       case 'fecha_modificacion':
       case 'fecha_estimada':
       case 'fecha_vencimiento':
+      case 'fecha_pago':
       case 'created_at':
         const contenidoFecha = formatearFecha(valor as string)
         return esEditable && modoEdicion ? (

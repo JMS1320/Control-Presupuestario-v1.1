@@ -891,12 +891,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const subtotales = calcularSubtotales(datosOperativos)
   const fmtMonto = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const datosFiltradosPagos = modoPagos ? datosOperativos.filter(fila => {
-    if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
-    if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
-    if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
-    return true
-  }) : datosOperativos
+  // Los chips de origen (siempre visibles) ya filtran; en Modo Pagos usamos el mismo set operativo.
+  const datosFiltradosPagos = datosOperativos
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
@@ -2329,42 +2325,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   </div>
                 </div>
 
-                {/* Filtros por origen */}
-                <div className="flex items-center gap-6 p-2 bg-white rounded border">
-                  <span className="text-sm font-medium text-gray-700">Mostrar:</span>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.arca}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, arca: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">ARCA</Badge>
-                        ({data.filter(f => f.origen === 'ARCA').length})
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.template}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, template: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">Template</Badge>
-                        ({data.filter(f => f.origen === 'TEMPLATE').length})
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.anticipo}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, anticipo: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs">Anticipo</Badge>
-                        ({data.filter(f => f.origen === 'ANTICIPO').length})
-                      </span>
-                    </label>
-                  </div>
-                </div>
+                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
 
                 <div className="flex items-center gap-4">
                   {/* Checkboxes independientes */}
