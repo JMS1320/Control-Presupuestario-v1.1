@@ -116,10 +116,10 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 **Dejado de lado (pendiente):**
 - Guardián templates **no armado** (post-merge) → hoy la protección de venc de templates es **solo UI**, no BD.
 - **Nada mergeado** a main; **nada testeado**.
-- **Grilla ARCA sin `fecha_pago` editable** (solo templates grid + Cash Flow) → "anda en Cash Flow pero no en la grilla ARCA".
+- ✅ ~~Grilla ARCA sin `fecha_pago` editable~~ HECHO (commit `411b810`): columna `fecha_pago` editable en la grilla ARCA (config+interfaz+render+hook+fix localStorage).
 - **Desagrupar NO está en Cash Flow** (si agrupás mal, se desagrupa desde el Modal).
 - ✅ ~~enforce `fecha_pago` obligatoria al pagar~~ HECHO (commit `c52fbe4`): bloquea pasar FC a 'pagar' sin fecha_pago cargada.
-- E1 flecos: filtro avanzado, filtro origen viejo redundante, labels de chips. ✅ ~~filtro fecha para `debito`~~ HECHO (`c52fbe4`): oculta débitos vencidos + toggle.
+- E1 flecos: filtro avanzado (falta que el user diga qué falla), labels de chips (cosmético). ✅ ~~filtro origen redundante~~ HECHO (`411b810`, los chips lo cubren). ✅ ~~filtro fecha para `debito`~~ HECHO (`c52fbe4`): oculta débitos vencidos + toggle.
 - E5 (deprecar Modal), E6 (grillas), E4 lado Modal.
 
 **Riesgos de bug a verificar en el test:**
