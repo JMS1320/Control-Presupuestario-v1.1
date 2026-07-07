@@ -558,7 +558,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // HOOK QUINCENA - Interceptar cambio a "pagado" para facturas ARCA con SICORE
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagado' && filaParaCambioEstado.sicore) {
-        const quincenahNueva = generarQuincenaSicoreLocal(filaParaCambioEstado.fecha_estimada)
+        const quincenahNueva = generarQuincenaSicore(filaParaCambioEstado.fecha_estimada)
         if (quincenahNueva !== filaParaCambioEstado.sicore) {
           setConfirmCambioQuincena({
             filaId: filaParaCambioEstado.id,
@@ -1216,13 +1216,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       .then(({ data }) => { if (data) setTiposSicore(data) })
   }, [])
 
-  // Generar quincena SICORE a partir de una fecha
-  const generarQuincenaSicoreLocal = (fecha: string): string => {
-    const d = new Date(fecha)
-    const yy = d.getFullYear().toString().slice(-2)
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0')
-    return `${yy}-${mm} - ${d.getDate() <= 15 ? '1ra' : '2da'}`
-  }
+  // Quincena SICORE: usa el helper único de lib/sicore/quincena (E4 — centralizado)
 
   // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
   const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
@@ -1251,7 +1245,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
     const minimoServicios = 67170
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     console.log('🔍 SICORE CF: Evaluando fila', {
       id: fila.id,
@@ -1305,7 +1299,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
     const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
@@ -1470,7 +1464,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const iva = parseCampo(camposSicore.iva)
     const impTotal = netoGravado + netoNoGravado + opExentas + iva
     const netoBase = netoGravado + netoNoGravado + opExentas
-    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena)
 
@@ -1496,7 +1490,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Confirmar y guardar SICORE en el anticipo
   const confirmarSicoreAnticipo = async () => {
     if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
-    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
     const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
     const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     const { error } = await supabase.from('anticipos_proveedores').update({
