@@ -118,8 +118,8 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - **Nada mergeado** a main; **nada testeado**.
 - **Grilla ARCA sin `fecha_pago` editable** (solo templates grid + Cash Flow) → "anda en Cash Flow pero no en la grilla ARCA".
 - **Desagrupar NO está en Cash Flow** (si agrupás mal, se desagrupa desde el Modal).
-- Refinamiento: **enforce `fecha_pago` obligatoria al pagar** (hoy usa fallback venc/estimada).
-- E1 flecos: filtro avanzado, filtro origen viejo redundante, labels de chips, **filtro fecha para `debito`**.
+- ✅ ~~enforce `fecha_pago` obligatoria al pagar~~ HECHO (commit `c52fbe4`): bloquea pasar FC a 'pagar' sin fecha_pago cargada.
+- E1 flecos: filtro avanzado, filtro origen viejo redundante, labels de chips. ✅ ~~filtro fecha para `debito`~~ HECHO (`c52fbe4`): oculta débitos vencidos + toggle.
 - E5 (deprecar Modal), E6 (grillas), E4 lado Modal.
 
 **Riesgos de bug a verificar en el test:**
