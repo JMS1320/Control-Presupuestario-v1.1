@@ -111,3 +111,21 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
   - 🔴 **NO usar SICORE desde Cash Flow hasta testear JUNTOS** (crea certificados con numeración perpetua — un bug ensucia la numeración fiscal). Mientras tanto: **SICORE desde el Modal** (v2, intacto). Test: pagar 1 FC de prueba con retención desde Cash Flow → verificar el registro en `sicore_retenciones` (quincena desde fecha_pago, nro_certificado correcto, montos) vs lo que haría el Modal; si está mal, **anular desde el Modal**.
   - Refinamiento pendiente: enforce `fecha_pago` obligatoria al pasar a pagar (hoy usa fallback venc/estimada).
 - **E4 (lado Cash Flow) HECHO** (commit `06c2653`): borrada la copia local `generarQuincenaSicoreLocal`; las 5 llamadas del Cash Flow usan el helper único `lib/sicore/quincena` (fórmula idéntica, sin cambio de comportamiento). Falta **E4 lado Modal** (su `generarQuincenaSicore` propia) → se hace al deprecar el Modal (E5), para no tocarlo antes.
+
+### 🔍 Auditoría migración Cash Flow (2026-07-07) — pendientes + riesgos de bug
+**Dejado de lado (pendiente):**
+- Guardián templates **no armado** (post-merge) → hoy la protección de venc de templates es **solo UI**, no BD.
+- **Nada mergeado** a main; **nada testeado**.
+- **Grilla ARCA sin `fecha_pago` editable** (solo templates grid + Cash Flow) → "anda en Cash Flow pero no en la grilla ARCA".
+- **Desagrupar NO está en Cash Flow** (si agrupás mal, se desagrupa desde el Modal).
+- Refinamiento: **enforce `fecha_pago` obligatoria al pagar** (hoy usa fallback venc/estimada).
+- E1 flecos: filtro avanzado, filtro origen viejo redundante, labels de chips, **filtro fecha para `debito`**.
+- E5 (deprecar Modal), E6 (grillas), E4 lado Modal.
+
+**Riesgos de bug a verificar en el test:**
+- 🔴 **SICORE v2 (fiscal, sin testear):** numeración de certificados; que la quincena salga de `fecha_pago`; que el registro quede igual al del Modal. **Los writes de desarrollo van a la BD compartida → visibles en prod.**
+- 🔴 Si NO cargás `fecha_pago`, SICORE cae a venc (fallback) → puede no ser la quincena que querés (enforce pendiente).
+- 🟡 **Agrupar:** `monto_total` usa `debitos` (revisar vs `montoEnPesos` del Modal en FC USD); origen `agrupacion/directo` del último ítem del lote (metadata menor).
+- 🟡 **PDF:** si seleccionás una **fila de grupo**, sale 1 línea agregada (el Modal saca por-FC); FC USD (montos).
+- 🟡 **Export:** `empresa='MSA'` hardcode (ok si Cash Flow siempre es MSA).
+- 🟢 Chips: contador usa data completa vs visible (cosmético con búsqueda); mensaje de "sin datos" viejo.
