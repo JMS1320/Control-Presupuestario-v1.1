@@ -253,6 +253,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [segCada, setSegCada] = useState(20)
   const [segDesde, setSegDesde] = useState<number | null>(null) // null = auto (centrado en el promedio)
   const [segFecha, setSegFecha] = useState<string>('')
+  const [segCortes, setSegCortes] = useState<number[] | null>(null) // null = uniforme (cada/desde); array = cortes editados (arrastrados)
+  const [segDragIdx, setSegDragIdx] = useState<number | null>(null)
+  const segAxisRef = useRef<HTMLDivElement>(null)
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -657,21 +660,71 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     return lo
   })()
   const segDesdeEff = segDesde ?? segDesdeAuto
-  const segReporte = (() => {
-    if (!segPesos.length) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], bajo: null as null | { cantidad: number; promedio: number; pct: number }, total: null as null | { cantidad: number; promedio: number } }
+  // Cortes uniformes (seed): desde segDesdeEff, cada segCada, hasta cubrir el máximo
+  const cortesAuto = (() => {
+    if (!segPesos.length) return [] as number[]
     const max = Math.max(...segPesos)
+    const cortes: number[] = []
+    for (let x = segDesdeEff; x < max + segCada; x += segCada) cortes.push(x)
+    return cortes
+  })()
+  // Cortes efectivos: si el usuario arrastró/editó → esos; sino los uniformes
+  const cortesEff = (segCortes && segCortes.length >= 2) ? [...segCortes].sort((a, b) => a - b) : cortesAuto
+  const segAxisMin = cortesEff.length ? cortesEff[0] : 0
+  const segAxisMax = cortesEff.length ? cortesEff[cortesEff.length - 1] : 1
+  // Densidad (bins finos) para el eje vertical
+  const segDensidad = (() => {
+    if (!segPesos.length || segAxisMax <= segAxisMin) return [] as { lo: number; hi: number; n: number }[]
+    const nBins = 40
+    const paso = (segAxisMax - segAxisMin) / nBins
+    const bins = Array.from({ length: nBins }, (_, i) => ({ lo: segAxisMin + i * paso, hi: segAxisMin + (i + 1) * paso, n: 0 }))
+    for (const p of segPesos) {
+      let idx = Math.floor((p - segAxisMin) / paso)
+      if (idx < 0) idx = 0
+      if (idx >= nBins) idx = nBins - 1
+      bins[idx].n++
+    }
+    return bins
+  })()
+  const segDensMax = Math.max(1, ...segDensidad.map(b => b.n))
+  const segReporte = (() => {
+    if (!segPesos.length || cortesEff.length < 2) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], bajo: null as null | { cantidad: number; promedio: number; pct: number }, total: null as null | { cantidad: number; promedio: number } }
     const filas: { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] = []
-    for (let lo = segDesdeEff; lo < max; lo += segCada) {
-      const hi = lo + segCada
+    for (let i = 0; i < cortesEff.length - 1; i++) {
+      const lo = cortesEff[i], hi = cortesEff[i + 1]
       const en = segPesos.filter(p => p >= lo && p < hi)
       if (en.length === 0) continue
       filas.push({ lo, hi, cantidad: en.length, promedio: en.reduce((s, p) => s + p, 0) / en.length, pct: en.length / segPesos.length })
     }
-    const bajoArr = segPesos.filter(p => p < segDesdeEff)
+    const bajoArr = segPesos.filter(p => p < cortesEff[0])
     const bajo = bajoArr.length ? { cantidad: bajoArr.length, promedio: bajoArr.reduce((s, p) => s + p, 0) / bajoArr.length, pct: bajoArr.length / segPesos.length } : null
     const total = { cantidad: segPesos.length, promedio: segPesos.reduce((s, p) => s + p, 0) / segPesos.length }
     return { filas, bajo, total }
   })()
+
+  // Drag de divisores del eje: mapea Y del mouse → peso y actualiza el corte arrastrado
+  useEffect(() => {
+    if (segDragIdx == null) return
+    const onMove = (e: MouseEvent) => {
+      const el = segAxisRef.current
+      if (!el || segAxisMax <= segAxisMin) return
+      const rect = el.getBoundingClientRect()
+      const pct = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
+      const w = segAxisMax - pct * (segAxisMax - segAxisMin) // top = max, bottom = min
+      setSegCortes(prev => {
+        const base = prev ?? cortesAuto
+        const arr = [...base]
+        const lo = arr[segDragIdx - 1] ?? -Infinity
+        const hi = arr[segDragIdx + 1] ?? Infinity
+        arr[segDragIdx] = Math.round(Math.min(hi - 1, Math.max(lo + 1, w)))
+        return arr
+      })
+    }
+    const onUp = () => setSegDragIdx(null)
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  }, [segDragIdx, segAxisMin, segAxisMax, cortesAuto])
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
@@ -1625,59 +1678,84 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 text-xs">
               <span className="font-semibold text-gray-700">Segmentación por peso</span>
               <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" checked={segOrigen === 'estimado'} onChange={() => setSegOrigen('estimado')} />
+                <input type="radio" checked={segOrigen === 'estimado'} onChange={() => { setSegOrigen('estimado'); setSegCortes(null) }} />
                 Estimado
-                <input type="number" step="0.1" value={segGanancia} onChange={e => setSegGanancia(parseFloat(e.target.value) || 0)} disabled={segOrigen !== 'estimado'} className="w-14 border rounded px-1 py-0.5" />
+                <input type="number" step="0.1" value={segGanancia} onChange={e => { setSegGanancia(parseFloat(e.target.value) || 0); setSegCortes(null) }} disabled={segOrigen !== 'estimado'} className="w-14 border rounded px-1 py-0.5" />
                 kg/día
               </label>
               <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" checked={segOrigen === 'pesada'} onChange={() => setSegOrigen('pesada')} />
+                <input type="radio" checked={segOrigen === 'pesada'} onChange={() => { setSegOrigen('pesada'); setSegCortes(null) }} />
                 Pesada
-                <select value={segFechaEff} onChange={e => setSegFecha(e.target.value)} disabled={segOrigen !== 'pesada'} className="border rounded px-1 py-0.5">
+                <select value={segFechaEff} onChange={e => { setSegFecha(e.target.value); setSegCortes(null) }} disabled={segOrigen !== 'pesada'} className="border rounded px-1 py-0.5">
                   {todasFechas.map(f => <option key={f} value={f}>{formatFecha(f)}</option>)}
                 </select>
               </label>
               <span className="flex items-center gap-1">
-                cada <input type="number" value={segCada} onChange={e => setSegCada(parseInt(e.target.value) || 20)} className="w-14 border rounded px-1 py-0.5" /> kg
-                desde <input type="number" value={segDesdeEff} onChange={e => setSegDesde(parseInt(e.target.value))} className="w-16 border rounded px-1 py-0.5" />
-                <button onClick={() => setSegDesde(null)} className="underline text-gray-500" title="Volver a centrar en el promedio">auto</button>
+                cada <input type="number" value={segCada} onChange={e => { setSegCada(parseInt(e.target.value) || 20); setSegCortes(null) }} className="w-14 border rounded px-1 py-0.5" /> kg
+                desde <input type="number" value={segDesdeEff} onChange={e => { setSegDesde(parseInt(e.target.value)); setSegCortes(null) }} className="w-16 border rounded px-1 py-0.5" />
+                <button onClick={() => { setSegDesde(null); setSegCortes(null) }} className="underline text-gray-500" title="Volver a rangos uniformes centrados en el promedio">auto</button>
               </span>
+              <span className="text-gray-400 text-[11px]">↕ arrastrá los divisores del eje para mover los cortes</span>
             </div>
             {segReporte.total ? (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-gray-500 border-b">
-                    <th className="text-left py-1">Rango</th>
-                    <th className="text-right">Cantidad</th>
-                    <th className="text-right">Promedio</th>
-                    <th className="text-right pr-1">% sobre total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {segReporte.bajo && (
-                    <tr className="text-gray-500">
-                      <td className="py-0.5">&lt; {segDesdeEff}</td>
-                      <td className="text-right">{segReporte.bajo.cantidad}</td>
-                      <td className="text-right">{segReporte.bajo.promedio.toFixed(0)}</td>
-                      <td className="text-right pr-1">{Math.round(segReporte.bajo.pct * 100)}%</td>
+              <div className="flex gap-3">
+                {/* Eje de densidad vertical con divisores arrastrables (peso ↑) */}
+                <div ref={segAxisRef} className="relative select-none shrink-0" style={{ width: 100, height: 240 }}>
+                  {segDensidad.map((b, i) => {
+                    const topPct = ((segAxisMax - b.hi) / (segAxisMax - segAxisMin)) * 100
+                    const hPct = ((b.hi - b.lo) / (segAxisMax - segAxisMin)) * 100
+                    return <div key={i} className="absolute left-7 bg-green-300/70 rounded-sm" style={{ top: `${topPct}%`, height: `${Math.max(hPct - 0.4, 0.6)}%`, width: `${(b.n / segDensMax) * 60}px` }} />
+                  })}
+                  <span className="absolute left-0 -top-1 text-[10px] text-gray-400">{Math.round(segAxisMax)}</span>
+                  <span className="absolute left-0 -bottom-1 text-[10px] text-gray-400">{Math.round(segAxisMin)}</span>
+                  {cortesEff.map((c, i) => {
+                    if (i === 0 || i === cortesEff.length - 1) return null
+                    const topPct = ((segAxisMax - c) / (segAxisMax - segAxisMin)) * 100
+                    return (
+                      <div key={i} className="absolute left-5 right-0 flex items-center cursor-ns-resize group" style={{ top: `${topPct}%`, transform: 'translateY(-50%)', height: 12 }}
+                           onMouseDown={(e) => { e.preventDefault(); if (segCortes == null) setSegCortes([...cortesEff]); setSegDragIdx(i) }}>
+                        <div className="h-[2px] w-full bg-blue-500 group-hover:bg-blue-700" />
+                        <span className="absolute -left-5 -top-2 text-[9px] font-medium text-blue-600 bg-white/90 px-0.5 rounded">{Math.round(c)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Tabla */}
+                <table className="w-full text-xs self-start">
+                  <thead>
+                    <tr className="text-gray-500 border-b">
+                      <th className="text-left py-1">Rango</th>
+                      <th className="text-right">Cantidad</th>
+                      <th className="text-right">Promedio</th>
+                      <th className="text-right pr-1">% sobre total</th>
                     </tr>
-                  )}
-                  {segReporte.filas.map(r => (
-                    <tr key={r.lo} className="hover:bg-white">
-                      <td className="py-0.5">{r.lo} / {r.hi}</td>
-                      <td className="text-right">{r.cantidad}</td>
-                      <td className="text-right">{r.promedio.toFixed(0)}</td>
-                      <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
+                  </thead>
+                  <tbody>
+                    {segReporte.bajo && (
+                      <tr className="text-gray-500">
+                        <td className="py-0.5">&lt; {Math.round(cortesEff[0])}</td>
+                        <td className="text-right">{segReporte.bajo.cantidad}</td>
+                        <td className="text-right">{segReporte.bajo.promedio.toFixed(0)}</td>
+                        <td className="text-right pr-1">{Math.round(segReporte.bajo.pct * 100)}%</td>
+                      </tr>
+                    )}
+                    {segReporte.filas.map(r => (
+                      <tr key={r.lo} className="hover:bg-white">
+                        <td className="py-0.5">{Math.round(r.lo)} / {Math.round(r.hi)}</td>
+                        <td className="text-right">{r.cantidad}</td>
+                        <td className="text-right">{r.promedio.toFixed(0)}</td>
+                        <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
+                      </tr>
+                    ))}
+                    <tr className="font-semibold border-t">
+                      <td className="py-0.5">Total</td>
+                      <td className="text-right">{segReporte.total.cantidad}</td>
+                      <td className="text-right">{segReporte.total.promedio.toFixed(1).replace('.', ',')}</td>
+                      <td className="text-right pr-1">100%</td>
                     </tr>
-                  ))}
-                  <tr className="font-semibold border-t">
-                    <td className="py-0.5">Total</td>
-                    <td className="text-right">{segReporte.total.cantidad}</td>
-                    <td className="text-right">{segReporte.total.promedio.toFixed(1).replace('.', ',')}</td>
-                    <td className="text-right pr-1">100%</td>
-                  </tr>
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <p className="text-gray-400 text-xs">Sin pesos para segmentar (elegí "Estimado" o una pesada con datos).</p>
             )}
