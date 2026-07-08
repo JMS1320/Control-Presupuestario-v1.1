@@ -247,6 +247,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Historial
   const [modalHistorial, setModalHistorial] = useState(false)
+  const [segColapsado, setSegColapsado] = useState(false) // segmentación colapsable (para ver lo de abajo)
   // Segmentación por rangos de peso (reporte arriba del historial)
   const [segOrigen, setSegOrigen] = useState<'estimado' | 'pesada'>('estimado')
   // Grupos: reposición (torito=macho rep / ternera_rep=hembra rep, ambos con es_torito=true) vs venta (macho/hembra con es_torito=false)
@@ -1777,8 +1778,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
           {/* ── Reporte: segmentación por rangos de peso ── */}
           <div className="mb-4 border rounded-lg p-3 bg-slate-50">
+            <button type="button" onClick={() => setSegColapsado(v => !v)} className="flex items-center gap-2 w-full text-left font-semibold text-gray-700 mb-2">
+              <span className="text-gray-400">{segColapsado ? '▶' : '▼'}</span>
+              <span>Segmentación por peso</span>
+              {segReporte.total && <span className="text-xs font-normal text-gray-400">· {segReporte.filas.length} secciones · {segReporte.total.cantidad} animales</span>}
+            </button>
+            {!segColapsado && (<>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
-              <span className="font-semibold text-gray-700">Segmentación por peso</span>
               <span className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-gray-500">Reposición:</span>
                 {([['torito', '🐂 Toritos'], ['ternera_rep', '♀ Terneras rep']] as const).map(([k, lbl]) => {
@@ -1880,6 +1886,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             ) : (
               <p className="text-gray-400 text-xs">Sin pesos para segmentar (elegí "Estimado" o una pesada con datos).</p>
             )}
+            </>)}
           </div>
 
           {todasFechas.length === 0 ? (
