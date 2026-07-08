@@ -249,6 +249,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [modalHistorial, setModalHistorial] = useState(false)
   // Segmentación por rangos de peso (reporte arriba del historial)
   const [segOrigen, setSegOrigen] = useState<'estimado' | 'pesada'>('estimado')
+  const [segSexo, setSegSexo] = useState<'todos' | 'Macho' | 'Hembra'>('todos')
   const [segGanancia, setSegGanancia] = useState(0.6)
   const [segCada, setSegCada] = useState(20)
   const [segDesde, setSegDesde] = useState<number | null>(null) // null = auto (centrado en el promedio)
@@ -644,34 +645,35 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   // ── Segmentación por rangos de peso (reporte arriba del historial) ──
   const segFechaEff = segFecha || todasFechas[todasFechas.length - 1] || ''
   const segPesos: number[] = ternerosFiltrados
-    .filter(t => t.pesadas_terneros.length > 0)
+    .filter(t => t.pesadas_terneros.length > 0 && (segSexo === 'todos' || t.sexo === segSexo))
     .map(t => segOrigen === 'estimado'
       ? getPesoEstimadoHoy(t.pesadas_terneros, segGanancia)
       : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
     .filter((p): p is number => p != null)
-  // Default "desde": centra el promedio (redondeado a decenas) en el rango medio y baja de a `cada` hasta cubrir el mínimo
+  // Default: POCAS secciones (5) centradas en el pico (promedio redondeado a decenas).
+  // Lo que caiga debajo/arriba va a los buckets "<" y ">" (el usuario amplía arrastrando).
+  const SEG_N_DEFAULT = 5
   const segDesdeAuto = (() => {
     if (!segPesos.length) return 0
-    const min = Math.min(...segPesos)
     const prom = segPesos.reduce((s, p) => s + p, 0) / segPesos.length
     const centro = Math.round(prom / 10) * 10
-    let lo = centro - segCada / 2
-    while (lo > min) lo -= segCada
-    return lo
+    // piso para que el pico quede en la sección del medio
+    return centro - Math.floor(SEG_N_DEFAULT / 2) * segCada - segCada / 2
   })()
   const segDesdeEff = segDesde ?? segDesdeAuto
-  // Cortes uniformes (seed): desde segDesdeEff, cada segCada, hasta cubrir el máximo
+  // Cortes uniformes (seed): SEG_N_DEFAULT secciones desde segDesdeEff, cada segCada
   const cortesAuto = (() => {
     if (!segPesos.length) return [] as number[]
-    const max = Math.max(...segPesos)
     const cortes: number[] = []
-    for (let x = segDesdeEff; x < max + segCada; x += segCada) cortes.push(x)
+    for (let i = 0; i <= SEG_N_DEFAULT; i++) cortes.push(segDesdeEff + i * segCada)
     return cortes
   })()
   // Cortes efectivos: si el usuario arrastró/editó → esos; sino los uniformes
   const cortesEff = (segCortes && segCortes.length >= 2) ? [...segCortes].sort((a, b) => a - b) : cortesAuto
-  const segAxisMin = cortesEff.length ? cortesEff[0] : 0
-  const segAxisMax = cortesEff.length ? cortesEff[cortesEff.length - 1] : 1
+  const segMinPeso = segPesos.length ? Math.min(...segPesos) : 0
+  const segMaxPeso = segPesos.length ? Math.max(...segPesos) : 1
+  const segAxisMin = Math.min(cortesEff[0] ?? segMinPeso, segMinPeso)
+  const segAxisMax = Math.max(cortesEff[cortesEff.length - 1] ?? segMaxPeso, segMaxPeso)
   // Densidad (bins finos) para el eje vertical
   const segDensidad = (() => {
     if (!segPesos.length || segAxisMax <= segAxisMin) return [] as { lo: number; hi: number; n: number }[]
@@ -688,18 +690,21 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   })()
   const segDensMax = Math.max(1, ...segDensidad.map(b => b.n))
   const segReporte = (() => {
-    if (!segPesos.length || cortesEff.length < 2) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], bajo: null as null | { cantidad: number; promedio: number; pct: number }, total: null as null | { cantidad: number; promedio: number } }
+    type Bucket = { cantidad: number; promedio: number; pct: number }
+    if (!segPesos.length || cortesEff.length < 2) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], bajo: null as null | Bucket, alto: null as null | Bucket, total: null as null | { cantidad: number; promedio: number } }
     const filas: { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] = []
     for (let i = 0; i < cortesEff.length - 1; i++) {
       const lo = cortesEff[i], hi = cortesEff[i + 1]
       const en = segPesos.filter(p => p >= lo && p < hi)
-      if (en.length === 0) continue
-      filas.push({ lo, hi, cantidad: en.length, promedio: en.reduce((s, p) => s + p, 0) / en.length, pct: en.length / segPesos.length })
+      // b: mostrar TODAS las secciones (1:1 con los divisores), aunque estén vacías
+      filas.push({ lo, hi, cantidad: en.length, promedio: en.length ? en.reduce((s, p) => s + p, 0) / en.length : 0, pct: en.length / segPesos.length })
     }
     const bajoArr = segPesos.filter(p => p < cortesEff[0])
     const bajo = bajoArr.length ? { cantidad: bajoArr.length, promedio: bajoArr.reduce((s, p) => s + p, 0) / bajoArr.length, pct: bajoArr.length / segPesos.length } : null
+    const altoArr = segPesos.filter(p => p >= cortesEff[cortesEff.length - 1])
+    const alto = altoArr.length ? { cantidad: altoArr.length, promedio: altoArr.reduce((s, p) => s + p, 0) / altoArr.length, pct: altoArr.length / segPesos.length } : null
     const total = { cantidad: segPesos.length, promedio: segPesos.reduce((s, p) => s + p, 0) / segPesos.length }
-    return { filas, bajo, total }
+    return { filas, bajo, alto, total }
   })()
 
   // Drag de divisores del eje: mapea Y del mouse → peso y actualiza el corte arrastrado
@@ -1677,6 +1682,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           <div className="mb-4 border rounded-lg p-3 bg-slate-50">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
               <span className="font-semibold text-gray-700">Segmentación por peso</span>
+              <span className="flex items-center gap-1">
+                Sexo
+                <select value={segSexo} onChange={e => setSegSexo(e.target.value as 'todos' | 'Macho' | 'Hembra')} className="border rounded px-1 py-1">
+                  <option value="todos">Todos</option>
+                  <option value="Macho">♂ Machos</option>
+                  <option value="Hembra">♀ Hembras</option>
+                </select>
+              </span>
               <label className="flex items-center gap-1 cursor-pointer">
                 <input type="radio" checked={segOrigen === 'estimado'} onChange={() => setSegOrigen('estimado')} />
                 Estimado
@@ -1743,10 +1756,18 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <tr key={r.lo} className="hover:bg-white">
                         <td className="py-2">{Math.round(r.lo)} / {Math.round(r.hi)}</td>
                         <td className="text-right">{r.cantidad}</td>
-                        <td className="text-right">{r.promedio.toFixed(0)}</td>
+                        <td className="text-right">{r.cantidad ? r.promedio.toFixed(0) : '—'}</td>
                         <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
                       </tr>
                     ))}
+                    {segReporte.alto && (
+                      <tr className="text-gray-500">
+                        <td className="py-2">&gt; {Math.round(cortesEff[cortesEff.length - 1])}</td>
+                        <td className="text-right">{segReporte.alto.cantidad}</td>
+                        <td className="text-right">{segReporte.alto.promedio.toFixed(0)}</td>
+                        <td className="text-right pr-1">{Math.round(segReporte.alto.pct * 100)}%</td>
+                      </tr>
+                    )}
                     <tr className="font-semibold border-t">
                       <td className="py-2">Total</td>
                       <td className="text-right">{segReporte.total.cantidad}</td>
