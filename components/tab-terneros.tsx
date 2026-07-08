@@ -278,6 +278,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Edición ternero
   const [modoEdicion, setModoEdicion] = useState(false)
+  // Marcado de reposición (usa columna es_torito; macho→torito, hembra→ternera rep)
+  const [modoReposicion, setModoReposicion] = useState(false)
+  const [selReposicion, setSelReposicion] = useState<Set<string>>(new Set())
+  const [guardandoRep, setGuardandoRep] = useState(false)
+  const [nMasPesadas, setNMasPesadas] = useState('40')
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
@@ -360,6 +365,38 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     } else {
       toast.success('Ternero actualizado')
       setTerneroEditando(null)
+      cargar()
+    }
+  }
+
+  // ─── Marcado de reposición (es_torito) ────────────────────────────────────
+  const toggleSelRep = (id: string) => setSelReposicion(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
+
+  const seleccionarNMasPesadas = () => {
+    const n = parseInt(nMasPesadas) || 0
+    const ranked = ternerosFiltrados
+      .filter(t => t.activo)
+      .map(t => ({ id: t.id, peso: getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) }))
+      .filter(t => t.peso != null)
+      .sort((a, b) => (b.peso as number) - (a.peso as number))
+      .slice(0, n)
+    setSelReposicion(new Set(ranked.map(t => t.id)))
+  }
+
+  const aplicarReposicion = async (valor: boolean) => {
+    const ids = [...selReposicion]
+    if (!ids.length) { toast.error('No hay animales seleccionados'); return }
+    setGuardandoRep(true)
+    const { error } = await supabase.schema('productivo').from('terneros')
+      .update({ es_torito: valor }).in('id', ids)
+    setGuardandoRep(false)
+    if (error) {
+      toast.error('Error al actualizar: ' + error.message)
+    } else {
+      toast.success(`${ids.length} ${valor ? 'marcados como reposición' : 'quitados de reposición'}`)
+      setSelReposicion(new Set())
       cargar()
     }
   }
@@ -829,10 +866,20 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           <Button
             variant={modoEdicion ? "default" : "outline"}
             size="sm"
-            onClick={() => setModoEdicion(p => !p)}
+            onClick={() => { setModoEdicion(p => !p); setModoReposicion(false) }}
             className={modoEdicion ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700"}
           >
             ✏️ {modoEdicion ? 'Editando...' : 'Editar'}
+          </Button>
+
+          {/* Botón modo reposición */}
+          <Button
+            variant={modoReposicion ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setModoReposicion(p => !p); setModoEdicion(false); setSelReposicion(new Set()) }}
+            className={modoReposicion ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-amber-400 text-amber-700"}
+          >
+            🐂 {modoReposicion ? 'Marcando rep...' : 'Reposición'}
           </Button>
 
           {/* Botón descargar Excel */}
@@ -1061,6 +1108,23 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {modoReposicion && (
+                <div className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-sm">
+                  <span className="font-semibold text-amber-800">🐂 Reposición</span>
+                  <span className="text-amber-700">Seleccioná filas (o las más pesadas) y marcá. Macho→torito · Hembra→ternera rep.</span>
+                  <span className="flex items-center gap-1 ml-2">
+                    <button type="button" onClick={seleccionarNMasPesadas} className="px-2 py-1 rounded bg-white border border-amber-400 text-amber-800 hover:bg-amber-100">Seleccionar</button>
+                    <Input value={nMasPesadas} onChange={e => setNMasPesadas(e.target.value)} className="h-7 w-14 text-center" />
+                    <span className="text-amber-700">más pesadas</span>
+                  </span>
+                  <span className="ml-auto flex items-center gap-2">
+                    <span className="text-amber-800 font-medium">{selReposicion.size} sel.</span>
+                    <button type="button" onClick={() => setSelReposicion(new Set())} className="text-xs text-amber-700 hover:underline">Limpiar</button>
+                    <Button size="sm" disabled={guardandoRep || selReposicion.size === 0} onClick={() => aplicarReposicion(true)} className="bg-amber-600 hover:bg-amber-700 text-white">✓ Marcar reposición</Button>
+                    <Button size="sm" variant="outline" disabled={guardandoRep || selReposicion.size === 0} onClick={() => aplicarReposicion(false)} className="border-gray-400 text-gray-700">Quitar</Button>
+                  </span>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
@@ -1069,7 +1133,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     <TableHead className="text-xs">Carav. Interna</TableHead>
                     <TableHead className="text-xs">Sexo</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
-                    <TableHead className="text-xs">Torito</TableHead>
+                    <TableHead className="text-xs">Reposición</TableHead>
                     <TableHead className="text-xs">Categoría</TableHead>
                     {subTab === config.showExtraTorito && <>
                       <TableHead className="text-xs">Hijo de</TableHead>
@@ -1100,9 +1164,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     // Estilo tachado rojo para inactivos
                     const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => modoEdicion && abrirEdicion(t)}>
+                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${modoReposicion && !inactivo ? 'cursor-pointer hover:bg-amber-50' : ''} ${selReposicion.has(t.id) ? 'bg-amber-100' : inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`}
+                        onClick={() => { if (modoReposicion && !inactivo) toggleSelRep(t.id); else if (modoEdicion) abrirEdicion(t) }}>
                         <TableCell className="w-6 pr-0">
-                          {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
+                          {modoReposicion && !inactivo
+                            ? <input type="checkbox" checked={selReposicion.has(t.id)} onChange={() => toggleSelRep(t.id)} onClick={e => e.stopPropagation()} />
+                            : inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
                         <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
@@ -1121,7 +1188,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
                         </TableCell>
                         <TableCell className={cellStrike}>
-                          {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
+                          {t.es_torito && (t.sexo === 'Hembra'
+                            ? <Badge className="text-xs bg-pink-100 text-pink-800 border-pink-300">♀ rep</Badge>
+                            : <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂 torito</Badge>)}
                         </TableCell>
                         <TableCell className={`text-[10px] ${cellStrike}`}>
                           {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
