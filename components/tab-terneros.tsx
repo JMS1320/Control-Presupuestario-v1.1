@@ -1675,32 +1675,32 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
           {/* ── Reporte: segmentación por rangos de peso ── */}
           <div className="mb-4 border rounded-lg p-3 bg-slate-50">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 text-xs">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
               <span className="font-semibold text-gray-700">Segmentación por peso</span>
               <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" checked={segOrigen === 'estimado'} onChange={() => { setSegOrigen('estimado'); setSegCortes(null) }} />
+                <input type="radio" checked={segOrigen === 'estimado'} onChange={() => setSegOrigen('estimado')} />
                 Estimado
-                <input type="number" step="0.1" value={segGanancia} onChange={e => { setSegGanancia(parseFloat(e.target.value) || 0); setSegCortes(null) }} disabled={segOrigen !== 'estimado'} className="w-14 border rounded px-1 py-0.5" />
+                <input type="number" step="0.1" value={segGanancia} onChange={e => setSegGanancia(parseFloat(e.target.value) || 0)} disabled={segOrigen !== 'estimado'} className="w-16 border rounded px-1 py-1" />
                 kg/día
               </label>
               <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" checked={segOrigen === 'pesada'} onChange={() => { setSegOrigen('pesada'); setSegCortes(null) }} />
+                <input type="radio" checked={segOrigen === 'pesada'} onChange={() => setSegOrigen('pesada')} />
                 Pesada
-                <select value={segFechaEff} onChange={e => { setSegFecha(e.target.value); setSegCortes(null) }} disabled={segOrigen !== 'pesada'} className="border rounded px-1 py-0.5">
+                <select value={segFechaEff} onChange={e => setSegFecha(e.target.value)} disabled={segOrigen !== 'pesada'} className="border rounded px-1 py-1">
                   {todasFechas.map(f => <option key={f} value={f}>{formatFecha(f)}</option>)}
                 </select>
               </label>
               <span className="flex items-center gap-1">
-                cada <input type="number" value={segCada} onChange={e => { setSegCada(parseInt(e.target.value) || 20); setSegCortes(null) }} className="w-14 border rounded px-1 py-0.5" /> kg
-                desde <input type="number" value={segDesdeEff} onChange={e => { setSegDesde(parseInt(e.target.value)); setSegCortes(null) }} className="w-16 border rounded px-1 py-0.5" />
+                cada <input type="number" value={segCada} onChange={e => { setSegCada(parseInt(e.target.value) || 20); setSegCortes(null) }} className="w-16 border rounded px-1 py-1" /> kg
+                desde <input type="number" value={segDesdeEff} onChange={e => { setSegDesde(parseInt(e.target.value)); setSegCortes(null) }} className="w-16 border rounded px-1 py-1" />
                 <button onClick={() => { setSegDesde(null); setSegCortes(null) }} className="underline text-gray-500" title="Volver a rangos uniformes centrados en el promedio">auto</button>
               </span>
-              <span className="text-gray-400 text-[11px]">↕ arrastrá los divisores del eje para mover los cortes</span>
+              <span className="text-gray-400 text-xs">↕ arrastrá los divisores del eje para mover los cortes · cambiar la ganancia mantiene tus rangos</span>
             </div>
             {segReporte.total ? (
               <div className="flex gap-3">
                 {/* Eje de densidad vertical con divisores arrastrables (peso ↑) */}
-                <div ref={segAxisRef} className="relative select-none shrink-0" style={{ width: 110, height: 360 }}>
+                <div ref={segAxisRef} className="relative select-none shrink-0" style={{ width: 130, height: 520 }}>
                   {segDensidad.map((b, i) => {
                     const topPct = ((segAxisMax - b.hi) / (segAxisMax - segAxisMin)) * 100
                     const hPct = ((b.hi - b.lo) / (segAxisMax - segAxisMin)) * 100
@@ -1721,7 +1721,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   })}
                 </div>
                 {/* Tabla */}
-                <table className="w-full text-xs self-start">
+                <table className="w-full text-base self-start">
                   <thead>
                     <tr className="text-gray-500 border-b">
                       <th className="text-left py-1">Rango</th>
@@ -1733,7 +1733,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <tbody>
                     {segReporte.bajo && (
                       <tr className="text-gray-500">
-                        <td className="py-0.5">&lt; {Math.round(cortesEff[0])}</td>
+                        <td className="py-2">&lt; {Math.round(cortesEff[0])}</td>
                         <td className="text-right">{segReporte.bajo.cantidad}</td>
                         <td className="text-right">{segReporte.bajo.promedio.toFixed(0)}</td>
                         <td className="text-right pr-1">{Math.round(segReporte.bajo.pct * 100)}%</td>
@@ -1741,14 +1741,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     )}
                     {segReporte.filas.map(r => (
                       <tr key={r.lo} className="hover:bg-white">
-                        <td className="py-0.5">{Math.round(r.lo)} / {Math.round(r.hi)}</td>
+                        <td className="py-2">{Math.round(r.lo)} / {Math.round(r.hi)}</td>
                         <td className="text-right">{r.cantidad}</td>
                         <td className="text-right">{r.promedio.toFixed(0)}</td>
                         <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
                       </tr>
                     ))}
                     <tr className="font-semibold border-t">
-                      <td className="py-0.5">Total</td>
+                      <td className="py-2">Total</td>
                       <td className="text-right">{segReporte.total.cantidad}</td>
                       <td className="text-right">{segReporte.total.promedio.toFixed(1).replace('.', ',')}</td>
                       <td className="text-right pr-1">100%</td>
