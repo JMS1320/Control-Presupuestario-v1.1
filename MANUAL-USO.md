@@ -129,3 +129,31 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - 🟡 **PDF:** si seleccionás una **fila de grupo**, sale 1 línea agregada (el Modal saca por-FC); FC USD (montos).
 - 🟡 **Export:** `empresa='MSA'` hardcode (ok si Cash Flow siempre es MSA).
 - 🟢 Chips: contador usa data completa vs visible (cosmético con búsqueda); mensaje de "sin datos" viejo.
+
+### ✅ CHECKLIST DE TEST — Cash Flow (listo para usar, numerado)
+> Cuando el usuario pida testear, presentar esta lista tal cual para que responda punto por punto.
+
+**🟦 E1 — Vista operativa**
+1. Barra de chips (Estado + Origen) siempre visible arriba de la tabla, con contadores.
+2. Default operativo al entrar: se ven impagos (todo menos `pagado`); `conciliado` nunca aparece.
+3. Todos / Ninguno en cada grupo de chips (al instante).
+4. Botón "Ver todo" → muestra también `pagado`.
+5. Filtro `debito`: los débitos vencidos (anteriores a hoy−7d) se ocultan; toggle "ver débitos vencidos" los muestra.
+6. Búsqueda rápida + filtro avanzado siguen andando encima de los chips.
+
+**🟩 E2 — Funciones (botones en "Modo Pagos")**
+7. Subtotales (barra): Débitos / Créditos / Neto + desglose por estado — se recalcula con chips/búsqueda.
+8. 🔗 Agrupar ⚠️(escribe BD): ≥2 filas mismo proveedor → grupo de pago. (Si sale mal, desagrupar desde el Modal.)
+9. 📄 Comprobante PDF: seleccionás filas → PDF por proveedor. ¿Sale igual al del Modal?
+10. 🏦 Exportar lote Galicia: seleccionás filas → modal de export (CBU/mail/completar). ¿Igual que desde el Modal?
+
+**🟥 E3 — SICORE (FISCAL, cuidado)**
+11. SICORE v2 desde Cash Flow: pagar FC con retención → crea el registro en `sicore_retenciones` (certificado). ⚠️ probar 1 FC controlada; si está mal, anular desde el Modal.
+12. Quincena desde `fecha_pago` (no desde venc).
+13. Enforce `fecha_pago`: no deja pasar FC a "pagar" sin fecha de pago (avisa).
+14. Abort SICORE: cancelar → la FC queda en pendiente (no pasa a pagar).
+
+**🟨 Fechas (refactor — Cash Flow + grillas)**
+15. `fecha_pago` editable en: columna Cash Flow · grilla templates · grilla ARCA.
+16. Venc read-only para templates en Cash Flow (editable solo en "Egresos sin Factura").
+17. Propagación: editar `fecha_pago` → la fila se reubica en el Cash Flow (arrastra a estimada).
