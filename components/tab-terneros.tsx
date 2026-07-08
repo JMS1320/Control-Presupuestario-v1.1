@@ -13,6 +13,7 @@ import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, 
 import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import { AnalisisProductivo } from "./analisis-productivo"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -1888,6 +1889,16 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             )}
             </>)}
           </div>
+
+          {/* ── Bloque de análisis productivo-económico (recibe segmentos en vivo) ── */}
+          <AnalisisProductivo
+            secciones={segReporte.filas.map(r => ({
+              label: r.lo === -Infinity ? `< ${Math.round(r.hi)}` : r.hi === Infinity ? `> ${Math.round(r.lo)}` : `${Math.round(r.lo)} / ${Math.round(r.hi)}`,
+              cantidad: r.cantidad,
+              promedio: r.promedio,
+            }))}
+            total={segReporte.total}
+          />
 
           {todasFechas.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
