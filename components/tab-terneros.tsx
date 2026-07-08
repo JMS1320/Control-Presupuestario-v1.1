@@ -750,7 +750,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-  }, [segDragIdx, segAxisMin, segAxisMax, segCada, cortesAuto])
+    // Deps SOLO primitivos estables durante el drag (sin cortesAuto, que es array nuevo cada render y reseteaba `del`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segDragIdx, segAxisMin, segAxisMax, segCada])
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
