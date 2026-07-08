@@ -256,7 +256,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [segFecha, setSegFecha] = useState<string>('')
   const [segCortes, setSegCortes] = useState<number[] | null>(null) // null = uniforme (cada/desde); array = cortes editados (arrastrados)
   const [segDragIdx, setSegDragIdx] = useState<number | null>(null)
+  const [segDragDelete, setSegDragDelete] = useState(false) // true si el corte arrastrado está en zona de borrado
   const segAxisRef = useRef<HTMLDivElement>(null)
+  const segCortesRef = useRef<number[] | null>(null)
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -707,29 +709,49 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     return { filas, bajo, alto, total }
   })()
 
-  // Drag de divisores del eje: mapea Y del mouse → peso y actualiza el corte arrastrado
+  // Mantener el ref de cortes sincronizado (para leer el valor fresco durante el drag)
+  useEffect(() => { segCortesRef.current = segCortes }, [segCortes])
+
+  // Drag de divisores: mapea Y del mouse → peso y mueve el corte. Si lo colapsás contra un
+  // vecino (zona de borrado) → al soltar se elimina esa división (fusiona secciones).
   useEffect(() => {
     if (segDragIdx == null) return
+    let del = false
     const onMove = (e: MouseEvent) => {
       const el = segAxisRef.current
       if (!el || segAxisMax <= segAxisMin) return
       const rect = el.getBoundingClientRect()
       const pct = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
       const w = segAxisMax - pct * (segAxisMax - segAxisMin) // top = max, bottom = min
-      setSegCortes(prev => {
-        const base = prev ?? cortesAuto
-        const arr = [...base]
-        const lo = arr[segDragIdx - 1] ?? -Infinity
-        const hi = arr[segDragIdx + 1] ?? Infinity
-        arr[segDragIdx] = Math.round(Math.min(hi - 1, Math.max(lo + 1, w)))
-        return arr
-      })
+      const base = segCortesRef.current ?? cortesAuto
+      const arr = [...base]
+      const lo = arr[segDragIdx - 1] ?? -Infinity
+      const hi = arr[segDragIdx + 1] ?? Infinity
+      const val = Math.round(Math.min(hi - 1, Math.max(lo + 1, w)))
+      arr[segDragIdx] = val
+      const T = segCada * 0.4
+      del = base.length > 2 && (
+        (segDragIdx > 0 && (val - arr[segDragIdx - 1]) <= T) ||
+        (segDragIdx < arr.length - 1 && (arr[segDragIdx + 1] - val) <= T)
+      )
+      segCortesRef.current = arr
+      setSegCortes(arr)
+      setSegDragDelete(del)
     }
-    const onUp = () => setSegDragIdx(null)
+    const onUp = () => {
+      if (del) {
+        const base = segCortesRef.current ?? cortesAuto
+        const arr = base.filter((_, i) => i !== segDragIdx)
+        segCortesRef.current = arr
+        setSegCortes(arr)
+      }
+      setSegDragIdx(null)
+      setSegDragDelete(false)
+    }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-  }, [segDragIdx, segAxisMin, segAxisMax, cortesAuto])
+  }, [segDragIdx, segAxisMin, segAxisMax, segCada, cortesAuto])
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
@@ -1722,16 +1744,21 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <span className="absolute left-0 -top-1 text-[10px] text-gray-400">{Math.round(segAxisMax)}</span>
                   <span className="absolute left-0 -bottom-1 text-[10px] text-gray-400">{Math.round(segAxisMin)}</span>
                   {cortesEff.map((c, i) => {
-                    if (i === 0 || i === cortesEff.length - 1) return null
                     const topPct = ((segAxisMax - c) / (segAxisMax - segAxisMin)) * 100
+                    const enBorrado = segDragIdx === i && segDragDelete
                     return (
                       <div key={i} className="absolute left-5 right-0 flex items-center cursor-ns-resize group" style={{ top: `${topPct}%`, transform: 'translateY(-50%)', height: 12 }}
-                           onMouseDown={(e) => { e.preventDefault(); if (segCortes == null) setSegCortes([...cortesEff]); setSegDragIdx(i) }}>
-                        <div className="h-[2px] w-full bg-blue-500 group-hover:bg-blue-700" />
-                        <span className="absolute -left-5 -top-2 text-[9px] font-medium text-blue-600 bg-white/90 px-0.5 rounded">{Math.round(c)}</span>
+                           onMouseDown={(e) => { e.preventDefault(); if (segCortes == null) { const c0 = [...cortesEff]; setSegCortes(c0); segCortesRef.current = c0 } setSegDragIdx(i) }}>
+                        <div className={`h-[2px] w-full ${enBorrado ? 'bg-red-500' : 'bg-blue-500 group-hover:bg-blue-700'}`} />
+                        <span className={`absolute -left-6 -top-2 text-[9px] font-medium px-0.5 rounded ${enBorrado ? 'text-red-600 bg-red-50' : 'text-blue-600 bg-white/90'}`}>{enBorrado ? '✕ borrar' : Math.round(c)}</span>
                       </div>
                     )
                   })}
+                  {/* Crear sección desde el tope (más pesados) o el piso (más livianos) */}
+                  <button className="absolute right-0 -top-2 text-sm leading-none text-emerald-600 hover:text-emerald-800 font-bold" title="Crear sección arriba (más pesados)"
+                          onClick={() => { const nuevo = Math.min(Math.round(cortesEff[cortesEff.length - 1] + segCada), Math.round(segMaxPeso)); if (nuevo > cortesEff[cortesEff.length - 1]) setSegCortes([...cortesEff, nuevo]) }}>＋</button>
+                  <button className="absolute right-0 -bottom-2 text-sm leading-none text-emerald-600 hover:text-emerald-800 font-bold" title="Crear sección abajo (más livianos)"
+                          onClick={() => { const nuevo = Math.max(Math.round(cortesEff[0] - segCada), Math.round(segMinPeso)); if (nuevo < cortesEff[0]) setSegCortes([nuevo, ...cortesEff]) }}>＋</button>
                 </div>
                 {/* Tabla */}
                 <table className="w-full text-base self-start">
