@@ -1665,7 +1665,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           Modal: Historial pesadas (pivot table)
       ════════════════════════════════════════════════════════════════════ */}
       <Dialog open={modalHistorial} onOpenChange={setModalHistorial}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-auto">
+        <DialogContent className="max-w-[97vw] w-[97vw] max-h-[95vh] h-[95vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-4 w-4" />
@@ -1700,7 +1700,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             {segReporte.total ? (
               <div className="flex gap-3">
                 {/* Eje de densidad vertical con divisores arrastrables (peso ↑) */}
-                <div ref={segAxisRef} className="relative select-none shrink-0" style={{ width: 100, height: 240 }}>
+                <div ref={segAxisRef} className="relative select-none shrink-0" style={{ width: 110, height: 360 }}>
                   {segDensidad.map((b, i) => {
                     const topPct = ((segAxisMax - b.hi) / (segAxisMax - segAxisMin)) * 100
                     const hPct = ((b.hi - b.lo) / (segAxisMax - segAxisMin)) * 100
