@@ -247,6 +247,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Historial
   const [modalHistorial, setModalHistorial] = useState(false)
+  // Segmentación por rangos de peso (reporte arriba del historial)
+  const [segOrigen, setSegOrigen] = useState<'estimado' | 'pesada'>('estimado')
+  const [segGanancia, setSegGanancia] = useState(0.6)
+  const [segCada, setSegCada] = useState(20)
+  const [segDesde, setSegDesde] = useState<number | null>(null) // null = auto (centrado en el promedio)
+  const [segFecha, setSegFecha] = useState<string>('')
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -631,6 +637,41 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     fechaActual: f,
     dias: Math.round((new Date(f).getTime() - new Date(todasFechas[i]).getTime()) / 86400000),
   }))
+
+  // ── Segmentación por rangos de peso (reporte arriba del historial) ──
+  const segFechaEff = segFecha || todasFechas[todasFechas.length - 1] || ''
+  const segPesos: number[] = ternerosFiltrados
+    .filter(t => t.pesadas_terneros.length > 0)
+    .map(t => segOrigen === 'estimado'
+      ? getPesoEstimadoHoy(t.pesadas_terneros, segGanancia)
+      : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
+    .filter((p): p is number => p != null)
+  // Default "desde": centra el promedio (redondeado a decenas) en el rango medio y baja de a `cada` hasta cubrir el mínimo
+  const segDesdeAuto = (() => {
+    if (!segPesos.length) return 0
+    const min = Math.min(...segPesos)
+    const prom = segPesos.reduce((s, p) => s + p, 0) / segPesos.length
+    const centro = Math.round(prom / 10) * 10
+    let lo = centro - segCada / 2
+    while (lo > min) lo -= segCada
+    return lo
+  })()
+  const segDesdeEff = segDesde ?? segDesdeAuto
+  const segReporte = (() => {
+    if (!segPesos.length) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], bajo: null as null | { cantidad: number; promedio: number; pct: number }, total: null as null | { cantidad: number; promedio: number } }
+    const max = Math.max(...segPesos)
+    const filas: { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] = []
+    for (let lo = segDesdeEff; lo < max; lo += segCada) {
+      const hi = lo + segCada
+      const en = segPesos.filter(p => p >= lo && p < hi)
+      if (en.length === 0) continue
+      filas.push({ lo, hi, cantidad: en.length, promedio: en.reduce((s, p) => s + p, 0) / en.length, pct: en.length / segPesos.length })
+    }
+    const bajoArr = segPesos.filter(p => p < segDesdeEff)
+    const bajo = bajoArr.length ? { cantidad: bajoArr.length, promedio: bajoArr.reduce((s, p) => s + p, 0) / bajoArr.length, pct: bajoArr.length / segPesos.length } : null
+    const total = { cantidad: segPesos.length, promedio: segPesos.reduce((s, p) => s + p, 0) / segPesos.length }
+    return { filas, bajo, total }
+  })()
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
@@ -1578,6 +1619,69 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               Historial de pesadas — {todasFechas.length} fecha{todasFechas.length !== 1 ? 's' : ''}
             </DialogTitle>
           </DialogHeader>
+
+          {/* ── Reporte: segmentación por rangos de peso ── */}
+          <div className="mb-4 border rounded-lg p-3 bg-slate-50">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2 text-xs">
+              <span className="font-semibold text-gray-700">Segmentación por peso</span>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" checked={segOrigen === 'estimado'} onChange={() => setSegOrigen('estimado')} />
+                Estimado
+                <input type="number" step="0.1" value={segGanancia} onChange={e => setSegGanancia(parseFloat(e.target.value) || 0)} disabled={segOrigen !== 'estimado'} className="w-14 border rounded px-1 py-0.5" />
+                kg/día
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" checked={segOrigen === 'pesada'} onChange={() => setSegOrigen('pesada')} />
+                Pesada
+                <select value={segFechaEff} onChange={e => setSegFecha(e.target.value)} disabled={segOrigen !== 'pesada'} className="border rounded px-1 py-0.5">
+                  {todasFechas.map(f => <option key={f} value={f}>{formatFecha(f)}</option>)}
+                </select>
+              </label>
+              <span className="flex items-center gap-1">
+                cada <input type="number" value={segCada} onChange={e => setSegCada(parseInt(e.target.value) || 20)} className="w-14 border rounded px-1 py-0.5" /> kg
+                desde <input type="number" value={segDesdeEff} onChange={e => setSegDesde(parseInt(e.target.value))} className="w-16 border rounded px-1 py-0.5" />
+                <button onClick={() => setSegDesde(null)} className="underline text-gray-500" title="Volver a centrar en el promedio">auto</button>
+              </span>
+            </div>
+            {segReporte.total ? (
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b">
+                    <th className="text-left py-1">Rango</th>
+                    <th className="text-right">Cantidad</th>
+                    <th className="text-right">Promedio</th>
+                    <th className="text-right pr-1">% sobre total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {segReporte.bajo && (
+                    <tr className="text-gray-500">
+                      <td className="py-0.5">&lt; {segDesdeEff}</td>
+                      <td className="text-right">{segReporte.bajo.cantidad}</td>
+                      <td className="text-right">{segReporte.bajo.promedio.toFixed(0)}</td>
+                      <td className="text-right pr-1">{Math.round(segReporte.bajo.pct * 100)}%</td>
+                    </tr>
+                  )}
+                  {segReporte.filas.map(r => (
+                    <tr key={r.lo} className="hover:bg-white">
+                      <td className="py-0.5">{r.lo} / {r.hi}</td>
+                      <td className="text-right">{r.cantidad}</td>
+                      <td className="text-right">{r.promedio.toFixed(0)}</td>
+                      <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
+                    </tr>
+                  ))}
+                  <tr className="font-semibold border-t">
+                    <td className="py-0.5">Total</td>
+                    <td className="text-right">{segReporte.total.cantidad}</td>
+                    <td className="text-right">{segReporte.total.promedio.toFixed(1).replace('.', ',')}</td>
+                    <td className="text-right pr-1">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-gray-400 text-xs">Sin pesos para segmentar (elegí "Estimado" o una pesada con datos).</p>
+            )}
+          </div>
 
           {todasFechas.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
