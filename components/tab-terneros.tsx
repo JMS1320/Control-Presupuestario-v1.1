@@ -249,7 +249,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [modalHistorial, setModalHistorial] = useState(false)
   // Segmentación por rangos de peso (reporte arriba del historial)
   const [segOrigen, setSegOrigen] = useState<'estimado' | 'pesada'>('estimado')
-  const [segSexo, setSegSexo] = useState<'todos' | 'Macho' | 'Hembra'>('todos')
+  // Grupos: reposición (torito=macho rep / ternera_rep=hembra rep, ambos con es_torito=true) vs venta (macho/hembra con es_torito=false)
+  const [segGrupos, setSegGrupos] = useState<Set<string>>(new Set(['torito', 'ternera_rep', 'macho', 'hembra']))
   const [segGanancia, setSegGanancia] = useState(0.6)
   const [segCada, setSegCada] = useState(20)
   const [segDesde, setSegDesde] = useState<number | null>(null) // null = auto (centrado en el promedio)
@@ -646,8 +647,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // ── Segmentación por rangos de peso (reporte arriba del historial) ──
   const segFechaEff = segFecha || todasFechas[todasFechas.length - 1] || ''
+  // Grupo de un animal según es_torito (=reposición) + sexo
+  const grupoDe = (t: Ternero): string =>
+    t.es_torito ? (t.sexo === 'Macho' ? 'torito' : 'ternera_rep')
+                : (t.sexo === 'Macho' ? 'macho' : 'hembra')
   const segPesos: number[] = ternerosFiltrados
-    .filter(t => t.pesadas_terneros.length > 0 && (segSexo === 'todos' || t.sexo === segSexo))
+    .filter(t => t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
     .map(t => segOrigen === 'estimado'
       ? getPesoEstimadoHoy(t.pesadas_terneros, segGanancia)
       : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
@@ -1705,13 +1710,21 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           <div className="mb-4 border rounded-lg p-3 bg-slate-50">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
               <span className="font-semibold text-gray-700">Segmentación por peso</span>
-              <span className="flex items-center gap-1">
-                Sexo
-                <select value={segSexo} onChange={e => setSegSexo(e.target.value as 'todos' | 'Macho' | 'Hembra')} className="border rounded px-1 py-1">
-                  <option value="todos">Todos</option>
-                  <option value="Macho">♂ Machos</option>
-                  <option value="Hembra">♀ Hembras</option>
-                </select>
+              <span className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-gray-500">Reposición:</span>
+                {([['torito', '🐂 Toritos'], ['ternera_rep', '♀ Terneras rep']] as const).map(([k, lbl]) => {
+                  const on = segGrupos.has(k)
+                  return <button key={k} type="button" onClick={() => setSegGrupos(prev => { const n = new Set(prev); if (on) n.delete(k); else n.add(k); return n })}
+                    className={`px-2 py-0.5 rounded-full border text-xs ${on ? 'bg-amber-100 border-amber-400 text-amber-800' : 'bg-white border-gray-300 text-gray-400 line-through'}`}>{lbl}</button>
+                })}
+                <span className="text-gray-500 ml-2">Venta:</span>
+                {([['macho', '♂ Machos'], ['hembra', '♀ Hembras']] as const).map(([k, lbl]) => {
+                  const on = segGrupos.has(k)
+                  return <button key={k} type="button" onClick={() => setSegGrupos(prev => { const n = new Set(prev); if (on) n.delete(k); else n.add(k); return n })}
+                    className={`px-2 py-0.5 rounded-full border text-xs ${on ? 'bg-sky-100 border-sky-400 text-sky-800' : 'bg-white border-gray-300 text-gray-400 line-through'}`}>{lbl}</button>
+                })}
+                <button type="button" onClick={() => setSegGrupos(new Set(['torito', 'ternera_rep', 'macho', 'hembra']))} className="text-xs text-blue-600 hover:underline ml-1">Todos</button>
+                <button type="button" onClick={() => setSegGrupos(new Set())} className="text-xs text-blue-600 hover:underline">Ninguno</button>
               </span>
               <label className="flex items-center gap-1 cursor-pointer">
                 <input type="radio" checked={segOrigen === 'estimado'} onChange={() => setSegOrigen('estimado')} />
