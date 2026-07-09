@@ -241,6 +241,21 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
   const totalSeg = etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal
   useEffect(() => { onTotal?.(totalSeg) }, [totalSeg]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Contra-cálculo: punto de equilibrio (etapa 1 / decisión de entrada) ──
+  // Coincide EXACTO con el modelo (test verificado). Precios NETOS = tras desbaste+CZ+mort.
+  const pIniBE = num(pesoInicio)
+  const convBE = num(conversion)
+  const PcEf = pIniBE > 0 ? c.netoEnt / pIniBE : 0         // $/kg peso entrada, neto
+  const PvEf = c.pFin > 0 ? c.czNetoSal / c.pFin : 0       // $/kg peso final, neto
+  const perdidaIniCab = pIniBE * (PcEf - PvEf)             // pérdida por cab a recuperar
+  const costoKgProd = c.kgGanados > 0 ? -c.costoRacion / c.kgGanados : 0
+  const margenKg = PvEf - costoKgProd
+  const kgRecuperar = margenKg !== 0 ? perdidaIniCab / margenKg : Infinity
+  const diasRecuperar = convBE > 0 ? kgRecuperar / convBE : Infinity
+  const diasRestantes = c.d - diasRecuperar
+  const beValido = margenKg > 0 && c.kgGanados > 0 && pIniBE > 0
+  const gananciaBECab = margenKg * convBE * diasRestantes  // = c.gananciaCab
+
   // ── Export Excel / PDF ──
   const round1 = (n: number) => Math.round(n * 10) / 10
   const nombreArch = () => `Analisis_${(fase || "engorde").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}`
@@ -277,6 +292,17 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
       [],
       ["Ganancia / cabeza", Math.round(c.gananciaCab)],
       ["Ganancia total", Math.round(c.gananciaTotal)],
+      [],
+      ["PUNTO DE EQUILIBRIO"],
+      ...(beValido ? [
+        ["Precio neto entrada $/kg", round1(PcEf)],
+        ["Precio neto venta $/kg", round1(PvEf)],
+        ["Costo por kg producido", round1(costoKgProd)],
+        ["Margen por kg producido", round1(margenKg)],
+        ["Pérdida inicial a recuperar", Math.round(perdidaIniCab * c.cant)],
+        ["Recuperar kg", Math.round(kgRecuperar), "Recuperar días", Math.round(diasRecuperar)],
+        ["Días productivos tuyos", Math.round(diasRestantes), "de", c.d],
+      ] as (string | number)[][] : [["Margen por kg ≤ 0 → operación perdedora (no recupera)"]]),
     ]
     if (verB) {
       rows.push([], ["COMPARACIÓN ESCENARIO B (overrides; vacío = usa A)"])
@@ -352,6 +378,21 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
     doc.text(`Ganancia / cabeza: $${money(c.gananciaCab)}`, 14, yEnd)
     doc.text(`Ganancia total (x${c.cant}): $${money(c.gananciaTotal)}`, 14, yEnd + 7)
     let yCur = yEnd + 7
+    if (beValido) {
+      autoTable(doc, {
+        startY: yCur + 5, theme: "grid", styles: { fontSize: 8 },
+        head: [["Punto de equilibrio", "Valor"]],
+        body: [
+          ["Precio neto entrada / venta", `$${money(PcEf)} / $${money(PvEf)} por kg`],
+          ["Costo por kg producido", `$${money(costoKgProd)}`],
+          ["Margen por kg producido", `$${money(margenKg)}`],
+          ["Pérdida inicial a recuperar", `$${money(perdidaIniCab * c.cant)}`],
+          ["Recuperás en", `${Math.round(kgRecuperar)} kg · ${Math.round(diasRecuperar)} días`],
+          ["Días productivos tuyos", `${Math.round(diasRestantes)} de ${c.d}`],
+        ],
+      })
+      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    }
     if (verB) {
       autoTable(doc, {
         startY: yEnd + 12, theme: "grid", styles: { fontSize: 8 },
@@ -588,6 +629,28 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
                 </tr>
               </tbody>
             </table>
+
+            {/* Contra-cálculo: punto de equilibrio */}
+            <div className="mt-2 p-2 rounded-lg bg-amber-50/60 border border-amber-200">
+              <div className="font-medium text-gray-600 mb-1">Punto de equilibrio <span className="text-xs font-normal text-gray-400">(otra lectura del mismo número{etapas.length > 0 ? " · sobre la etapa 1" : ""})</span></div>
+              {beValido ? (
+                <div className="space-y-0.5">
+                  <div className="flex justify-between"><span className={lbl}>Precio neto entrada / venta</span><span>${money(PcEf)} / ${money(PvEf)} por kg</span></div>
+                  <div className="flex justify-between"><span className={lbl}>Costo por kg producido</span><span>${money(costoKgProd)}</span></div>
+                  <div className="flex justify-between"><span className={lbl}>Margen por kg producido</span><span className="text-emerald-700 font-medium">${money(margenKg)}</span></div>
+                  <div className="flex justify-between"><span className={lbl}>Pérdida inicial a recuperar</span><span className="text-red-600">${money(perdidaIniCab * c.cant)}</span></div>
+                  <div className="flex justify-between"><span className={lbl}>Recuperás en</span><span>{Math.round(kgRecuperar)} kg · {Math.round(diasRecuperar)} días</span></div>
+                  <div className="flex justify-between"><span className={lbl}>Días productivos "tuyos"</span><span className={diasRestantes >= 0 ? "text-emerald-700 font-medium" : "text-red-600 font-medium"}>{Math.round(diasRestantes)} de {c.d}</span></div>
+                  <div className="flex justify-between border-t pt-0.5 mt-0.5"><span className={lbl}>Ganancia por este camino</span><span className={gananciaBECab >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>${money(gananciaBECab * c.cant)} ✓</span></div>
+                </div>
+              ) : (
+                <div className="text-red-600 text-xs">
+                  {c.kgGanados <= 0 || pIniBE <= 0
+                    ? "Faltan peso inicial / días para calcular el equilibrio."
+                    : `Margen por kg ≤ 0 ($${money(margenKg)}) → operación perdedora: no se recupera con más días de encierre.`}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Cadena de etapas (encadenamiento) */}
