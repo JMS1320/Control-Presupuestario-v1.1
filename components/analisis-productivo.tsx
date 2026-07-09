@@ -224,14 +224,16 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   // Ganancia etapa 1 = V1 − compra − ración1; etapa k = Vk − V(k−1) − ración_k (costo de oportunidad).
   interface PasoCadena {
     nombre: string; fechaIni: string; fechaFin: string
-    pIni: number; pFin: number; cant: number; V: number; R: number; ganancia: number
+    pIni: number; pFin: number; cant: number; V: number; R: number; vPrev: number; ganancia: number
+    calc: ReturnType<typeof calcular>
   }
   const cadena: { pasos: PasoCadena[]; totalPunta: number } = (() => {
     const pasos: PasoCadena[] = []
     // Etapa 1 (del estado top-level, ya calculada en c)
     const V1 = c.czNetoSal * c.cant
     const R1 = -c.costoRacion * c.cant
-    pasos.push({ nombre: fase || "Etapa 1", fechaIni: fechaInicio, fechaFin, pIni: num(pesoInicio), pFin: c.pFin, cant: c.cant, V: V1, R: R1, ganancia: c.gananciaTotal })
+    const P = c.netoEnt * c.cant // compra (costo de entrada de la etapa 1)
+    pasos.push({ nombre: fase || "Etapa 1", fechaIni: fechaInicio, fechaFin, pIni: num(pesoInicio), pFin: c.pFin, cant: c.cant, V: V1, R: R1, vPrev: P, ganancia: c.gananciaTotal, calc: c })
     let prevV = V1
     let cantAct = c.cant * (1 - pct(mortandad))
     let pesoAct = c.pFin
@@ -247,7 +249,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
       const Rk = -ck.costoRacion * ck.cant
       const gk = Vk - prevV - Rk
       const fFin = addDays(fechaAct, parseInt(e.dias) || 0)
-      pasos.push({ nombre: e.nombre || `Etapa ${idx + 2}`, fechaIni: fechaAct, fechaFin: fFin, pIni: pesoAct, pFin: ck.pFin, cant: ck.cant, V: Vk, R: Rk, ganancia: gk })
+      pasos.push({ nombre: e.nombre || `Etapa ${idx + 2}`, fechaIni: fechaAct, fechaFin: fFin, pIni: pesoAct, pFin: ck.pFin, cant: ck.cant, V: Vk, R: Rk, vPrev: prevV, ganancia: gk, calc: ck })
       prevV = Vk
       cantAct = ck.cant * (1 - pct(e.mort))
       pesoAct = ck.pFin
@@ -713,27 +715,53 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
 
             {etapas.map((e, idx) => {
               const paso = cadena.pasos[idx + 1]
+              const pc = paso.calc
+              const gCab = paso.cant > 0 ? paso.ganancia / paso.cant : 0
+              const vPrevCab = paso.cant > 0 ? paso.vPrev / paso.cant : 0
               return (
-                <div key={idx} className="p-2 rounded-lg border border-teal-200 bg-white/60">
-                  <div className="flex items-center gap-2 mb-1">
+                <div key={idx} className="p-2 rounded-lg border border-teal-200 bg-white/60 space-y-2">
+                  <div className="flex items-center gap-2">
                     <input value={e.nombre} onChange={ev => updEtapa(idx, "nombre", ev.target.value)} className="border rounded px-1 py-0.5 text-sm font-medium w-32" />
-                    <span className="text-xs text-gray-400">{paso.fechaIni} → {paso.fechaFin} · {kg(paso.pIni)}→{kg(paso.pFin)} kg · {Math.round(paso.cant)} cab</span>
+                    <span className="text-xs text-gray-400">{paso.fechaIni} → {paso.fechaFin} · {Math.round(paso.cant)} cab heredadas</span>
                     <button type="button" onClick={() => delEtapa(idx)} className="ml-auto text-xs text-red-600 hover:underline">✕ quitar</button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  {/* Inputs agrupados (mismo estilo que la etapa 1) */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span className="font-medium text-gray-600">Período</span>
                     <span className="flex items-center gap-1"><span className={lbl}>Días</span><input value={e.dias} onChange={ev => updEtapa(idx, "dias", ev.target.value)} className={`${inp} w-14`} /></span>
-                    <span className="flex items-center gap-1"><span className={lbl}>Conversión</span><input value={e.conversion} onChange={ev => updEtapa(idx, "conversion", ev.target.value)} className={`${inp} w-14`} /></span>
-                    <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={e.precioVenta} onChange={ev => updEtapa(idx, "precioVenta", ev.target.value)} className={`${inp} w-20`} /></span>
-                    <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={e.maizPrecio} onChange={ev => updEtapa(idx, "maizPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
-                    <span className="flex items-center gap-1"><span className={lbl}>Conc. $/kg</span><input value={e.concPrecio} onChange={ev => updEtapa(idx, "concPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Conversión kg/día</span><input value={e.conversion} onChange={ev => updEtapa(idx, "conversion", ev.target.value)} className={`${inp} w-16`} /></span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span className="font-medium text-gray-600">Venta</span>
+                    <span className="flex items-center gap-1"><span className={lbl}>$/kg</span><input value={e.precioVenta} onChange={ev => updEtapa(idx, "precioVenta", ev.target.value)} className={`${inp} w-20`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>Desbaste %</span><input value={e.desbSal} onChange={ev => updEtapa(idx, "desbSal", ev.target.value)} className={`${inp} w-12`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>CZ %</span><input value={e.czSal} onChange={ev => updEtapa(idx, "czSal", ev.target.value)} className={`${inp} w-12`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>Mort. %</span><input value={e.mort} onChange={ev => updEtapa(idx, "mort", ev.target.value)} className={`${inp} w-12`} /></span>
-                    <span className="flex items-center gap-1"><span className={lbl}>Ración %</span><input value={e.racionPV} onChange={ev => updEtapa(idx, "racionPV", ev.target.value)} className={`${inp} w-12`} /></span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                    <span className="font-medium text-gray-600">Ración</span>
+                    <span className="flex items-center gap-1"><span className={lbl}>% PV</span><input value={e.racionPV} onChange={ev => updEtapa(idx, "racionPV", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={e.maizPrecio} onChange={ev => updEtapa(idx, "maizPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Conc. $/kg</span><input value={e.concPrecio} onChange={ev => updEtapa(idx, "concPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>Maíz %</span><input value={e.maizPct} onChange={ev => updEtapa(idx, "maizPct", ev.target.value)} className={`${inp} w-12`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>Conc. %</span><input value={e.concPct} onChange={ev => updEtapa(idx, "concPct", ev.target.value)} className={`${inp} w-12`} /></span>
                   </div>
-                  <div className="text-xs mt-1">Ganancia de la etapa (vs vender antes): <b className={paso.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}>${money(paso.ganancia)}</b></div>
+                  {/* Desglose de la etapa (por cabeza) — mismo formato que la etapa 1 */}
+                  <table className="text-sm w-full">
+                    <tbody>
+                      <tr><td className={`${lbl} pr-4`}>Peso heredado → fin</td><td className="text-right">{kg(paso.pIni)} → {kg(pc.pFin)} kg</td></tr>
+                      <tr className="text-red-500"><td className="pr-4 pl-2 text-xs">merma mortandad ({e.mort || 0}%)</td><td className="text-right">−{kg(pc.mermaKgMort)} kg</td></tr>
+                      <tr className="text-red-500"><td className="pr-4 pl-2 text-xs">merma desbaste ({e.desbSal || 0}%)</td><td className="text-right">−{kg(pc.mermaKgSal)} kg</td></tr>
+                      <tr><td className={`${lbl} pr-4`}>Peso neto</td><td className="text-right">{kg(pc.pNetoSal)} kg</td></tr>
+                      <tr><td className={`${lbl} pr-4`}>Monto bruto / cab</td><td className="text-right">${money(pc.brutoSal)}</td></tr>
+                      <tr className="text-red-500"><td className="pr-4 pl-2 text-xs">merma CZ ({e.czSal || 0}%)</td><td className="text-right">−${money(pc.mermaCzSal)}</td></tr>
+                      <tr className="font-medium border-t"><td className="pr-4 py-0.5">Venta hipotética / cab</td><td className="text-right">${money(pc.czNetoSal)}</td></tr>
+                      <tr className="text-red-500"><td className="pr-4 pl-2 text-xs">− ración / cab</td><td className="text-right">−${money(-pc.costoRacion)}</td></tr>
+                      <tr className="text-red-500"><td className="pr-4 pl-2 text-xs">− venta etapa anterior / cab <span className="text-gray-400">(costo oport.)</span></td><td className="text-right">−${money(vPrevCab)}</td></tr>
+                      <tr className="font-semibold border-t"><td className="pr-4 py-0.5">Ganancia etapa / cab</td><td className={`text-right ${gCab >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(gCab)}</td></tr>
+                      <tr className="font-semibold"><td className="pr-4">Ganancia etapa total (× {Math.round(paso.cant)})</td><td className={`text-right ${paso.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(paso.ganancia)}</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               )
             })}
