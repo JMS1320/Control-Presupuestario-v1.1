@@ -1,0 +1,68 @@
+/**
+ * EnviarMailsDetalle.gs — crea BORRADORES en Gmail desde la cola `public.mails_pago`.
+ *
+ * Flujo: la app encola filas (estado='pendiente') con el Detalle PDF (+ certificado SICORE) en base64.
+ * Esta función lee las pendientes, crea un BORRADOR por cada una con los adjuntos, y marca 'borrador'.
+ * Sin horarios: se corre a MANO (o desde un botón). En lote. Los primeros los revisás en Borradores
+ * de Gmail y los mandás vos. Cuando veas que todo anda bien → cambiar createDraft por sendEmail (abajo).
+ *
+ * CONFIGURAR (una vez): SUPABASE_URL y SUPABASE_KEY (anon o service role del proyecto).
+ * NO commitear la key real en este archivo si el repo es público.
+ */
+
+var SUPABASE_URL = 'https://TU_PROJECT_REF.supabase.co';
+var SUPABASE_KEY = 'TU_ANON_O_SERVICE_KEY';
+
+/** Correr esta función a mano (o con un trigger/botón). */
+function prepararBorradores() {
+  var pendientes = fetchPendientes_();
+  if (!pendientes.length) { Logger.log('Sin mails pendientes.'); return; }
+
+  var ok = 0, err = 0;
+  pendientes.forEach(function (m) {
+    try {
+      var adjuntos = [];
+      if (m.detalle_pdf) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
+      if (m.retencion_pdf && m.adjuntar_retencion) adjuntos.push(base64ToPdfBlob_(m.retencion_pdf, 'CertificadoRetencion.pdf'));
+
+      var draft = GmailApp.createDraft(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
+      // Cuando esté validado, reemplazar la línea de arriba por envío directo:
+      // GmailApp.sendEmail(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
+
+      actualizar_(m.id, { estado: 'borrador', gmail_draft_id: draft.getId(), error: null });
+      ok++;
+    } catch (e) {
+      actualizar_(m.id, { estado: 'error', error: String(e) });
+      err++;
+    }
+  });
+  Logger.log('Borradores creados: ' + ok + ' · errores: ' + err);
+}
+
+function fetchPendientes_() {
+  var url = SUPABASE_URL + '/rest/v1/mails_pago?estado=eq.pendiente&select=*&order=creado_at.asc';
+  var res = UrlFetchApp.fetch(url, { headers: headers_(), muteHttpExceptions: true });
+  if (res.getResponseCode() >= 300) throw new Error('Supabase ' + res.getResponseCode() + ': ' + res.getContentText());
+  return JSON.parse(res.getContentText() || '[]');
+}
+
+function actualizar_(id, campos) {
+  var url = SUPABASE_URL + '/rest/v1/mails_pago?id=eq.' + id;
+  UrlFetchApp.fetch(url, {
+    method: 'patch', headers: headers_(), payload: JSON.stringify(campos), muteHttpExceptions: true
+  });
+}
+
+function headers_() {
+  return {
+    'apikey': SUPABASE_KEY,
+    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=minimal'
+  };
+}
+
+function base64ToPdfBlob_(b64, nombre) {
+  var bytes = Utilities.base64Decode(b64);
+  return Utilities.newBlob(bytes, 'application/pdf', nombre);
+}
