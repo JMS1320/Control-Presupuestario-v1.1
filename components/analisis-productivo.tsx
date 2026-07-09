@@ -10,7 +10,7 @@
 //   Días ↔ Fecha Fin y Maíz% ↔ Concentrado% (edito uno, se calcula el otro).
 // v1: un solo bloque (sin escalonar etapas ni agrupar segmentos — pendiente).
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -43,6 +43,54 @@ const diffDays = (a: string, b: string) => {
   const da = new Date(a + "T00:00:00"), db = new Date(b + "T00:00:00")
   if (isNaN(da.getTime()) || isNaN(db.getTime())) return 0
   return Math.round((db.getTime() - da.getTime()) / 86400000)
+}
+
+// Inputs ya parseados (porcentajes como fracción, ej. 0.03). Función pura → se corre 1 vez por escenario.
+interface CalcInputs {
+  cant: number; d: number; conv: number; pIni: number
+  desbEnt: number; desbSal: number; czEnt: number; czSal: number; mort: number
+  precioCompra: number; precioVenta: number
+  racionPV: number; maizPct: number; concPct: number; maizPrecio: number; concPrecio: number
+}
+
+function calcular(i: CalcInputs) {
+  const kgGanados = i.d * i.conv                     // H17
+  const pFin = i.pIni + kgGanados                    // L16
+  const pProm = (pFin + i.pIni) / 2                  // H18
+  // Entrada
+  const mermaKgEnt = i.pIni * i.desbEnt
+  const pNetoEnt = i.pIni - mermaKgEnt               // C17
+  const brutoEnt = pNetoEnt * i.precioCompra         // C19
+  const mermaCzEnt = brutoEnt * i.czEnt
+  const netoEnt = brutoEnt - mermaCzEnt              // C20 = C28
+  // Salida
+  const mermaKgMort = pFin * i.mort                  // mortandad sobre bruto vendido
+  const pTrasMort = pFin - mermaKgMort               // saldo tras mortandad
+  const mermaKgSal = pTrasMort * i.desbSal           // desbaste sobre el saldo
+  const pNetoSal = pTrasMort - mermaKgSal            // L17
+  const brutoSal = pNetoSal * i.precioVenta          // L19
+  const mermaCzSal = brutoSal * i.czSal
+  const czNetoSal = brutoSal - mermaCzSal            // L20
+  // Ración
+  const racKgDia = pProm * i.racionPV                // H20
+  const maizKgDia = racKgDia * i.maizPct             // H22
+  const concKgDia = racKgDia * i.concPct             // H23
+  const maizCosto = -i.maizPrecio * maizKgDia * i.d  // L22 (por cabeza)
+  const concCosto = -concKgDia * i.d * i.concPrecio  // L23 (por cabeza)
+  const costoRacion = maizCosto + concCosto          // L24
+  const maizKgLote = maizKgDia * i.d * i.cant        // H24
+  const concKgLote = concKgDia * i.d * i.cant        // H25
+  // Resultado
+  const netoSalida = czNetoSal + costoRacion         // L28
+  const gananciaCab = netoSalida - netoEnt           // L30
+  const gananciaTotal = gananciaCab * i.cant         // L31
+  return {
+    cant: i.cant, d: i.d, kgGanados, pFin, pProm,
+    mermaKgEnt, pNetoEnt, brutoEnt, mermaCzEnt, netoEnt,
+    mermaKgMort, pTrasMort, mermaKgSal, pNetoSal, brutoSal, mermaCzSal, czNetoSal,
+    racKgDia, maizKgDia, concKgDia, maizCosto, concCosto, costoRacion, maizKgLote, concKgLote,
+    netoSalida, gananciaCab, gananciaTotal,
+  }
 }
 
 export function AnalisisProductivo({ secciones, total }: Props) {
@@ -96,61 +144,34 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     }
   }
 
-  // ── Cálculo (mirror del Excel) ──
-  const c = useMemo(() => {
-    const cant = num(cantidad)
-    const d = parseInt(dias) || 0
-    const conv = num(conversion)
-    const pIni = num(pesoInicio)
-    const kgGanados = d * conv                       // H17
-    const pFin = pIni + kgGanados                    // L16
-    const pProm = (pFin + pIni) / 2                  // H18
+  // Overrides del escenario B (vacío = usa A)
+  const [bPrecioVenta, setBPrecioVenta] = useState("")
+  const [bPrecioCompra, setBPrecioCompra] = useState("")
+  const [bMaiz, setBMaiz] = useState("")
+  const [bConc, setBConc] = useState("")
+  const [bMort, setBMort] = useState("")
+  const [bConv, setBConv] = useState("")
+  const [bDias, setBDias] = useState("")
+  const [verB, setVerB] = useState(false)
 
-    // Entrada
-    const dEnt = pct(desbEnt)
-    const mermaKgEnt = pIni * dEnt
-    const pNetoEnt = pIni - mermaKgEnt               // C17
-    const brutoEnt = pNetoEnt * num(precioCompra)    // C19
-    const czEntV = pct(czEnt)
-    const mermaCzEnt = brutoEnt * czEntV
-    const netoEnt = brutoEnt - mermaCzEnt            // C20 = C28
-
-    // Salida
-    const mortV = pct(mortandad)
-    const mermaKgMort = pFin * mortV                 // mortandad: descuento en kg sobre el bruto vendido
-    const pTrasMort = pFin - mermaKgMort             // saldo tras mortandad
-    const dSal = pct(desbSal)
-    const mermaKgSal = pTrasMort * dSal              // desbaste sobre el saldo
-    const pNetoSal = pTrasMort - mermaKgSal          // L17
-    const brutoSal = pNetoSal * num(precioVenta)     // L19
-    const czSalV = pct(czSal)
-    const mermaCzSal = brutoSal * czSalV
-    const czNetoSal = brutoSal - mermaCzSal          // L20
-
-    // Ración
-    const racKgDia = pProm * pct(racionPV)           // H20
-    const mPct = pct(maizPct), cPct = pct(concPct)
-    const maizKgDia = racKgDia * mPct                // H22
-    const concKgDia = racKgDia * cPct                // H23
-    const maizCosto = -num(maizPrecio) * maizKgDia * d   // L22 (por cabeza)
-    const concCosto = -concKgDia * d * num(concPrecio)   // L23 (por cabeza)
-    const costoRacion = maizCosto + concCosto        // L24
-    const maizKgLote = maizKgDia * d * cant          // H24
-    const concKgLote = concKgDia * d * cant          // H25
-
-    // Resultado
-    const netoSalida = czNetoSal + costoRacion       // L28
-    const gananciaCab = netoSalida - netoEnt         // L30
-    const gananciaTotal = gananciaCab * cant         // L31
-
-    return {
-      cant, d, kgGanados, pFin, pProm,
-      mermaKgEnt, pNetoEnt, brutoEnt, mermaCzEnt, netoEnt,
-      mermaKgMort, pTrasMort, mermaKgSal, pNetoSal, brutoSal, mermaCzSal, czNetoSal,
-      racKgDia, maizKgDia, concKgDia, maizCosto, concCosto, costoRacion, maizKgLote, concKgLote,
-      netoSalida, gananciaCab, gananciaTotal,
-    }
-  }, [cantidad, dias, conversion, pesoInicio, mortandad, desbEnt, desbSal, czEnt, czSal, precioCompra, precioVenta, racionPV, maizPct, concPct, maizPrecio, concPrecio])
+  // ── Cálculo (mirror del Excel) — función pura, corrida por escenario ──
+  const baseInputs: CalcInputs = {
+    cant: num(cantidad), d: parseInt(dias) || 0, conv: num(conversion), pIni: num(pesoInicio),
+    desbEnt: pct(desbEnt), desbSal: pct(desbSal), czEnt: pct(czEnt), czSal: pct(czSal), mort: pct(mortandad),
+    precioCompra: num(precioCompra), precioVenta: num(precioVenta),
+    racionPV: pct(racionPV), maizPct: pct(maizPct), concPct: pct(concPct), maizPrecio: num(maizPrecio), concPrecio: num(concPrecio),
+  }
+  const c = calcular(baseInputs)
+  const cB = calcular({
+    ...baseInputs,
+    ...(bPrecioVenta.trim() ? { precioVenta: num(bPrecioVenta) } : {}),
+    ...(bPrecioCompra.trim() ? { precioCompra: num(bPrecioCompra) } : {}),
+    ...(bMaiz.trim() ? { maizPrecio: num(bMaiz) } : {}),
+    ...(bConc.trim() ? { concPrecio: num(bConc) } : {}),
+    ...(bMort.trim() ? { mort: pct(bMort) } : {}),
+    ...(bConv.trim() ? { conv: num(bConv) } : {}),
+    ...(bDias.trim() ? { d: parseInt(bDias) || 0 } : {}),
+  })
 
   // ── Export Excel / PDF ──
   const round1 = (n: number) => Math.round(n * 10) / 10
@@ -404,11 +425,55 @@ export function AnalisisProductivo({ secciones, total }: Props) {
             </table>
           </div>
 
-          {/* Resultado */}
-          <div className="flex flex-wrap items-center gap-6 border-t pt-2">
-            <span className="font-medium text-gray-600">Resultado</span>
-            <span className={lbl}>Ganancia / cabeza: <b className={c.gananciaCab >= 0 ? "text-emerald-700" : "text-red-600"}>${money(c.gananciaCab)}</b></span>
-            <span className={lbl}>Ganancia total (×{c.cant}): <b className={`text-lg ${c.gananciaTotal >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(c.gananciaTotal)}</b></span>
+          {/* Resultado + comparador escenario B */}
+          <div className="border-t pt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-medium text-gray-600">Resultado</span>
+              <button type="button" onClick={() => setVerB(v => !v)} className="text-xs px-2 py-1 rounded border border-indigo-400 text-indigo-700 hover:bg-indigo-50">
+                {verB ? "Ocultar escenario B" : "＋ Comparar escenario B"}
+              </button>
+            </div>
+
+            {verB && (
+              <div className="p-2 rounded-lg bg-indigo-50/60 border border-indigo-200">
+                <div className="text-xs text-indigo-700 mb-1">Escenario B — cargá solo lo que cambia (vacío = usa A):</div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input placeholder={precioVenta} value={bPrecioVenta} onChange={e => setBPrecioVenta(e.target.value)} className={`${inp} w-20`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input placeholder={precioCompra} value={bPrecioCompra} onChange={e => setBPrecioCompra(e.target.value)} className={`${inp} w-20`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input placeholder={maizPrecio} value={bMaiz} onChange={e => setBMaiz(e.target.value)} className={`${inp} w-20`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Concentrado $/kg</span><input placeholder={concPrecio} value={bConc} onChange={e => setBConc(e.target.value)} className={`${inp} w-20`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Mortandad %</span><input placeholder={mortandad} value={bMort} onChange={e => setBMort(e.target.value)} className={`${inp} w-12`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Conversión</span><input placeholder={conversion} value={bConv} onChange={e => setBConv(e.target.value)} className={`${inp} w-14`} /></span>
+                  <span className="flex items-center gap-1"><span className={lbl}>Días</span><input placeholder={dias} value={bDias} onChange={e => setBDias(e.target.value)} className={`${inp} w-14`} /></span>
+                  <button type="button" onClick={() => { setBPrecioVenta(""); setBPrecioCompra(""); setBMaiz(""); setBConc(""); setBMort(""); setBConv(""); setBDias("") }} className="text-xs text-indigo-600 hover:underline">Limpiar B</button>
+                </div>
+              </div>
+            )}
+
+            <table className="text-sm">
+              <thead>
+                <tr className="text-gray-500 border-b">
+                  <th className="text-left pr-4"></th>
+                  <th className="text-right px-3">Escenario A</th>
+                  {verB && <th className="text-right px-3 text-indigo-700">Escenario B</th>}
+                  {verB && <th className="text-right px-3">Δ (B−A)</th>}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className={`${lbl} pr-4`}>Ganancia / cabeza</td>
+                  <td className="text-right px-3"><b className={c.gananciaCab >= 0 ? "text-emerald-700" : "text-red-600"}>${money(c.gananciaCab)}</b></td>
+                  {verB && <td className="text-right px-3"><b className={cB.gananciaCab >= 0 ? "text-emerald-700" : "text-red-600"}>${money(cB.gananciaCab)}</b></td>}
+                  {verB && <td className={`text-right px-3 font-medium ${cB.gananciaCab - c.gananciaCab >= 0 ? "text-emerald-700" : "text-red-600"}`}>{cB.gananciaCab - c.gananciaCab >= 0 ? "+" : ""}{money(cB.gananciaCab - c.gananciaCab)}</td>}
+                </tr>
+                <tr>
+                  <td className={`${lbl} pr-4`}>Ganancia total (×{c.cant})</td>
+                  <td className="text-right px-3"><b className={`text-base ${c.gananciaTotal >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(c.gananciaTotal)}</b></td>
+                  {verB && <td className="text-right px-3"><b className={`text-base ${cB.gananciaTotal >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(cB.gananciaTotal)}</b></td>}
+                  {verB && <td className={`text-right px-3 font-semibold ${cB.gananciaTotal - c.gananciaTotal >= 0 ? "text-emerald-700" : "text-red-600"}`}>{cB.gananciaTotal - c.gananciaTotal >= 0 ? "+" : ""}{money(cB.gananciaTotal - c.gananciaTotal)}</td>}
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* Notas */}
