@@ -765,7 +765,15 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
             {verSens && (() => {
               const N = Math.max(1, Math.min(5, parseInt(sensEscalones) || 2))
               const offs = Array.from({ length: 2 * N + 1 }, (_, i) => i - N)
-              const parseDisp = (s: string) => parseFloat(String(s).replace(/\./g, "").replace(",", ".")) || 0
+              // Parseo tolerante: acepta coma o punto como decimal; punto como miles solo si son 3 dígitos.
+              const parseDisp = (s: string) => {
+                const t = String(s).trim(); if (!t) return 0
+                if (t.includes(",")) return parseFloat(t.replace(/\./g, "").replace(",", ".")) || 0
+                if (/^\d+\.\d{1,2}$/.test(t)) return parseFloat(t) || 0 // "0.1", "1.25" = decimal
+                return parseFloat(t.replace(/\./g, "")) || 0            // "5.400" = 5400 · "10" = 10
+              }
+              const gananciaCon = (v: typeof VARS[number], valDisp: number) =>
+                calcular({ ...baseInputs, [v.campo]: v.tipo === "pct" ? valDisp / 100 : valDisp }).gananciaCab
               const deltaDefault = (v: typeof VARS[number]) => v.tipo === "money" ? "50" : v.key === "conversion" ? "0,1" : v.key === "dias" ? "10" : v.tipo === "pct" ? "1" : v.key === "cantidad" ? "5" : "10"
               const activas = VARS.filter(v => sensVars[v.key])
               const disponibles = VARS.filter(v => !sensVars[v.key])
@@ -794,7 +802,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                           {activas.map(v => {
                             const baseD = (sensVars[v.key].base.trim() ? parseDisp(sensVars[v.key].base) : parseDisp(v.base))
                             const deltaD = parseDisp(sensVars[v.key].delta)
-                            const gBase = calcular(applyOverrides(baseInputs, { [v.key]: String(baseD) })).gananciaCab
+                            const gBase = gananciaCon(v, baseD)
                             return (
                               <tr key={v.key} className="border-b border-slate-100">
                                 <td className="pr-2 py-1 text-gray-600">{v.label}</td>
@@ -802,7 +810,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                                 <td className="text-right px-1"><input value={sensVars[v.key].delta} onChange={e => setSensVars(s => ({ ...s, [v.key]: { ...s[v.key], delta: e.target.value } }))} className={`${inp} w-14`} /></td>
                                 {offs.map(o => {
                                   const val = baseD + o * deltaD
-                                  const g = calcular(applyOverrides(baseInputs, { [v.key]: String(val) })).gananciaCab
+                                  const g = gananciaCon(v, val)
                                   const diff = g - gBase
                                   return <td key={o} className={`text-right px-2 whitespace-nowrap ${o === 0 ? "bg-violet-100 font-semibold" : diff > 0 ? "text-emerald-700" : diff < 0 ? "text-red-600" : ""}`} title={`${v.label} = ${val}`}>${money(g)}</td>
                                 })}
