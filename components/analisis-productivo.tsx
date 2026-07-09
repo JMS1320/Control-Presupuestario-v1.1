@@ -16,6 +16,7 @@ import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { toast } from "sonner"
+import type { FilaMercado } from "@/app/api/precios-mercado/route"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
@@ -830,6 +831,25 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   const [sel, setSel] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Precios de mercado (referencia, scraping entresurcosycorralesya)
+  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hace7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
+  const [mercDesde, setMercDesde] = useState(hace7)
+  const [mercHasta, setMercHasta] = useState(hoyISO)
+  const [mercFilas, setMercFilas] = useState<FilaMercado[] | null>(null)
+  const [mercLoading, setMercLoading] = useState(false)
+  const [mercOpen, setMercOpen] = useState(false)
+  const traerMercado = async () => {
+    setMercLoading(true)
+    try {
+      const r = await fetch(`/api/precios-mercado?desde=${mercDesde}&hasta=${mercHasta}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || "Error")
+      setMercFilas(d.filas); setMercOpen(true)
+    } catch (e) { toast.error("Precios de mercado: " + (e as Error).message) }
+    finally { setMercLoading(false) }
+  }
+
   useEffect(() => { try { setEstudios(JSON.parse(localStorage.getItem(LS_ESTUDIOS) || "{}")) } catch { /* ignore */ } }, [])
 
   const addSeg = () => setSegIds(p => [...p, nextId.current++])
@@ -924,6 +944,48 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
         <button type="button" onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬆ Cargar archivo</button>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={cargarArchivo} />
         <span className="text-xs text-gray-400">guardado = en esta PC · archivo = portable/backup</span>
+      </div>
+
+      {/* Precios de mercado (referencia) */}
+      <div className="mb-3 border rounded-lg bg-white">
+        <div className="flex flex-wrap items-center gap-2 p-2 text-sm">
+          <button type="button" onClick={() => setMercOpen(v => !v)} className="font-semibold text-gray-700 flex items-center gap-1">
+            <span className="text-gray-400">{mercOpen ? "▼" : "▶"}</span>Precios de mercado (referencia)
+          </button>
+          <span className="text-gray-500 ml-2">Desde</span>
+          <input type="date" value={mercDesde} onChange={e => setMercDesde(e.target.value)} className="border rounded px-1 py-0.5" />
+          <span className="text-gray-500">Hasta</span>
+          <input type="date" value={mercHasta} onChange={e => setMercHasta(e.target.value)} className="border rounded px-1 py-0.5" />
+          <button type="button" onClick={traerMercado} disabled={mercLoading} className="px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">{mercLoading ? "Trayendo…" : "Traer precios"}</button>
+          {mercFilas && <span className="text-xs text-gray-400">{mercFilas.length} categorías · fuente: entresurcosycorralesya.com</span>}
+        </div>
+        {mercOpen && mercFilas && (
+          <div className="px-2 pb-2 overflow-x-auto">
+            <table className="text-sm w-full">
+              <thead>
+                <tr className="text-gray-500 border-b">
+                  <th className="text-left pr-3 py-1">Categoría</th><th className="text-right px-2">Cant.</th>
+                  <th className="text-right px-2">Prom. Kilo</th><th className="text-right px-2">Kilo+</th><th className="text-right px-2">Kilo−</th>
+                  <th className="text-right px-2">Prom. Bulto</th><th className="text-right px-2">Bulto+</th><th className="text-right px-2">Bulto−</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mercFilas.map((f, i) => (
+                  <tr key={i} className="hover:bg-slate-50 border-b border-slate-100">
+                    <td className="pr-3 py-1">{f.categoria}</td>
+                    <td className="text-right px-2">{f.cantidad}</td>
+                    <td className="text-right px-2 font-medium">${money(f.promKilo)}</td>
+                    <td className="text-right px-2 text-emerald-700">${money(f.kiloMax)}</td>
+                    <td className="text-right px-2 text-red-600">${money(f.kiloMin)}</td>
+                    <td className="text-right px-2 text-gray-500">${money(f.promBulto)}</td>
+                    <td className="text-right px-2 text-gray-500">${money(f.bultoMax)}</td>
+                    <td className="text-right px-2 text-gray-500">${money(f.bultoMin)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-2 items-start">
