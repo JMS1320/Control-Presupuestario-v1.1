@@ -694,7 +694,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     t.es_torito ? (t.sexo === 'Macho' ? 'torito' : 'ternera_rep')
                 : (t.sexo === 'Macho' ? 'macho' : 'hembra')
   const segPesos: number[] = ternerosFiltrados
-    .filter(t => t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
+    // t.activo: excluye animales dados de baja (mortandad) que aún tienen pesadas históricas
+    .filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
     .map(t => segOrigen === 'estimado'
       ? getPesoEstimadoHoy(t.pesadas_terneros, segGanancia)
       : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
