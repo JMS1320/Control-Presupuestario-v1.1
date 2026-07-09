@@ -37,7 +37,7 @@ interface Props {
 
 // Estado serializable de un segmento (para guardar/cargar estudios)
 interface SegState {
-  fase: string; notas: string
+  fase: string; notas: string; fuente: string
   cantidad: string; pesoInicio: string
   maizPrecio: string; concPrecio: string; tc: string; precioCompra: string; precioVenta: string
   fechaInicio: string; fechaFin: string; dias: string; conversion: string
@@ -137,8 +137,9 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   const [colapsado, setColapsado] = useState(indice > 0)
   const [fase, setFase] = useState(g("fase", ""))
   const [notas, setNotas] = useState(g("notas", ""))
+  const [fuente, setFuente] = useState(g("fuente", "")) // etiqueta de la sección/total elegida (persiste el vínculo)
 
-  // Fuente: 'total' | índice de sección
+  // Fuente: 'total' | label de sección
   const [cantidad, setCantidad] = useState(g("cantidad", "0"))
   const [pesoInicio, setPesoInicio] = useState(g("pesoInicio", "0"))
 
@@ -176,9 +177,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   const onConcPct = (v: string) => { setConcPct(v); setMaizPct(String(100 - (parseFloat(v.replace(",", ".")) || 0))) }
 
   const usarFuente = (val: string) => {
+    setFuente(val)
     if (val === "total" && total) { setCantidad(String(total.cantidad)); setPesoInicio(String(Math.round(total.promedio))) }
     else {
-      const s = secciones[parseInt(val)]
+      const s = secciones.find(x => x.label === val)
       if (s) { setCantidad(String(s.cantidad)); setPesoInicio(String(Math.round(s.promedio))) }
     }
   }
@@ -268,7 +270,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
 
   // Snapshot serializable → reportar al contenedor (para guardar/cargar estudios)
   const snapshot: SegState = {
-    fase, notas, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
+    fase, notas, fuente, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
     fechaInicio, fechaFin, dias, conversion, mortandad, desbEnt, desbSal, czEnt, czSal,
     racionPV, maizPct, concPct, bPrecioVenta, bPrecioCompra, bMaiz, bConc, bMort, bConv, bDias, verB, etapas,
   }
@@ -493,11 +495,11 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
             </span>
             <span className="flex items-center gap-1">
               <span className={lbl}>Fuente</span>
-              <select onChange={e => usarFuente(e.target.value)} defaultValue="" className="border rounded px-1 py-0.5">
-                <option value="" disabled>elegí…</option>
+              <select value={fuente} onChange={e => usarFuente(e.target.value)} className="border rounded px-1 py-0.5">
+                <option value="">elegí…</option>
                 {total && <option value="total">Total rodeo ({total.cantidad} cab · {Math.round(total.promedio)} kg)</option>}
                 {secciones.map((s, i) => s.cantidad > 0 && (
-                  <option key={i} value={i}>{s.label} ({s.cantidad} cab · {Math.round(s.promedio)} kg)</option>
+                  <option key={i} value={s.label}>{s.label} ({s.cantidad} cab · {Math.round(s.promedio)} kg)</option>
                 ))}
               </select>
             </span>
