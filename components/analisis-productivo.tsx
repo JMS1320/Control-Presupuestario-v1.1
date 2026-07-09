@@ -200,6 +200,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   const [bConv, setBConv] = useState(g("bConv", ""))
   const [bDias, setBDias] = useState(g("bDias", ""))
   const [verB, setVerB] = useState(g("verB", false))
+  const [bVisibles, setBVisibles] = useState<Set<string>>(new Set()) // qué variables de B están agregadas (sesión)
 
   // ── Cálculo (mirror del Excel) — función pura, corrida por escenario ──
   const baseInputs: CalcInputs = {
@@ -664,21 +665,40 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
               </button>
             </div>
 
-            {verB && (
-              <div className="p-2 rounded-lg bg-indigo-50/60 border border-indigo-200">
-                <div className="text-xs text-indigo-700 mb-1">Escenario B — cargá solo lo que cambia (vacío = usa A):</div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input placeholder={precioVenta} value={bPrecioVenta} onChange={e => setBPrecioVenta(e.target.value)} className={`${inp} w-20`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input placeholder={precioCompra} value={bPrecioCompra} onChange={e => setBPrecioCompra(e.target.value)} className={`${inp} w-20`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input placeholder={maizPrecio} value={bMaiz} onChange={e => setBMaiz(e.target.value)} className={`${inp} w-20`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Concentrado $/kg</span><input placeholder={concPrecio} value={bConc} onChange={e => setBConc(e.target.value)} className={`${inp} w-20`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Mortandad %</span><input placeholder={mortandad} value={bMort} onChange={e => setBMort(e.target.value)} className={`${inp} w-12`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Conversión</span><input placeholder={conversion} value={bConv} onChange={e => setBConv(e.target.value)} className={`${inp} w-14`} /></span>
-                  <span className="flex items-center gap-1"><span className={lbl}>Días</span><input placeholder={dias} value={bDias} onChange={e => setBDias(e.target.value)} className={`${inp} w-14`} /></span>
-                  <button type="button" onClick={() => { setBPrecioVenta(""); setBPrecioCompra(""); setBMaiz(""); setBConc(""); setBMort(""); setBConv(""); setBDias("") }} className="text-xs text-indigo-600 hover:underline">Limpiar B</button>
+            {verB && (() => {
+              const bVars = [
+                { k: "venta", label: "Venta $/kg", val: bPrecioVenta, set: setBPrecioVenta, ph: precioVenta, w: "w-20" },
+                { k: "compra", label: "Compra $/kg", val: bPrecioCompra, set: setBPrecioCompra, ph: precioCompra, w: "w-20" },
+                { k: "maiz", label: "Maíz $/kg", val: bMaiz, set: setBMaiz, ph: maizPrecio, w: "w-20" },
+                { k: "conc", label: "Concentrado $/kg", val: bConc, set: setBConc, ph: concPrecio, w: "w-20" },
+                { k: "mort", label: "Mortandad %", val: bMort, set: setBMort, ph: mortandad, w: "w-12" },
+                { k: "conv", label: "Conversión", val: bConv, set: setBConv, ph: conversion, w: "w-14" },
+                { k: "dias", label: "Días", val: bDias, set: setBDias, ph: dias, w: "w-14" },
+              ]
+              const visibles = bVars.filter(v => bVisibles.has(v.k) || v.val.trim())
+              const ocultas = bVars.filter(v => !bVisibles.has(v.k) && !v.val.trim())
+              return (
+                <div className="p-2 rounded-lg bg-indigo-50/60 border border-indigo-200">
+                  <div className="text-xs text-indigo-700 mb-1">Escenario B — agregá solo las variables que querés cambiar (el resto usa A):</div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    {visibles.map(v => (
+                      <span key={v.k} className="flex items-center gap-1">
+                        <span className={lbl}>{v.label}</span>
+                        <input placeholder={v.ph} value={v.val} onChange={e => v.set(e.target.value)} className={`${inp} ${v.w}`} />
+                        <button type="button" onClick={() => { v.set(""); setBVisibles(prev => { const n = new Set(prev); n.delete(v.k); return n }) }} className="text-xs text-gray-400 hover:text-red-600" title="Sacar variable">✕</button>
+                      </span>
+                    ))}
+                    {ocultas.length > 0 && (
+                      <select value="" onChange={e => { if (e.target.value) setBVisibles(prev => new Set(prev).add(e.target.value)) }} className="border border-indigo-300 rounded px-1 py-0.5 text-indigo-700 text-xs">
+                        <option value="">＋ agregar variable…</option>
+                        {ocultas.map(v => <option key={v.k} value={v.k}>{v.label}</option>)}
+                      </select>
+                    )}
+                    {visibles.length === 0 && <span className="text-xs text-gray-400">(sin variables agregadas — B = A)</span>}
+                  </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             <table className="text-sm">
               <thead>
