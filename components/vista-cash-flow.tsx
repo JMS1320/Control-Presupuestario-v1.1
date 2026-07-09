@@ -5,6 +5,7 @@ import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { PanelMailsPago } from "@/components/panel-mails-pago"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
@@ -2305,6 +2306,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     >
                       📄 Detalle PDF
                     </Button>
+                    <PanelMailsPago />
                     <Button
                       size="sm"
                       onClick={exportarLoteSeleccionados}
