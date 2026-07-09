@@ -5948,6 +5948,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       monto_a_abonar: montoPagoEnPesos(f as never),
     }
   })
+  // Mapea un grupo de templates (egresos sin factura) a los items del detalle
+  const mapTemplatesAItems = (ts: Array<Record<string, unknown>>) => ts.map((t) => ({
+    comprobante: ((t.egreso as Record<string, unknown> | undefined)?.nombre_referencia as string) || (t.descripcion as string) || '-',
+    fecha: (t.fecha_vencimiento as string) || (t.fecha_estimada as string) || '',
+    imp_total: (t.monto as number) || 0,
+    monto_a_abonar: (t.monto as number) || 0,
+  }))
   const encolarMailDetalle = async (
     tipo: 'arca' | 'template', proveedor: string, cuit: string,
     items: Parameters<typeof generarPDFDetallePago>[3],
@@ -10394,6 +10401,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                             )
                                           }}
                                         >📄</Button>
+                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                          onClick={() => {
+                                            const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                            encolarMailDetalle('arca', f.denominacion_emisor, f.cuit, [{
+                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                              fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
+                                              imp_total: (f.imp_total || 0) * tc,
+                                              monto_sicore: f.monto_sicore,
+                                              descuento_aplicado: f.descuento_aplicado,
+                                              monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                                ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                                : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            }])
+                                          }}
+                                        >✉</Button>
                                         {onRevertir && (
                                           <Button
                                             size="sm" variant="ghost"
@@ -10659,20 +10682,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
                                   <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'template', row.proveedor,
-                                        tsGrupo[0]?.egreso?.cuit_quien_cobra || '',
-                                        tsGrupo.map(t => ({
-                                          comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                          fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                          imp_total: t.monto || 0,
-                                          monto_a_abonar: t.monto || 0,
-                                        }))
-                                      )}
-                                    >📄</Button>
+                                    <div className="flex items-center gap-1">
+                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
+                                      >📄</Button>
+                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        onClick={() => encolarMailDetalle('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
+                                      >✉</Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -10745,21 +10762,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
                                       <div className="flex items-center gap-1">
-                                        <Button
-                                          size="sm" variant="ghost"
-                                          title="Generar PDF detalle de pago"
-                                          onClick={() => generarPDFDetallePago(
-                                            'template',
-                                            t.egreso?.nombre_quien_cobra || '-',
-                                            t.egreso?.cuit_quien_cobra || '',
-                                            [{
-                                              comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                              fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                              imp_total: t.monto || 0,
-                                              monto_a_abonar: t.monto || 0,
-                                            }]
-                                          )}
+                                        <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                          onClick={() => generarPDFDetallePago('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
                                         >📄</Button>
+                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                          onClick={() => encolarMailDetalle('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
+                                        >✉</Button>
                                         {onRevertir && (
                                           <Button
                                             size="sm" variant="ghost"
