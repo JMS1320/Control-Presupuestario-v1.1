@@ -8,9 +8,10 @@
 // Inputs (amarillo): precios, conversión, desbaste%, CZ%, ración%, split.
 // Vinculados (naranja): Cantidad y Peso Inicio (vienen del segmento, editables);
 //   Días ↔ Fecha Fin y Maíz% ↔ Concentrado% (edito uno, se calcula el otro).
-// v1: un solo bloque (sin escalonar etapas ni agrupar segmentos — pendiente).
+// Multi-segmento: cada columna = un segmento (AnalisisSegmento), en vertical el encadenamiento.
+// El contenedor AnalisisProductivo pone los segmentos en horizontal y suma el total combinado.
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -24,6 +25,12 @@ export interface SegmentoAnalisis {
 interface Props {
   secciones: SegmentoAnalisis[]
   total: { cantidad: number; promedio: number } | null
+}
+
+interface SegProps extends Props {
+  indice: number
+  onRemove?: () => void
+  onTotal?: (v: number) => void
 }
 
 // ── Helpers de parseo (es-AR) ──────────────────────────────────────────────
@@ -101,8 +108,9 @@ function calcular(i: CalcInputs) {
   }
 }
 
-export function AnalisisProductivo({ secciones, total }: Props) {
-  const [colapsado, setColapsado] = useState(true)
+function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegProps) {
+  const letra = String.fromCharCode(65 + indice) // A, B, C…
+  const [colapsado, setColapsado] = useState(indice > 0)
   const [fase, setFase] = useState("")
   const [notas, setNotas] = useState("")
 
@@ -228,6 +236,10 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     })
     return { pasos, totalPunta: pasos.reduce((s, p) => s + p.ganancia, 0) }
   })()
+
+  // Reportar el total de este segmento al contenedor (para el combinado)
+  const totalSeg = etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal
+  useEffect(() => { onTotal?.(totalSeg) }, [totalSeg]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Export Excel / PDF ──
   const round1 = (n: number) => Math.round(n * 10) / 10
@@ -370,19 +382,20 @@ export function AnalisisProductivo({ secciones, total }: Props) {
   const lbl = "text-gray-500"
 
   return (
-    <div className="mb-4 border rounded-lg p-3 bg-emerald-50/40">
+    <div className="border rounded-lg p-3 bg-emerald-50/40 shrink-0 w-[470px]">
       <div className="flex items-center gap-2 mb-2">
         <button type="button" onClick={() => setColapsado(v => !v)} className="flex items-center gap-2 flex-1 text-left font-semibold text-gray-700">
           <span className="text-gray-400">{colapsado ? "▶" : "▼"}</span>
-          <span>Análisis productivo-económico</span>
+          <span>Segmento {letra}</span>
           {!colapsado || c.cant > 0
-            ? <span className="text-xs font-normal text-emerald-700">· Ganancia {etapas.length > 0 ? "punta a punta" : "total"}: ${money(etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal)}</span>
+            ? <span className="text-xs font-normal text-emerald-700">· ${money(etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal)}</span>
             : null}
         </button>
         {!colapsado && (<>
-          <button type="button" onClick={exportarExcel} className="text-xs px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50">⬇ Excel</button>
-          <button type="button" onClick={exportarPDF} className="text-xs px-2 py-1 rounded border border-red-400 text-red-700 hover:bg-red-50">⬇ PDF</button>
+          <button type="button" onClick={exportarExcel} className="text-xs px-1.5 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50">⬇xls</button>
+          <button type="button" onClick={exportarPDF} className="text-xs px-1.5 py-1 rounded border border-red-400 text-red-700 hover:bg-red-50">⬇pdf</button>
         </>)}
+        {onRemove && <button type="button" onClick={onRemove} title="Quitar segmento" className="text-xs px-1.5 py-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">✕</button>}
       </div>
 
       {!colapsado && (
@@ -649,6 +662,41 @@ export function AnalisisProductivo({ secciones, total }: Props) {
             <span className={lbl}>Notas</span>
             <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Anotaciones del análisis (van al Excel y al PDF)…" className="w-full border rounded px-2 py-1 mt-1 text-sm" />
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Contenedor: segmentos en horizontal + total combinado ──
+export function AnalisisProductivo({ secciones, total }: Props) {
+  const nextId = useRef(1)
+  const [segIds, setSegIds] = useState<number[]>([0])
+  const [totales, setTotales] = useState<Record<number, number>>({})
+  const addSeg = () => setSegIds(p => [...p, nextId.current++])
+  const removeSeg = (id: number) => {
+    setSegIds(p => p.filter(x => x !== id))
+    setTotales(t => { const n = { ...t }; delete n[id]; return n })
+  }
+  const reportTotal = (id: number, v: number) => setTotales(t => t[id] === v ? t : { ...t, [id]: v })
+  const combinado = segIds.reduce((s, id) => s + (totales[id] || 0), 0)
+
+  return (
+    <div className="mb-4">
+      <div className="flex gap-3 overflow-x-auto pb-2 items-start">
+        {segIds.map((id, i) => (
+          <AnalisisSegmento key={id} indice={i} secciones={secciones} total={total}
+            onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
+            onTotal={v => reportTotal(id, v)} />
+        ))}
+        <button type="button" onClick={addSeg} title="Agregar otro segmento a la derecha"
+          className="shrink-0 self-start px-3 py-6 rounded-lg border-2 border-dashed border-emerald-400 text-emerald-700 hover:bg-emerald-50 text-sm font-medium whitespace-nowrap">
+          ＋ Segmento
+        </button>
+      </div>
+      {segIds.length > 1 && (
+        <div className="mt-1 px-3 py-2 rounded-lg bg-emerald-100 border border-emerald-300 text-sm font-semibold text-emerald-800">
+          Ganancia combinada ({segIds.length} segmentos): ${money(combinado)}
         </div>
       )}
     </div>
