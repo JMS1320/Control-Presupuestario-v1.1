@@ -45,6 +45,14 @@ const diffDays = (a: string, b: string) => {
   return Math.round((db.getTime() - da.getTime()) / 86400000)
 }
 
+// Etapa encadenada (además de la etapa 1, que usa el estado top-level). Solo peso y fecha se propagan.
+interface StageForm {
+  nombre: string; dias: string; conversion: string
+  precioVenta: string; maizPrecio: string; concPrecio: string
+  desbSal: string; czSal: string; mort: string
+  racionPV: string; maizPct: string; concPct: string
+}
+
 // Inputs ya parseados (porcentajes como fracción, ej. 0.03). Función pura → se corre 1 vez por escenario.
 interface CalcInputs {
   cant: number; d: number; conv: number; pIni: number
@@ -161,6 +169,16 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     precioCompra: num(precioCompra), precioVenta: num(precioVenta),
     racionPV: pct(racionPV), maizPct: pct(maizPct), concPct: pct(concPct), maizPrecio: num(maizPrecio), concPrecio: num(concPrecio),
   }
+  // Etapas encadenadas (v2). Etapa 1 = estado top-level; estas son las siguientes.
+  const [etapas, setEtapas] = useState<StageForm[]>([])
+  const addEtapa = () => setEtapas(prev => [...prev, {
+    nombre: `Etapa ${prev.length + 2}`, dias: "60", conversion, precioVenta,
+    maizPrecio, concPrecio, desbSal, czSal, mort: mortandad, racionPV, maizPct, concPct,
+  }])
+  const updEtapa = (idx: number, campo: keyof StageForm, val: string) =>
+    setEtapas(prev => prev.map((e, i) => i === idx ? { ...e, [campo]: val } : e))
+  const delEtapa = (idx: number) => setEtapas(prev => prev.filter((_, i) => i !== idx))
+
   const c = calcular(baseInputs)
   const cB = calcular({
     ...baseInputs,
@@ -172,6 +190,44 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     ...(bConv.trim() ? { conv: num(bConv) } : {}),
     ...(bDias.trim() ? { d: parseInt(bDias) || 0 } : {}),
   })
+
+  // ── Cadena de etapas (encadenamiento) ──
+  // Etapa k: peso y fecha propagan; mortandad reduce la cantidad que pasa a la siguiente.
+  // Ración de cada etapa usa la cantidad de INICIO (sin descontar su mortandad).
+  // Ganancia etapa 1 = V1 − compra − ración1; etapa k = Vk − V(k−1) − ración_k (costo de oportunidad).
+  interface PasoCadena {
+    nombre: string; fechaIni: string; fechaFin: string
+    pIni: number; pFin: number; cant: number; V: number; R: number; ganancia: number
+  }
+  const cadena: { pasos: PasoCadena[]; totalPunta: number } = (() => {
+    const pasos: PasoCadena[] = []
+    // Etapa 1 (del estado top-level, ya calculada en c)
+    const V1 = c.czNetoSal * c.cant
+    const R1 = -c.costoRacion * c.cant
+    pasos.push({ nombre: fase || "Etapa 1", fechaIni: fechaInicio, fechaFin, pIni: num(pesoInicio), pFin: c.pFin, cant: c.cant, V: V1, R: R1, ganancia: c.gananciaTotal })
+    let prevV = V1
+    let cantAct = c.cant * (1 - pct(mortandad))
+    let pesoAct = c.pFin
+    let fechaAct = fechaFin
+    etapas.forEach((e, idx) => {
+      const ck = calcular({
+        cant: cantAct, d: parseInt(e.dias) || 0, conv: num(e.conversion), pIni: pesoAct,
+        desbEnt: 0, desbSal: pct(e.desbSal), czEnt: 0, czSal: pct(e.czSal), mort: pct(e.mort),
+        precioCompra: 0, precioVenta: num(e.precioVenta),
+        racionPV: pct(e.racionPV), maizPct: pct(e.maizPct), concPct: pct(e.concPct), maizPrecio: num(e.maizPrecio), concPrecio: num(e.concPrecio),
+      })
+      const Vk = ck.czNetoSal * ck.cant
+      const Rk = -ck.costoRacion * ck.cant
+      const gk = Vk - prevV - Rk
+      const fFin = addDays(fechaAct, parseInt(e.dias) || 0)
+      pasos.push({ nombre: e.nombre || `Etapa ${idx + 2}`, fechaIni: fechaAct, fechaFin: fFin, pIni: pesoAct, pFin: ck.pFin, cant: ck.cant, V: Vk, R: Rk, ganancia: gk })
+      prevV = Vk
+      cantAct = ck.cant * (1 - pct(e.mort))
+      pesoAct = ck.pFin
+      fechaAct = fFin
+    })
+    return { pasos, totalPunta: pasos.reduce((s, p) => s + p.ganancia, 0) }
+  })()
 
   // ── Export Excel / PDF ──
   const round1 = (n: number) => Math.round(n * 10) / 10
@@ -224,6 +280,11 @@ export function AnalisisProductivo({ secciones, total }: Props) {
         ["Ganancia / cabeza", Math.round(c.gananciaCab), Math.round(cB.gananciaCab), Math.round(cB.gananciaCab - c.gananciaCab)],
         ["Ganancia total", Math.round(c.gananciaTotal), Math.round(cB.gananciaTotal), Math.round(cB.gananciaTotal - c.gananciaTotal)],
       )
+    }
+    if (etapas.length > 0) {
+      rows.push([], ["CADENA DE ETAPAS"], ["Etapa", "Desde", "Hasta", "Peso ini", "Peso fin", "Cant", "Venta hipot.", "Ganancia"])
+      cadena.pasos.forEach(p => rows.push([p.nombre, p.fechaIni, p.fechaFin, round1(p.pIni), round1(p.pFin), Math.round(p.cant), Math.round(p.V), Math.round(p.ganancia)]))
+      rows.push(["Ganancia total punta a punta", "", "", "", "", "", "", Math.round(cadena.totalPunta)])
     }
     rows.push([], ["Notas", notas])
     return rows
@@ -290,6 +351,17 @@ export function AnalisisProductivo({ secciones, total }: Props) {
       })
       yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
     }
+    if (etapas.length > 0) {
+      autoTable(doc, {
+        startY: yCur + 6, theme: "grid", styles: { fontSize: 8 },
+        head: [["Etapa", "Período", "Peso ini→fin", "Cant", "Venta hipot.", "Ganancia"]],
+        body: [
+          ...cadena.pasos.map(p => [p.nombre, `${p.fechaIni}→${p.fechaFin}`, `${kg(p.pIni)}→${kg(p.pFin)}`, String(Math.round(p.cant)), `$${money(p.V)}`, `$${money(p.ganancia)}`]),
+          ["TOTAL punta a punta", "", "", "", "", `$${money(cadena.totalPunta)}`],
+        ],
+      })
+      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    }
     if (notas) { doc.setFontSize(9); doc.text("Notas:", 14, yCur + 9); doc.text(doc.splitTextToSize(notas, 180) as string[], 14, yCur + 14) }
     doc.save(nombreArch() + ".pdf")
   }
@@ -304,7 +376,7 @@ export function AnalisisProductivo({ secciones, total }: Props) {
           <span className="text-gray-400">{colapsado ? "▶" : "▼"}</span>
           <span>Análisis productivo-económico</span>
           {!colapsado || c.cant > 0
-            ? <span className="text-xs font-normal text-emerald-700">· Ganancia total: ${money(c.gananciaTotal)}</span>
+            ? <span className="text-xs font-normal text-emerald-700">· Ganancia {etapas.length > 0 ? "punta a punta" : "total"}: ${money(etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal)}</span>
             : null}
         </button>
         {!colapsado && (<>
@@ -503,6 +575,73 @@ export function AnalisisProductivo({ secciones, total }: Props) {
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          {/* Cadena de etapas (encadenamiento) */}
+          <div className="border-t pt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-medium text-gray-600">Cadena de etapas</span>
+              <button type="button" onClick={addEtapa} className="text-xs px-2 py-1 rounded border border-teal-500 text-teal-700 hover:bg-teal-50">＋ Encadenar etapa</button>
+              <span className="text-xs text-gray-400">peso y fecha se propagan · la mortandad reduce la cantidad que pasa a la siguiente</span>
+            </div>
+
+            {etapas.map((e, idx) => {
+              const paso = cadena.pasos[idx + 1]
+              return (
+                <div key={idx} className="p-2 rounded-lg border border-teal-200 bg-white/60">
+                  <div className="flex items-center gap-2 mb-1">
+                    <input value={e.nombre} onChange={ev => updEtapa(idx, "nombre", ev.target.value)} className="border rounded px-1 py-0.5 text-sm font-medium w-32" />
+                    <span className="text-xs text-gray-400">{paso.fechaIni} → {paso.fechaFin} · {kg(paso.pIni)}→{kg(paso.pFin)} kg · {Math.round(paso.cant)} cab</span>
+                    <button type="button" onClick={() => delEtapa(idx)} className="ml-auto text-xs text-red-600 hover:underline">✕ quitar</button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="flex items-center gap-1"><span className={lbl}>Días</span><input value={e.dias} onChange={ev => updEtapa(idx, "dias", ev.target.value)} className={`${inp} w-14`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Conversión</span><input value={e.conversion} onChange={ev => updEtapa(idx, "conversion", ev.target.value)} className={`${inp} w-14`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={e.precioVenta} onChange={ev => updEtapa(idx, "precioVenta", ev.target.value)} className={`${inp} w-20`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={e.maizPrecio} onChange={ev => updEtapa(idx, "maizPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Conc. $/kg</span><input value={e.concPrecio} onChange={ev => updEtapa(idx, "concPrecio", ev.target.value)} className={`${inp} w-20`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Desbaste %</span><input value={e.desbSal} onChange={ev => updEtapa(idx, "desbSal", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>CZ %</span><input value={e.czSal} onChange={ev => updEtapa(idx, "czSal", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Mort. %</span><input value={e.mort} onChange={ev => updEtapa(idx, "mort", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Ración %</span><input value={e.racionPV} onChange={ev => updEtapa(idx, "racionPV", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Maíz %</span><input value={e.maizPct} onChange={ev => updEtapa(idx, "maizPct", ev.target.value)} className={`${inp} w-12`} /></span>
+                    <span className="flex items-center gap-1"><span className={lbl}>Conc. %</span><input value={e.concPct} onChange={ev => updEtapa(idx, "concPct", ev.target.value)} className={`${inp} w-12`} /></span>
+                  </div>
+                  <div className="text-xs mt-1">Ganancia de la etapa (vs vender antes): <b className={paso.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}>${money(paso.ganancia)}</b></div>
+                </div>
+              )
+            })}
+
+            {etapas.length > 0 && (
+              <table className="text-sm">
+                <thead>
+                  <tr className="text-gray-500 border-b">
+                    <th className="text-left pr-4 py-1">Etapa</th>
+                    <th className="text-left px-3">Período</th>
+                    <th className="text-right px-3">Peso ini→fin</th>
+                    <th className="text-right px-3">Cant.</th>
+                    <th className="text-right px-3">Venta hipot.</th>
+                    <th className="text-right px-3">Ganancia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cadena.pasos.map((p, i) => (
+                    <tr key={i} className="hover:bg-white">
+                      <td className="pr-4 py-1">{p.nombre}</td>
+                      <td className="px-3 text-gray-500 text-xs">{p.fechaIni} → {p.fechaFin}</td>
+                      <td className="text-right px-3">{kg(p.pIni)} → {kg(p.pFin)}</td>
+                      <td className="text-right px-3">{Math.round(p.cant)}</td>
+                      <td className="text-right px-3">${money(p.V)}</td>
+                      <td className={`text-right px-3 ${p.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(p.ganancia)}</td>
+                    </tr>
+                  ))}
+                  <tr className="font-semibold border-t">
+                    <td className="pr-4 py-1" colSpan={5}>Ganancia total punta a punta</td>
+                    <td className={`text-right px-3 text-base ${cadena.totalPunta >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(cadena.totalPunta)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* Notas */}
