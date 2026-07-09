@@ -44,7 +44,7 @@ interface SegState {
   fechaInicio: string; fechaFin: string; dias: string; conversion: string
   mortandad: string; desbEnt: string; desbSal: string; czEnt: string; czSal: string
   racionPV: string; maizPct: string; concPct: string
-  bPrecioVenta: string; bPrecioCompra: string; bMaiz: string; bConc: string; bMort: string; bConv: string; bDias: string; verB: boolean
+  bOv: Record<string, string>; verB: boolean
   etapas: StageForm[]
 }
 
@@ -191,16 +191,15 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     }
   }
 
-  // Overrides del escenario B (vacío = usa A)
-  const [bPrecioVenta, setBPrecioVenta] = useState(g("bPrecioVenta", ""))
-  const [bPrecioCompra, setBPrecioCompra] = useState(g("bPrecioCompra", ""))
-  const [bMaiz, setBMaiz] = useState(g("bMaiz", ""))
-  const [bConc, setBConc] = useState(g("bConc", ""))
-  const [bMort, setBMort] = useState(g("bMort", ""))
-  const [bConv, setBConv] = useState(g("bConv", ""))
-  const [bDias, setBDias] = useState(g("bDias", ""))
+  // Overrides del escenario B: mapa variable→valor (ausente/vacío = usa A)
+  const [bOv, setBOv] = useState<Record<string, string>>(() => {
+    const ov: Record<string, string> = { ...(initial?.bOv ?? {}) }
+    // migración de estudios viejos (campos b* individuales)
+    const viejos: Record<string, string> = { bPrecioVenta: "precioVenta", bPrecioCompra: "precioCompra", bMaiz: "maizPrecio", bConc: "concPrecio", bMort: "mortandad", bConv: "conversion", bDias: "dias" }
+    for (const [o, nk] of Object.entries(viejos)) { const v = (initial as Record<string, unknown> | undefined)?.[o]; if (typeof v === "string" && v) ov[nk] = v }
+    return ov
+  })
   const [verB, setVerB] = useState(g("verB", false))
-  const [bVisibles, setBVisibles] = useState<Set<string>>(new Set()) // qué variables de B están agregadas (sesión)
 
   // ── Cálculo (mirror del Excel) — función pura, corrida por escenario ──
   const baseInputs: CalcInputs = {
@@ -219,17 +218,34 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     setEtapas(prev => prev.map((e, i) => i === idx ? { ...e, [campo]: val } : e))
   const delEtapa = (idx: number) => setEtapas(prev => prev.filter((_, i) => i !== idx))
 
+  // Config de variables (palancas) — compartida por Escenario B y (futuro) sensibilidad
+  const parseVal = (tipo: string, v: string) => tipo === "pct" ? pct(v) : tipo === "int" ? (parseInt(v) || 0) : num(v)
+  const VARS: { key: string; label: string; campo: keyof CalcInputs; tipo: "money" | "num" | "int" | "pct"; base: string; w: string }[] = [
+    { key: "cantidad", label: "Cantidad", campo: "cant", tipo: "int", base: cantidad, w: "w-16" },
+    { key: "pesoInicio", label: "Peso inicio", campo: "pIni", tipo: "num", base: pesoInicio, w: "w-16" },
+    { key: "dias", label: "Días", campo: "d", tipo: "int", base: dias, w: "w-14" },
+    { key: "conversion", label: "Conversión", campo: "conv", tipo: "num", base: conversion, w: "w-14" },
+    { key: "precioCompra", label: "Compra $/kg", campo: "precioCompra", tipo: "money", base: precioCompra, w: "w-20" },
+    { key: "precioVenta", label: "Venta $/kg", campo: "precioVenta", tipo: "money", base: precioVenta, w: "w-20" },
+    { key: "maizPrecio", label: "Maíz $/kg", campo: "maizPrecio", tipo: "money", base: maizPrecio, w: "w-20" },
+    { key: "concPrecio", label: "Concentrado $/kg", campo: "concPrecio", tipo: "money", base: concPrecio, w: "w-20" },
+    { key: "desbEnt", label: "Desbaste ent %", campo: "desbEnt", tipo: "pct", base: desbEnt, w: "w-12" },
+    { key: "desbSal", label: "Desbaste sal %", campo: "desbSal", tipo: "pct", base: desbSal, w: "w-12" },
+    { key: "czEnt", label: "CZ ent %", campo: "czEnt", tipo: "pct", base: czEnt, w: "w-12" },
+    { key: "czSal", label: "CZ sal %", campo: "czSal", tipo: "pct", base: czSal, w: "w-12" },
+    { key: "mortandad", label: "Mortandad %", campo: "mort", tipo: "pct", base: mortandad, w: "w-12" },
+    { key: "racionPV", label: "Ración %PV", campo: "racionPV", tipo: "pct", base: racionPV, w: "w-12" },
+    { key: "maizPct", label: "Maíz %", campo: "maizPct", tipo: "pct", base: maizPct, w: "w-12" },
+    { key: "concPct", label: "Concentrado %", campo: "concPct", tipo: "pct", base: concPct, w: "w-12" },
+  ]
+  const applyOverrides = (b: CalcInputs, ov: Record<string, string>): CalcInputs => {
+    const o = { ...b }
+    for (const vd of VARS) { const val = ov[vd.key]; if (val && val.trim()) o[vd.campo] = parseVal(vd.tipo, val) }
+    return o
+  }
+
   const c = calcular(baseInputs)
-  const cB = calcular({
-    ...baseInputs,
-    ...(bPrecioVenta.trim() ? { precioVenta: num(bPrecioVenta) } : {}),
-    ...(bPrecioCompra.trim() ? { precioCompra: num(bPrecioCompra) } : {}),
-    ...(bMaiz.trim() ? { maizPrecio: num(bMaiz) } : {}),
-    ...(bConc.trim() ? { concPrecio: num(bConc) } : {}),
-    ...(bMort.trim() ? { mort: pct(bMort) } : {}),
-    ...(bConv.trim() ? { conv: num(bConv) } : {}),
-    ...(bDias.trim() ? { d: parseInt(bDias) || 0 } : {}),
-  })
+  const cB = calcular(applyOverrides(baseInputs, bOv))
 
   // ── Cadena de etapas (encadenamiento) ──
   // Etapa k: peso y fecha propagan; mortandad reduce la cantidad que pasa a la siguiente.
@@ -279,7 +295,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   const snapshot: SegState = {
     fase, notas, fuente, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
     fechaInicio, fechaFin, dias, conversion, mortandad, desbEnt, desbSal, czEnt, czSal,
-    racionPV, maizPct, concPct, bPrecioVenta, bPrecioCompra, bMaiz, bConc, bMort, bConv, bDias, verB, etapas,
+    racionPV, maizPct, concPct, bOv, verB, etapas,
   }
   const snapKey = JSON.stringify(snapshot)
   useEffect(() => { onState?.(snapshot) }, [snapKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -354,13 +370,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     ]
     if (verB) {
       rows.push([], ["COMPARACIÓN ESCENARIO B (overrides; vacío = usa A)"])
-      if (bPrecioVenta.trim()) rows.push(["B · Venta $/kg", num(bPrecioVenta)])
-      if (bPrecioCompra.trim()) rows.push(["B · Compra $/kg", num(bPrecioCompra)])
-      if (bMaiz.trim()) rows.push(["B · Maíz $/kg", num(bMaiz)])
-      if (bConc.trim()) rows.push(["B · Concentrado $/kg", num(bConc)])
-      if (bMort.trim()) rows.push(["B · Mortandad %", num(bMort)])
-      if (bConv.trim()) rows.push(["B · Conversión kg/día", num(bConv)])
-      if (bDias.trim()) rows.push(["B · Días", parseInt(bDias) || 0])
+      for (const v of VARS) if (bOv[v.key]?.trim()) rows.push([`B · ${v.label}`, v.tipo === "money" || v.tipo === "num" ? num(bOv[v.key]) : v.tipo === "int" ? (parseInt(bOv[v.key]) || 0) : (parseFloat(bOv[v.key].replace(",", ".")) || 0)])
       rows.push(
         ["", "A", "B", "Δ (B−A)"],
         ["Ganancia / cabeza", Math.round(c.gananciaCab), Math.round(cB.gananciaCab), Math.round(cB.gananciaCab - c.gananciaCab)],
@@ -666,35 +676,26 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
             </div>
 
             {verB && (() => {
-              const bVars = [
-                { k: "venta", label: "Venta $/kg", val: bPrecioVenta, set: setBPrecioVenta, ph: precioVenta, w: "w-20" },
-                { k: "compra", label: "Compra $/kg", val: bPrecioCompra, set: setBPrecioCompra, ph: precioCompra, w: "w-20" },
-                { k: "maiz", label: "Maíz $/kg", val: bMaiz, set: setBMaiz, ph: maizPrecio, w: "w-20" },
-                { k: "conc", label: "Concentrado $/kg", val: bConc, set: setBConc, ph: concPrecio, w: "w-20" },
-                { k: "mort", label: "Mortandad %", val: bMort, set: setBMort, ph: mortandad, w: "w-12" },
-                { k: "conv", label: "Conversión", val: bConv, set: setBConv, ph: conversion, w: "w-14" },
-                { k: "dias", label: "Días", val: bDias, set: setBDias, ph: dias, w: "w-14" },
-              ]
-              const visibles = bVars.filter(v => bVisibles.has(v.k) || v.val.trim())
-              const ocultas = bVars.filter(v => !bVisibles.has(v.k) && !v.val.trim())
+              const activas = VARS.filter(v => bOv[v.key] !== undefined)
+              const disponibles = VARS.filter(v => bOv[v.key] === undefined)
               return (
                 <div className="p-2 rounded-lg bg-indigo-50/60 border border-indigo-200">
-                  <div className="text-xs text-indigo-700 mb-1">Escenario B — agregá solo las variables que querés cambiar (el resto usa A):</div>
+                  <div className="text-xs text-indigo-700 mb-1">Escenario B — agregá las variables que querés cambiar (el resto usa A):</div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    {visibles.map(v => (
-                      <span key={v.k} className="flex items-center gap-1">
+                    {activas.map(v => (
+                      <span key={v.key} className="flex items-center gap-1">
                         <span className={lbl}>{v.label}</span>
-                        <input placeholder={v.ph} value={v.val} onChange={e => v.set(e.target.value)} className={`${inp} ${v.w}`} />
-                        <button type="button" onClick={() => { v.set(""); setBVisibles(prev => { const n = new Set(prev); n.delete(v.k); return n }) }} className="text-xs text-gray-400 hover:text-red-600" title="Sacar variable">✕</button>
+                        <input placeholder={v.base} value={bOv[v.key]} onChange={e => setBOv(o => ({ ...o, [v.key]: e.target.value }))} className={`${inp} ${v.w}`} />
+                        <button type="button" onClick={() => setBOv(o => { const n = { ...o }; delete n[v.key]; return n })} className="text-xs text-gray-400 hover:text-red-600" title="Sacar variable">✕</button>
                       </span>
                     ))}
-                    {ocultas.length > 0 && (
-                      <select value="" onChange={e => { if (e.target.value) setBVisibles(prev => new Set(prev).add(e.target.value)) }} className="border border-indigo-300 rounded px-1 py-0.5 text-indigo-700 text-xs">
+                    {disponibles.length > 0 && (
+                      <select value="" onChange={e => { if (e.target.value) setBOv(o => ({ ...o, [e.target.value]: "" })) }} className="border border-indigo-300 rounded px-1 py-0.5 text-indigo-700 text-xs">
                         <option value="">＋ agregar variable…</option>
-                        {ocultas.map(v => <option key={v.k} value={v.k}>{v.label}</option>)}
+                        {disponibles.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
                       </select>
                     )}
-                    {visibles.length === 0 && <span className="text-xs text-gray-400">(sin variables agregadas — B = A)</span>}
+                    {!activas.length && <span className="text-xs text-gray-400">(sin variables — B = A)</span>}
                   </div>
                 </div>
               )
