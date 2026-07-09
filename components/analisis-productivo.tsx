@@ -46,11 +46,14 @@ interface SegState {
   racionPV: string; maizPct: string; concPct: string
   bOv: Record<string, string>; verB: boolean
   etapas: StageForm[]
+  incluido: boolean        // cuenta en la ganancia combinada (el "no elegido" queda pero suma 0)
+  salidaEtapa: number      // hasta qué etapa se vende (índice en cadena.pasos; -1 = última/punta a punta)
 }
 
 interface SegProps extends Props {
   indice: number
   onRemove?: () => void
+  onDuplicar?: () => void
   onTotal?: (v: number) => void
   initial?: Partial<SegState>
   onState?: (s: SegState) => void
@@ -136,7 +139,7 @@ function calcular(i: CalcInputs) {
   }
 }
 
-function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial, onState, mercado }: SegProps) {
+function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, mercado }: SegProps) {
   const letra = String.fromCharCode(65 + indice) // A, B, C…
   const hoy = new Date().toISOString().slice(0, 10)
   const g = <K extends keyof SegState>(k: K, def: SegState[K]): SegState[K] => (initial?.[k] ?? def) as SegState[K]
@@ -200,6 +203,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     return ov
   })
   const [verB, setVerB] = useState(g("verB", false))
+  const [incluido, setIncluido] = useState(g("incluido", true))   // cuenta en la combinada
+  const [salidaEtapa, setSalidaEtapa] = useState<number>(g("salidaEtapa", -1)) // -1 = última etapa
   // Análisis de sensibilidad (sesión): variables a analizar con su base y paso; escalones global
   const [verSens, setVerSens] = useState(false)
   const [sensEscalones, setSensEscalones] = useState("2")
@@ -291,15 +296,18 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     return { pasos, totalPunta: pasos.reduce((s, p) => s + p.ganancia, 0) }
   })()
 
-  // Reportar el total de este segmento al contenedor (para el combinado)
-  const totalSeg = etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal
+  // Punto de salida: hasta qué etapa se vende (ganancia acumulada hasta ahí)
+  const exitIdx = (salidaEtapa < 0 || salidaEtapa >= cadena.pasos.length) ? cadena.pasos.length - 1 : salidaEtapa
+  const gananciaHastaSalida = cadena.pasos.slice(0, exitIdx + 1).reduce((s, p) => s + p.ganancia, 0)
+  // Reportar a la combinada: 0 si el segmento no está incluido (alternativa no elegida)
+  const totalSeg = incluido ? gananciaHastaSalida : 0
   useEffect(() => { onTotal?.(totalSeg) }, [totalSeg]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Snapshot serializable → reportar al contenedor (para guardar/cargar estudios)
   const snapshot: SegState = {
     fase, notas, fuente, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
     fechaInicio, fechaFin, dias, conversion, mortandad, desbEnt, desbSal, czEnt, czSal,
-    racionPV, maizPct, concPct, bOv, verB, etapas,
+    racionPV, maizPct, concPct, bOv, verB, etapas, incluido, salidaEtapa,
   }
   const snapKey = JSON.stringify(snapshot)
   useEffect(() => { onState?.(snapshot) }, [snapKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -501,17 +509,19 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   return (
     <div className="border rounded-lg p-3 bg-emerald-50/40 shrink-0 w-[470px]">
       <div className="flex items-center gap-2 mb-2">
-        <button type="button" onClick={() => setColapsado(v => !v)} className="flex items-center gap-2 flex-1 text-left font-semibold text-gray-700">
+        <input type="checkbox" checked={incluido} onChange={e => setIncluido(e.target.checked)} title="Incluir en la ganancia combinada (destildá la alternativa que no elegís)" className="shrink-0" />
+        <button type="button" onClick={() => setColapsado(v => !v)} className={`flex items-center gap-2 flex-1 text-left font-semibold ${incluido ? "text-gray-700" : "text-gray-400"}`}>
           <span className="text-gray-400">{colapsado ? "▶" : "▼"}</span>
           <span>Segmento {letra}</span>
           {!colapsado || c.cant > 0
-            ? <span className="text-xs font-normal text-emerald-700">· ${money(etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal)}</span>
+            ? <span className={`text-xs font-normal ${incluido ? "text-emerald-700" : "text-gray-400 line-through"}`}>· ${money(gananciaHastaSalida)}{cadena.pasos.length > 1 ? ` (hasta ${cadena.pasos[exitIdx]?.nombre})` : ""}</span>
             : null}
         </button>
         {!colapsado && (<>
           <button type="button" onClick={exportarExcel} className="text-xs px-1.5 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50">⬇xls</button>
           <button type="button" onClick={exportarPDF} className="text-xs px-1.5 py-1 rounded border border-red-400 text-red-700 hover:bg-red-50">⬇pdf</button>
         </>)}
+        {onDuplicar && <button type="button" onClick={onDuplicar} title="Duplicar este segmento (para armar la alternativa B)" className="text-xs px-1.5 py-1 rounded border border-blue-300 text-blue-600 hover:bg-blue-50">⧉ dup</button>}
         {onRemove && <button type="button" onClick={onRemove} title="Quitar segmento" className="text-xs px-1.5 py-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">✕</button>}
       </div>
 
@@ -892,7 +902,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
               <table className="text-sm">
                 <thead>
                   <tr className="text-gray-500 border-b">
-                    <th className="text-left pr-4 py-1">Etapa</th>
+                    <th className="text-center px-1 py-1" title="Vendés al final de esta etapa">Salida</th>
+                    <th className="text-left pr-4">Etapa</th>
                     <th className="text-left px-3">Período</th>
                     <th className="text-right px-3">Peso ini→fin</th>
                     <th className="text-right px-3">Cant.</th>
@@ -901,19 +912,23 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                   </tr>
                 </thead>
                 <tbody>
-                  {cadena.pasos.map((p, i) => (
-                    <tr key={i} className="hover:bg-white">
-                      <td className="pr-4 py-1">{p.nombre}</td>
-                      <td className="px-3 text-gray-500 text-xs">{p.fechaIni} → {p.fechaFin}</td>
-                      <td className="text-right px-3">{kg(p.pIni)} → {kg(p.pFin)}</td>
-                      <td className="text-right px-3">{Math.round(p.cant)}</td>
-                      <td className="text-right px-3">${money(p.V)}</td>
-                      <td className={`text-right px-3 ${p.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(p.ganancia)}</td>
-                    </tr>
-                  ))}
+                  {cadena.pasos.map((p, i) => {
+                    const incluida = i <= exitIdx
+                    return (
+                      <tr key={i} className={incluida ? "" : "text-gray-300"}>
+                        <td className="text-center px-1"><input type="radio" name={`salida-seg-${indice}`} checked={exitIdx === i} onChange={() => setSalidaEtapa(i === cadena.pasos.length - 1 ? -1 : i)} title="Vender al final de esta etapa" /></td>
+                        <td className="pr-4 py-1">{p.nombre}</td>
+                        <td className="px-3 text-gray-500 text-xs">{p.fechaIni} → {p.fechaFin}</td>
+                        <td className="text-right px-3">{kg(p.pIni)} → {kg(p.pFin)}</td>
+                        <td className="text-right px-3">{Math.round(p.cant)}</td>
+                        <td className="text-right px-3">${money(p.V)}</td>
+                        <td className={`text-right px-3 ${!incluida ? "" : p.ganancia >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(p.ganancia)}</td>
+                      </tr>
+                    )
+                  })}
                   <tr className="font-semibold border-t">
-                    <td className="pr-4 py-1" colSpan={5}>Ganancia total punta a punta</td>
-                    <td className={`text-right px-3 text-base ${cadena.totalPunta >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(cadena.totalPunta)}</td>
+                    <td colSpan={6} className="pr-4 py-1">Ganancia hasta la salida ({cadena.pasos[exitIdx]?.nombre})</td>
+                    <td className={`text-right px-3 text-base ${gananciaHastaSalida >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(gananciaHastaSalida)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1008,6 +1023,13 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   }
   const reportTotal = (id: number, v: number) => setTotales(t => t[id] === v ? t : { ...t, [id]: v })
   const reportState = (id: number, s: SegState) => { segStatesRef.current[id] = s }
+  const duplicarSeg = (id: number) => {
+    const st = segStatesRef.current[id]
+    if (!st) return
+    const nid = nextId.current++
+    setInitials(ini => ({ ...ini, [nid]: JSON.parse(JSON.stringify(st)) }))
+    setSegIds(p => { const i = p.indexOf(id); const n = [...p]; n.splice(i + 1, 0, nid); return n })
+  }
   const combinado = segIds.reduce((s, id) => s + (totales[id] || 0), 0)
 
   const snapshotEstudio = (): Estudio => ({
@@ -1154,6 +1176,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
           <AnalisisSegmento key={id} indice={i} secciones={secciones} total={total}
             initial={initials[id]}
             mercado={mercadoDisponible ? { precio: precioMercado, resaltar: resaltarMercado, limpiar: limpiarResaltar } : undefined}
+            onDuplicar={() => duplicarSeg(id)}
             onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
             onTotal={v => reportTotal(id, v)}
             onState={s => reportState(id, s)} />
