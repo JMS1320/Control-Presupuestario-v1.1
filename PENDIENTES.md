@@ -76,6 +76,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) |
+| A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un Personal Access Token (`sbp_...`, admin de toda la cuenta Supabase) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git** (commits viejos). **Acción del usuario: ROTAR el token** en Supabase → Account → Access Tokens (revocar el viejo + generar nuevo, actualizar el MCP local). Motivo: un PAT filtrado da control total de la cuenta a quien lo tenga. |
 
 ### Datos (los carga el usuario)
 | ID | Estado | Ítem |
