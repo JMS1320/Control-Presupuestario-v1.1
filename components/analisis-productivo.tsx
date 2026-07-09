@@ -11,10 +11,14 @@
 // Multi-segmento: cada columna = un segmento (AnalisisSegmento), en vertical el encadenamiento.
 // El contenedor AnalisisProductivo pone los segmentos en horizontal y suma el total combinado.
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type ChangeEvent } from "react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { toast } from "sonner"
+
+const LS_ESTUDIOS = "analisis_engorde_estudios"
+interface Estudio { version: number; fecha: string; segments: SegState[] }
 
 export interface SegmentoAnalisis {
   label: string
@@ -27,10 +31,24 @@ interface Props {
   total: { cantidad: number; promedio: number } | null
 }
 
+// Estado serializable de un segmento (para guardar/cargar estudios)
+interface SegState {
+  fase: string; notas: string
+  cantidad: string; pesoInicio: string
+  maizPrecio: string; concPrecio: string; tc: string; precioCompra: string; precioVenta: string
+  fechaInicio: string; fechaFin: string; dias: string; conversion: string
+  mortandad: string; desbEnt: string; desbSal: string; czEnt: string; czSal: string
+  racionPV: string; maizPct: string; concPct: string
+  bPrecioVenta: string; bPrecioCompra: string; bMaiz: string; bConc: string; bMort: string; bConv: string; bDias: string; verB: boolean
+  etapas: StageForm[]
+}
+
 interface SegProps extends Props {
   indice: number
   onRemove?: () => void
   onTotal?: (v: number) => void
+  initial?: Partial<SegState>
+  onState?: (s: SegState) => void
 }
 
 // ── Helpers de parseo (es-AR) ──────────────────────────────────────────────
@@ -108,42 +126,43 @@ function calcular(i: CalcInputs) {
   }
 }
 
-function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegProps) {
+function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial, onState }: SegProps) {
   const letra = String.fromCharCode(65 + indice) // A, B, C…
+  const hoy = new Date().toISOString().slice(0, 10)
+  const g = <K extends keyof SegState>(k: K, def: SegState[K]): SegState[K] => (initial?.[k] ?? def) as SegState[K]
   const [colapsado, setColapsado] = useState(indice > 0)
-  const [fase, setFase] = useState("")
-  const [notas, setNotas] = useState("")
+  const [fase, setFase] = useState(g("fase", ""))
+  const [notas, setNotas] = useState(g("notas", ""))
 
   // Fuente: 'total' | índice de sección
-  const [cantidad, setCantidad] = useState("0")
-  const [pesoInicio, setPesoInicio] = useState("0")
+  const [cantidad, setCantidad] = useState(g("cantidad", "0"))
+  const [pesoInicio, setPesoInicio] = useState(g("pesoInicio", "0"))
 
   // Precios (inputs)
-  const [maizPrecio, setMaizPrecio] = useState("270")
-  const [concPrecio, setConcPrecio] = useState("745")
-  const [tc, setTc] = useState("1450")
-  const [precioCompra, setPrecioCompra] = useState("5.400")
-  const [precioVenta, setPrecioVenta] = useState("5.000")
+  const [maizPrecio, setMaizPrecio] = useState(g("maizPrecio", "270"))
+  const [concPrecio, setConcPrecio] = useState(g("concPrecio", "745"))
+  const [tc, setTc] = useState(g("tc", "1450"))
+  const [precioCompra, setPrecioCompra] = useState(g("precioCompra", "5.400"))
+  const [precioVenta, setPrecioVenta] = useState(g("precioVenta", "5.000"))
 
   // Período (fecha fin ↔ días)
-  const hoy = new Date().toISOString().slice(0, 10)
-  const [fechaInicio, setFechaInicio] = useState(hoy)
-  const [fechaFin, setFechaFin] = useState(addDays(hoy, 74))
-  const [dias, setDias] = useState("74")
-  const [conversion, setConversion] = useState("0,7")
+  const [fechaInicio, setFechaInicio] = useState(g("fechaInicio", hoy))
+  const [fechaFin, setFechaFin] = useState(g("fechaFin", addDays(hoy, 74)))
+  const [dias, setDias] = useState(g("dias", "74"))
+  const [conversion, setConversion] = useState(g("conversion", "0,7"))
 
   // Mortandad (input %, solo salida — descuenta kg del bruto vendido)
-  const [mortandad, setMortandad] = useState("0")
+  const [mortandad, setMortandad] = useState(g("mortandad", "0"))
   // Desbaste / CZ (inputs %)
-  const [desbEnt, setDesbEnt] = useState("3")
-  const [desbSal, setDesbSal] = useState("5")
-  const [czEnt, setCzEnt] = useState("4")
-  const [czSal, setCzSal] = useState("4")
+  const [desbEnt, setDesbEnt] = useState(g("desbEnt", "3"))
+  const [desbSal, setDesbSal] = useState(g("desbSal", "5"))
+  const [czEnt, setCzEnt] = useState(g("czEnt", "4"))
+  const [czSal, setCzSal] = useState(g("czSal", "4"))
 
   // Ración
-  const [racionPV, setRacionPV] = useState("1,5")
-  const [maizPct, setMaizPct] = useState("85")
-  const [concPct, setConcPct] = useState("15")
+  const [racionPV, setRacionPV] = useState(g("racionPV", "1,5"))
+  const [maizPct, setMaizPct] = useState(g("maizPct", "85"))
+  const [concPct, setConcPct] = useState(g("concPct", "15"))
 
   // ── Handlers de pares vinculados ──
   const onDias = (v: string) => { setDias(v); setFechaFin(addDays(fechaInicio, parseInt(v) || 0)) }
@@ -161,14 +180,14 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
   }
 
   // Overrides del escenario B (vacío = usa A)
-  const [bPrecioVenta, setBPrecioVenta] = useState("")
-  const [bPrecioCompra, setBPrecioCompra] = useState("")
-  const [bMaiz, setBMaiz] = useState("")
-  const [bConc, setBConc] = useState("")
-  const [bMort, setBMort] = useState("")
-  const [bConv, setBConv] = useState("")
-  const [bDias, setBDias] = useState("")
-  const [verB, setVerB] = useState(false)
+  const [bPrecioVenta, setBPrecioVenta] = useState(g("bPrecioVenta", ""))
+  const [bPrecioCompra, setBPrecioCompra] = useState(g("bPrecioCompra", ""))
+  const [bMaiz, setBMaiz] = useState(g("bMaiz", ""))
+  const [bConc, setBConc] = useState(g("bConc", ""))
+  const [bMort, setBMort] = useState(g("bMort", ""))
+  const [bConv, setBConv] = useState(g("bConv", ""))
+  const [bDias, setBDias] = useState(g("bDias", ""))
+  const [verB, setVerB] = useState(g("verB", false))
 
   // ── Cálculo (mirror del Excel) — función pura, corrida por escenario ──
   const baseInputs: CalcInputs = {
@@ -178,7 +197,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
     racionPV: pct(racionPV), maizPct: pct(maizPct), concPct: pct(concPct), maizPrecio: num(maizPrecio), concPrecio: num(concPrecio),
   }
   // Etapas encadenadas (v2). Etapa 1 = estado top-level; estas son las siguientes.
-  const [etapas, setEtapas] = useState<StageForm[]>([])
+  const [etapas, setEtapas] = useState<StageForm[]>(g("etapas", []))
   const addEtapa = () => setEtapas(prev => [...prev, {
     nombre: `Etapa ${prev.length + 2}`, dias: "60", conversion, precioVenta,
     maizPrecio, concPrecio, desbSal, czSal, mort: mortandad, racionPV, maizPct, concPct,
@@ -240,6 +259,15 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
   // Reportar el total de este segmento al contenedor (para el combinado)
   const totalSeg = etapas.length > 0 ? cadena.totalPunta : c.gananciaTotal
   useEffect(() => { onTotal?.(totalSeg) }, [totalSeg]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Snapshot serializable → reportar al contenedor (para guardar/cargar estudios)
+  const snapshot: SegState = {
+    fase, notas, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
+    fechaInicio, fechaFin, dias, conversion, mortandad, desbEnt, desbSal, czEnt, czSal,
+    racionPV, maizPct, concPct, bPrecioVenta, bPrecioCompra, bMaiz, bConc, bMort, bConv, bDias, verB, etapas,
+  }
+  const snapKey = JSON.stringify(snapshot)
+  useEffect(() => { onState?.(snapshot) }, [snapKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Contra-cálculo: punto de equilibrio (etapa 1 / decisión de entrada) ──
   // Coincide EXACTO con el modelo (test verificado). Precios NETOS = tras desbaste+CZ+mort.
@@ -739,26 +767,102 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal }: SegPr
   )
 }
 
-// ── Contenedor: segmentos en horizontal + total combinado ──
+// ── Contenedor: segmentos en horizontal + total combinado + guardar/cargar estudios ──
 export function AnalisisProductivo({ secciones, total }: Props) {
   const nextId = useRef(1)
   const [segIds, setSegIds] = useState<number[]>([0])
   const [totales, setTotales] = useState<Record<number, number>>({})
+  const [initials, setInitials] = useState<Record<number, Partial<SegState>>>({})
+  const segStatesRef = useRef<Record<number, SegState>>({})
+  const [estudios, setEstudios] = useState<Record<string, Estudio>>({})
+  const [sel, setSel] = useState("")
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { try { setEstudios(JSON.parse(localStorage.getItem(LS_ESTUDIOS) || "{}")) } catch { /* ignore */ } }, [])
+
   const addSeg = () => setSegIds(p => [...p, nextId.current++])
   const removeSeg = (id: number) => {
     setSegIds(p => p.filter(x => x !== id))
     setTotales(t => { const n = { ...t }; delete n[id]; return n })
+    delete segStatesRef.current[id]
   }
   const reportTotal = (id: number, v: number) => setTotales(t => t[id] === v ? t : { ...t, [id]: v })
+  const reportState = (id: number, s: SegState) => { segStatesRef.current[id] = s }
   const combinado = segIds.reduce((s, id) => s + (totales[id] || 0), 0)
+
+  const snapshotEstudio = (): Estudio => ({
+    version: 1, fecha: new Date().toISOString(),
+    segments: segIds.map(id => segStatesRef.current[id]).filter(Boolean) as SegState[],
+  })
+  const cargarEstudio = (est: Estudio) => {
+    const segs = est.segments || []
+    if (!segs.length) return
+    const ids = segs.map(() => nextId.current++)
+    const ini: Record<number, Partial<SegState>> = {}
+    ids.forEach((id, i) => { ini[id] = segs[i] })
+    segStatesRef.current = {}
+    setInitials(ini)
+    setTotales({})
+    setSegIds(ids)
+  }
+
+  const guardar = () => {
+    const nombre = (prompt("Nombre del estudio:", sel || "") || "").trim()
+    if (!nombre) return
+    const all = { ...estudios, [nombre]: snapshotEstudio() }
+    localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
+    setEstudios(all); setSel(nombre)
+    toast.success(`Estudio "${nombre}" guardado`)
+  }
+  const borrar = () => {
+    if (!sel) return
+    const all = { ...estudios }; delete all[sel]
+    localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
+    setEstudios(all); setSel("")
+    toast.success("Estudio borrado")
+  }
+  const descargarArchivo = () => {
+    const blob = new Blob([JSON.stringify(snapshotEstudio(), null, 2)], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url; a.download = `Estudio_engorde_${new Date().toISOString().slice(0, 10)}.json`
+    a.click(); URL.revokeObjectURL(url)
+  }
+  const cargarArchivo = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try { cargarEstudio(JSON.parse(reader.result as string) as Estudio); toast.success("Estudio cargado del archivo") }
+      catch { toast.error("Archivo inválido") }
+    }
+    reader.readAsText(file); e.target.value = ""
+  }
 
   return (
     <div className="mb-4">
+      {/* Barra guardar/cargar estudios */}
+      <div className="flex flex-wrap items-center gap-2 mb-2 text-sm">
+        <span className="font-semibold text-gray-600">Estudio</span>
+        <button type="button" onClick={guardar} className="px-2 py-1 rounded border border-emerald-500 text-emerald-700 hover:bg-emerald-50">💾 Guardar</button>
+        <select value={sel} onChange={e => { setSel(e.target.value); if (e.target.value && estudios[e.target.value]) cargarEstudio(estudios[e.target.value]) }} className="border rounded px-1 py-1">
+          <option value="">Cargar guardado…</option>
+          {Object.keys(estudios).sort().map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        {sel && <button type="button" onClick={borrar} title="Borrar este estudio guardado" className="px-1.5 py-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">🗑</button>}
+        <span className="text-gray-300">·</span>
+        <button type="button" onClick={descargarArchivo} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬇ Archivo</button>
+        <button type="button" onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬆ Cargar archivo</button>
+        <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={cargarArchivo} />
+        <span className="text-xs text-gray-400">guardado = en esta PC · archivo = portable/backup</span>
+      </div>
+
       <div className="flex gap-3 overflow-x-auto pb-2 items-start">
         {segIds.map((id, i) => (
           <AnalisisSegmento key={id} indice={i} secciones={secciones} total={total}
+            initial={initials[id]}
             onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
-            onTotal={v => reportTotal(id, v)} />
+            onTotal={v => reportTotal(id, v)}
+            onState={s => reportState(id, s)} />
         ))}
         <button type="button" onClick={addSeg} title="Agregar otro segmento a la derecha"
           className="shrink-0 self-start px-3 py-6 rounded-lg border-2 border-dashed border-emerald-400 text-emerald-700 hover:bg-emerald-50 text-sm font-medium whitespace-nowrap">
