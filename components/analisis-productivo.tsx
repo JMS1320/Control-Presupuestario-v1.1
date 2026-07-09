@@ -22,7 +22,7 @@ const LS_ESTUDIOS = "analisis_engorde_estudios"
 export interface SegConfig {
   origen: string; grupos: string[]; ganancia: number; cada: number; desde: number | null; fecha: string; cortes: number[] | null
 }
-interface Estudio { version: number; fecha: string; segments: SegState[]; segConfig?: SegConfig }
+interface Estudio { version: number; fecha: string; segments: SegState[]; segConfigs?: SegConfig[]; segConfig?: SegConfig /* compat viejo */ }
 
 export interface SegmentoAnalisis {
   label: string
@@ -817,10 +817,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
 
 // ── Contenedor: segmentos en horizontal + total combinado + guardar/cargar estudios ──
 interface ContainerProps extends Props {
-  segConfig?: SegConfig
-  onRestoreSegConfig?: (c: SegConfig) => void
+  segConfigs?: SegConfig[]
+  onRestoreSegConfigs?: (c: SegConfig[]) => void
 }
-export function AnalisisProductivo({ secciones, total, segConfig, onRestoreSegConfig }: ContainerProps) {
+export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegConfigs }: ContainerProps) {
   const nextId = useRef(1)
   const [segIds, setSegIds] = useState<number[]>([0])
   const [totales, setTotales] = useState<Record<number, number>>({})
@@ -845,12 +845,13 @@ export function AnalisisProductivo({ secciones, total, segConfig, onRestoreSegCo
   const snapshotEstudio = (): Estudio => ({
     version: 1, fecha: new Date().toISOString(),
     segments: segIds.map(id => segStatesRef.current[id]).filter(Boolean) as SegState[],
-    segConfig,
+    segConfigs,
   })
   const cargarEstudio = (est: Estudio) => {
     const segs = est.segments || []
     if (!segs.length) return
-    if (est.segConfig) onRestoreSegConfig?.(est.segConfig) // reconstruye el dibujo de la segmentación
+    const cfgs = est.segConfigs ?? (est.segConfig ? [est.segConfig] : undefined)
+    if (cfgs) onRestoreSegConfigs?.(cfgs) // reconstruye los segmentadores
     const ids = segs.map(() => nextId.current++)
     const ini: Record<number, Partial<SegState>> = {}
     ids.forEach((id, i) => { ini[id] = segs[i] })
