@@ -57,6 +57,7 @@ interface SegProps extends Props {
   mercado?: {
     precio: (sexo: "macho" | "hembra", peso: number) => { precio: number; cats: string[] } | null
     resaltar?: (sexo: "macho" | "hembra", cats: string[]) => void
+    limpiar?: () => void
   }
 }
 
@@ -474,9 +475,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
   const sexoSeg: "macho" | "hembra" | null = /achos|orito/i.test(fuente) ? "macho" : /embra|ernera/i.test(fuente) ? "hembra" : null
   const puedeMercado = !!(mercado && sexoSeg)
   const fmtNum = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
-  const usarMercadoCompra = () => { const r = mercado?.precio(sexoSeg!, num(pesoInicio)); if (r) { setPrecioCompra(fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
-  const usarMercadoVenta = () => { const r = mercado?.precio(sexoSeg!, c.pFin); if (r) { setPrecioVenta(fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
-  const usarMercadoEtapa = (idx: number, pesoFin: number) => { const r = mercado?.precio(sexoSeg!, pesoFin); if (r) { updEtapa(idx, "precioVenta", fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
+  // Se busca por kg NETOS (post-desbaste), que es el peso al que cotiza el mercado.
+  const usarMercadoCompra = () => { const r = mercado?.precio(sexoSeg!, c.pNetoEnt); if (r) { setPrecioCompra(fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
+  const usarMercadoVenta = () => { const r = mercado?.precio(sexoSeg!, c.pNetoSal); if (r) { setPrecioVenta(fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
+  const usarMercadoEtapa = (idx: number, pesoNetoSal: number) => { const r = mercado?.precio(sexoSeg!, pesoNetoSal); if (r) { updEtapa(idx, "precioVenta", fmtNum(r.precio)); mercado?.resaltar?.(sexoSeg!, r.cats) } else toast.error("Sin precio de mercado para ese peso/sexo") }
 
   const inp = "border rounded px-1 py-0.5 text-right"
   const lbl = "text-gray-500"
@@ -528,8 +530,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
             <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={maizPrecio} onChange={e => setMaizPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>Concentrado $/kg</span><input value={concPrecio} onChange={e => setConcPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>TC</span><input value={tc} onChange={e => setTc(e.target.value)} className={`${inp} w-20`} /></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => setPrecioCompra(e.target.value)} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoCompra} title={`Precio de mercado (${sexoSeg}, ${Math.round(num(pesoInicio))} kg vivo)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoEnt)} kg)</span></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoVenta} title={`Precio de mercado (${sexoSeg}, ${Math.round(c.pFin)} kg vivo)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoSal)} kg)</span></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => { setPrecioCompra(e.target.value); mercado?.limpiar?.() }} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoCompra} title={`Precio de mercado (${sexoSeg}, ${Math.round(c.pNetoEnt)} kg netos)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoEnt)} kg)</span></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => { setPrecioVenta(e.target.value); mercado?.limpiar?.() }} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoVenta} title={`Precio de mercado (${sexoSeg}, ${Math.round(c.pNetoSal)} kg netos)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoSal)} kg)</span></span>
           </div>
 
           {/* Período */}
@@ -752,7 +754,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                     <span className="font-medium text-gray-600">Venta</span>
-                    <span className="flex items-center gap-1"><span className={lbl}>$/kg</span><input value={e.precioVenta} onChange={ev => updEtapa(idx, "precioVenta", ev.target.value)} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={() => usarMercadoEtapa(idx, paso.pFin)} title={`Precio de mercado (${sexoSeg}, ${Math.round(paso.pFin)} kg vivo)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}</span>
+                    <span className="flex items-center gap-1"><span className={lbl}>$/kg</span><input value={e.precioVenta} onChange={ev => { updEtapa(idx, "precioVenta", ev.target.value); mercado?.limpiar?.() }} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={() => usarMercadoEtapa(idx, pc.pNetoSal)} title={`Precio de mercado (${sexoSeg}, ${Math.round(pc.pNetoSal)} kg netos)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}</span>
                     <span className="flex items-center gap-1"><span className={lbl}>Desbaste %</span><input value={e.desbSal} onChange={ev => updEtapa(idx, "desbSal", ev.target.value)} className={`${inp} w-12`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>CZ %</span><input value={e.czSal} onChange={ev => updEtapa(idx, "czSal", ev.target.value)} className={`${inp} w-12`} /></span>
                     <span className="flex items-center gap-1"><span className={lbl}>Mort. %</span><input value={e.mort} onChange={ev => updEtapa(idx, "mort", ev.target.value)} className={`${inp} w-12`} /></span>
@@ -885,7 +887,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
       let i = 0; while (i < anclas.length - 1 && anclas[i + 1].w <= peso) i++
       const a = anclas[i], b = anclas[i + 1]
       base = a.p + ((peso - a.w) / (b.w - a.w)) * (b.p - a.p)
-      cats = [a.cat, b.cat]
+      cats = [a.cat] // el rango que contiene el peso (a.pesoLo ≤ peso < b.pesoLo)
     }
     return { precio: base * primaFactor, cats }
   }
@@ -893,6 +895,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   // Resaltar en el panel los rangos usados por el último "mkt"
   const [mercResaltar, setMercResaltar] = useState<{ sexo: "macho" | "hembra"; cats: string[] } | null>(null)
   const resaltarMercado = (sexo: "macho" | "hembra", cats: string[]) => { setMercSexoVer(sexo); setMercResaltar({ sexo, cats }); setMercOpen(true) }
+  const limpiarResaltar = () => setMercResaltar(null)
 
   useEffect(() => { try { setEstudios(JSON.parse(localStorage.getItem(LS_ESTUDIOS) || "{}")) } catch { /* ignore */ } }, [])
 
@@ -1044,7 +1047,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
         {segIds.map((id, i) => (
           <AnalisisSegmento key={id} indice={i} secciones={secciones} total={total}
             initial={initials[id]}
-            mercado={mercadoDisponible ? { precio: precioMercado, resaltar: resaltarMercado } : undefined}
+            mercado={mercadoDisponible ? { precio: precioMercado, resaltar: resaltarMercado, limpiar: limpiarResaltar } : undefined}
             onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
             onTotal={v => reportTotal(id, v)}
             onState={s => reportState(id, s)} />
