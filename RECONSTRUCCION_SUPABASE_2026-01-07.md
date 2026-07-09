@@ -11027,3 +11027,27 @@ ALTER TABLE pam.comprobantes_arca ADD COLUMN IF NOT EXISTS fecha_pago date;
 ALTER TABLE ma.comprobantes_arca  ADD COLUMN IF NOT EXISTS fecha_pago date;
 ```
 - ⏳ **PENDIENTE (no código aún):** SICORE pasa a usar `fecha_pago` (`generarQuincenaSicore` + fila `sicore_retenciones.fecha_pago`), fiscal, solo hacia adelante. + que el pago escriba `fecha_pago` (depende de decisión base operativa Modal vs Cash Flow — ver PENDIENTES B-FEAT-BASE-OPERATIVA / MANUAL-USO).
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-09 · Tabla mails_pago (cola de mails de detalle)
+
+Feature: enviar automáticamente el **Detalle de pago** (PDF) por mail al proveedor, con el **certificado SICORE** adjunto si hay retención. Flujo: app encola → GAS crea borradores en Gmail → envío manual/lote. Ver PENDIENTES B-FEAT-MAIL-DETALLE.
+
+```sql
+-- Aplicado 2026-07-09 (aditivo, schema public)
+CREATE TABLE IF NOT EXISTS public.mails_pago (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  creado_at timestamptz DEFAULT now(),
+  grupo_pago_id uuid, comprobante_arca_id uuid,
+  proveedor text, cuit text,
+  email_destino text NOT NULL,        -- de proveedores.email_pagos
+  asunto text NOT NULL, cuerpo text NOT NULL,
+  detalle_pdf text NOT NULL,          -- PDF base64
+  retencion_pdf text,                 -- certificado SICORE base64 (nullable)
+  tiene_sicore boolean DEFAULT false,
+  adjuntar_retencion boolean DEFAULT true,
+  estado text DEFAULT 'pendiente',    -- pendiente | borrador | enviado | error
+  gmail_draft_id text, error text, enviado_at timestamptz
+);
+GRANT ALL ON public.mails_pago TO anon, authenticated, service_role;
+CREATE INDEX IF NOT EXISTS idx_mails_pago_estado ON public.mails_pago (estado);
+```
