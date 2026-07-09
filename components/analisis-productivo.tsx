@@ -806,13 +806,34 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     setSegIds(ids)
   }
 
-  const guardar = () => {
+  // Descarga con selector de ruta (File System Access API) y fallback a carpeta Descargas.
+  const descargarEstudio = async (est: Estudio, nombreArch: string) => {
+    const json = JSON.stringify(est, null, 2)
+    const w = window as unknown as { showSaveFilePicker?: (o: { suggestedName?: string; types?: unknown[] }) => Promise<{ createWritable: () => Promise<{ write: (d: string) => Promise<void>; close: () => Promise<void> }> }> }
+    if (w.showSaveFilePicker) {
+      try {
+        const handle = await w.showSaveFilePicker({ suggestedName: nombreArch, types: [{ description: "Estudio de análisis", accept: { "application/json": [".json"] } }] })
+        const wr = await handle.createWritable(); await wr.write(json); await wr.close()
+        toast.success("Archivo guardado")
+      } catch { /* el usuario canceló el diálogo */ }
+    } else {
+      const blob = new Blob([json], { type: "application/json" })
+      const url = URL.createObjectURL(blob); const a = document.createElement("a")
+      a.href = url; a.download = nombreArch; a.click(); URL.revokeObjectURL(url)
+    }
+  }
+
+  const guardar = async () => {
     const nombre = (prompt("Nombre del estudio:", sel || "") || "").trim()
     if (!nombre) return
-    const all = { ...estudios, [nombre]: snapshotEstudio() }
+    const est = snapshotEstudio()
+    const all = { ...estudios, [nombre]: est }
     localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
     setEstudios(all); setSel(nombre)
-    toast.success(`Estudio "${nombre}" guardado`)
+    toast.success(`Estudio "${nombre}" guardado en la app`)
+    if (confirm("¿Descargar también el archivo (backup portable, elegís la carpeta)?")) {
+      await descargarEstudio(est, `Estudio_${nombre.replace(/\s+/g, "_")}.json`)
+    }
   }
   const borrar = () => {
     if (!sel) return
@@ -821,13 +842,7 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     setEstudios(all); setSel("")
     toast.success("Estudio borrado")
   }
-  const descargarArchivo = () => {
-    const blob = new Blob([JSON.stringify(snapshotEstudio(), null, 2)], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url; a.download = `Estudio_engorde_${new Date().toISOString().slice(0, 10)}.json`
-    a.click(); URL.revokeObjectURL(url)
-  }
+  const descargarArchivo = () => descargarEstudio(snapshotEstudio(), `Estudio_engorde_${new Date().toISOString().slice(0, 10)}.json`)
   const cargarArchivo = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
     const reader = new FileReader()
