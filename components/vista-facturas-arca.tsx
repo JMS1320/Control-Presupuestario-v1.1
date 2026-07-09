@@ -5526,8 +5526,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       tipo_sicore: string | null
       sicore: string | null
       fecha_pago: string
-    } | null
-  ) => {
+    } | null,
+    opciones?: { returnBase64?: boolean }
+  ): Promise<string | void> => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
@@ -5659,11 +5660,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         }
       })
 
+      if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
+
       const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
       doc.save(nombreArchivo)
 
     } catch (error) {
-      console.error('Error generando PDF comprobante de pago:', error)
+      console.error('Error generando PDF detalle de pago:', error)
       alert('Error al generar PDF: ' + (error as Error).message)
     }
   }
@@ -5923,6 +5926,61 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       }
     } finally {
       setDescargandoCerts(false)
+    }
+  }
+
+  // ── Encolar mail de Detalle de pago (cola public.mails_pago → GAS crea borradores) ──
+  const abToBase64 = (buf: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buf); let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return btoa(bin)
+  }
+  // Mapea un grupo de facturas ARCA a los items del detalle (reusado por el botón PDF y el de mail)
+  const mapFacsAItems = (facs: Array<Record<string, unknown>>) => facs.map((f) => {
+    const tc = (f.tc_pago ?? f.tipo_cambio ?? 1) as number
+    return {
+      comprobante: `FC ${f.tipo_comprobante}-${String((f.punto_venta as number) || 0).padStart(5, '0')}-${String((f.numero_desde as number) || 0).padStart(8, '0')}`,
+      fecha: (f.fecha_emision as string) || '',
+      fecha_estimada: (f.fecha_estimada as string) || (f.fecha_vencimiento as string) || null,
+      imp_total: ((f.imp_total as number) || 0) * tc,
+      monto_sicore: f.monto_sicore as number | null,
+      descuento_aplicado: f.descuento_aplicado as number | null,
+      monto_a_abonar: montoPagoEnPesos(f as never),
+    }
+  })
+  const encolarMailDetalle = async (
+    tipo: 'arca' | 'template', proveedor: string, cuit: string,
+    items: Parameters<typeof generarPDFDetallePago>[3],
+    anticipo?: Parameters<typeof generarPDFDetallePago>[4]
+  ) => {
+    try {
+      const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true })
+      if (!detalleB64) { alert('No se pudo generar el detalle PDF'); return }
+      const cuitClean = (cuit || '').replace(/\D/g, '')
+      const { data: prov } = await supabase.from('proveedores').select('email_pagos').eq('cuit', cuitClean).maybeSingle()
+      const email = (prov as { email_pagos?: string } | null)?.email_pagos || ''
+      // Certificado: si hay registros SICORE cargados (no anulados) para este CUIT
+      const regs = registrosV2.filter((r: { anulado?: boolean; cuit_emisor?: string }) => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean)
+      let retB64: string | null = null
+      if (regs.length) {
+        const bytes = await generarCertificadoRetencion(regs as Parameters<typeof generarCertificadoRetencion>[0], true)
+        if (bytes) retB64 = abToBase64(bytes)
+      }
+      const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
+      const fcs = items.map(i => i.comprobante).join(', ')
+      const asunto = `Detalle de pago — ${proveedor}`
+      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\nMonto total: $${totalPagado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.${retB64 ? '\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nSaludos.`
+      const { error } = await supabase.from('mails_pago').insert({
+        proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
+        detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
+        estado: 'pendiente',
+      })
+      if (error) { alert('Error encolando mail: ' + error.message); return }
+      alert(email
+        ? `✉ Mail de detalle encolado para ${proveedor} (${email})${retB64 ? ' + certificado' : ''}`
+        : `✉ Encolado para ${proveedor} — SIN email (cargá email_pagos del proveedor o completalo en el panel)`)
+    } catch (e) {
+      alert('Error encolando mail: ' + (e as Error).message)
     }
   }
 
@@ -10132,25 +10190,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
                                   <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'arca', row.proveedor, row.cuit,
-                                        facsGrupo.map(f => {
-                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-                                          return {
-                                            comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                            fecha: f.fecha_emision || '',
-                                            fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
-                                            imp_total: (f.imp_total || 0) * tc,
-                                            monto_sicore: f.monto_sicore,
-                                            descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: montoPagoEnPesos(f),
-                                          }
-                                        })
-                                      )}
-                                    >📄</Button>
+                                    <div className="flex items-center gap-1">
+                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
+                                      >📄</Button>
+                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
+                                      >✉</Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
