@@ -310,6 +310,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
       ["CZ (comerc.) %", num(czEnt), num(czSal)],
       ["Merma $", -Math.round(c.mermaCzEnt), -Math.round(c.mermaCzSal)],
       ["NETO", Math.round(c.netoEnt), Math.round(c.czNetoSal)],
+      ["Precio neto $/kg vivo (sin desbaste)", pIniBE > 0 ? round1(c.netoEnt / pIniBE) : "", c.pFin > 0 ? round1(c.czNetoSal / c.pFin) : ""],
+      ["Precio neto $/kg (con desbaste)", c.pNetoEnt > 0 ? round1(c.netoEnt / c.pNetoEnt) : "", c.pNetoSal > 0 ? round1(c.czNetoSal / c.pNetoSal) : ""],
       [],
       ["RACIÓN — peso prom.", round1(c.pProm)],
       ["Ración % PV", num(racionPV)], ["Ración kg/día", round1(c.racKgDia)],
@@ -393,6 +395,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
         ["CZ %", `${czEnt}%`, `${czSal}%`],
         ["Merma $", `-$${money(c.mermaCzEnt)}`, `-$${money(c.mermaCzSal)}`],
         ["NETO", `$${money(c.netoEnt)}`, `$${money(c.czNetoSal)}`],
+        ["$/kg vivo (sin desbaste)", pIniBE > 0 ? `$${money(c.netoEnt / pIniBE)}` : "—", c.pFin > 0 ? `$${money(c.czNetoSal / c.pFin)}` : "—"],
+        ["$/kg neto (con desbaste)", c.pNetoEnt > 0 ? `$${money(c.netoEnt / c.pNetoEnt)}` : "—", c.pNetoSal > 0 ? `$${money(c.czNetoSal / c.pNetoSal)}` : "—"],
       ],
     })
     autoTable(doc, {
@@ -576,6 +580,16 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                 <td className="pr-4 py-1">NETO</td>
                 <td className="text-right px-3">${money(c.netoEnt)}</td>
                 <td className="text-right px-3">${money(c.czNetoSal)}</td>
+              </tr>
+              <tr className="text-gray-500 text-xs">
+                <td className="pr-4 pl-2">↳ $/kg vivo (sin desbaste)</td>
+                <td className="text-right px-3">{pIniBE > 0 ? `$${money(c.netoEnt / pIniBE)}` : "—"}</td>
+                <td className="text-right px-3">{c.pFin > 0 ? `$${money(c.czNetoSal / c.pFin)}` : "—"}</td>
+              </tr>
+              <tr className="text-gray-500 text-xs">
+                <td className="pr-4 pl-2">↳ $/kg neto (con desbaste)</td>
+                <td className="text-right px-3">{c.pNetoEnt > 0 ? `$${money(c.netoEnt / c.pNetoEnt)}` : "—"}</td>
+                <td className="text-right px-3">{c.pNetoSal > 0 ? `$${money(c.czNetoSal / c.pNetoSal)}` : "—"}</td>
               </tr>
             </tbody>
           </table>
