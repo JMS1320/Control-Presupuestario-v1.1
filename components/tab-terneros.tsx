@@ -1943,6 +1943,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               promedio: r.promedio,
             }))}
             total={segReporte.total}
+            segConfig={{ origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes }}
+            onRestoreSegConfig={cfg => {
+              setSegOrigen(cfg.origen === 'pesada' ? 'pesada' : 'estimado')
+              setSegGrupos(new Set(cfg.grupos))
+              setSegGanancia(cfg.ganancia); setSegCada(cfg.cada); setSegDesde(cfg.desde)
+              setSegFecha(cfg.fecha); setSegCortes(cfg.cortes); setSegColapsado(false)
+            }}
           />
 
           {todasFechas.length === 0 ? (

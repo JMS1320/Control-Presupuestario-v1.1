@@ -18,7 +18,11 @@ import autoTable from "jspdf-autotable"
 import { toast } from "sonner"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
-interface Estudio { version: number; fecha: string; segments: SegState[] }
+// Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
+export interface SegConfig {
+  origen: string; grupos: string[]; ganancia: number; cada: number; desde: number | null; fecha: string; cortes: number[] | null
+}
+interface Estudio { version: number; fecha: string; segments: SegState[]; segConfig?: SegConfig }
 
 export interface SegmentoAnalisis {
   label: string
@@ -810,7 +814,11 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
 }
 
 // ── Contenedor: segmentos en horizontal + total combinado + guardar/cargar estudios ──
-export function AnalisisProductivo({ secciones, total }: Props) {
+interface ContainerProps extends Props {
+  segConfig?: SegConfig
+  onRestoreSegConfig?: (c: SegConfig) => void
+}
+export function AnalisisProductivo({ secciones, total, segConfig, onRestoreSegConfig }: ContainerProps) {
   const nextId = useRef(1)
   const [segIds, setSegIds] = useState<number[]>([0])
   const [totales, setTotales] = useState<Record<number, number>>({})
@@ -835,10 +843,12 @@ export function AnalisisProductivo({ secciones, total }: Props) {
   const snapshotEstudio = (): Estudio => ({
     version: 1, fecha: new Date().toISOString(),
     segments: segIds.map(id => segStatesRef.current[id]).filter(Boolean) as SegState[],
+    segConfig,
   })
   const cargarEstudio = (est: Estudio) => {
     const segs = est.segments || []
     if (!segs.length) return
+    if (est.segConfig) onRestoreSegConfig?.(est.segConfig) // reconstruye el dibujo de la segmentación
     const ids = segs.map(() => nextId.current++)
     const ini: Record<number, Partial<SegState>> = {}
     ids.forEach((id, i) => { ini[id] = segs[i] })
