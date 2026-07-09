@@ -54,6 +54,7 @@ interface SegProps extends Props {
   onTotal?: (v: number) => void
   initial?: Partial<SegState>
   onState?: (s: SegState) => void
+  mercado?: { precio: (sexo: "macho" | "hembra", peso: number) => number | null }
 }
 
 // ── Helpers de parseo (es-AR) ──────────────────────────────────────────────
@@ -131,7 +132,7 @@ function calcular(i: CalcInputs) {
   }
 }
 
-function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial, onState }: SegProps) {
+function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial, onState, mercado }: SegProps) {
   const letra = String.fromCharCode(65 + indice) // A, B, C…
   const hoy = new Date().toISOString().slice(0, 10)
   const g = <K extends keyof SegState>(k: K, def: SegState[K]): SegState[K] => (initial?.[k] ?? def) as SegState[K]
@@ -466,6 +467,13 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     doc.save(nombreArch() + ".pdf")
   }
 
+  // Precio de mercado: sexo derivado de la Fuente (label "A·Machos: …" / "A·Hembras: …")
+  const sexoSeg: "macho" | "hembra" | null = /achos|orito/i.test(fuente) ? "macho" : /embra|ernera/i.test(fuente) ? "hembra" : null
+  const puedeMercado = !!(mercado && sexoSeg)
+  const fmtNum = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
+  const usarMercadoCompra = () => { const p = mercado?.precio(sexoSeg!, num(pesoInicio)); if (p) setPrecioCompra(fmtNum(p)); else toast.error("Sin precio de mercado para ese peso/sexo") }
+  const usarMercadoVenta = () => { const p = mercado?.precio(sexoSeg!, c.pFin); if (p) setPrecioVenta(fmtNum(p)); else toast.error("Sin precio de mercado para ese peso/sexo") }
+
   const inp = "border rounded px-1 py-0.5 text-right"
   const lbl = "text-gray-500"
 
@@ -516,8 +524,8 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
             <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={maizPrecio} onChange={e => setMaizPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>Concentrado $/kg</span><input value={concPrecio} onChange={e => setConcPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>TC</span><input value={tc} onChange={e => setTc(e.target.value)} className={`${inp} w-20`} /></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => setPrecioCompra(e.target.value)} className={`${inp} w-20`} /><span className="text-xs text-gray-400">(neto {kg(c.pNetoEnt)} kg)</span></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} className={`${inp} w-20`} /><span className="text-xs text-gray-400">(neto {kg(c.pNetoSal)} kg)</span></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => setPrecioCompra(e.target.value)} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoCompra} title={`Precio de mercado (${sexoSeg}, ${Math.round(num(pesoInicio))} kg vivo)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoEnt)} kg)</span></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} className={`${inp} w-20`} />{puedeMercado && <button type="button" onClick={usarMercadoVenta} title={`Precio de mercado (${sexoSeg}, ${Math.round(c.pFin)} kg vivo)`} className="text-xs px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">mkt</button>}<span className="text-xs text-gray-400">(neto {kg(c.pNetoSal)} kg)</span></span>
           </div>
 
           {/* Período */}
@@ -836,19 +844,47 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   const hace7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
   const [mercDesde, setMercDesde] = useState(hace7)
   const [mercHasta, setMercHasta] = useState(hoyISO)
-  const [mercFilas, setMercFilas] = useState<FilaMercado[] | null>(null)
+  const [mercMacho, setMercMacho] = useState<FilaMercado[] | null>(null)
+  const [mercHembra, setMercHembra] = useState<FilaMercado[] | null>(null)
+  const [mercSexoVer, setMercSexoVer] = useState<"macho" | "hembra">("macho")
+  const [prima, setPrima] = useState("") // % de calidad sobre el precio calculado (vacío = 0)
   const [mercLoading, setMercLoading] = useState(false)
   const [mercOpen, setMercOpen] = useState(false)
+  const mercFilas = mercSexoVer === "hembra" ? mercHembra : mercMacho
   const traerMercado = async () => {
     setMercLoading(true)
     try {
-      const r = await fetch(`/api/precios-mercado?desde=${mercDesde}&hasta=${mercHasta}`)
-      const d = await r.json()
-      if (!r.ok) throw new Error(d.error || "Error")
-      setMercFilas(d.filas); setMercOpen(true)
+      const [rm, rh] = await Promise.all([
+        fetch(`/api/precios-mercado?sexo=macho&desde=${mercDesde}&hasta=${mercHasta}`),
+        fetch(`/api/precios-mercado?sexo=hembra&desde=${mercDesde}&hasta=${mercHasta}`),
+      ])
+      const dm = await rm.json(), dh = await rh.json()
+      if (!rm.ok) throw new Error(dm.error || "Error (machos)")
+      setMercMacho(dm.filas)
+      setMercHembra(rh.ok ? dh.filas : null)
+      setMercOpen(true)
     } catch (e) { toast.error("Precios de mercado: " + (e as Error).message) }
     finally { setMercLoading(false) }
   }
+  // Precio de mercado interpolado: base = Kilo+ (máximo) del rango en su extremo liviano (pesoLo),
+  // interpolado por peso; × (1 + prima%). Fuera de los extremos → ancla del extremo (no extrapola).
+  const primaFactor = 1 + (parseFloat(prima.replace(",", ".")) || 0) / 100
+  const precioMercado = (sexo: "macho" | "hembra", peso: number): number | null => {
+    const filas = sexo === "hembra" ? mercHembra : mercMacho
+    if (!filas || !filas.length || !peso) return null
+    const anclas = filas.map(f => ({ w: f.pesoLo, p: f.kiloMax })).filter(a => a.p > 0).sort((a, b) => a.w - b.w)
+    if (!anclas.length) return null
+    let base: number
+    if (peso <= anclas[0].w) base = anclas[0].p
+    else if (peso >= anclas[anclas.length - 1].w) base = anclas[anclas.length - 1].p
+    else {
+      let i = 0; while (i < anclas.length - 1 && anclas[i + 1].w <= peso) i++
+      const a = anclas[i], b = anclas[i + 1]
+      base = a.p + ((peso - a.w) / (b.w - a.w)) * (b.p - a.p)
+    }
+    return base * primaFactor
+  }
+  const mercadoDisponible = !!(mercMacho || mercHembra)
 
   useEffect(() => { try { setEstudios(JSON.parse(localStorage.getItem(LS_ESTUDIOS) || "{}")) } catch { /* ignore */ } }, [])
 
@@ -957,7 +993,15 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
           <span className="text-gray-500">Hasta</span>
           <input type="date" value={mercHasta} onChange={e => setMercHasta(e.target.value)} className="border rounded px-1 py-0.5" />
           <button type="button" onClick={traerMercado} disabled={mercLoading} className="px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">{mercLoading ? "Trayendo…" : "Traer precios"}</button>
-          {mercFilas && <span className="text-xs text-gray-400">{mercFilas.length} categorías · fuente: entresurcosycorralesya.com</span>}
+          {mercadoDisponible && (<>
+            <span className="ml-2 flex items-center gap-1">
+              {(["macho", "hembra"] as const).map(s => (
+                <button key={s} type="button" onClick={() => setMercSexoVer(s)} className={`px-2 py-0.5 rounded-full border text-xs ${mercSexoVer === s ? "bg-slate-700 text-white border-slate-700" : "bg-white border-gray-300 text-gray-500"}`}>{s === "macho" ? "♂ Machos" : "♀ Hembras"}</button>
+              ))}
+            </span>
+            <span className="flex items-center gap-1"><span className="text-gray-500">Prima calidad %</span><input value={prima} onChange={e => setPrima(e.target.value)} placeholder="0" className="border rounded px-1 py-0.5 w-14 text-right" /></span>
+          </>)}
+          {mercFilas && <span className="text-xs text-gray-400">{mercFilas.length} cat · fuente: entresurcosycorralesya.com</span>}
         </div>
         {mercOpen && mercFilas && (
           <div className="px-2 pb-2 overflow-x-auto">
@@ -992,6 +1036,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
         {segIds.map((id, i) => (
           <AnalisisSegmento key={id} indice={i} secciones={secciones} total={total}
             initial={initials[id]}
+            mercado={mercadoDisponible ? { precio: precioMercado } : undefined}
             onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
             onTotal={v => reportTotal(id, v)}
             onState={s => reportState(id, s)} />
