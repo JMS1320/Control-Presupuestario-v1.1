@@ -227,6 +227,21 @@
 
 ---
 
+## Import de Pesadas (productivo) — comportamiento `#productivo #pesadas #import #2026-07-09`
+
+Endpoint `app/api/import-pesadas/route.ts` (2 acciones: `?accion=analizar` y `?accion=confirmar`). Modal en `tab-terneros.tsx`.
+
+- **Una fecha por archivo.** Si el Excel tiene fechas distintas → lo **rechaza** (separar en un archivo por fecha).
+- **IDV → caravana_oficial** vía `idvACaravana` (padStart 15, espacio tras pos 3). Match contra `productivo.terneros` activos.
+- **Clasificación:** `ok` (1 match) · `duplicadas` (>1 match → el usuario elige ternero) · `no_encontradas` (caravana en Excel pero no en BD → "sin vincular" con `ternero_id=null` + `caravana_idv`, o "crear nuevo" ternero) · **`sin_idv`** (fila con peso pero SIN caravana legible → hoy **solo se cuenta y se DESCARTA**, no se guarda). Ver pendiente B-FEAT-15.
+- **Columnas del historial = por FECHA.** Importar más pesadas con la **misma fecha** → van a la **misma columna** (no crea columna nueva). Fecha distinta → columna nueva.
+- ⚠️ **SIN dedup**: `productivo.pesadas_terneros` solo tiene **PK en `id`** (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada → **duplica** la pesada en silencio. Ver pendiente B-FEAT-16.
+- **Segmentación** (multi-segmentador) excluye animales `activo=false` (bajas/mortandad) aunque tengan pesadas históricas. Las pesadas `ternero_id=null` (sin vincular) NO entran hoy al promedio.
+
+**Tags**: `#productivo` `#pesadas` `#import` `#dedup` `#2026-07-09`
+
+---
+
 # 🔧 **CONFIGURACIONES MASTER** `#config #funcionando`
 
 ## MCP Supabase Windows CMD Wrapper - FUNCIONANDO `#mcp #windows #cmd-wrapper #2025-08-14`
@@ -239,7 +254,7 @@
     "supabase": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--project-ref=upaygsviflbuwraaawhf"],
-      "env": {"SUPABASE_ACCESS_TOKEN": "sbp_dc3586c6770fdbadda8899e9523b753ba3b4a105"}
+      "env": {"SUPABASE_ACCESS_TOKEN": "<TU_TOKEN_SUPABASE>"}   // ⚠️ NUNCA commitear el token real. Antes había uno hardcodeado → ROTARLO en Supabase (ver nota abajo).
     }
   }
 }

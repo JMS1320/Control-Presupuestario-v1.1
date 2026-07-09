@@ -157,3 +157,35 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 15. `fecha_pago` editable en: columna Cash Flow · grilla templates · grilla ARCA.
 16. Venc read-only para templates en Cash Flow (editable solo en "Egresos sin Factura").
 17. Propagación: editar `fecha_pago` → la fila se reubica en el Cash Flow (arrastra a estimada).
+
+---
+
+## 🐄 Módulo: Análisis productivo-económico (engorde) 🟡 (nuevo, sin testear)
+
+**Dónde:** Sector Productivo → Recría → botón **"Historial pesadas"** (modal). Debajo de las pesadas históricas.
+**Para qué:** decidir, por segmento de peso, si conviene comprar/engordar/vender, con proyección de margen y punto de equilibrio.
+**Código:** `components/segmentador.tsx` (segmentación) + `components/analisis-productivo.tsx` (análisis). Todo **client-side** (no toca BD salvo el marcado de reposición y el import de pesadas). Estudios se guardan en **localStorage** + archivo `.json`.
+
+### Marcar reposición (grilla Recría, botón 🐂 Reposición) ✅
+- Reusa la columna `es_torito` como flag de **reposición** (macho→torito, hembra→ternera rep).
+- Chips de filtro por grupo + columnas ordenables + **"Seleccionar N más pesadas"** (respeta el chip activo) → **Marcar / Quitar**. La escritura la dispara el usuario.
+
+### Segmentadores (multi) 🟡
+- **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
+- El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").
+- Eje de densidad vertical: **arrastrás los divisores** para mover cortes, colapsás contra un vecino para **borrar**, botones **＋ sección** para crear. Peso "estimado hoy" (con ganancia editable) o una pesada elegida. Excluye bajas (mortandad).
+- Así conviven **Machos y Hembras a la vez** sin mezclarse.
+
+### Análisis por segmento (columnas) 🟡
+- Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).
+- Modelo de engorde (reconstruido del Excel del usuario): precios, desbaste, CZ (comercialización), ración (maíz/concentrado), mortandad. Muestra Entrada/Salida con mermas, precio neto $/kg (con y sin desbaste), y **Ganancia /cab + total**.
+- **Escenario B:** cargás solo lo que cambia (venta/maíz/etc.) → tabla A | B | Δ.
+- **Cadena de etapas** ("＋ Encadenar etapa"): peso bruto y fecha propagan; mortandad reduce la cantidad; ración usa cant de inicio. Ganancia etapa k = Vk − V(k−1) − ración (costo de oportunidad). Total **punta a punta**.
+- **Punto de equilibrio:** misma ganancia por otro camino (pérdida inicial /cab, costo y margen por kg, kg/días para recuperar, días "tuyos"). Coincide exacto (test verificado).
+- **Export Excel/PDF** por segmento. **Regla:** al agregar campos al análisis, actualizar SIEMPRE los exports.
+
+### Guardar estudios ✅
+- Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑** · **⬇/⬆ Archivo `.json`** (portable).
+- Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
+
+**Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
