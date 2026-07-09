@@ -46,7 +46,7 @@ export const generarPDFDetallePago = async (
     // ── Header ────────────────────────────────────────────────────────────
     doc.setFontSize(16)
     doc.setFont('helvetica', 'bold')
-    doc.text('COMPROBANTE DE PAGO', pageW / 2, 18, { align: 'center' })
+    doc.text('DETALLE DE PAGO', pageW / 2, 18, { align: 'center' })
 
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
@@ -159,7 +159,7 @@ export const generarPDFDetallePago = async (
       }
     })
 
-    const nombreArchivo = `ComprobantePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
+    const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
     doc.save(nombreArchivo)
 
   } catch (error) {

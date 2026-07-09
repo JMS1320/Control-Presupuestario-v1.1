@@ -2303,7 +2303,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       className="text-xs border-green-500 text-green-700 hover:bg-green-50"
                       disabled={filasSeleccionadas.size === 0}
                     >
-                      📄 Comprobante PDF
+                      📄 Detalle PDF
                     </Button>
                     <Button
                       size="sm"
