@@ -44,12 +44,20 @@ export async function GET(request: Request) {
   try {
     const modulo = sexo === "hembra" ? "ternera" : "ternero"
     const url = `https://www.entresurcosycorralesya.com/ajax-modulo-${modulo}.php?desde=${desde}&hasta=${hasta}`
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest" },
-      cache: "no-store",
-    })
-    if (!res.ok) return NextResponse.json({ error: `La web respondió ${res.status}` }, { status: 502 })
+    const ctrl = new AbortController()
+    const to = setTimeout(() => ctrl.abort(), 12000)
+    let res: Response
+    try {
+      res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest" },
+        cache: "no-store", signal: ctrl.signal,
+      })
+    } finally { clearTimeout(to) }
+    if (!res.ok) return NextResponse.json({ error: `La web de precios respondió ${res.status}` }, { status: 502 })
     const html = await res.text()
+    if (!html.trim()) {
+      return NextResponse.json({ error: "Sin datos para ese rango de fechas. Probá fechas un poco anteriores (el sitio publica con demora)." }, { status: 404 })
+    }
 
     const filas: FilaMercado[] = []
     const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi
@@ -76,10 +84,11 @@ export async function GET(request: Request) {
     }
 
     if (!filas.length) {
-      return NextResponse.json({ error: "No se pudo parsear la tabla (¿cambió la estructura de la web?)" }, { status: 502 })
+      return NextResponse.json({ error: "Sin datos para ese rango (o cambió la estructura de la web). Probá otras fechas." }, { status: 404 })
     }
     return NextResponse.json({ desde, hasta, filas })
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 })
+    const msg = (e as Error).name === "AbortError" ? "La web de precios tardó demasiado (timeout). Probá de nuevo." : "No se pudo conectar con la web de precios: " + (e as Error).message
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }

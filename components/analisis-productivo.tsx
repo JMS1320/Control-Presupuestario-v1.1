@@ -741,7 +741,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                   <div className="flex justify-between gap-2 border-t pt-0.5 mt-0.5"><span className={lbl}>Pérdida inicial por cabeza <span className="text-gray-400">({kg(pIniBE)}kg × ({money(PcEf)}−{money(PvEf)}))</span></span><span className="text-red-600 whitespace-nowrap">${money(perdidaIniCab)}</span></div>
                   <div className="flex justify-between gap-2"><span className={lbl}>Kg para recuperarla <span className="text-gray-400">(pérdida ÷ margen)</span></span><span className="whitespace-nowrap">{Math.round(kgRecuperar)} kg</span></div>
                   <div className="flex justify-between gap-2"><span className={lbl}>Días para recuperarla <span className="text-gray-400">(kg ÷ {convBE} conv.)</span></span><span className="whitespace-nowrap">{Math.round(diasRecuperar)} días</span></div>
-                  <div className="flex justify-between gap-2"><span className={lbl}>Días productivos "tuyos" <span className="text-gray-400">(ciclo {c.d} − {Math.round(diasRecuperar)})</span></span><span className={`whitespace-nowrap ${diasRestantes >= 0 ? "text-emerald-700 font-medium" : "text-red-600 font-medium"}`}>{Math.round(diasRestantes)} días</span></div>
+                  <div className="flex justify-between gap-2"><span className={lbl}>Días productivos "tuyos" <span className="text-gray-400">(ciclo {c.d} − {Math.round(diasRecuperar)})</span></span><span className={`whitespace-nowrap ${diasRestantes >= 0 ? "text-emerald-700 font-medium" : "text-red-600 font-medium"}`}>{Math.round(diasRestantes)} días ({c.d > 0 ? Math.round((diasRestantes / c.d) * 100) : 0}%)</span></div>
                   <div className="flex justify-between gap-2 border-t pt-0.5 mt-0.5"><span className={lbl}>Ganancia por cabeza <span className="text-gray-400">(días × {convBE} × margen)</span></span><span className={`whitespace-nowrap ${gananciaBECab >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}`}>${money(gananciaBECab)} ✓</span></div>
                   <div className="flex justify-between gap-2"><span className={lbl}>Ganancia total (× {c.cant} cab)</span><span className={`whitespace-nowrap ${gananciaBECab >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}`}>${money(gananciaBECab * c.cant)}</span></div>
                 </div>
@@ -947,10 +947,10 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Precios de mercado (referencia, scraping entresurcosycorralesya)
-  const hoyISO = new Date().toISOString().slice(0, 10)
-  const hace7 = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-  const [mercDesde, setMercDesde] = useState(hace7)
-  const [mercHasta, setMercHasta] = useState(hoyISO)
+  // Default: ventana que termina unos días atrás (el sitio publica con demora; los días más recientes vienen vacíos)
+  const isoDias = (d: number) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
+  const [mercDesde, setMercDesde] = useState(isoDias(13))
+  const [mercHasta, setMercHasta] = useState(isoDias(3))
   const [mercMacho, setMercMacho] = useState<FilaMercado[] | null>(null)
   const [mercHembra, setMercHembra] = useState<FilaMercado[] | null>(null)
   const [mercSexoVer, setMercSexoVer] = useState<"macho" | "hembra">("macho")
@@ -1058,12 +1058,12 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
       await descargarEstudio(est, `Estudio_${nombre.replace(/\s+/g, "_")}.json`)
     }
   }
-  const borrar = () => {
-    if (!sel) return
-    const all = { ...estudios }; delete all[sel]
+  const borrarEstudio = (nombre: string) => {
+    if (!nombre || !confirm(`¿Borrar el estudio "${nombre}"? (no se puede deshacer)`)) return
+    const all = { ...estudios }; delete all[nombre]
     localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
-    setEstudios(all); setSel("")
-    toast.success("Estudio borrado")
+    setEstudios(all); if (sel === nombre) setSel("")
+    toast.success(`Estudio "${nombre}" borrado`)
   }
   const descargarArchivo = () => descargarEstudio(snapshotEstudio(), `Estudio_engorde_${new Date().toISOString().slice(0, 10)}.json`)
   const cargarArchivo = (e: ChangeEvent<HTMLInputElement>) => {
@@ -1086,7 +1086,12 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
           <option value="">Cargar guardado…</option>
           {Object.keys(estudios).sort().map(n => <option key={n} value={n}>{n}</option>)}
         </select>
-        {sel && <button type="button" onClick={borrar} title="Borrar este estudio guardado" className="px-1.5 py-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">🗑</button>}
+        {Object.keys(estudios).length > 0 && (
+          <select value="" onChange={e => { const n = e.target.value; e.target.value = ""; if (n) borrarEstudio(n) }} className="border border-red-200 rounded px-1 py-1 text-red-600" title="Borrar un estudio guardado (sin cargarlo)">
+            <option value="">🗑 borrar…</option>
+            {Object.keys(estudios).sort().map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
         <span className="text-gray-300">·</span>
         <button type="button" onClick={descargarArchivo} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬇ Archivo</button>
         <button type="button" onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬆ Cargar archivo</button>
