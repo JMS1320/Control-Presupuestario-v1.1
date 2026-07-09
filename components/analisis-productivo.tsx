@@ -513,6 +513,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
               <select value={fuente} onChange={e => usarFuente(e.target.value)} className="border rounded px-1 py-0.5">
                 <option value="">elegí…</option>
                 {total && <option value="total">Total rodeo ({total.cantidad} cab · {Math.round(total.promedio)} kg)</option>}
+                {/* Fuente guardada que ya no está en la lista actual (cambió la segmentación) → la muestro igual */}
+                {fuente && fuente !== "total" && !secciones.some(s => s.label === fuente) && (
+                  <option value={fuente}>{fuente} · (del estudio)</option>
+                )}
                 {secciones.map((s, i) => s.cantidad > 0 && (
                   <option key={i} value={s.label}>{s.label} ({s.cantidad} cab · {Math.round(s.promedio)} kg)</option>
                 ))}
