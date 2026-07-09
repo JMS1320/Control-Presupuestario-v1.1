@@ -11,6 +11,9 @@
 // v1: un solo bloque (sin escalonar etapas ni agrupar segmentos — pendiente).
 
 import { useMemo, useState } from "react"
+import * as XLSX from "xlsx"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 export interface SegmentoAnalisis {
   label: string
@@ -45,6 +48,7 @@ const diffDays = (a: string, b: string) => {
 export function AnalisisProductivo({ secciones, total }: Props) {
   const [colapsado, setColapsado] = useState(true)
   const [fase, setFase] = useState("")
+  const [notas, setNotas] = useState("")
 
   // Fuente: 'total' | índice de sección
   const [cantidad, setCantidad] = useState("0")
@@ -143,18 +147,113 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     }
   }, [cantidad, dias, conversion, pesoInicio, desbEnt, desbSal, czEnt, czSal, precioCompra, precioVenta, racionPV, maizPct, concPct, maizPrecio, concPrecio])
 
+  // ── Export Excel / PDF ──
+  const round1 = (n: number) => Math.round(n * 10) / 10
+  const nombreArch = () => `Analisis_${(fase || "engorde").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}`
+
+  const filasExport = (): (string | number)[][] => [
+    ["ANÁLISIS PRODUCTIVO-ECONÓMICO"],
+    ["Fase", fase],
+    [],
+    ["Cantidad", c.cant],
+    ["Maíz $/kg", num(maizPrecio)], ["Concentrado $/kg", num(concPrecio)], ["TC", num(tc)],
+    ["Precio compra $/kg", num(precioCompra)], ["Precio venta $/kg", num(precioVenta)],
+    ["Fecha inicio", fechaInicio], ["Fecha fin", fechaFin], ["Días", c.d],
+    ["Conversión kg/día", num(conversion)], ["Kg ganados", round1(c.kgGanados)],
+    [],
+    ["", "ENTRADA (compra)", "SALIDA (venta)"],
+    ["Peso", round1(num(pesoInicio)), round1(c.pFin)],
+    ["Desbaste %", num(desbEnt), num(desbSal)],
+    ["Merma kg", -round1(c.mermaKgEnt), -round1(c.mermaKgSal)],
+    ["Peso neto (ref. precio)", round1(c.pNetoEnt), round1(c.pNetoSal)],
+    ["Monto bruto", Math.round(c.brutoEnt), Math.round(c.brutoSal)],
+    ["CZ (comerc.) %", num(czEnt), num(czSal)],
+    ["Merma $", -Math.round(c.mermaCzEnt), -Math.round(c.mermaCzSal)],
+    ["NETO", Math.round(c.netoEnt), Math.round(c.czNetoSal)],
+    [],
+    ["RACIÓN — peso prom.", round1(c.pProm)],
+    ["Ración % PV", num(racionPV)], ["Ración kg/día", round1(c.racKgDia)],
+    ["Maíz %", num(maizPct), "Concentrado %", num(concPct)],
+    ["Maíz kg/día", round1(c.maizKgDia), "costo", Math.round(c.maizCosto), "Kg totales lote", Math.round(c.maizKgLote)],
+    ["Concentrado kg/día", round1(c.concKgDia), "costo", Math.round(c.concCosto), "Kg totales lote", Math.round(c.concKgLote)],
+    ["Costo ración total", Math.round(c.costoRacion)],
+    [],
+    ["Ganancia / cabeza", Math.round(c.gananciaCab)],
+    ["Ganancia total", Math.round(c.gananciaTotal)],
+    [],
+    ["Notas", notas],
+  ]
+
+  const exportarExcel = () => {
+    const ws = XLSX.utils.aoa_to_sheet(filasExport())
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Análisis")
+    XLSX.writeFile(wb, nombreArch() + ".xlsx")
+  }
+
+  const exportarPDF = () => {
+    const doc = new jsPDF()
+    doc.setFontSize(14); doc.text("Análisis productivo-económico", 14, 16)
+    doc.setFontSize(10); doc.text(`Fase: ${fase || "—"}   ·   ${new Date().toLocaleDateString("es-AR")}`, 14, 23)
+    autoTable(doc, {
+      startY: 28, theme: "grid", styles: { fontSize: 8 }, head: [["Parámetro", "Valor"]],
+      body: [
+        ["Cantidad", String(c.cant)],
+        ["Precio compra $/kg → neto", `$${money(num(precioCompra))}  (neto ${kg(c.pNetoEnt)} kg)`],
+        ["Precio venta $/kg → neto", `$${money(num(precioVenta))}  (neto ${kg(c.pNetoSal)} kg)`],
+        ["Período", `${fechaInicio} → ${fechaFin} (${c.d} días)`],
+        ["Conversión kg/día", conversion], ["Kg ganados", kg(c.kgGanados)],
+      ],
+    })
+    autoTable(doc, {
+      startY: (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4, theme: "grid", styles: { fontSize: 8 },
+      head: [["", "Entrada (compra)", "Salida (venta)"]],
+      body: [
+        ["Peso", `${kg(num(pesoInicio))} kg`, `${kg(c.pFin)} kg`],
+        ["Desbaste %", `${desbEnt}%`, `${desbSal}%`],
+        ["Merma kg", `-${kg(c.mermaKgEnt)}`, `-${kg(c.mermaKgSal)}`],
+        ["Peso neto", `${kg(c.pNetoEnt)} kg`, `${kg(c.pNetoSal)} kg`],
+        ["Monto bruto", `$${money(c.brutoEnt)}`, `$${money(c.brutoSal)}`],
+        ["CZ %", `${czEnt}%`, `${czSal}%`],
+        ["Merma $", `-$${money(c.mermaCzEnt)}`, `-$${money(c.mermaCzSal)}`],
+        ["NETO", `$${money(c.netoEnt)}`, `$${money(c.czNetoSal)}`],
+      ],
+    })
+    autoTable(doc, {
+      startY: (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4, theme: "grid", styles: { fontSize: 8 },
+      head: [["Ración", "kg/día", "Costo/cab", "Kg totales lote"]],
+      body: [
+        ["Maíz", kg(c.maizKgDia), `-$${money(-c.maizCosto)}`, money(c.maizKgLote)],
+        ["Concentrado", kg(c.concKgDia), `-$${money(-c.concCosto)}`, money(c.concKgLote)],
+        ["Costo ración total", "", `-$${money(-c.costoRacion)}`, ""],
+      ],
+    })
+    const yEnd = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
+    doc.setFontSize(11)
+    doc.text(`Ganancia / cabeza: $${money(c.gananciaCab)}`, 14, yEnd)
+    doc.text(`Ganancia total (x${c.cant}): $${money(c.gananciaTotal)}`, 14, yEnd + 7)
+    if (notas) { doc.setFontSize(9); doc.text("Notas:", 14, yEnd + 16); doc.text(doc.splitTextToSize(notas, 180) as string[], 14, yEnd + 21) }
+    doc.save(nombreArch() + ".pdf")
+  }
+
   const inp = "border rounded px-1 py-0.5 text-right"
   const lbl = "text-gray-500"
 
   return (
     <div className="mb-4 border rounded-lg p-3 bg-emerald-50/40">
-      <button type="button" onClick={() => setColapsado(v => !v)} className="flex items-center gap-2 w-full text-left font-semibold text-gray-700 mb-2">
-        <span className="text-gray-400">{colapsado ? "▶" : "▼"}</span>
-        <span>Análisis productivo-económico</span>
-        {!colapsado || c.cant > 0
-          ? <span className="text-xs font-normal text-emerald-700">· Ganancia total: ${money(c.gananciaTotal)}</span>
-          : null}
-      </button>
+      <div className="flex items-center gap-2 mb-2">
+        <button type="button" onClick={() => setColapsado(v => !v)} className="flex items-center gap-2 flex-1 text-left font-semibold text-gray-700">
+          <span className="text-gray-400">{colapsado ? "▶" : "▼"}</span>
+          <span>Análisis productivo-económico</span>
+          {!colapsado || c.cant > 0
+            ? <span className="text-xs font-normal text-emerald-700">· Ganancia total: ${money(c.gananciaTotal)}</span>
+            : null}
+        </button>
+        {!colapsado && (<>
+          <button type="button" onClick={exportarExcel} className="text-xs px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50">⬇ Excel</button>
+          <button type="button" onClick={exportarPDF} className="text-xs px-2 py-1 rounded border border-red-400 text-red-700 hover:bg-red-50">⬇ PDF</button>
+        </>)}
+      </div>
 
       {!colapsado && (
         <div className="text-sm space-y-3">
@@ -186,8 +285,8 @@ export function AnalisisProductivo({ secciones, total }: Props) {
             <span className="flex items-center gap-1"><span className={lbl}>Maíz $/kg</span><input value={maizPrecio} onChange={e => setMaizPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>Concentrado $/kg</span><input value={concPrecio} onChange={e => setConcPrecio(e.target.value)} className={`${inp} w-20`} /></span>
             <span className="flex items-center gap-1"><span className={lbl}>TC</span><input value={tc} onChange={e => setTc(e.target.value)} className={`${inp} w-20`} /></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => setPrecioCompra(e.target.value)} className={`${inp} w-20`} /></span>
-            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} className={`${inp} w-20`} /></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Compra $/kg</span><input value={precioCompra} onChange={e => setPrecioCompra(e.target.value)} className={`${inp} w-20`} /><span className="text-xs text-gray-400">(neto {kg(c.pNetoEnt)} kg)</span></span>
+            <span className="flex items-center gap-1"><span className={lbl}>Venta $/kg</span><input value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} className={`${inp} w-20`} /><span className="text-xs text-gray-400">(neto {kg(c.pNetoSal)} kg)</span></span>
           </div>
 
           {/* Período */}
@@ -292,6 +391,12 @@ export function AnalisisProductivo({ secciones, total }: Props) {
             <span className="font-medium text-gray-600">Resultado</span>
             <span className={lbl}>Ganancia / cabeza: <b className={c.gananciaCab >= 0 ? "text-emerald-700" : "text-red-600"}>${money(c.gananciaCab)}</b></span>
             <span className={lbl}>Ganancia total (×{c.cant}): <b className={`text-lg ${c.gananciaTotal >= 0 ? "text-emerald-700" : "text-red-600"}`}>${money(c.gananciaTotal)}</b></span>
+          </div>
+
+          {/* Notas */}
+          <div className="border-t pt-2">
+            <span className={lbl}>Notas</span>
+            <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2} placeholder="Anotaciones del análisis (van al Excel y al PDF)…" className="w-full border rounded px-2 py-1 mt-1 text-sm" />
           </div>
         </div>
       )}
