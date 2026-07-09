@@ -68,6 +68,8 @@ export function AnalisisProductivo({ secciones, total }: Props) {
   const [dias, setDias] = useState("74")
   const [conversion, setConversion] = useState("0,7")
 
+  // Mortandad (input %, solo salida — descuenta kg del bruto vendido)
+  const [mortandad, setMortandad] = useState("0")
   // Desbaste / CZ (inputs %)
   const [desbEnt, setDesbEnt] = useState("3")
   const [desbSal, setDesbSal] = useState("5")
@@ -114,9 +116,12 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     const netoEnt = brutoEnt - mermaCzEnt            // C20 = C28
 
     // Salida
+    const mortV = pct(mortandad)
+    const mermaKgMort = pFin * mortV                 // mortandad: descuento en kg sobre el bruto vendido
+    const pTrasMort = pFin - mermaKgMort             // saldo tras mortandad
     const dSal = pct(desbSal)
-    const mermaKgSal = pFin * dSal
-    const pNetoSal = pFin - mermaKgSal               // L17
+    const mermaKgSal = pTrasMort * dSal              // desbaste sobre el saldo
+    const pNetoSal = pTrasMort - mermaKgSal          // L17
     const brutoSal = pNetoSal * num(precioVenta)     // L19
     const czSalV = pct(czSal)
     const mermaCzSal = brutoSal * czSalV
@@ -141,11 +146,11 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     return {
       cant, d, kgGanados, pFin, pProm,
       mermaKgEnt, pNetoEnt, brutoEnt, mermaCzEnt, netoEnt,
-      mermaKgSal, pNetoSal, brutoSal, mermaCzSal, czNetoSal,
+      mermaKgMort, pTrasMort, mermaKgSal, pNetoSal, brutoSal, mermaCzSal, czNetoSal,
       racKgDia, maizKgDia, concKgDia, maizCosto, concCosto, costoRacion, maizKgLote, concKgLote,
       netoSalida, gananciaCab, gananciaTotal,
     }
-  }, [cantidad, dias, conversion, pesoInicio, desbEnt, desbSal, czEnt, czSal, precioCompra, precioVenta, racionPV, maizPct, concPct, maizPrecio, concPrecio])
+  }, [cantidad, dias, conversion, pesoInicio, mortandad, desbEnt, desbSal, czEnt, czSal, precioCompra, precioVenta, racionPV, maizPct, concPct, maizPrecio, concPrecio])
 
   // ── Export Excel / PDF ──
   const round1 = (n: number) => Math.round(n * 10) / 10
@@ -163,6 +168,8 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     [],
     ["", "ENTRADA (compra)", "SALIDA (venta)"],
     ["Peso", round1(num(pesoInicio)), round1(c.pFin)],
+    ["Mortandad %", "", num(mortandad)],
+    ["Merma kg (mortandad)", "", -round1(c.mermaKgMort)],
     ["Desbaste %", num(desbEnt), num(desbSal)],
     ["Merma kg", -round1(c.mermaKgEnt), -round1(c.mermaKgSal)],
     ["Peso neto (ref. precio)", round1(c.pNetoEnt), round1(c.pNetoSal)],
@@ -210,6 +217,7 @@ export function AnalisisProductivo({ secciones, total }: Props) {
       head: [["", "Entrada (compra)", "Salida (venta)"]],
       body: [
         ["Peso", `${kg(num(pesoInicio))} kg`, `${kg(c.pFin)} kg`],
+        ["Mortandad %", "—", `${mortandad}%  (-${kg(c.mermaKgMort)} kg)`],
         ["Desbaste %", `${desbEnt}%`, `${desbSal}%`],
         ["Merma kg", `-${kg(c.mermaKgEnt)}`, `-${kg(c.mermaKgSal)}`],
         ["Peso neto", `${kg(c.pNetoEnt)} kg`, `${kg(c.pNetoSal)} kg`],
@@ -313,6 +321,16 @@ export function AnalisisProductivo({ secciones, total }: Props) {
                 <td className={`${lbl} pr-4`}>Peso {"🟠"}</td>
                 <td className="text-right px-3"><input value={pesoInicio} onChange={e => setPesoInicio(e.target.value)} className={`${inp} w-16`} /> kg</td>
                 <td className="text-right px-3">{kg(c.pFin)} kg</td>
+              </tr>
+              <tr>
+                <td className={`${lbl} pr-4`}>Mortandad %</td>
+                <td className="text-right px-3 text-gray-300">—</td>
+                <td className="text-right px-3"><input value={mortandad} onChange={e => setMortandad(e.target.value)} className={`${inp} w-12`} /> %</td>
+              </tr>
+              <tr className="text-red-500">
+                <td className="pr-4 pl-2 text-xs">merma kg</td>
+                <td className="text-right px-3 text-gray-300">—</td>
+                <td className="text-right px-3">−{kg(c.mermaKgMort)}</td>
               </tr>
               <tr>
                 <td className={`${lbl} pr-4`}>Desbaste %</td>
