@@ -200,6 +200,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
     return ov
   })
   const [verB, setVerB] = useState(g("verB", false))
+  // Análisis de sensibilidad (sesión): variables a analizar con su base y paso; escalones global
+  const [verSens, setVerSens] = useState(false)
+  const [sensEscalones, setSensEscalones] = useState("2")
+  const [sensVars, setSensVars] = useState<Record<string, { base: string; delta: string }>>({})
 
   // ── Cálculo (mirror del Excel) — función pura, corrida por escenario ──
   const baseInputs: CalcInputs = {
@@ -749,6 +753,70 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onTotal, initial
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Análisis de sensibilidad */}
+          <div className="border-t pt-2 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-medium text-gray-600">Análisis de sensibilidad</span>
+              <button type="button" onClick={() => setVerSens(v => !v)} className="text-xs px-2 py-1 rounded border border-violet-400 text-violet-700 hover:bg-violet-50">{verSens ? "Ocultar" : "＋ Ver sensibilidad"}</button>
+              {verSens && <span className="flex items-center gap-1 text-sm"><span className={lbl}>escalones por lado</span><input value={sensEscalones} onChange={e => setSensEscalones(e.target.value)} className={`${inp} w-12`} /></span>}
+            </div>
+            {verSens && (() => {
+              const N = Math.max(1, Math.min(5, parseInt(sensEscalones) || 2))
+              const offs = Array.from({ length: 2 * N + 1 }, (_, i) => i - N)
+              const parseDisp = (s: string) => parseFloat(String(s).replace(/\./g, "").replace(",", ".")) || 0
+              const deltaDefault = (v: typeof VARS[number]) => v.tipo === "money" ? "50" : v.key === "conversion" ? "0,1" : v.key === "dias" ? "10" : v.tipo === "pct" ? "1" : v.key === "cantidad" ? "5" : "10"
+              const activas = VARS.filter(v => sensVars[v.key])
+              const disponibles = VARS.filter(v => !sensVars[v.key])
+              return (
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-500">Base = Escenario A. Cada fila mueve SOLO esa variable (el resto queda en A). Ganancia por cabeza. <span className="text-gray-400">Sumar filas es aproximado (hay interacciones).</span></div>
+                  {disponibles.length > 0 && (
+                    <select value="" onChange={e => { const k = e.target.value; if (k) setSensVars(s => ({ ...s, [k]: { base: "", delta: deltaDefault(VARS.find(v => v.key === k)!) } })) }} className="border border-violet-300 rounded px-1 py-0.5 text-violet-700 text-xs">
+                      <option value="">＋ agregar variable…</option>
+                      {disponibles.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
+                    </select>
+                  )}
+                  {activas.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="text-sm">
+                        <thead>
+                          <tr className="text-gray-500 border-b">
+                            <th className="text-left pr-2 py-1">Variable</th>
+                            <th className="text-right px-1">base</th>
+                            <th className="text-right px-1">paso ±</th>
+                            {offs.map(o => <th key={o} className="text-right px-2">{o === 0 ? "BASE" : (o > 0 ? "+" : "") + o}</th>)}
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {activas.map(v => {
+                            const baseD = (sensVars[v.key].base.trim() ? parseDisp(sensVars[v.key].base) : parseDisp(v.base))
+                            const deltaD = parseDisp(sensVars[v.key].delta)
+                            const gBase = calcular(applyOverrides(baseInputs, { [v.key]: String(baseD) })).gananciaCab
+                            return (
+                              <tr key={v.key} className="border-b border-slate-100">
+                                <td className="pr-2 py-1 text-gray-600">{v.label}</td>
+                                <td className="text-right px-1"><input value={sensVars[v.key].base} placeholder={v.base} onChange={e => setSensVars(s => ({ ...s, [v.key]: { ...s[v.key], base: e.target.value } }))} className={`${inp} w-16`} /></td>
+                                <td className="text-right px-1"><input value={sensVars[v.key].delta} onChange={e => setSensVars(s => ({ ...s, [v.key]: { ...s[v.key], delta: e.target.value } }))} className={`${inp} w-14`} /></td>
+                                {offs.map(o => {
+                                  const val = baseD + o * deltaD
+                                  const g = calcular(applyOverrides(baseInputs, { [v.key]: String(val) })).gananciaCab
+                                  const diff = g - gBase
+                                  return <td key={o} className={`text-right px-2 whitespace-nowrap ${o === 0 ? "bg-violet-100 font-semibold" : diff > 0 ? "text-emerald-700" : diff < 0 ? "text-red-600" : ""}`} title={`${v.label} = ${val}`}>${money(g)}</td>
+                                })}
+                                <td className="pl-1"><button type="button" onClick={() => setSensVars(s => { const n = { ...s }; delete n[v.key]; return n })} className="text-xs text-gray-400 hover:text-red-600">✕</button></td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Cadena de etapas (encadenamiento) */}
