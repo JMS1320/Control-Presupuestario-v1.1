@@ -177,40 +177,57 @@ export function AnalisisProductivo({ secciones, total }: Props) {
   const round1 = (n: number) => Math.round(n * 10) / 10
   const nombreArch = () => `Analisis_${(fase || "engorde").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}`
 
-  const filasExport = (): (string | number)[][] => [
-    ["ANÁLISIS PRODUCTIVO-ECONÓMICO"],
-    ["Fase", fase],
-    [],
-    ["Cantidad", c.cant],
-    ["Maíz $/kg", num(maizPrecio)], ["Concentrado $/kg", num(concPrecio)], ["TC", num(tc)],
-    ["Precio compra $/kg", num(precioCompra)], ["Precio venta $/kg", num(precioVenta)],
-    ["Fecha inicio", fechaInicio], ["Fecha fin", fechaFin], ["Días", c.d],
-    ["Conversión kg/día", num(conversion)], ["Kg ganados", round1(c.kgGanados)],
-    [],
-    ["", "ENTRADA (compra)", "SALIDA (venta)"],
-    ["Peso", round1(num(pesoInicio)), round1(c.pFin)],
-    ["Mortandad %", "", num(mortandad)],
-    ["Merma kg (mortandad)", "", -round1(c.mermaKgMort)],
-    ["Desbaste %", num(desbEnt), num(desbSal)],
-    ["Merma kg", -round1(c.mermaKgEnt), -round1(c.mermaKgSal)],
-    ["Peso neto (ref. precio)", round1(c.pNetoEnt), round1(c.pNetoSal)],
-    ["Monto bruto", Math.round(c.brutoEnt), Math.round(c.brutoSal)],
-    ["CZ (comerc.) %", num(czEnt), num(czSal)],
-    ["Merma $", -Math.round(c.mermaCzEnt), -Math.round(c.mermaCzSal)],
-    ["NETO", Math.round(c.netoEnt), Math.round(c.czNetoSal)],
-    [],
-    ["RACIÓN — peso prom.", round1(c.pProm)],
-    ["Ración % PV", num(racionPV)], ["Ración kg/día", round1(c.racKgDia)],
-    ["Maíz %", num(maizPct), "Concentrado %", num(concPct)],
-    ["Maíz kg/día", round1(c.maizKgDia), "costo", Math.round(c.maizCosto), "Kg totales lote", Math.round(c.maizKgLote)],
-    ["Concentrado kg/día", round1(c.concKgDia), "costo", Math.round(c.concCosto), "Kg totales lote", Math.round(c.concKgLote)],
-    ["Costo ración total", Math.round(c.costoRacion)],
-    [],
-    ["Ganancia / cabeza", Math.round(c.gananciaCab)],
-    ["Ganancia total", Math.round(c.gananciaTotal)],
-    [],
-    ["Notas", notas],
-  ]
+  const filasExport = (): (string | number)[][] => {
+    const rows: (string | number)[][] = [
+      ["ANÁLISIS PRODUCTIVO-ECONÓMICO"],
+      ["Fase", fase],
+      [],
+      ["Cantidad", c.cant],
+      ["Maíz $/kg", num(maizPrecio)], ["Concentrado $/kg", num(concPrecio)], ["TC", num(tc)],
+      ["Precio compra $/kg", num(precioCompra)], ["Precio venta $/kg", num(precioVenta)],
+      ["Fecha inicio", fechaInicio], ["Fecha fin", fechaFin], ["Días", c.d],
+      ["Conversión kg/día", num(conversion)], ["Kg ganados", round1(c.kgGanados)],
+      [],
+      ["", "ENTRADA (compra)", "SALIDA (venta)"],
+      ["Peso", round1(num(pesoInicio)), round1(c.pFin)],
+      ["Mortandad %", "", num(mortandad)],
+      ["Merma kg (mortandad)", "", -round1(c.mermaKgMort)],
+      ["Desbaste %", num(desbEnt), num(desbSal)],
+      ["Merma kg", -round1(c.mermaKgEnt), -round1(c.mermaKgSal)],
+      ["Peso neto (ref. precio)", round1(c.pNetoEnt), round1(c.pNetoSal)],
+      ["Monto bruto", Math.round(c.brutoEnt), Math.round(c.brutoSal)],
+      ["CZ (comerc.) %", num(czEnt), num(czSal)],
+      ["Merma $", -Math.round(c.mermaCzEnt), -Math.round(c.mermaCzSal)],
+      ["NETO", Math.round(c.netoEnt), Math.round(c.czNetoSal)],
+      [],
+      ["RACIÓN — peso prom.", round1(c.pProm)],
+      ["Ración % PV", num(racionPV)], ["Ración kg/día", round1(c.racKgDia)],
+      ["Maíz %", num(maizPct), "Concentrado %", num(concPct)],
+      ["Maíz kg/día", round1(c.maizKgDia), "costo", Math.round(c.maizCosto), "Kg totales lote", Math.round(c.maizKgLote)],
+      ["Concentrado kg/día", round1(c.concKgDia), "costo", Math.round(c.concCosto), "Kg totales lote", Math.round(c.concKgLote)],
+      ["Costo ración total", Math.round(c.costoRacion)],
+      [],
+      ["Ganancia / cabeza", Math.round(c.gananciaCab)],
+      ["Ganancia total", Math.round(c.gananciaTotal)],
+    ]
+    if (verB) {
+      rows.push([], ["COMPARACIÓN ESCENARIO B (overrides; vacío = usa A)"])
+      if (bPrecioVenta.trim()) rows.push(["B · Venta $/kg", num(bPrecioVenta)])
+      if (bPrecioCompra.trim()) rows.push(["B · Compra $/kg", num(bPrecioCompra)])
+      if (bMaiz.trim()) rows.push(["B · Maíz $/kg", num(bMaiz)])
+      if (bConc.trim()) rows.push(["B · Concentrado $/kg", num(bConc)])
+      if (bMort.trim()) rows.push(["B · Mortandad %", num(bMort)])
+      if (bConv.trim()) rows.push(["B · Conversión kg/día", num(bConv)])
+      if (bDias.trim()) rows.push(["B · Días", parseInt(bDias) || 0])
+      rows.push(
+        ["", "A", "B", "Δ (B−A)"],
+        ["Ganancia / cabeza", Math.round(c.gananciaCab), Math.round(cB.gananciaCab), Math.round(cB.gananciaCab - c.gananciaCab)],
+        ["Ganancia total", Math.round(c.gananciaTotal), Math.round(cB.gananciaTotal), Math.round(cB.gananciaTotal - c.gananciaTotal)],
+      )
+    }
+    rows.push([], ["Notas", notas])
+    return rows
+  }
 
   const exportarExcel = () => {
     const ws = XLSX.utils.aoa_to_sheet(filasExport())
@@ -261,7 +278,19 @@ export function AnalisisProductivo({ secciones, total }: Props) {
     doc.setFontSize(11)
     doc.text(`Ganancia / cabeza: $${money(c.gananciaCab)}`, 14, yEnd)
     doc.text(`Ganancia total (x${c.cant}): $${money(c.gananciaTotal)}`, 14, yEnd + 7)
-    if (notas) { doc.setFontSize(9); doc.text("Notas:", 14, yEnd + 16); doc.text(doc.splitTextToSize(notas, 180) as string[], 14, yEnd + 21) }
+    let yCur = yEnd + 7
+    if (verB) {
+      autoTable(doc, {
+        startY: yEnd + 12, theme: "grid", styles: { fontSize: 8 },
+        head: [["Escenario B (overrides)", "A", "B", "Δ (B−A)"]],
+        body: [
+          ["Ganancia / cabeza", `$${money(c.gananciaCab)}`, `$${money(cB.gananciaCab)}`, `$${money(cB.gananciaCab - c.gananciaCab)}`],
+          ["Ganancia total", `$${money(c.gananciaTotal)}`, `$${money(cB.gananciaTotal)}`, `$${money(cB.gananciaTotal - c.gananciaTotal)}`],
+        ],
+      })
+      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    }
+    if (notas) { doc.setFontSize(9); doc.text("Notas:", 14, yCur + 9); doc.text(doc.splitTextToSize(notas, 180) as string[], 14, yCur + 14) }
     doc.save(nombreArch() + ".pdf")
   }
 
