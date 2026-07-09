@@ -242,6 +242,19 @@ Endpoint `app/api/import-pesadas/route.ts` (2 acciones: `?accion=analizar` y `?a
 
 ---
 
+## Precios de mercado — scraping entresurcosycorralesya `#productivo #precios #scraping #2026-07-09`
+
+Para poblar precios del análisis de engorde. `app/api/precios-mercado/route.ts` (server-side, evita CORS).
+
+- **Endpoints** (la web carga la tabla por JS; el HTML de `terneros.html`/`terneras.html` NO trae la tabla): `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` (machos: Terneros/Novillitos/Novillos) y `ajax-modulo-ternera.php` (hembras: Terneras/Vaquillonas + "Ternera Holando" que se EXCLUYE). Devuelve tabla HTML: 8 cols (Categoría, Cantidad, Prom.Kilo, **Kilo+**, Kilo−, Prom.Bulto, Bulto+, Bulto−). Se parsea `<td>` por `<tr>`, filtrando filas con "Kg".
+- **El route** acepta `sexo=macho|hembra`, parsea los límites de peso del rango (`pesoLo/pesoHi`), timeout 12s, y devuelve error claro si viene vacío.
+- ⚠️ **El sitio publica con DEMORA**: los días más recientes vienen **vacíos** (0 bytes). El default de fechas del panel termina 3 días atrás. El usuario reportó (2026-07-09) que el sitio no abría ni desde Chrome → puede haber estado caído.
+- **Modelo de precio (acordado con el user):** base = **Kilo+ (máx) asignado al extremo liviano del rango (pesoLo)**, interpolado por peso → escalera; se busca por **kg NETO** (post-desbaste) × (1+prima% calidad). Sexo derivado de la Fuente del segmento.
+
+**Tags**: `#productivo` `#precios` `#scraping` `#mercado` `#2026-07-09`
+
+---
+
 # 🔧 **CONFIGURACIONES MASTER** `#config #funcionando`
 
 ## MCP Supabase Windows CMD Wrapper - FUNCIONANDO `#mcp #windows #cmd-wrapper #2025-08-14`

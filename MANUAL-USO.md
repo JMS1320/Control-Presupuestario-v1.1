@@ -179,13 +179,15 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 ### Análisis por segmento (columnas) 🟡
 - Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).
 - Modelo de engorde (reconstruido del Excel del usuario): precios, desbaste, CZ (comercialización), ración (maíz/concentrado), mortandad. Muestra Entrada/Salida con mermas, precio neto $/kg (con y sin desbaste), y **Ganancia /cab + total**.
-- **Escenario B:** cargás solo lo que cambia (venta/maíz/etc.) → tabla A | B | Δ.
+- **Escenario B (dinámico):** botón "＋ agregar variable" ofrece las **16 variables de A**; agregás solo las que cambiás → tabla A | B | Δ.
+- **Análisis de sensibilidad:** "＋ Ver sensibilidad" → "＋ agregar variable" (base default = presupuestado + paso editable) · escalones por lado (2). Tabla de ganancia/cab moviendo SOLO esa variable (BASE resaltado, verde/rojo). Ves cuánto pesa cada palanca (dónde te destacás). Sumar filas = aproximado (interacciones). No persiste aún.
+- **Precios de mercado (referencia + auto-poblar):** panel "Traer precios" (fechas → trae machos+hembras de entresurcosycorralesya). Botón **`mkt`** junto a Compra/Venta/etapas → autopobla el $/kg según el **sexo** del segmento (de la Fuente) y el **kg neto** (post-desbaste). Base = máx del rango en su extremo liviano, interpolado, × (1+prima% calidad). Resalta el rango usado; editar a mano limpia la marca. *(Si "Traer precios" falla: el sitio publica con demora → probá fechas anteriores.)*
 - **Cadena de etapas** ("＋ Encadenar etapa"): peso bruto y fecha propagan; mortandad reduce la cantidad; ración usa cant de inicio. Ganancia etapa k = Vk − V(k−1) − ración (costo de oportunidad). Total **punta a punta**.
 - **Punto de equilibrio:** misma ganancia por otro camino (pérdida inicial /cab, costo y margen por kg, kg/días para recuperar, días "tuyos"). Coincide exacto (test verificado).
 - **Export Excel/PDF** por segmento. **Regla:** al agregar campos al análisis, actualizar SIEMPRE los exports.
 
 ### Guardar estudios ✅
-- Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑** · **⬇/⬆ Archivo `.json`** (portable).
+- Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑 borrar…** (selector: borra cualquier estudio con confirm, sin cargarlo) · **⬇/⬆ Archivo `.json`** (portable).
 - Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
 
 **Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
