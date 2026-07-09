@@ -40,11 +40,17 @@ function fFecha(iso: string) { const [y, m, d] = iso.split("-"); return `${d}/${
 
 const GRUPOS_ALL = ["torito", "ternera_rep", "macho", "hembra"]
 export function poblacionLabel(grupos: string[]): string {
-  const map: Record<string, string> = { macho: "Machos", hembra: "Hembras", torito: "Toritos", ternera_rep: "Terneras rep" }
-  const on = GRUPOS_ALL.filter(g => grupos.includes(g))
-  if (on.length === 0) return "—"
-  if (on.length === GRUPOS_ALL.length) return "Todos"
-  return on.map(g => map[g]).join("+")
+  const has = (k: string) => grupos.includes(k)
+  const parts: string[] = []
+  if (has("macho") && has("torito")) parts.push("Machos")
+  else if (has("macho")) parts.push("Machos venta")
+  else if (has("torito")) parts.push("Toritos")
+  if (has("hembra") && has("ternera_rep")) parts.push("Hembras")
+  else if (has("hembra")) parts.push("Hembras venta")
+  else if (has("ternera_rep")) parts.push("Terneras rep")
+  if (!parts.length) return "—"
+  if (parts.length === 2 && parts[0] === "Machos" && parts[1] === "Hembras") return "Todos"
+  return parts.join(" + ")
 }
 
 export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig }: Props) {
@@ -173,7 +179,19 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const cfgKey = JSON.stringify(cfg)
   useEffect(() => { onConfig?.(cfg) }, [cfgKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleGrupo = (k: string) => setSegGrupos(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  // El sexo es "maestro": al sacar/poner Machos arrastra Toritos; Hembras arrastra Terneras rep.
+  // La reposición sí se puede togglear sola (ej. Machos SIN toritos = solo venta).
+  const parRep: Record<string, string> = { macho: "torito", hembra: "ternera_rep" }
+  const toggleGrupo = (k: string) => setSegGrupos(prev => {
+    const n = new Set(prev)
+    const prender = !n.has(k)
+    if (k === "macho" || k === "hembra") {
+      if (prender) { n.add(k); n.add(parRep[k]) } else { n.delete(k); n.delete(parRep[k]) }
+    } else {
+      if (prender) n.add(k); else n.delete(k)
+    }
+    return n
+  })
 
   return (
     <div className="mb-3 border rounded-lg p-3 bg-slate-50">
