@@ -285,6 +285,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [selReposicion, setSelReposicion] = useState<Set<string>>(new Set())
   const [guardandoRep, setGuardandoRep] = useState(false)
   const [nMasPesadas, setNMasPesadas] = useState('40')
+  const [filtroGrupo, setFiltroGrupo] = useState<null | 'machos' | 'hembras' | 'toritos' | 'terneras_rep'>(null)
+  const [sort, setSort] = useState<{ col: string | null; dir: 'asc' | 'desc' }>({ col: null, dir: 'desc' })
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
@@ -379,7 +381,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const seleccionarNMasPesadas = () => {
     const n = parseInt(nMasPesadas) || 0
     const ranked = ternerosFiltrados
-      .filter(t => t.activo)
+      .filter(t => t.activo && pasaGrupo(t))
       .map(t => ({ id: t.id, peso: getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) }))
       .filter(t => t.peso != null)
       .sort((a, b) => (b.peso as number) - (a.peso as number))
@@ -624,7 +626,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const ternerosInactivos = ternerosFiltrados.filter(t => !t.activo)
   const machos = ternerosActivos.filter(t => t.sexo === 'Macho')
   const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
-  const toritos = ternerosActivos.filter(t => t.es_torito)
+  const toritos = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Macho')
+  const ternerasRep = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Hembra')
   const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
   // Conteo por sub-tab para badges
@@ -799,10 +802,39 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   }, [segDragIdx, segAxisMin, segAxisMax, segCada])
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
-  const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
+  // Filtro rápido por grupo (chips). Con filtro activo, oculta inactivos.
+  const pasaGrupo = (t: Ternero): boolean => {
+    if (!filtroGrupo) return true
+    if (filtroGrupo === 'machos') return t.sexo === 'Macho'
+    if (filtroGrupo === 'hembras') return t.sexo === 'Hembra'
+    if (filtroGrupo === 'toritos') return !!t.es_torito && t.sexo === 'Macho'
+    if (filtroGrupo === 'terneras_rep') return !!t.es_torito && t.sexo === 'Hembra'
+    return true
+  }
+  const ternerosVista = ternerosFiltrados.filter(t => (filtroGrupo ? t.activo : true) && pasaGrupo(t))
+  const toggleSort = (col: string) => setSort(prev => prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+  const arrowSort = (col: string) => sort.col === col ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+  const sortVal = (t: Ternero, col: string): number | string => {
+    switch (col) {
+      case 'caravana': return t.caravana_oficial ?? ''
+      case 'interna': return t.caravana_interna ?? ''
+      case 'sexo': return t.sexo ?? ''
+      case 'pesoHoy': return getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) ?? -Infinity
+      case 'ultima': return getUltimaPesada(t.pesadas_terneros)?.fecha ?? ''
+      case 'ganUlt2': return getGananciaUlt2(t.pesadas_terneros) ?? -Infinity
+      case 'ganPaP': return getGananciaPuntaAPunta(t.pesadas_terneros) ?? -Infinity
+      default: return ''
+    }
+  }
+  const ternerosOrdenados = [...ternerosVista].sort((a, b) => {
     // Inactivos siempre al final
     if (a.activo && !b.activo) return -1
     if (!a.activo && b.activo) return 1
+    if (sort.col) {
+      const va = sortVal(a, sort.col), vb = sortVal(b, sort.col)
+      const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb))
+      return sort.dir === 'asc' ? cmp : -cmp
+    }
     if (!a.activo && !b.activo) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
     const ga = getGananciaUlt2(a.pesadas_terneros)
     const gb = getGananciaUlt2(b.pesadas_terneros)
@@ -829,16 +861,28 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <Baby className="h-3 w-3 mr-1" />
             {ternerosActivos.length} terneros
           </Badge>
-          <Badge variant="outline" className="text-sky-700 border-sky-300 bg-sky-50">
+          <button type="button" onClick={() => setFiltroGrupo(g => g === 'machos' ? null : 'machos')}
+            className={`px-2 py-0.5 rounded-full border text-xs text-sky-700 border-sky-300 ${filtroGrupo === 'machos' ? 'bg-sky-200 ring-1 ring-sky-500' : 'bg-sky-50'}`}>
             ♂ {machos.length} machos
-          </Badge>
-          <Badge variant="outline" className="text-pink-700 border-pink-300 bg-pink-50">
+          </button>
+          <button type="button" onClick={() => setFiltroGrupo(g => g === 'hembras' ? null : 'hembras')}
+            className={`px-2 py-0.5 rounded-full border text-xs text-pink-700 border-pink-300 ${filtroGrupo === 'hembras' ? 'bg-pink-200 ring-1 ring-pink-500' : 'bg-pink-50'}`}>
             ♀ {hembras.length} hembras
-          </Badge>
+          </button>
           {toritos.length > 0 && (
-            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
+            <button type="button" onClick={() => setFiltroGrupo(g => g === 'toritos' ? null : 'toritos')}
+              className={`px-2 py-0.5 rounded-full border text-xs text-amber-700 border-amber-300 ${filtroGrupo === 'toritos' ? 'bg-amber-200 ring-1 ring-amber-500' : 'bg-amber-50'}`}>
               🐂 {toritos.length} toritos
-            </Badge>
+            </button>
+          )}
+          {ternerasRep.length > 0 && (
+            <button type="button" onClick={() => setFiltroGrupo(g => g === 'terneras_rep' ? null : 'terneras_rep')}
+              className={`px-2 py-0.5 rounded-full border text-xs text-pink-800 border-pink-400 ${filtroGrupo === 'terneras_rep' ? 'bg-pink-200 ring-1 ring-pink-600' : 'bg-pink-100'}`}>
+              ♀ {ternerasRep.length} terneras rep
+            </button>
+          )}
+          {filtroGrupo && (
+            <button type="button" onClick={() => setFiltroGrupo(null)} className="text-xs text-blue-600 hover:underline">✕ ver todos</button>
           )}
           {conPesadas.length > 0 && (
             <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
@@ -1117,7 +1161,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <span className="flex items-center gap-1 ml-2">
                     <button type="button" onClick={seleccionarNMasPesadas} className="px-2 py-1 rounded bg-white border border-amber-400 text-amber-800 hover:bg-amber-100">Seleccionar</button>
                     <Input value={nMasPesadas} onChange={e => setNMasPesadas(e.target.value)} className="h-7 w-14 text-center" />
-                    <span className="text-amber-700">más pesadas</span>
+                    <span className="text-amber-700">más pesadas {filtroGrupo ? `(de ${filtroGrupo === 'terneras_rep' ? 'terneras rep' : filtroGrupo})` : '(usá un chip de arriba para acotar sexo)'}</span>
                   </span>
                   <span className="ml-auto flex items-center gap-2">
                     <span className="text-amber-800 font-medium">{selReposicion.size} sel.</span>
@@ -1131,9 +1175,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-xs w-6"></TableHead>
-                    <TableHead className="text-xs">Carav. Oficial</TableHead>
-                    <TableHead className="text-xs">Carav. Interna</TableHead>
-                    <TableHead className="text-xs">Sexo</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('caravana')}>Carav. Oficial{arrowSort('caravana')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('interna')}>Carav. Interna{arrowSort('interna')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('sexo')}>Sexo{arrowSort('sexo')}</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
                     <TableHead className="text-xs">Reposición</TableHead>
                     <TableHead className="text-xs">Categoría</TableHead>
@@ -1145,10 +1189,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <TableHead className="text-xs">Nacimiento</TableHead>
                       <TableHead className="text-xs">Peso Nac.</TableHead>
                     </>}
-                    <TableHead className="text-xs">Últ. Pesada</TableHead>
-                    <TableHead className="text-xs">Peso hoy est.</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. p→p</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ultima')}>Últ. Pesada{arrowSort('ultima')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('pesoHoy')}>Peso hoy est.{arrowSort('pesoHoy')}</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganUlt2')}>Gan. últ. 2{arrowSort('ganUlt2')}</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganPaP')}>Gan. p→p{arrowSort('ganPaP')}</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
                     <TableHead className="text-xs">Estado</TableHead>
                   </TableRow>
