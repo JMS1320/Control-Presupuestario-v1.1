@@ -191,3 +191,32 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
 
 **Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
+
+---
+
+## ✉ Módulo: Mail de "Detalle de pago" al proveedor ✅ (funcionando)
+
+Manda al proveedor un mail con el **Detalle de pago** en PDF adjunto (+ **certificado de retención** si hubo SICORE). **Un mail por PAGO** (una FC o un grupo de N facturas → un solo mail). Es un template autollenado y **editable**. NO se mezcla con el aviso de transferencia del banco (ese llega aparte desde `go@bancogalicia.com.ar` con asunto "Aviso de transferencia").
+
+### Cómo se opera (2 formas de encolar)
+1. **Desde el Modal de Pagos (Egresos → ARCA/Templates):** botón **✉** al lado del 📄, por grupo o por FC. Sirve mientras la factura está en estado de pago.
+2. **Desde Cash Flow (recomendado de acá en más):** seleccionás las filas → botón **✉ Encolar mail detalle**. Agrupa por proveedor. **Sirve también para proveedores YA pagados** (el Modal de Pagos no muestra las pagadas).
+
+Ambos botones llaman la misma función (`lib/pagos/encolar-mail-detalle`) → insertan el mail en la cola `public.mails_pago` (estado `pendiente`).
+
+### Panel de revisión + envío (Cash Flow → "✉ Mails de detalle")
+- Lista la cola por estado (pendiente / borrador / enviado / error). Podés **editar** destinatario, asunto y cuerpo, togglear los adjuntos (detalle / retención) y **borrar**.
+- **Guardar** = solo persiste tus ediciones (no envía).
+- **Enviar Borrador** (por fila) = guarda + dispara el GAS → crea el **borrador** en Gmail. **Enviar todos los pendientes** = lo hace para todos de una.
+- El GAS crea **BORRADORES** (no envía): los revisás en Gmail y los mandás vos. El estado del panel pasa a "borrador" a los pocos segundos.
+
+### Contenido del mail (auto)
+- Cuerpo: "Adjuntamos el detalle del pago de: FC…" + desglose (Importe facturas / Retención / Descuento / **Total transferido** / **Fecha de pago**) + aviso de que llegará el comprobante de transferencia del banco.
+- **Fecha de pago:** sale de la retención SICORE; si no hay, de la fecha estimada; si no hay ninguna, quedan puntos `..............` para completar a mano.
+- **Adjuntos por default:** certificado = SIEMPRE que haya retención; detalle PDF = solo si hubo descuento (editable con los checkboxes del panel).
+- Email destino = `proveedores.email_pagos`. Si el proveedor no tiene, se encola igual "SIN email" y lo completás en el panel.
+
+### Setup del GAS (una vez)
+- Proyecto de Apps Script **separado** en la cuenta **sanmanuel.sp@gmail.com** (de ahí salen los borradores). Código: `gas-mail-detalle/EnviarMailsDetalle.gs` (con `SUPABASE_URL` + anon key configurados).
+- Deploy: **Implementar → Nueva implementación → Web app** (Ejecutar como: San Manuel · Acceso: Cualquiera) → copiar la URL `.../exec`. La primera vez que tocás "Enviar Borrador" la app te la pide y la guarda.
+- Si cambiás el código del GAS: **Implementar → Gestionar implementaciones → editar → Nueva versión** (la URL no cambia).

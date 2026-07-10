@@ -255,6 +255,23 @@ Para poblar precios del análisis de engorde. `app/api/precios-mercado/route.ts`
 
 ---
 
+## Mail "Detalle de pago" al proveedor — arquitectura `#mail #gas #pagos #sicore #2026-07-10`
+
+Manda al proveedor el Detalle de pago (PDF) + certificado de retención (si hay SICORE), un mail por pago. **FUNCIONANDO** (testeado 2026-07-10, crea borradores en Gmail).
+
+- **Cola:** `public.mails_pago` (creada 2026-07-09, ver RECONSTRUCCION). Columnas clave: `email_destino, asunto, cuerpo, detalle_pdf` (base64), `retencion_pdf` (base64), `tiene_sicore, adjuntar_detalle, adjuntar_retencion, estado` (pendiente/borrador/enviado/error), `gmail_draft_id`.
+- **Fuente única (regla DRY):** `lib/pagos/encolar-mail-detalle.ts` (lógica, UI-agnóstica, devuelve `{ok,email,conCertificado,error}`), `lib/pagos/certificado-retencion.ts` (cert MSA), `lib/pagos/pdf-detalle-pago.ts` (con `returnBase64`). La llaman el **Modal de Pagos** (`vista-facturas-arca`, wrapper con alert) y **Cash Flow** (`encolarMailsSeleccionados`, botón "✉ Encolar mail detalle" — sirve para pagadas). Cash Flow = schema `msa`.
+- **Certificado:** matchea por `sicore_retenciones.factura_id IN (ids)` — NO por `comprobantes_arca.fecha_pago` (suele estar NULL). En Cash Flow los ids salen de `row.id` o `row.ids_grupo` (grupos).
+- **GAS = Web App** (`gas-mail-detalle/EnviarMailsDetalle.gs`): `doGet(e)` → `prepararBorradores(soloId?)` lee `mails_pago` estado=pendiente (con `?id=` uno solo), crea **borradores** (`GmailApp.createDraft`), marca `borrador`. Deployado en proyecto **SEPARADO** de la cuenta **sanmanuel.sp@gmail.com** (Execute as: Me · Anyone). Config: `SUPABASE_URL='https://lyojiaglcictmboqwxfm.supabase.co'` + anon key.
+- **Anti-duplicados:** el disparo desde la app es `fetch(url, {mode:'no-cors'})` (fire-and-forget, no lee respuesta). Para que doble-disparo no duplique: **LockService.getScriptLock()** serializa + guarda `if (m.gmail_draft_id) return`.
+- **UI:** panel `PanelMailsPago` (Cash Flow, "✉ Mails de detalle"): editar/togglear/borrar + botones "Enviar Borrador" (por fila, `?id=`) y "Enviar todos los pendientes" (sin id). URL del GAS se pide 1 vez → `localStorage.gas_mails_url`.
+- **Cuerpo:** desglose + `Fecha de pago:` (de SICORE `fecha_pago` / estimada / puntos) + aviso de que el comprobante de transferencia llega del banco (`go@bancogalicia.com.ar`, asunto "Aviso de transferencia"). El mail del **lote Galicia es OTRO**, no se mezcla.
+- ⚠️ Cambiar el código del GAS ⇒ redeploy "Gestionar implementaciones → Nueva versión" (la URL no cambia). Para envío directo (sin revisar): cambiar `createDraft`→`sendEmail` cuando el user valide.
+
+**Tags**: `#mail #gas #pagos #sicore #detalle-pago #2026-07-10`
+
+---
+
 # 🔧 **CONFIGURACIONES MASTER** `#config #funcionando`
 
 ## MCP Supabase Windows CMD Wrapper - FUNCIONANDO `#mcp #windows #cmd-wrapper #2025-08-14`
