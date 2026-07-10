@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
@@ -5955,74 +5956,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     imp_total: (t.monto as number) || 0,
     monto_a_abonar: (t.monto as number) || 0,
   }))
+  // Wrapper de UI: delega en la lib compartida (lib/pagos/encolar-mail-detalle) y muestra el alert.
+  // La lógica vive en la lib para que Cash Flow y cualquier otra vista la reusen (regla DRY).
   const encolarMailDetalle = async (
     tipo: 'arca' | 'template', proveedor: string, cuit: string,
     items: Parameters<typeof generarPDFDetallePago>[3],
     anticipo?: Parameters<typeof generarPDFDetallePago>[4],
     facturaIds?: string[]
   ) => {
-    try {
-      const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true })
-      if (!detalleB64) { alert('No se pudo generar el detalle PDF'); return }
-      const cuitClean = (cuit || '').replace(/\D/g, '')
-      const { data: prov } = await supabase.from('proveedores').select('email_pagos').eq('cuit', cuitClean).maybeSingle()
-      const email = (prov as { email_pagos?: string } | null)?.email_pagos || ''
-
-      // Certificado SICORE: match por factura_id (comprobantes_arca.fecha_pago suele estar NULL → no sirve
-      // fecha_pago). sicore_retenciones.factura_id vincula la retención a la FC del pago.
-      let retB64: string | null = null
-      let fechaPagoReal = ''
-      if (tipo === 'arca') {
-        let regs: Array<Record<string, unknown>> = []
-        const ids = (facturaIds || []).filter(Boolean)
-        if (ids.length) {
-          const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
-            .select('cuit_emisor, denominacion_emisor, fecha_pago, total_pagado, retencion, tipo_sicore, nro_comprobante, nro_certificado')
-            .in('factura_id', ids).eq('anulado', false)
-          regs = (data || []) as Array<Record<string, unknown>>
-        }
-        if (!regs.length && cuitClean) { // fallback: registros cargados en pantalla (tab SICORE)
-          regs = (registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>).filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>
-        }
-        if (regs.length) {
-          fechaPagoReal = String((regs[0] as { fecha_pago?: string }).fecha_pago || '')
-          const bytes = await generarCertificadoRetencion(regs as Parameters<typeof generarCertificadoRetencion>[0], true)
-          if (bytes) retB64 = abToBase64(bytes)
-        }
-      }
-      if (!fechaPagoReal) fechaPagoReal = (items[0]?.fecha_estimada as string) || ''
-
-      const m = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-      const fmtF = (f: string) => { if (!f) return '..............'; const d = new Date(f + 'T12:00:00'); return isNaN(d.getTime()) ? f : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
-      const totalBruto = items.reduce((s, i) => s + (i.imp_total || 0), 0)
-      const totalRet = items.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
-      const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
-      const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
-      const fcs = items.map(i => i.comprobante).join(', ')
-      let cuenta = `\nTotal transferido: ${m(totalPagado)}`
-      if (totalRet > 0 || totalDesc > 0) {
-        cuenta = `\nImporte facturas: ${m(totalBruto)}`
-        if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
-        if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
-        cuenta += `\nTotal transferido: ${m(totalPagado)}`
-      }
-      cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
-      const asunto = `Detalle de pago — ${proveedor}`
-      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
-
-      const { error } = await supabase.from('mails_pago').insert({
-        proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
-        detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
-        adjuntar_detalle: (totalDesc > 0), // auto SOLO si hay descuento (editable en el panel)
-        estado: 'pendiente',
-      })
-      if (error) { alert('Error encolando mail: ' + error.message); return }
-      alert(email
-        ? `✉ Mail de detalle encolado para ${proveedor} (${email})${retB64 ? ' + certificado' : ''}`
-        : `✉ Encolado para ${proveedor} — SIN email (cargá email_pagos del proveedor o completalo en el panel)`)
-    } catch (e) {
-      alert('Error encolando mail: ' + (e as Error).message)
-    }
+    const r = await encolarMailDetalleLib({
+      tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds,
+      registrosFallback: registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>,
+    })
+    if (!r.ok) { alert('Error encolando mail: ' + (r.error || '')); return }
+    alert(r.email
+      ? `✉ Mail de detalle encolado para ${proveedor} (${r.email})${r.conCertificado ? ' + certificado' : ''}`
+      : `✉ Encolado para ${proveedor} — SIN email (cargá email_pagos del proveedor o completalo en el panel)`)
   }
 
   // Componente SubdiariosContent

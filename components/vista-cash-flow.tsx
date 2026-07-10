@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
+import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -940,6 +941,57 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null)
     })
     toast.success(`${grupos.size} comprobante(s) PDF generado(s)`)
+  }
+
+  // E2.3b: Encolar mail de "Detalle de pago" sobre las filas seleccionadas (agrupa por proveedor).
+  // Reusa lib/pagos/encolar-mail-detalle (misma lógica que el modal de pagos). Cash Flow = schema 'msa'.
+  // Sirve para mandar el detalle a proveedores YA pagados (el modal de pagos no muestra pagadas).
+  const encolarMailsSeleccionados = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const fmtFecha = (s?: string | null) => {
+      if (!s) return ''
+      const d = new Date(s + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
+    }
+    const grupos = new Map<string, CashFlowRow[]>()
+    for (const f of filas) {
+      const k = `${f.cuit_proveedor || ''}||${f.nombre_proveedor || ''}`
+      const arr = grupos.get(k) || []
+      arr.push(f)
+      grupos.set(k, arr)
+    }
+    const t = toast.loading(`Encolando ${grupos.size} mail(s)…`)
+    let ok = 0, sinMail = 0, err = 0
+    for (const [k, fs] of grupos) {
+      const [cuit, proveedor] = k.split('||')
+      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      const items = fs.map(f => {
+        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
+        return {
+          comprobante: f.detalle || fa.comprobante_display || '-',
+          fecha: fmtFecha(f.fecha_estimada),
+          fecha_estimada: f.fecha_estimada,
+          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          monto_sicore: fa.monto_sicore ?? null,
+          descuento_aplicado: fa.descuento_aplicado ?? null,
+          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+        }
+      })
+      // factura_id para el certificado SICORE: si es grupo, las FC individuales; si no, el id de la fila.
+      const facturaIds: string[] = []
+      for (const f of fs) {
+        if (f.origen !== 'ARCA') continue
+        if (f.ids_grupo && f.ids_grupo.length) facturaIds.push(...f.ids_grupo)
+        else facturaIds.push(f.id)
+      }
+      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: 'msa', facturaIds })
+      if (!r.ok) err++
+      else if (!r.email) sinMail++
+      else ok++
+    }
+    toast.dismiss(t)
+    toast.success(`✉ ${ok} mail(s) encolado(s)${sinMail ? ` · ${sinMail} sin email` : ''}${err ? ` · ${err} error(es)` : ''}. Revisá "✉ Mails de detalle".`)
   }
 
   // E2.4: Exportar lote Galicia sobre las filas seleccionadas. Reusa el módulo lotes-galicia (CBU/mail/agendar proveedores).
@@ -2305,6 +2357,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       📄 Detalle PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={encolarMailsSeleccionados}
+                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      ✉ Encolar mail detalle
                     </Button>
                     <PanelMailsPago />
                     <Button

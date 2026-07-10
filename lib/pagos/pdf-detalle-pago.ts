@@ -26,8 +26,9 @@ export const generarPDFDetallePago = async (
     tipo_sicore: string | null
     sicore: string | null
     fecha_pago: string
-  } | null
-) => {
+  } | null,
+  opciones?: { returnBase64?: boolean }
+): Promise<string | void> => {
   try {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const pageW = doc.internal.pageSize.getWidth()
@@ -158,6 +159,8 @@ export const generarPDFDetallePago = async (
         }
       }
     })
+
+    if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
 
     const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
     doc.save(nombreArchivo)
