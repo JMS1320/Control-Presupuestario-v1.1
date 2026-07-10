@@ -23,7 +23,9 @@ const LS_ESTUDIOS = "analisis_engorde_estudios"
 export interface SegConfig {
   origen: string; grupos: string[]; ganancia: number; cada: number; desde: number | null; fecha: string; cortes: number[] | null
 }
-interface Estudio { version: number; fecha: string; segments: SegState[]; segConfigs?: SegConfig[]; segConfig?: SegConfig /* compat viejo */ }
+// Precios de mercado scrapeados, guardados con el estudio (opcional → estudios viejos no lo tienen)
+export interface EstudioMercado { desde: string; hasta: string; prima: string; macho: FilaMercado[] | null; hembra: FilaMercado[] | null; fechaScraping?: string }
+interface Estudio { version: number; fecha: string; segments: SegState[]; segConfigs?: SegConfig[]; segConfig?: SegConfig /* compat viejo */; mercado?: EstudioMercado }
 
 export interface SegmentoAnalisis {
   label: string
@@ -968,6 +970,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   const [mercHasta, setMercHasta] = useState(isoDias(3))
   const [mercMacho, setMercMacho] = useState<FilaMercado[] | null>(null)
   const [mercHembra, setMercHembra] = useState<FilaMercado[] | null>(null)
+  const [mercFecha, setMercFecha] = useState<string | null>(null) // cuándo se scrapearon (para guardar con el estudio)
   const [mercSexoVer, setMercSexoVer] = useState<"macho" | "hembra">("macho")
   const [prima, setPrima] = useState("") // % de calidad sobre el precio calculado (vacío = 0)
   const [mercLoading, setMercLoading] = useState(false)
@@ -984,6 +987,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
       if (!rm.ok) throw new Error(dm.error || "Error (machos)")
       setMercMacho(dm.filas)
       setMercHembra(rh.ok ? dh.filas : null)
+      setMercFecha(new Date().toISOString())
       setMercOpen(true)
     } catch (e) { toast.error("Precios de mercado: " + (e as Error).message) }
     finally { setMercLoading(false) }
@@ -1036,12 +1040,26 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
     version: 1, fecha: new Date().toISOString(),
     segments: segIds.map(id => segStatesRef.current[id]).filter(Boolean) as SegState[],
     segConfigs,
+    // Precios de mercado scrapeados → se guardan con el estudio (solo si hay datos traídos)
+    mercado: (mercMacho || mercHembra)
+      ? { desde: mercDesde, hasta: mercHasta, prima, macho: mercMacho, hembra: mercHembra, fechaScraping: mercFecha ?? undefined }
+      : undefined,
   })
   const cargarEstudio = (est: Estudio) => {
     const segs = est.segments || []
     if (!segs.length) return
     const cfgs = est.segConfigs ?? (est.segConfig ? [est.segConfig] : undefined)
     if (cfgs) onRestoreSegConfigs?.(cfgs) // reconstruye los segmentadores
+    // Restaurar precios de mercado guardados con el estudio (si los tiene)
+    if (est.mercado) {
+      setMercDesde(est.mercado.desde)
+      setMercHasta(est.mercado.hasta)
+      setPrima(est.mercado.prima ?? "")
+      setMercMacho(est.mercado.macho ?? null)
+      setMercHembra(est.mercado.hembra ?? null)
+      setMercFecha(est.mercado.fechaScraping ?? null)
+      if (est.mercado.macho || est.mercado.hembra) setMercOpen(true)
+    }
     const ids = segs.map(() => nextId.current++)
     const ini: Record<number, Partial<SegState>> = {}
     ids.forEach((id, i) => { ini[id] = segs[i] })
@@ -1140,7 +1158,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
             </span>
             <span className="flex items-center gap-1"><span className="text-gray-500">Prima calidad %</span><input value={prima} onChange={e => setPrima(e.target.value)} placeholder="0" className="border rounded px-1 py-0.5 w-14 text-right" /></span>
           </>)}
-          {mercFilas && <span className="text-xs text-gray-400">{mercFilas.length} cat · fuente: entresurcosycorralesya.com</span>}
+          {mercFilas && <span className="text-xs text-gray-400">{mercFilas.length} cat · fuente: entresurcosycorralesya.com{mercFecha ? ` · traídos ${new Date(mercFecha).toLocaleDateString("es-AR")}` : ""}</span>}
         </div>
         {mercOpen && mercFilas && (
           <div className="px-2 pb-2 overflow-x-auto">

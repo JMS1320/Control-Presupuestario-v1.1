@@ -188,7 +188,7 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 
 ### Guardar estudios ✅
 - Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑 borrar…** (selector: borra cualquier estudio con confirm, sin cargarlo) · **⬇/⬆ Archivo `.json`** (portable).
-- Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
+- Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente + **los precios de mercado scrapeados** (rango de fechas, prima calidad y las tablas machos/hembras traídas). Al cargar un estudio se restauran esos precios tal cual (con la fecha en que se trajeron, que se muestra en el panel), así el análisis queda reproducible sin volver a scrapear. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
 
 **Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
 
