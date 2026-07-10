@@ -5959,7 +5959,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     tipo: 'arca' | 'template', proveedor: string, cuit: string,
     items: Parameters<typeof generarPDFDetallePago>[3],
     anticipo?: Parameters<typeof generarPDFDetallePago>[4],
-    fechaPago?: string
+    facturaIds?: string[]
   ) => {
     try {
       const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true })
@@ -5968,17 +5968,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const { data: prov } = await supabase.from('proveedores').select('email_pagos').eq('cuit', cuitClean).maybeSingle()
       const email = (prov as { email_pagos?: string } | null)?.email_pagos || ''
 
-      // Certificado SICORE: consulta directa a la BD (por fecha_pago + cuit) → no depende de tener el tab abierto
+      // Certificado SICORE: match por factura_id (comprobantes_arca.fecha_pago suele estar NULL → no sirve
+      // fecha_pago). sicore_retenciones.factura_id vincula la retención a la FC del pago.
       let retB64: string | null = null
-      if (tipo === 'arca' && cuitClean) {
+      if (tipo === 'arca') {
         let regs: Array<Record<string, unknown>> = []
-        if (fechaPago) {
+        const ids = (facturaIds || []).filter(Boolean)
+        if (ids.length) {
           const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
             .select('cuit_emisor, denominacion_emisor, fecha_pago, total_pagado, retencion, tipo_sicore, nro_comprobante, nro_certificado')
-            .eq('fecha_pago', fechaPago).eq('anulado', false)
-          regs = (data || []).filter((r: Record<string, unknown>) => String(r.cuit_emisor || '').replace(/\D/g, '') === cuitClean)
+            .in('factura_id', ids).eq('anulado', false)
+          regs = (data || []) as Array<Record<string, unknown>>
         }
-        if (!regs.length) { // fallback: registros cargados en pantalla (tab SICORE)
+        if (!regs.length && cuitClean) { // fallback: registros cargados en pantalla (tab SICORE)
           regs = (registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>).filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>
         }
         if (regs.length) {
@@ -10228,7 +10230,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onClick={() => generarPDFDetallePago('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
                                       >📄</Button>
                                       <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
-                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo), undefined, (facsGrupo[0] as { fecha_pago?: string })?.fecha_pago)}
+                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo), undefined, facsGrupo.map((f) => (f as { id: string }).id))}
                                       >✉</Button>
                                     </div>
                                   </TableCell>
@@ -10440,7 +10442,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                               monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
                                                 ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
                                                 : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
-                                            }], undefined, f.fecha_pago)
+                                            }], undefined, [f.id])
                                           }}
                                         >✉</Button>
                                         {onRevertir && (
