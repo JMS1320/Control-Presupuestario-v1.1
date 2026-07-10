@@ -26,29 +26,39 @@ function doGet(e) {
 
 /** Correr a mano, o vía web app (doGet). soloId opcional = un mail puntual. */
 function prepararBorradores(soloId) {
-  var pendientes = fetchPendientes_(soloId);
-  if (!pendientes.length) { Logger.log('Sin mails pendientes.'); return { ok: 0, err: 0, msg: 'sin pendientes' }; }
+  // Lock: evita que dos disparos concurrentes (doble-click / no-cors) dupliquen borradores.
+  // La 2da corrida espera; para cuando entra, la 1ra ya marcó todo 'borrador' → no hay pendientes.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { Logger.log('No se pudo obtener lock'); return { ok: 0, err: 0, msg: 'ocupado' }; }
+  try {
+    var pendientes = fetchPendientes_(soloId);
+    if (!pendientes.length) { Logger.log('Sin mails pendientes.'); return { ok: 0, err: 0, msg: 'sin pendientes' }; }
 
-  var ok = 0, err = 0;
-  pendientes.forEach(function (m) {
-    try {
-      var adjuntos = [];
-      if (m.detalle_pdf && m.adjuntar_detalle !== false) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
-      if (m.retencion_pdf && m.adjuntar_retencion) adjuntos.push(base64ToPdfBlob_(m.retencion_pdf, 'CertificadoRetencion.pdf'));
+    var ok = 0, err = 0;
+    pendientes.forEach(function (m) {
+      try {
+        // Doble guarda de idempotencia: si ya tiene borrador creado, no re-crear.
+        if (m.gmail_draft_id) { return; }
+        var adjuntos = [];
+        if (m.detalle_pdf && m.adjuntar_detalle !== false) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
+        if (m.retencion_pdf && m.adjuntar_retencion) adjuntos.push(base64ToPdfBlob_(m.retencion_pdf, 'CertificadoRetencion.pdf'));
 
-      var draft = GmailApp.createDraft(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
-      // Cuando esté validado, reemplazar la línea de arriba por envío directo:
-      // GmailApp.sendEmail(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
+        var draft = GmailApp.createDraft(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
+        // Cuando esté validado, reemplazar la línea de arriba por envío directo:
+        // GmailApp.sendEmail(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
 
-      actualizar_(m.id, { estado: 'borrador', gmail_draft_id: draft.getId(), error: null });
-      ok++;
-    } catch (e) {
-      actualizar_(m.id, { estado: 'error', error: String(e) });
-      err++;
-    }
-  });
-  Logger.log('Borradores creados: ' + ok + ' · errores: ' + err);
-  return { ok: ok, err: err };
+        actualizar_(m.id, { estado: 'borrador', gmail_draft_id: draft.getId(), error: null });
+        ok++;
+      } catch (e) {
+        actualizar_(m.id, { estado: 'error', error: String(e) });
+        err++;
+      }
+    });
+    Logger.log('Borradores creados: ' + ok + ' · errores: ' + err);
+    return { ok: ok, err: err };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function fetchPendientes_(soloId) {
