@@ -5958,7 +5958,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const encolarMailDetalle = async (
     tipo: 'arca' | 'template', proveedor: string, cuit: string,
     items: Parameters<typeof generarPDFDetallePago>[3],
-    anticipo?: Parameters<typeof generarPDFDetallePago>[4]
+    anticipo?: Parameters<typeof generarPDFDetallePago>[4],
+    fechaPago?: string
   ) => {
     try {
       const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true })
@@ -5966,17 +5967,42 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const cuitClean = (cuit || '').replace(/\D/g, '')
       const { data: prov } = await supabase.from('proveedores').select('email_pagos').eq('cuit', cuitClean).maybeSingle()
       const email = (prov as { email_pagos?: string } | null)?.email_pagos || ''
-      // Certificado: si hay registros SICORE cargados (no anulados) para este CUIT
-      const regs = registrosV2.filter((r: { anulado?: boolean; cuit_emisor?: string }) => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean)
+
+      // Certificado SICORE: consulta directa a la BD (por fecha_pago + cuit) → no depende de tener el tab abierto
       let retB64: string | null = null
-      if (regs.length) {
-        const bytes = await generarCertificadoRetencion(regs as Parameters<typeof generarCertificadoRetencion>[0], true)
-        if (bytes) retB64 = abToBase64(bytes)
+      if (tipo === 'arca' && cuitClean) {
+        let regs: Array<Record<string, unknown>> = []
+        if (fechaPago) {
+          const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
+            .select('cuit_emisor, denominacion_emisor, fecha_pago, total_pagado, retencion, tipo_sicore, nro_comprobante, nro_certificado')
+            .eq('fecha_pago', fechaPago).eq('anulado', false)
+          regs = (data || []).filter((r: Record<string, unknown>) => String(r.cuit_emisor || '').replace(/\D/g, '') === cuitClean)
+        }
+        if (!regs.length) { // fallback: registros cargados en pantalla (tab SICORE)
+          regs = (registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>).filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>
+        }
+        if (regs.length) {
+          const bytes = await generarCertificadoRetencion(regs as Parameters<typeof generarCertificadoRetencion>[0], true)
+          if (bytes) retB64 = abToBase64(bytes)
+        }
       }
+
+      const m = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      const totalBruto = items.reduce((s, i) => s + (i.imp_total || 0), 0)
+      const totalRet = items.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
+      const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
       const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
       const fcs = items.map(i => i.comprobante).join(', ')
+      let cuenta = `\nTotal transferido: ${m(totalPagado)}`
+      if (totalRet > 0 || totalDesc > 0) {
+        cuenta = `\nImporte facturas: ${m(totalBruto)}`
+        if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
+        if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
+        cuenta += `\nTotal transferido: ${m(totalPagado)}`
+      }
       const asunto = `Detalle de pago — ${proveedor}`
-      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\nMonto total: $${totalPagado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.${retB64 ? '\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nSaludos.`
+      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el aviso de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
+
       const { error } = await supabase.from('mails_pago').insert({
         proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
         detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
@@ -10202,7 +10228,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onClick={() => generarPDFDetallePago('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
                                       >📄</Button>
                                       <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
-                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
+                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo), undefined, (facsGrupo[0] as { fecha_pago?: string })?.fecha_pago)}
                                       >✉</Button>
                                     </div>
                                   </TableCell>
@@ -10414,7 +10440,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                               monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
                                                 ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
                                                 : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
-                                            }])
+                                            }], undefined, f.fecha_pago)
                                           }}
                                         >✉</Button>
                                         {onRevertir && (
