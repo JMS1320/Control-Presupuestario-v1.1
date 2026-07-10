@@ -13,7 +13,7 @@ import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, 
 import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
-import { AnalisisProductivo, type SegConfig } from "./analisis-productivo"
+import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -255,6 +255,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [segPayloads, setSegPayloads] = useState<Record<number, SegPayload>>({})
   const segConfigsRef = useRef<Record<number, SegConfig>>({})
   const [segInitials, setSegInitials] = useState<Record<number, SegConfig>>({})
+  // Reproducción de estudios: por id de segmentador, anclaje re-link (asOf+hoyMs) o foto congelada.
+  const [segReproducir, setSegReproducir] = useState<Record<number, { asOf?: string | null; hoyMs?: number } | null>>({})
+  const [segFrozen, setSegFrozen] = useState<Record<number, SegSnapshot | null>>({})
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -687,6 +690,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const removeSegmentador = (id: number) => {
     setSegmentadorIds(p => p.filter(x => x !== id))
     setSegPayloads(prev => { const n = { ...prev }; delete n[id]; return n })
+    setSegReproducir(prev => { const n = { ...prev }; delete n[id]; return n })
+    setSegFrozen(prev => { const n = { ...prev }; delete n[id]; return n })
     delete segConfigsRef.current[id]
   }
   // Secciones combinadas de todos los segmentadores (para el análisis). Etiqueta: "Letra·Población: rango"
@@ -698,12 +703,32 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     for (const s of p.secciones) if (s.cantidad > 0) arr.push({ label: `${pref}: ${s.label}`, cantidad: s.cantidad, promedio: s.promedio })
     return arr
   })
-  const restaurarSegmentadores = (cfgs: SegConfig[]) => {
+  const restaurarSegmentadores = (cfgs: SegConfig[], modo: ModoCarga) => {
     const ids = cfgs.map(() => segNextId.current++)
     const ini: Record<number, SegConfig> = {}
-    ids.forEach((id, i) => { ini[id] = cfgs[i] })
+    const repro: Record<number, { asOf?: string | null; hoyMs?: number } | null> = {}
+    const frozen: Record<number, SegSnapshot | null> = {}
+    ids.forEach((id, i) => {
+      const c = cfgs[i]
+      ini[id] = c
+      if (modo === "foto" && c?.snapshot) {
+        // Foto congelada: no toca el rodeo.
+        frozen[id] = c.snapshot
+        repro[id] = null
+      } else if (modo === "relink" && (c?.pesadaBaseFecha || c?.fechaCalculo)) {
+        // Re-linkear anclado a la pesada base + fecha de cálculo guardadas.
+        frozen[id] = null
+        repro[id] = { asOf: c.pesadaBaseFecha ?? null, hoyMs: c.fechaCalculo ? new Date(c.fechaCalculo + "T00:00:00").getTime() : undefined }
+      } else {
+        // Estudio viejo sin receta/foto → comportamiento en vivo (como antes).
+        frozen[id] = null
+        repro[id] = null
+      }
+    })
     segConfigsRef.current = {}
     setSegInitials(ini)
+    setSegReproducir(repro)
+    setSegFrozen(frozen)
     setSegPayloads({})
     setSegmentadorIds(ids)
   }
@@ -1738,6 +1763,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               todasFechas={todasFechas}
               gananciaDefault={gananciaDiaria}
               initialConfig={segInitials[id]}
+              reproducir={segReproducir[id]}
+              frozen={segFrozen[id]}
               onSections={p => setPayload(id, p)}
               onConfig={c => setConfig(id, c)}
               onRemove={segmentadorIds.length > 1 ? () => removeSegmentador(id) : undefined}

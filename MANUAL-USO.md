@@ -190,6 +190,12 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑 borrar…** (selector: borra cualquier estudio con confirm, sin cargarlo) · **⬇/⬆ Archivo `.json`** (portable).
 - Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente + **los precios de mercado scrapeados** (rango de fechas, prima calidad y las tablas machos/hembras traídas). Al cargar un estudio se restauran esos precios tal cual (con la fecha en que se trajeron, que se muestra en el panel), así el análisis queda reproducible sin volver a scrapear. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
 
+**Congelar el kilaje del estudio (para revisar análisis viejos sin que se muevan):** cada segmentador guarda además la **receta** (qué pesada base y qué "hoy" usó el estimado +X kg/día) **y una foto congelada** de los cortes/pesos. Al cargar un estudio la app **pregunta** cómo linkear el segmentado:
+  - **📌 Datos guardados (foto)** → muestra la foto tal cual; no depende del rodeo actual → inmune a pesadas nuevas o borradas (es el modo "a prueba de bugs").
+  - **🔄 Re-linkear con el rodeo** → recalcula, pero **anclado a la pesada base y la fecha guardadas** (no a "la última + hoy"), así reproduce el mismo kilaje aunque hayas importado una pesada nueva. Requiere que las pesadas viejas sigan en la base.
+  - Estudios viejos (sin receta/foto) cargan en vivo como antes.
+  - El segmentador en modo foto muestra el badge **📸 foto guardada** y una tabla read-only.
+
 **Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
 
 ---

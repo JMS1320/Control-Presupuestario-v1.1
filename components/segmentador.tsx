@@ -5,7 +5,7 @@
 // arrastre de cortes y render. Reporta sus secciones + su config hacia arriba.
 
 import { useState, useEffect, useRef } from "react"
-import type { SegConfig } from "./analisis-productivo"
+import type { SegConfig, SegSnapshot } from "./analisis-productivo"
 
 interface AnimalSeg {
   sexo: string | null
@@ -25,15 +25,25 @@ interface Props {
   onConfig?: (c: SegConfig) => void
   onRemove?: () => void
   initialConfig?: SegConfig
+  // ── Reproducción de un estudio guardado ──
+  // reproducir: re-deriva anclado a una pesada base + fecha de cálculo (en vez de "última + hoy")
+  reproducir?: { asOf?: string | null; hoyMs?: number } | null
+  // frozen: modo foto → mostrar/repotar la foto congelada, sin tocar el rodeo
+  frozen?: SegSnapshot | null
 }
 
 function getUltima(pesadas: { fecha: string; peso_kg: number }[]) {
   if (!pesadas.length) return null
   return [...pesadas].sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
 }
-function pesoEstimado(pesadas: { fecha: string; peso_kg: number }[], g: number): number | null {
-  const u = getUltima(pesadas); if (!u) return null
-  const d = Math.floor((Date.now() - new Date(u.fecha).getTime()) / 86400000)
+// Peso estimado = última pesada + ganancia × días hasta hoy.
+// asOf: si se pasa, toma la última pesada CON fecha ≤ asOf (reproduce el estado histórico).
+// hoyMs: si se pasa, usa esa fecha como "hoy" (congela el drift de días).
+function pesoEstimado(pesadas: { fecha: string; peso_kg: number }[], g: number, asOf?: string | null, hoyMs?: number): number | null {
+  const rel = asOf ? pesadas.filter(p => p.fecha <= asOf) : pesadas
+  const u = getUltima(rel); if (!u) return null
+  const ref = hoyMs ?? Date.now()
+  const d = Math.floor((ref - new Date(u.fecha).getTime()) / 86400000)
   return u.peso_kg + g * d
 }
 function fFecha(iso: string) { const [y, m, d] = iso.split("-"); return `${d}/${m}/${y.slice(2)}` }
@@ -53,7 +63,7 @@ export function poblacionLabel(grupos: string[]): string {
   return parts.join(" + ")
 }
 
-export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig }: Props) {
+export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig, reproducir, frozen }: Props) {
   const [segColapsado, setSegColapsado] = useState(false)
   const [segGrupos, setSegGrupos] = useState<Set<string>>(new Set(initialConfig?.grupos ?? GRUPOS_ALL))
   const [segOrigen, setSegOrigen] = useState<"estimado" | "pesada">(initialConfig?.origen === "pesada" ? "pesada" : "estimado")
@@ -68,10 +78,13 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const segCortesRef = useRef<number[] | null>(null)
 
   const segFechaEff = segFecha || todasFechas[todasFechas.length - 1] || ""
+  // Anclajes de reproducción (si el estudio se cargó en modo re-linkear): base pesada + "hoy" fijo.
+  const reproAsOf = reproducir?.asOf ?? null
+  const reproHoyMs = reproducir?.hoyMs
   const grupoDe = (t: AnimalSeg) => t.es_torito ? (t.sexo === "Macho" ? "torito" : "ternera_rep") : (t.sexo === "Macho" ? "macho" : "hembra")
   const segPesos: number[] = animales
     .filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
-    .map(t => segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia) : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
+    .map(t => segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia, reproAsOf, reproHoyMs) : (t.pesadas_terneros.find(p => p.fecha === (reproAsOf || segFechaEff))?.peso_kg ?? null))
     .filter((p): p is number => p != null)
 
   const SEG_SECCIONES_DEFAULT = 5
@@ -164,7 +177,7 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
 
   // Reportar secciones + config hacia arriba
   const poblacion = poblacionLabel([...segGrupos])
-  const payload: SegPayload = {
+  const livePayload: SegPayload = {
     poblacion,
     secciones: segReporte.filas.map(r => ({
       label: r.lo === -Infinity ? `< ${Math.round(r.hi)}` : r.hi === Infinity ? `> ${Math.round(r.lo)}` : `${Math.round(r.lo)} / ${Math.round(r.hi)}`,
@@ -172,10 +185,22 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
     })),
     total: segReporte.total,
   }
+  // En modo foto se reporta la foto congelada tal cual (no depende del rodeo actual).
+  const payload: SegPayload = frozen ?? livePayload
   const payloadKey = JSON.stringify(payload)
   useEffect(() => { onSections(payload) }, [payloadKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cfg: SegConfig = { origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes }
+  // Receta de reproducción: qué pesada base y qué "hoy" se usaron (para poder re-linkear igual al recargar).
+  // En modo foto se preserva la receta original (initialConfig) para no pisarla al re-guardar.
+  const pesadaBaseFecha = frozen
+    ? (initialConfig?.pesadaBaseFecha ?? null)
+    : segOrigen === "estimado"
+      ? (reproAsOf ?? todasFechas[todasFechas.length - 1] ?? null)
+      : (reproAsOf || segFechaEff || null)
+  const fechaCalculo = frozen
+    ? (initialConfig?.fechaCalculo ?? new Date().toISOString().slice(0, 10))
+    : new Date(reproHoyMs ?? Date.now()).toISOString().slice(0, 10)
+  const cfg: SegConfig = { origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes, pesadaBaseFecha, fechaCalculo, snapshot: frozen ?? livePayload }
   const cfgKey = JSON.stringify(cfg)
   useEffect(() => { onConfig?.(cfg) }, [cfgKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -202,9 +227,29 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
           <span className="text-xs font-normal px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">{poblacion}</span>
           {segReporte.total && <span className="text-xs font-normal text-gray-400">· {segReporte.filas.length} secc · {segReporte.total.cantidad} animales</span>}
         </button>
+        {frozen && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700" title="Foto guardada con el estudio — no depende del rodeo actual">📸 foto guardada</span>}
         {onRemove && <button type="button" onClick={onRemove} title="Quitar segmentador" className="text-xs px-1.5 py-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50">✕</button>}
       </div>
-      {!segColapsado && (<>
+      {/* Modo foto: tabla read-only de la foto congelada (no re-deriva del rodeo) */}
+      {!segColapsado && frozen && (
+        <div className="text-sm">
+          <p className="text-xs text-indigo-600 mb-2">Datos guardados con el estudio (foto congelada). No dependen de las pesadas actuales.</p>
+          <table className="w-full text-base">
+            <thead>
+              <tr className="text-gray-500 border-b"><th className="text-left py-1">Rango</th><th className="text-right">Cantidad</th><th className="text-right pr-1">Promedio</th></tr>
+            </thead>
+            <tbody>
+              {frozen.secciones.map((s, idx) => (
+                <tr key={idx} className="hover:bg-white"><td className="py-2">{s.label}</td><td className="text-right">{s.cantidad}</td><td className="text-right pr-1">{s.cantidad ? s.promedio.toFixed(0) : "—"}</td></tr>
+              ))}
+              {frozen.total && (
+                <tr className="font-semibold border-t"><td className="py-2">Total</td><td className="text-right">{frozen.total.cantidad}</td><td className="text-right pr-1">{frozen.total.promedio.toFixed(1).replace(".", ",")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!segColapsado && !frozen && (<>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3 text-sm">
           <span className="flex items-center gap-1.5 flex-wrap">
             <span className="text-gray-500">Reposición:</span>

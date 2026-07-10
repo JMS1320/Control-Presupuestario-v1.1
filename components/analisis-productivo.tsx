@@ -20,9 +20,22 @@ import type { FilaMercado } from "@/app/api/precios-mercado/route"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
+// Foto congelada de lo que reportó un segmentador (mismo shape que SegPayload de segmentador.tsx,
+// inline para evitar import circular de tipos).
+export interface SegSnapshot {
+  poblacion: string
+  secciones: { label: string; cantidad: number; promedio: number }[]
+  total: { cantidad: number; promedio: number } | null
+}
 export interface SegConfig {
   origen: string; grupos: string[]; ganancia: number; cada: number; desde: number | null; fecha: string; cortes: number[] | null
+  // ── Reproducción del linkeo (opcional → estudios viejos no lo tienen) ──
+  pesadaBaseFecha?: string | null   // fecha de la pesada base usada (la "última" al guardar, modo estimado)
+  fechaCalculo?: string             // "hoy" (ISO) usado para el +ganancia×días — congela el drift de días
+  snapshot?: SegSnapshot            // foto de los cortes/pesos calculados al guardar (no depende de la BD)
 }
+// Modo de carga del segmentado de un estudio: 'foto' = usar snapshot congelado · 'relink' = re-derivar anclado
+export type ModoCarga = "foto" | "relink"
 // Precios de mercado scrapeados, guardados con el estudio (opcional → estudios viejos no lo tienen)
 export interface EstudioMercado { desde: string; hasta: string; prima: string; macho: FilaMercado[] | null; hembra: FilaMercado[] | null; fechaScraping?: string }
 interface Estudio { version: number; fecha: string; segments: SegState[]; segConfigs?: SegConfig[]; segConfig?: SegConfig /* compat viejo */; mercado?: EstudioMercado }
@@ -951,7 +964,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
 // ── Contenedor: segmentos en horizontal + total combinado + guardar/cargar estudios ──
 interface ContainerProps extends Props {
   segConfigs?: SegConfig[]
-  onRestoreSegConfigs?: (c: SegConfig[]) => void
+  onRestoreSegConfigs?: (c: SegConfig[], modo: ModoCarga) => void
 }
 export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegConfigs }: ContainerProps) {
   const nextId = useRef(1)
@@ -1049,7 +1062,22 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
     const segs = est.segments || []
     if (!segs.length) return
     const cfgs = est.segConfigs ?? (est.segConfig ? [est.segConfig] : undefined)
-    if (cfgs) onRestoreSegConfigs?.(cfgs) // reconstruye los segmentadores
+    if (cfgs) {
+      // Si el estudio guardó foto/receta, dejar elegir cómo linkear el segmentado.
+      const conReceta = cfgs.some(c => c?.pesadaBaseFecha || c?.fechaCalculo)
+      const conFoto = cfgs.some(c => c?.snapshot)
+      let modo: ModoCarga = "relink"
+      if (conFoto || conReceta) {
+        const fBase = cfgs.find(c => c?.pesadaBaseFecha)?.pesadaBaseFecha
+        const relink = window.confirm(
+          "¿Cómo cargar el segmentado por peso?\n\n" +
+          "• Aceptar → 🔄 RE-LINKEAR con el rodeo" + (fBase ? ` (recalcula anclado a la pesada del ${fBase.split("-").reverse().join("/")})` : "") + ".\n" +
+          "• Cancelar → 📌 DATOS GUARDADOS (foto congelada — no depende de la base, a prueba de bugs)."
+        )
+        modo = relink ? "relink" : "foto"
+      }
+      onRestoreSegConfigs?.(cfgs, modo) // reconstruye los segmentadores
+    }
     // Restaurar precios de mercado guardados con el estudio (si los tiene)
     if (est.mercado) {
       setMercDesde(est.mercado.desde)
