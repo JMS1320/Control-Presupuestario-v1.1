@@ -5971,6 +5971,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Certificado SICORE: match por factura_id (comprobantes_arca.fecha_pago suele estar NULL → no sirve
       // fecha_pago). sicore_retenciones.factura_id vincula la retención a la FC del pago.
       let retB64: string | null = null
+      let fechaPagoReal = ''
       if (tipo === 'arca') {
         let regs: Array<Record<string, unknown>> = []
         const ids = (facturaIds || []).filter(Boolean)
@@ -5984,12 +5985,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           regs = (registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>).filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>
         }
         if (regs.length) {
+          fechaPagoReal = String((regs[0] as { fecha_pago?: string }).fecha_pago || '')
           const bytes = await generarCertificadoRetencion(regs as Parameters<typeof generarCertificadoRetencion>[0], true)
           if (bytes) retB64 = abToBase64(bytes)
         }
       }
+      if (!fechaPagoReal) fechaPagoReal = (items[0]?.fecha_estimada as string) || ''
 
       const m = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      const fmtF = (f: string) => { if (!f) return '..............'; const d = new Date(f + 'T12:00:00'); return isNaN(d.getTime()) ? f : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
       const totalBruto = items.reduce((s, i) => s + (i.imp_total || 0), 0)
       const totalRet = items.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
       const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)

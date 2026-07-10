@@ -83,6 +83,18 @@ export function PanelMailsPago() {
       setTimeout(cargar, 3000)
     } catch (e) { toast.error("Error disparando el GAS: " + (e as Error).message) }
   }
+  const enviarTodos = async () => {
+    const pend = mails.filter(m => m.estado === "pendiente")
+    if (pend.length === 0) { toast.info("No hay mails pendientes."); return }
+    if (!confirm(`¿Preparar borradores de los ${pend.length} mails pendientes?`)) return
+    const url = getGasUrl(); if (!url) return
+    await Promise.all(pend.map(m => guardar(m, true))) // persiste ediciones de todos
+    try {
+      await fetch(url, { method: "GET", mode: "no-cors" })
+      toast.success(`Preparando ${pend.length} borradores… revisá Gmail. El estado se actualiza en unos segundos.`)
+      setTimeout(cargar, 4000)
+    } catch (e) { toast.error("Error disparando el GAS: " + (e as Error).message) }
+  }
   const borrar = async (m: MailPago) => {
     if (!confirm(`¿Borrar el mail encolado para ${m.proveedor || "?"}?`)) return
     const { error } = await supabase.from("mails_pago").delete().eq("id", m.id)
@@ -108,7 +120,8 @@ export function PanelMailsPago() {
                 className={`px-2 py-0.5 rounded-full border text-xs ${filtro === e ? "bg-slate-700 text-white border-slate-700" : "bg-white border-gray-300 text-gray-600"}`}>{e}</button>
             ))}
             <Button size="sm" variant="outline" onClick={cargar} disabled={loading}>{loading ? "…" : "↻ Refrescar"}</Button>
-            <span className="text-xs text-gray-400 ml-2">Para enviar: corré <b>prepararBorradores()</b> en el GAS → crea borradores en Gmail. {pendientes > 0 && <b className="text-amber-700">{pendientes} pendiente(s)</b>}</span>
+            <Button size="sm" onClick={enviarTodos} disabled={pendientes === 0} className="bg-blue-600 hover:bg-blue-700 text-white">✉ Enviar todos los pendientes</Button>
+            <span className="text-xs text-gray-400 ml-2">Crea borradores en Gmail (los revisás y enviás vos). {pendientes > 0 && <b className="text-amber-700">{pendientes} pendiente(s)</b>}</span>
           </div>
 
           {mails.length === 0 ? (
