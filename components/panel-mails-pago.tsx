@@ -55,13 +55,33 @@ export function PanelMailsPago() {
   const setCampo = (id: string, campo: keyof MailPago, val: string | boolean) =>
     setMails(ms => ms.map(m => m.id === id ? { ...m, [campo]: val } : m))
 
-  const guardar = async (m: MailPago) => {
+  const guardar = async (m: MailPago, silent = false) => {
     const { error } = await supabase.from("mails_pago").update({
       email_destino: m.email_destino, asunto: m.asunto, cuerpo: m.cuerpo,
       adjuntar_retencion: m.adjuntar_retencion, adjuntar_detalle: m.adjuntar_detalle,
     }).eq("id", m.id)
-    if (error) toast.error("Error guardando: " + error.message)
-    else toast.success("Guardado")
+    if (error) { toast.error("Error guardando: " + error.message); return false }
+    if (!silent) toast.success("Guardado")
+    return true
+  }
+
+  // URL del GAS desplegado como Web App (se pide una vez y queda en el navegador)
+  const getGasUrl = (): string | null => {
+    let u = localStorage.getItem("gas_mails_url")
+    if (!u) {
+      u = prompt("Pegá la URL del GAS desplegado como Web App (Apps Script → Deploy → Web app → URL):") || ""
+      if (u) localStorage.setItem("gas_mails_url", u)
+    }
+    return u || null
+  }
+  const enviarBorrador = async (m: MailPago) => {
+    if (!(await guardar(m, true))) return // persiste tus ediciones primero
+    const url = getGasUrl(); if (!url) return
+    try {
+      await fetch(`${url}?id=${m.id}`, { method: "GET", mode: "no-cors" })
+      toast.success("Preparando borrador… revisá Gmail. El estado se actualiza en unos segundos.")
+      setTimeout(cargar, 3000)
+    } catch (e) { toast.error("Error disparando el GAS: " + (e as Error).message) }
   }
   const borrar = async (m: MailPago) => {
     if (!confirm(`¿Borrar el mail encolado para ${m.proveedor || "?"}?`)) return
@@ -107,6 +127,7 @@ export function PanelMailsPago() {
                       <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={m.adjuntar_detalle !== false} onChange={e => setCampo(m.id, "adjuntar_detalle", e.target.checked)} /> adjuntar detalle</label>
                       <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!m.adjuntar_retencion} disabled={!m.tiene_sicore} onChange={e => setCampo(m.id, "adjuntar_retencion", e.target.checked)} /> adjuntar retención</label>
                       <Button size="sm" variant="outline" onClick={() => guardar(m)}>Guardar</Button>
+                      <Button size="sm" onClick={() => enviarBorrador(m)} className="bg-blue-600 hover:bg-blue-700 text-white">Enviar Borrador</Button>
                       <Button size="sm" variant="ghost" onClick={() => borrar(m)} className="text-red-600">✕</Button>
                     </span>
                   </div>

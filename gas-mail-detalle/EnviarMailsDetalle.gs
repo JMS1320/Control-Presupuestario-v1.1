@@ -13,10 +13,21 @@
 var SUPABASE_URL = 'https://TU_PROJECT_REF.supabase.co';
 var SUPABASE_KEY = 'TU_ANON_O_SERVICE_KEY';
 
-/** Correr esta función a mano (o con un trigger/botón). */
-function prepararBorradores() {
-  var pendientes = fetchPendientes_();
-  if (!pendientes.length) { Logger.log('Sin mails pendientes.'); return; }
+/**
+ * Web app: la app llama a esta URL para preparar borradores.
+ * Deploy → New deployment → Web app → Execute as: Me · Who has access: Anyone.
+ * Con ?id=<uuid> prepara solo ese mail; sin id, todos los pendientes.
+ */
+function doGet(e) {
+  var id = e && e.parameter ? e.parameter.id : null;
+  var res = prepararBorradores(id);
+  return ContentService.createTextOutput(JSON.stringify(res)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** Correr a mano, o vía web app (doGet). soloId opcional = un mail puntual. */
+function prepararBorradores(soloId) {
+  var pendientes = fetchPendientes_(soloId);
+  if (!pendientes.length) { Logger.log('Sin mails pendientes.'); return { ok: 0, err: 0, msg: 'sin pendientes' }; }
 
   var ok = 0, err = 0;
   pendientes.forEach(function (m) {
@@ -37,10 +48,12 @@ function prepararBorradores() {
     }
   });
   Logger.log('Borradores creados: ' + ok + ' · errores: ' + err);
+  return { ok: ok, err: err };
 }
 
-function fetchPendientes_() {
+function fetchPendientes_(soloId) {
   var url = SUPABASE_URL + '/rest/v1/mails_pago?estado=eq.pendiente&select=*&order=creado_at.asc';
+  if (soloId) url += '&id=eq.' + soloId;
   var res = UrlFetchApp.fetch(url, { headers: headers_(), muteHttpExceptions: true });
   if (res.getResponseCode() >= 300) throw new Error('Supabase ' + res.getResponseCode() + ': ' + res.getContentText());
   return JSON.parse(res.getContentText() || '[]');
