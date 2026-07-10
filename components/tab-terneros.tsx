@@ -910,11 +910,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <PopoverContent className="w-96 text-sm">
               <p className="font-semibold mb-1">📋 Formato del Excel de pesadas</p>
               <p className="text-muted-foreground mb-2">
-                3 columnas (en cualquier orden; primera hoja; encabezados en la 1ª fila):
+                Columnas (en cualquier orden; primera hoja; encabezados en la 1ª fila):
               </p>
               <ul className="list-disc pl-4 space-y-1 mb-3">
                 <li><b>Fecha</b> — una sola para todo el archivo (DD/MM/AAAA). Si hay fechas distintas, el archivo se rechaza.</li>
                 <li><b>IDV</b> — número de caravana del lector (es la <b>caravana oficial</b> del animal); con o sin espacios.</li>
+                <li><b>Caravana</b> <span className="text-muted-foreground">(opcional)</span> — caravana <b>no oficial</b> (CUT/Descarte, toros): texto tal cual (ej. <code>B079</code>). Matchea contra caravana oficial o interna. Si esta columna tiene valor, se usa en vez de IDV.</li>
                 <li><b>Peso</b> — en kg (coma o punto).</li>
               </ul>
               <table className="w-full text-xs border-collapse">
@@ -922,13 +923,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <tr className="bg-muted">
                     <th className="border px-1.5 py-0.5 text-left">Fecha</th>
                     <th className="border px-1.5 py-0.5 text-left">IDV</th>
+                    <th className="border px-1.5 py-0.5 text-left">Caravana</th>
                     <th className="border px-1.5 py-0.5 text-left">Peso</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326455</td><td className="border px-1.5 py-0.5">185,5</td></tr>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326456</td><td className="border px-1.5 py-0.5">192</td></tr>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326457</td><td className="border px-1.5 py-0.5">178,3</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326455</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">185,5</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326456</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">192</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">B079</td><td className="border px-1.5 py-0.5">480</td></tr>
                 </tbody>
               </table>
             </PopoverContent>

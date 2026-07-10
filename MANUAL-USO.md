@@ -170,6 +170,12 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - Reusa la columna `es_torito` como flag de **reposición** (macho→torito, hembra→ternera rep).
 - Chips de filtro por grupo + columnas ordenables + **"Seleccionar N más pesadas"** (respeta el chip activo) → **Marcar / Quitar**. La escritura la dispara el usuario.
 
+### Importar pesadas (Excel) 🟡
+- Columnas: **Fecha** (una sola por archivo, DD/MM/AAAA), **Peso** (kg), y la identificación del animal:
+  - **IDV** → número de caravana del lector; se convierte a la caravana oficial (15 díg) y matchea `terneros.caravana_oficial`.
+  - **Caravana** (opcional, nueva) → caravana **no oficial** (CUT/Descarte, toros): texto tal cual (ej. `B079`). Matchea **texto exacto** contra `caravana_oficial` o `caravana_interna`. Si esta columna tiene valor, se usa en vez de IDV. Resuelve que antes estos animales caían en "sin IDV" y no se podían pesar por import.
+- El análisis clasifica en **OK / no encontradas / duplicadas**; para las no encontradas elegís *sin vincular / crear nuevo / ignorar* (amortiguador ante errores). El código de matcheo vive en `app/api/import-pesadas/route.ts`.
+
 ### Segmentadores (multi) 🟡
 - **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
 - El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").

@@ -106,82 +106,93 @@ async function handleAnalizar(request: Request) {
     }
     const fechaDetectada = [...fechasUnicas][0]
 
-    // Clasificar filas
-    const sinIdv: number[] = []
-    const conIdv: Array<{ fila: number; idv_original: string; caravana_convertida: string; peso: number }> = []
+    // Clasificar filas. Cada fila se identifica por:
+    //  - columna "Caravana" (no oficial: CUT/Descarte, toros…) → matchea TEXTO EXACTO contra
+    //    caravana_oficial o caravana_interna. Tiene prioridad si está presente.
+    //  - columna "IDV" (numérica) → se convierte al formato caravana_oficial (15 díg) como antes.
+    const sinId: number[] = []
+    type Item = { fila: number; tipo: 'idv' | 'caravana'; id_original: string; match: string; peso: number }
+    const items: Item[] = []
 
     rows.forEach((row, idx) => {
       const pesoRaw = row['Peso'] ?? row['peso'] ?? row['PESO']
       const peso = parseFloat(String(pesoRaw ?? '').replace(',', '.'))
       if (!peso || isNaN(peso) || peso <= 0) return  // fila sin peso válido
 
-      const idvRaw = row['IDV'] ?? row['idv'] ?? row['Idv']
-      const caravana = idvACaravana(idvRaw)
-
-      if (!caravana) {
-        sinIdv.push(idx + 1)
+      const caravanaRaw = row['Caravana'] ?? row['caravana'] ?? row['CARAVANA']
+      const caravanaTxt = caravanaRaw == null ? '' : String(caravanaRaw).trim()
+      if (caravanaTxt) {
+        items.push({ fila: idx + 1, tipo: 'caravana', id_original: caravanaTxt, match: caravanaTxt, peso })
         return
       }
 
-      conIdv.push({
-        fila: idx + 1,
-        idv_original: String(idvRaw),
-        caravana_convertida: caravana,
-        peso,
-      })
+      const idvRaw = row['IDV'] ?? row['idv'] ?? row['Idv']
+      const caravana = idvACaravana(idvRaw)
+      if (!caravana) {
+        sinId.push(idx + 1)
+        return
+      }
+      items.push({ fila: idx + 1, tipo: 'idv', id_original: String(idvRaw), match: caravana, peso })
     })
 
-    // Buscar todas las caravanas únicas en la BD de una sola vez
-    const caravanasUnicas = [...new Set(conIdv.map(r => r.caravana_convertida))]
+    // Valores a buscar en la BD
+    const oficialesIdv = [...new Set(items.filter(i => i.tipo === 'idv').map(i => i.match))]
+    const rawsCaravana = [...new Set(items.filter(i => i.tipo === 'caravana').map(i => i.match))]
 
-    const { data: ternerosBD } = await supabase
+    // Query 1: por caravana_oficial (IDV convertido + caravanas no oficiales cargadas en oficial)
+    const { data: porOficial } = await supabase
       .schema('productivo')
       .from('terneros')
       .select('id, caravana_oficial, caravana_interna, sexo, pelo')
-      .in('caravana_oficial', caravanasUnicas)
+      .in('caravana_oficial', [...oficialesIdv, ...rawsCaravana])
       .eq('activo', true)
 
-    // Mapa caravana_oficial → lista de terneros (puede haber duplicados en BD)
-    const mapaCaravana = new Map<string, any[]>()
-    ;(ternerosBD ?? []).forEach(t => {
-      const lista = mapaCaravana.get(t.caravana_oficial) ?? []
-      lista.push(t)
-      mapaCaravana.set(t.caravana_oficial, lista)
+    // Query 2: por caravana_interna (caravanas no oficiales cargadas en interna, ej. toros)
+    const { data: porInterna } = rawsCaravana.length
+      ? await supabase
+          .schema('productivo')
+          .from('terneros')
+          .select('id, caravana_oficial, caravana_interna, sexo, pelo')
+          .in('caravana_interna', rawsCaravana)
+          .eq('activo', true)
+      : { data: [] as any[] }
+
+    const mapaOficial = new Map<string, any[]>()
+    ;(porOficial ?? []).forEach(t => {
+      const lista = mapaOficial.get(t.caravana_oficial) ?? []; lista.push(t); mapaOficial.set(t.caravana_oficial, lista)
+    })
+    const mapaInterna = new Map<string, any[]>()
+    ;(porInterna ?? []).forEach(t => {
+      if (!t.caravana_interna) return
+      const lista = mapaInterna.get(t.caravana_interna) ?? []; lista.push(t); mapaInterna.set(t.caravana_interna, lista)
     })
 
     const ok: any[] = []
     const no_encontradas: any[] = []
     const duplicadas: any[] = []
 
-    conIdv.forEach(item => {
-      const encontrados = mapaCaravana.get(item.caravana_convertida) ?? []
-      if (encontrados.length === 1) {
-        ok.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          ternero_id: encontrados[0].id,
-          peso: item.peso,
-        })
-      } else if (encontrados.length > 1) {
-        duplicadas.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          peso: item.peso,
-          terneros: encontrados,
-        })
+    items.forEach(item => {
+      // idv: solo caravana_oficial. caravana: caravana_oficial O caravana_interna (dedup por id).
+      let encontrados: any[]
+      if (item.tipo === 'idv') {
+        encontrados = mapaOficial.get(item.match) ?? []
       } else {
-        no_encontradas.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          peso: item.peso,
-        })
+        const porO = mapaOficial.get(item.match) ?? []
+        const porI = mapaInterna.get(item.match) ?? []
+        const vistos = new Set<string>()
+        encontrados = [...porO, ...porI].filter(t => (vistos.has(t.id) ? false : (vistos.add(t.id), true)))
       }
+
+      const base = { idv: item.id_original, caravana_oficial: item.match, peso: item.peso }
+      if (encontrados.length === 1) ok.push({ ...base, ternero_id: encontrados[0].id })
+      else if (encontrados.length > 1) duplicadas.push({ ...base, terneros: encontrados })
+      else no_encontradas.push(base)
     })
 
     return NextResponse.json({
       fecha: fechaDetectada,
-      sin_idv: sinIdv.length,
-      total_con_idv: conIdv.length,
+      sin_idv: sinId.length,
+      total_con_idv: items.length,
       ok,
       no_encontradas,
       duplicadas,
