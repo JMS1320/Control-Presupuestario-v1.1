@@ -6006,6 +6006,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
         cuenta += `\nTotal transferido: ${m(totalPagado)}`
       }
+      cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
       const asunto = `Detalle de pago — ${proveedor}`
       const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
 
