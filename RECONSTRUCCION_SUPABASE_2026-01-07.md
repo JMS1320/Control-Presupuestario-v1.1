@@ -11051,3 +11051,6 @@ CREATE TABLE IF NOT EXISTS public.mails_pago (
 GRANT ALL ON public.mails_pago TO anon, authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_mails_pago_estado ON public.mails_pago (estado);
 ```
+
+-- Aplicado 2026-07-10 (aditivo): toggle para adjuntar (o no) el Detalle PDF
+ALTER TABLE public.mails_pago ADD COLUMN IF NOT EXISTS adjuntar_detalle boolean DEFAULT true;

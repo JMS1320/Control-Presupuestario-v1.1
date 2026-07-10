@@ -20,12 +20,13 @@ interface MailPago {
   cuerpo: string
   tiene_sicore?: boolean | null
   adjuntar_retencion?: boolean | null
+  adjuntar_detalle?: boolean | null
   estado: string
   error?: string | null
   enviado_at?: string | null
 }
 
-const SEL = "id,creado_at,proveedor,cuit,email_destino,asunto,cuerpo,tiene_sicore,adjuntar_retencion,estado,error,enviado_at"
+const SEL = "id,creado_at,proveedor,cuit,email_destino,asunto,cuerpo,tiene_sicore,adjuntar_retencion,adjuntar_detalle,estado,error,enviado_at"
 
 const estadoColor: Record<string, string> = {
   pendiente: "bg-amber-100 text-amber-800 border-amber-300",
@@ -56,7 +57,8 @@ export function PanelMailsPago() {
 
   const guardar = async (m: MailPago) => {
     const { error } = await supabase.from("mails_pago").update({
-      email_destino: m.email_destino, asunto: m.asunto, cuerpo: m.cuerpo, adjuntar_retencion: m.adjuntar_retencion,
+      email_destino: m.email_destino, asunto: m.asunto, cuerpo: m.cuerpo,
+      adjuntar_retencion: m.adjuntar_retencion, adjuntar_detalle: m.adjuntar_detalle,
     }).eq("id", m.id)
     if (error) toast.error("Error guardando: " + error.message)
     else toast.success("Guardado")
@@ -102,6 +104,7 @@ export function PanelMailsPago() {
                     <span className="text-xs text-gray-400">{new Date(m.creado_at).toLocaleString("es-AR")}</span>
                     {m.error && <span className="text-xs text-red-600">⚠ {m.error}</span>}
                     <span className="ml-auto flex items-center gap-2">
+                      <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={m.adjuntar_detalle !== false} onChange={e => setCampo(m.id, "adjuntar_detalle", e.target.checked)} /> adjuntar detalle</label>
                       <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={!!m.adjuntar_retencion} disabled={!m.tiene_sicore} onChange={e => setCampo(m.id, "adjuntar_retencion", e.target.checked)} /> adjuntar retención</label>
                       <Button size="sm" variant="outline" onClick={() => guardar(m)}>Guardar</Button>
                       <Button size="sm" variant="ghost" onClick={() => borrar(m)} className="text-red-600">✕</Button>

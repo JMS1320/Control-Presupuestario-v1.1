@@ -22,7 +22,7 @@ function prepararBorradores() {
   pendientes.forEach(function (m) {
     try {
       var adjuntos = [];
-      if (m.detalle_pdf) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
+      if (m.detalle_pdf && m.adjuntar_detalle !== false) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
       if (m.retencion_pdf && m.adjuntar_retencion) adjuntos.push(base64ToPdfBlob_(m.retencion_pdf, 'CertificadoRetencion.pdf'));
 
       var draft = GmailApp.createDraft(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });

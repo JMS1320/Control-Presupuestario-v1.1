@@ -6008,6 +6008,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const { error } = await supabase.from('mails_pago').insert({
         proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
         detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
+        adjuntar_detalle: (totalRet > 0 || totalDesc > 0), // auto si hay retención/descuento (editable en el panel)
         estado: 'pendiente',
       })
       if (error) { alert('Error encolando mail: ' + error.message); return }
