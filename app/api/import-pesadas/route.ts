@@ -20,17 +20,31 @@ function idvACaravana(idv: any): string | null {
 }
 
 // ─── Detección de fecha desde valor Excel ────────────────────────────────────
-function parseFecha(val: any): string | null {
-  if (!val) return null
-  if (typeof val === 'string') {
-    // DD/MM/YYYY
-    const m = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
-    // YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+// PROBLEMA: si la celda es una fecha de Excel guardada con formato US (m/d), un
+// "05/06" (5 de junio en es-AR) se guarda como May 6 y se leía mal. FIX: se prioriza
+// el TEXTO MOSTRADO de la celda (arg `texto` = `.w`) y se interpreta SIEMPRE como
+// dd/mm (es-AR); solo si el mes es imposible (>12) se asume que venía m/d y se da vuelta.
+// El texto mostrado conserva el mismo orden de dígitos que el usuario tipeó, así que
+// leerlo como dd/mm recupera su intención tanto en Excel argentino como US.
+// Fallback: si solo hay serial numérico sin texto, se usa la fecha absoluta del serial.
+function parseFecha(val: any, texto?: string): string | null {
+  const t = (texto ?? (typeof val === 'string' ? val : '')).trim()
+  const m = t.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+  if (m) {
+    let d = parseInt(m[1], 10)
+    let mo = parseInt(m[2], 10)
+    let y = parseInt(m[3], 10)
+    if (y < 100) y += 2000
+    // es-AR: default día/mes. Si el mes es imposible (>12) y el día sí podría ser mes, venía m/d → dar vuelta.
+    if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp }
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    }
   }
+  // YYYY-MM-DD directo
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+  // Fallback: serial de Excel (fecha absoluta, sin ambigüedad d/m)
   if (typeof val === 'number') {
-    // Excel serial date
     const date = XLSX.SSF.parse_date_code(val)
     if (date) {
       return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
@@ -62,6 +76,10 @@ async function handleAnalizar(request: Request) {
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true })
+    // 2do pase formateado (raw:false) → da el TEXTO MOSTRADO de la celda de fecha (`.w`),
+    // que conserva el orden de dígitos que el usuario tipeó. Se usa SOLO para la fecha
+    // (peso/IDV se leen de `rows` raw para no romper números grandes/notación científica).
+    const rowsFmt: any[] = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false })
 
     if (rows.length === 0) {
       return NextResponse.json({ error: 'El archivo está vacío' }, { status: 400 })
@@ -69,8 +87,12 @@ async function handleAnalizar(request: Request) {
 
     // Detectar fechas: debe haber UNA sola por archivo. Si hay distintas, rechazar.
     const fechasUnicas = new Set<string>()
-    for (const row of rows) {
-      const f = parseFecha(row['Fecha'] ?? row['fecha'] ?? row['FECHA'])
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const rowFmt = rowsFmt[i] ?? {}
+      const rawVal = row['Fecha'] ?? row['fecha'] ?? row['FECHA']
+      const txtVal = rowFmt['Fecha'] ?? rowFmt['fecha'] ?? rowFmt['FECHA']
+      const f = parseFecha(rawVal, typeof txtVal === 'string' ? txtVal : undefined)
       if (f) fechasUnicas.add(f)
     }
     if (fechasUnicas.size === 0) {
