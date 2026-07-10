@@ -6003,12 +6003,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         cuenta += `\nTotal transferido: ${m(totalPagado)}`
       }
       const asunto = `Detalle de pago — ${proveedor}`
-      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el aviso de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
+      const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
 
       const { error } = await supabase.from('mails_pago').insert({
         proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
         detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
-        adjuntar_detalle: (totalRet > 0 || totalDesc > 0), // auto si hay retención/descuento (editable en el panel)
+        adjuntar_detalle: (totalDesc > 0), // auto SOLO si hay descuento (editable en el panel)
         estado: 'pendiente',
       })
       if (error) { alert('Error encolando mail: ' + error.message); return }
