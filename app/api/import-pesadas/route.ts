@@ -20,17 +20,31 @@ function idvACaravana(idv: any): string | null {
 }
 
 // ─── Detección de fecha desde valor Excel ────────────────────────────────────
-function parseFecha(val: any): string | null {
-  if (!val) return null
-  if (typeof val === 'string') {
-    // DD/MM/YYYY
-    const m = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
-    // YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+// PROBLEMA: si la celda es una fecha de Excel guardada con formato US (m/d), un
+// "05/06" (5 de junio en es-AR) se guarda como May 6 y se leía mal. FIX: se prioriza
+// el TEXTO MOSTRADO de la celda (arg `texto` = `.w`) y se interpreta SIEMPRE como
+// dd/mm (es-AR); solo si el mes es imposible (>12) se asume que venía m/d y se da vuelta.
+// El texto mostrado conserva el mismo orden de dígitos que el usuario tipeó, así que
+// leerlo como dd/mm recupera su intención tanto en Excel argentino como US.
+// Fallback: si solo hay serial numérico sin texto, se usa la fecha absoluta del serial.
+function parseFecha(val: any, texto?: string): string | null {
+  const t = (texto ?? (typeof val === 'string' ? val : '')).trim()
+  const m = t.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+  if (m) {
+    let d = parseInt(m[1], 10)
+    let mo = parseInt(m[2], 10)
+    let y = parseInt(m[3], 10)
+    if (y < 100) y += 2000
+    // es-AR: default día/mes. Si el mes es imposible (>12) y el día sí podría ser mes, venía m/d → dar vuelta.
+    if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp }
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    }
   }
+  // YYYY-MM-DD directo
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+  // Fallback: serial de Excel (fecha absoluta, sin ambigüedad d/m)
   if (typeof val === 'number') {
-    // Excel serial date
     const date = XLSX.SSF.parse_date_code(val)
     if (date) {
       return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
@@ -62,6 +76,10 @@ async function handleAnalizar(request: Request) {
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
     const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true })
+    // 2do pase formateado (raw:false) → da el TEXTO MOSTRADO de la celda de fecha (`.w`),
+    // que conserva el orden de dígitos que el usuario tipeó. Se usa SOLO para la fecha
+    // (peso/IDV se leen de `rows` raw para no romper números grandes/notación científica).
+    const rowsFmt: any[] = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false })
 
     if (rows.length === 0) {
       return NextResponse.json({ error: 'El archivo está vacío' }, { status: 400 })
@@ -69,8 +87,12 @@ async function handleAnalizar(request: Request) {
 
     // Detectar fechas: debe haber UNA sola por archivo. Si hay distintas, rechazar.
     const fechasUnicas = new Set<string>()
-    for (const row of rows) {
-      const f = parseFecha(row['Fecha'] ?? row['fecha'] ?? row['FECHA'])
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const rowFmt = rowsFmt[i] ?? {}
+      const rawVal = row['Fecha'] ?? row['fecha'] ?? row['FECHA']
+      const txtVal = rowFmt['Fecha'] ?? rowFmt['fecha'] ?? rowFmt['FECHA']
+      const f = parseFecha(rawVal, typeof txtVal === 'string' ? txtVal : undefined)
       if (f) fechasUnicas.add(f)
     }
     if (fechasUnicas.size === 0) {
@@ -84,82 +106,93 @@ async function handleAnalizar(request: Request) {
     }
     const fechaDetectada = [...fechasUnicas][0]
 
-    // Clasificar filas
-    const sinIdv: number[] = []
-    const conIdv: Array<{ fila: number; idv_original: string; caravana_convertida: string; peso: number }> = []
+    // Clasificar filas. Cada fila se identifica por:
+    //  - columna "Caravana" (no oficial: CUT/Descarte, toros…) → matchea TEXTO EXACTO contra
+    //    caravana_oficial o caravana_interna. Tiene prioridad si está presente.
+    //  - columna "IDV" (numérica) → se convierte al formato caravana_oficial (15 díg) como antes.
+    const sinId: number[] = []
+    type Item = { fila: number; tipo: 'idv' | 'caravana'; id_original: string; match: string; peso: number }
+    const items: Item[] = []
 
     rows.forEach((row, idx) => {
       const pesoRaw = row['Peso'] ?? row['peso'] ?? row['PESO']
       const peso = parseFloat(String(pesoRaw ?? '').replace(',', '.'))
       if (!peso || isNaN(peso) || peso <= 0) return  // fila sin peso válido
 
-      const idvRaw = row['IDV'] ?? row['idv'] ?? row['Idv']
-      const caravana = idvACaravana(idvRaw)
-
-      if (!caravana) {
-        sinIdv.push(idx + 1)
+      const caravanaRaw = row['Caravana'] ?? row['caravana'] ?? row['CARAVANA']
+      const caravanaTxt = caravanaRaw == null ? '' : String(caravanaRaw).trim()
+      if (caravanaTxt) {
+        items.push({ fila: idx + 1, tipo: 'caravana', id_original: caravanaTxt, match: caravanaTxt, peso })
         return
       }
 
-      conIdv.push({
-        fila: idx + 1,
-        idv_original: String(idvRaw),
-        caravana_convertida: caravana,
-        peso,
-      })
+      const idvRaw = row['IDV'] ?? row['idv'] ?? row['Idv']
+      const caravana = idvACaravana(idvRaw)
+      if (!caravana) {
+        sinId.push(idx + 1)
+        return
+      }
+      items.push({ fila: idx + 1, tipo: 'idv', id_original: String(idvRaw), match: caravana, peso })
     })
 
-    // Buscar todas las caravanas únicas en la BD de una sola vez
-    const caravanasUnicas = [...new Set(conIdv.map(r => r.caravana_convertida))]
+    // Valores a buscar en la BD
+    const oficialesIdv = [...new Set(items.filter(i => i.tipo === 'idv').map(i => i.match))]
+    const rawsCaravana = [...new Set(items.filter(i => i.tipo === 'caravana').map(i => i.match))]
 
-    const { data: ternerosBD } = await supabase
+    // Query 1: por caravana_oficial (IDV convertido + caravanas no oficiales cargadas en oficial)
+    const { data: porOficial } = await supabase
       .schema('productivo')
       .from('terneros')
       .select('id, caravana_oficial, caravana_interna, sexo, pelo')
-      .in('caravana_oficial', caravanasUnicas)
+      .in('caravana_oficial', [...oficialesIdv, ...rawsCaravana])
       .eq('activo', true)
 
-    // Mapa caravana_oficial → lista de terneros (puede haber duplicados en BD)
-    const mapaCaravana = new Map<string, any[]>()
-    ;(ternerosBD ?? []).forEach(t => {
-      const lista = mapaCaravana.get(t.caravana_oficial) ?? []
-      lista.push(t)
-      mapaCaravana.set(t.caravana_oficial, lista)
+    // Query 2: por caravana_interna (caravanas no oficiales cargadas en interna, ej. toros)
+    const { data: porInterna } = rawsCaravana.length
+      ? await supabase
+          .schema('productivo')
+          .from('terneros')
+          .select('id, caravana_oficial, caravana_interna, sexo, pelo')
+          .in('caravana_interna', rawsCaravana)
+          .eq('activo', true)
+      : { data: [] as any[] }
+
+    const mapaOficial = new Map<string, any[]>()
+    ;(porOficial ?? []).forEach(t => {
+      const lista = mapaOficial.get(t.caravana_oficial) ?? []; lista.push(t); mapaOficial.set(t.caravana_oficial, lista)
+    })
+    const mapaInterna = new Map<string, any[]>()
+    ;(porInterna ?? []).forEach(t => {
+      if (!t.caravana_interna) return
+      const lista = mapaInterna.get(t.caravana_interna) ?? []; lista.push(t); mapaInterna.set(t.caravana_interna, lista)
     })
 
     const ok: any[] = []
     const no_encontradas: any[] = []
     const duplicadas: any[] = []
 
-    conIdv.forEach(item => {
-      const encontrados = mapaCaravana.get(item.caravana_convertida) ?? []
-      if (encontrados.length === 1) {
-        ok.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          ternero_id: encontrados[0].id,
-          peso: item.peso,
-        })
-      } else if (encontrados.length > 1) {
-        duplicadas.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          peso: item.peso,
-          terneros: encontrados,
-        })
+    items.forEach(item => {
+      // idv: solo caravana_oficial. caravana: caravana_oficial O caravana_interna (dedup por id).
+      let encontrados: any[]
+      if (item.tipo === 'idv') {
+        encontrados = mapaOficial.get(item.match) ?? []
       } else {
-        no_encontradas.push({
-          idv: item.idv_original,
-          caravana_oficial: item.caravana_convertida,
-          peso: item.peso,
-        })
+        const porO = mapaOficial.get(item.match) ?? []
+        const porI = mapaInterna.get(item.match) ?? []
+        const vistos = new Set<string>()
+        encontrados = [...porO, ...porI].filter(t => (vistos.has(t.id) ? false : (vistos.add(t.id), true)))
       }
+
+      const base = { idv: item.id_original, caravana_oficial: item.match, peso: item.peso }
+      if (encontrados.length === 1) ok.push({ ...base, ternero_id: encontrados[0].id })
+      else if (encontrados.length > 1) duplicadas.push({ ...base, terneros: encontrados })
+      else no_encontradas.push(base)
     })
 
     return NextResponse.json({
       fecha: fechaDetectada,
-      sin_idv: sinIdv.length,
-      total_con_idv: conIdv.length,
+      sin_idv: sinId.length,
+      total_con_idv: items.length,
       ok,
       no_encontradas,
       duplicadas,

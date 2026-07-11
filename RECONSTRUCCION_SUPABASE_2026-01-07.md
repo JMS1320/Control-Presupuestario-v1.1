@@ -10962,3 +10962,95 @@ Ver `CONCILIACION-CONTABILIDAD.md` sección "Pendientes identificados al 2026-03
 a3fb0ab - Feature: reglas de conciliacion filtradas por cuenta bancaria
 714cee0 - Docs: cuenta_bancaria_id en reglas — marcado como completado
 ```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-04 · Refactor fechas (fecha_pago)
+
+**Contexto:** se separa `fecha_pago` (fecha real de pago) de `fecha_vencimiento` (firme). Detalle y plan de test: `PENDIENTES.md` → A-TEST-06. **NO están en el backup original.**
+
+### FASE TEMPLATES (aplicado — commit `de5eac3`)
+
+```sql
+-- 1) Columna nueva
+ALTER TABLE public.cuotas_egresos_sin_factura ADD COLUMN IF NOT EXISTS fecha_pago date;
+COMMENT ON COLUMN public.cuotas_egresos_sin_factura.fecha_pago IS
+  'Fecha real de pago (editable desde Vista Pagos / Cash Flow). Propaga a fecha_estimada. No confundir con fecha_vencimiento (firme, solo editable en Egresos sin Factura).';
+
+-- 2) RPC: ÚNICO camino autorizado para cambiar el vencimiento de una cuota de template.
+--    Levanta la bandera app.venc_edit que el trigger-guardián exige.
+CREATE OR REPLACE FUNCTION public.actualizar_venc_cuota(p_cuota_id uuid, p_fecha date)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM set_config('app.venc_edit', 'on', true);
+  UPDATE public.cuotas_egresos_sin_factura
+     SET fecha_vencimiento = p_fecha,
+         fecha_estimada    = p_fecha,
+         updated_at        = now()
+   WHERE id = p_cuota_id;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.actualizar_venc_cuota(uuid, date) TO anon, authenticated, service_role;
+```
+
+### GUARDIÁN — ⏳ PENDIENTE (armar POST-MERGE, no antes)
+
+> La BD es compartida prod/preview. Prender el trigger antes del merge rompe prod (que corre código viejo que aún escribe venc al pagar). Armar **recién cuando la fase templates esté en `main`**.
+
+```sql
+CREATE OR REPLACE FUNCTION public.guard_venc_cuota()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.fecha_vencimiento IS DISTINCT FROM OLD.fecha_vencimiento THEN
+    IF current_setting('app.venc_edit', true) IS DISTINCT FROM 'on' THEN
+      RAISE EXCEPTION 'La fecha de vencimiento de un template solo puede editarse desde "Egresos sin Factura".';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_guard_venc_cuota
+  BEFORE UPDATE ON public.cuotas_egresos_sin_factura
+  FOR EACH ROW EXECUTE FUNCTION public.guard_venc_cuota();
+```
+
+### FASE ARCA — columna aplicada 2026-07-05; SICORE ⏳ pendiente
+```sql
+-- Aplicado 2026-07-05 (aditivo)
+ALTER TABLE msa.comprobantes_arca ADD COLUMN IF NOT EXISTS fecha_pago date;
+ALTER TABLE pam.comprobantes_arca ADD COLUMN IF NOT EXISTS fecha_pago date;
+ALTER TABLE ma.comprobantes_arca  ADD COLUMN IF NOT EXISTS fecha_pago date;
+```
+- ⏳ **PENDIENTE (no código aún):** SICORE pasa a usar `fecha_pago` (`generarQuincenaSicore` + fila `sicore_retenciones.fecha_pago`), fiscal, solo hacia adelante. + que el pago escriba `fecha_pago` (depende de decisión base operativa Modal vs Cash Flow — ver PENDIENTES B-FEAT-BASE-OPERATIVA / MANUAL-USO).
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-09 · Tabla mails_pago (cola de mails de detalle)
+
+Feature: enviar automáticamente el **Detalle de pago** (PDF) por mail al proveedor, con el **certificado SICORE** adjunto si hay retención. Flujo: app encola → GAS crea borradores en Gmail → envío manual/lote. Ver PENDIENTES B-FEAT-MAIL-DETALLE.
+
+```sql
+-- Aplicado 2026-07-09 (aditivo, schema public)
+CREATE TABLE IF NOT EXISTS public.mails_pago (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  creado_at timestamptz DEFAULT now(),
+  grupo_pago_id uuid, comprobante_arca_id uuid,
+  proveedor text, cuit text,
+  email_destino text NOT NULL,        -- de proveedores.email_pagos
+  asunto text NOT NULL, cuerpo text NOT NULL,
+  detalle_pdf text NOT NULL,          -- PDF base64
+  retencion_pdf text,                 -- certificado SICORE base64 (nullable)
+  tiene_sicore boolean DEFAULT false,
+  adjuntar_retencion boolean DEFAULT true,
+  estado text DEFAULT 'pendiente',    -- pendiente | borrador | enviado | error
+  gmail_draft_id text, error text, enviado_at timestamptz
+);
+GRANT ALL ON public.mails_pago TO anon, authenticated, service_role;
+CREATE INDEX IF NOT EXISTS idx_mails_pago_estado ON public.mails_pago (estado);
+```
+
+-- Aplicado 2026-07-10 (aditivo): toggle para adjuntar (o no) el Detalle PDF
+ALTER TABLE public.mails_pago ADD COLUMN IF NOT EXISTS adjuntar_detalle boolean DEFAULT true;

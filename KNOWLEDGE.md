@@ -227,6 +227,51 @@
 
 ---
 
+## Import de Pesadas (productivo) — comportamiento `#productivo #pesadas #import #2026-07-09`
+
+Endpoint `app/api/import-pesadas/route.ts` (2 acciones: `?accion=analizar` y `?accion=confirmar`). Modal en `tab-terneros.tsx`.
+
+- **Una fecha por archivo.** Si el Excel tiene fechas distintas → lo **rechaza** (separar en un archivo por fecha).
+- **IDV → caravana_oficial** vía `idvACaravana` (padStart 15, espacio tras pos 3). Match contra `productivo.terneros` activos.
+- **Clasificación:** `ok` (1 match) · `duplicadas` (>1 match → el usuario elige ternero) · `no_encontradas` (caravana en Excel pero no en BD → "sin vincular" con `ternero_id=null` + `caravana_idv`, o "crear nuevo" ternero) · **`sin_idv`** (fila con peso pero SIN caravana legible → hoy **solo se cuenta y se DESCARTA**, no se guarda). Ver pendiente B-FEAT-15.
+- **Columnas del historial = por FECHA.** Importar más pesadas con la **misma fecha** → van a la **misma columna** (no crea columna nueva). Fecha distinta → columna nueva.
+- ⚠️ **SIN dedup**: `productivo.pesadas_terneros` solo tiene **PK en `id`** (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada → **duplica** la pesada en silencio. Ver pendiente B-FEAT-16.
+- **Segmentación** (multi-segmentador) excluye animales `activo=false` (bajas/mortandad) aunque tengan pesadas históricas. Las pesadas `ternero_id=null` (sin vincular) NO entran hoy al promedio.
+
+**Tags**: `#productivo` `#pesadas` `#import` `#dedup` `#2026-07-09`
+
+---
+
+## Precios de mercado — scraping entresurcosycorralesya `#productivo #precios #scraping #2026-07-09`
+
+Para poblar precios del análisis de engorde. `app/api/precios-mercado/route.ts` (server-side, evita CORS).
+
+- **Endpoints** (la web carga la tabla por JS; el HTML de `terneros.html`/`terneras.html` NO trae la tabla): `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` (machos: Terneros/Novillitos/Novillos) y `ajax-modulo-ternera.php` (hembras: Terneras/Vaquillonas + "Ternera Holando" que se EXCLUYE). Devuelve tabla HTML: 8 cols (Categoría, Cantidad, Prom.Kilo, **Kilo+**, Kilo−, Prom.Bulto, Bulto+, Bulto−). Se parsea `<td>` por `<tr>`, filtrando filas con "Kg".
+- **El route** acepta `sexo=macho|hembra`, parsea los límites de peso del rango (`pesoLo/pesoHi`), timeout 12s, y devuelve error claro si viene vacío.
+- ⚠️ **El sitio publica con DEMORA**: los días más recientes vienen **vacíos** (0 bytes). El default de fechas del panel termina 3 días atrás. El usuario reportó (2026-07-09) que el sitio no abría ni desde Chrome → puede haber estado caído.
+- **Modelo de precio (acordado con el user):** base = **Kilo+ (máx) asignado al extremo liviano del rango (pesoLo)**, interpolado por peso → escalera; se busca por **kg NETO** (post-desbaste) × (1+prima% calidad). Sexo derivado de la Fuente del segmento.
+
+**Tags**: `#productivo` `#precios` `#scraping` `#mercado` `#2026-07-09`
+
+---
+
+## Mail "Detalle de pago" al proveedor — arquitectura `#mail #gas #pagos #sicore #2026-07-10`
+
+Manda al proveedor el Detalle de pago (PDF) + certificado de retención (si hay SICORE), un mail por pago. **FUNCIONANDO** (testeado 2026-07-10, crea borradores en Gmail).
+
+- **Cola:** `public.mails_pago` (creada 2026-07-09, ver RECONSTRUCCION). Columnas clave: `email_destino, asunto, cuerpo, detalle_pdf` (base64), `retencion_pdf` (base64), `tiene_sicore, adjuntar_detalle, adjuntar_retencion, estado` (pendiente/borrador/enviado/error), `gmail_draft_id`.
+- **Fuente única (regla DRY):** `lib/pagos/encolar-mail-detalle.ts` (lógica, UI-agnóstica, devuelve `{ok,email,conCertificado,error}`), `lib/pagos/certificado-retencion.ts` (cert MSA), `lib/pagos/pdf-detalle-pago.ts` (con `returnBase64`). La llaman el **Modal de Pagos** (`vista-facturas-arca`, wrapper con alert) y **Cash Flow** (`encolarMailsSeleccionados`, botón "✉ Encolar mail detalle" — sirve para pagadas). Cash Flow = schema `msa`.
+- **Certificado:** matchea por `sicore_retenciones.factura_id IN (ids)` — NO por `comprobantes_arca.fecha_pago` (suele estar NULL). En Cash Flow los ids salen de `row.id` o `row.ids_grupo` (grupos).
+- **GAS = Web App** (`gas-mail-detalle/EnviarMailsDetalle.gs`): `doGet(e)` → `prepararBorradores(soloId?)` lee `mails_pago` estado=pendiente (con `?id=` uno solo), crea **borradores** (`GmailApp.createDraft`), marca `borrador`. Deployado en proyecto **SEPARADO** de la cuenta **sanmanuel.sp@gmail.com** (Execute as: Me · Anyone). Config: `SUPABASE_URL='https://lyojiaglcictmboqwxfm.supabase.co'` + anon key.
+- **Anti-duplicados:** el disparo desde la app es `fetch(url, {mode:'no-cors'})` (fire-and-forget, no lee respuesta). Para que doble-disparo no duplique: **LockService.getScriptLock()** serializa + guarda `if (m.gmail_draft_id) return`.
+- **UI:** panel `PanelMailsPago` (Cash Flow, "✉ Mails de detalle"): editar/togglear/borrar + botones "Enviar Borrador" (por fila, `?id=`) y "Enviar todos los pendientes" (sin id). URL del GAS se pide 1 vez → `localStorage.gas_mails_url`.
+- **Cuerpo:** desglose + `Fecha de pago:` (de SICORE `fecha_pago` / estimada / puntos) + aviso de que el comprobante de transferencia llega del banco (`go@bancogalicia.com.ar`, asunto "Aviso de transferencia"). El mail del **lote Galicia es OTRO**, no se mezcla.
+- ⚠️ Cambiar el código del GAS ⇒ redeploy "Gestionar implementaciones → Nueva versión" (la URL no cambia). Para envío directo (sin revisar): cambiar `createDraft`→`sendEmail` cuando el user valide.
+
+**Tags**: `#mail #gas #pagos #sicore #detalle-pago #2026-07-10`
+
+---
+
 # 🔧 **CONFIGURACIONES MASTER** `#config #funcionando`
 
 ## MCP Supabase Windows CMD Wrapper - FUNCIONANDO `#mcp #windows #cmd-wrapper #2025-08-14`
@@ -239,7 +284,7 @@
     "supabase": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@supabase/mcp-server-supabase@latest", "--project-ref=upaygsviflbuwraaawhf"],
-      "env": {"SUPABASE_ACCESS_TOKEN": "sbp_dc3586c6770fdbadda8899e9523b753ba3b4a105"}
+      "env": {"SUPABASE_ACCESS_TOKEN": "<TU_TOKEN_SUPABASE>"}   // ⚠️ NUNCA commitear el token real. Antes había uno hardcodeado → ROTARLO en Supabase (ver nota abajo).
     }
   }
 }

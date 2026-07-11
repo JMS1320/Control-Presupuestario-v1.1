@@ -39,7 +39,7 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
   }, [])
 
   const procesarValor = useCallback((valor: any, columna: string): any => {
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       if (!valor || String(valor).trim() === '') {
         return null
       }
@@ -103,6 +103,12 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
         updateData.fecha_estimada = valorProcesado
         console.log(`🔄 Auto-actualización ${celda.origen}: fecha_vencimiento = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
       }
+
+      // Regla automática: fecha_pago también arrastra a fecha_estimada (ordena el cash flow)
+      if (celda.columna === 'fecha_pago' && valorProcesado !== null) {
+        updateData.fecha_estimada = valorProcesado
+        console.log(`🔄 Auto-actualización ${celda.origen}: fecha_pago = ${valorProcesado} → fecha_estimada = ${valorProcesado}`)
+      }
     }
 
     Object.keys(updateData).forEach(key => {
@@ -134,17 +140,27 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       const tabla = celdaEnEdicion.tableName || 'cuotas_egresos_sin_factura'
       const filtro = { id: celdaEnEdicion.filaId }
 
-      const query = celdaEnEdicion.origen === 'ARCA'
-        ? supabase.schema('msa').from(tabla)
-        : celdaEnEdicion.origen === 'PRODUCTIVO'
-        ? supabase.schema('productivo').from(tabla)
-        : supabase.from(tabla)
-      
-      console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
-      
-      const { error } = await query
-        .update(updateData)
-        .match(filtro)
+      // Venc de templates: SÍ o SÍ por el RPC (único camino autorizado por el guardián de BD).
+      // El RPC ya setea fecha_vencimiento + fecha_estimada.
+      let error: any
+      if (celdaEnEdicion.columna === 'fecha_vencimiento' && tabla === 'cuotas_egresos_sin_factura') {
+        const res = await supabase.rpc('actualizar_venc_cuota', {
+          p_cuota_id: celdaEnEdicion.filaId,
+          p_fecha: valorProcesado || null,
+        })
+        error = res.error
+      } else {
+        const query = celdaEnEdicion.origen === 'ARCA'
+          ? supabase.schema('msa').from(tabla)
+          : celdaEnEdicion.origen === 'PRODUCTIVO'
+          ? supabase.schema('productivo').from(tabla)
+          : supabase.from(tabla)
+
+        console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
+
+        const res = await query.update(updateData).match(filtro)
+        error = res.error
+      }
 
       if (error) {
         console.error(`Error actualizando ${tabla}:`, error)

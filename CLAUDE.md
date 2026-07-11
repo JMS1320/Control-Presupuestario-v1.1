@@ -33,6 +33,23 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 - **Errores de build preexistentes** (no del cambio en curso) → `ERRORES_CONOCIDOS.md` (baseline).
 - **Diseños de módulo** → `DISEÑO_*.md`, `CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`, etc.
 - **Conocimiento general** (funcionando / descartado / troubleshooting) → `KNOWLEDGE.md`.
+- **Flujo de trabajo / cómo USA el usuario cada módulo (manual de uso)** → `MANUAL-USO.md`. NO es arquitectura (esa va en ARQUITECTURA-BD); es el "cómo se opera".
+
+### 🗂️ Dimensiones de registro — cuando el usuario dice "registra" / "documenta"
+No es un solo archivo: evaluar **TODAS** estas dimensiones y actualizar las que apliquen (varias suelen tocarse a la vez):
+1. **Pendiente / bug / test** → `PENDIENTES.md` (índice + dossier).
+2. **Cambio de BD** → `ARQUITECTURA-BD.md` / `ESTRUCTURA_BD_COLUMNAS.md` (+ `RECONSTRUCCION_*` si está fuera del backup).
+3. **Flujo de trabajo / cómo se usa** → `MANUAL-USO.md`.
+4. **Conocimiento general** → `KNOWLEDGE.md`.
+5. **Continuidad entre sesiones** → memoria (`MEMORY.md` index).
+6. **Error baseline** → `ERRORES_CONOCIDOS.md`.
+Al terminar de registrar, decir explícitamente qué dimensiones se tocaron (para que el usuario controle que no quedó nada desparramado).
+
+### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
+- **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
+- Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).
+- Esto es distinto de los cambios de **estructura** (columnas/RPC/trigger acordados) — ver [[feedback_no_modificar_bd_sin_acuerdo]]: los de estructura también se avisan; los de **datos** se preguntan SÍ o SÍ.
+- Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
 
 ### 🔧 Git
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
@@ -71,5 +88,6 @@ npm test                             # tests
 | Estructura de datos (tablas, columnas, permisos) | `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md` |
 | Cómo reconstruir la BD | `RECONSTRUCCION_SUPABASE_2026-01-07.md` |
 | Conocimiento / configs / descartado | `KNOWLEDGE.md` |
+| Cómo se USA la app / flujo de trabajo | `MANUAL-USO.md` |
 | Historial de sesiones (referencia) | `CLAUDE_HISTORICO.md` |
 | Contexto entre sesiones | memoria (`MEMORY.md` index) |

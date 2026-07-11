@@ -13,6 +13,8 @@ import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, 
 import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
+import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
+import { Segmentador, type SegPayload } from "./segmentador"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -247,6 +249,16 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Historial
   const [modalHistorial, setModalHistorial] = useState(false)
+  // Segmentadores (múltiples: uno por población). Cada uno reporta sus secciones y su config.
+  const segNextId = useRef(1)
+  const [segmentadorIds, setSegmentadorIds] = useState<number[]>([0])
+  const [segPayloads, setSegPayloads] = useState<Record<number, SegPayload>>({})
+  const segConfigsRef = useRef<Record<number, SegConfig>>({})
+  const [segInitials, setSegInitials] = useState<Record<number, SegConfig>>({})
+  // Reproducción de estudios: por id de segmentador, foto congelada (modo foto).
+  // El re-link no necesita estado extra: el SegConfig ya trae pesadaBaseFecha + fechaCalculo
+  // y el Segmentador reproduce desde ahí (initialConfig).
+  const [segFrozen, setSegFrozen] = useState<Record<number, SegSnapshot | null>>({})
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -265,6 +277,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Edición ternero
   const [modoEdicion, setModoEdicion] = useState(false)
+  // Marcado de reposición (usa columna es_torito; macho→torito, hembra→ternera rep)
+  const [modoReposicion, setModoReposicion] = useState(false)
+  const [selReposicion, setSelReposicion] = useState<Set<string>>(new Set())
+  const [guardandoRep, setGuardandoRep] = useState(false)
+  const [nMasPesadas, setNMasPesadas] = useState('40')
+  const [filtroGrupo, setFiltroGrupo] = useState<null | 'machos' | 'hembras' | 'toritos' | 'terneras_rep'>(null)
+  const [sort, setSort] = useState<{ col: string | null; dir: 'asc' | 'desc' }>({ col: null, dir: 'desc' })
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
     caravana_oficial: '', caravana_interna: '', sexo: '', pelo: '',
@@ -347,6 +366,38 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     } else {
       toast.success('Ternero actualizado')
       setTerneroEditando(null)
+      cargar()
+    }
+  }
+
+  // ─── Marcado de reposición (es_torito) ────────────────────────────────────
+  const toggleSelRep = (id: string) => setSelReposicion(prev => {
+    const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
+
+  const seleccionarNMasPesadas = () => {
+    const n = parseInt(nMasPesadas) || 0
+    const ranked = ternerosFiltrados
+      .filter(t => t.activo && pasaGrupo(t))
+      .map(t => ({ id: t.id, peso: getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) }))
+      .filter(t => t.peso != null)
+      .sort((a, b) => (b.peso as number) - (a.peso as number))
+      .slice(0, n)
+    setSelReposicion(new Set(ranked.map(t => t.id)))
+  }
+
+  const aplicarReposicion = async (valor: boolean) => {
+    const ids = [...selReposicion]
+    if (!ids.length) { toast.error('No hay animales seleccionados'); return }
+    setGuardandoRep(true)
+    const { error } = await supabase.schema('productivo').from('terneros')
+      .update({ es_torito: valor }).in('id', ids)
+    setGuardandoRep(false)
+    if (error) {
+      toast.error('Error al actualizar: ' + error.message)
+    } else {
+      toast.success(`${ids.length} ${valor ? 'marcados como reposición' : 'quitados de reposición'}`)
+      setSelReposicion(new Set())
       cargar()
     }
   }
@@ -572,7 +623,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const ternerosInactivos = ternerosFiltrados.filter(t => !t.activo)
   const machos = ternerosActivos.filter(t => t.sexo === 'Macho')
   const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
-  const toritos = ternerosActivos.filter(t => t.es_torito)
+  const toritos = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Macho')
+  const ternerasRep = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Hembra')
   const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
   // Conteo por sub-tab para badges
@@ -632,11 +684,78 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     dias: Math.round((new Date(f).getTime() - new Date(todasFechas[i]).getTime()) / 86400000),
   }))
 
+  // ── Segmentadores: recolectar secciones de todos (etiquetadas por población) ──
+  const setPayload = (id: number, p: SegPayload) => setSegPayloads(prev => JSON.stringify(prev[id]) === JSON.stringify(p) ? prev : { ...prev, [id]: p })
+  const setConfig = (id: number, c: SegConfig) => { segConfigsRef.current[id] = c }
+  const addSegmentador = () => setSegmentadorIds(p => [...p, segNextId.current++])
+  const removeSegmentador = (id: number) => {
+    setSegmentadorIds(p => p.filter(x => x !== id))
+    setSegPayloads(prev => { const n = { ...prev }; delete n[id]; return n })
+    setSegFrozen(prev => { const n = { ...prev }; delete n[id]; return n })
+    delete segConfigsRef.current[id]
+  }
+  // Secciones combinadas de todos los segmentadores (para el análisis). Etiqueta: "Letra·Población: rango"
+  const seccionesCombinadas = segmentadorIds.flatMap((id, i) => {
+    const p = segPayloads[id]; if (!p) return []
+    const pref = `${String.fromCharCode(65 + i)}·${p.poblacion}`
+    const arr: { label: string; cantidad: number; promedio: number }[] = []
+    if (p.total) arr.push({ label: `${pref}: Total (${p.total.cantidad})`, cantidad: p.total.cantidad, promedio: p.total.promedio })
+    for (const s of p.secciones) if (s.cantidad > 0) arr.push({ label: `${pref}: ${s.label}`, cantidad: s.cantidad, promedio: s.promedio })
+    return arr
+  })
+  const restaurarSegmentadores = (cfgs: SegConfig[], modo: ModoCarga) => {
+    const ids = cfgs.map(() => segNextId.current++)
+    const ini: Record<number, SegConfig> = {}
+    const frozen: Record<number, SegSnapshot | null> = {}
+    ids.forEach((id, i) => {
+      const c = cfgs[i]
+      ini[id] = c
+      // Foto: muestra el snapshot congelado (no toca el rodeo).
+      // Re-link: no hace falta nada extra — el Segmentador lee pesadaBaseFecha+fechaCalculo del config.
+      frozen[id] = modo === "foto" && c?.snapshot ? c.snapshot : null
+    })
+    segConfigsRef.current = {}
+    setSegInitials(ini)
+    setSegFrozen(frozen)
+    setSegPayloads({})
+    setSegmentadorIds(ids)
+  }
+
+
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
-  const ternerosOrdenados = [...ternerosFiltrados].sort((a, b) => {
+  // Filtro rápido por grupo (chips). Con filtro activo, oculta inactivos.
+  const pasaGrupo = (t: Ternero): boolean => {
+    if (!filtroGrupo) return true
+    if (filtroGrupo === 'machos') return t.sexo === 'Macho'
+    if (filtroGrupo === 'hembras') return t.sexo === 'Hembra'
+    if (filtroGrupo === 'toritos') return !!t.es_torito && t.sexo === 'Macho'
+    if (filtroGrupo === 'terneras_rep') return !!t.es_torito && t.sexo === 'Hembra'
+    return true
+  }
+  const ternerosVista = ternerosFiltrados.filter(t => (filtroGrupo ? t.activo : true) && pasaGrupo(t))
+  const toggleSort = (col: string) => setSort(prev => prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+  const arrowSort = (col: string) => sort.col === col ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
+  const sortVal = (t: Ternero, col: string): number | string => {
+    switch (col) {
+      case 'caravana': return t.caravana_oficial ?? ''
+      case 'interna': return t.caravana_interna ?? ''
+      case 'sexo': return t.sexo ?? ''
+      case 'pesoHoy': return getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) ?? -Infinity
+      case 'ultima': return getUltimaPesada(t.pesadas_terneros)?.fecha ?? ''
+      case 'ganUlt2': return getGananciaUlt2(t.pesadas_terneros) ?? -Infinity
+      case 'ganPaP': return getGananciaPuntaAPunta(t.pesadas_terneros) ?? -Infinity
+      default: return ''
+    }
+  }
+  const ternerosOrdenados = [...ternerosVista].sort((a, b) => {
     // Inactivos siempre al final
     if (a.activo && !b.activo) return -1
     if (!a.activo && b.activo) return 1
+    if (sort.col) {
+      const va = sortVal(a, sort.col), vb = sortVal(b, sort.col)
+      const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb))
+      return sort.dir === 'asc' ? cmp : -cmp
+    }
     if (!a.activo && !b.activo) return (a.caravana_oficial ?? '').localeCompare(b.caravana_oficial ?? '')
     const ga = getGananciaUlt2(a.pesadas_terneros)
     const gb = getGananciaUlt2(b.pesadas_terneros)
@@ -663,16 +782,28 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <Baby className="h-3 w-3 mr-1" />
             {ternerosActivos.length} terneros
           </Badge>
-          <Badge variant="outline" className="text-sky-700 border-sky-300 bg-sky-50">
+          <button type="button" onClick={() => setFiltroGrupo(g => g === 'machos' ? null : 'machos')}
+            className={`px-2 py-0.5 rounded-full border text-xs text-sky-700 border-sky-300 ${filtroGrupo === 'machos' ? 'bg-sky-200 ring-1 ring-sky-500' : 'bg-sky-50'}`}>
             ♂ {machos.length} machos
-          </Badge>
-          <Badge variant="outline" className="text-pink-700 border-pink-300 bg-pink-50">
+          </button>
+          <button type="button" onClick={() => setFiltroGrupo(g => g === 'hembras' ? null : 'hembras')}
+            className={`px-2 py-0.5 rounded-full border text-xs text-pink-700 border-pink-300 ${filtroGrupo === 'hembras' ? 'bg-pink-200 ring-1 ring-pink-500' : 'bg-pink-50'}`}>
             ♀ {hembras.length} hembras
-          </Badge>
+          </button>
           {toritos.length > 0 && (
-            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
+            <button type="button" onClick={() => setFiltroGrupo(g => g === 'toritos' ? null : 'toritos')}
+              className={`px-2 py-0.5 rounded-full border text-xs text-amber-700 border-amber-300 ${filtroGrupo === 'toritos' ? 'bg-amber-200 ring-1 ring-amber-500' : 'bg-amber-50'}`}>
               🐂 {toritos.length} toritos
-            </Badge>
+            </button>
+          )}
+          {ternerasRep.length > 0 && (
+            <button type="button" onClick={() => setFiltroGrupo(g => g === 'terneras_rep' ? null : 'terneras_rep')}
+              className={`px-2 py-0.5 rounded-full border text-xs text-pink-800 border-pink-400 ${filtroGrupo === 'terneras_rep' ? 'bg-pink-200 ring-1 ring-pink-600' : 'bg-pink-100'}`}>
+              ♀ {ternerasRep.length} terneras rep
+            </button>
+          )}
+          {filtroGrupo && (
+            <button type="button" onClick={() => setFiltroGrupo(null)} className="text-xs text-blue-600 hover:underline">✕ ver todos</button>
           )}
           {conPesadas.length > 0 && (
             <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
@@ -702,10 +833,20 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           <Button
             variant={modoEdicion ? "default" : "outline"}
             size="sm"
-            onClick={() => setModoEdicion(p => !p)}
+            onClick={() => { setModoEdicion(p => !p); setModoReposicion(false) }}
             className={modoEdicion ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700"}
           >
             ✏️ {modoEdicion ? 'Editando...' : 'Editar'}
+          </Button>
+
+          {/* Botón modo reposición */}
+          <Button
+            variant={modoReposicion ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setModoReposicion(p => !p); setModoEdicion(false); setSelReposicion(new Set()) }}
+            className={modoReposicion ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-amber-400 text-amber-700"}
+          >
+            🐂 {modoReposicion ? 'Marcando rep...' : 'Reposición'}
           </Button>
 
           {/* Botón descargar Excel */}
@@ -757,11 +898,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <PopoverContent className="w-96 text-sm">
               <p className="font-semibold mb-1">📋 Formato del Excel de pesadas</p>
               <p className="text-muted-foreground mb-2">
-                3 columnas (en cualquier orden; primera hoja; encabezados en la 1ª fila):
+                Columnas (en cualquier orden; primera hoja; encabezados en la 1ª fila):
               </p>
               <ul className="list-disc pl-4 space-y-1 mb-3">
                 <li><b>Fecha</b> — una sola para todo el archivo (DD/MM/AAAA). Si hay fechas distintas, el archivo se rechaza.</li>
                 <li><b>IDV</b> — número de caravana del lector (es la <b>caravana oficial</b> del animal); con o sin espacios.</li>
+                <li><b>Caravana</b> <span className="text-muted-foreground">(opcional)</span> — caravana <b>no oficial</b> (CUT/Descarte, toros): texto tal cual (ej. <code>B079</code>). Matchea contra caravana oficial o interna. Si esta columna tiene valor, se usa en vez de IDV.</li>
                 <li><b>Peso</b> — en kg (coma o punto).</li>
               </ul>
               <table className="w-full text-xs border-collapse">
@@ -769,13 +911,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <tr className="bg-muted">
                     <th className="border px-1.5 py-0.5 text-left">Fecha</th>
                     <th className="border px-1.5 py-0.5 text-left">IDV</th>
+                    <th className="border px-1.5 py-0.5 text-left">Caravana</th>
                     <th className="border px-1.5 py-0.5 text-left">Peso</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326455</td><td className="border px-1.5 py-0.5">185,5</td></tr>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326456</td><td className="border px-1.5 py-0.5">192</td></tr>
-                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326457</td><td className="border px-1.5 py-0.5">178,3</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326455</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">185,5</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5">32010012326456</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">192</td></tr>
+                  <tr><td className="border px-1.5 py-0.5">23/02/2026</td><td className="border px-1.5 py-0.5"></td><td className="border px-1.5 py-0.5">B079</td><td className="border px-1.5 py-0.5">480</td></tr>
                 </tbody>
               </table>
             </PopoverContent>
@@ -934,15 +1077,32 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {modoReposicion && (
+                <div className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-sm">
+                  <span className="font-semibold text-amber-800">🐂 Reposición</span>
+                  <span className="text-amber-700">Seleccioná filas (o las más pesadas) y marcá. Macho→torito · Hembra→ternera rep.</span>
+                  <span className="flex items-center gap-1 ml-2">
+                    <button type="button" onClick={seleccionarNMasPesadas} className="px-2 py-1 rounded bg-white border border-amber-400 text-amber-800 hover:bg-amber-100">Seleccionar</button>
+                    <Input value={nMasPesadas} onChange={e => setNMasPesadas(e.target.value)} className="h-7 w-14 text-center" />
+                    <span className="text-amber-700">más pesadas {filtroGrupo ? `(de ${filtroGrupo === 'terneras_rep' ? 'terneras rep' : filtroGrupo})` : '(usá un chip de arriba para acotar sexo)'}</span>
+                  </span>
+                  <span className="ml-auto flex items-center gap-2">
+                    <span className="text-amber-800 font-medium">{selReposicion.size} sel.</span>
+                    <button type="button" onClick={() => setSelReposicion(new Set())} className="text-xs text-amber-700 hover:underline">Limpiar</button>
+                    <Button size="sm" disabled={guardandoRep || selReposicion.size === 0} onClick={() => aplicarReposicion(true)} className="bg-amber-600 hover:bg-amber-700 text-white">✓ Marcar reposición</Button>
+                    <Button size="sm" variant="outline" disabled={guardandoRep || selReposicion.size === 0} onClick={() => aplicarReposicion(false)} className="border-gray-400 text-gray-700">Quitar</Button>
+                  </span>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-xs w-6"></TableHead>
-                    <TableHead className="text-xs">Carav. Oficial</TableHead>
-                    <TableHead className="text-xs">Carav. Interna</TableHead>
-                    <TableHead className="text-xs">Sexo</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('caravana')}>Carav. Oficial{arrowSort('caravana')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('interna')}>Carav. Interna{arrowSort('interna')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('sexo')}>Sexo{arrowSort('sexo')}</TableHead>
                     <TableHead className="text-xs">Pelo</TableHead>
-                    <TableHead className="text-xs">Torito</TableHead>
+                    <TableHead className="text-xs">Reposición</TableHead>
                     <TableHead className="text-xs">Categoría</TableHead>
                     {subTab === config.showExtraTorito && <>
                       <TableHead className="text-xs">Hijo de</TableHead>
@@ -952,10 +1112,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <TableHead className="text-xs">Nacimiento</TableHead>
                       <TableHead className="text-xs">Peso Nac.</TableHead>
                     </>}
-                    <TableHead className="text-xs">Últ. Pesada</TableHead>
-                    <TableHead className="text-xs">Peso hoy est.</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. últ. 2</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap">Gan. p→p</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ultima')}>Últ. Pesada{arrowSort('ultima')}</TableHead>
+                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('pesoHoy')}>Peso hoy est.{arrowSort('pesoHoy')}</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganUlt2')}>Gan. últ. 2{arrowSort('ganUlt2')}</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganPaP')}>Gan. p→p{arrowSort('ganPaP')}</TableHead>
                     <TableHead className="text-xs">Obs.</TableHead>
                     <TableHead className="text-xs">Estado</TableHead>
                   </TableRow>
@@ -973,9 +1133,12 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     // Estilo tachado rojo para inactivos
                     const cellStrike = inactivo ? 'line-through text-red-400' : ''
                     return (
-                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`} onClick={() => modoEdicion && abrirEdicion(t)}>
+                      <TableRow key={t.id} className={`text-sm ${modoEdicion ? 'cursor-pointer hover:bg-blue-50' : ''} ${modoReposicion && !inactivo ? 'cursor-pointer hover:bg-amber-50' : ''} ${selReposicion.has(t.id) ? 'bg-amber-100' : inactivo ? 'bg-red-50/60' : esDup ? 'bg-red-50' : ''}`}
+                        onClick={() => { if (modoReposicion && !inactivo) toggleSelRep(t.id); else if (modoEdicion) abrirEdicion(t) }}>
                         <TableCell className="w-6 pr-0">
-                          {inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
+                          {modoReposicion && !inactivo
+                            ? <input type="checkbox" checked={selReposicion.has(t.id)} onChange={() => toggleSelRep(t.id)} onClick={e => e.stopPropagation()} />
+                            : inactivo ? <span title="Baja por mortandad">💀</span> : esDup ? <span title="Caravana duplicada">⚠️</span> : null}
                         </TableCell>
                         <TableCell className={`font-mono text-xs ${cellStrike}`}>
                           {t.caravana_oficial ?? <span className="text-gray-400">—</span>}
@@ -994,7 +1157,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           {t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : <span className="text-gray-400">—</span>}
                         </TableCell>
                         <TableCell className={cellStrike}>
-                          {t.es_torito && <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂</Badge>}
+                          {t.es_torito && (t.sexo === 'Hembra'
+                            ? <Badge className="text-xs bg-pink-100 text-pink-800 border-pink-300">♀ rep</Badge>
+                            : <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">🐂 torito</Badge>)}
                         </TableCell>
                         <TableCell className={`text-[10px] ${cellStrike}`}>
                           {t.categorias_hacienda?.nombre || <span className="text-gray-400">—</span>}
@@ -1571,13 +1736,41 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           Modal: Historial pesadas (pivot table)
       ════════════════════════════════════════════════════════════════════ */}
       <Dialog open={modalHistorial} onOpenChange={setModalHistorial}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-auto">
+        <DialogContent className="max-w-[97vw] w-[97vw] max-h-[95vh] h-[95vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-4 w-4" />
               Historial de pesadas — {todasFechas.length} fecha{todasFechas.length !== 1 ? 's' : ''}
             </DialogTitle>
           </DialogHeader>
+
+          {/* ── Segmentadores (uno por población; ej. Machos y Hembras a la vez) ── */}
+          {segmentadorIds.map((id, i) => (
+            <Segmentador
+              key={id}
+              titulo={String.fromCharCode(65 + i)}
+              animales={ternerosFiltrados}
+              todasFechas={todasFechas}
+              gananciaDefault={gananciaDiaria}
+              initialConfig={segInitials[id]}
+              frozen={segFrozen[id]}
+              onSections={p => setPayload(id, p)}
+              onConfig={c => setConfig(id, c)}
+              onRemove={segmentadorIds.length > 1 ? () => removeSegmentador(id) : undefined}
+            />
+          ))}
+          <button type="button" onClick={addSegmentador}
+            className="mb-4 px-3 py-2 rounded-lg border-2 border-dashed border-slate-400 text-slate-700 hover:bg-slate-50 text-sm font-medium">
+            ＋ Segmentador (otra población)
+          </button>
+
+          {/* ── Bloque de análisis productivo-económico (recibe secciones de todos los segmentadores) ── */}
+          <AnalisisProductivo
+            secciones={seccionesCombinadas}
+            total={null}
+            segConfigs={segmentadorIds.map(id => segConfigsRef.current[id]).filter(Boolean) as SegConfig[]}
+            onRestoreSegConfigs={restaurarSegmentadores}
+          />
 
           {todasFechas.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>

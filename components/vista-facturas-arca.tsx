@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
@@ -76,6 +77,7 @@ interface FacturaArca {
   fecha_modificacion: string | null
   fecha_estimada: string | null
   fecha_vencimiento: string | null
+  fecha_pago: string | null
   monto_a_abonar: number | null
   ddjj_iva: string
   created_at: string
@@ -164,6 +166,7 @@ const COLUMNAS_CONFIG = {
   fecha_modificacion: { label: "Fecha Modificación", visible: false, width: "150px" },
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
+  fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto_a_abonar: { label: "Monto a Abonar", visible: true, width: "140px" },
   ddjj_iva: { label: "DDJJ IVA", visible: true, width: "100px" },
   medio_pago: { label: "Medio Pago", visible: false, width: "120px" },
@@ -760,18 +763,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
+    )
+    // Mergear sobre defaults para que columnas nuevas (ej. fecha_pago) aparezcan aunque haya config guardada.
     const saved = localStorage.getItem('facturas-arca-columnas-visibles')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
-    )
+    return defaults
   })
 
   // Estado para anchos de columnas personalizables con persistencia
@@ -1115,7 +1119,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     event.stopPropagation()
     
     // TESTING: Usar hook solo para fechas (approach gradual)
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       console.log('🔄 Usando hook para fecha:', columna)
       const celdaHook: CeldaEnEdicion = {
         filaId: facturaId,
@@ -1409,7 +1413,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Campos editables en ARCA
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'monto_a_abonar', 'cuenta_contable', 
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto_a_abonar', 'cuenta_contable',
     'centro_costo', 'estado', 'observaciones_pago', 'detalle', 'campana'
   ]
 
@@ -1519,7 +1523,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
 
     // Si esta celda está en edición (hook) para fechas, mostrar input del hook
-    const esCeldaHookEnEdicion = (['fecha_estimada', 'fecha_vencimiento'].includes(columna as string)) && 
+    const esCeldaHookEnEdicion = (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna as string)) &&
                                 hookEditor.celdaEnEdicion?.filaId === factura.id && 
                                 hookEditor.celdaEnEdicion?.columna === columna
     
@@ -1699,6 +1703,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       case 'fecha_modificacion':
       case 'fecha_estimada':
       case 'fecha_vencimiento':
+      case 'fecha_pago':
       case 'created_at':
         const contenidoFecha = formatearFecha(valor as string)
         return esEditable && modoEdicion ? (
@@ -5522,8 +5527,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       tipo_sicore: string | null
       sicore: string | null
       fecha_pago: string
-    } | null
-  ) => {
+    } | null,
+    opciones?: { returnBase64?: boolean }
+  ): Promise<string | void> => {
     try {
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
@@ -5542,7 +5548,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // ── Header ────────────────────────────────────────────────────────────
       doc.setFontSize(16)
       doc.setFont('helvetica', 'bold')
-      doc.text('COMPROBANTE DE PAGO', pageW / 2, 18, { align: 'center' })
+      doc.text('DETALLE DE PAGO', pageW / 2, 18, { align: 'center' })
 
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
@@ -5655,11 +5661,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         }
       })
 
-      const nombreArchivo = `ComprobantePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
+      if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
+
+      const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
       doc.save(nombreArchivo)
 
     } catch (error) {
-      console.error('Error generando PDF comprobante de pago:', error)
+      console.error('Error generando PDF detalle de pago:', error)
       alert('Error al generar PDF: ' + (error as Error).message)
     }
   }
@@ -5920,6 +5928,50 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     } finally {
       setDescargandoCerts(false)
     }
+  }
+
+  // ── Encolar mail de Detalle de pago (cola public.mails_pago → GAS crea borradores) ──
+  const abToBase64 = (buf: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buf); let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return btoa(bin)
+  }
+  // Mapea un grupo de facturas ARCA a los items del detalle (reusado por el botón PDF y el de mail)
+  const mapFacsAItems = (facs: Array<Record<string, unknown>>) => facs.map((f) => {
+    const tc = (f.tc_pago ?? f.tipo_cambio ?? 1) as number
+    return {
+      comprobante: `FC ${f.tipo_comprobante}-${String((f.punto_venta as number) || 0).padStart(5, '0')}-${String((f.numero_desde as number) || 0).padStart(8, '0')}`,
+      fecha: (f.fecha_emision as string) || '',
+      fecha_estimada: (f.fecha_estimada as string) || (f.fecha_vencimiento as string) || null,
+      imp_total: ((f.imp_total as number) || 0) * tc,
+      monto_sicore: f.monto_sicore as number | null,
+      descuento_aplicado: f.descuento_aplicado as number | null,
+      monto_a_abonar: montoPagoEnPesos(f as never),
+    }
+  })
+  // Mapea un grupo de templates (egresos sin factura) a los items del detalle
+  const mapTemplatesAItems = (ts: Array<Record<string, unknown>>) => ts.map((t) => ({
+    comprobante: ((t.egreso as Record<string, unknown> | undefined)?.nombre_referencia as string) || (t.descripcion as string) || '-',
+    fecha: (t.fecha_vencimiento as string) || (t.fecha_estimada as string) || '',
+    imp_total: (t.monto as number) || 0,
+    monto_a_abonar: (t.monto as number) || 0,
+  }))
+  // Wrapper de UI: delega en la lib compartida (lib/pagos/encolar-mail-detalle) y muestra el alert.
+  // La lógica vive en la lib para que Cash Flow y cualquier otra vista la reusen (regla DRY).
+  const encolarMailDetalle = async (
+    tipo: 'arca' | 'template', proveedor: string, cuit: string,
+    items: Parameters<typeof generarPDFDetallePago>[3],
+    anticipo?: Parameters<typeof generarPDFDetallePago>[4],
+    facturaIds?: string[]
+  ) => {
+    const r = await encolarMailDetalleLib({
+      tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds,
+      registrosFallback: registrosV2 as Array<{ anulado?: boolean; cuit_emisor?: string }>,
+    })
+    if (!r.ok) { alert('Error encolando mail: ' + (r.error || '')); return }
+    alert(r.email
+      ? `✉ Mail de detalle encolado para ${proveedor} (${r.email})${r.conCertificado ? ' + certificado' : ''}`
+      : `✉ Encolado para ${proveedor} — SIN email (cargá email_pagos del proveedor o completalo en el panel)`)
   }
 
   // Componente SubdiariosContent
@@ -10128,25 +10180,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
                                   <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'arca', row.proveedor, row.cuit,
-                                        facsGrupo.map(f => {
-                                          const tc = f.tc_pago ?? f.tipo_cambio ?? 1
-                                          return {
-                                            comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
-                                            fecha: f.fecha_emision || '',
-                                            fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
-                                            imp_total: (f.imp_total || 0) * tc,
-                                            monto_sicore: f.monto_sicore,
-                                            descuento_aplicado: f.descuento_aplicado,
-                                            monto_a_abonar: montoPagoEnPesos(f),
-                                          }
-                                        })
-                                      )}
-                                    >📄</Button>
+                                    <div className="flex items-center gap-1">
+                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
+                                      >📄</Button>
+                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo), undefined, facsGrupo.map((f) => (f as { id: string }).id))}
+                                      >✉</Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -10343,6 +10384,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                             )
                                           }}
                                         >📄</Button>
+                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                          onClick={() => {
+                                            const tc = f.tc_pago ?? f.tipo_cambio ?? 1
+                                            encolarMailDetalle('arca', f.denominacion_emisor, f.cuit, [{
+                                              comprobante: `FC ${f.tipo_comprobante}-${String(f.punto_venta || 0).padStart(5,'0')}-${String(f.numero_desde || 0).padStart(8,'0')}`,
+                                              fecha: f.fecha_emision || '',
+                                              fecha_estimada: f.fecha_estimada || f.fecha_vencimiento || null,
+                                              imp_total: (f.imp_total || 0) * tc,
+                                              monto_sicore: f.monto_sicore,
+                                              descuento_aplicado: f.descuento_aplicado,
+                                              monto_a_abonar: (f.monto_sicore || f.descuento_aplicado)
+                                                ? (f.imp_total || 0) * tc - (f.monto_sicore || 0) - (f.descuento_aplicado || 0)
+                                                : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
+                                            }], undefined, [f.id])
+                                          }}
+                                        >✉</Button>
                                         {onRevertir && (
                                           <Button
                                             size="sm" variant="ghost"
@@ -10536,7 +10593,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <TableHeader className="sticky top-0 z-10 bg-white border-b">
                           <TableRow>
                             {mostrarCheckbox && <TableHead className="w-10"></TableHead>}
-                            <TableHead>Fecha Vto.</TableHead>
+                            <TableHead>Fecha Pago</TableHead>
                             <TableHead>Referencia</TableHead>
                             <TableHead>Proveedor</TableHead>
                             <TableHead>Cuenta</TableHead>
@@ -10564,9 +10621,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onKeyDown={async (e) => {
                                           if (e.key === 'Enter' && editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .in('id', row.ids)
-                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                             setEditandoFechaPagosId(null)
                                           }
                                           if (e.key === 'Escape') setEditandoFechaPagosId(null)
@@ -10574,9 +10631,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onBlur={async () => {
                                           if (editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .in('id', row.ids)
-                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => row.ids.includes(x.id) ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                           }
                                           setEditandoFechaPagosId(null)
                                         }}
@@ -10589,7 +10646,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         title="Click para cambiar fecha de pago del grupo (propaga a todas las cuotas)"
                                         onClick={() => {
                                           setEditandoFechaPagosId(row.grupoPagoId)
-                                          setEditandoFechaPagosVal(row.fecha || tsGrupo[0]?.fecha_vencimiento || tsGrupo[0]?.fecha_estimada || '')
+                                          setEditandoFechaPagosVal(row.fecha || tsGrupo[0]?.fecha_pago || tsGrupo[0]?.fecha_estimada || '')
                                         }}
                                       >
                                         {row.fecha || '-'}
@@ -10608,20 +10665,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     ${row.montoTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                                   </TableCell>
                                   <TableCell>
-                                    <Button
-                                      size="sm" variant="ghost"
-                                      title="Generar PDF detalle de pago"
-                                      onClick={() => generarPDFDetallePago(
-                                        'template', row.proveedor,
-                                        tsGrupo[0]?.egreso?.cuit_quien_cobra || '',
-                                        tsGrupo.map(t => ({
-                                          comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                          fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                          imp_total: t.monto || 0,
-                                          monto_a_abonar: t.monto || 0,
-                                        }))
-                                      )}
-                                    >📄</Button>
+                                    <div className="flex items-center gap-1">
+                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                        onClick={() => generarPDFDetallePago('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
+                                      >📄</Button>
+                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        onClick={() => encolarMailDetalle('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
+                                      >✉</Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -10653,9 +10704,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onKeyDown={async (e) => {
                                           if (e.key === 'Enter' && editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .eq('id', t.id)
-                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                             setEditandoFechaPagosId(null)
                                           }
                                           if (e.key === 'Escape') setEditandoFechaPagosId(null)
@@ -10663,9 +10714,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         onBlur={async () => {
                                           if (editandoFechaPagosVal) {
                                             await supabase.from('cuotas_egresos_sin_factura')
-                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal })
+                                              .update({ fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal })
                                               .eq('id', t.id)
-                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_vencimiento: editandoFechaPagosVal } : x))
+                                            setTemplatesPagos(prev => prev.map(x => x.id === t.id ? { ...x, fecha_estimada: editandoFechaPagosVal, fecha_pago: editandoFechaPagosVal } : x))
                                           }
                                           setEditandoFechaPagosId(null)
                                         }}
@@ -10678,10 +10729,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                         title="Click para cambiar fecha de pago"
                                         onClick={() => {
                                           setEditandoFechaPagosId(t.id)
-                                          setEditandoFechaPagosVal(t.fecha_estimada || t.fecha_vencimiento || '')
+                                          setEditandoFechaPagosVal(t.fecha_pago || t.fecha_estimada || '')
                                         }}
                                       >
-                                        {t.fecha_vencimiento || t.fecha_estimada || '-'}
+                                        {t.fecha_pago || t.fecha_estimada || '-'}
                                       </span>
                                     )}
                                   </TableCell>
@@ -10694,21 +10745,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
                                       <div className="flex items-center gap-1">
-                                        <Button
-                                          size="sm" variant="ghost"
-                                          title="Generar PDF detalle de pago"
-                                          onClick={() => generarPDFDetallePago(
-                                            'template',
-                                            t.egreso?.nombre_quien_cobra || '-',
-                                            t.egreso?.cuit_quien_cobra || '',
-                                            [{
-                                              comprobante: t.egreso?.nombre_referencia || t.descripcion || '-',
-                                              fecha: t.fecha_vencimiento || t.fecha_estimada || '',
-                                              imp_total: t.monto || 0,
-                                              monto_a_abonar: t.monto || 0,
-                                            }]
-                                          )}
+                                        <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                          onClick={() => generarPDFDetallePago('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
                                         >📄</Button>
+                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                          onClick={() => encolarMailDetalle('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
+                                        >✉</Button>
                                         {onRevertir && (
                                           <Button
                                             size="sm" variant="ghost"

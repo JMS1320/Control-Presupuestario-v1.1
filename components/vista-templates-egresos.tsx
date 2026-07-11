@@ -35,6 +35,7 @@ interface CuotaEgresoSinFactura {
   egreso_id: string
   fecha_estimada: string
   fecha_vencimiento: string | null
+  fecha_pago: string | null
   monto: number
   descripcion: string | null
   estado: string
@@ -64,6 +65,7 @@ interface CuotaEgresoSinFactura {
 const COLUMNAS_CONFIG = {
   fecha_estimada: { label: "Fecha Estimada", visible: true, width: "130px" },
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
+  fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto: { label: "Monto", visible: true, width: "130px" },
   descripcion: { label: "Descripción", visible: true, width: "200px" },
   estado: { label: "Estado", visible: true, width: "100px" },
@@ -175,34 +177,36 @@ export function VistaTemplatesEgresos() {
 
   // Estado para columnas visibles con valores por defecto
   const [columnasVisibles, setColumnasVisibles] = useState<Record<string, boolean>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
+    )
+    // Cargar desde localStorage, mergeando sobre los defaults para que las columnas
+    // nuevas (agregadas después de guardar la config) aparezcan con su default.
     const saved = localStorage.getItem('templates-egresos-columnas-visibles')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
-    )
+    return defaults
   })
 
   // Estado para anchos de columnas personalizables con persistencia
   const [anchosColumnas, setAnchosColumnas] = useState<Record<string, string>>(() => {
-    // Intentar cargar desde localStorage
+    const defaults = Object.fromEntries(
+      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
+    )
     const saved = localStorage.getItem('templates-egresos-anchos-columnas')
     if (saved) {
       try {
-        return JSON.parse(saved)
+        return { ...defaults, ...JSON.parse(saved) }
       } catch {
         // Si hay error, usar valores por defecto
       }
     }
-    return Object.fromEntries(
-      Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
-    )
+    return defaults
   })
 
   // Guardar cambios de columnas visibles en localStorage
@@ -522,7 +526,7 @@ export function VistaTemplatesEgresos() {
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'monto', 'descripcion', 'estado',
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'estado',
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
@@ -559,11 +563,11 @@ export function VistaTemplatesEgresos() {
     event.stopPropagation()
     
     // APPROACH HÍBRIDO: Usar hook solo para fechas (migración gradual)
-    if (['fecha_estimada', 'fecha_vencimiento'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna)) {
       console.log('🔄 Templates: Usando hook para fecha:', columna)
       // Convertir fecha BD (YYYY-MM-DD) a formato input date
       let valorFormateado = valor || ''
-      if (['fecha_estimada', 'fecha_vencimiento'].includes(columna) && valor) {
+      if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(columna) && valor) {
         // Si viene fecha de BD (YYYY-MM-DD), mantener ese formato para input type="date"
         valorFormateado = String(valor).includes('-') ? valor : valor
         console.log('🗓️ Templates iniciarEdicion valor original:', valor, '→ formateado:', valorFormateado)
@@ -729,11 +733,22 @@ export function VistaTemplatesEgresos() {
         console.log(`🔄 Auto-actualización Templates: fecha_vencimiento = ${valorFinal} → fecha_estimada = ${valorFinal}`)
       }
       
-      // Guardado simple directo en cuotas (igual que ARCA)
-      const { error } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update(updateData)
-        .eq('id', datosEdicion.cuotaId)
+      // Guardado: fecha_vencimiento pasa SÍ o SÍ por el RPC (único camino autorizado por el guardián).
+      // El resto de los campos, update directo como siempre.
+      let error: any = null
+      if (datosEdicion.columna === 'fecha_vencimiento') {
+        const { error: rpcError } = await supabase.rpc('actualizar_venc_cuota', {
+          p_cuota_id: datosEdicion.cuotaId,
+          p_fecha: valorFinal || null,
+        })
+        error = rpcError
+      } else {
+        const res = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update(updateData)
+          .eq('id', datosEdicion.cuotaId)
+        error = res.error
+      }
 
       if (error) {
         console.error('Error actualizando cuota:', error)
@@ -980,7 +995,7 @@ export function VistaTemplatesEgresos() {
     let valor: any
 
     // Obtener valor según la columna
-    if (['fecha_estimada', 'fecha_vencimiento', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
     } else if (columna === 'categ') {
       // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
@@ -1147,10 +1162,17 @@ export function VistaTemplatesEgresos() {
     const contenidoCelda = (() => {
       switch (columna) {
         case 'fecha_estimada':
-        case 'fecha_vencimiento':
         case 'created_at':
         case 'updated_at':
           return formatearFecha(valor as string)
+
+        case 'fecha_vencimiento':
+          // Venc firme → azul; distingue de la estimada
+          return <span className="text-blue-600 font-medium">{formatearFecha(valor as string)}</span>
+
+        case 'fecha_pago':
+          // Fecha real de pago → verde
+          return <span className="text-green-700 font-medium">{formatearFecha(valor as string)}</span>
         
         case 'monto':
           return formatearNumero(valor as number)

@@ -2,6 +2,15 @@
 
 import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
+import { calcularSubtotales } from "@/lib/pagos/subtotales"
+import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
+import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { PanelMailsPago } from "@/components/panel-mails-pago"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
+import { agruparPagos } from "@/lib/pagos/agrupar"
+import { generarQuincenaSicore } from "@/lib/sicore/quincena"
+import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,6 +38,7 @@ import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculab
 const columnasDefinicion = [
   { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32', editable: true },
   { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32', editable: true },
+  { key: 'fecha_pago', label: 'Fecha Pago', type: 'date', width: 'w-32', editable: true },
   { key: 'categ', label: 'CATEG', type: 'text', width: 'w-24', editable: true },
   { key: 'centro_costo', label: 'Centro Costo', type: 'text', width: 'w-28', editable: true },
   { key: 'cuit_proveedor', label: 'CUIT Proveedor', type: 'text', width: 'w-32', editable: false }, // Solo lectura (viene de fuente)
@@ -79,7 +89,7 @@ interface CeldaEnEdicion {
   valor: string | number
 }
 
-export function VistaCashFlow() {
+export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [busquedaRapida, setBusquedaRapida] = useState('')
@@ -249,6 +259,19 @@ export function VistaCashFlow() {
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
+  // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
+  const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
+  const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
+  const [chipsInit, setChipsInit] = useState(false)
+  const [verDebitosVencidos, setVerDebitosVencidos] = useState(false) // débitos auto: ocultar los ya vencidos (se asumen pagados)
+  const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  useEffect(() => {
+    if (chipsInit || !data || data.length === 0) return
+    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
+    setChipsOrigenes(new Set(data.map(f => f.origen)))
+    setChipsInit(true)
+  }, [data, chipsInit])
+
   // Ref para poder cerrar el editor del hook desde dentro de customValidations
   const hookEditorRef = useRef<{ setCeldaEnEdicion: (v: any) => void } | null>(null)
 
@@ -271,7 +294,7 @@ export function VistaCashFlow() {
       if (filaActual?.ids_grupo && filaActual.ids_grupo.length > 0) {
         let valorFinal: any = celda.valor
         // Procesar fechas: convertir DD/MM/AAAA → YYYY-MM-DD si corresponde
-        if (['fecha_estimada', 'fecha_vencimiento'].includes(celda.columna)) {
+        if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(celda.columna)) {
           const fechaStr = String(valorFinal).trim()
           if (fechaStr.includes('/')) {
             const [d, m, y] = fechaStr.split('/')
@@ -403,8 +426,17 @@ export function VistaCashFlow() {
     }
     
     // Verificar si la columna es editable para este origen
-    const esEditable = columna.editable
-    
+    let esEditable = columna.editable
+    // La fecha de vencimiento de templates es de solo-lectura acá:
+    // solo se edita desde "Egresos sin Factura" (el guardián de BD lo bloquea igual si se intenta).
+    if (columna.key === 'fecha_vencimiento' && fila.origen !== 'ARCA') {
+      esEditable = false
+    }
+    // fecha_pago editable solo para templates (FC se habilita en la fase ARCA)
+    if (columna.key === 'fecha_pago' && fila.origen !== 'TEMPLATE') {
+      esEditable = false
+    }
+
     // Ctrl+Click normal = editar campo
     if (!event.ctrlKey || !esEditable) return
     
@@ -511,6 +543,20 @@ export function VistaCashFlow() {
         return
       }
 
+      // ENFORCE fecha_pago - para pagar una FC hay que tener la Fecha de Pago cargada
+      // (la quincena SICORE sale de esa fecha). Bloquea el paso a pagar si falta.
+      if (
+        filaParaCambioEstado.origen === 'ARCA' &&
+        nuevoEstado === 'pagar' &&
+        filaParaCambioEstado.estado !== 'pagar' &&
+        !filaParaCambioEstado.fecha_pago
+      ) {
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        toast.error('Cargá la Fecha de Pago de la FC antes de pasarla a pagar (la retención SICORE se calcula por esa fecha).')
+        return
+      }
+
       // HOOK SICORE - Interceptar cambio estado HACIA "pagar" para facturas ARCA
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && filaParaCambioEstado.estado !== 'pagar') {
         // Guardar estado pendiente y evaluar SICORE (NO guardar en BD todavía)
@@ -529,7 +575,7 @@ export function VistaCashFlow() {
 
       // HOOK QUINCENA - Interceptar cambio a "pagado" para facturas ARCA con SICORE
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagado' && filaParaCambioEstado.sicore) {
-        const quincenahNueva = generarQuincenaSicoreLocal(filaParaCambioEstado.fecha_estimada)
+        const quincenahNueva = generarQuincenaSicore(filaParaCambioEstado.fecha_estimada)
         if (quincenahNueva !== filaParaCambioEstado.sicore) {
           setConfirmCambioQuincena({
             filaId: filaParaCambioEstado.id,
@@ -824,12 +870,31 @@ export function VistaCashFlow() {
       })
     : data
 
-  const datosFiltradosPagos = modoPagos ? datosConBusqueda.filter(fila => {
-    if (fila.origen === 'ARCA' && !filtroOrigenPagos.arca) return false
-    if (fila.origen === 'TEMPLATE' && !filtroOrigenPagos.template) return false
-    if (fila.origen === 'ANTICIPO' && !filtroOrigenPagos.anticipo) return false
-    return true
-  }) : datosConBusqueda
+  // E1: valores disponibles para los chips + filtro operativo (siempre activo tras inicializar)
+  const estadosDisponibles = Array.from(new Set(data.map(f => f.estado))).sort()
+  const origenesDisponibles = Array.from(new Set(data.map(f => f.origen))).sort()
+  // Débitos automáticos: los anteriores a hoy se asumen pagados. Ocultar los previos a (hoy − 7 días) salvo que se pidan.
+  const corteDebitoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+  const datosOperativos = !chipsInit
+    ? datosConBusqueda
+    : datosConBusqueda.filter(fila => {
+        if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
+        if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
+        return true
+      })
+  const toggleChip = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, val: string) => {
+    setter(prev => { const n = new Set(prev); n.has(val) ? n.delete(val) : n.add(val); return n })
+  }
+  const verTodo = () => {
+    setChipsEstados(new Set(estadosDisponibles))
+    setChipsOrigenes(new Set(origenesDisponibles))
+  }
+  // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
+  const subtotales = calcularSubtotales(datosOperativos)
+  const fmtMonto = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  // Los chips de origen (siempre visibles) ya filtran; en Modo Pagos usamos el mismo set operativo.
+  const datosFiltradosPagos = datosOperativos
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
@@ -840,6 +905,149 @@ export function VistaCashFlow() {
 
   const deseleccionarTodas = () => {
     setFilasSeleccionadas(new Set())
+  }
+
+  // E2.3: Comprobante de pago PDF sobre las filas seleccionadas (agrupa por proveedor). Reusa lib/pagos/pdf-detalle-pago.
+  const generarPDFPagosSeleccionados = () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const fmtFecha = (s?: string | null) => {
+      if (!s) return ''
+      const d = new Date(s + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
+    }
+    const grupos = new Map<string, CashFlowRow[]>()
+    for (const f of filas) {
+      const k = `${f.cuit_proveedor || ''}||${f.nombre_proveedor || ''}`
+      const arr = grupos.get(k) || []
+      arr.push(f)
+      grupos.set(k, arr)
+    }
+    grupos.forEach((fs, k) => {
+      const [cuit, proveedor] = k.split('||')
+      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      const items = fs.map(f => {
+        const fa = f as any
+        return {
+          comprobante: f.detalle || fa.comprobante_display || '-',
+          fecha: fmtFecha(f.fecha_estimada),
+          fecha_estimada: f.fecha_estimada,
+          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          monto_sicore: fa.monto_sicore ?? null,
+          descuento_aplicado: fa.descuento_aplicado ?? null,
+          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+        }
+      })
+      generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null)
+    })
+    toast.success(`${grupos.size} comprobante(s) PDF generado(s)`)
+  }
+
+  // E2.3b: Encolar mail de "Detalle de pago" sobre las filas seleccionadas (agrupa por proveedor).
+  // Reusa lib/pagos/encolar-mail-detalle (misma lógica que el modal de pagos). Cash Flow = schema 'msa'.
+  // Sirve para mandar el detalle a proveedores YA pagados (el modal de pagos no muestra pagadas).
+  const encolarMailsSeleccionados = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const fmtFecha = (s?: string | null) => {
+      if (!s) return ''
+      const d = new Date(s + 'T12:00:00')
+      return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`
+    }
+    const grupos = new Map<string, CashFlowRow[]>()
+    for (const f of filas) {
+      const k = `${f.cuit_proveedor || ''}||${f.nombre_proveedor || ''}`
+      const arr = grupos.get(k) || []
+      arr.push(f)
+      grupos.set(k, arr)
+    }
+    const t = toast.loading(`Encolando ${grupos.size} mail(s)…`)
+    let ok = 0, sinMail = 0, err = 0
+    for (const [k, fs] of grupos) {
+      const [cuit, proveedor] = k.split('||')
+      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      const items = fs.map(f => {
+        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
+        return {
+          comprobante: f.detalle || fa.comprobante_display || '-',
+          fecha: fmtFecha(f.fecha_estimada),
+          fecha_estimada: f.fecha_estimada,
+          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          monto_sicore: fa.monto_sicore ?? null,
+          descuento_aplicado: fa.descuento_aplicado ?? null,
+          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+        }
+      })
+      // factura_id para el certificado SICORE: si es grupo, las FC individuales; si no, el id de la fila.
+      const facturaIds: string[] = []
+      for (const f of fs) {
+        if (f.origen !== 'ARCA') continue
+        if (f.ids_grupo && f.ids_grupo.length) facturaIds.push(...f.ids_grupo)
+        else facturaIds.push(f.id)
+      }
+      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: 'msa', facturaIds })
+      if (!r.ok) err++
+      else if (!r.email) sinMail++
+      else ok++
+    }
+    toast.dismiss(t)
+    toast.success(`✉ ${ok} mail(s) encolado(s)${sinMail ? ` · ${sinMail} sin email` : ''}${err ? ` · ${err} error(es)` : ''}. Revisá "✉ Mails de detalle".`)
+  }
+
+  // E2.4: Exportar lote Galicia sobre las filas seleccionadas. Reusa el módulo lotes-galicia (CBU/mail/agendar proveedores).
+  const exportarLoteSeleccionados = () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
+    const items: ItemSeleccionado[] = []
+    for (const f of filas) {
+      const schema = (f.origen_tabla?.split('.')[0]) || 'msa'
+      if ((f.facturas_agrupadas ?? 0) > 1) {
+        items.push({ tipo: 'grupo', id: (f.grupo_pago_id || f.id) as string, schema })
+      } else if (f.origen === 'ARCA') {
+        items.push({ tipo: 'fc', id: f.id, schema })
+      } else if (f.origen === 'TEMPLATE') {
+        items.push({ tipo: 'cuota_template', id: f.id })
+      } else if (f.origen === 'ANTICIPO') {
+        items.push({ tipo: 'anticipo', id: f.id, schema })
+      } else if (f.origen === 'SUELDO') {
+        items.push({ tipo: 'sueldo', id: f.id })
+      }
+      // VENTA: es ingreso, no se exporta como pago
+    }
+    if (items.length === 0) { toast.error('Ninguna fila seleccionada es exportable como pago'); return }
+    setModalExportarLote({ open: true, items })
+  }
+
+  // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
+  const agruparSeleccionados = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && (f.facturas_agrupadas ?? 0) <= 1)
+    if (filas.length < 2) { toast.error('Seleccioná al menos 2 filas individuales del mismo proveedor'); return }
+    const origenes = new Set(filas.map(f => f.origen))
+    if (origenes.size > 1) { toast.error('Agrupá filas del mismo origen (todas FC o todas templates)'); return }
+    const origen = filas[0].origen
+    if (origen !== 'ARCA' && origen !== 'TEMPLATE') { toast.error('Agrupar disponible para FC (ARCA) y templates'); return }
+    if (filas.some(f => f.grupo_pago_id)) { toast.error('Alguna fila ya pertenece a un grupo (desagrupá primero desde el Modal)'); return }
+    const cuits = new Set(filas.map(f => f.cuit_proveedor || ''))
+    if (cuits.size > 1) {
+      if (!window.confirm('⚠️ Las filas seleccionadas tienen CUITs diferentes. ¿Agrupar igual?')) return
+    }
+    try {
+      await agruparPagos({
+        schema: 'msa',
+        origen: origen as 'ARCA' | 'TEMPLATE',
+        ids: filas.map(f => f.id),
+        cuit: filas[0].cuit_proveedor || null,
+        proveedor: filas[0].nombre_proveedor || '',
+        monto_total: filas.reduce((s, f) => s + (f.debitos || 0), 0),
+        estado: origen === 'ARCA' ? 'pagar' : (filas[0].estado || 'pendiente'),
+        observaciones: cuits.size > 1 ? 'Multi-CUIT' : null,
+      })
+      toast.success(`${filas.length} pagos agrupados`)
+      setFilasSeleccionadas(new Set())
+      await cargarDatos()
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al agrupar')
+    }
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
@@ -1078,13 +1286,7 @@ export function VistaCashFlow() {
       .then(({ data }) => { if (data) setTiposSicore(data) })
   }, [])
 
-  // Generar quincena SICORE a partir de una fecha
-  const generarQuincenaSicoreLocal = (fecha: string): string => {
-    const d = new Date(fecha)
-    const yy = d.getFullYear().toString().slice(-2)
-    const mm = (d.getMonth() + 1).toString().padStart(2, '0')
-    return `${yy}-${mm} - ${d.getDate() <= 15 ? '1ra' : '2da'}`
-  }
+  // Quincena SICORE: usa el helper único de lib/sicore/quincena (E4 — centralizado)
 
   // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
   const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
@@ -1113,7 +1315,7 @@ export function VistaCashFlow() {
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
     const minimoServicios = 67170
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     console.log('🔍 SICORE CF: Evaluando fila', {
       id: fila.id,
@@ -1167,7 +1369,7 @@ export function VistaCashFlow() {
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
     const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
-    const quincena = generarQuincenaSicoreLocal(fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
@@ -1207,15 +1409,42 @@ export function VistaCashFlow() {
       // - ARS (tc=1): saldoPesos / 1 = saldoPesos ✓
       // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
       const montoAAbona = saldoPesos / tc
-      const quincena = generarQuincenaSicoreLocal(facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString())
+      // Quincena desde fecha_pago (fecha real de pago); fallback venc/estimada
+      const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString().split('T')[0]
+      const quincena = generarQuincenaSicore(fechaSicore)
 
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
-      // 2. Actualizar datos SICORE (monto_sicore siempre en pesos)
+      // 2. Estampar datos SICORE en la FC (compat con v1)
       await supabase.schema('msa').from('comprobantes_arca')
         .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
         .eq('id', guardadoPendienteCF.filaId)
+
+      // 3. Registrar en SICORE v2 (sicore_retenciones) — capa compartida, mismo registro que el Modal
+      const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
+      const fa = facturaEnProceso as any
+      await registrarEnSicoreRetenciones('msa', {
+        origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
+        quincena,
+        fecha_pago: fechaSicore,
+        factura_id: guardadoPendienteCF.filaId,
+        fecha_emision: fa.fecha_emision ?? null,
+        tipo_comprobante: fa.tipo_comprobante ?? null,
+        punto_venta: fa.punto_venta ?? null,
+        numero_desde: fa.numero_desde ?? null,
+        cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
+        denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
+        tipo_sicore: tipoSeleccionado.tipo,
+        alicuota: tipoSeleccionado.porcentaje_retencion,
+        neto_gravado_pagado: datosSicoreCalculo?.netoFactura ?? 0,
+        total_pagado: totalPagado,
+        descuento_aplicado: descuentoAdicional,
+        minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
+        base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
+        retencion: montoRetencion,
+        pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
+      })
 
       toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
 
@@ -1305,7 +1534,7 @@ export function VistaCashFlow() {
     const iva = parseCampo(camposSicore.iva)
     const impTotal = netoGravado + netoNoGravado + opExentas + iva
     const netoBase = netoGravado + netoNoGravado + opExentas
-    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
     const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena)
 
@@ -1331,7 +1560,7 @@ export function VistaCashFlow() {
   // Confirmar y guardar SICORE en el anticipo
   const confirmarSicoreAnticipo = async () => {
     if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
-    const quincena = generarQuincenaSicoreLocal(anticipoSicoreFecha || new Date().toISOString())
+    const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
     const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
     const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     const { error } = await supabase.from('anticipos_proveedores').update({
@@ -2120,45 +2349,46 @@ export function VistaCashFlow() {
                     >
                       Deseleccionar
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generarPDFPagosSeleccionados}
+                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      📄 Detalle PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={encolarMailsSeleccionados}
+                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      ✉ Encolar mail detalle
+                    </Button>
+                    <PanelMailsPago />
+                    <Button
+                      size="sm"
+                      onClick={exportarLoteSeleccionados}
+                      className="text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      🏦 Exportar lote Galicia
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={agruparSeleccionados}
+                      className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
+                      disabled={filasSeleccionadas.size < 2}
+                    >
+                      🔗 Agrupar
+                    </Button>
                   </div>
                 </div>
 
-                {/* Filtros por origen */}
-                <div className="flex items-center gap-6 p-2 bg-white rounded border">
-                  <span className="text-sm font-medium text-gray-700">Mostrar:</span>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.arca}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, arca: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-purple-50 text-purple-700 text-xs">ARCA</Badge>
-                        ({data.filter(f => f.origen === 'ARCA').length})
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.template}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, template: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">Template</Badge>
-                        ({data.filter(f => f.origen === 'TEMPLATE').length})
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <Checkbox
-                        checked={filtroOrigenPagos.anticipo}
-                        onCheckedChange={(checked) => setFiltroOrigenPagos(prev => ({ ...prev, anticipo: !!checked }))}
-                      />
-                      <span className="text-sm flex items-center gap-1">
-                        <Badge variant="outline" className="bg-orange-50 text-orange-700 text-xs">Anticipo</Badge>
-                        ({data.filter(f => f.origen === 'ANTICIPO').length})
-                      </span>
-                    </label>
-                  </div>
-                </div>
+                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
 
                 <div className="flex items-center gap-4">
                   {/* Checkboxes independientes */}
@@ -2233,6 +2463,63 @@ export function VistaCashFlow() {
             </div>
           )}
 
+          {/* E1: barra de chips operativos (siempre visible) — Estado + Origen */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-white rounded-lg border">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Estado:</span>
+              {estadosDisponibles.map(e => (
+                <button
+                  key={e}
+                  onClick={() => toggleChip(setChipsEstados, e)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsEstados.has(e) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {e} ({data.filter(f => f.estado === e).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsEstados(new Set(estadosDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+              <button onClick={() => setChipsEstados(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Origen:</span>
+              {origenesDisponibles.map(o => (
+                <button
+                  key={o}
+                  onClick={() => toggleChip(setChipsOrigenes, o)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsOrigenes.has(o) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {o} ({data.filter(f => f.origen === o).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsOrigenes(new Set(origenesDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+              <button onClick={() => setChipsOrigenes(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+            </div>
+            <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
+              <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />
+              ver débitos vencidos
+            </label>
+            <button onClick={verTodo} className="text-xs px-2.5 py-0.5 rounded border bg-gray-100 hover:bg-gray-200 text-gray-700">Ver todo</button>
+          </div>
+
+          {/* E2.1: barra de subtotales (respeta chips/filtros) */}
+          <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-slate-50 rounded-lg border text-sm">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-gray-500">{subtotales.cantidad} filas</span>
+              <span>Débitos: <b className="text-red-700">${fmtMonto(subtotales.totalDebitos)}</b></span>
+              <span>Créditos: <b className="text-green-700">${fmtMonto(subtotales.totalCreditos)}</b></span>
+              <span>Neto: <b className={subtotales.neto >= 0 ? 'text-green-700' : 'text-red-700'}>${fmtMonto(subtotales.neto)}</b></span>
+            </div>
+            {subtotales.porEstado.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
+                <span className="text-xs font-semibold text-gray-500">por estado:</span>
+                {subtotales.porEstado.map(s => (
+                  <span key={s.clave} className="text-xs bg-white border rounded px-2 py-0.5">
+                    {s.clave}: <b>${fmtMonto(s.debitos + s.creditos)}</b> ({s.cantidad})
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-auto max-h-[600px]">
@@ -2260,7 +2547,7 @@ export function VistaCashFlow() {
 
                 {/* Body */}
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {(modoPagos ? datosFiltradosPagos : datosConBusqueda).length === 0 ? (
+                  {(modoPagos ? datosFiltradosPagos : datosOperativos).length === 0 ? (
                     <tr>
                       <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
@@ -2271,7 +2558,7 @@ export function VistaCashFlow() {
                       </td>
                     </tr>
                   ) : (
-                    (modoPagos ? datosFiltradosPagos : datosConBusqueda).map((fila, index) => {
+                    (modoPagos ? datosFiltradosPagos : datosOperativos).map((fila, index) => {
                       const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
                       return (
                       <tr
@@ -3502,6 +3789,15 @@ export function VistaCashFlow() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* E2.4: Export lote Galicia (módulo reusado) */}
+      <ModalExportarLote
+        open={modalExportarLote.open}
+        onClose={() => setModalExportarLote({ open: false, items: [] })}
+        empresa="MSA"
+        items={modalExportarLote.items}
+        userRole={userRole}
+      />
     </div>
   )
 }

@@ -48,6 +48,7 @@ export interface CashFlowRow {
   es_multi_cuenta?: boolean // Para templates: indica categ por cuota
   fecha_estimada: string
   fecha_vencimiento: string | null
+  fecha_pago?: string | null // Fecha real de pago (templates/FC). Arrastra a fecha_estimada.
   categ: string
   centro_costo: string
   cuit_proveedor: string
@@ -135,6 +136,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         origen_tabla: 'msa.comprobantes_arca',
         fecha_estimada: fechaCF,
         fecha_vencimiento: f.fecha_vencimiento,
+        fecha_pago: f.fecha_pago ?? null,
         categ: f.cuenta_contable || 'SIN_CATEG',
         centro_costo: f.centro_costo || 'SIN_CC',
         cuit_proveedor: f.cuit || '',
@@ -233,6 +235,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         egreso_id: c.egreso_id,
         fecha_estimada: c.fecha_estimada,
         fecha_vencimiento: c.fecha_vencimiento,
+        fecha_pago: c.fecha_pago ?? null,
         categ: c.categ || c.egreso?.categ || 'SIN_CATEG',
         es_multi_cuenta: c.egreso?.es_multi_cuenta ?? false,
         centro_costo: c.egreso?.centro_costo || 'SIN_CC',
@@ -695,6 +698,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       if (campo === 'fecha_vencimiento' && valor) {
         updateData.fecha_estimada = valor
         console.log(`🔄 Auto-actualización: fecha_vencimiento = ${valor} → fecha_estimada = ${valor}`)
+      }
+
+      // Regla automática: fecha_pago también arrastra a fecha_estimada (ordena el cash flow)
+      if (campo === 'fecha_pago' && valor) {
+        updateData.fecha_estimada = valor
+        console.log(`🔄 Auto-actualización: fecha_pago = ${valor} → fecha_estimada = ${valor}`)
       }
 
       if (origen === 'SUELDO' && filaOrigen?.origen_tabla === 'sueldos.pagos') {
