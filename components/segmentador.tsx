@@ -25,10 +25,7 @@ interface Props {
   onConfig?: (c: SegConfig) => void
   onRemove?: () => void
   initialConfig?: SegConfig
-  // ── Reproducción de un estudio guardado ──
-  // reproducir: re-deriva anclado a una pesada base + fecha de cálculo (en vez de "última + hoy")
-  reproducir?: { asOf?: string | null; hoyMs?: number } | null
-  // frozen: modo foto → mostrar/repotar la foto congelada, sin tocar el rodeo
+  // frozen: modo foto → mostrar/reportar la foto congelada, sin tocar el rodeo
   frozen?: SegSnapshot | null
 }
 
@@ -63,7 +60,7 @@ export function poblacionLabel(grupos: string[]): string {
   return parts.join(" + ")
 }
 
-export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig, reproducir, frozen }: Props) {
+export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig, frozen }: Props) {
   const [segColapsado, setSegColapsado] = useState(false)
   const [segGrupos, setSegGrupos] = useState<Set<string>>(new Set(initialConfig?.grupos ?? GRUPOS_ALL))
   const [segOrigen, setSegOrigen] = useState<"estimado" | "pesada">(initialConfig?.origen === "pesada" ? "pesada" : "estimado")
@@ -71,6 +68,10 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const [segCada, setSegCada] = useState(initialConfig?.cada ?? 20)
   const [segDesde, setSegDesde] = useState<number | null>(initialConfig?.desde ?? null)
   const [segFecha, setSegFecha] = useState(initialConfig?.fecha ?? "")
+  // Estimado configurable: pesada BASE ("" = última) + proyectar HASTA fecha ("" = hoy).
+  // Se guardan resueltas a fecha concreta en el config → un estudio reproduce el kilaje exacto.
+  const [segPesadaBase, setSegPesadaBase] = useState(initialConfig?.pesadaBaseFecha ?? "")
+  const [segHasta, setSegHasta] = useState(initialConfig?.fechaCalculo ?? "")
   const [segCortes, setSegCortes] = useState<number[] | null>(initialConfig?.cortes ?? null)
   const [segDragIdx, setSegDragIdx] = useState<number | null>(null)
   const [segDragDelete, setSegDragDelete] = useState(false)
@@ -78,13 +79,13 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const segCortesRef = useRef<number[] | null>(null)
 
   const segFechaEff = segFecha || todasFechas[todasFechas.length - 1] || ""
-  // Anclajes de reproducción (si el estudio se cargó en modo re-linkear): base pesada + "hoy" fijo.
-  const reproAsOf = reproducir?.asOf ?? null
-  const reproHoyMs = reproducir?.hoyMs
+  // Estimado: base = pesada elegida ("" → última) proyectada hasta la fecha elegida ("" → hoy).
+  const asOf = segPesadaBase || null
+  const hastaMs = segHasta ? new Date(segHasta + "T00:00:00").getTime() : undefined
   const grupoDe = (t: AnimalSeg) => t.es_torito ? (t.sexo === "Macho" ? "torito" : "ternera_rep") : (t.sexo === "Macho" ? "macho" : "hembra")
   const segPesos: number[] = animales
     .filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
-    .map(t => segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia, reproAsOf, reproHoyMs) : (t.pesadas_terneros.find(p => p.fecha === (reproAsOf || segFechaEff))?.peso_kg ?? null))
+    .map(t => segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia, asOf, hastaMs) : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
     .filter((p): p is number => p != null)
 
   const SEG_SECCIONES_DEFAULT = 5
@@ -190,16 +191,18 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const payloadKey = JSON.stringify(payload)
   useEffect(() => { onSections(payload) }, [payloadKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Receta de reproducción: qué pesada base y qué "hoy" se usaron (para poder re-linkear igual al recargar).
+  // Receta de reproducción: pesada BASE + fecha HASTA (del análisis), resueltas a fecha concreta
+  // ("" → última / hoy) para que un estudio guardado reproduzca el kilaje exacto al recargar.
   // En modo foto se preserva la receta original (initialConfig) para no pisarla al re-guardar.
+  const hoyISO = new Date().toISOString().slice(0, 10)
   const pesadaBaseFecha = frozen
     ? (initialConfig?.pesadaBaseFecha ?? null)
     : segOrigen === "estimado"
-      ? (reproAsOf ?? todasFechas[todasFechas.length - 1] ?? null)
-      : (reproAsOf || segFechaEff || null)
+      ? (segPesadaBase || todasFechas[todasFechas.length - 1] || null)
+      : (segFechaEff || null)
   const fechaCalculo = frozen
-    ? (initialConfig?.fechaCalculo ?? new Date().toISOString().slice(0, 10))
-    : new Date(reproHoyMs ?? Date.now()).toISOString().slice(0, 10)
+    ? (initialConfig?.fechaCalculo ?? hoyISO)
+    : (segHasta || hoyISO)
   const cfg: SegConfig = { origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes, pesadaBaseFecha, fechaCalculo, snapshot: frozen ?? livePayload }
   const cfgKey = JSON.stringify(cfg)
   useEffect(() => { onConfig?.(cfg) }, [cfgKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -267,11 +270,19 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
             <button type="button" onClick={() => setSegGrupos(new Set(GRUPOS_ALL))} className="text-xs text-blue-600 hover:underline ml-1">Todos</button>
             <button type="button" onClick={() => setSegGrupos(new Set())} className="text-xs text-blue-600 hover:underline">Ninguno</button>
           </span>
-          <label className="flex items-center gap-1 cursor-pointer">
+          <label className="flex items-center gap-1 cursor-pointer flex-wrap">
             <input type="radio" checked={segOrigen === "estimado"} onChange={() => setSegOrigen("estimado")} />
             Estimado
             <input type="number" step="0.1" value={segGanancia} onChange={e => setSegGanancia(parseFloat(e.target.value) || 0)} disabled={segOrigen !== "estimado"} className="w-16 border rounded px-1 py-1" />
             kg/día
+            <span className="text-gray-500">desde</span>
+            <select value={segPesadaBase} onChange={e => { setSegPesadaBase(e.target.value); setSegCortes(null) }} disabled={segOrigen !== "estimado"} title="Pesada base de la proyección" className="border rounded px-1 py-1">
+              <option value="">última</option>
+              {todasFechas.map(f => <option key={f} value={f}>{fFecha(f)}</option>)}
+            </select>
+            <span className="text-gray-500">hasta</span>
+            <input type="date" value={segHasta || hoyISO} onChange={e => { setSegHasta(e.target.value); setSegCortes(null) }} disabled={segOrigen !== "estimado"} title="Fecha del análisis (hasta cuándo proyecta el aumento diario)" className="border rounded px-1 py-1" />
+            {segOrigen === "estimado" && segHasta && <button type="button" onClick={() => { setSegHasta(""); setSegCortes(null) }} className="text-xs text-blue-600 hover:underline" title="Proyectar hasta hoy">hoy</button>}
           </label>
           <label className="flex items-center gap-1 cursor-pointer">
             <input type="radio" checked={segOrigen === "pesada"} onChange={() => setSegOrigen("pesada")} />

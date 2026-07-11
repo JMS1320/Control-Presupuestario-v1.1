@@ -179,7 +179,11 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 ### Segmentadores (multi) 🟡
 - **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
 - El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").
-- Eje de densidad vertical: **arrastrás los divisores** para mover cortes, colapsás contra un vecino para **borrar**, botones **＋ sección** para crear. Peso "estimado hoy" (con ganancia editable) o una pesada elegida. Excluye bajas (mortandad).
+- Eje de densidad vertical: **arrastrás los divisores** para mover cortes, colapsás contra un vecino para **borrar**, botones **＋ sección** para crear. Excluye bajas (mortandad).
+- **Origen del peso:**
+  - **Estimado** = pesada base **+ aumento diario (kg/día) × días**. Elegís *desde* (pesada base: **última** por defecto, o una pesada puntual) y *hasta* (fecha del análisis: **hoy** por defecto, o una fecha puntual, con botón "hoy" para volver). Así podés proyectar "desde la pesada X hasta la fecha Y", no solo desde la última.
+  - **Pesada** = usa el peso de una pesada elegida tal cual (sin proyección).
+  - Al guardar el estudio, *desde/hasta* se **resuelven a fechas concretas** → el estudio reproduce el kilaje exacto aunque después importes pesadas nuevas.
 - Así conviven **Machos y Hembras a la vez** sin mezclarse.
 
 ### Análisis por segmento (columnas) 🟡
@@ -196,11 +200,12 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
 - Barra "Estudio": **💾 Guardar** (localStorage, por nombre; ofrece descargar archivo con selector de carpeta) · **Cargar guardado** (dropdown) · **🗑 borrar…** (selector: borra cualquier estudio con confirm, sin cargarlo) · **⬇/⬆ Archivo `.json`** (portable).
 - Guarda TODO: segmentadores + segmentos + etapas + escenario B + el vínculo Fuente + **los precios de mercado scrapeados** (rango de fechas, prima calidad y las tablas machos/hembras traídas). Al cargar un estudio se restauran esos precios tal cual (con la fecha en que se trajeron, que se muestra en el panel), así el análisis queda reproducible sin volver a scrapear. localStorage = esta PC/navegador/URL; el **archivo** = backup a prueba de todo.
 
-**Congelar el kilaje del estudio (para revisar análisis viejos sin que se muevan):** cada segmentador guarda además la **receta** (qué pesada base y qué "hoy" usó el estimado +X kg/día) **y una foto congelada** de los cortes/pesos. Al cargar un estudio la app **pregunta** cómo linkear el segmentado:
-  - **📌 Datos guardados (foto)** → muestra la foto tal cual; no depende del rodeo actual → inmune a pesadas nuevas o borradas (es el modo "a prueba de bugs").
-  - **🔄 Re-linkear con el rodeo** → recalcula, pero **anclado a la pesada base y la fecha guardadas** (no a "la última + hoy"), así reproduce el mismo kilaje aunque hayas importado una pesada nueva. Requiere que las pesadas viejas sigan en la base.
+**Congelar el kilaje del estudio (para revisar análisis viejos sin que se muevan):** cada segmentador guarda la **receta** (pesada base *desde* + fecha *hasta*, resueltas a fecha concreta) **y una foto congelada** de los cortes/pesos. Al cargar un estudio la app **pregunta** cómo linkear el segmentado:
+  - **📌 Datos guardados (foto)** → muestra la foto tal cual; no depende del rodeo actual → inmune a pesadas nuevas o borradas (es el modo "a prueba de bugs"). El segmentador muestra el badge **📸 foto guardada** + tabla read-only.
+  - **🔄 Re-linkear con el rodeo** → recalcula usando *desde/hasta* guardados (el propio config), no "la última + hoy" → reproduce el mismo kilaje aunque hayas importado una pesada nueva. Requiere que las pesadas viejas sigan en la base.
   - Estudios viejos (sin receta/foto) cargan en vivo como antes.
-  - El segmentador en modo foto muestra el badge **📸 foto guardada** y una tabla read-only.
+
+**Recuperar un estudio viejo (sin receta):** abrilo, y en cada segmentador poné *desde* = la pesada que era la última cuando lo hiciste y *hasta* = la fecha de aquel análisis → reproducís el kilaje original a mano. **Volvé a guardarlo** y queda con receta + foto (y el vínculo con los segmentos). *(El análisis económico en sí ya se conservaba: peso inicio/cantidad por segmento se guardan siempre.)*
 
 **Pendiente:** export combinado + agrupador de segmentos (B-FEAT-14). Todo **sin testear**.
 
