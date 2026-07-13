@@ -48,6 +48,23 @@ function pesoEstimado(pesadas: { fecha: string; peso_kg: number }[], g: number, 
 }
 function fFecha(iso: string) { const [y, m, d] = iso.split("-"); return `${d}/${m}/${y.slice(2)}` }
 
+// Índices históricos de un animal desde sus pesadas: ganancia diaria punta a punta (1ª→última)
+// y entre las 2 últimas pesadas (kg/día). null si no hay datos suficientes.
+function indicesHistoricos(pesadas: { fecha: string; peso_kg: number }[]): { puntaPunta: number | null; ultimas: number | null; nPesadas: number } {
+  const ps = [...pesadas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const n = ps.length
+  const dias = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
+  let puntaPunta: number | null = null, ultimas: number | null = null
+  if (n >= 2) {
+    const dPP = dias(ps[0].fecha, ps[n - 1].fecha)
+    if (dPP > 0) puntaPunta = (ps[n - 1].peso_kg - ps[0].peso_kg) / dPP
+    const dUlt = dias(ps[n - 2].fecha, ps[n - 1].fecha)
+    if (dUlt > 0) ultimas = (ps[n - 1].peso_kg - ps[n - 2].peso_kg) / dUlt
+  }
+  return { puntaPunta, ultimas, nPesadas: n }
+}
+const promedioNoNulo = (arr: (number | null)[]): number | null => { const v = arr.filter((n): n is number => n != null); return v.length ? v.reduce((s, n) => s + n, 0) / v.length : null }
+
 // Sub-segmentación: divide un conjunto de animales (de una sección) en sub-rangos de peso de ancho `cada`.
 function subRangos(items: { a: AnimalSeg; peso: number }[], cada: number): { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] {
   if (!items.length || cada <= 0) return []
@@ -400,14 +417,38 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
                                     </tbody>
                                   </table>
                                 </div>
-                                <div>
-                                  <div className="text-sm font-semibold text-gray-600 mb-1">Individuos ({animalesSec.length})</div>
-                                  <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                                    {animalesSec.map((x, i) => (
-                                      <span key={i} className="text-xs bg-white border rounded px-1.5 py-0.5 whitespace-nowrap">{caravanaDe(x.a)} · {x.peso.toFixed(0)}kg</span>
-                                    ))}
-                                  </div>
-                                </div>
+                                {(() => {
+                                  const ind = animalesSec.map(x => ({ x, i: indicesHistoricos(x.a.pesadas_terneros) }))
+                                  const fmt = (n: number | null) => n == null ? "—" : n.toFixed(2).replace(".", ",")
+                                  const avgPP = promedioNoNulo(ind.map(o => o.i.puntaPunta))
+                                  const avgUlt = promedioNoNulo(ind.map(o => o.i.ultimas))
+                                  return (
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-600 mb-1">Individuos ({animalesSec.length}) e índices históricos</div>
+                                      <div className="text-xs text-gray-600 mb-1">Promedio grupo — g. diaria punta a punta: <b>{fmt(avgPP)}</b> kg/día · últimas pesadas: <b>{fmt(avgUlt)}</b> kg/día</div>
+                                      <div className="max-h-48 overflow-y-auto">
+                                        <table className="text-xs w-full">
+                                          <thead><tr className="text-gray-500 border-b">
+                                            <th className="text-left">Caravana</th>
+                                            <th className="text-right">Peso</th>
+                                            <th className="text-right" title="Ganancia diaria punta a punta (1ª → última pesada)">g. p-p</th>
+                                            <th className="text-right pr-1" title="Ganancia diaria entre las 2 últimas pesadas">g. últ.</th>
+                                          </tr></thead>
+                                          <tbody>
+                                            {ind.map((o, i) => (
+                                              <tr key={i} className="border-b border-slate-100">
+                                                <td>{caravanaDe(o.x.a)}</td>
+                                                <td className="text-right">{o.x.peso.toFixed(0)}kg</td>
+                                                <td className="text-right">{fmt(o.i.puntaPunta)}</td>
+                                                <td className="text-right pr-1">{fmt(o.i.ultimas)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             )}
                           </td>
