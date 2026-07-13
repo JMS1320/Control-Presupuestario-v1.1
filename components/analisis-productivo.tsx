@@ -503,10 +503,37 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
       ["Ganancia / cabeza", `$${money(c.gananciaCab)}`, `$${money(cB.gananciaCab)}`, `$${money(cB.gananciaCab - c.gananciaCab)}`],
       ["Ganancia total", `$${money(c.gananciaTotal)}`, `$${money(cB.gananciaTotal)}`, `$${money(cB.gananciaTotal - c.gananciaTotal)}`],
     ] })
-    if (etapas.length > 0) blocks.push({ t: "table", head: [["Etapa", "Período", "Peso ini→fin", "Cant", "Venta hipot.", "Ganancia"]], body: [
-      ...cadena.pasos.map(p => [p.nombre, `${p.fechaIni}→${p.fechaFin}`, `${kg(p.pIni)}→${kg(p.pFin)}`, String(Math.round(p.cant)), `$${money(p.V)}`, `$${money(p.ganancia)}`]),
-      ["TOTAL punta a punta", "", "", "", "", `$${money(cadena.totalPunta)}`],
-    ] })
+    if (etapas.length > 0) {
+      // Resumen de la cadena
+      blocks.push({ t: "table", head: [["Etapa", "Período", "Peso ini→fin", "Cant", "Venta hipot.", "Ganancia"]], body: [
+        ...cadena.pasos.map(p => [p.nombre, `${p.fechaIni}→${p.fechaFin}`, `${kg(p.pIni)}→${kg(p.pFin)}`, String(Math.round(p.cant)), `$${money(p.V)}`, `$${money(p.ganancia)}`]),
+        ["TOTAL punta a punta", "", "", "", "", `$${money(cadena.totalPunta)}`],
+      ] })
+      // Detalle por etapa de la cadena (la etapa 1 ya tiene su detalle completo arriba).
+      // Las etapas 2+ son continuación (no compran): se muestra productivo + ración + económico incremental.
+      cadena.pasos.forEach((p, k) => {
+        if (k === 0) return
+        const e = etapas[k - 1]; const cc = p.calc
+        blocks.push(
+          { t: "sub", text: `Etapa ${k + 1}: ${p.nombre}   (${p.fechaIni} → ${p.fechaFin})` },
+          { t: "table", head: [["Parámetro", "Valor"]], body: [
+            ["Cantidad", String(Math.round(cc.cant))],
+            ["Peso ini → fin", `${kg(p.pIni)} → ${kg(p.pFin)} kg`],
+            ["Días", String(e.dias)], ["Conversión kg/día", String(e.conversion)],
+            ["Kg ganados", kg(cc.kgGanados)],
+            ["Mortandad %", `${e.mort}%`], ["Desbaste salida %", `${e.desbSal}%`],
+            ["Peso neto salida", `${kg(cc.pNetoSal)} kg`],
+          ] },
+          { t: "table", head: [["Ración", "kg/día", "Costo/cab", "Kg totales lote"]], body: [
+            ["Maíz", kg(cc.maizKgDia), `-$${money(-cc.maizCosto)}`, money(cc.maizKgLote)],
+            ["Concentrado", kg(cc.concKgDia), `-$${money(-cc.concCosto)}`, money(cc.concKgLote)],
+            ["Costo ración total", "", `-$${money(-cc.costoRacion)}`, ""],
+          ] },
+          { t: "line", text: `Venta hipotética: $${money(p.V)}   ·   Costo ración: -$${money(-p.R)}`, size: 10 },
+          { t: "line", text: `Ganancia de la etapa (incremental): $${money(p.ganancia)}`, size: 10 },
+        )
+      })
+    }
     if (notas) blocks.push({ t: "gap", h: 3 }, { t: "line", text: "Notas:", size: 9 }, { t: "wrap", text: notas })
     return blocks
   }
