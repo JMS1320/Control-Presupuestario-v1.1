@@ -185,6 +185,7 @@ Hay **dos "SICORE" en el código, NO son lo mismo**:
   - **Pesada** = usa el peso de una pesada elegida tal cual (sin proyección).
   - Al guardar el estudio, *desde/hasta* se **resuelven a fechas concretas** → el estudio reproduce el kilaje exacto aunque después importes pesadas nuevas.
 - Así conviven **Machos y Hembras a la vez** sin mezclarse.
+- **Panel de sección (▶ desplegar una fila de la tabla):** clickeás un rango y se abre debajo: **(1) Sub-segmentar** — "cada X kg" divide ese rango en sub-rangos (cant/prom/%) para informar al comprador cómo viene el lote; **(2) Individuos** — lista de caravanas + peso de los animales de ese rango. Usa el **mismo peso estimado** que la segmentación. Solo lectura (no re-hace el proceso). *(Fase 2 pendiente: índices históricos — ganancia diaria punta a punta / últimas pesadas.)*
 
 ### Análisis por segmento (columnas) 🟡
 - Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).
