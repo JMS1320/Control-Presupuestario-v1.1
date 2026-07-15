@@ -545,6 +545,14 @@ Grep "#descartado" KNOWLEDGE.md     # Métodos NO usar
 
 # 🚨 **TROUBLESHOOTING ÚNICO** `#error #solucion`
 
+## SICORE — TXT no importa en ARCA "debería ser Numérico Positivo" `#sicore #arca #retenciones #2026-07-13`
+**Contexto**: El TXT de retenciones que exporta la app (Formato Estándar Retenciones **v9.0**) se sube a ARCA/SICORE. Mayo 2026 (2 quincenas) subió OK; **junio no** → error en cada renglón.
+**Síntoma**: "En la línea N el campo **Importe del comprobante / Base de cálculo / Importe de la retención** debería ser Numérico Positivo".
+**Causa (NO es bug de la app)**: en ARCA → "Configuración de Importación de Retenciones" el **Separador decimal viene por defecto en PUNTO** (SICORE 9.0), pero el archivo usa **coma** (`728702,36`). Con separador=Punto, ARCA no parsea la coma como número. Mayo funcionó porque estaba en Coma; al actualizar a v9.0 se reseteó a Punto. Los archivos de mayo y junio son idénticos en formato (145 chars, coma, CRLF) → el archivo no cambió.
+**Solución (CONFIRMADA empíricamente 2026-07-13)**: los archivos con **PUNTO** decimal subieron OK con la config de ARCA en **Punto** (el default de v9.0). Se probó generando `exports_app/sicore_bug/*_PUNTO.TXT` (coma→punto con `tr`). NO se probó la vía alternativa (config=Coma + archivos coma), pero según las guías de terceros también debería andar. ⚠️ **No es dato oficial de AFIP** — fue diagnóstico + guías de terceros (gestormax/planillasutiles/axoft) + prueba real del usuario.
+**Estado**: workaround manual OK. **PENDIENTE**: que el export de la app genere el TXT con **punto** directamente (hoy usa coma) → ver PENDIENTES. Detalle en `memory/project_sicore_error_importacion_arca.md`.
+
+
 ## MCP Windows NPX Problems - RESUELTO `#mcp #windows #npx #2025-08-14`
 **Contexto**: Herramientas MCP no aparecen tras múltiples reinicios Claude Code
 **Síntomas**: 

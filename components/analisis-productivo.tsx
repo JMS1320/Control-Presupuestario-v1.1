@@ -72,6 +72,7 @@ interface SegProps extends Props {
   onTotal?: (v: number) => void
   initial?: Partial<SegState>
   onState?: (s: SegState) => void
+  onRegisterExport?: (getter: (() => SegExportData) | null) => void
   mercado?: {
     precio: (sexo: "macho" | "hembra", peso: number) => { precio: number; cats: string[] } | null
     resaltar?: (sexo: "macho" | "hembra", cats: string[]) => void
@@ -84,6 +85,38 @@ const num = (s: string) => parseFloat(String(s).replace(/\./g, "").replace(",", 
 const pct = (s: string) => (parseFloat(String(s).replace(",", ".")) || 0) / 100
 const money = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
 const kg = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 1 })
+
+// ── PDF declarativo (bloques) — reusado por el export de cada segmento y el combinado ──
+type PdfBlock =
+  | { t: "title"; text: string }
+  | { t: "sub"; text: string }
+  | { t: "line"; text: string; size?: number }
+  | { t: "wrap"; text: string; size?: number }
+  | { t: "table"; head: string[][]; body: string[][] }
+  | { t: "gap"; h: number }
+
+// Dibuja los bloques en el doc a partir de startY, manejando saltos de página. Devuelve la Y final.
+function renderPdfBlocks(doc: jsPDF, blocks: PdfBlock[], startY: number): number {
+  let y = startY
+  const pageH = doc.internal.pageSize.getHeight()
+  const ensure = (need: number) => { if (y + need > pageH - 12) { doc.addPage(); y = 16 } }
+  for (const b of blocks) {
+    if (b.t === "title") { ensure(10); doc.setFontSize(14); doc.text(b.text, 14, y); y += 7 }
+    else if (b.t === "sub") { ensure(8); doc.setFontSize(10); doc.text(b.text, 14, y); y += 6 }
+    else if (b.t === "line") { ensure(8); doc.setFontSize(b.size ?? 11); doc.text(b.text, 14, y); y += 7 }
+    else if (b.t === "wrap") { doc.setFontSize(b.size ?? 9); const lines = doc.splitTextToSize(b.text, 180) as string[]; ensure(lines.length * 5 + 2); doc.text(lines, 14, y); y += lines.length * 5 + 2 }
+    else if (b.t === "gap") { y += b.h }
+    else if (b.t === "table") {
+      autoTable(doc, { startY: y, theme: "grid", styles: { fontSize: 8 }, head: b.head, body: b.body })
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4
+    }
+  }
+  return y
+}
+
+// Datos que cada segmento expone para el export combinado del estudio.
+export interface SegResumen { titulo: string; incluido: boolean; cant: number; pesoIni: number; pesoFin: number; gananciaCab: number; gananciaTotal: number }
+export interface SegExportData { resumen: SegResumen; blocks: PdfBlock[]; filas: (string | number)[][] }
 
 // Fechas (yyyy-mm-dd) ↔ días
 const addDays = (iso: string, d: number) => {
@@ -154,7 +187,7 @@ function calcular(i: CalcInputs) {
   }
 }
 
-function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, mercado }: SegProps) {
+function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, onRegisterExport, mercado }: SegProps) {
   const letra = String.fromCharCode(65 + indice) // A, B, C…
   const hoy = new Date().toISOString().slice(0, 10)
   const g = <K extends keyof SegState>(k: K, def: SegState[K]): SegState[K] => (initial?.[k] ?? def) as SegState[K]
@@ -420,24 +453,20 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
     XLSX.writeFile(wb, nombreArch() + ".xlsx")
   }
 
-  const exportarPDF = () => {
-    const doc = new jsPDF()
-    doc.setFontSize(14); doc.text("Análisis productivo-económico", 14, 16)
-    doc.setFontSize(10); doc.text(`Fase: ${fase || "—"}   ·   ${new Date().toLocaleDateString("es-AR")}`, 14, 23)
-    autoTable(doc, {
-      startY: 28, theme: "grid", styles: { fontSize: 8 }, head: [["Parámetro", "Valor"]],
-      body: [
+  // Detalle del segmento como bloques declarativos (reusado por el PDF individual y el combinado).
+  const pdfBlocks = (): PdfBlock[] => {
+    const blocks: PdfBlock[] = [
+      { t: "title", text: "Análisis productivo-económico" },
+      { t: "sub", text: `Fase: ${fase || "—"}   ·   ${new Date().toLocaleDateString("es-AR")}` },
+      { t: "gap", h: 3 },
+      { t: "table", head: [["Parámetro", "Valor"]], body: [
         ["Cantidad", String(c.cant)],
         ["Precio compra $/kg → neto", `$${money(num(precioCompra))}  (neto ${kg(c.pNetoEnt)} kg)`],
         ["Precio venta $/kg → neto", `$${money(num(precioVenta))}  (neto ${kg(c.pNetoSal)} kg)`],
         ["Período", `${fechaInicio} → ${fechaFin} (${c.d} días)`],
-        ["Conversión kg/día", conversion], ["Kg ganados", kg(c.kgGanados)],
-      ],
-    })
-    autoTable(doc, {
-      startY: (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4, theme: "grid", styles: { fontSize: 8 },
-      head: [["", "Entrada (compra)", "Salida (venta)"]],
-      body: [
+        ["Conversión kg/día", String(conversion)], ["Kg ganados", kg(c.kgGanados)],
+      ] },
+      { t: "table", head: [["", "Entrada (compra)", "Salida (venta)"]], body: [
         ["Peso", `${kg(num(pesoInicio))} kg`, `${kg(c.pFin)} kg`],
         ["Mortandad %", "—", `${mortandad}%  (-${kg(c.mermaKgMort)} kg)`],
         ["Desbaste %", `${desbEnt}%`, `${desbSal}%`],
@@ -449,65 +478,83 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
         ["NETO", `$${money(c.netoEnt)}`, `$${money(c.czNetoSal)}`],
         ["$/kg vivo (sin desbaste)", pIniBE > 0 ? `$${money(c.netoEnt / pIniBE)}` : "—", c.pFin > 0 ? `$${money(c.czNetoSal / c.pFin)}` : "—"],
         ["$/kg neto (con desbaste)", c.pNetoEnt > 0 ? `$${money(c.netoEnt / c.pNetoEnt)}` : "—", c.pNetoSal > 0 ? `$${money(c.czNetoSal / c.pNetoSal)}` : "—"],
-      ],
-    })
-    autoTable(doc, {
-      startY: (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4, theme: "grid", styles: { fontSize: 8 },
-      head: [["Ración", "kg/día", "Costo/cab", "Kg totales lote"]],
-      body: [
+      ] },
+      { t: "table", head: [["Ración", "kg/día", "Costo/cab", "Kg totales lote"]], body: [
         ["Maíz", kg(c.maizKgDia), `-$${money(-c.maizCosto)}`, money(c.maizKgLote)],
         ["Concentrado", kg(c.concKgDia), `-$${money(-c.concCosto)}`, money(c.concKgLote)],
         ["Costo ración total", "", `-$${money(-c.costoRacion)}`, ""],
-      ],
-    })
-    const yEnd = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8
-    doc.setFontSize(11)
-    doc.text(`Ganancia / cabeza: $${money(c.gananciaCab)}`, 14, yEnd)
-    doc.text(`Ganancia total (x${c.cant}): $${money(c.gananciaTotal)}`, 14, yEnd + 7)
-    let yCur = yEnd + 7
-    if (beValido) {
-      autoTable(doc, {
-        startY: yCur + 5, theme: "grid", styles: { fontSize: 8 },
-        head: [["Punto de equilibrio", "Valor", "Cuenta"]],
-        body: [
-          ["Precio neto entrada / venta", `$${money(PcEf)} / $${money(PvEf)} por kg`, "tras desbaste + CZ"],
-          ["Costo por kg producido", `$${money(costoKgProd)}`, "ración ÷ kg ganados"],
-          ["Margen por kg producido", `$${money(margenKg)}`, "venta − costo"],
-          ["Pérdida inicial por cabeza", `$${money(perdidaIniCab)}`, `${kg(pIniBE)}kg × (ent−venta)`],
-          ["Kg para recuperarla", `${Math.round(kgRecuperar)} kg`, "pérdida ÷ margen"],
-          ["Días para recuperarla", `${Math.round(diasRecuperar)} días`, `kg ÷ ${convBE} conv.`],
-          ["Días productivos tuyos", `${Math.round(diasRestantes)} de ${c.d}`, `ciclo − recuperar`],
-          ["Ganancia por cabeza", `$${money(gananciaBECab)}`, `días × ${convBE} × margen`],
-          ["Ganancia total (x" + c.cant + ")", `$${money(gananciaBECab * c.cant)}`, ""],
-        ],
-      })
-      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
-    }
-    if (verB) {
-      autoTable(doc, {
-        startY: yEnd + 12, theme: "grid", styles: { fontSize: 8 },
-        head: [["Escenario B (overrides)", "A", "B", "Δ (B−A)"]],
-        body: [
-          ["Ganancia / cabeza", `$${money(c.gananciaCab)}`, `$${money(cB.gananciaCab)}`, `$${money(cB.gananciaCab - c.gananciaCab)}`],
-          ["Ganancia total", `$${money(c.gananciaTotal)}`, `$${money(cB.gananciaTotal)}`, `$${money(cB.gananciaTotal - c.gananciaTotal)}`],
-        ],
-      })
-      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
-    }
+      ] },
+      { t: "gap", h: 4 },
+      { t: "line", text: `Ganancia / cabeza: $${money(c.gananciaCab)}` },
+      { t: "line", text: `Ganancia total (x${c.cant}): $${money(c.gananciaTotal)}` },
+    ]
+    if (beValido) blocks.push({ t: "table", head: [["Punto de equilibrio", "Valor", "Cuenta"]], body: [
+      ["Precio neto entrada / venta", `$${money(PcEf)} / $${money(PvEf)} por kg`, "tras desbaste + CZ"],
+      ["Costo por kg producido", `$${money(costoKgProd)}`, "ración ÷ kg ganados"],
+      ["Margen por kg producido", `$${money(margenKg)}`, "venta − costo"],
+      ["Pérdida inicial por cabeza", `$${money(perdidaIniCab)}`, `${kg(pIniBE)}kg × (ent−venta)`],
+      ["Kg para recuperarla", `${Math.round(kgRecuperar)} kg`, "pérdida ÷ margen"],
+      ["Días para recuperarla", `${Math.round(diasRecuperar)} días`, `kg ÷ ${convBE} conv.`],
+      ["Días productivos tuyos", `${Math.round(diasRestantes)} de ${c.d}`, `ciclo − recuperar`],
+      ["Ganancia por cabeza", `$${money(gananciaBECab)}`, `días × ${convBE} × margen`],
+      [`Ganancia total (x${c.cant})`, `$${money(gananciaBECab * c.cant)}`, ""],
+    ] })
+    if (verB) blocks.push({ t: "table", head: [["Escenario B (overrides)", "A", "B", "Δ (B−A)"]], body: [
+      ["Ganancia / cabeza", `$${money(c.gananciaCab)}`, `$${money(cB.gananciaCab)}`, `$${money(cB.gananciaCab - c.gananciaCab)}`],
+      ["Ganancia total", `$${money(c.gananciaTotal)}`, `$${money(cB.gananciaTotal)}`, `$${money(cB.gananciaTotal - c.gananciaTotal)}`],
+    ] })
     if (etapas.length > 0) {
-      autoTable(doc, {
-        startY: yCur + 6, theme: "grid", styles: { fontSize: 8 },
-        head: [["Etapa", "Período", "Peso ini→fin", "Cant", "Venta hipot.", "Ganancia"]],
-        body: [
-          ...cadena.pasos.map(p => [p.nombre, `${p.fechaIni}→${p.fechaFin}`, `${kg(p.pIni)}→${kg(p.pFin)}`, String(Math.round(p.cant)), `$${money(p.V)}`, `$${money(p.ganancia)}`]),
-          ["TOTAL punta a punta", "", "", "", "", `$${money(cadena.totalPunta)}`],
-        ],
+      // Resumen de la cadena
+      blocks.push({ t: "table", head: [["Etapa", "Período", "Peso ini→fin", "Cant", "Venta hipot.", "Ganancia"]], body: [
+        ...cadena.pasos.map(p => [p.nombre, `${p.fechaIni}→${p.fechaFin}`, `${kg(p.pIni)}→${kg(p.pFin)}`, String(Math.round(p.cant)), `$${money(p.V)}`, `$${money(p.ganancia)}`]),
+        ["TOTAL punta a punta", "", "", "", "", `$${money(cadena.totalPunta)}`],
+      ] })
+      // Detalle por etapa de la cadena (la etapa 1 ya tiene su detalle completo arriba).
+      // Las etapas 2+ son continuación (no compran): se muestra productivo + ración + económico incremental.
+      cadena.pasos.forEach((p, k) => {
+        if (k === 0) return
+        const e = etapas[k - 1]; const cc = p.calc
+        blocks.push(
+          { t: "sub", text: `Etapa ${k + 1}: ${p.nombre}   (${p.fechaIni} → ${p.fechaFin})` },
+          { t: "table", head: [["Parámetro", "Valor"]], body: [
+            ["Cantidad", String(Math.round(cc.cant))],
+            ["Peso ini → fin", `${kg(p.pIni)} → ${kg(p.pFin)} kg`],
+            ["Días", String(e.dias)], ["Conversión kg/día", String(e.conversion)],
+            ["Kg ganados", kg(cc.kgGanados)],
+            ["Mortandad %", `${e.mort}%`], ["Desbaste salida %", `${e.desbSal}%`],
+            ["Peso neto salida", `${kg(cc.pNetoSal)} kg`],
+          ] },
+          { t: "table", head: [["Ración", "kg/día", "Costo/cab", "Kg totales lote"]], body: [
+            ["Maíz", kg(cc.maizKgDia), `-$${money(-cc.maizCosto)}`, money(cc.maizKgLote)],
+            ["Concentrado", kg(cc.concKgDia), `-$${money(-cc.concCosto)}`, money(cc.concKgLote)],
+            ["Costo ración total", "", `-$${money(-cc.costoRacion)}`, ""],
+          ] },
+          { t: "line", text: `Venta hipotética: $${money(p.V)}   ·   Costo ración: -$${money(-p.R)}`, size: 10 },
+          { t: "line", text: `Ganancia de la etapa (incremental): $${money(p.ganancia)}`, size: 10 },
+        )
       })
-      yCur = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
     }
-    if (notas) { doc.setFontSize(9); doc.text("Notas:", 14, yCur + 9); doc.text(doc.splitTextToSize(notas, 180) as string[], 14, yCur + 14) }
+    if (notas) blocks.push({ t: "gap", h: 3 }, { t: "line", text: "Notas:", size: 9 }, { t: "wrap", text: notas })
+    return blocks
+  }
+
+  const exportarPDF = () => {
+    const doc = new jsPDF()
+    renderPdfBlocks(doc, pdfBlocks(), 16)
     doc.save(nombreArch() + ".pdf")
   }
+
+  // Exponer los datos de export al contenedor (para el PDF/Excel combinado del estudio).
+  const exportDataRef = useRef<() => SegExportData>(() => ({ resumen: { titulo: "", incluido: true, cant: 0, pesoIni: 0, pesoFin: 0, gananciaCab: 0, gananciaTotal: 0 }, blocks: [], filas: [] }))
+  exportDataRef.current = () => ({
+    resumen: { titulo: fase || fuente || `Segmento ${letra}`, incluido, cant: c.cant, pesoIni: num(pesoInicio), pesoFin: c.pFin, gananciaCab: c.gananciaCab, gananciaTotal: c.gananciaTotal },
+    blocks: pdfBlocks(),
+    filas: filasExport(),
+  })
+  useEffect(() => {
+    onRegisterExport?.(() => exportDataRef.current())
+    return () => onRegisterExport?.(null)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Precio de mercado: sexo derivado de la Fuente (label "A·Machos: …" / "A·Hembras: …")
   const sexoSeg: "macho" | "hembra" | null = /achos|orito/i.test(fuente) ? "macho" : /embra|ernera/i.test(fuente) ? "hembra" : null
@@ -1040,6 +1087,11 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
   }
   const reportTotal = (id: number, v: number) => setTotales(t => t[id] === v ? t : { ...t, [id]: v })
   const reportState = (id: number, s: SegState) => { segStatesRef.current[id] = s }
+  // Getters de export por segmento (para el PDF/Excel combinado del estudio)
+  const exportGettersRef = useRef<Record<number, () => SegExportData>>({})
+  const registerExport = (id: number, getter: (() => SegExportData) | null) => {
+    if (getter) exportGettersRef.current[id] = getter; else delete exportGettersRef.current[id]
+  }
   const duplicarSeg = (id: number) => {
     const st = segStatesRef.current[id]
     if (!st) return
@@ -1114,9 +1166,21 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
     }
   }
 
+  // Sobrescribe el estudio ABIERTO (sin re-tipear el nombre) → evita ir acumulando duplicados.
+  const actualizar = () => {
+    if (!sel || !estudios[sel]) return
+    if (!confirm(`¿Sobrescribir el estudio "${sel}" con el estado actual?`)) return
+    const est = snapshotEstudio()
+    const all = { ...estudios, [sel]: est }
+    localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
+    setEstudios(all)
+    toast.success(`Estudio "${sel}" actualizado`)
+  }
+  // Guardar como… → crea un estudio nuevo (pide nombre; pre-carga vacío para no pisar sin querer).
   const guardar = async () => {
-    const nombre = (prompt("Nombre del estudio:", sel || "") || "").trim()
+    const nombre = (prompt("Guardar como (nombre del estudio nuevo):", "") || "").trim()
     if (!nombre) return
+    if (estudios[nombre] && !confirm(`Ya existe un estudio "${nombre}". ¿Sobrescribirlo?`)) return
     const est = snapshotEstudio()
     const all = { ...estudios, [nombre]: est }
     localStorage.setItem(LS_ESTUDIOS, JSON.stringify(all))
@@ -1134,6 +1198,60 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
     toast.success(`Estudio "${nombre}" borrado`)
   }
   const descargarArchivo = () => descargarEstudio(snapshotEstudio(), `Estudio_engorde_${new Date().toISOString().slice(0, 10)}.json`)
+
+  // ── Export COMBINADO del estudio (todos los segmentos: resumen + detalle) ──
+  const nombreEstudioArch = () => (sel || `engorde_${new Date().toISOString().slice(0, 10)}`).replace(/\s+/g, "_")
+  const datosExport = (): SegExportData[] => segIds.map(id => exportGettersRef.current[id]?.()).filter(Boolean) as SegExportData[]
+
+  const exportarPDFTotal = () => {
+    const datos = datosExport()
+    if (!datos.length) { toast.error("No hay segmentos para exportar"); return }
+    const doc = new jsPDF()
+    doc.setFontSize(15); doc.text(`Estudio${sel ? `: ${sel}` : ""}`, 14, 16)
+    doc.setFontSize(10); doc.text(new Date().toLocaleDateString("es-AR"), 14, 22)
+    const incl = datos.filter(d => d.resumen.incluido)
+    const totCant = incl.reduce((s, d) => s + d.resumen.cant, 0)
+    const totGan = incl.reduce((s, d) => s + d.resumen.gananciaTotal, 0)
+    autoTable(doc, {
+      startY: 27, theme: "grid", styles: { fontSize: 8 },
+      head: [["Segmento", "Cant", "Peso ini→fin", "$/cab", "$ total"]],
+      body: [
+        ...datos.map(d => [
+          d.resumen.titulo + (d.resumen.incluido ? "" : " (no incl.)"),
+          String(Math.round(d.resumen.cant)),
+          `${kg(d.resumen.pesoIni)}→${kg(d.resumen.pesoFin)}`,
+          `$${money(d.resumen.gananciaCab)}`,
+          `$${money(d.resumen.gananciaTotal)}`,
+        ]),
+        ["TOTAL (incluidos)", String(totCant), "", "", `$${money(totGan)}`],
+      ],
+    })
+    datos.forEach(d => { doc.addPage(); renderPdfBlocks(doc, d.blocks, 16) })
+    doc.save(`Estudio_${nombreEstudioArch()}.pdf`)
+  }
+
+  const exportarExcelTotal = () => {
+    const datos = datosExport()
+    if (!datos.length) { toast.error("No hay segmentos para exportar"); return }
+    const wb = XLSX.utils.book_new()
+    const incl = datos.filter(d => d.resumen.incluido)
+    const resumenAOA: (string | number)[][] = [
+      ["ESTUDIO", sel || ""],
+      [],
+      ["Segmento", "Incluido", "Cant", "Peso ini", "Peso fin", "$/cab", "$ total"],
+      ...datos.map(d => [d.resumen.titulo, d.resumen.incluido ? "Sí" : "No", Math.round(d.resumen.cant), Math.round(d.resumen.pesoIni), Math.round(d.resumen.pesoFin), Math.round(d.resumen.gananciaCab), Math.round(d.resumen.gananciaTotal)]),
+      ["TOTAL (incluidos)", "", incl.reduce((s, d) => s + d.resumen.cant, 0), "", "", "", incl.reduce((s, d) => s + d.resumen.gananciaTotal, 0)],
+    ]
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumenAOA), "Resumen")
+    const usados = new Set<string>()
+    datos.forEach((d, i) => {
+      const base = (d.resumen.titulo || `Seg ${i + 1}`).replace(/[\\/?*[\]:]/g, " ").slice(0, 28).trim() || `Seg ${i + 1}`
+      let n = base, k = 2; while (usados.has(n)) n = `${base.slice(0, 26)} ${k++}`
+      usados.add(n)
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(d.filas), n)
+    })
+    XLSX.writeFile(wb, `Estudio_${nombreEstudioArch()}.xlsx`)
+  }
   const cargarArchivo = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
     const reader = new FileReader()
@@ -1149,7 +1267,10 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
       {/* Barra guardar/cargar estudios */}
       <div className="flex flex-wrap items-center gap-2 mb-2 text-sm">
         <span className="font-semibold text-gray-600">Estudio</span>
-        <button type="button" onClick={guardar} className="px-2 py-1 rounded border border-emerald-500 text-emerald-700 hover:bg-emerald-50">💾 Guardar</button>
+        {sel && estudios[sel] && (
+          <button type="button" onClick={actualizar} title={`Sobrescribir el estudio abierto "${sel}"`} className="px-2 py-1 rounded border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700">💾 Actualizar «{sel}»</button>
+        )}
+        <button type="button" onClick={guardar} title="Guardar como un estudio nuevo (pide nombre)" className="px-2 py-1 rounded border border-emerald-500 text-emerald-700 hover:bg-emerald-50">💾 Guardar como…</button>
         <select value={sel} onChange={e => { setSel(e.target.value); if (e.target.value && estudios[e.target.value]) cargarEstudio(estudios[e.target.value]) }} className="border rounded px-1 py-1">
           <option value="">Cargar guardado…</option>
           {Object.keys(estudios).sort().map(n => <option key={n} value={n}>{n}</option>)}
@@ -1164,6 +1285,9 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
         <button type="button" onClick={descargarArchivo} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬇ Archivo</button>
         <button type="button" onClick={() => fileRef.current?.click()} className="px-2 py-1 rounded border border-slate-400 text-slate-700 hover:bg-slate-50">⬆ Cargar archivo</button>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={cargarArchivo} />
+        <span className="text-gray-300">·</span>
+        <button type="button" onClick={exportarPDFTotal} title="PDF del estudio completo: resumen + detalle de cada segmento" className="px-2 py-1 rounded border border-red-400 text-red-700 hover:bg-red-50">⬇ PDF total</button>
+        <button type="button" onClick={exportarExcelTotal} title="Excel del estudio completo: hoja Resumen + una hoja por segmento" className="px-2 py-1 rounded border border-emerald-500 text-emerald-700 hover:bg-emerald-50">⬇ Excel total</button>
         <span className="text-xs text-gray-400">guardado = en esta PC · archivo = portable/backup</span>
       </div>
 
@@ -1225,7 +1349,8 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
             onDuplicar={() => duplicarSeg(id)}
             onRemove={segIds.length > 1 ? () => removeSeg(id) : undefined}
             onTotal={v => reportTotal(id, v)}
-            onState={s => reportState(id, s)} />
+            onState={s => reportState(id, s)}
+            onRegisterExport={g => registerExport(id, g)} />
         ))}
         <button type="button" onClick={addSeg} title="Agregar otro segmento a la derecha"
           className="shrink-0 self-start px-3 py-6 rounded-lg border-2 border-dashed border-emerald-400 text-emerald-700 hover:bg-emerald-50 text-sm font-medium whitespace-nowrap">

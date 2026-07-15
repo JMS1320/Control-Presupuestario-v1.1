@@ -4,15 +4,18 @@
 // uno por población, ej. Machos y Hembras a la vez). Autocontenido: su estado, cálculo,
 // arrastre de cortes y render. Reporta sus secciones + su config hacia arriba.
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Fragment } from "react"
 import type { SegConfig, SegSnapshot } from "./analisis-productivo"
 
 interface AnimalSeg {
   sexo: string | null
   es_torito: boolean
   activo: boolean
+  caravana_oficial?: string | null
+  caravana_interna?: string | null
   pesadas_terneros: { fecha: string; peso_kg: number }[]
 }
+const caravanaDe = (a: AnimalSeg) => a.caravana_oficial || a.caravana_interna || "—"
 export interface SeccionSeg { label: string; cantidad: number; promedio: number }
 export interface SegPayload { poblacion: string; secciones: SeccionSeg[]; total: { cantidad: number; promedio: number } | null }
 
@@ -45,6 +48,39 @@ function pesoEstimado(pesadas: { fecha: string; peso_kg: number }[], g: number, 
 }
 function fFecha(iso: string) { const [y, m, d] = iso.split("-"); return `${d}/${m}/${y.slice(2)}` }
 
+// Índices históricos de un animal desde sus pesadas: ganancia diaria punta a punta (1ª→última)
+// y entre las 2 últimas pesadas (kg/día). null si no hay datos suficientes.
+function indicesHistoricos(pesadas: { fecha: string; peso_kg: number }[]): { puntaPunta: number | null; ultimas: number | null; nPesadas: number } {
+  const ps = [...pesadas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const n = ps.length
+  const dias = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
+  let puntaPunta: number | null = null, ultimas: number | null = null
+  if (n >= 2) {
+    const dPP = dias(ps[0].fecha, ps[n - 1].fecha)
+    if (dPP > 0) puntaPunta = (ps[n - 1].peso_kg - ps[0].peso_kg) / dPP
+    const dUlt = dias(ps[n - 2].fecha, ps[n - 1].fecha)
+    if (dUlt > 0) ultimas = (ps[n - 1].peso_kg - ps[n - 2].peso_kg) / dUlt
+  }
+  return { puntaPunta, ultimas, nPesadas: n }
+}
+const promedioNoNulo = (arr: (number | null)[]): number | null => { const v = arr.filter((n): n is number => n != null); return v.length ? v.reduce((s, n) => s + n, 0) / v.length : null }
+
+// Sub-segmentación: divide un conjunto de animales (de una sección) en sub-rangos de peso de ancho `cada`.
+function subRangos(items: { a: AnimalSeg; peso: number }[], cada: number): { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] {
+  if (!items.length || cada <= 0) return []
+  const pesos = items.map(i => i.peso)
+  const min = Math.min(...pesos), max = Math.max(...pesos)
+  const start = Math.floor(min / cada) * cada
+  const bins: { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] = []
+  for (let b = start; b <= max; b += cada) {
+    // Último bin inclusivo en el extremo superior para no perder el máximo exacto.
+    const ultimo = b + cada > max
+    const en = items.filter(i => i.peso >= b && (ultimo ? i.peso <= b + cada : i.peso < b + cada))
+    if (en.length) bins.push({ lo: b, hi: b + cada, cantidad: en.length, promedio: en.reduce((s, i) => s + i.peso, 0) / en.length, pct: en.length / items.length })
+  }
+  return bins
+}
+
 const GRUPOS_ALL = ["torito", "ternera_rep", "macho", "hembra"]
 export function poblacionLabel(grupos: string[]): string {
   const has = (k: string) => grupos.includes(k)
@@ -75,6 +111,9 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const [segCortes, setSegCortes] = useState<number[] | null>(initialConfig?.cortes ?? null)
   const [segDragIdx, setSegDragIdx] = useState<number | null>(null)
   const [segDragDelete, setSegDragDelete] = useState(false)
+  // Panel de sección (individuos + sub-segmentar): índice de fila abierta + ancho de sub-rango.
+  const [subAbierta, setSubAbierta] = useState<number | null>(null)
+  const [subCada, setSubCada] = useState(10)
   const segAxisRef = useRef<HTMLDivElement>(null)
   const segCortesRef = useRef<number[] | null>(null)
 
@@ -83,10 +122,12 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const asOf = segPesadaBase || null
   const hastaMs = segHasta ? new Date(segHasta + "T00:00:00").getTime() : undefined
   const grupoDe = (t: AnimalSeg) => t.es_torito ? (t.sexo === "Macho" ? "torito" : "ternera_rep") : (t.sexo === "Macho" ? "macho" : "hembra")
-  const segPesos: number[] = animales
+  // Animales con su peso (conserva identidad → para el panel de individuos / sub-segmentar).
+  const segAnimalesPeso: { a: AnimalSeg; peso: number }[] = animales
     .filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
-    .map(t => segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia, asOf, hastaMs) : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null))
-    .filter((p): p is number => p != null)
+    .map(t => ({ a: t, peso: segOrigen === "estimado" ? pesoEstimado(t.pesadas_terneros, segGanancia, asOf, hastaMs) : (t.pesadas_terneros.find(p => p.fecha === segFechaEff)?.peso_kg ?? null) }))
+    .filter((x): x is { a: AnimalSeg; peso: number } => x.peso != null)
+  const segPesos: number[] = segAnimalesPeso.map(x => x.peso)
 
   const SEG_SECCIONES_DEFAULT = 5
   const segNCortesDefault = SEG_SECCIONES_DEFAULT - 1
@@ -337,13 +378,83 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
                 {segReporte.filas.map((r, idx) => {
                   const label = r.lo === -Infinity ? `< ${Math.round(r.hi)}` : r.hi === Infinity ? `> ${Math.round(r.lo)}` : `${Math.round(r.lo)} / ${Math.round(r.hi)}`
                   const esExtremo = r.lo === -Infinity || r.hi === Infinity
+                  const abierta = subAbierta === idx
+                  const animalesSec = abierta ? segAnimalesPeso.filter(x => x.peso >= r.lo && x.peso < r.hi).sort((a, b) => b.peso - a.peso) : []
+                  const subs = abierta ? subRangos(animalesSec, subCada) : []
                   return (
-                    <tr key={idx} className={esExtremo ? "text-gray-500 hover:bg-white" : "hover:bg-white"}>
-                      <td className="py-2">{label}</td>
-                      <td className="text-right">{r.cantidad}</td>
-                      <td className="text-right">{r.cantidad ? r.promedio.toFixed(0) : "—"}</td>
-                      <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
-                    </tr>
+                    <Fragment key={idx}>
+                      <tr onClick={() => setSubAbierta(abierta ? null : idx)} title="Ver individuos y sub-segmentar"
+                        className={`cursor-pointer ${esExtremo ? "text-gray-500" : ""} ${abierta ? "bg-emerald-50" : "hover:bg-white"}`}>
+                        <td className="py-2"><span className="text-gray-400 mr-1 text-xs">{abierta ? "▼" : "▶"}</span>{label}</td>
+                        <td className="text-right">{r.cantidad}</td>
+                        <td className="text-right">{r.cantidad ? r.promedio.toFixed(0) : "—"}</td>
+                        <td className="text-right pr-1">{Math.round(r.pct * 100)}%</td>
+                      </tr>
+                      {abierta && (
+                        <tr>
+                          <td colSpan={4} className="bg-slate-50 border-b px-2 py-2">
+                            {animalesSec.length === 0 ? <p className="text-xs text-gray-400">Sin animales en este rango.</p> : (
+                              <div className="flex flex-col gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2 text-sm mb-1">
+                                    <span className="font-semibold text-gray-600">Sub-segmentar</span>
+                                    <span className="text-gray-500">cada</span>
+                                    <input type="number" value={subCada} onClick={e => e.stopPropagation()} onChange={e => setSubCada(Math.max(1, parseInt(e.target.value) || 10))} className="w-14 border rounded px-1 py-0.5" />
+                                    <span className="text-gray-500">kg</span>
+                                    <span className="text-xs text-gray-400">· para informar al comprador cómo viene el lote</span>
+                                  </div>
+                                  <table className="text-sm w-full">
+                                    <thead><tr className="text-gray-500 border-b"><th className="text-left">Sub-rango</th><th className="text-right">Cant.</th><th className="text-right">Prom.</th><th className="text-right pr-1">%</th></tr></thead>
+                                    <tbody>
+                                      {subs.map((s, i) => (
+                                        <tr key={i} className="border-b border-slate-100">
+                                          <td>{Math.round(s.lo)} / {Math.round(s.hi)}</td>
+                                          <td className="text-right">{s.cantidad}</td>
+                                          <td className="text-right">{s.promedio.toFixed(0)}</td>
+                                          <td className="text-right pr-1">{Math.round(s.pct * 100)}%</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                {(() => {
+                                  const ind = animalesSec.map(x => ({ x, i: indicesHistoricos(x.a.pesadas_terneros) }))
+                                  const fmt = (n: number | null) => n == null ? "—" : n.toFixed(2).replace(".", ",")
+                                  const avgPP = promedioNoNulo(ind.map(o => o.i.puntaPunta))
+                                  const avgUlt = promedioNoNulo(ind.map(o => o.i.ultimas))
+                                  return (
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-600 mb-1">Individuos ({animalesSec.length}) e índices históricos</div>
+                                      <div className="text-xs text-gray-600 mb-1">Promedio grupo — g. diaria punta a punta: <b>{fmt(avgPP)}</b> kg/día · últimas pesadas: <b>{fmt(avgUlt)}</b> kg/día</div>
+                                      <div className="max-h-48 overflow-y-auto">
+                                        <table className="text-xs w-full">
+                                          <thead><tr className="text-gray-500 border-b">
+                                            <th className="text-left">Caravana</th>
+                                            <th className="text-right">Peso</th>
+                                            <th className="text-right" title="Ganancia diaria punta a punta (1ª → última pesada)">g. p-p</th>
+                                            <th className="text-right pr-1" title="Ganancia diaria entre las 2 últimas pesadas">g. últ.</th>
+                                          </tr></thead>
+                                          <tbody>
+                                            {ind.map((o, i) => (
+                                              <tr key={i} className="border-b border-slate-100">
+                                                <td>{caravanaDe(o.x.a)}</td>
+                                                <td className="text-right">{o.x.peso.toFixed(0)}kg</td>
+                                                <td className="text-right">{fmt(o.i.puntaPunta)}</td>
+                                                <td className="text-right pr-1">{fmt(o.i.ultimas)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
                 <tr className="font-semibold border-t">

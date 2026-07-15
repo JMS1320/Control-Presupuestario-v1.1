@@ -4906,8 +4906,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
+    // ARCA/SICORE 9.0 importa con separador decimal PUNTO (default de la config de importación).
+    // Antes se convertía a coma; con v9.0 daba "el campo debería ser Numérico Positivo". Ver KNOWLEDGE #sicore.
+    // Esto es SOLO para el TXT de SICORE (Excel/PDF siguen es-AR con coma, no van a ARCA).
     const formatMonto = (n: number, largo: number) =>
-      padLeft(n.toFixed(2).replace('.', ','), largo)
+      padLeft(n.toFixed(2), largo)
     const formatFecha = (iso: string) => {
       const [a, m, d] = iso.split('-')
       return `${d}/${m}/${a}`
