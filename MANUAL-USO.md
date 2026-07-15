@@ -238,3 +238,17 @@ Ambos botones llaman la misma función (`lib/pagos/encolar-mail-detalle`) → in
 - Proyecto de Apps Script **separado** en la cuenta **sanmanuel.sp@gmail.com** (de ahí salen los borradores). Código: `gas-mail-detalle/EnviarMailsDetalle.gs` (con `SUPABASE_URL` + anon key configurados).
 - Deploy: **Implementar → Nueva implementación → Web app** (Ejecutar como: San Manuel · Acceso: Cualquiera) → copiar la URL `.../exec`. La primera vez que tocás "Enviar Borrador" la app te la pide y la guarda.
 - Si cambiás el código del GAS: **Implementar → Gestionar implementaciones → editar → Nueva versión** (la URL no cambia).
+
+---
+
+## 📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)
+
+**Dónde:** Egresos → Facturas → botón **Subdiarios** → "Consultar período" → elegís período → sale el **resumen en 2 bloques** (+ el detalle de cada factura debajo).
+
+**Resumen en 2 bloques** (mismo cálculo en pantalla, Excel y PDF — función compartida `calcularSubtotalesSubdiario`):
+1. **📒 Libro IVA Compras** = comprobantes que **SÍ generan crédito fiscal** (Fac **A** y **M**). Filas Facturas / Notas de Crédito / Total Neto, con Neto Gravado, Exento/No Gravado, IVA, Otros Tributos, Total.
+2. **📋 Comprobantes que no generan crédito fiscal (Fac C y B)** = Fac **B** (6/7/8) + Fac **C** (11/12/13). Filas Comprobantes / Notas de crédito / Total Neto (por importe total).
+
+**Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
+
+**Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
