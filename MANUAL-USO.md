@@ -81,7 +81,8 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
 | Función | Hoy dónde | ¿En Cash Flow? |
 |---|---|---|
 | Subtotales por estado (preparado/pagar/pendiente) | Modal (l.9271, 10037…) | ❌ portar |
-| Agrupar pagos/templates/sueldos | Modal (l.9293/9381/9445) | 🟡 parcial |
+| Agrupar pagos/templates | Modal (l.9293/9381/9445) | ✅ `agruparSeleccionados` (lib/pagos/agrupar) + paridad fina (nombre combinado, responsable templates, monto en pesos) |
+| **Desagrupar** (deshacer grupo) | Modal (desagruparPago/desagruparTemplates) | ✅ **botón ✕ en la fila-grupo** (lib/pagos/desagrupar; deshace todo el grupo). En CF el grupo = 1 fila consolidada → no hay desagrupar parcial |
 | PDF detalle de pago | `generarPDFDetallePago` (l.5505) | ❌ extraer a util |
 | Export Excel de pagos | Modal | ❌ extraer a util |
 | Cambiar estado (pagar/preparado/pagado) | ambos | ✅ ya |
