@@ -1331,6 +1331,34 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       esNegativa: netoFacturaPesos < 0
     })
 
+    // Guarda de estado_quincena ANTES de estampar — igual que el Modal (evaluarRetencionSicore).
+    // Sin esto, si la quincena está 'declarada' el Cash Flow estampaba la FC + estado 'pagar' pero
+    // el insert en sicore_retenciones se salteaba en silencio → estado inconsistente.
+    const { data: qChk } = await supabase
+      .schema('msa')
+      .from('sicore_retenciones')
+      .select('estado_quincena')
+      .eq('quincena', quincena)
+      .eq('anulado', false)
+      .order('estado_quincena', { ascending: false }) // 'declarada' > 'cerrada' > 'abierta'
+      .limit(1)
+      .maybeSingle()
+    const estadoQ = (qChk?.estado_quincena as string | undefined) ?? null
+    if (estadoQ === 'declarada') {
+      alert(`🔒 La quincena ${quincena} ya fue declarada a AFIP. No se pueden agregar nuevas retenciones.\nRectificá la DDJJ con tu contadora antes de modificar.`)
+      await cancelarSicoreCF(false, freshPending, freshCola)
+      return
+    }
+    if (estadoQ === 'cerrada') {
+      const okWarn = window.confirm(
+        `⚠️ La quincena ${quincena} ya está cerrada (TXT generado).\nAl agregar esta retención tendrás que regenerar el TXT y reenviarlo a tu contadora.\n\n¿Continuar?`
+      )
+      if (!okWarn) {
+        await cancelarSicoreCF(false, freshPending, freshCola)
+        return
+      }
+    }
+
     // Caso especial: facturas negativas
     if (netoFacturaPesos < 0) {
       const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
