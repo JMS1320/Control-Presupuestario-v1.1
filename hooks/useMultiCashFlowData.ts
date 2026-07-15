@@ -66,6 +66,7 @@ export interface CashFlowRow {
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
   imp_total?: number
+  iva?: number
   // Moneda (solo para filas ARCA)
   moneda?: string | null        // 'ARS' o 'USD' (null = ARS)
   tipo_cambio?: number          // TC original ARCA (1.0 para ARS)
@@ -154,6 +155,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_no_gravado: f.imp_neto_no_gravado || 0,
         imp_op_exentas: f.imp_op_exentas || 0,
         imp_total: f.imp_total || 0,
+        iva: f.iva || 0,
         moneda: f.moneda || null,
         tipo_cambio: f.tipo_cambio ?? 1,
         tc_pago: f.tc_pago ?? null,

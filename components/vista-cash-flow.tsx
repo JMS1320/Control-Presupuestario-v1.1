@@ -217,6 +217,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [tipoSeleccionado, setTipoSeleccionado] = useState<TipoSicore | null>(null)
   const [montoRetencion, setMontoRetencion] = useState(0)
   const [descuentoAdicional, setDescuentoAdicional] = useState(0)
+  // Descuento en SICORE (paridad con el Modal): % o monto + desglose gravado/IVA
+  const [descuentoTipoInput, setDescuentoTipoInput] = useState<'pct' | 'monto'>('pct')
+  const [descuentoInputValor, setDescuentoInputValor] = useState('')
+  const [descuentoDesglose, setDescuentoDesglose] = useState<{ gravado: number; iva: number; noGravado: number; exento: number; total: number } | null>(null)
   const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
     netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean, sinRetencion?: boolean
   } | null>(null)
@@ -1433,14 +1437,62 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       minimoAplicado = tipo.minimo_no_imponible
     }
 
-    const retencionCalculada = baseImponible * tipo.porcentaje_retencion
+    const retencionCalculada = Math.round(baseImponible * tipo.porcentaje_retencion * 100) / 100
 
     // Guardar netoFacturaPesos (ya en pesos) para mostrar en modal
     setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo })
     setTipoSeleccionado(tipo)
     setMontoRetencion(retencionCalculada)
     setDescuentoAdicional(0)
+    setDescuentoDesglose(null)
+    setDescuentoInputValor('')
     setPasoSicore('calculo')
+  }
+
+  // Aplicar descuento (% o monto) — desglosa en gravado/IVA y recalcula la retención sobre el neto ajustado.
+  // Todo en ARS (× TC de pago), igual que el cálculo del Cash Flow. Paridad con el Modal.
+  const aplicarDescuentoSicoreCF = () => {
+    if (!facturaEnProceso || !datosSicoreCalculo) return
+    const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
+    const impTotal = (facturaEnProceso.imp_total || 0) * tc
+    const impGravado = (facturaEnProceso.imp_neto_gravado || 0) * tc
+    const impNoGravado = (facturaEnProceso.imp_neto_no_gravado || 0) * tc
+    const impExento = (facturaEnProceso.imp_op_exentas || 0) * tc
+    const impIva = (facturaEnProceso.iva || 0) * tc
+
+    const inputNum = parseFloat(descuentoInputValor.replace(/\./g, '').replace(',', '.')) || 0
+    const pct = descuentoTipoInput === 'pct' ? inputNum / 100 : (impTotal > 0 ? inputNum / impTotal : 0)
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    const descGravado = r2(impGravado * pct)
+    const descIva = r2(impIva * pct)
+    const descNoGravado = r2(impNoGravado * pct)
+    const descExento = r2(impExento * pct)
+    const descTotal = r2(descGravado + descIva + descNoGravado + descExento)
+
+    setDescuentoDesglose({ gravado: descGravado, iva: descIva, noGravado: descNoGravado, exento: descExento, total: descTotal })
+    setDescuentoAdicional(descTotal)
+
+    // Recalcular base SICORE sobre el neto ajustado (solo si aplica retención)
+    const netoAjustado = r2((impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento))
+    if (!datosSicoreCalculo.sinRetencion && tipoSeleccionado) {
+      const baseAjustada = Math.max(0, r2(netoAjustado - datosSicoreCalculo.minimoAplicado))
+      setMontoRetencion(r2(baseAjustada * tipoSeleccionado.porcentaje_retencion))
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
+    } else {
+      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado })
+    }
+  }
+
+  const limpiarDescuentoSicoreCF = () => {
+    if (!facturaEnProceso) return
+    setDescuentoAdicional(0)
+    setDescuentoDesglose(null)
+    setDescuentoInputValor('')
+    if (tipoSeleccionado && !datosSicoreCalculo?.sinRetencion) {
+      calcularRetencionSicoreCF(facturaEnProceso, tipoSeleccionado) // restaura cálculo original
+    } else {
+      setMontoRetencion(0)
+    }
   }
 
   // Finalizar SICORE para factura ARCA desde Cash Flow
@@ -1510,6 +1562,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setTipoSeleccionado(null)
       setMontoRetencion(0)
       setDescuentoAdicional(0)
+      setDescuentoDesglose(null)
+      setDescuentoInputValor('')
       setGuardadoPendienteCF(null)
       setPasoSicore('tipo')
 
@@ -1555,6 +1609,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setTipoSeleccionado(null)
     setMontoRetencion(0)
     setDescuentoAdicional(0)
+    setDescuentoDesglose(null)
+    setDescuentoInputValor('')
     setGuardadoPendienteCF(null)
     setPasoSicore('tipo')
 
@@ -3734,67 +3790,97 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           )}
 
-          {pasoSicore === 'calculo' && facturaEnProceso && (() => {
-            const esUSD = facturaEnProceso.moneda === 'USD' || (facturaEnProceso.tipo_cambio ?? 1) > 1.01
+          {pasoSicore === 'calculo' && facturaEnProceso && datosSicoreCalculo && (() => {
             const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
-            const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
-            const saldoPesos = impTotalPesos - montoRetencion - descuentoAdicional
+            const esUSD = facturaEnProceso.moneda === 'USD' || (facturaEnProceso.tipo_cambio ?? 1) > 1.01
+            const impTotal = (facturaEnProceso.imp_total || 0) * tc
+            const impGravado = (facturaEnProceso.imp_neto_gravado || 0) * tc
+            const impIva = (facturaEnProceso.iva || 0) * tc
+            const saldoGravado = impGravado - (descuentoDesglose?.gravado || 0)
+            const saldoIva = impIva - (descuentoDesglose?.iva || 0)
+            const transferencia = impTotal - (descuentoDesglose?.total || 0) - montoRetencion
+            const fmt = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             return (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {esUSD && (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 flex items-center gap-1">
-                  💵 Factura USD · TC de pago: <strong>${tc.toLocaleString('es-AR')}</strong> · Montos en ARS
-                </div>
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">💵 Factura USD · TC de pago: <strong>${fmt(tc)}</strong> · Montos en ARS</div>
               )}
-              {tipoSeleccionado && datosSicoreCalculo ? (<>
-                <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-1">
-                  <div className="flex justify-between"><span className="text-gray-600">Neto base{esUSD ? ' (ARS)' : ''}:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                  {datosSicoreCalculo.minimoAplicado > 0 && (
-                    <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                  )}
-                  <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
-                  {datosSicoreCalculo.esRetencionAdicional && (
-                    <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
-                  <input
-                    type="text"
-                    placeholder="0,00"
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    value={montoRetencion === 0 ? '' : String(montoRetencion).replace('.', ',')}
-                    onChange={e => setMontoRetencion(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
-                  />
-                </div>
-              </>) : (
-                <div className="text-sm text-gray-600 bg-gray-50 border rounded-lg p-3">Sin retención SICORE — aplicá el descuento si corresponde.</div>
+              {datosSicoreCalculo.esRetencionAdicional && (
+                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">⚠️ Retención adicional en quincena - No se aplica mínimo no imponible</div>
               )}
 
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional{esUSD ? ' (ARS)' : ''}:</label>
-                <input
-                  type="text"
-                  placeholder="0,00"
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  value={descuentoAdicional === 0 ? '' : String(descuentoAdicional).replace('.', ',')}
-                  onChange={e => setDescuentoAdicional(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
-                />
+              {/* Desglose Gravado / IVA / Total */}
+              <div className="bg-green-50 p-3 rounded-lg">
+                <p className="text-xs font-semibold text-green-800 mb-2">{tipoSeleccionado ? `${tipoSeleccionado.emoji} ${tipoSeleccionado.tipo} — Desglose` : 'Desglose'}</p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b">
+                      <th className="text-left pb-1">Concepto</th><th className="text-right pb-1">Gravado</th><th className="text-right pb-1">IVA</th><th className="text-right pb-1">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="py-0.5 text-gray-600">Factura</td>
+                      <td className="text-right">${fmt(impGravado)}</td>
+                      <td className="text-right">${fmt(impIva)}</td>
+                      <td className="text-right font-medium">${fmt(impTotal)}</td>
+                    </tr>
+                    {descuentoDesglose && descuentoDesglose.total > 0 && (
+                      <tr className="text-orange-700">
+                        <td className="py-0.5">Descuento</td>
+                        <td className="text-right">-${fmt(descuentoDesglose.gravado)}</td>
+                        <td className="text-right">-${fmt(descuentoDesglose.iva)}</td>
+                        <td className="text-right font-medium">-${fmt(descuentoDesglose.total)}</td>
+                      </tr>
+                    )}
+                    <tr className="border-t font-semibold">
+                      <td className="py-0.5">Saldo pagar</td>
+                      <td className="text-right">${fmt(saldoGravado)}</td>
+                      <td className="text-right">${fmt(saldoIva)}</td>
+                      <td className="text-right">${fmt(impTotal - (descuentoDesglose?.total || 0))}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
-                <div className="flex justify-between font-bold text-base">
-                  <span>Saldo a pagar{esUSD ? ' (ARS)' : ''}:</span>
-                  <span className="text-green-700">
-                    ${saldoPesos.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </span>
+              {/* Cálculo SICORE (solo si hay retención) */}
+              {tipoSeleccionado && (
+                <div className="bg-gray-50 p-3 rounded-lg text-xs space-y-1">
+                  <div className="flex justify-between"><span className="text-gray-500">Monto no imponible:</span><span>${fmt(datosSicoreCalculo.minimoAplicado)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Base imponible:</span><span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
                 </div>
-                {esUSD && (
-                  <div className="text-xs text-gray-500 text-right mt-0.5">
-                    ≈ USD {(saldoPesos / tc).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
-                  </div>
+              )}
+
+              {/* Transferencia */}
+              <div className="bg-gray-50 p-3 rounded-lg text-sm flex justify-between">
+                <span className="font-bold">Transferencia{esUSD ? ' (ARS)' : ''}:</span>
+                <span className="font-bold text-green-700">${fmt(transferencia)}{esUSD ? ` · ≈ USD ${fmt(transferencia / tc)}` : ''}</span>
+              </div>
+
+              {/* Descuento pronto pago (% o monto) */}
+              <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg space-y-2">
+                <p className="text-xs font-semibold text-orange-800">Descuento pronto pago (genera NC posterior)</p>
+                <div className="flex gap-2 items-center">
+                  <select value={descuentoTipoInput} onChange={e => setDescuentoTipoInput(e.target.value as 'pct' | 'monto')} className="border rounded px-2 py-1 text-xs w-16 bg-white">
+                    <option value="pct">%</option>
+                    <option value="monto">$</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder={descuentoTipoInput === 'pct' ? 'ej: 5' : 'ej: 21.438'}
+                    value={descuentoInputValor}
+                    onChange={e => setDescuentoInputValor(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') aplicarDescuentoSicoreCF() }}
+                    className="border rounded px-2 py-1 text-xs flex-1 bg-white"
+                  />
+                  <button onClick={aplicarDescuentoSicoreCF} className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded">Aplicar</button>
+                  {descuentoDesglose && descuentoDesglose.total > 0 && (
+                    <button onClick={limpiarDescuentoSicoreCF} className="text-gray-400 hover:text-red-500 text-xs px-2 py-1">✕</button>
+                  )}
+                </div>
+                {descuentoDesglose && descuentoDesglose.total > 0 && (
+                  <p className="text-xs text-orange-700">Desc: Grav ${fmt(descuentoDesglose.gravado)} + IVA ${fmt(descuentoDesglose.iva)} = ${fmt(descuentoDesglose.total)}</p>
                 )}
               </div>
 
@@ -3802,12 +3888,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={finalizarProcesoSicoreCF}>
                   ✅ Confirmar y pasar a Pagar
                 </Button>
-                <Button variant="outline" onClick={() => setPasoSicore('tipo')}>
-                  ← Tipo
-                </Button>
-                <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>
-                  Cancelar
-                </Button>
+                <Button variant="outline" onClick={() => setPasoSicore('tipo')}>← Tipo</Button>
+                <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>Cancelar</Button>
               </div>
             </div>
           )
