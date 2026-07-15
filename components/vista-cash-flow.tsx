@@ -432,8 +432,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (columna.key === 'fecha_vencimiento' && fila.origen !== 'ARCA') {
       esEditable = false
     }
-    // fecha_pago editable solo para templates (FC se habilita en la fase ARCA)
-    if (columna.key === 'fecha_pago' && fila.origen !== 'TEMPLATE') {
+    // fecha_pago editable para templates y FC (ARCA). El hook escribe fecha_pago en
+    // comprobantes_arca (schema msa) + arrastra a fecha_estimada. Otros orígenes (anticipos)
+    // no tienen la columna directa → bloqueado.
+    if (columna.key === 'fecha_pago' && fila.origen !== 'TEMPLATE' && fila.origen !== 'ARCA') {
       esEditable = false
     }
 
