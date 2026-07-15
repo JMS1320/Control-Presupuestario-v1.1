@@ -218,7 +218,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [montoRetencion, setMontoRetencion] = useState(0)
   const [descuentoAdicional, setDescuentoAdicional] = useState(0)
   const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
-    netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean
+    netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean, sinRetencion?: boolean
   } | null>(null)
   const [guardadoPendienteCF, setGuardadoPendienteCF] = useState<{
     filaId: string, nuevoEstado: string, estadoAnterior: string
@@ -1381,9 +1381,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
     // Caso normal: positivos - aplicar filtro mínimo en pesos
     if (netoFacturaPesos <= minimoServicios) {
-      console.log('✅ SICORE CF: No corresponde (menor a mínimo) - guardando estado sin SICORE')
-      // Por debajo del mínimo → guardar estado sin SICORE
-      await cancelarSicoreCF(true, freshPending, freshCola)
+      // No corresponde retención, pero ofrecer descuento pronto pago (igual que el Modal)
+      const aplicarDescuento = window.confirm(
+        'No corresponde retención SICORE (monto menor al mínimo).\n\n¿Desea aplicar un descuento pronto pago?'
+      )
+      if (aplicarDescuento) {
+        setFacturaEnProceso(fila)
+        setTipoSeleccionado(null)
+        setMontoRetencion(0)
+        setDescuentoAdicional(0)
+        setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true })
+        setPasoSicore('calculo')
+        setMostrarModalSicore(true)
+      } else {
+        await cancelarSicoreCF(true, freshPending, freshCola)
+      }
       return
     }
 
@@ -1431,7 +1443,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Finalizar SICORE para factura ARCA desde Cash Flow
   const finalizarProcesoSicoreCF = async () => {
-    if (!facturaEnProceso || !tipoSeleccionado || !guardadoPendienteCF) return
+    if (!facturaEnProceso || !guardadoPendienteCF) return
+    // Permitir finalizar sin retención si hay descuento (paridad con el Modal)
+    if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0) return
 
     try {
       // SICORE se calcula sobre lo pagado: usar TC de pago
@@ -1451,35 +1465,42 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // 2. Estampar datos SICORE en la FC (compat con v1) + descuento en la propia FC (paridad con el Modal)
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null })
+        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado?.tipo ?? null, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null })
         .eq('id', guardadoPendienteCF.filaId)
 
-      // 3. Registrar en SICORE v2 (sicore_retenciones) — capa compartida, mismo registro que el Modal
-      const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
-      const fa = facturaEnProceso as any
-      await registrarEnSicoreRetenciones('msa', {
-        origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
-        quincena,
-        fecha_pago: fechaSicore,
-        factura_id: guardadoPendienteCF.filaId,
-        fecha_emision: fa.fecha_emision ?? null,
-        tipo_comprobante: fa.tipo_comprobante ?? null,
-        punto_venta: fa.punto_venta ?? null,
-        numero_desde: fa.numero_desde ?? null,
-        cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
-        denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
-        tipo_sicore: tipoSeleccionado.tipo,
-        alicuota: tipoSeleccionado.porcentaje_retencion,
-        neto_gravado_pagado: datosSicoreCalculo?.netoFactura ?? 0,
-        total_pagado: totalPagado,
-        descuento_aplicado: descuentoAdicional,
-        minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
-        base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
-        retencion: montoRetencion,
-        pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
-      })
+      // 3. Registrar en SICORE v2 (sicore_retenciones) SOLO si hay retención real (paridad con el Modal).
+      //    "Sin retención + descuento" no genera registro SICORE (solo estampa el descuento en la FC).
+      if (tipoSeleccionado && montoRetencion > 0) {
+        const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
+        const fa = facturaEnProceso as any
+        await registrarEnSicoreRetenciones('msa', {
+          origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
+          quincena,
+          fecha_pago: fechaSicore,
+          factura_id: guardadoPendienteCF.filaId,
+          fecha_emision: fa.fecha_emision ?? null,
+          tipo_comprobante: fa.tipo_comprobante ?? null,
+          punto_venta: fa.punto_venta ?? null,
+          numero_desde: fa.numero_desde ?? null,
+          cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
+          denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
+          tipo_sicore: tipoSeleccionado.tipo,
+          alicuota: tipoSeleccionado.porcentaje_retencion,
+          neto_gravado_pagado: datosSicoreCalculo?.netoFactura ?? 0,
+          total_pagado: totalPagado,
+          descuento_aplicado: descuentoAdicional,
+          minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
+          base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
+          retencion: montoRetencion,
+          pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
+        })
+      }
 
-      toast.success(`✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`)
+      toast.success(
+        tipoSeleccionado && montoRetencion > 0
+          ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`
+          : `✅ Pago aplicado${descuentoAdicional > 0 ? ` con descuento $${descuentoAdicional.toLocaleString('es-AR')}` : ''} (sin retención)`
+      )
 
       // Limpiar modal
       setMostrarModalSicore(false)
@@ -3694,8 +3715,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 ))}
               </div>
               <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => cancelarSicoreCF(true)}>
-                  Continuar sin retención
+                <Button variant="outline" className="flex-1" onClick={() => {
+                  // Sin retención pero permitir aplicar descuento (paridad con el Modal)
+                  setTipoSeleccionado(null)
+                  setMontoRetencion(0)
+                  setDescuentoAdicional(0)
+                  setDatosSicoreCalculo({ netoFactura: 0, minimoAplicado: 0, baseImponible: 0, esRetencionAdicional: false, sinRetencion: true })
+                  setPasoSicore('calculo')
+                }}>
+                  Sin retención (aplicar descuento)
                 </Button>
                 <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>
                   Cancelar
@@ -3704,7 +3732,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           )}
 
-          {pasoSicore === 'calculo' && tipoSeleccionado && facturaEnProceso && datosSicoreCalculo && (() => {
+          {pasoSicore === 'calculo' && facturaEnProceso && (() => {
             const esUSD = facturaEnProceso.moneda === 'USD' || (facturaEnProceso.tipo_cambio ?? 1) > 1.01
             const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
             const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
@@ -3716,28 +3744,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   💵 Factura USD · TC de pago: <strong>${tc.toLocaleString('es-AR')}</strong> · Montos en ARS
                 </div>
               )}
-              <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-1">
-                <div className="flex justify-between"><span className="text-gray-600">Neto base{esUSD ? ' (ARS)' : ''}:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                {datosSicoreCalculo.minimoAplicado > 0 && (
-                  <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                )}
-                <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
-                {datosSicoreCalculo.esRetencionAdicional && (
-                  <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
-                )}
-              </div>
+              {tipoSeleccionado && datosSicoreCalculo ? (<>
+                <div className="bg-gray-50 border rounded-lg p-3 text-sm space-y-1">
+                  <div className="flex justify-between"><span className="text-gray-600">Neto base{esUSD ? ' (ARS)' : ''}:</span><span>${datosSicoreCalculo.netoFactura.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {datosSicoreCalculo.minimoAplicado > 0 && (
+                    <div className="flex justify-between"><span className="text-gray-600">No imponible:</span><span>-${datosSicoreCalculo.minimoAplicado.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-600">Base imponible:</span><span>${datosSicoreCalculo.baseImponible.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">% Retención ({tipoSeleccionado.tipo}):</span><span>{(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%</span></div>
+                  {datosSicoreCalculo.esRetencionAdicional && (
+                    <div className="text-xs text-amber-600 font-medium">⚠️ Retención adicional en la quincena (sin descuento mínimo)</div>
+                  )}
+                </div>
 
-              <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
-                <input
-                  type="text"
-                  placeholder="0,00"
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  value={montoRetencion === 0 ? '' : String(montoRetencion).replace('.', ',')}
-                  onChange={e => setMontoRetencion(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
-                />
-              </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Monto retención{esUSD ? ' (ARS)' : ''}:</label>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    value={montoRetencion === 0 ? '' : String(montoRetencion).replace('.', ',')}
+                    onChange={e => setMontoRetencion(parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')) || 0)}
+                  />
+                </div>
+              </>) : (
+                <div className="text-sm text-gray-600 bg-gray-50 border rounded-lg p-3">Sin retención SICORE — aplicá el descuento si corresponde.</div>
+              )}
 
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Descuento adicional{esUSD ? ' (ARS)' : ''}:</label>
