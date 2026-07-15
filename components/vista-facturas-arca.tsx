@@ -290,6 +290,50 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
   )
 }
 
+// Resumen del subdiario en 2 bloques (compartido por el display en vivo y por el Excel/PDF → siempre iguales).
+//  - ivaCompras (SÍ genera crédito fiscal: Fac A, M): FC / NC / Neto con neto gravado, exento, IVA, otros, total.
+//  - monotributo (NO genera crédito fiscal: Fac B 6/7/8 + Fac C 11/12/13): Comprobantes / NC / Neto (imp_total).
+function calcularSubtotalesSubdiario(facturas: any[]) {
+  const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
+  const sumarBloque = (lista: any[], abs: boolean) => lista.reduce((acc, f) => {
+    const tc = tcFactura(f)
+    const sgn = (v: number) => (abs ? Math.abs(v) : v)
+    acc.imp_total         += sgn(Number(f.imp_total) || 0) * tc
+    acc.iva               += sgn(Number(f.iva) || 0) * tc
+    acc.imp_neto_gravado  += sgn(Number(f.imp_neto_gravado) || 0) * tc
+    acc.exento_no_gravado += sgn((Number(f.imp_neto_no_gravado) || 0) + (Number(f.imp_op_exentas) || 0)) * tc
+    acc.otros_tributos    += sgn(Number(f.otros_tributos) || 0) * tc
+    return acc
+  }, { imp_total: 0, iva: 0, imp_neto_gravado: 0, exento_no_gravado: 0, otros_tributos: 0 })
+
+  const TIPOS_SIN_CREDITO = [6, 7, 8, 11, 12, 13]
+  const creditoFiscal = facturas.filter(f => !TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
+  const fcList = creditoFiscal.filter(f => (Number(f.imp_total) || 0) >= 0)
+  const ncList = creditoFiscal.filter(f => (Number(f.imp_total) || 0) < 0)
+  const sumFC = sumarBloque(fcList, false)
+  const sumNC = sumarBloque(ncList, true)
+  const sumNeto = {
+    imp_total:         sumFC.imp_total         - sumNC.imp_total,
+    iva:               sumFC.iva               - sumNC.iva,
+    imp_neto_gravado:  sumFC.imp_neto_gravado  - sumNC.imp_neto_gravado,
+    exento_no_gravado: sumFC.exento_no_gravado - sumNC.exento_no_gravado,
+    otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
+  }
+
+  const sinCredito = facturas.filter(f => TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
+  const sinCredComprob = sinCredito.filter(f => (Number(f.imp_total) || 0) >= 0)
+  const sinCredNC = sinCredito.filter(f => (Number(f.imp_total) || 0) < 0)
+  const totalComprob = sinCredComprob.reduce((s, f) => s + (Number(f.imp_total) || 0) * tcFactura(f), 0)
+  const totalNC = sinCredNC.reduce((s, f) => s + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
+
+  return {
+    ivaCompras: { fc: { ...sumFC, cantidad: fcList.length }, nc: { ...sumNC, cantidad: ncList.length }, neto: sumNeto },
+    monotributo: { fc: { total: totalComprob, cantidad: sinCredComprob.length }, nc: { total: totalNC, cantidad: sinCredNC.length }, neto: totalComprob - totalNC },
+    facturas_c: totalComprob,
+    cantidad_facturas_c: sinCredComprob.length,
+  }
+}
+
 export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: 'admin' | 'contable' } = {}) {
   const esContable = userRole === 'contable'
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
@@ -2098,67 +2142,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const facturas = data || []
       setFacturasPeriodo(facturas)
       
-      // Calcular subtotales (todos los importes en pesos: siempre TC de la factura, nunca tc_pago)
-      const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
-
-      // Bloque "Libro IVA Compras" = comprobantes que SÍ generan crédito fiscal (Fac A, M).
-      // Excluye Fac B (6/7/8) y Fac C (11/12/13) → esos van al bloque 2. Separamos FC (imp_total >= 0)
-      // de NC (imp_total < 0) para mostrar 3 filas: Facturas, NC, Total Neto.
-      const sumarBloque = (lista: any[], abs: boolean) => lista.reduce((acc, f) => {
-        const tc = tcFactura(f)
-        const sgn = (v: number) => (abs ? Math.abs(v) : v)
-        const ng = Number(f.imp_neto_gravado) || 0
-        const nng = Number(f.imp_neto_no_gravado) || 0
-        const opEx = Number(f.imp_op_exentas) || 0
-        acc.imp_total          += sgn(Number(f.imp_total) || 0) * tc
-        acc.iva                += sgn(Number(f.iva) || 0) * tc
-        acc.imp_neto_gravado   += sgn(ng) * tc
-        acc.exento_no_gravado  += sgn(nng + opEx) * tc
-        acc.otros_tributos     += sgn(Number(f.otros_tributos) || 0) * tc
-        return acc
-      }, { imp_total: 0, iva: 0, imp_neto_gravado: 0, exento_no_gravado: 0, otros_tributos: 0 })
-
-      // Comprobantes que NO generan crédito fiscal: Fac B (6/7/8) + Fac C (11/12/13).
-      // Van al bloque 2; el bloque 1 (Libro IVA Compras) queda solo con los que SÍ generan crédito (Fac A, M).
-      const TIPOS_SIN_CREDITO = [6, 7, 8, 11, 12, 13]
-      const facturasCreditoFiscal = facturas.filter(f => !TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
-      const facturasFC = facturasCreditoFiscal.filter(f => (Number(f.imp_total) || 0) >= 0)
-      const facturasNC = facturasCreditoFiscal.filter(f => (Number(f.imp_total) || 0) < 0)
-      const sumFC = sumarBloque(facturasFC, false)        // valores ya positivos
-      const sumNC = sumarBloque(facturasNC, true)         // abs para mostrar en positivo
-      const sumNeto = {                                    // Total = FC − |NC|
-        imp_total:         sumFC.imp_total         - sumNC.imp_total,
-        iva:               sumFC.iva               - sumNC.iva,
-        imp_neto_gravado:  sumFC.imp_neto_gravado  - sumNC.imp_neto_gravado,
-        exento_no_gravado: sumFC.exento_no_gravado - sumNC.exento_no_gravado,
-        otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
-      }
-
-      // Bloque 2: "Comprobantes que no generan crédito fiscal (Fac C y B)". 3 filas:
-      // Comprobantes (FC+ND de B y C, imp_total >= 0) / Notas de crédito (NC, imp_total < 0) / Total Neto.
-      const facturasSinCredito = facturas.filter(f => TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
-      const sinCredComprob = facturasSinCredito.filter(f => (Number(f.imp_total) || 0) >= 0)
-      const sinCredNC = facturasSinCredito.filter(f => (Number(f.imp_total) || 0) < 0)
-      const totalSinCredComprob = sinCredComprob.reduce((sum, f) => sum + (Number(f.imp_total) || 0) * tcFactura(f), 0)
-      const totalSinCredNC = sinCredNC.reduce((sum, f) => sum + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
-      const totalSinCredNeto = totalSinCredComprob - totalSinCredNC
-
-      setSubtotales({
-        ivaCompras: {
-          fc: { ...sumFC, cantidad: facturasFC.length },
-          nc: { ...sumNC, cantidad: facturasNC.length },
-          neto: sumNeto,
-        },
-        // key `monotributo` conservada por compat con el render; ahora = Fac B + C (no crédito fiscal)
-        monotributo: {
-          fc: { total: totalSinCredComprob, cantidad: sinCredComprob.length },
-          nc: { total: totalSinCredNC, cantidad: sinCredNC.length },
-          neto: totalSinCredNeto,
-        },
-        // Campos legacy para no romper otras referencias si existen
-        facturas_c: totalSinCredComprob,
-        cantidad_facturas_c: sinCredComprob.length,
-      })
+      // Subtotales en 2 bloques (misma función que usa el Excel/PDF → siempre coinciden).
+      setSubtotales(calcularSubtotalesSubdiario(facturas))
     } catch (error) {
       console.error('Error cargando período:', error)
     } finally {
@@ -2578,21 +2563,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         neto_0: 0, neto_2_5: 0, neto_5: 0, neto_10_5: 0, neto_21: 0, neto_27: 0
       })
 
-      // Calcular Monotributista (facturas tipo C)
-      const monotributista = facturas
-        .filter(f => f.tipo_comprobante === 11) // Tipo 11 = Factura C (MONOTRIBUTISTA)
-        .reduce((acc, f) => {
-          const tc = Number(f.tipo_cambio) || 1
-          return acc + (f.imp_total || 0) * tc
-        }, 0)
+      // Resumen del subdiario en 2 bloques — MISMA función que el display en vivo (pantalla = Excel = PDF).
+      const sub = calcularSubtotalesSubdiario(facturas)
+      const bIva = sub.ivaCompras, bMono = sub.monotributo
 
-      // Calcular total general + monotributo
-      const totalGeneral = totales.neto_gravado + totales.neto_no_gravado + totales.op_exentas + totales.otros_tributos + totales.total_iva + totales.importe_total
-
-      // Agregar filas de totales
+      // Agregar filas de totales: Bloque 1 (crédito fiscal) + Bloque 2 (no crédito fiscal) + Detalle por Alícuotas.
       const filasExtras = [
         {},
-        { 'Fecha': 'TOTALES GENERALES', 'Neto Gravado': formatearNumeroExcel(totales.neto_gravado), 'Neto No Gravado': formatearNumeroExcel(totales.neto_no_gravado), 'Op. Exentas': formatearNumeroExcel(totales.op_exentas), 'Otros Tributos': formatearNumeroExcel(totales.otros_tributos), 'IVA 21%': formatearNumeroExcel(totales.iva_21), 'IVA Diferencial': formatearNumeroExcel(totales.iva_diferencial), 'Total IVA': formatearNumeroExcel(totales.total_iva), 'Imp. Total': formatearNumeroExcel(totales.importe_total) },
+        { 'Fecha': '📒 LIBRO IVA COMPRAS (generan crédito fiscal)', 'Neto Gravado': 'Neto Gravado', 'Neto No Gravado': 'Exento/No Grav.', 'Total IVA': 'IVA', 'Otros Tributos': 'Otros Trib.', 'Imp. Total': 'Total' },
+        { 'Fecha': `Facturas (${bIva.fc.cantidad})`, 'Neto Gravado': formatearNumeroExcel(bIva.fc.imp_neto_gravado), 'Neto No Gravado': formatearNumeroExcel(bIva.fc.exento_no_gravado), 'Total IVA': formatearNumeroExcel(bIva.fc.iva), 'Otros Tributos': formatearNumeroExcel(bIva.fc.otros_tributos), 'Imp. Total': formatearNumeroExcel(bIva.fc.imp_total) },
+        { 'Fecha': `Notas de Crédito (${bIva.nc.cantidad})`, 'Neto Gravado': formatearNumeroExcel(bIva.nc.imp_neto_gravado), 'Neto No Gravado': formatearNumeroExcel(bIva.nc.exento_no_gravado), 'Total IVA': formatearNumeroExcel(bIva.nc.iva), 'Otros Tributos': formatearNumeroExcel(bIva.nc.otros_tributos), 'Imp. Total': formatearNumeroExcel(bIva.nc.imp_total) },
+        { 'Fecha': 'Total Neto (FC − NC)', 'Neto Gravado': formatearNumeroExcel(bIva.neto.imp_neto_gravado), 'Neto No Gravado': formatearNumeroExcel(bIva.neto.exento_no_gravado), 'Total IVA': formatearNumeroExcel(bIva.neto.iva), 'Otros Tributos': formatearNumeroExcel(bIva.neto.otros_tributos), 'Imp. Total': formatearNumeroExcel(bIva.neto.imp_total) },
+        {},
+        { 'Fecha': '📋 Comprobantes que no generan crédito fiscal (Fac C y B)', 'Imp. Total': 'Total' },
+        { 'Fecha': `Comprobantes Fac B y C (${bMono.fc.cantidad})`, 'Imp. Total': formatearNumeroExcel(bMono.fc.total) },
+        { 'Fecha': `Notas de crédito B y C (${bMono.nc.cantidad})`, 'Imp. Total': formatearNumeroExcel(bMono.nc.total) },
+        { 'Fecha': 'Total Neto (FC − NC)', 'Imp. Total': formatearNumeroExcel(bMono.neto) },
         {},
         { 'Fecha': 'Detalle por Alícuotas', 'Tipo-N° Comp.': 'Neto $', 'Razón Social': 'Alíc.', 'C.U.I.T.': 'IVA $' },
         { 'Fecha': 'Al 0%', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_0), 'Razón Social': '0.00', 'C.U.I.T.': formatearNumeroExcel(0) },
@@ -2602,17 +2588,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         { 'Fecha': 'Al 21%', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_21), 'Razón Social': '21.00', 'C.U.I.T.': formatearNumeroExcel(totales.iva_21) },
         { 'Fecha': 'Al 27%', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_27), 'Razón Social': '27.00', 'C.U.I.T.': formatearNumeroExcel(totales.iva_27) },
         { 'Fecha': 'TOTALES', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_gravado), 'Razón Social': '----', 'C.U.I.T.': formatearNumeroExcel(totales.total_iva) },
-        {},
-        {},
-        { 'Fecha': 'TOTALES GENERALES:' },
-        { 'Fecha': 'Concepto ', 'Tipo-N° Comp.': 'Importe $' },
-        { 'Fecha': 'Neto Gravado ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_gravado) },
-        { 'Fecha': 'Neto No Gravado', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_no_gravado) },
-        { 'Fecha': 'Op. Exentas ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.op_exentas) },
-        { 'Fecha': 'Otros Tributos ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.otros_tributos) },
-        { 'Fecha': 'Total IVA ', 'Tipo-N° Comp.': formatearNumeroExcel(totales.total_iva) },
-        { 'Fecha': 'Monotributo', 'Tipo-N° Comp.': formatearNumeroExcel(monotributista) },
-        { 'Fecha': 'Importe Total', 'Tipo-N° Comp.': formatearNumeroExcel(totales.importe_total) }
       ]
 
       // Crear libro Excel
@@ -2738,14 +2713,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         iva_2_5: 0, iva_5: 0, iva_10_5: 0, iva_21: 0, iva_27: 0,
         neto_0: 0, neto_2_5: 0, neto_5: 0, neto_10_5: 0, neto_21: 0, neto_27: 0
       })
-
-      // Calcular Monotributista (facturas tipo C)
-      const monotributista = facturas
-        .filter(f => f.tipo_comprobante === 11)
-        .reduce((acc, f) => {
-          const tc = Number(f.tipo_cambio) || 1
-          return acc + (f.imp_total || 0) * tc
-        }, 0)
 
       console.log('🔍 DEBUG PDF: Totales calculados:', totales)
       
@@ -2882,32 +2849,38 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         }
       })
       
-      // Agregar totales generales y MONOTRIBUTISTA en página desglose
+      // Resumen del subdiario en 2 bloques — MISMA función que el display en vivo (pantalla = Excel = PDF).
+      const subPdf = calcularSubtotalesSubdiario(facturas)
+      const pIva = subPdf.ivaCompras, pMono = subPdf.monotributo
       const yTotales = doc.lastAutoTable.finalY + 15
       doc.setFontSize(10)
       doc.setFont(undefined, 'bold')
-      doc.text('TOTALES GENERALES:', 20, yTotales)
-      
-      const totalesGenerales = [
-        ['Neto Gravado', formatearNumeroPDF(totales.neto_gravado).trim()],
-        ['Neto No Gravado', formatearNumeroPDF(totales.neto_no_gravado).trim()],
-        ['Op. Exentas', formatearNumeroPDF(totales.op_exentas).trim()],
-        ['Otros Tributos', formatearNumeroPDF(totales.otros_tributos).trim()],
-        ['Total IVA', formatearNumeroPDF(totales.total_iva).trim()],
-        ['Monotributo', formatearNumeroPDF(monotributista).trim()],
-        ['Importe Total', formatearNumeroPDF(totales.importe_total).trim()]
-      ]
-      
+      doc.text('LIBRO IVA COMPRAS (generan crédito fiscal):', 20, yTotales)
       autoTable(doc, {
-        head: [['Concepto', 'Importe $']],
-        body: totalesGenerales,
+        head: [['Concepto', 'Neto Gravado', 'Exento/No Grav.', 'IVA', 'Otros Trib.', 'Total']],
+        body: [
+          [`Facturas (${pIva.fc.cantidad})`, formatearNumeroPDF(pIva.fc.imp_neto_gravado).trim(), formatearNumeroPDF(pIva.fc.exento_no_gravado).trim(), formatearNumeroPDF(pIva.fc.iva).trim(), formatearNumeroPDF(pIva.fc.otros_tributos).trim(), formatearNumeroPDF(pIva.fc.imp_total).trim()],
+          [`Notas de Crédito (${pIva.nc.cantidad})`, formatearNumeroPDF(pIva.nc.imp_neto_gravado).trim(), formatearNumeroPDF(pIva.nc.exento_no_gravado).trim(), formatearNumeroPDF(pIva.nc.iva).trim(), formatearNumeroPDF(pIva.nc.otros_tributos).trim(), formatearNumeroPDF(pIva.nc.imp_total).trim()],
+          ['Total Neto (FC - NC)', formatearNumeroPDF(pIva.neto.imp_neto_gravado).trim(), formatearNumeroPDF(pIva.neto.exento_no_gravado).trim(), formatearNumeroPDF(pIva.neto.iva).trim(), formatearNumeroPDF(pIva.neto.otros_tributos).trim(), formatearNumeroPDF(pIva.neto.imp_total).trim()],
+        ],
         startY: yTotales + 5,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [66, 139, 202] },
+      })
+      const yMono = doc.lastAutoTable.finalY + 10
+      doc.setFont(undefined, 'bold')
+      doc.text('Comprobantes que no generan crédito fiscal (Fac C y B):', 20, yMono)
+      autoTable(doc, {
+        head: [['Concepto', 'Total']],
+        body: [
+          [`Comprobantes Fac B y C (${pMono.fc.cantidad})`, formatearNumeroPDF(pMono.fc.total).trim()],
+          [`Notas de crédito B y C (${pMono.nc.cantidad})`, formatearNumeroPDF(pMono.nc.total).trim()],
+          ['Total Neto (FC - NC)', formatearNumeroPDF(pMono.neto).trim()],
+        ],
+        startY: yMono + 5,
         styles: { fontSize: 9 },
         headStyles: { fillColor: [66, 139, 202] },
-        columnStyles: {
-          0: { cellWidth: 60 },
-          1: { cellWidth: 60, halign: 'right' }
-        }
+        columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 50, halign: 'right' } },
       })
 
       // Generar nombre único para evitar sobreescribir  
