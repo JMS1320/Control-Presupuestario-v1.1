@@ -53,6 +53,7 @@ export interface CashFlowRow {
   centro_costo: string
   cuit_proveedor: string
   nombre_proveedor: string
+  responsable?: string          // responsable de la cuota template (para validar agrupación)
   detalle: string
   debitos: number
   creditos: number
@@ -243,6 +244,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         centro_costo: c.egreso?.centro_costo || 'SIN_CC',
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
+        responsable: c.egreso?.responsable || '',
         detalle: c.descripcion || c.egreso?.nombre_referencia || '',
         detalle_usuario: c.descripcion || null,
         debitos: esIngreso ? 0 : monto,

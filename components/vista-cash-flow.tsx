@@ -9,6 +9,7 @@ import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lot
 import { PanelMailsPago } from "@/components/panel-mails-pago"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
+import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1037,22 +1038,48 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (cuits.size > 1) {
       if (!window.confirm('⚠️ Las filas seleccionadas tienen CUITs diferentes. ¿Agrupar igual?')) return
     }
+    // Templates: exigir mismo responsable (paridad con el Modal)
+    if (origen === 'TEMPLATE' && new Set(filas.map(f => f.responsable || '')).size > 1) {
+      toast.error('Los templates a agrupar deben tener el mismo responsable'); return
+    }
+    // Nombre del grupo: combinar proveedores ("A + B" / "A + N más")
+    const proveedoresUnicos = [...new Set(filas.map(f => f.nombre_proveedor).filter(Boolean))] as string[]
+    const proveedorGrupo = proveedoresUnicos.length <= 2
+      ? proveedoresUnicos.join(' + ')
+      : `${proveedoresUnicos[0]} + ${proveedoresUnicos.length - 1} más`
+    // monto_total en pesos (para USD: debitos × TC de la fila ARCA; templates ya en ARS)
+    const monto_total = filas.reduce((s, f) => s + (f.debitos || 0) * (origen === 'ARCA' ? (f.tc_pago ?? f.tipo_cambio ?? 1) : 1), 0)
     try {
       await agruparPagos({
         schema: 'msa',
         origen: origen as 'ARCA' | 'TEMPLATE',
         ids: filas.map(f => f.id),
         cuit: filas[0].cuit_proveedor || null,
-        proveedor: filas[0].nombre_proveedor || '',
-        monto_total: filas.reduce((s, f) => s + (f.debitos || 0), 0),
+        proveedor: proveedorGrupo || (filas[0].nombre_proveedor || ''),
+        monto_total,
         estado: origen === 'ARCA' ? 'pagar' : (filas[0].estado || 'pendiente'),
-        observaciones: cuits.size > 1 ? 'Multi-CUIT' : null,
+        observaciones: cuits.size > 1 ? `Multi-CUIT: ${[...cuits].join(', ')}` : null,
       })
       toast.success(`${filas.length} pagos agrupados`)
       setFilasSeleccionadas(new Set())
       await cargarDatos()
     } catch (e: any) {
       toast.error(e?.message || 'Error al agrupar')
+    }
+  }
+
+  // Deshacer un grupo (fila consolidada) → vuelven las FCs/cuotas individuales. Paridad con el Modal.
+  const desagruparFilaGrupo = async (fila: CashFlowRow) => {
+    if (!fila.grupo_pago_id || !(fila.facturas_agrupadas && fila.facturas_agrupadas > 1)) return
+    const origen = fila.origen === 'ARCA' ? 'ARCA' : 'TEMPLATE'
+    if (!window.confirm(`¿Deshacer el grupo (${fila.facturas_agrupadas} comprobantes)? Vuelven a ser individuales.`)) return
+    try {
+      await desagruparPago('msa', origen, fila.grupo_pago_id)
+      toast.success('Grupo deshecho')
+      setFilasSeleccionadas(new Set())
+      await cargarDatos()
+    } catch (e: any) {
+      toast.error(e?.message || 'Error al desagrupar')
     }
   }
 
@@ -2031,6 +2058,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   💵 USD
                 </span>
                 <span className="truncate">{(valor as string) || '-'}</span>
+              </div>
+            )
+          }
+          // Fila-grupo: ✕ para deshacer el grupo (en la columna Detalle)
+          if (columna.key === 'detalle' && (fila.facturas_agrupadas ?? 0) > 1 && fila.grupo_pago_id) {
+            return (
+              <div className="flex items-center gap-1">
+                <button
+                  title="Deshacer grupo (vuelven a ser individuales)"
+                  className="shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded px-1 text-xs font-bold leading-none"
+                  onClick={(e) => { e.stopPropagation(); desagruparFilaGrupo(fila) }}
+                >✕</button>
+                <span className="truncate" title={valor as string}>🔗 {(valor as string) || '-'}</span>
               </div>
             )
           }
