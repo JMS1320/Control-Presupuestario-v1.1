@@ -1307,6 +1307,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     freshPending?: PendingSicore | null,
     freshCola?: CashFlowRow[]
   ) => {
+    // Fac C (tipo 11 = monotributista): NUNCA se le retiene (igual que el Modal) → guardar estado sin SICORE.
+    if ((fila as any).tipo_comprobante === 11) {
+      await cancelarSicoreCF(true, freshPending, freshCola)
+      return
+    }
     const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const netoGravado = fila.imp_neto_gravado || 0
     const netoNoGravado = fila.imp_neto_no_gravado || 0
@@ -1444,9 +1449,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
-      // 2. Estampar datos SICORE en la FC (compat con v1)
+      // 2. Estampar datos SICORE en la FC (compat con v1) + descuento en la propia FC (paridad con el Modal)
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo })
+        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado.tipo, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null })
         .eq('id', guardadoPendienteCF.filaId)
 
       // 3. Registrar en SICORE v2 (sicore_retenciones) — capa compartida, mismo registro que el Modal
