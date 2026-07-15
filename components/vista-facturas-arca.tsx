@@ -2101,8 +2101,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Calcular subtotales (todos los importes en pesos: siempre TC de la factura, nunca tc_pago)
       const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
 
-      // Bloque "Libro IVA Compras": TODOS los tipos EXCEPTO Factura C (tipo 11),
-      // que va en el bloque Monotributo aparte. Separamos FC (imp_total >= 0)
+      // Bloque "Libro IVA Compras" = comprobantes que SÍ generan crédito fiscal (Fac A, M).
+      // Excluye Fac B (6/7/8) y Fac C (11/12/13) → esos van al bloque 2. Separamos FC (imp_total >= 0)
       // de NC (imp_total < 0) para mostrar 3 filas: Facturas, NC, Total Neto.
       const sumarBloque = (lista: any[], abs: boolean) => lista.reduce((acc, f) => {
         const tc = tcFactura(f)
@@ -2118,9 +2118,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         return acc
       }, { imp_total: 0, iva: 0, imp_neto_gravado: 0, exento_no_gravado: 0, otros_tributos: 0 })
 
-      const facturasNoMonotrib = facturas.filter(f => f.tipo_comprobante !== 11)
-      const facturasFC = facturasNoMonotrib.filter(f => (Number(f.imp_total) || 0) >= 0)
-      const facturasNC = facturasNoMonotrib.filter(f => (Number(f.imp_total) || 0) < 0)
+      // Comprobantes que NO generan crédito fiscal: Fac B (6/7/8) + Fac C (11/12/13).
+      // Van al bloque 2; el bloque 1 (Libro IVA Compras) queda solo con los que SÍ generan crédito (Fac A, M).
+      const TIPOS_SIN_CREDITO = [6, 7, 8, 11, 12, 13]
+      const facturasCreditoFiscal = facturas.filter(f => !TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
+      const facturasFC = facturasCreditoFiscal.filter(f => (Number(f.imp_total) || 0) >= 0)
+      const facturasNC = facturasCreditoFiscal.filter(f => (Number(f.imp_total) || 0) < 0)
       const sumFC = sumarBloque(facturasFC, false)        // valores ya positivos
       const sumNC = sumarBloque(facturasNC, true)         // abs para mostrar en positivo
       const sumNeto = {                                    // Total = FC − |NC|
@@ -2131,12 +2134,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
       }
 
-      // Bloque Monotributo: 3 filas (Facturas C tipo 11 / NC C tipo 13 / Total Neto)
-      const facturasC = facturas.filter(f => f.tipo_comprobante === 11)
-      const notasC = facturas.filter(f => f.tipo_comprobante === 13)
-      const totalFacturasC = facturasC.reduce((sum, f) => sum + (Number(f.imp_total) || 0) * tcFactura(f), 0)
-      const totalNotasC = notasC.reduce((sum, f) => sum + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
-      const totalNetoC = totalFacturasC - totalNotasC
+      // Bloque 2: "Comprobantes que no generan crédito fiscal (Fac C y B)". 3 filas:
+      // Comprobantes (FC+ND de B y C, imp_total >= 0) / Notas de crédito (NC, imp_total < 0) / Total Neto.
+      const facturasSinCredito = facturas.filter(f => TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
+      const sinCredComprob = facturasSinCredito.filter(f => (Number(f.imp_total) || 0) >= 0)
+      const sinCredNC = facturasSinCredito.filter(f => (Number(f.imp_total) || 0) < 0)
+      const totalSinCredComprob = sinCredComprob.reduce((sum, f) => sum + (Number(f.imp_total) || 0) * tcFactura(f), 0)
+      const totalSinCredNC = sinCredNC.reduce((sum, f) => sum + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
+      const totalSinCredNeto = totalSinCredComprob - totalSinCredNC
 
       setSubtotales({
         ivaCompras: {
@@ -2144,14 +2149,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           nc: { ...sumNC, cantidad: facturasNC.length },
           neto: sumNeto,
         },
+        // key `monotributo` conservada por compat con el render; ahora = Fac B + C (no crédito fiscal)
         monotributo: {
-          fc: { total: totalFacturasC, cantidad: facturasC.length },
-          nc: { total: totalNotasC, cantidad: notasC.length },
-          neto: totalNetoC,
+          fc: { total: totalSinCredComprob, cantidad: sinCredComprob.length },
+          nc: { total: totalSinCredNC, cantidad: sinCredNC.length },
+          neto: totalSinCredNeto,
         },
         // Campos legacy para no romper otras referencias si existen
-        facturas_c: totalFacturasC,
-        cantidad_facturas_c: facturasC.length,
+        facturas_c: totalSinCredComprob,
+        cantidad_facturas_c: sinCredComprob.length,
       })
     } catch (error) {
       console.error('Error cargando período:', error)
@@ -6137,7 +6143,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               const mneto = subtotales.monotributo.neto
               return (
               <div>
-                <h4 className="font-medium mb-2 text-sm">📋 Monotributo — Facturas C (Tipo 11) y NC C (Tipo 13)</h4>
+                <h4 className="font-medium mb-2 text-sm">📋 Comprobantes que no generan crédito fiscal (Fac C y B)</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border">
                     <thead className="bg-gray-50">
@@ -6148,11 +6154,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     </thead>
                     <tbody>
                       <tr className="border-t">
-                        <td className="px-3 py-2">Facturas C{mfc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mfc.cantidad})</span>}</td>
+                        <td className="px-3 py-2">Comprobantes (Fac B y C){mfc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mfc.cantidad})</span>}</td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mfc.total || 0)}</td>
                       </tr>
                       <tr className="border-t">
-                        <td className="px-3 py-2">NC C{mnc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mnc.cantidad})</span>}</td>
+                        <td className="px-3 py-2">Notas de crédito (B y C){mnc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mnc.cantidad})</span>}</td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mnc.total || 0)}</td>
                       </tr>
                       <tr className="border-t bg-red-50 font-semibold">
