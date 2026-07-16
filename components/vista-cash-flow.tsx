@@ -10,6 +10,7 @@ import { PanelMailsPago } from "@/components/panel-mails-pago"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
+import { resetearRetencionFactura, estadoQuincenaDeFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -616,6 +617,37 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           setGuardandoCambio(false)
           return
         }
+      }
+
+      // Revertir FC (ARCA) a 'pendiente' = RESET completo (anula SICORE v2 + limpia sicore/tc/descuento +
+      // monto_a_abonar→imp_total), igual que "Resetear" del Modal. Sin esto quedaba pendiente con datos SICORE.
+      if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
+        const fila = filaParaCambioEstado
+        // Miembros a resetear: si es fila-grupo, todos; si es individual, ella sola.
+        const ids = (fila.facturas_agrupadas && fila.facturas_agrupadas > 1 && fila.ids_grupo?.length) ? fila.ids_grupo : [fila.id]
+        // Chequeo estado_quincena (declarada bloquea / cerrada confirma) si hay retención
+        if (fila.sicore) {
+          const estadoQ = await estadoQuincenaDeFactura('msa', ids[0])
+          if (estadoQ === 'declarada') {
+            toast.error('🔒 Esta retención ya fue declarada a AFIP. Rectificá la DDJJ para modificar.')
+            setFilaParaCambioEstado(null); setGuardandoCambio(false); return
+          }
+          if (estadoQ === 'cerrada' && !window.confirm('⚠️ Quincena cerrada (TXT generado). Al anular tendrás que regenerar el TXT. ¿Continuar?')) {
+            setFilaParaCambioEstado(null); setGuardandoCambio(false); return
+          }
+        }
+        try {
+          for (const id of ids) {
+            await resetearRetencionFactura('msa', id)
+          }
+          toast.success(ids.length > 1 ? `${ids.length} FC reseteadas a pendiente` : 'FC reseteada a pendiente')
+        } catch (e: any) {
+          toast.error('Error al resetear: ' + (e?.message ?? e))
+        }
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        await cargarDatos()
+        return
       }
 
       const exito = await actualizarRegistro(

@@ -7323,7 +7323,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {(factura.sicore || factura.tc_pago || factura.descuento_aplicado) && (
+                                {(factura.sicore || factura.tc_pago || factura.descuento_aplicado || factura.estado === 'pagar' || factura.estado === 'preparado' || factura.estado === 'echeq') && (
                                   <DropdownMenuItem
                                     className="text-orange-600"
                                     onClick={() => resetearFactura(factura)}
