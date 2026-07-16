@@ -3884,7 +3884,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .eq('anulado', false)
       if (errAnul) console.error('Error anulando sicore_retenciones:', errAnul)
 
-      // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original)
+      // 2. Resetear factura — monto_a_abonar = imp_total (siempre en moneda original).
+      // fecha_pago se vacía; si hay vencimiento, fecha_estimada vuelve a ese venc (sino queda como está).
       const updateData: any = {
         estado: 'pendiente',
         sicore: null,
@@ -3893,7 +3894,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         descuento_aplicado: null,
         tc_pago: null,
         monto_a_abonar: factura.imp_total,
+        fecha_pago: null,
       }
+      if (factura.fecha_vencimiento) updateData.fecha_estimada = factura.fecha_vencimiento
       const { error: errUpd } = await supabase
         .schema(schemaName)
         .from('comprobantes_arca')
