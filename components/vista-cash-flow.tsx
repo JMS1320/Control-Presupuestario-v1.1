@@ -1126,25 +1126,44 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       let facturasParaSicore: CashFlowRow[] = []
       const actualizaciones: Array<{id: string, origen: 'ARCA' | 'TEMPLATE', campo: string, valor: any}> = []
 
+      // Cambio de fecha: siempre directo para todas
       todasFilas.forEach(fila => {
-        // Cambio de fecha siempre va al batch directo
         if (cambiarFechaVenc && valorFechaLote) {
           actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_vencimiento', valor: valorFechaLote })
           actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_estimada', valor: valorFechaLote })
         }
+      })
 
-        if (cambiarEstadoLote) {
-          const esArcaAPagar = valorEstadoLote === 'pagar' && fila.origen === 'ARCA' && fila.estado !== 'pagar'
-          const netoEnPesos = calcularNetoLote(fila)
-          const calificaSicore = netoEnPesos > minimoSicore || netoEnPesos < 0
-
-          if (esArcaAPagar && calificaSicore) {
-            facturasParaSicore.push(fila)
+      if (cambiarEstadoLote) {
+        const esArcaAPagar = (f: CashFlowRow) => valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar'
+        // Lo que no es ARCA→pagar: estado directo
+        todasFilas.filter(f => !esArcaAPagar(f)).forEach(f =>
+          actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote })
+        )
+        // ARCA→pagar: decidir SICORE por PROVEEDOR (acumulado de quincena), no por factura individual.
+        const porCuit = new Map<string, CashFlowRow[]>()
+        todasFilas.filter(esArcaAPagar).forEach(f => {
+          const k = f.cuit_proveedor || ''
+          porCuit.set(k, [...(porCuit.get(k) || []), f])
+        })
+        for (const grupo of porCuit.values()) {
+          const g0 = grupo[0]
+          const quincena = generarQuincenaSicore(g0.fecha_pago || g0.fecha_vencimiento || g0.fecha_estimada || new Date().toISOString())
+          const totalNeto = grupo.reduce((s, f) => s + calcularNetoLote(f), 0)
+          const hayNegativa = grupo.some(f => calcularNetoLote(f) < 0)
+          const yaRetuvo = await verificarRetencionPreviaFactura(g0.cuit_proveedor, quincena)
+          const netoPrevio = yaRetuvo ? 0 : await netoPagosPreviosSinRetencion(g0.cuit_proveedor, quincena)
+          const califica = yaRetuvo || hayNegativa || (totalNeto + netoPrevio) > minimoSicore
+          if (califica) {
+            // Todas las del proveedor a la cola, ordenadas de mayor a menor neto
+            // (la grande aplica el mínimo; las NC negativas quedan al final).
+            const ordenado = [...grupo].sort((a, b) => calcularNetoLote(b) - calcularNetoLote(a))
+            facturasParaSicore.push(...ordenado)
           } else {
-            actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'estado', valor: valorEstadoLote })
+            grupo.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote }))
           }
         }
-      })
+      }
 
       // Guardar las que no necesitan SICORE primero
       if (actualizaciones.length > 0) {
