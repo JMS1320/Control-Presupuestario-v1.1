@@ -3253,13 +3253,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Generar quincena según fecha vencimiento
   const generarQuincenaSicore = (fechaVencimiento: string): string => {
-    const fecha = new Date(fechaVencimiento)
-    const año = fecha.getFullYear().toString().slice(-2) // últimos 2 dígitos
-    const mes = (fecha.getMonth() + 1).toString().padStart(2, '0')
-    const dia = fecha.getDate()
-    
-    const quincena = dia <= 15 ? '1ra' : '2da'
-    return `${año}-${mes} - ${quincena}`
+    // Parsear la fecha como LOCAL desde el string (evita el corrimiento de zona horaria:
+    // new Date("2026-07-16") es UTC medianoche → en Argentina cae al 15/07 → quincena mal).
+    const [a, m, d] = (fechaVencimiento || '').slice(0, 10).split('-')
+    const año = (a ?? '').slice(-2)
+    const mes = (m ?? '01').padStart(2, '0')
+    const dia = parseInt(d ?? '01', 10) || 1
+    return `${año}-${mes} - ${dia <= 15 ? '1ra' : '2da'}`
   }
 
   // Nombre de carpeta: mismo formato de quincena '26-02 - 1ra' / '26-02 - 2da'

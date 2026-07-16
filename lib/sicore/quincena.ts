@@ -4,8 +4,12 @@
 // Formato: "YY-MM - 1ra|2da" (ej. "26-06 - 1ra").
 
 export function generarQuincenaSicore(fecha: string): string {
-  const d = new Date(fecha)
-  const yy = d.getFullYear().toString().slice(-2)
-  const mm = (d.getMonth() + 1).toString().padStart(2, '0')
-  return `${yy}-${mm} - ${d.getDate() <= 15 ? '1ra' : '2da'}`
+  // Parsear la fecha como LOCAL desde el string (evita el corrimiento de zona horaria:
+  // new Date("2026-07-16") es UTC medianoche → en Argentina cae al 15/07 → quincena mal).
+  // fecha viene como "YYYY-MM-DD" (o ISO); tomamos los primeros 10 chars.
+  const [y, m, d] = fecha.slice(0, 10).split('-')
+  const yy = (y ?? '').slice(-2)
+  const mm = (m ?? '01').padStart(2, '0')
+  const dia = parseInt(d ?? '01', 10) || 1
+  return `${yy}-${mm} - ${dia <= 15 ? '1ra' : '2da'}`
 }
