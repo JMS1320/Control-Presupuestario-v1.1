@@ -223,7 +223,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [descuentoInputValor, setDescuentoInputValor] = useState('')
   const [descuentoDesglose, setDescuentoDesglose] = useState<{ gravado: number; iva: number; noGravado: number; exento: number; total: number } | null>(null)
   const [datosSicoreCalculo, setDatosSicoreCalculo] = useState<{
-    netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean, sinRetencion?: boolean
+    netoFactura: number, minimoAplicado: number, baseImponible: number, esRetencionAdicional: boolean, sinRetencion?: boolean, netoPrevio?: number, minimoTipo?: number, ignorarPrevios?: boolean
   } | null>(null)
   const [guardadoPendienteCF, setGuardadoPendienteCF] = useState<{
     filaId: string, nuevoEstado: string, estadoAnterior: string
@@ -1330,6 +1330,27 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     } catch { return false }
   }
 
+  // Neto ya pagado en la quincena SIN retención (facturas bajo mínimo / NC negativas) → consumió parte del mínimo.
+  // Solo se usa cuando NO hubo retención previa (si la hubo, el mínimo ya está consumido → ver capa 1).
+  // Filtra sicore vacío para no doble-contar los que sí retuvieron. Las NC entran negativas y restan.
+  const netoPagosPreviosSinRetencion = async (cuit: string, quincena: string): Promise<number> => {
+    try {
+      const { data } = await supabase.schema('msa').from('comprobantes_arca')
+        .select('imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, tipo_cambio, tc_pago, fecha_pago')
+        .eq('cuit', cuit)
+        .is('sicore', null)
+        .not('fecha_pago', 'is', null)
+        .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
+      let suma = 0
+      for (const c of (data ?? []) as any[]) {
+        if (!c.fecha_pago || generarQuincenaSicore(c.fecha_pago) !== quincena) continue
+        const tc = c.tc_pago ?? c.tipo_cambio ?? 1
+        suma += ((c.imp_neto_gravado || 0) + (c.imp_neto_no_gravado || 0) + (c.imp_op_exentas || 0)) * tc
+      }
+      return Math.round(suma * 100) / 100
+    } catch { return 0 }
+  }
+
   // Tipo para datos pendientes de guardado
   type PendingSicore = { filaId: string, nuevoEstado: string, estadoAnterior: string }
 
@@ -1412,24 +1433,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       return
     }
 
-    // Caso normal: positivos - aplicar filtro mínimo en pesos
-    if (netoFacturaPesos <= minimoServicios) {
-      // No corresponde retención, pero ofrecer descuento pronto pago (igual que el Modal)
-      const aplicarDescuento = window.confirm(
-        'No corresponde retención SICORE (monto menor al mínimo).\n\n¿Desea aplicar un descuento pronto pago?'
-      )
-      if (aplicarDescuento) {
-        setFacturaEnProceso(fila)
-        setTipoSeleccionado(null)
-        setMontoRetencion(0)
-        setDescuentoAdicional(0)
-        setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true })
-        setPasoSicore('calculo')
-        setMostrarModalSicore(true)
-      } else {
-        await cancelarSicoreCF(true, freshPending, freshCola)
+    // Caso normal: positivos.
+    // Capa 1: si YA hubo retención en la quincena → adicional (cualquier positivo califica, sin mínimo).
+    // Capa 2: si NO hubo retención → ver pagos previos que consumieron parte del mínimo (usa el mínimo más bajo como gate).
+    const yaRetuvoPos = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+    if (!yaRetuvoPos) {
+      const netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena)
+      const minimoDisponible = Math.max(0, minimoServicios - netoPrevio)
+      if (netoFacturaPesos <= minimoDisponible) {
+        // No corresponde retención, pero ofrecer descuento pronto pago (igual que el Modal)
+        const infoPrevio = netoPrevio > 0 ? `\n(mínimo $${minimoServicios.toLocaleString('es-AR')} − $${netoPrevio.toLocaleString('es-AR')} ya pagados en la quincena = disponible $${minimoDisponible.toLocaleString('es-AR')})` : ''
+        const aplicarDescuento = window.confirm(
+          `No corresponde retención SICORE (menor al mínimo disponible).${infoPrevio}\n\n¿Desea aplicar un descuento pronto pago?`
+        )
+        if (aplicarDescuento) {
+          setFacturaEnProceso(fila)
+          setTipoSeleccionado(null)
+          setMontoRetencion(0)
+          setDescuentoAdicional(0)
+          setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true, netoPrevio })
+          setPasoSicore('calculo')
+          setMostrarModalSicore(true)
+        } else {
+          await cancelarSicoreCF(true, freshPending, freshCola)
+        }
+        return
       }
-      return
     }
 
     console.log('⚡ SICORE CF: Corresponde evaluación - abriendo modal')
@@ -1438,8 +1467,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setMostrarModalSicore(true)
   }
 
-  // Calcular retención según tipo seleccionado
-  const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore) => {
+  // Calcular retención según tipo seleccionado. ignorarPrevios = override (no restar pagos previos del mínimo).
+  const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore, ignorarPrevios = false) => {
     // SICORE se calcula sobre lo pagado: usar TC de pago para convertir a pesos
     const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const netoGravado = fila.imp_neto_gravado || 0
@@ -1449,25 +1478,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
     const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
 
+    // Capa 1: ¿ya hubo retención en la quincena? → mínimo ya consumido → adicional (sin mínimo).
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
     let baseImponible = netoFacturaPesos
     let minimoAplicado = 0
+    let netoPrevio = 0
 
     if (!yaRetuvo) {
-      if (netoFacturaPesos <= tipo.minimo_no_imponible) {
-        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFacturaPesos.toLocaleString('es-AR')}\nMínimo: $${tipo.minimo_no_imponible.toLocaleString('es-AR')}`)
+      // Capa 2: pagos previos (sin retención) que consumieron parte del mínimo (override = ignorarlos).
+      netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena) // real, para mostrar
+      const minimoDisponible = Math.max(0, tipo.minimo_no_imponible - (ignorarPrevios ? 0 : netoPrevio))
+      if (netoFacturaPesos <= minimoDisponible) {
+        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFacturaPesos.toLocaleString('es-AR')}\nMínimo disponible: $${minimoDisponible.toLocaleString('es-AR')}${netoPrevio > 0 ? ` (mínimo $${tipo.minimo_no_imponible.toLocaleString('es-AR')} − $${netoPrevio.toLocaleString('es-AR')} ya pagados)` : ''}`)
         setMostrarModalSicore(false)
         return
       }
-      baseImponible = netoFacturaPesos - tipo.minimo_no_imponible
-      minimoAplicado = tipo.minimo_no_imponible
+      baseImponible = netoFacturaPesos - minimoDisponible
+      minimoAplicado = minimoDisponible
     }
 
     const retencionCalculada = Math.round(baseImponible * tipo.porcentaje_retencion * 100) / 100
 
     // Guardar netoFacturaPesos (ya en pesos) para mostrar en modal
-    setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo })
+    setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, netoPrevio, minimoTipo: tipo.minimo_no_imponible, ignorarPrevios })
     setTipoSeleccionado(tipo)
     setMontoRetencion(retencionCalculada)
     setDescuentoAdicional(0)
@@ -3889,6 +3923,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <div className="flex justify-between"><span className="text-gray-500">Monto no imponible:</span><span>${fmt(datosSicoreCalculo.minimoAplicado)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Base imponible:</span><span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
+                  {(datosSicoreCalculo.netoPrevio ?? 0) > 0 && !datosSicoreCalculo.esRetencionAdicional && (
+                    <div className="mt-1 pt-1 border-t border-gray-200 space-y-0.5">
+                      <div className="flex justify-between text-amber-700"><span>Pagos previos en la quincena (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
+                      <div className="text-[11px] text-gray-500">Mínimo ${fmt(datosSicoreCalculo.minimoTipo ?? 0)} − previos → mínimo aplicado ${fmt(datosSicoreCalculo.minimoAplicado)}</div>
+                      <label className="flex items-center gap-1 cursor-pointer text-[11px] text-gray-600">
+                        <input type="checkbox" checked={!!datosSicoreCalculo.ignorarPrevios}
+                          onChange={() => facturaEnProceso && tipoSeleccionado && calcularRetencionSicoreCF(facturaEnProceso, tipoSeleccionado, !datosSicoreCalculo.ignorarPrevios)} />
+                        Ignorar pagos previos (usar mínimo completo)
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
 

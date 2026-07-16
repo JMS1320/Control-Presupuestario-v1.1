@@ -476,7 +476,7 @@ Handoff completo + qué quedó pausado en memoria [[gas-pdf-testing-handoff]]. *
   - ⏳ Aún: 2 columnas de mail (`email_facturacion` 3 = Config PDFs vs `email_pagos` 26 = Galicia) → aclarar/unificar. + Selector de `fc` manual por factura. Detalle en memoria [[config-proveedores-fragmentada]].
 
 #### 🔵 AUDIT MULTI-EMPRESA (MSA / PAM / MA) — al terminar de afinar Cash Flow/pagos/SICORE (2026-07-15)
-- **Qué:** cuando cerremos el afinado de todo (pagos, SICORE, grupos, etc.), hacer un **audit** de que TODO funciona para las **3 empresas: MSA, PAM y MA** (no solo MSA). Hoy varias cosas están hardcodeadas a `msa` (Cash Flow carga FCs de msa; `registrarEnSicoreRetenciones('msa')`; `agruparPagos({schema:'msa'})`; etc.).
+- **Qué:** cuando cerremos el afinado de todo (pagos, grupos, cash flow), hacer un **audit** de que funciona para las **3 empresas: MSA, PAM y MA**. Hoy hay cosas hardcodeadas a `msa` (Cash Flow carga FCs de msa; `agruparPagos({schema:'msa'})`; etc.). **NOTA: SICORE es SOLO MSA** (PAM y MA no usan SICORE) → el `'msa'` hardcodeado en SICORE (`registrarEnSicoreRetenciones`, cálculos, pagos previos) es CORRECTO, no entra en este audit.
 - **Regla de trabajo (vinculante de acá en más):** al desarrollar cualquier cosa nueva de pagos/cash flow, **pensar y dejar preparado para las 3 empresas desde el vamos** (schema parametrizable), no solo MSA. Evitar acumular deuda de hardcodeos msa.
 - **Cuándo:** al final del afinado. Listar dónde está hardcodeado `msa` y qué falta para PAM/MA (¿existe `sicore_retenciones`/`grupos_pago` en pam/ma? ¿el Cash Flow debe mostrar FCs de las 3?).
 
