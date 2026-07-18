@@ -238,6 +238,7 @@ export function TabSueldos() {
   const [modalCampana, setModalCampana] = useState(false)
   const [nuevaCampanaEtiqueta, setNuevaCampanaEtiqueta] = useState('')
   const [nuevaCampanaActivar, setNuevaCampanaActivar] = useState(true)
+  const [nuevaCampanaAumento, setNuevaCampanaAumento] = useState('')
   const [creandoCampana, setCreandoCampana] = useState(false)
 
   // Modal Gestión de Nómina
@@ -730,19 +731,26 @@ export function TabSueldos() {
       return
     }
 
-    // Obtener todos los empleados activos
-    const { data: empData } = await supabase.from('sueldos_empleados').select('*').eq('activo', true)
+    // Empleados vigentes: se generan por FECHAS (no por flag `activo`).
+    // Regla: si el empleado ya tiene fecha_egreso ANTERIOR al inicio de la campaña,
+    // ya no trabaja → NO se genera (baja = fecha_egreso; los períodos viejos perduran).
+    const { data: empData } = await supabase.from('sueldos_empleados').select('*')
     const empleados = (empData ?? []) as Empleado[]
     const campMin = { anio: parsed.anio1, mes: 7 }
     const campMax = { anio: parsed.anio2, mes: 6 }
     const periodoInserts: Record<string, any>[] = []
 
+    // % de aumento sobre el sueldo FIJO propagado (0 si vacío). Acepta coma decimal.
+    const pctAumento = parseFloat(String(nuevaCampanaAumento).replace(/\./g, '').replace(',', '.')) || 0
+    const factor = 1 + pctAumento / 100
+    const mul = (v: number | null | undefined) => (v == null ? null : v * factor)
+
     for (const emp of empleados) {
-      // Saltar si el empleado se fue antes de que empiece la campaña
+      // Saltar si el empleado se fue antes de que empiece la campaña (fecha_hasta puesta → no trabaja más)
       const egreso = emp.fecha_egreso ? new Date(emp.fecha_egreso) : null
       if (egreso && egreso < new Date(parsed.inicio)) continue
 
-      // Últimos parámetros conocidos
+      // Últimos parámetros conocidos (sueldo fijo a propagar)
       const { data: ul } = await supabase
         .from('sueldos_periodos')
         .select('*')
@@ -752,46 +760,45 @@ export function TabSueldos() {
         .limit(1)
         .maybeSingle()
 
+      // Sueldo FIJO propagado (+ % aumento). Los datos MÓVILES (francos/días/horas) van EN BLANCO:
+      // se cargan reales mes a mes (no meter estimaciones en los reales; el presupuesto usará los promedios).
+      const montoA = mul(ul?.monto_a)
+      const montoB = mul(ul?.monto_b)
+      const vDia   = mul(ul?.valor_por_dia)
+      const vHora  = mul(ul?.valor_por_hora)
+      const vfRaw  = ul?.valor_franco ?? ((ul?.monto_a ?? 0) + (ul?.monto_b ?? 0) > 0 ? ((ul?.monto_a ?? 0) + (ul?.monto_b ?? 0)) / 25 : null)
+      const vFranco = emp.tipo_empleado === 'ab_francos' ? mul(vfRaw) : mul(ul?.valor_franco)
+
+      // Bruto inicial SIN datos móviles: ab_francos = A+B (francos 0), por_dia/por_hora = 0, plano = A
+      let brutoBase = 0
+      switch (emp.tipo_empleado) {
+        case 'ab_francos':   brutoBase = (montoA ?? 0) + (montoB ?? 0); break
+        case 'por_dia':      brutoBase = 0; break
+        case 'por_hora_ipc': brutoBase = 0; break
+        case 'plano_ipc':    brutoBase = (montoA ?? 0); break
+      }
+
       for (let anio = campMin.anio, mes = campMin.mes; ; ) {
         const primerDia  = new Date(anio, mes - 1, 1)
         const ultimoDia  = new Date(anio, mes, 0)
         const ingreso    = emp.fecha_ingreso ? new Date(emp.fecha_ingreso) : null
         const egresoMes  = emp.fecha_egreso  ? new Date(emp.fecha_egreso)  : null
-        const activo = (!ingreso || ingreso <= ultimoDia) && (!egresoMes || egresoMes >= primerDia)
+        const vigente = (!ingreso || ingreso <= ultimoDia) && (!egresoMes || egresoMes >= primerDia)
 
-        if (activo) {
-          const a      = ul?.monto_a ?? 0
-          const b      = ul?.monto_b ?? 0
-          const francos = ul?.francos_cantidad ?? 0
-          const vf     = ul?.valor_franco ?? (a + b > 0 ? (a + b) / 25 : 0)
-          const vdia   = ul?.valor_por_dia ?? 0
-          const dias   = ul?.dias_trabajados ?? 0
-          const vhora  = ul?.valor_por_hora ?? 0
-          const horas  = ul?.horas_mes ?? 0
-
-          let bruto = 0
-          switch (emp.tipo_empleado) {
-            case 'ab_francos':   bruto = (a + b) + (vf * francos); break
-            case 'por_dia':      bruto = vdia * dias; break
-            case 'por_hora_ipc': bruto = vhora * horas; break
-            case 'plano_ipc':    bruto = a; break
-          }
-
+        if (vigente) {
           periodoInserts.push({
             empleado_id: emp.id, campana_id: campData.id,
             anio, mes,
             fecha_inicio_periodo: primerDia.toISOString().split('T')[0],
             fecha_fin_periodo:    ultimoDia.toISOString().split('T')[0],
-            bruto_calculado: bruto, sueldo_x_ipc: bruto,
-            anticipos_descontados: 0, saldo_pendiente: bruto,
+            bruto_calculado: brutoBase, sueldo_x_ipc: brutoBase,
+            anticipos_descontados: 0, saldo_pendiente: brutoBase,
             estado: 'proyectado',
-            monto_a: ul?.monto_a ?? null, monto_b: ul?.monto_b ?? null,
-            francos_cantidad:  ul?.francos_cantidad  ?? null,
-            valor_por_dia:     ul?.valor_por_dia     ?? null,
-            dias_trabajados:   ul?.dias_trabajados   ?? null,
-            valor_por_hora:    ul?.valor_por_hora    ?? null,
-            horas_mes:         ul?.horas_mes         ?? null,
-            valor_franco:      ul?.valor_franco      ?? null,
+            // Fijo propagado (+% aumento):
+            monto_a: montoA, monto_b: montoB,
+            valor_por_dia: vDia, valor_por_hora: vHora, valor_franco: vFranco,
+            // Móviles EN BLANCO (se cargan mes a mes):
+            francos_cantidad: null, dias_trabajados: null, horas_mes: null,
           })
         }
 
@@ -808,6 +815,7 @@ export function TabSueldos() {
     setCreandoCampana(false)
     setModalCampana(false)
     setNuevaCampanaEtiqueta('')
+    setNuevaCampanaAumento('')
     await cargarCampanas()
     await cargar()
   }
@@ -975,7 +983,7 @@ export function TabSueldos() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setNuevaCampanaActivar(true); setModalCampana(true) }}>
+          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setNuevaCampanaActivar(true); setNuevaCampanaAumento(''); setModalCampana(true) }}>
             <Settings className="h-4 w-4 mr-2" />
             Campañas
           </Button>
@@ -2122,6 +2130,21 @@ export function TabSueldos() {
                 })()}
               </div>
 
+              <div>
+                <Label>Aumento sobre el sueldo fijo <span className="text-gray-400 font-normal">(% opcional)</span></Label>
+                <div className="relative">
+                  <Input
+                    type="text"
+                    placeholder="0"
+                    value={nuevaCampanaAumento}
+                    onChange={e => setNuevaCampanaAumento(e.target.value)}
+                    className="pr-7"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Se aplica a los montos fijos (A/B, valor por día/hora, valor franco). Dejar en blanco = sin aumento.</p>
+              </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -2135,8 +2158,9 @@ export function TabSueldos() {
                 </label>
               </div>
 
-              <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
-                Se generarán períodos para todos los empleados vigentes, copiando los últimos parámetros conocidos de cada uno.
+              <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700 space-y-1">
+                <p>Se generan períodos <strong>solo para los empleados vigentes</strong> (los que tienen <em>fecha hasta</em> puesta = baja, no se generan).</p>
+                <p>Se propaga el <strong>sueldo fijo</strong> del último período (con el % de aumento). Los <strong>datos móviles</strong> (francos, días, horas) quedan <strong>en blanco</strong> para cargarlos mes a mes.</p>
               </div>
 
               <Button
