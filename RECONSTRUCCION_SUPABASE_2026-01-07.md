@@ -10965,6 +10965,35 @@ a3fb0ab - Feature: reglas de conciliacion filtradas por cuenta bancaria
 
 ---
 
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-18 · Sueldos: lock "mes de trabajo" (`sueldos.config`)
+
+**Contexto:** módulo Sueldos gana un **lock de mes editable** ("mes de trabajo"): un único mes se puede editar; el resto se ve en solo lectura. El lock persiste en una tabla de config de una sola fila. Ver `MANUAL-USO.md` § Sueldos y `PENDIENTES.md` → B-FEAT-RENOVAR-CAMPAÑA (punto 1). **NO está en el backup original.**
+
+```sql
+-- Patrón espejo del resto de sueldos: sueldos.X (tabla base) + public.sueldos_X (vista auto-actualizable). Sin RLS (como sueldos.campanas).
+CREATE TABLE IF NOT EXISTS sueldos.config (
+  id smallint PRIMARY KEY DEFAULT 1,
+  mes_trabajo_anio smallint,
+  mes_trabajo_mes  smallint,
+  updated_at timestamptz DEFAULT now(),
+  CONSTRAINT sueldos_config_single_row CHECK (id = 1)   -- garantiza una sola fila
+);
+
+INSERT INTO sueldos.config (id, mes_trabajo_anio, mes_trabajo_mes)
+VALUES (1, 2026, 6) ON CONFLICT (id) DO NOTHING;         -- seed: lock inicial en junio 2026
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON sueldos.config TO anon, authenticated, service_role;
+
+CREATE OR REPLACE VIEW public.sueldos_config AS
+  SELECT id, mes_trabajo_anio, mes_trabajo_mes, updated_at FROM sueldos.config;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.sueldos_config TO anon, authenticated, service_role;
+```
+
+La app lee/escribe vía `supabase.from('sueldos_config')` (id=1). El lock se mueve con el botón "Trabajar en este mes" (`moverLock` en `tab-sueldos.tsx`).
+
+---
+
 ## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-04 · Refactor fechas (fecha_pago)
 
 **Contexto:** se separa `fecha_pago` (fecha real de pago) de `fecha_vencimiento` (firme). Detalle y plan de test: `PENDIENTES.md` → A-TEST-06. **NO están en el backup original.**

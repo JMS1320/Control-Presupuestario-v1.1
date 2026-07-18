@@ -252,3 +252,20 @@ Ambos botones llaman la misma función (`lib/pagos/encolar-mail-detalle`) → in
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
+
+## 👷 Módulo: Sueldos 🟡 (lock de mes sin testear)
+
+**Dónde:** tab Sueldos. Navegás por mes con las flechas ◀ ▶.
+
+### Lock "mes de trabajo" (2026-07-18, sin testear)
+El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (persiste en `sueldos.config`, una fila). Sirve para no equivocarte de mes al cargar datos.
+- Al entrar, la vista se posiciona en el **mes de trabajo** (badge verde 🔒 "Mes de trabajo · editable").
+- Podés **navegar** a cualquier otro mes (◀ ▶) pero sale en **"Solo lectura"**: los botones de editar/registrar (lápiz, Registrar Anticipo, editar/eliminar pago) quedan deshabilitados.
+- Para editar otro mes: navegás a ese mes y apretás **"Trabajar en este mes"** → el lock se mueve ahí. Ej.: hoy el lock está en junio (saldos); para cargar el **adelanto de julio** movés el lock a julio.
+- **Rango de navegación = unión de todas las campañas** (no solo la activa) → podés ir de junio 25/26 a julio 26/27 sin cambiar de campaña.
+
+### Crear campaña nueva (generación de períodos)
+**Dónde:** botón "Gestionar Campañas" → Nueva campaña (etiqueta ej. `26/27`).
+- Genera períodos (julio→junio) **solo para los empleados vigentes**: los que tienen **fecha hasta (egreso)** anterior al inicio de la campaña **NO se generan** (baja = fecha_egreso; los períodos viejos perduran).
+- Propaga el **sueldo FIJO** del último período de cada uno. Los **datos móviles** (francos, días, horas) quedan **en blanco** → se cargan reales mes a mes.
+- Pendiente (no hecho aún): pantalla de **revisión empleado por empleado** + **% de aumento** al propagar (ver PENDIENTES B-FEAT-RENOVAR-CAMPAÑA).

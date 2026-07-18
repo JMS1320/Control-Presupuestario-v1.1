@@ -19,7 +19,7 @@ import {
 import {
   Users, DollarSign, ArrowDownCircle, Clock,
   ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2, UserPlus,
-  Settings, UserMinus, CalendarDays,
+  Settings, UserMinus, CalendarDays, Lock,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -234,6 +234,10 @@ export function TabSueldos() {
   const [mesMin, setMesMin] = useState(MES_MIN)
   const [mesMax, setMesMax] = useState(MES_MAX)
 
+  // Lock de "mes de trabajo": único mes editable (sueldos.config). Los demás se ven en solo lectura.
+  const [mesTrabajo, setMesTrabajo] = useState<{ anio: number; mes: number } | null>(null)
+  const [guardandoLock, setGuardandoLock] = useState(false)
+
   // Modal gestión campaña
   const [modalCampana, setModalCampana] = useState(false)
   const [nuevaCampanaEtiqueta, setNuevaCampanaEtiqueta] = useState('')
@@ -306,11 +310,15 @@ export function TabSueldos() {
     setTodasCampanas(lista)
     const activa = lista.find(c => c.activa) ?? null
     setCampanaActiva(activa)
-    if (activa) {
-      const inicio = new Date(activa.fecha_inicio)
-      const fin    = new Date(activa.fecha_fin)
-      const min = { anio: inicio.getUTCFullYear(), mes: inicio.getUTCMonth() + 1 }
-      const max = { anio: fin.getUTCFullYear(),   mes: fin.getUTCMonth()   + 1 }
+    if (lista.length > 0) {
+      // Rango por UNIÓN de todas las campañas (para trabajar meses de campañas distintas:
+      // p.ej. saldo junio 25/26 + adelanto julio 26/27 conviviendo).
+      const inicios = lista.map(c => new Date(c.fecha_inicio).getTime())
+      const fines   = lista.map(c => new Date(c.fecha_fin).getTime())
+      const minD = new Date(Math.min(...inicios))
+      const maxD = new Date(Math.max(...fines))
+      const min = { anio: minD.getUTCFullYear(), mes: minD.getUTCMonth() + 1 }
+      const max = { anio: maxD.getUTCFullYear(), mes: maxD.getUTCMonth() + 1 }
       setMesMin(min)
       setMesMax(max)
       setMesActual(prev => {
@@ -322,7 +330,32 @@ export function TabSueldos() {
     }
   }
 
-  useEffect(() => { cargarCampanas() }, [])
+  // ── Lock "mes de trabajo" ─────────────────────────────────────────────────
+  const cargarLock = async () => {
+    const { data } = await supabase.from('sueldos_config')
+      .select('mes_trabajo_anio, mes_trabajo_mes').eq('id', 1).maybeSingle()
+    if (data?.mes_trabajo_anio && data?.mes_trabajo_mes) {
+      const lock = { anio: data.mes_trabajo_anio, mes: data.mes_trabajo_mes }
+      setMesTrabajo(lock)
+      setMesActual(lock)   // al entrar, ver el mes de trabajo
+    }
+  }
+
+  // Mover el lock al mes que se está viendo (acción deliberada del admin).
+  const moverLock = async () => {
+    setGuardandoLock(true)
+    const nuevo = { anio: mesActual.anio, mes: mesActual.mes }
+    const { error } = await supabase.from('sueldos_config')
+      .update({ mes_trabajo_anio: nuevo.anio, mes_trabajo_mes: nuevo.mes, updated_at: new Date().toISOString() })
+      .eq('id', 1)
+    if (error) { alert('No se pudo mover el mes de trabajo: ' + error.message); setGuardandoLock(false); return }
+    setMesTrabajo(nuevo)
+    setGuardandoLock(false)
+  }
+
+  const esMesLockeado = !!mesTrabajo && mesActual.anio === mesTrabajo.anio && mesActual.mes === mesTrabajo.mes
+
+  useEffect(() => { (async () => { await cargarCampanas(); await cargarLock() })() }, [])
   useEffect(() => { cargar() }, [mesActual])
 
   // ── Navegación de mes ──────────────────────────────────────────────────────
@@ -344,6 +377,7 @@ export function TabSueldos() {
   // ── Registrar anticipo ────────────────────────────────────────────────────
 
   const abrirAnticipo = (empleadoId?: string, tipo: 'anticipo' | 'sueldo' = 'anticipo') => {
+    if (!esMesLockeado) return  // solo se registra en el mes de trabajo
     if (empleadoId) setAntEmpId(empleadoId)
     else setAntEmpId('')
     setAntTipo(tipo)
@@ -476,6 +510,7 @@ export function TabSueldos() {
   // ── Editar / Eliminar pago ────────────────────────────────────────────────
 
   const abrirEdicionPago = (pago: Pago) => {
+    if (!esMesLockeado) return  // solo se edita en el mes de trabajo
     setEditandoPago(pago)
     setAntEmpId(pago.empleado_id)
     setAntMonto(pago.monto ? pago.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '')
@@ -490,6 +525,7 @@ export function TabSueldos() {
   }
 
   const eliminarPago = async (pago: Pago) => {
+    if (!esMesLockeado) return  // solo se elimina en el mes de trabajo
     if (!window.confirm(`¿Eliminar este ${pago.tipo} de ${formatoMoneda(pago.monto)}? Esta acción no se puede deshacer.`)) return
 
     // Revertir anticipos_descontados y saldo_pendiente en el período vinculado
@@ -525,6 +561,7 @@ export function TabSueldos() {
   }
 
   const abrirEdicion = (p: Periodo) => {
+    if (!esMesLockeado) return  // solo se edita el mes de trabajo
     setEdPeriodo(p)
     const fmt = (v: number | null, decimales = 2) =>
       v !== null && v !== 0 ? v.toLocaleString('es-AR', { minimumFractionDigits: decimales, maximumFractionDigits: decimales }) : ''
@@ -988,14 +1025,14 @@ export function TabSueldos() {
             <Users className="h-4 w-4 mr-2" />
             Gestión de Nómina
           </Button>
-          <Button onClick={() => abrirAnticipo()}>
+          <Button onClick={() => abrirAnticipo()} disabled={!esMesLockeado} title={!esMesLockeado ? 'Mové el mes de trabajo a este mes para registrar' : undefined}>
             <Plus className="h-4 w-4 mr-2" />
             Registrar Anticipo
           </Button>
         </div>
       </div>
 
-      {/* Navegación de mes */}
+      {/* Navegación de mes + lock "mes de trabajo" */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navMes(-1)} disabled={!puedeRetroceder}>
           <ChevronLeft className="h-4 w-4" />
@@ -1006,6 +1043,26 @@ export function TabSueldos() {
         <Button variant="ghost" size="icon" onClick={() => navMes(1)} disabled={!puedeAvanzar}>
           <ChevronRight className="h-4 w-4" />
         </Button>
+
+        {/* Lock: mes de trabajo (editable) vs solo lectura */}
+        {esMesLockeado ? (
+          <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full font-medium">
+            <Lock className="h-3.5 w-3.5" /> Mes de trabajo · editable
+          </span>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs bg-gray-100 text-gray-500 px-3 py-1.5 rounded-full">Solo lectura</span>
+            <Button variant="outline" size="sm" onClick={moverLock} disabled={guardandoLock}>
+              {guardandoLock ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Lock className="h-3.5 w-3.5 mr-1" />}
+              Trabajar en este mes
+            </Button>
+          </div>
+        )}
+        {mesTrabajo && !esMesLockeado && (
+          <span className="text-xs text-gray-400">
+            (trabajando en {MESES_SHORT[mesTrabajo.mes - 1]} {mesTrabajo.anio})
+          </span>
+        )}
       </div>
 
       {/* Cards resumen */}
@@ -1147,7 +1204,8 @@ export function TabSueldos() {
                           size="sm"
                           className="text-xs h-7 px-2"
                           onClick={() => abrirEdicion(p)}
-                          title="Editar parámetros del mes"
+                          disabled={!esMesLockeado}
+                          title={esMesLockeado ? 'Editar parámetros del mes' : 'Solo lectura — mové el mes de trabajo a este mes para editar'}
                         >
                           <Pencil className="h-3 w-3" />
                         </Button>
@@ -1250,15 +1308,17 @@ export function TabSueldos() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => abrirEdicionPago(pago)}
-                          className="text-gray-300 hover:text-blue-500 transition-colors"
-                          title="Editar"
+                          disabled={!esMesLockeado}
+                          className="text-gray-300 hover:text-blue-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-300"
+                          title={esMesLockeado ? 'Editar' : 'Solo lectura — mové el mes de trabajo a este mes para editar'}
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => eliminarPago(pago)}
-                          className="text-gray-300 hover:text-red-500 transition-colors"
-                          title="Eliminar"
+                          disabled={!esMesLockeado}
+                          className="text-gray-300 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-gray-300"
+                          title={esMesLockeado ? 'Eliminar' : 'Solo lectura — mové el mes de trabajo a este mes para editar'}
                         >
                           <Trash2 size={14} />
                         </button>
