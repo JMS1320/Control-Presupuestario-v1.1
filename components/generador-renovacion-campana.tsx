@@ -14,14 +14,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, ChevronDown, ChevronRight, Save } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 type Periodicidad = 'bianual' | 'anual'
-interface Celda { monto: number | '' }
+interface Celda { monto: number | ''; dia?: number }   // dia = día del mes de la cuota origen (se preserva)
 interface Fila {
   template: any
   incluir: boolean
@@ -91,9 +91,10 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       const celdas: Record<string, Celda> = {}
       for (const c of (porTemplate[t.id] ?? [])) {
         if (!c.fecha_estimada) continue
-        const [y, m] = c.fecha_estimada.slice(0, 10).split('-')
+        const [y, m, d] = c.fecha_estimada.slice(0, 10).split('-')
         const ty = parseInt(y, 10) + shift
-        celdas[colKey(ty, parseInt(m, 10))] = { monto: c.monto ?? 0 }
+        // Preserva el día real de la cuota origen (shift solo el año)
+        celdas[colKey(ty, parseInt(m, 10))] = { monto: c.monto ?? 0, dia: parseInt(d, 10) || 1 }
       }
       return { template: t, incluir: t.aplica_generacion === true, celdas }
     })
@@ -117,8 +118,29 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const setMonto = (templateId: string, col: string, valor: string) => {
     const monto = valor.trim() === '' ? '' : (parseFloat(valor.replace(/\./g, '').replace(',', '.')) || 0)
     setFilas(prev => prev.map(f => f.template.id === templateId
-      ? { ...f, celdas: { ...f.celdas, [col]: { monto } } }
+      ? { ...f, celdas: { ...f.celdas, [col]: { monto, dia: f.celdas[col]?.dia } } }
       : f))
+  }
+
+  // Vaciar toda la fila (deja en cero/sin cuota; útil cuando el pre-cargado tiene datos viejos, ej. UATRE)
+  const vaciarFila = (templateId: string) => {
+    setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, celdas: {} } : f))
+  }
+
+  // Replicar el primer monto cargado a los 12 meses base del target (preserva el día si la celda ya lo tenía)
+  const replicarFila = (templateId: string) => {
+    if (!targetY1) return
+    setFilas(prev => prev.map(f => {
+      if (f.template.id !== templateId) return f
+      const primera = Object.values(f.celdas).find(c => c.monto !== '' && c.monto != null)
+      if (!primera) return f
+      const nuevas = { ...f.celdas }
+      for (const { y, m } of mesesBase(periodicidad, targetY1)) {
+        const k = colKey(y, m)
+        nuevas[k] = { monto: primera.monto, dia: nuevas[k]?.dia }
+      }
+      return { ...f, celdas: nuevas }
+    }))
   }
 
   // Opt-in desde "No aplican": incluye la fila + persiste aplica_generacion=true
@@ -157,7 +179,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           nro++
           const [y, m] = col.split('-')
           const anioNum = parseInt(y, 10), mesNum = parseInt(m, 10)
-          const fecha = `${y}-${m}-01`
+          const dia = String(celda.dia ?? 1).padStart(2, '0')   // día real de la cuota origen (o 1 si es celda nueva)
+          const fecha = `${y}-${m}-${dia}`
           cuotasInsert.push({
             egreso_id: nuevo.id,
             numero_cuota: nro,
@@ -200,8 +223,12 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           {lista.map(f => (
             <tr key={f.template.id} className="border-t">
               <td className="sticky left-0 bg-white px-3 py-1.5 border-r font-medium whitespace-nowrap">
-                {f.template.nombre_referencia}
-                <span className="text-xs text-gray-400 ml-2">{f.template.responsable}</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => replicarFila(f.template.id)} title="Replicar el primer monto a los 12 meses" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
+                  <span>{f.template.nombre_referencia}</span>
+                  <span className="text-xs text-gray-400">{f.template.responsable}</span>
+                </div>
               </td>
               {columnas.map(col => (
                 <td key={col} className="px-1 py-1 border-r">
