@@ -10965,6 +10965,32 @@ a3fb0ab - Feature: reglas de conciliacion filtradas por cuenta bancaria
 
 ---
 
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-18 · Templates: `periodicidad` + `aplica_generacion`
+
+**Contexto:** para la **regeneración de campaña de templates** (renovar cuotas al nuevo período). Antes anual/bianual se **infería** del formato del string `año` (`"2026"` vs `"25/26"`) — frágil, y el wizard solo escribía single-year. Ahora es dato explícito. Ver `MANUAL-USO.md` § Templates y `PENDIENTES.md` → B-FEAT-RENOVAR-CAMPAÑA. **NO está en el backup original.**
+
+```sql
+ALTER TABLE public.egresos_sin_factura
+  ADD COLUMN IF NOT EXISTS periodicidad text,       -- 'anual' (calendario) | 'bianual' (campaña jul-jun)
+  ADD COLUMN IF NOT EXISTS aplica_generacion boolean; -- entra a la regeneración automática (independiente de fijo/abierto)
+
+-- Siembra periodicidad desde el formato de "año":
+UPDATE public.egresos_sin_factura SET periodicidad = CASE
+  WHEN "año" LIKE '%/%'     THEN 'bianual'
+  WHEN "año" ~ '^[0-9]{4}$' THEN 'anual'
+  ELSE NULL END
+WHERE periodicidad IS NULL;
+
+-- Siembra aplica_generacion SOLO bianuales (decisión del usuario); anuales quedan NULL (a decidir en el generador):
+UPDATE public.egresos_sin_factura SET aplica_generacion = true  WHERE periodicidad='bianual' AND tipo_template='fijo';
+UPDATE public.egresos_sin_factura SET aplica_generacion = false WHERE periodicidad='bianual' AND tipo_template='abierto';
+UPDATE public.egresos_sin_factura SET aplica_generacion = true  WHERE nombre_referencia='Tarjeta Visa Business MSA'; -- abierto pero regenera (monto estimado)
+```
+
+Resultado siembra (activos): bianual fijo=true ×10 (9 MSA + Acciones), bianual abierto=false ×3 (Caja, Interbancaria BAPRO/Santander), bianual abierto=true ×1 (Tarjeta Visa Business MSA), anual (58 fijo + 46 abierto)=NULL, sin año ×2=NULL. El **wizard** (`wizard-templates-egresos.tsx`) ahora captura ambos campos y arma `año` según periodicidad (bianual → etiqueta campaña "26/27").
+
+---
+
 ## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-18 · Sueldos: lock "mes de trabajo" (`sueldos.config`)
 
 **Contexto:** módulo Sueldos gana un **lock de mes editable** ("mes de trabajo"): un único mes se puede editar; el resto se ve en solo lectura. El lock persiste en una tabla de config de una sola fila. Ver `MANUAL-USO.md` § Sueldos y `PENDIENTES.md` → B-FEAT-RENOVAR-CAMPAÑA (punto 1). **NO está en el backup original.**

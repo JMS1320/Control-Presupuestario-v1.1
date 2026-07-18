@@ -30,6 +30,8 @@ interface DatosBasicos {
   cuit_quien_cobra: string
   nombre_quien_cobra: string
   monto_base: number
+  periodicidad: 'anual' | 'bianual'   // anual (calendario) | bianual (campaña jul-jun)
+  aplica_generacion: boolean          // entra a la regeneración automática de cuotas
 }
 
 interface ConfiguracionRecurrencia {
@@ -94,7 +96,9 @@ export function WizardTemplatesEgresos() {
       responsable: '',
       cuit_quien_cobra: '',
       nombre_quien_cobra: '',
-      monto_base: 0
+      monto_base: 0,
+      periodicidad: 'anual',
+      aplica_generacion: true
     },
     configuracion: {
       tipo: 'mensual',
@@ -225,7 +229,7 @@ export function WizardTemplatesEgresos() {
   }
 
   // Función para actualizar datos básicos
-  const actualizarDatosBasicos = (campo: keyof DatosBasicos, valor: string | number) => {
+  const actualizarDatosBasicos = (campo: keyof DatosBasicos, valor: string | number | boolean) => {
     setState(prev => ({
       ...prev,
       datos_basicos: { ...prev.datos_basicos, [campo]: valor }
@@ -277,6 +281,11 @@ export function WizardTemplatesEgresos() {
       // 2. Crear renglón de egreso
       const esAbierto = state.datos_basicos.tipo_template === 'abierto'
       const esMultiCuenta = state.datos_basicos.es_multi_cuenta
+      // "año": anual = año calendario; bianual = etiqueta de campaña (jul-jun), p.ej. "26/27"
+      const esBianual = state.datos_basicos.periodicidad === 'bianual'
+      const yy = año_actual % 100
+      const etiquetaCampana = (new Date().getMonth() + 1) >= 7 ? `${yy}/${yy + 1}` : `${yy - 1}/${yy}`
+      const valorAnio = esBianual ? etiquetaCampana : String(año_actual)
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
@@ -293,7 +302,9 @@ export function WizardTemplatesEgresos() {
           es_bidireccional: state.datos_basicos.es_bidireccional, // multi-cuenta + bidireccional ahora conviven (cobros con sub-cuentas)
           es_multi_cuenta: esMultiCuenta,
           configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
-          año: año_actual,
+          año: valorAnio,
+          periodicidad: state.datos_basicos.periodicidad,
+          aplica_generacion: state.datos_basicos.aplica_generacion,
           activo: true
         })
         .select()
@@ -350,7 +361,9 @@ export function WizardTemplatesEgresos() {
           responsable: '',
           cuit_quien_cobra: '',
           nombre_quien_cobra: '',
-          monto_base: 0
+          monto_base: 0,
+          periodicidad: 'anual',
+          aplica_generacion: true
         },
         configuracion: {
           tipo: 'mensual',
@@ -463,6 +476,44 @@ export function WizardTemplatesEgresos() {
                     Agregue cuotas manualmente desde "Pago Manual".
                   </div>
                 )}
+
+                {/* Periodicidad: anual (calendario) vs bianual (campaña jul-jun) */}
+                <div className="mt-4">
+                  <Label className="text-sm font-medium">Periodicidad *</Label>
+                  <RadioGroup
+                    value={state.datos_basicos.periodicidad}
+                    onValueChange={(value: 'anual' | 'bianual') => actualizarDatosBasicos('periodicidad', value)}
+                    className="mt-2 flex gap-6"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="anual" id="per_anual" />
+                      <Label htmlFor="per_anual" className="font-normal">
+                        <span className="font-medium">Anual</span>
+                        <span className="text-sm text-gray-500 ml-2">(año calendario, ej. 2026)</span>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="bianual" id="per_bianual" />
+                      <Label htmlFor="per_bianual" className="font-normal">
+                        <span className="font-medium">Bianual</span>
+                        <span className="text-sm text-gray-500 ml-2">(campaña jul–jun, ej. 26/27)</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {/* Aplica a la regeneración automática de cuotas (renovar campaña/año) */}
+                <div className="mt-4 flex items-center space-x-2">
+                  <Checkbox
+                    id="aplica_generacion"
+                    checked={state.datos_basicos.aplica_generacion}
+                    onCheckedChange={(checked) => actualizarDatosBasicos('aplica_generacion', checked === true)}
+                  />
+                  <Label htmlFor="aplica_generacion" className="font-normal">
+                    <span className="font-medium">♻️ Entra a la regeneración automática</span>
+                    <span className="text-sm text-gray-500 ml-2">(se le crean las cuotas del próximo período al renovar). Destildar los que se cargan solos por conciliación.</span>
+                  </Label>
+                </div>
 
                 {/* Opción Bidireccional */}
                 <div className="mt-4 flex items-center space-x-2">
