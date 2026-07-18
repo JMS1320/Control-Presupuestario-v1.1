@@ -265,7 +265,11 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 - **Rango de navegación = unión de todas las campañas** (no solo la activa) → podés ir de junio 25/26 a julio 26/27 sin cambiar de campaña.
 
 ### Crear campaña nueva (generación de períodos)
-**Dónde:** botón "Gestionar Campañas" → Nueva campaña (etiqueta ej. `26/27`).
+**Dónde:** botón "Gestionar Campañas" → Nueva campaña (etiqueta ej. `26/27`) → "Crear campaña y generar períodos".
+- La campaña nueva **queda activa** (la anterior pasa a inactiva; se sigue viendo/editando por el rango unificado). Ya **no** pregunta si activar.
 - Genera períodos (julio→junio) **solo para los empleados vigentes**: los que tienen **fecha hasta (egreso)** anterior al inicio de la campaña **NO se generan** (baja = fecha_egreso; los períodos viejos perduran).
 - Propaga el **sueldo FIJO** del último período de cada uno. Los **datos móviles** (francos, días, horas) quedan **en blanco** → se cargan reales mes a mes.
-- Pendiente (no hecho aún): pantalla de **revisión empleado por empleado** + **% de aumento** al propagar (ver PENDIENTES B-FEAT-RENOVAR-CAMPAÑA).
+- **Revisión de nómina (al confirmar):** se abre una **tabla con todos los empleados** de la campaña (Empleado · Tipo · Bruto base). Click en el **lápiz** de una fila → abre el **mismo modal de edición** mensual, ya con el fijo propagado; editás lo que quieras y **cuando pregunta "¿propagar a los meses siguientes?" decís que SÍ** → el cambio se aplica a toda la campaña. Lo móvil sigue en blanco. No hay % masivo: se edita **uno por uno** según haga falta.
+
+### Alta de empleado
+- Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.

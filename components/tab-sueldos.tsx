@@ -241,8 +241,13 @@ export function TabSueldos() {
   // Modal gestión campaña
   const [modalCampana, setModalCampana] = useState(false)
   const [nuevaCampanaEtiqueta, setNuevaCampanaEtiqueta] = useState('')
-  const [nuevaCampanaActivar, setNuevaCampanaActivar] = useState(true)
   const [creandoCampana, setCreandoCampana] = useState(false)
+
+  // Revisión de nómina tras crear campaña (tabla para editar el fijo empleado por empleado)
+  const [modalRevisionCampana, setModalRevisionCampana] = useState(false)
+  const [revisionCampId, setRevisionCampId] = useState<string | null>(null)
+  const [revisionMes, setRevisionMes] = useState<{ anio: number; mes: number } | null>(null)
+  const [revisionPeriodos, setRevisionPeriodos] = useState<Periodo[]>([])
 
   // Modal Gestión de Nómina
   const [modalNomina, setModalNomina] = useState(false)
@@ -560,8 +565,8 @@ export function TabSueldos() {
     }
   }
 
-  const abrirEdicion = (p: Periodo) => {
-    if (!esMesLockeado) return  // solo se edita el mes de trabajo
+  const abrirEdicion = (p: Periodo, forzar = false) => {
+    if (!esMesLockeado && !forzar) return  // solo se edita el mes de trabajo (salvo revisión de campaña)
     setEdPeriodo(p)
     const fmt = (v: number | null, decimales = 2) =>
       v !== null && v !== 0 ? v.toLocaleString('es-AR', { minimumFractionDigits: decimales, maximumFractionDigits: decimales }) : ''
@@ -697,6 +702,20 @@ export function TabSueldos() {
     }
     setPropagandoData(null)
     await cargar()
+    // Si la edición vino de la revisión de campaña, refrescar esa tabla
+    if (modalRevisionCampana && revisionCampId && revisionMes) await cargarRevision(revisionCampId, revisionMes)
+  }
+
+  // Carga la tabla de revisión de campaña = períodos del PRIMER mes (julio) con el empleado.
+  const cargarRevision = async (campId: string, primerMes: { anio: number; mes: number }) => {
+    const { data } = await supabase
+      .from('sueldos_periodos')
+      .select('*, empleado:sueldos_empleados(*)')
+      .eq('campana_id', campId)
+      .eq('anio', primerMes.anio)
+      .eq('mes', primerMes.mes)
+      .order('empleado(nombre)')
+    setRevisionPeriodos((data ?? []) as Periodo[])
   }
 
   // Bruto preview en tiempo real
@@ -751,14 +770,13 @@ export function TabSueldos() {
     if (!parsed) { alert('Formato inválido. Ejemplo: 26/27'); return }
     setCreandoCampana(true)
 
-    // Desactivar campaña actual si se activa la nueva
-    if (nuevaCampanaActivar) {
-      await supabase.from('sueldos_campanas').update({ activa: false }).eq('activa', true)
-    }
+    // La campaña nueva SIEMPRE queda activa (desactiva la anterior). "Activa" = campaña vigente
+    // para el rótulo del header + generación de empleados nuevos; la navegación es por unión de campañas.
+    await supabase.from('sueldos_campanas').update({ activa: false }).eq('activa', true)
 
     const { data: campData, error: campError } = await supabase
       .from('sueldos_campanas')
-      .insert({ etiqueta: nuevaCampanaEtiqueta.trim(), fecha_inicio: parsed.inicio, fecha_fin: parsed.fin, activa: nuevaCampanaActivar })
+      .insert({ etiqueta: nuevaCampanaEtiqueta.trim(), fecha_inicio: parsed.inicio, fecha_fin: parsed.fin, activa: true })
       .select().single()
 
     if (campError || !campData) {
@@ -848,6 +866,13 @@ export function TabSueldos() {
     setNuevaCampanaEtiqueta('')
     await cargarCampanas()
     await cargar()
+
+    // Abrir la revisión de nómina (primer mes de la campaña = julio) para editar el fijo empleado por empleado
+    const primerMes = { anio: parsed.anio1, mes: 7 }
+    setRevisionCampId(campData.id)
+    setRevisionMes(primerMes)
+    await cargarRevision(campData.id, primerMes)
+    setModalRevisionCampana(true)
   }
 
   // ── Gestión de Nómina ─────────────────────────────────────────────────────
@@ -927,62 +952,63 @@ export function TabSueldos() {
       return
     }
 
-    // 2. Generar períodos para cada mes activo dentro del rango de campaña
-    const CAMPANA_ID = '8ffb3f4f-6dc7-4df1-88de-09607518d2c1'
+    // 2. Generar períodos por FECHA DE ALTA: en toda campaña que se solape con el empleo
+    //    (según fecha_ingreso/fecha_egreso), NO según la campaña activa.
     const periodoInserts: Record<string, any>[] = []
+    const ingreso = nuevoFechaIngreso ? new Date(nuevoFechaIngreso) : null
+    const egreso  = nuevoFechaEgreso  ? new Date(nuevoFechaEgreso)  : null
 
-    const campanaId = campanaActiva?.id ?? CAMPANA_ID
-    const campMin   = campanaActiva ? (() => { const d = new Date(campanaActiva.fecha_inicio); return { anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 } })() : mesMin
-    const campMax   = campanaActiva ? (() => { const d = new Date(campanaActiva.fecha_fin);   return { anio: d.getUTCFullYear(), mes: d.getUTCMonth() + 1 } })() : mesMax
+    // Datos del alta (iguales para todos los meses; se cargan/ajustan por mes después)
+    const a       = n(nuevoMontoA)
+    const b       = n(nuevoMontoB)
+    const francos = n(nuevoFrancos)
+    const vFranco = a + b > 0 ? (a + b) / 25 : 0
+    const vDia    = n(nuevoValorDia)
+    const dias    = n(nuevoDias)
+    const vHora   = n(nuevoValorHora)
+    const horas   = n(nuevoHoras)
+    let brutoAlta = 0
+    switch (nuevoTipo) {
+      case 'ab_francos':   brutoAlta = (a + b) + (vFranco * francos); break
+      case 'por_dia':      brutoAlta = vDia * dias; break
+      case 'por_hora_ipc': brutoAlta = vHora * horas; break
+      case 'plano_ipc':    brutoAlta = a; break
+    }
 
-    for (let anio = campMin.anio, mes = campMin.mes; ; ) {
-      const primerDia = new Date(anio, mes - 1, 1)
-      const ultimoDia = new Date(anio, mes, 0)
+    for (const camp of todasCampanas) {
+      const cIni = new Date(camp.fecha_inicio)
+      const cFin = new Date(camp.fecha_fin)
+      const campMin = { anio: cIni.getUTCFullYear(), mes: cIni.getUTCMonth() + 1 }
+      const campMax = { anio: cFin.getUTCFullYear(), mes: cFin.getUTCMonth() + 1 }
 
-      // Verificar que el empleado estaba activo este mes
-      const ingreso = nuevoFechaIngreso ? new Date(nuevoFechaIngreso) : null
-      const egreso  = nuevoFechaEgreso  ? new Date(nuevoFechaEgreso)  : null
-      const activo  = (!ingreso || ingreso <= ultimoDia) && (!egreso || egreso >= primerDia)
+      for (let anio = campMin.anio, mes = campMin.mes; ; ) {
+        const primerDia = new Date(anio, mes - 1, 1)
+        const ultimoDia = new Date(anio, mes, 0)
+        const activo = (!ingreso || ingreso <= ultimoDia) && (!egreso || egreso >= primerDia)
 
-      if (activo) {
-        const a        = n(nuevoMontoA)
-        const b        = n(nuevoMontoB)
-        const francos  = n(nuevoFrancos)
-        const vFranco  = a + b > 0 ? (a + b) / 25 : 0
-        const vDia     = n(nuevoValorDia)
-        const dias     = n(nuevoDias)
-        const vHora    = n(nuevoValorHora)
-        const horas    = n(nuevoHoras)
-
-        let bruto = 0
-        switch (nuevoTipo) {
-          case 'ab_francos':   bruto = (a + b) + (vFranco * francos); break
-          case 'por_dia':      bruto = vDia * dias; break
-          case 'por_hora_ipc': bruto = vHora * horas; break
-          case 'plano_ipc':    bruto = a; break
+        if (activo) {
+          periodoInserts.push({
+            empleado_id:           empData.id,
+            campana_id:            camp.id,
+            anio, mes,
+            fecha_inicio_periodo:  primerDia.toISOString().split('T')[0],
+            fecha_fin_periodo:     ultimoDia.toISOString().split('T')[0],
+            bruto_calculado:       brutoAlta, sueldo_x_ipc: brutoAlta,
+            anticipos_descontados: 0, saldo_pendiente: brutoAlta,
+            estado:                'proyectado',
+            monto_a:              a || null,
+            monto_b:              b || null,
+            francos_cantidad:     nuevoTipo === 'ab_francos'   ? (francos || null) : null,
+            valor_por_dia:        nuevoTipo === 'por_dia'      ? (vDia    || null) : null,
+            dias_trabajados:      nuevoTipo === 'por_dia'      ? (dias    || null) : null,
+            valor_por_hora:       nuevoTipo === 'por_hora_ipc' ? (vHora   || null) : null,
+            horas_mes:            nuevoTipo === 'por_hora_ipc' ? (horas   || null) : null,
+          })
         }
 
-        periodoInserts.push({
-          empleado_id:           empData.id,
-          campana_id:            campanaId,
-          anio, mes,
-          fecha_inicio_periodo:  primerDia.toISOString().split('T')[0],
-          fecha_fin_periodo:     ultimoDia.toISOString().split('T')[0],
-          bruto_calculado:       bruto, sueldo_x_ipc: bruto,
-          anticipos_descontados: 0, saldo_pendiente: bruto,
-          estado:                'proyectado',
-          monto_a:              a || null,
-          monto_b:              b || null,
-          francos_cantidad:     nuevoTipo === 'ab_francos'   ? (francos || null) : null,
-          valor_por_dia:        nuevoTipo === 'por_dia'      ? (vDia    || null) : null,
-          dias_trabajados:      nuevoTipo === 'por_dia'      ? (dias    || null) : null,
-          valor_por_hora:       nuevoTipo === 'por_hora_ipc' ? (vHora   || null) : null,
-          horas_mes:            nuevoTipo === 'por_hora_ipc' ? (horas   || null) : null,
-        })
+        if (anio === campMax.anio && mes === campMax.mes) break
+        mes++; if (mes > 12) { mes = 1; anio++ }
       }
-
-      if (anio === campMax.anio && mes === campMax.mes) break
-      mes++; if (mes > 12) { mes = 1; anio++ }
     }
 
     if (periodoInserts.length > 0) {
@@ -1013,7 +1039,7 @@ export function TabSueldos() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setNuevaCampanaActivar(true); setModalCampana(true) }}>
+          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setModalCampana(true) }}>
             <Settings className="h-4 w-4 mr-2" />
             Campañas
           </Button>
@@ -1983,8 +2009,7 @@ export function TabSueldos() {
 
             {/* Info sobre períodos a generar */}
             <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
-              Se generarán automáticamente los períodos de la campaña {campanaActiva?.etiqueta ?? '…'} donde el empleado esté activo
-              {' '}({MESES_SHORT[mesMin.mes - 1]} {mesMin.anio} – {MESES_SHORT[mesMax.mes - 1]} {mesMax.anio}).
+              Se generarán los períodos <strong>según la fecha de alta</strong> del empleado, en las campañas que correspondan (desde su ingreso en adelante).
             </div>
 
           </div>
@@ -2183,22 +2208,10 @@ export function TabSueldos() {
                 })()}
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="activarCampana"
-                  checked={nuevaCampanaActivar}
-                  onChange={e => setNuevaCampanaActivar(e.target.checked)}
-                  className="h-4 w-4"
-                />
-                <label htmlFor="activarCampana" className="text-sm">
-                  Activar esta campaña (desactiva la actual)
-                </label>
-              </div>
-
               <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700 space-y-1">
+                <p>La campaña nueva queda <strong>activa</strong> (la anterior pasa a inactiva; se puede seguir viendo/editando por el rango unificado).</p>
                 <p>Se generan períodos <strong>solo para los empleados vigentes</strong> (los que tienen <em>fecha hasta</em> puesta = baja, no se generan).</p>
-                <p>Se propaga el <strong>sueldo fijo</strong> del último período. Los <strong>datos móviles</strong> (francos, días, horas) quedan <strong>en blanco</strong> para cargarlos mes a mes.</p>
+                <p>Se propaga el <strong>sueldo fijo</strong> del último período. Los <strong>datos móviles</strong> (francos, días, horas) quedan <strong>en blanco</strong>. Después de crear vas a poder <strong>revisar y editar el fijo empleado por empleado</strong>.</p>
               </div>
 
               <Button
@@ -2213,6 +2226,61 @@ export function TabSueldos() {
               </Button>
             </div>
 
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Modal Revisión de Nómina (tras crear campaña) ─────────────────────── */}
+      <Dialog open={modalRevisionCampana} onOpenChange={setModalRevisionCampana}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Revisar nómina de la campaña
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-700">
+              Cada empleado tiene propagado el <strong>sueldo fijo</strong> del período anterior. Editá el que necesites (click en el lápiz);
+              el cambio se aplica a <strong>toda la campaña</strong> (te pregunta si propagar a los meses siguientes → decí que sí).
+              Lo móvil (francos/días/horas) se carga después, mes a mes.
+            </div>
+
+            {revisionPeriodos.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">No se generaron períodos (no hay empleados vigentes).</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>Empleado</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Bruto base</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {revisionPeriodos.map(p => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium">{p.empleado?.nombre}</TableCell>
+                      <TableCell className="text-xs text-gray-500">
+                        {({ ab_francos: 'A/B + Francos', por_dia: 'Por día', por_hora_ipc: 'Por hora', plano_ipc: 'Plano' } as Record<string, string>)[p.empleado?.tipo_empleado ?? ''] ?? p.empleado?.tipo_empleado}
+                      </TableCell>
+                      <TableCell className="text-right">{formatoMoneda(p.bruto_calculado ?? 0)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => abrirEdicion(p, true)} title="Editar sueldo fijo (aplica a toda la campaña)">
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={() => setModalRevisionCampana(false)}>Listo</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
