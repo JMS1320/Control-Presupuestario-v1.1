@@ -273,3 +273,16 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 
 ### Alta de empleado
 - Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.
+
+## 🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)
+
+**Dónde:** Egresos → Templates → botón **"Renovar campaña"**.
+
+**Qué hace:** genera las cuotas del **próximo período** de los templates (Modelo A: crea una **fila nueva** del template con el año nuevo + sus cuotas; la vieja queda como historial).
+- **General:** sirve para **bianual** (campaña jul–jun, ej. 25/26 → 26/27) y **anual** (calendario, ej. 2026 → 2027). Elegís periodicidad + período a generar.
+- **Dos secciones colapsables:** *Previstas a generar* (`aplica_generacion=true`) y *No aplican* (tildás para incluir alguno suelto → persiste el flag).
+- **Matriz de meses:** filas = templates, columnas = meses del período nuevo. **Mínimo 12 columnas** + extra si hay cuotas fuera (spillover, ej. una cuota que se paga el mes siguiente). Cada celda es el **monto** (editable; casi todos estimados); **vacío = sin cuota** ese mes.
+- **Pre-carga:** corre el último período conocido de cada template al nuevo (por eso Acciones 24/25 cae solo en 2028). Editás lo que haga falta y **Generar**.
+- La **descripción** de cada cuota se rearma con el mes/año nuevo (para que concilie bien en el extracto).
+
+**Los campos que lo alimentan** (`egreso_id`→ `egresos_sin_factura`): **`periodicidad`** (anual/bianual) y **`aplica_generacion`** — se cargan en el **wizard** al crear el template (paso 1).

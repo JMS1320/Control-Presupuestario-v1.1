@@ -27,6 +27,7 @@ import { usePagoCuotas } from "@/hooks/usePagoCuotas"
 import useInlineEditor, { CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
+import { GeneradorRenovacionCampana } from "./generador-renovacion-campana"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
 
@@ -93,6 +94,7 @@ export function VistaTemplatesEgresos() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mostrarWizard, setMostrarWizard] = useState(false)
+  const [mostrarGenerador, setMostrarGenerador] = useState(false)
   
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
@@ -1341,6 +1343,15 @@ export function VistaTemplatesEgresos() {
             Crear Template
           </Button>
 
+          <Button
+            onClick={() => setMostrarGenerador(true)}
+            variant="outline"
+            className="border-green-600 text-green-700 hover:bg-green-50"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Renovar campaña
+          </Button>
+
           {/* Botón Pago Manual - Templates Abiertos */}
           <Button
             onClick={abrirModalPagoManual}
@@ -1888,6 +1899,10 @@ export function VistaTemplatesEgresos() {
             </div>
           </div>
         </div>
+      )}
+
+      {mostrarGenerador && (
+        <GeneradorRenovacionCampana onClose={() => { setMostrarGenerador(false); cargarCuotas() }} />
       )}
 
       {/* Modal Conversión Masiva Anual → Cuotas */}
