@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -24,10 +24,14 @@ type Periodicidad = 'bianual' | 'anual'
 // monto = valor de la celda; dia = día del mes de la cuota origen; componentes = montos de las varias
 // cuotas del origen si en ese mes había más de una (se muestra la SUMA + aviso, se genera 1 cuota).
 interface Celda { monto: number | ''; dia?: number; componentes?: number[] }
+interface ItemCuota { col: string; dia: number; monto: number }   // col = "YYYY-MM"
 interface Fila {
   template: any
   incluir: boolean
-  celdas: Record<string, Celda>   // colKey "YYYY-MM" -> monto
+  celdas: Record<string, Celda>   // colKey "YYYY-MM" -> monto (editor principal, 1 por mes)
+  raw: ItemCuota[]                // cuotas individuales del origen (corridas al target) — para el detalle
+  detalle?: ItemCuota[]           // override manual (fase 2): si existe, GANA sobre celdas (permite varias/mes)
+  esVencimiento: boolean          // las fechas de esta fila son de vencimiento (sino, estimadas)
 }
 
 // año1 del período: "26/27" -> 2026 ; "2027" -> 2027
@@ -56,6 +60,9 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const [openPrevistas, setOpenPrevistas] = useState(true)
   const [openNoAplican, setOpenNoAplican] = useState(false)
   const [generando, setGenerando] = useState(false)
+  // Detalle por fila (fase 2 punto 4): editar las cuotas individuales (permite varias por mes)
+  const [detalleId, setDetalleId] = useState<string | null>(null)
+  const [detalleItems, setDetalleItems] = useState<ItemCuota[]>([])
 
   // Default del target según hoy
   useEffect(() => {
@@ -91,12 +98,15 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       const srcY1 = year1De(t.año)
       const shift = srcY1 != null ? (targetY1 - srcY1) : 0    // corre el último período conocido al target
       const celdas: Record<string, Celda> = {}
+      const raw: ItemCuota[] = []
       for (const c of (porTemplate[t.id] ?? [])) {
         if (!c.fecha_estimada) continue
         const [y, m, d] = c.fecha_estimada.slice(0, 10).split('-')
         const ty = parseInt(y, 10) + shift
         const k = colKey(ty, parseInt(m, 10))
         const monto = c.monto ?? 0
+        const dia = parseInt(d, 10) || 1
+        raw.push({ col: k, dia, monto })
         const prev = celdas[k]
         if (prev && prev.monto !== '') {
           // Varias cuotas en el mismo mes → suma + registra la composición (se genera 1 sola cuota)
@@ -105,10 +115,10 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           celdas[k] = { monto: Number(prev.monto) + monto, dia: prev.dia, componentes: comp }
         } else {
           // Preserva el día real de la cuota origen (shift solo el año)
-          celdas[k] = { monto, dia: parseInt(d, 10) || 1 }
+          celdas[k] = { monto, dia }
         }
       }
-      return { template: t, incluir: t.aplica_generacion === true, celdas }
+      return { template: t, incluir: t.aplica_generacion === true, celdas, raw, esVencimiento: t.tipo_fecha === 'Vencimiento' }
     })
     setFilas(nuevasFilas)
     setCargando(false)
@@ -158,6 +168,39 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, incluir: checked } : f))
   }
 
+  // Fechas de la fila = estimadas o de vencimiento
+  const toggleVencimiento = (templateId: string, checked: boolean) => {
+    setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, esVencimiento: checked } : f))
+  }
+
+  // ── Detalle por fila (fase 2 punto 4) ──────────────────────────────────────
+  const abrirDetalle = (f: Fila) => {
+    setDetalleId(f.template.id)
+    // Punto de partida: el detalle ya editado, o las cuotas individuales del origen (raw)
+    setDetalleItems((f.detalle ?? f.raw).map(i => ({ ...i })))
+  }
+  const setDetalleCampo = (idx: number, campo: keyof ItemCuota, valor: string) => {
+    setDetalleItems(prev => prev.map((it, i) => {
+      if (i !== idx) return it
+      if (campo === 'col') return { ...it, col: valor }
+      if (campo === 'dia') return { ...it, dia: Math.min(31, Math.max(1, parseInt(valor, 10) || 1)) }
+      return { ...it, monto: parseFloat(valor.replace(/\./g, '').replace(',', '.')) || 0 }
+    }))
+  }
+  const addDetalleItem = () => {
+    const primerMes = targetY1 ? colKey(mesesBase(periodicidad, targetY1)[0].y, mesesBase(periodicidad, targetY1)[0].m) : ''
+    setDetalleItems(prev => [...prev, { col: primerMes, dia: 1, monto: 0 }])
+  }
+  const removeDetalleItem = (idx: number) => setDetalleItems(prev => prev.filter((_, i) => i !== idx))
+  const guardarDetalle = () => {
+    setFilas(prev => prev.map(f => f.template.id === detalleId ? { ...f, detalle: detalleItems.map(i => ({ ...i })) } : f))
+    setDetalleId(null)
+  }
+  const quitarDetalle = () => {
+    setFilas(prev => prev.map(f => f.template.id === detalleId ? { ...f, detalle: undefined } : f))
+    setDetalleId(null)
+  }
+
   // Vaciar toda la fila (deja en cero/sin cuota; útil cuando el pre-cargado tiene datos viejos, ej. UATRE)
   const vaciarFila = (templateId: string) => {
     setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, celdas: {} } : f))
@@ -192,6 +235,14 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const generar = async () => {
     const aGenerar = filas.filter(f => f.incluir)
     if (aGenerar.length === 0) { toast.error('No hay templates seleccionados'); return }
+    // Punto 2: advertir al confirmar si se dejan afuera templates PREVISTOS (aplica=true) deseleccionados
+    const desel = previstas.filter(f => !f.incluir)
+    if (desel.length > 0) {
+      const ok = window.confirm(
+        `Atención: vas a dejar SIN generar ${desel.length} template(s) previsto(s):\n\n${desel.map(f => '• ' + f.template.nombre_referencia).join('\n')}\n\n¿Continuar igual?`
+      )
+      if (!ok) return
+    }
     setGenerando(true)
     let okTemplates = 0, okCuotas = 0
     try {
@@ -206,23 +257,29 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         if (eT || !nuevo) { console.error('Error clonando template', t.nombre_referencia, eT); continue }
         okTemplates++
 
-        // 2. Cuotas (solo celdas con monto cargado; incluye 0 explícito)
+        // 2. Cuotas: si hay DETALLE manual (varias/mes) se usa; sino, las celdas de la matriz (1/mes)
+        const items: ItemCuota[] = f.detalle
+          ? f.detalle
+          : columnas
+              .filter(col => f.celdas[col] && f.celdas[col].monto !== '')
+              .map(col => ({ col, dia: f.celdas[col]!.dia ?? 1, monto: Number(f.celdas[col]!.monto) }))
+        const itemsOrd = [...items].filter(it => it.col).sort((a, b) => a.col === b.col ? a.dia - b.dia : a.col.localeCompare(b.col))
+
         const cuotasInsert: any[] = []
         let nro = 0
-        for (const col of columnas) {
-          const celda = f.celdas[col]
-          if (!celda || celda.monto === '') continue
+        for (const it of itemsOrd) {
           nro++
-          const [y, m] = col.split('-')
+          const [y, m] = it.col.split('-')
           const anioNum = parseInt(y, 10), mesNum = parseInt(m, 10)
-          const dia = String(celda.dia ?? 1).padStart(2, '0')   // día real de la cuota origen (o 1 si es celda nueva)
+          const dia = String(it.dia ?? 1).padStart(2, '0')
           const fecha = `${y}-${m}-${dia}`
           cuotasInsert.push({
             egreso_id: nuevo.id,
             numero_cuota: nro,
             mes: mesNum,
             fecha_estimada: fecha,
-            monto: celda.monto,
+            fecha_vencimiento: f.esVencimiento ? fecha : null,   // fechas de la fila = vencimiento (checkbox)
+            monto: it.monto,
             estado: 'pendiente',
             // Fórmula de descripción reproducida con el período nuevo (etiqueta del extracto al conciliar)
             descripcion: `${t.nombre_referencia} ${t.responsable ?? ''} - ${MESES_LARGO[mesNum - 1]} ${anioNum}`.replace(/\s+/g, ' ').trim(),
@@ -270,7 +327,12 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
                   )}
                   <button onClick={() => replicarFila(f.template.id)} title="Replicar el primer monto a los 12 meses" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
                   <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => abrirDetalle(f)} title="Detalle de cuotas (permite varias por mes)" className="text-gray-400 hover:text-purple-600"><List className="h-3.5 w-3.5" /></button>
                   <span>{f.template.nombre_referencia}</span>
+                  {f.detalle && <span className="text-[9px] bg-purple-500 text-white rounded px-1" title="Se genera desde el detalle manual (la matriz se ignora para esta fila)">detalle</span>}
+                  <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer" title="Las fechas de esta fila son de vencimiento (sino, estimadas)">
+                    <Checkbox checked={f.esVencimiento} onCheckedChange={(ch) => toggleVencimiento(f.template.id, ch === true)} className="h-3 w-3" /> venc
+                  </label>
                   <span className="text-xs text-gray-400">{f.template.responsable}</span>
                 </div>
               </td>
@@ -394,6 +456,47 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           )}
         </div>
       </div>
+
+      {/* Modal Detalle de cuotas por fila (fase 2 punto 4) */}
+      {detalleId && (() => {
+        const df = filas.find(f => f.template.id === detalleId)
+        const opciones = Array.from(new Set([...columnas, ...detalleItems.map(i => i.col)])).sort()
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+            <div className="bg-white rounded-lg w-full max-w-xl max-h-[85vh] overflow-y-auto p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold">Detalle de cuotas — {df?.template.nombre_referencia}</h3>
+                <button onClick={() => setDetalleId(null)}><X className="h-5 w-5" /></button>
+              </div>
+              <p className="text-xs text-gray-500">Editá las cuotas individuales. Podés poner <strong>varias en el mismo mes</strong>. Al generar, este detalle <strong>reemplaza</strong> lo que muestra la matriz para esta fila.</p>
+              <div className="space-y-1">
+                <div className="grid grid-cols-[1fr_60px_1fr_32px] gap-2 text-xs text-gray-400 px-1">
+                  <span>Mes</span><span className="text-center">Día</span><span className="text-right">Monto</span><span></span>
+                </div>
+                {detalleItems.map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-[1fr_60px_1fr_32px] gap-2 items-center">
+                    <select value={it.col} onChange={e => setDetalleCampo(idx, 'col', e.target.value)} className="border rounded h-8 text-sm px-1">
+                      {opciones.map(col => <option key={col} value={col}>{fmtCol(col)}</option>)}
+                    </select>
+                    <Input value={it.dia} onChange={e => setDetalleCampo(idx, 'dia', e.target.value)} className="h-8 text-sm text-center px-1" />
+                    <Input value={Number(it.monto).toLocaleString('es-AR')} onChange={e => setDetalleCampo(idx, 'monto', e.target.value)} className="h-8 text-sm text-right px-1" />
+                    <button onClick={() => removeDetalleItem(idx)} className="text-gray-400 hover:text-red-600" title="Quitar cuota"><X className="h-4 w-4" /></button>
+                  </div>
+                ))}
+                {detalleItems.length === 0 && <p className="text-sm text-gray-400 px-1">Sin cuotas. Agregá con el botón de abajo.</p>}
+              </div>
+              <Button variant="outline" size="sm" onClick={addDetalleItem}><Plus className="h-4 w-4 mr-1" />Agregar cuota</Button>
+              <div className="flex items-center justify-between pt-2 border-t">
+                <Button variant="ghost" size="sm" onClick={quitarDetalle} className="text-gray-500">Quitar detalle (usar matriz)</Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setDetalleId(null)}>Cancelar</Button>
+                  <Button size="sm" onClick={guardarDetalle}>Guardar detalle</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
