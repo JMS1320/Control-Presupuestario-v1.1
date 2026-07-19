@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -115,11 +115,35 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const previstas = filas.filter(f => f.template.aplica_generacion === true)
   const noAplican = filas.filter(f => f.template.aplica_generacion !== true)
 
+  // Inicio del período (para ADVERTIR — no bloquear — cuotas que caen antes; ej. datos viejos tipo UATRE)
+  const inicioKey = useMemo(() => {
+    if (!targetY1) return ''
+    const base = mesesBase(periodicidad, targetY1)
+    return colKey(base[0].y, base[0].m)
+  }, [periodicidad, targetY1])
+  const hayCuotasAntes = useMemo(() =>
+    filas.some(f => f.incluir && Object.entries(f.celdas).some(([col, c]) => col < inicioKey && c.monto !== '' && c.monto != null))
+  , [filas, inicioKey])
+
   const setMonto = (templateId: string, col: string, valor: string) => {
     const monto = valor.trim() === '' ? '' : (parseFloat(valor.replace(/\./g, '').replace(',', '.')) || 0)
     setFilas(prev => prev.map(f => f.template.id === templateId
       ? { ...f, celdas: { ...f.celdas, [col]: { monto, dia: f.celdas[col]?.dia } } }
       : f))
+  }
+
+  // Editar el día del mes de una celda (punto 3)
+  const setDia = (templateId: string, col: string, valor: string) => {
+    const n = parseInt(valor, 10)
+    const dia = isNaN(n) ? undefined : Math.min(31, Math.max(1, n))
+    setFilas(prev => prev.map(f => f.template.id === templateId
+      ? { ...f, celdas: { ...f.celdas, [col]: { monto: f.celdas[col]?.monto ?? '', dia } } }
+      : f))
+  }
+
+  // Deseleccionar/incluir un template previsto para ESTA corrida (no toca aplica_generacion) (punto 1)
+  const toggleIncluir = (templateId: string, checked: boolean) => {
+    setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, incluir: checked } : f))
   }
 
   // Vaciar toda la fila (deja en cero/sin cuota; útil cuando el pre-cargado tiene datos viejos, ej. UATRE)
@@ -210,37 +234,61 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     }
   }
 
-  const renderMatriz = (lista: Fila[]) => (
+  const renderMatriz = (lista: Fila[], conIncluir = false) => (
     <div className="overflow-x-auto border rounded">
       <table className="text-sm min-w-max">
         <thead>
           <tr className="bg-gray-50">
-            <th className="sticky left-0 bg-gray-50 text-left px-3 py-2 border-r min-w-[220px]">Template</th>
-            {columnas.map(col => <th key={col} className="px-2 py-2 text-center whitespace-nowrap border-r">{fmtCol(col)}</th>)}
+            <th className="sticky left-0 bg-gray-50 text-left px-3 py-2 border-r min-w-[240px]">Template</th>
+            {columnas.map(col => (
+              <th key={col} className={`px-2 py-2 text-center whitespace-nowrap border-r ${col < inicioKey ? 'bg-amber-100 text-amber-700' : ''}`}
+                  title={col < inicioKey ? 'Mes anterior al inicio del período — revisar' : undefined}>
+                {fmtCol(col)}{col < inicioKey ? ' ⚠' : ''}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {lista.map(f => (
-            <tr key={f.template.id} className="border-t">
+            <tr key={f.template.id} className={`border-t ${conIncluir && !f.incluir ? 'opacity-40' : ''}`}>
               <td className="sticky left-0 bg-white px-3 py-1.5 border-r font-medium whitespace-nowrap">
                 <div className="flex items-center gap-2">
+                  {conIncluir && (
+                    <Checkbox checked={f.incluir} onCheckedChange={(ch) => toggleIncluir(f.template.id, ch === true)} title="Incluir en esta generación" />
+                  )}
                   <button onClick={() => replicarFila(f.template.id)} title="Replicar el primer monto a los 12 meses" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
                   <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
                   <span>{f.template.nombre_referencia}</span>
                   <span className="text-xs text-gray-400">{f.template.responsable}</span>
                 </div>
               </td>
-              {columnas.map(col => (
-                <td key={col} className="px-1 py-1 border-r">
-                  <Input
-                    type="text"
-                    value={f.celdas[col]?.monto === '' || f.celdas[col]?.monto == null ? '' : Number(f.celdas[col].monto).toLocaleString('es-AR')}
-                    onChange={e => setMonto(f.template.id, col, e.target.value)}
-                    className="h-7 w-24 text-right text-xs px-1"
-                    placeholder="—"
-                  />
-                </td>
-              ))}
+              {columnas.map(col => {
+                const celda = f.celdas[col]
+                const tiene = celda && celda.monto !== '' && celda.monto != null
+                return (
+                  <td key={col} className={`px-1 py-1 border-r ${col < inicioKey ? 'bg-amber-50' : ''}`}>
+                    <div className="flex flex-col gap-0.5">
+                      <Input
+                        type="text"
+                        value={tiene ? Number(celda!.monto).toLocaleString('es-AR') : ''}
+                        onChange={e => setMonto(f.template.id, col, e.target.value)}
+                        className="h-6 w-24 text-right text-xs px-1"
+                        placeholder="—"
+                      />
+                      {tiene && (
+                        <Input
+                          type="text"
+                          value={celda!.dia ?? ''}
+                          onChange={e => setDia(f.template.id, col, e.target.value)}
+                          className="h-5 w-24 text-right text-[10px] px-1 text-gray-500"
+                          placeholder="día"
+                          title="Día del mes de la cuota"
+                        />
+                      )}
+                    </div>
+                  </td>
+                )
+              })}
             </tr>
           ))}
         </tbody>
@@ -279,13 +327,20 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
           ) : (
             <>
+              {hayCuotasAntes && (
+                <div className="bg-amber-50 border border-amber-300 rounded p-3 text-sm text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>Hay cuotas que caen <strong>antes del inicio del período</strong> (columnas ⚠ en ámbar). Suele ser <strong>dato viejo mal cargado</strong> (ej. UATRE). Revisá o vaciá esas celdas si no corresponden. No se bloquean — podés generarlas igual si son válidas.</span>
+                </div>
+              )}
+
               {/* Previstas a generar */}
               <div>
                 <button className="flex items-center gap-2 font-semibold text-green-700 mb-2" onClick={() => setOpenPrevistas(o => !o)}>
                   {openPrevistas ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   Previstas a generar ({previstas.length})
                 </button>
-                {openPrevistas && (previstas.length ? renderMatriz(previstas) : <p className="text-sm text-gray-400 px-2">Ninguna.</p>)}
+                {openPrevistas && (previstas.length ? renderMatriz(previstas, true) : <p className="text-sm text-gray-400 px-2">Ninguna.</p>)}
               </div>
 
               {/* No aplican (opt-in) */}
