@@ -278,11 +278,24 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 
 **Dónde:** Egresos → Templates → botón **"Renovar campaña"**.
 
-**Qué hace:** genera las cuotas del **próximo período** de los templates (Modelo A: crea una **fila nueva** del template con el año nuevo + sus cuotas; la vieja queda como historial).
-- **General:** sirve para **bianual** (campaña jul–jun, ej. 25/26 → 26/27) y **anual** (calendario, ej. 2026 → 2027). Elegís periodicidad + período a generar.
-- **Dos secciones colapsables:** *Previstas a generar* (`aplica_generacion=true`) y *No aplican* (tildás para incluir alguno suelto → persiste el flag).
-- **Matriz de meses:** filas = templates, columnas = meses del período nuevo. **Mínimo 12 columnas** + extra si hay cuotas fuera (spillover, ej. una cuota que se paga el mes siguiente). Cada celda es el **monto** (editable; casi todos estimados); **vacío = sin cuota** ese mes.
-- **Pre-carga:** corre el último período conocido de cada template al nuevo (por eso Acciones 24/25 cae solo en 2028). Editás lo que haga falta y **Generar**.
-- La **descripción** de cada cuota se rearma con el mes/año nuevo (para que concilie bien en el extracto).
+**Qué hace:** genera las cuotas del **próximo período** de los templates (Modelo A: crea una **fila nueva** del template con el año nuevo + sus cuotas; la vieja queda como historial). Sirve para **bianual** (campaña jul–jun, ej. 25/26 → 26/27) y **anual** (calendario, ej. 2026 → 2027): elegís periodicidad + período a generar.
 
-**Los campos que lo alimentan** (`egreso_id`→ `egresos_sin_factura`): **`periodicidad`** (anual/bianual) y **`aplica_generacion`** — se cargan en el **wizard** al crear el template (paso 1).
+**Secciones:**
+- *Previstas a generar* (`aplica_generacion=true`) — se generan; podés **destildar** alguna por fila para excluirla de esta corrida (temporal, no cambia el flag). Al **Generar**, si dejaste previstas afuera, **te avisa** y confirmás.
+- *No aplican* (colapsable) — tildás para **incluir alguno suelto** → persiste `aplica_generacion=true`.
+
+**Matriz de meses** (filas = templates, columnas = meses del período nuevo, **mín. 12** + extras por spillover). Cada celda:
+- **Monto** (editable; casi todos estimados) + un mini-campo **"día"** (día del mes de la cuota; editar el día no cambia de columna). **Vacío = sin cuota** ese mes.
+- **Varias cuotas en un mes:** se muestran **sumadas** con anillo naranja + badge **"Σn"** + tooltip con la composición (genera 1 cuota con la suma).
+- **Meses antes del inicio del período** salen en **ámbar (⚠) + banner de aviso** (suele ser dato viejo mal cargado, ej. UATRE) — **no se bloquea**, podés vaciar/ignorar.
+
+**Herramientas por fila** (íconos a la izquierda del nombre):
+- 📋 **Replicar** el primer monto a los 12 meses base · 🧹 **Vaciar** toda la fila.
+- 📃 **Detalle** → modal para editar las **cuotas individuales** (mes/día/monto), permite **varias por mes**, agregar/quitar. Si la fila tiene detalle, **ese detalle GANA** sobre la matriz (badge "detalle").
+- ☑ **"venc"** → las fechas de esa fila se generan como **vencimiento** (`fecha_vencimiento`); sin tildar, solo `fecha_estimada`.
+
+**Pre-carga:** corre el último período conocido de cada template al nuevo (por eso Acciones 24/25 cae en 2028 por el shift +2). La **descripción** de cada cuota se rearma con el mes/año nuevo (para que concilie bien en el extracto).
+
+**Los campos que lo alimentan** (`egresos_sin_factura`): **`periodicidad`** (anual/bianual) y **`aplica_generacion`** — se cargan en el **wizard** al crear el template (paso 1). Los **abiertos** (comisiones, Caja…) **no se renuevan**: persisten entre años solos (el selector de Pago Manual los busca por `tipo_template`+`activo`, no por `año`).
+
+**⚠️ Estado: v1 SIN TESTEAR end-to-end.** Falta probar en bianual (crear 26/27 real + revisar cuotas/fechas/descripciones/detalle/vencimiento). Pendiente contable: si Acciones necesita la cuota 25/26 intermedia (cae en 2028 saltando 2027).

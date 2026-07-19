@@ -162,6 +162,11 @@
 - Tabla `templates_master` para contenedor anual
 - Validaciones constraint y tipos
 
+### **🔗 Templates — hallazgos (2026-07-19, generador Renovar campaña):**
+- **El vínculo movimiento↔cuota de template es la columna `template_cuota_id`** en las tablas de movimientos (`public.msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `msa.caja_ams/caja_general/caja_sigot`, `ma.ma_galicia`, tarjetas). NO hay FK formal (se linkea por esa columna sin constraint). Para saber si una cuota está conciliada de verdad, buscar su `id` en `template_cuota_id`.
+- **Templates ABIERTOS son año-agnósticos:** el selector de Pago Manual (`vista-cash-flow.tsx:1260`) los trae por `tipo_template='abierto'` + `activo=true`, **sin filtrar `año`** → un abierto (Caja, comisiones) **persiste entre campañas/años solo**, no necesita "renovarse". Los que se renuevan (generan cuotas por período) son los **fijo** + los que tengan `aplica_generacion=true`.
+- **anual vs bianual** ya NO se infiere del string `año` — es la columna `periodicidad` ('anual' calendario | 'bianual' campaña jul-jun). El wizard la captura. Ver [[project_generador_renovacion_templates]].
+
 ### **🔧 Validaciones CATEG:**
 - Dropdown automático desde `cuentas_contables`
 - 4 modos validación: estricto, crear, lista, dropdown
