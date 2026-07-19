@@ -21,7 +21,9 @@ import { toast } from "sonner"
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 type Periodicidad = 'bianual' | 'anual'
-interface Celda { monto: number | ''; dia?: number }   // dia = día del mes de la cuota origen (se preserva)
+// monto = valor de la celda; dia = día del mes de la cuota origen; componentes = montos de las varias
+// cuotas del origen si en ese mes había más de una (se muestra la SUMA + aviso, se genera 1 cuota).
+interface Celda { monto: number | ''; dia?: number; componentes?: number[] }
 interface Fila {
   template: any
   incluir: boolean
@@ -93,8 +95,18 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         if (!c.fecha_estimada) continue
         const [y, m, d] = c.fecha_estimada.slice(0, 10).split('-')
         const ty = parseInt(y, 10) + shift
-        // Preserva el día real de la cuota origen (shift solo el año)
-        celdas[colKey(ty, parseInt(m, 10))] = { monto: c.monto ?? 0, dia: parseInt(d, 10) || 1 }
+        const k = colKey(ty, parseInt(m, 10))
+        const monto = c.monto ?? 0
+        const prev = celdas[k]
+        if (prev && prev.monto !== '') {
+          // Varias cuotas en el mismo mes → suma + registra la composición (se genera 1 sola cuota)
+          const comp = prev.componentes ?? [Number(prev.monto)]
+          comp.push(monto)
+          celdas[k] = { monto: Number(prev.monto) + monto, dia: prev.dia, componentes: comp }
+        } else {
+          // Preserva el día real de la cuota origen (shift solo el año)
+          celdas[k] = { monto, dia: parseInt(d, 10) || 1 }
+        }
       }
       return { template: t, incluir: t.aplica_generacion === true, celdas }
     })
@@ -137,7 +149,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     const n = parseInt(valor, 10)
     const dia = isNaN(n) ? undefined : Math.min(31, Math.max(1, n))
     setFilas(prev => prev.map(f => f.template.id === templateId
-      ? { ...f, celdas: { ...f.celdas, [col]: { monto: f.celdas[col]?.monto ?? '', dia } } }
+      ? { ...f, celdas: { ...f.celdas, [col]: { monto: f.celdas[col]?.monto ?? '', dia, componentes: f.celdas[col]?.componentes } } }
       : f))
   }
 
@@ -265,16 +277,21 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
               {columnas.map(col => {
                 const celda = f.celdas[col]
                 const tiene = celda && celda.monto !== '' && celda.monto != null
+                const multi = celda?.componentes && celda.componentes.length > 1
                 return (
                   <td key={col} className={`px-1 py-1 border-r ${col < inicioKey ? 'bg-amber-50' : ''}`}>
                     <div className="flex flex-col gap-0.5">
-                      <Input
-                        type="text"
-                        value={tiene ? Number(celda!.monto).toLocaleString('es-AR') : ''}
-                        onChange={e => setMonto(f.template.id, col, e.target.value)}
-                        className="h-6 w-24 text-right text-xs px-1"
-                        placeholder="—"
-                      />
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          value={tiene ? Number(celda!.monto).toLocaleString('es-AR') : ''}
+                          onChange={e => setMonto(f.template.id, col, e.target.value)}
+                          className={`h-6 w-24 text-right text-xs px-1 ${multi ? 'ring-1 ring-orange-400 bg-orange-50' : ''}`}
+                          placeholder="—"
+                          title={multi ? `⚠ Suma de ${celda!.componentes!.length} cuotas del origen: ${celda!.componentes!.map(x => x.toLocaleString('es-AR')).join(' + ')}. Se generará 1 sola cuota con la suma (editable).` : undefined}
+                        />
+                        {multi && <span className="absolute -top-1 -right-1 text-[9px] bg-orange-500 text-white rounded-full px-1 leading-tight">Σ{celda!.componentes!.length}</span>}
+                      </div>
                       {tiene && (
                         <Input
                           type="text"
