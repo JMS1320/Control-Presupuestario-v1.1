@@ -174,22 +174,23 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   }
 
   // ── Detalle por fila (fase 2 punto 4) ──────────────────────────────────────
+  const ordItems = (arr: ItemCuota[]) => [...arr].sort((a, b) => a.col === b.col ? a.dia - b.dia : a.col.localeCompare(b.col))
   const abrirDetalle = (f: Fila) => {
     setDetalleId(f.template.id)
-    // Punto de partida: el detalle ya editado, o las cuotas individuales del origen (raw)
-    setDetalleItems((f.detalle ?? f.raw).map(i => ({ ...i })))
+    // Punto de partida: el detalle ya editado, o las cuotas individuales del origen (raw). Ordenado por fecha.
+    setDetalleItems(ordItems((f.detalle ?? f.raw).map(i => ({ ...i }))))
   }
   const setDetalleCampo = (idx: number, campo: keyof ItemCuota, valor: string) => {
-    setDetalleItems(prev => prev.map((it, i) => {
+    setDetalleItems(prev => ordItems(prev.map((it, i) => {
       if (i !== idx) return it
       if (campo === 'col') return { ...it, col: valor }
       if (campo === 'dia') return { ...it, dia: Math.min(31, Math.max(1, parseInt(valor, 10) || 1)) }
       return { ...it, monto: parseFloat(valor.replace(/\./g, '').replace(',', '.')) || 0 }
-    }))
+    })))
   }
   const addDetalleItem = () => {
     const primerMes = targetY1 ? colKey(mesesBase(periodicidad, targetY1)[0].y, mesesBase(periodicidad, targetY1)[0].m) : ''
-    setDetalleItems(prev => [...prev, { col: primerMes, dia: 1, monto: 0 }])
+    setDetalleItems(prev => ordItems([...prev, { col: primerMes, dia: 1, monto: 0 }]))
   }
   const removeDetalleItem = (idx: number) => setDetalleItems(prev => prev.filter((_, i) => i !== idx))
   const guardarDetalle = () => {
@@ -308,7 +309,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       <table className="text-sm min-w-max">
         <thead>
           <tr className="bg-gray-50">
-            <th className="sticky left-0 bg-gray-50 text-left px-3 py-2 border-r min-w-[240px]">Template</th>
+            <th className="sticky left-0 z-20 bg-gray-50 text-left px-3 py-2 border-r min-w-[240px]">Template</th>
             {columnas.map(col => (
               <th key={col} className={`px-2 py-2 text-center whitespace-nowrap border-r ${col < inicioKey ? 'bg-amber-100 text-amber-700' : ''}`}
                   title={col < inicioKey ? 'Mes anterior al inicio del período — revisar' : undefined}>
@@ -320,7 +321,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         <tbody>
           {lista.map(f => (
             <tr key={f.template.id} className={`border-t ${conIncluir && !f.incluir ? 'opacity-40' : ''}`}>
-              <td className="sticky left-0 bg-white px-3 py-1.5 border-r font-medium whitespace-nowrap">
+              <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r font-medium whitespace-nowrap">
                 <div className="flex items-center gap-2">
                   {conIncluir && (
                     <Checkbox checked={f.incluir} onCheckedChange={(ch) => toggleIncluir(f.template.id, ch === true)} title="Incluir en esta generación" />
