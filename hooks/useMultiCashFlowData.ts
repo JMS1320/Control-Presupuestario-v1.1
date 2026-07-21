@@ -68,6 +68,9 @@ export interface CashFlowRow {
   imp_op_exentas?: number
   imp_total?: number
   iva?: number
+  monto_sicore?: number | null        // retención SICORE aplicada (para el PDF Detalle de pago)
+  descuento_aplicado?: number | null  // descuento pronto pago aplicado
+  monto_a_abonar?: number             // neto a pagar (imp_total − retención − descuento − anticipo)
   // Moneda (solo para filas ARCA)
   moneda?: string | null        // 'ARS' o 'USD' (null = ARS)
   tipo_cambio?: number          // TC original ARCA (1.0 para ARS)
@@ -157,6 +160,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_op_exentas: f.imp_op_exentas || 0,
         imp_total: f.imp_total || 0,
         iva: f.iva || 0,
+        monto_sicore: f.monto_sicore ?? null,
+        descuento_aplicado: f.descuento_aplicado ?? null,
+        monto_a_abonar: f.monto_a_abonar ?? f.imp_total ?? 0,
         moneda: f.moneda || null,
         tipo_cambio: f.tipo_cambio ?? 1,
         tc_pago: f.tc_pago ?? null,
@@ -211,6 +217,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_no_gravado: 0,
         imp_op_exentas: 0,
         imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
+        monto_sicore: Math.round(fs.reduce((s, f) => s + (f.monto_sicore || 0), 0) * 100) / 100 || null,
+        descuento_aplicado: Math.round(fs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0) * 100) / 100 || null,
+        monto_a_abonar: Math.round(fs.reduce((s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0) * 100) / 100,
         comprobante_display: fs.map(f => `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`).join(' + '),
         grupo_pago_id: grupoId,
         facturas_agrupadas: fs.length,
