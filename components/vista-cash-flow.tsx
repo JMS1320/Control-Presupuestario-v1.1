@@ -13,6 +13,7 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -231,6 +232,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   } | null>(null)
   // Cola SICORE para lote (y para below-minimum auto-advance)
   const [colaLoteSicore, setColaLoteSicore] = useState<CashFlowRow[]>([])
+
+  // ── ECHEQ (paridad con el Modal de Pagos) ──────────────────────────────────
+  // El echeq pasa por el MISMO flujo SICORE que "pagar"; el pending lleva nuevoEstado='echeq'.
+  // Al finalizar, si hay echeq pendiente → estampa metodo_pago/fecha_cobro_echeq + registra el cheque (neto).
+  const [mostrarModalEcheqCF, setMostrarModalEcheqCF] = useState(false)
+  const [echeqFormCF, setEcheqFormCF] = useState<EcheqDatos>({ banco: '', numero: '', fechaEmision: '', fechaCobro: '' })
+  const [echeqOrigenCF, setEcheqOrigenCF] = useState<'factura' | 'anticipo'>('factura')
+  const echeqFilaCF = useRef<CashFlowRow | null>(null)       // factura en proceso de echeq
+  const echeqAnticipoCF = useRef<any | null>(null)           // anticipo en proceso de echeq
+  const echeqPendienteCF = useRef<EcheqDatos | null>(null)   // datos del cheque a registrar al finalizar
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -535,7 +546,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     
     try {
       setGuardandoCambio(true)
-      
+
+      // HOOK ECHEQ (facturas ARCA) - abrir modal para capturar banco/número/fechas.
+      // El echeq pasa por el MISMO flujo SICORE que "pagar" (la retención sale igual); al finalizar
+      // se estampa estado='echeq' + metodo_pago + fecha_cobro_echeq + se registra el cheque (neto).
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'echeq' && filaParaCambioEstado.estado !== 'echeq') {
+        echeqFilaCF.current = filaParaCambioEstado
+        echeqAnticipoCF.current = null
+        setEcheqOrigenCF('factura')
+        setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || new Date().toISOString().split('T')[0], fechaCobro: '' })
+        setMostrarModalEcheqCF(true)
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        return
+      }
+
       // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
       if (
         filaParaCambioEstado.origen === 'ARCA' &&
@@ -1662,6 +1687,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         })
       }
 
+      // 4. ECHEQ: si el pago es con echeq, estampar método/fecha de cobro + registrar el cheque (neto en ARS).
+      //    El estado ya se escribió como 'echeq' (guardadoPendienteCF.nuevoEstado). saldoPesos = neto real a librar.
+      if (echeqPendienteCF.current && echeqFilaCF.current?.id === guardadoPendienteCF.filaId) {
+        const datos = echeqPendienteCF.current
+        await supabase.schema('msa').from('comprobantes_arca')
+          .update({ metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision })
+          .eq('id', guardadoPendienteCF.filaId)
+        await guardarChequeFactura('msa', {
+          id: guardadoPendienteCF.filaId,
+          nombre_proveedor: facturaEnProceso.nombre_proveedor,
+          cuit_proveedor: facturaEnProceso.cuit_proveedor,
+        }, datos, saldoPesos, montoRetencion > 0 ? { quincena, monto: montoRetencion, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
+        echeqPendienteCF.current = null
+        echeqFilaCF.current = null
+      }
+
       toast.success(
         tipoSeleccionado && montoRetencion > 0
           ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`
@@ -1714,6 +1755,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     } else if (pending && continuarSinSicore) {
       // Guardar el cambio de estado sin SICORE
       await actualizarRegistro(pending.filaId, 'estado', pending.nuevoEstado, 'ARCA')
+      // ECHEQ sin retención: estampar método/fecha de cobro + registrar el cheque por el total (imp_total ARS).
+      if (echeqPendienteCF.current && echeqFilaCF.current?.id === pending.filaId) {
+        const datos = echeqPendienteCF.current
+        const fila = echeqFilaCF.current
+        const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
+        const neto = (fila.imp_total || 0) * tc
+        await supabase.schema('msa').from('comprobantes_arca')
+          .update({ metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision })
+          .eq('id', pending.filaId)
+        await guardarChequeFactura('msa', { id: fila.id, nombre_proveedor: fila.nombre_proveedor, cuit_proveedor: fila.cuit_proveedor }, datos, neto, null)
+        echeqPendienteCF.current = null
+        echeqFilaCF.current = null
+      }
       if (cola.length === 0) toast.success('Estado cambiado sin retención SICORE')
     }
     setMostrarModalSicore(false)
@@ -1735,6 +1789,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       await evaluarRetencionSicoreCF(siguiente, nextPending, resto)
     } else {
       cargarDatos()
+    }
+  }
+
+  // Confirmar el modal ECHEQ → arranca el MISMO flujo SICORE que "pagar", con el pending en 'echeq'.
+  // La retención se calcula igual; el cheque + método de pago se estampan al finalizar (finalize/cancelar).
+  const confirmarEcheqCF = async () => {
+    if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro) {
+      toast.error('Completá banco, fecha de emisión y fecha de cobro.'); return
+    }
+    const datos: EcheqDatos = { ...echeqFormCF }
+    echeqPendienteCF.current = datos
+    setMostrarModalEcheqCF(false)
+
+    if (echeqOrigenCF === 'factura' && echeqFilaCF.current) {
+      // La quincena SICORE sale de la fecha de emisión del echeq → setear fecha_pago = fechaEmisión
+      const fila = { ...echeqFilaCF.current, fecha_pago: datos.fechaEmision } as CashFlowRow
+      echeqFilaCF.current = fila
+      await supabase.schema('msa').from('comprobantes_arca').update({ fecha_pago: datos.fechaEmision }).eq('id', fila.id)
+      const pending: PendingSicore = { filaId: fila.id, nuevoEstado: 'echeq', estadoAnterior: fila.estado }
+      setGuardadoPendienteCF(pending)
+      await evaluarRetencionSicoreCF(fila, pending, [])
+    } else if (echeqOrigenCF === 'anticipo' && echeqAnticipoCF.current) {
+      // Anticipo: fecha del echeq manda la quincena. Reutiliza el flujo SICORE de anticipos.
+      const ant = echeqAnticipoCF.current
+      await supabase.from('anticipos_proveedores').update({ fecha_pago: datos.fechaEmision }).eq('id', ant.id)
+      await cambiarEstadoPagoAnticipo(ant.id, 'pagar', true)   // esEcheq = true
     }
   }
 
@@ -1787,18 +1867,27 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
     const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
     const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
+    // Si el pago del anticipo es con ECHEQ, cierra en estado 'echeq' + registra el cheque (neto)
+    const esEcheq = !!(echeqPendienteCF.current && echeqAnticipoCF.current?.id === anticipoSicoreId)
     const { error } = await supabase.from('anticipos_proveedores').update({
-      estado_pago: 'pagar',
+      estado_pago: esEcheq ? 'echeq' : 'pagar',
       sicore: quincena,
       monto_sicore: montoSicoreAnticipo,
       tipo_sicore: tipoSicoreAnticipo.tipo,
       monto_restante: saldoFinal,
+      ...(esEcheq ? { metodo_pago: 'echeq', fecha_cobro_echeq: echeqPendienteCF.current!.fechaCobro, fecha_pago: echeqPendienteCF.current!.fechaEmision } : {}),
     }).eq('id', anticipoSicoreId)
 
     if (error) { toast.error('Error guardando SICORE: ' + error.message); return }
-    toast.success(`Retención SICORE aplicada: $${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — Quincena ${quincena}`)
+    if (esEcheq && anticipo) {
+      await guardarChequeAnticipo('msa', { id: anticipo.id, nombre_proveedor: anticipo.nombre_proveedor, cuit_proveedor: anticipo.cuit_proveedor }, echeqPendienteCF.current!, saldoFinal, { quincena, monto: montoSicoreAnticipo, tipo: tipoSicoreAnticipo.tipo })
+      echeqPendienteCF.current = null
+      echeqAnticipoCF.current = null
+    }
+    toast.success(`Retención SICORE aplicada: $${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — Quincena ${quincena}${esEcheq ? ' (echeq)' : ''}`)
     cerrarModalSicoreAnticipo()
     await cargarAnticiposExistentes()
+    await cargarDatos()
   }
 
   // Cerrar y limpiar modal SICORE anticipo
@@ -1950,23 +2039,52 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
   }
 
-  const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string) => {
+  // Estampa el echeq en un anticipo ya con SICORE resuelto: estado='echeq' + método/fechas + registra cheque (neto).
+  const finalizarEcheqAnticipo = async (anticipo: any, saldoNeto: number, sicore: { quincena: string | null; monto: number | null; tipo: string | null } | null) => {
+    const datos = echeqPendienteCF.current
+    if (!datos) return
+    await supabase.from('anticipos_proveedores')
+      .update({ estado_pago: 'echeq', metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision, monto_restante: saldoNeto })
+      .eq('id', anticipo.id)
+    await guardarChequeAnticipo('msa', { id: anticipo.id, nombre_proveedor: anticipo.nombre_proveedor, cuit_proveedor: anticipo.cuit_proveedor }, datos, saldoNeto, sicore)
+    echeqPendienteCF.current = null
+    echeqAnticipoCF.current = null
+  }
+
+  const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string, esEcheq = false) => {
     // Obtener el anticipo completo para saber si tiene SICORE
     const anticipo = anticiposExistentes.find(a => a.id === anticipoId)
 
+    // Intercept ECHEQ desde la UI → abrir modal (banco/número/fechas); el resto lo hace confirmarEcheqCF.
+    if (nuevoEstado === 'echeq' && !esEcheq) {
+      if (!anticipo) return
+      echeqAnticipoCF.current = anticipo
+      echeqFilaCF.current = null
+      setEcheqOrigenCF('anticipo')
+      setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || new Date().toISOString().split('T')[0], fechaCobro: '' })
+      setMostrarModalEcheqCF(true)
+      return
+    }
+
+    // esEcheq viene con nuevoEstado='pagar' (pasa por el flujo SICORE, cierra en 'echeq')
     if (nuevoEstado === 'pagar') {
       if (anticipo?.sicore && anticipo?.monto_sicore) {
         // Ya tiene SICORE: actualizar estado + recalcular saldo
         const saldo = (anticipo.monto || 0) - (anticipo.monto_sicore || 0)
-        const { error } = await supabase.from('anticipos_proveedores')
-          .update({ estado_pago: 'pagar', monto_restante: saldo }).eq('id', anticipoId)
-        if (error) { toast.error('Error: ' + error.message); return }
-        toast.success('Anticipo → pagar (SICORE ya aplicado)')
+        if (esEcheq) {
+          await finalizarEcheqAnticipo(anticipo, saldo, { quincena: anticipo.sicore, monto: anticipo.monto_sicore, tipo: anticipo.tipo_sicore })
+          toast.success('Anticipo → echeq (SICORE ya aplicado)')
+        } else {
+          const { error } = await supabase.from('anticipos_proveedores')
+            .update({ estado_pago: 'pagar', monto_restante: saldo }).eq('id', anticipoId)
+          if (error) { toast.error('Error: ' + error.message); return }
+          toast.success('Anticipo → pagar (SICORE ya aplicado)')
+        }
       } else if (anticipo) {
-        // Sin SICORE: abrir modal
+        // Sin SICORE: abrir modal (si es echeq, el ref echeqAnticipoCF/echeqPendienteCF persiste → confirmarSicoreAnticipo cierra en echeq)
         setAnticipoSicoreId(anticipo.id)
         setAnticipoSicoreCuit(anticipo.cuit_proveedor)
-        setAnticipoSicoreFecha(anticipo.fecha_pago)
+        setAnticipoSicoreFecha(esEcheq && echeqPendienteCF.current ? echeqPendienteCF.current.fechaEmision : anticipo.fecha_pago)
         setPasoSicoreAnticipo('tipo')
         setMostrarModalSicoreAnticipo(true)
         return  // no recargar todavía
@@ -3719,6 +3837,46 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       {/* Wizard vinculación anticipo → factura (compartido con Vista Principal) */}
       <ModalVinculacionAnticipo controller={vincAnticipo} />
+
+      {/* Modal ECHEQ (facturas y anticipos) — paridad con el Modal de Pagos */}
+      <Dialog open={mostrarModalEcheqCF} onOpenChange={(open) => { if (!open) { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>📝 Pago con ECHEQ</DialogTitle>
+            <DialogDescription>Completar datos del cheque electrónico ({echeqOrigenCF === 'anticipo' ? 'anticipo' : 'factura'})</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-sm font-medium block mb-1">Banco emisor *</label>
+              <select className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.banco} onChange={e => setEcheqFormCF(prev => ({ ...prev, banco: e.target.value }))}>
+                <option value="">Seleccionar banco...</option>
+                {['Banco Galicia', 'Banco Santander', 'Banco Nación', 'Banco Provincia', 'BBVA', 'Banco HSBC', 'Banco Macro', 'Banco ICBC', 'Banco Ciudad', 'Banco Comafi', 'Banco Supervielle', 'Banco Patagonia', 'Banco Credicoop', 'Banco Industrial', 'Otro'].map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Número de ECHEQ</label>
+              <input type="text" className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Ej: 000012345" value={echeqFormCF.numero} onChange={e => setEcheqFormCF(prev => ({ ...prev, numero: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Fecha de emisión *</label>
+              <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaEmision} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaEmision: e.target.value }))} />
+              {echeqFormCF.fechaEmision && (
+                <p className="text-xs text-blue-600 mt-1">→ Quincena SICORE: {generarQuincenaSicore(echeqFormCF.fechaEmision)}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Fecha de cobro *</label>
+              <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaCobro} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaCobro: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null }}>Cancelar</Button>
+            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar ECHEQ</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal SICORE - Anticipo de pago */}
       <Dialog open={mostrarModalSicoreAnticipo} onOpenChange={(open) => { if (!open) cerrarModalSicoreAnticipo() }}>
