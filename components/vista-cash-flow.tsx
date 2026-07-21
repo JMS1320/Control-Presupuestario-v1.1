@@ -1847,6 +1847,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
   }
 
+  // ECHEQ directo (la FC YA tiene SICORE aplicado, p.ej. saldo con anticipo): no recalcula nada,
+  // solo registra el cheque por el saldo real (monto_a_abonar en ARS) + estado='echeq' + método/fecha de cobro.
+  const registrarEcheqDirecto = async (facturaId: string, datos: EcheqDatos) => {
+    const { data: fc } = await supabase.schema('msa').from('comprobantes_arca')
+      .select('monto_a_abonar, imp_total, tc_pago, tipo_cambio, sicore, monto_sicore, tipo_sicore, denominacion_emisor, cuit')
+      .eq('id', facturaId).single()
+    if (!fc) return
+    const tc = (fc.tc_pago as number) ?? (fc.tipo_cambio as number) ?? 1
+    const neto = (((fc.monto_a_abonar as number) ?? (fc.imp_total as number) ?? 0)) * tc  // saldo real a librar (ARS)
+    await supabase.schema('msa').from('comprobantes_arca')
+      .update({ estado: 'echeq', metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision })
+      .eq('id', facturaId)
+    await guardarChequeFactura('msa', { id: facturaId, denominacion_emisor: fc.denominacion_emisor as string | null, cuit: fc.cuit as string | null },
+      datos, neto, fc.sicore ? { quincena: fc.sicore as string, monto: (fc.monto_sicore as number) ?? null, tipo: (fc.tipo_sicore as string) ?? null } : null)
+  }
+
   // Confirmar el modal ECHEQ → arranca el MISMO flujo SICORE que "pagar", con el pending en 'echeq'.
   // La retención se calcula igual; el cheque + método de pago se estampan al finalizar (finalize/cancelar).
   const confirmarEcheqCF = async () => {
@@ -1857,13 +1873,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     echeqPendienteCF.current = datos
     setMostrarModalEcheqCF(false)
 
-    // ECHEQ en LOTE: procesar la cola de FC ARCA (cada una calcula su SICORE; el finalize estampa echeq + cheque)
+    // ECHEQ en LOTE: partir en las que YA tienen SICORE (echeq directo, sin recalcular) y las que no (flujo SICORE)
     if (echeqLoteActivo.current && echeqLoteFacturas.current.length > 0) {
-      const facturas = echeqLoteFacturas.current
-      // fecha_pago = emisión del echeq (define la quincena) para todas
+      const yaSicore = echeqLoteFacturas.current.filter(f => !!f.sicore)
+      const sinSicore = echeqLoteFacturas.current.filter(f => !f.sicore)
+      for (const f of yaSicore) await registrarEcheqDirecto(f.id, datos)
+      if (sinSicore.length === 0) {
+        echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null
+        toast.success('ECHEQ registrado')
+        await cargarDatos()
+        return
+      }
+      // fecha_pago = emisión del echeq (define la quincena) para las que sí necesitan SICORE
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ fecha_pago: datos.fechaEmision }).in('id', facturas.map(f => f.id))
-      const conFecha = facturas.map(f => ({ ...f, fecha_pago: datos.fechaEmision }) as CashFlowRow)
+        .update({ fecha_pago: datos.fechaEmision }).in('id', sinSicore.map(f => f.id))
+      const conFecha = sinSicore.map(f => ({ ...f, fecha_pago: datos.fechaEmision }) as CashFlowRow)
       const [primera, ...resto] = conFecha
       setColaLoteSicore(resto)
       const pending: PendingSicore = { filaId: primera.id, nuevoEstado: 'echeq', estadoAnterior: primera.estado }
@@ -1873,13 +1897,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     if (echeqOrigenCF === 'factura' && echeqFilaCF.current) {
-      // La quincena SICORE sale de la fecha de emisión del echeq → setear fecha_pago = fechaEmisión
-      const fila = { ...echeqFilaCF.current, fecha_pago: datos.fechaEmision } as CashFlowRow
-      echeqFilaCF.current = fila
-      await supabase.schema('msa').from('comprobantes_arca').update({ fecha_pago: datos.fechaEmision }).eq('id', fila.id)
-      const pending: PendingSicore = { filaId: fila.id, nuevoEstado: 'echeq', estadoAnterior: fila.estado }
+      const fila = echeqFilaCF.current
+      // Si la FC YA tiene SICORE aplicado (p.ej. saldo con anticipo vinculado) → echeq directo por el saldo, sin recalcular.
+      if (fila.sicore) {
+        await registrarEcheqDirecto(fila.id, datos)
+        echeqPendienteCF.current = null; echeqFilaCF.current = null
+        toast.success('ECHEQ registrado')
+        await cargarDatos()
+        return
+      }
+      // Sin SICORE: la quincena sale de la fecha de emisión del echeq → setear fecha_pago = fechaEmisión
+      const filaF = { ...fila, fecha_pago: datos.fechaEmision } as CashFlowRow
+      echeqFilaCF.current = filaF
+      await supabase.schema('msa').from('comprobantes_arca').update({ fecha_pago: datos.fechaEmision }).eq('id', filaF.id)
+      const pending: PendingSicore = { filaId: filaF.id, nuevoEstado: 'echeq', estadoAnterior: filaF.estado }
       setGuardadoPendienteCF(pending)
-      await evaluarRetencionSicoreCF(fila, pending, [])
+      await evaluarRetencionSicoreCF(filaF, pending, [])
     } else if (echeqOrigenCF === 'anticipo' && echeqAnticipoCF.current) {
       // Anticipo: fecha del echeq manda la quincena. Reutiliza el flujo SICORE de anticipos.
       const ant = echeqAnticipoCF.current
