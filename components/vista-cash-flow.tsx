@@ -239,9 +239,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [mostrarModalEcheqCF, setMostrarModalEcheqCF] = useState(false)
   const [echeqFormCF, setEcheqFormCF] = useState<EcheqDatos>({ banco: '', numero: '', fechaEmision: '', fechaCobro: '' })
   const [echeqOrigenCF, setEcheqOrigenCF] = useState<'factura' | 'anticipo'>('factura')
-  const echeqFilaCF = useRef<CashFlowRow | null>(null)       // factura en proceso de echeq
+  const echeqFilaCF = useRef<CashFlowRow | null>(null)       // factura en proceso de echeq (single)
   const echeqAnticipoCF = useRef<any | null>(null)           // anticipo en proceso de echeq
   const echeqPendienteCF = useRef<EcheqDatos | null>(null)   // datos del cheque a registrar al finalizar
+  const echeqLoteActivo = useRef<boolean>(false)             // echeq de varias FC vía lote (usa la cola SICORE)
+  const echeqLoteFacturas = useRef<CashFlowRow[]>([])        // FC ARCA a procesar como echeq en lote
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -1215,6 +1217,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
       })
 
+      // ECHEQ en lote: las FC ARCA pasan por el flujo echeq+SICORE (modal + cheque); el resto va directo.
+      if (cambiarEstadoLote && valorEstadoLote === 'echeq') {
+        const arcaFacturas = todasFilas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq')
+        const noArca = todasFilas.filter(f => !(f.origen === 'ARCA' && f.estado !== 'echeq'))
+        noArca.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen as 'ARCA' | 'TEMPLATE', campo: 'estado', valor: 'echeq' }))
+        if (actualizaciones.length > 0) await actualizarBatch(actualizaciones)
+        if (arcaFacturas.length > 0) {
+          // Abrir el modal echeq UNA vez; al confirmar, confirmarEcheqCF procesa la cola (cada FC calcula su SICORE).
+          echeqLoteActivo.current = true
+          echeqLoteFacturas.current = arcaFacturas
+          echeqFilaCF.current = null
+          echeqAnticipoCF.current = null
+          setEcheqOrigenCF('factura')
+          const hoy = new Date().toISOString().split('T')[0]
+          setEcheqFormCF({ banco: '', numero: '', fechaEmision: (cambiarFechaVenc && valorFechaLote) || arcaFacturas[0].fecha_pago || hoy, fechaCobro: '' })
+          setMostrarModalEcheqCF(true)
+        } else {
+          toast.success(`${noArca.length} registros → echeq`)
+          desactivarModoPagos()
+        }
+        setProcesandoLote(false)
+        return
+      }
+
       if (cambiarEstadoLote) {
         const esArcaAPagar = (f: CashFlowRow) => valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar'
         // Lo que no es ARCA→pagar: estado directo
@@ -1711,10 +1737,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         })
       }
 
-      // 4. ECHEQ: si el pago es con echeq, estampar método/fecha de cobro + registrar el cheque (neto en ARS).
+      // 4. ECHEQ: si el pago es con echeq (single o lote), estampar método/fecha de cobro + registrar el cheque (neto en ARS).
       //    El estado ya se escribió como 'echeq' (guardadoPendienteCF.nuevoEstado). saldoPesos = neto real a librar.
-      if (echeqPendienteCF.current && echeqFilaCF.current?.id === guardadoPendienteCF.filaId) {
-        const datos = echeqPendienteCF.current
+      const aplicaEcheq = !!echeqPendienteCF.current && (echeqLoteActivo.current || echeqFilaCF.current?.id === guardadoPendienteCF.filaId)
+      if (aplicaEcheq) {
+        const datos = echeqPendienteCF.current!
         await supabase.schema('msa').from('comprobantes_arca')
           .update({ metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision })
           .eq('id', guardadoPendienteCF.filaId)
@@ -1723,8 +1750,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           nombre_proveedor: facturaEnProceso.nombre_proveedor,
           cuit_proveedor: facturaEnProceso.cuit_proveedor,
         }, datos, saldoPesos, montoRetencion > 0 ? { quincena, monto: montoRetencion, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
-        echeqPendienteCF.current = null
-        echeqFilaCF.current = null
+        if (!echeqLoteActivo.current) { echeqPendienteCF.current = null; echeqFilaCF.current = null }
       }
 
       toast.success(
@@ -1749,10 +1775,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (siguiente) {
         const resto = colaLoteSicore.slice(1)
         setColaLoteSicore(resto)
-        const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: 'pagar', estadoAnterior: siguiente.estado }
+        const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: echeqLoteActivo.current ? 'echeq' : 'pagar', estadoAnterior: siguiente.estado }
         setGuardadoPendienteCF(nextPending)
         await evaluarRetencionSicoreCF(siguiente, nextPending, resto)
       } else {
+        // Fin de cola: limpiar refs del echeq lote
+        if (echeqLoteActivo.current) { echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null }
         cargarDatos()
       }
     } catch (error) {
@@ -1773,24 +1801,25 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const cola = freshCola !== undefined ? freshCola : colaLoteSicore
 
     if (pending && !continuarSinSicore) {
-      // Restaurar estado anterior en BD y limpiar cola entera
+      // Restaurar estado anterior en BD y limpiar cola entera (aborta también el echeq lote)
       await actualizarRegistro(pending.filaId, 'estado', pending.estadoAnterior, 'ARCA')
       setColaLoteSicore([])
+      echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null; echeqFilaCF.current = null
     } else if (pending && continuarSinSicore) {
       // Guardar el cambio de estado sin SICORE
       await actualizarRegistro(pending.filaId, 'estado', pending.nuevoEstado, 'ARCA')
-      // ECHEQ sin retención: estampar método/fecha de cobro + registrar el cheque por el total (imp_total ARS).
-      if (echeqPendienteCF.current && echeqFilaCF.current?.id === pending.filaId) {
-        const datos = echeqPendienteCF.current
-        const fila = echeqFilaCF.current
+      // ECHEQ sin retención (single o lote): estampar método/fecha de cobro + registrar el cheque por el total (imp_total ARS).
+      const fila = echeqLoteActivo.current ? facturaEnProceso : echeqFilaCF.current
+      const aplicaEcheq = !!echeqPendienteCF.current && !!fila && (echeqLoteActivo.current || fila.id === pending.filaId)
+      if (aplicaEcheq && fila) {
+        const datos = echeqPendienteCF.current!
         const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
         const neto = (fila.imp_total || 0) * tc
         await supabase.schema('msa').from('comprobantes_arca')
           .update({ metodo_pago: 'echeq', fecha_cobro_echeq: datos.fechaCobro, fecha_pago: datos.fechaEmision })
           .eq('id', pending.filaId)
-        await guardarChequeFactura('msa', { id: fila.id, nombre_proveedor: fila.nombre_proveedor, cuit_proveedor: fila.cuit_proveedor }, datos, neto, null)
-        echeqPendienteCF.current = null
-        echeqFilaCF.current = null
+        await guardarChequeFactura('msa', { id: pending.filaId, nombre_proveedor: fila.nombre_proveedor, cuit_proveedor: fila.cuit_proveedor }, datos, neto, null)
+        if (!echeqLoteActivo.current) { echeqPendienteCF.current = null; echeqFilaCF.current = null }
       }
       if (cola.length === 0) toast.success('Estado cambiado sin retención SICORE')
     }
@@ -1808,10 +1837,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (continuarSinSicore && cola.length > 0) {
       const [siguiente, ...resto] = cola
       setColaLoteSicore(resto)
-      const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: 'pagar', estadoAnterior: siguiente.estado }
+      const nextPending: PendingSicore = { filaId: siguiente.id, nuevoEstado: echeqLoteActivo.current ? 'echeq' : 'pagar', estadoAnterior: siguiente.estado }
       setGuardadoPendienteCF(nextPending)
       await evaluarRetencionSicoreCF(siguiente, nextPending, resto)
     } else {
+      // Fin de cola: limpiar refs del echeq lote
+      if (echeqLoteActivo.current) { echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null }
       cargarDatos()
     }
   }
@@ -1825,6 +1856,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const datos: EcheqDatos = { ...echeqFormCF }
     echeqPendienteCF.current = datos
     setMostrarModalEcheqCF(false)
+
+    // ECHEQ en LOTE: procesar la cola de FC ARCA (cada una calcula su SICORE; el finalize estampa echeq + cheque)
+    if (echeqLoteActivo.current && echeqLoteFacturas.current.length > 0) {
+      const facturas = echeqLoteFacturas.current
+      // fecha_pago = emisión del echeq (define la quincena) para todas
+      await supabase.schema('msa').from('comprobantes_arca')
+        .update({ fecha_pago: datos.fechaEmision }).in('id', facturas.map(f => f.id))
+      const conFecha = facturas.map(f => ({ ...f, fecha_pago: datos.fechaEmision }) as CashFlowRow)
+      const [primera, ...resto] = conFecha
+      setColaLoteSicore(resto)
+      const pending: PendingSicore = { filaId: primera.id, nuevoEstado: 'echeq', estadoAnterior: primera.estado }
+      setGuardadoPendienteCF(pending)
+      await evaluarRetencionSicoreCF(primera, pending, resto)
+      return
+    }
 
     if (echeqOrigenCF === 'factura' && echeqFilaCF.current) {
       // La quincena SICORE sale de la fecha de emisión del echeq → setear fecha_pago = fechaEmisión
@@ -3863,7 +3909,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       <ModalVinculacionAnticipo controller={vincAnticipo} />
 
       {/* Modal ECHEQ (facturas y anticipos) — paridad con el Modal de Pagos */}
-      <Dialog open={mostrarModalEcheqCF} onOpenChange={(open) => { if (!open) { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null } }}>
+      <Dialog open={mostrarModalEcheqCF} onOpenChange={(open) => { if (!open) { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []} }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>📝 Pago con ECHEQ</DialogTitle>
@@ -3896,7 +3942,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>
             <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar ECHEQ</Button>
           </DialogFooter>
         </DialogContent>
