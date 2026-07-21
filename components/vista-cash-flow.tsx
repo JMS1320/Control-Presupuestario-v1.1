@@ -2349,6 +2349,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         
         case 'text':
         default:
+          // Badge ECHEQ en columna nombre_proveedor (distintivo visual claro)
+          if (columna.key === 'nombre_proveedor' && fila.estado === 'echeq') {
+            return (
+              <div className="flex items-center gap-1">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-emerald-600 text-white shrink-0" title="Pago con ECHEQ">📝 ECHEQ</span>
+                <span className="truncate" title={valor as string}>{(valor as string) || '-'}</span>
+              </div>
+            )
+          }
           // Badge USD clickable en columna nombre_proveedor para facturas USD
           if (columna.key === 'nombre_proveedor' && fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)) {
             const tcLabel = fila.tc_pago
@@ -3023,7 +3032,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         key={fila.id}
                         className={`group hover:bg-gray-50 ${
                           filasSeleccionadas.has(fila.id) ? 'bg-blue-50' :
-                          fila.estado === 'echeq' ? 'bg-emerald-50' :
+                          fila.estado === 'echeq' ? 'bg-emerald-100 border-l-4 border-emerald-500' :
                           esUSD ? 'bg-amber-50' :
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                         }`}
