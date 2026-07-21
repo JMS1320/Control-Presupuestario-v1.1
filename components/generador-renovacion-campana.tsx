@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X, Info } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -52,6 +52,13 @@ function mesesBase(periodicidad: Periodicidad, targetY1: number): { y: number; m
   return out
 }
 
+// Marca un monto estimado con el "código interno …123" (últimos 3 dígitos = 123 → no es real).
+// Ej. 1.000.000 → 1.000.123 · 44.206 → 44.123. El 0 se respeta (SICORE se llena en cero).
+function marca123(monto: number): number {
+  if (!monto) return monto
+  return Math.floor(monto / 1000) * 1000 + 123
+}
+
 export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void }) {
   const [periodicidad, setPeriodicidad] = useState<Periodicidad>('bianual')
   const [targetLabel, setTargetLabel] = useState('')          // "26/27" o "2027"
@@ -60,6 +67,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const [openPrevistas, setOpenPrevistas] = useState(true)
   const [openNoAplican, setOpenNoAplican] = useState(false)
   const [generando, setGenerando] = useState(false)
+  const [marcarEstimados, setMarcarEstimados] = useState(true)   // pre-carga: montos ≠0 terminan en …123 (código interno "es estimado")
   // Detalle por fila (fase 2 punto 4): editar las cuotas individuales (permite varias por mes)
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [detalleItems, setDetalleItems] = useState<ItemCuota[]>([])
@@ -104,7 +112,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         const [y, m, d] = c.fecha_estimada.slice(0, 10).split('-')
         const ty = parseInt(y, 10) + shift
         const k = colKey(ty, parseInt(m, 10))
-        const monto = c.monto ?? 0
+        // Pre-carga: si está el toggle, marca el estimado con …123 (el 0 queda 0)
+        const monto = marcarEstimados ? marca123(c.monto ?? 0) : (c.monto ?? 0)
         const dia = parseInt(d, 10) || 1
         raw.push({ col: k, dia, monto })
         const prev = celdas[k]
@@ -329,6 +338,9 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
                   <button onClick={() => replicarFila(f.template.id)} title="Replicar el primer monto a los 12 meses" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
                   <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
                   <button onClick={() => abrirDetalle(f)} title="Detalle de cuotas (permite varias por mes)" className="text-gray-400 hover:text-purple-600"><List className="h-3.5 w-3.5" /></button>
+                  {(f.template.observaciones_template || f.template.alertas) && (
+                    <span className="text-blue-500" title={`Nota: ${f.template.observaciones_template || f.template.alertas}`}><Info className="h-3.5 w-3.5" /></span>
+                  )}
                   <span>{f.template.nombre_referencia}</span>
                   {f.detalle && <span className="text-[9px] bg-purple-500 text-white rounded px-1" title="Se genera desde el detalle manual (la matriz se ignora para esta fila)">detalle</span>}
                   <label className="flex items-center gap-1 text-[10px] text-gray-500 cursor-pointer" title="Las fechas de esta fila son de vencimiento (sino, estimadas)">
@@ -401,6 +413,10 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             <Button variant="outline" onClick={cargar} disabled={cargando}>
               {cargando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Recargar
             </Button>
+            <label className="flex items-center gap-2 text-sm cursor-pointer" title="Al recargar, los montos estimados terminan en …123 (código interno para distinguirlos de montos reales). El 0 queda 0.">
+              <Checkbox checked={marcarEstimados} onCheckedChange={(ch) => setMarcarEstimados(ch === true)} />
+              Marcar estimados (…123)
+            </label>
           </div>
 
           {cargando ? (
