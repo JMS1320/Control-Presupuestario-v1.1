@@ -1016,7 +1016,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
     const tareas = Array.from(grupos.entries()).map(async ([k, fs]) => {
       const [cuit, proveedor] = k.split('||')
-      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
       const items = fs.map(f => {
         const fa = f as any
         return {
@@ -1063,7 +1063,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     let ok = 0, sinMail = 0, err = 0
     for (const [k, fs] of grupos) {
       const [cuit, proveedor] = k.split('||')
-      const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
+      // 'arca' si CUALQUIER fila del grupo es ARCA (sino el cert SICORE se saltea al mezclar con transferencias/anticipos)
+      const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
       const items = fs.map(f => {
         const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
         return {

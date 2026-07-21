@@ -8,6 +8,7 @@
 import { supabase } from '@/lib/supabase'
 import { generarPDFDetallePago } from './pdf-detalle-pago'
 import { generarCertificadoRetencion } from './certificado-retencion'
+import { obtenerMediosPagoFactura, type MedioPago } from './medios-pago'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf)
@@ -38,7 +39,11 @@ export interface EncolarMailResult {
 export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarMailResult> {
   const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, registrosFallback } = p
   try {
-    const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true })
+    // Medios de pago (transferencia + echeq + ...) para el desglose multimedio en el PDF del mail
+    const ids = (facturaIds || []).filter(Boolean)
+    let mediosPago: MedioPago[] = []
+    if (tipo === 'arca' && ids.length) mediosPago = await obtenerMediosPagoFactura(schemaName, ids)
+    const detalleB64 = await generarPDFDetallePago(tipo, proveedor, cuit, items, anticipo, { returnBase64: true, mediosPago })
     if (!detalleB64) return { ok: false, email: '', conCertificado: false, error: 'No se pudo generar el detalle PDF' }
 
     const cuitClean = (cuit || '').replace(/\D/g, '')
@@ -76,12 +81,21 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
     const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
     const fcs = items.map(i => i.comprobante).join(', ')
-    let cuenta = `\nTotal transferido: ${m(totalPagado)}`
-    if (totalRet > 0 || totalDesc > 0) {
+    let cuenta: string
+    if (mediosPago.length > 0) {
+      // Desglose por medio real (transferencia + echeq + ...) + retención/descuento = total factura
       cuenta = `\nImporte facturas: ${m(totalBruto)}`
+      for (const md of mediosPago) cuenta += `\n${md.detalle || md.tipo}: ${m(md.monto)}`
       if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
       if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
-      cuenta += `\nTotal transferido: ${m(totalPagado)}`
+    } else {
+      cuenta = `\nTotal transferido: ${m(totalPagado)}`
+      if (totalRet > 0 || totalDesc > 0) {
+        cuenta = `\nImporte facturas: ${m(totalBruto)}`
+        if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
+        if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
+        cuenta += `\nTotal transferido: ${m(totalPagado)}`
+      }
     }
     cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
     const asunto = `Detalle de pago — ${proveedor}`
