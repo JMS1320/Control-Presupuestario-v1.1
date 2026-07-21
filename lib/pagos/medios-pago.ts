@@ -21,7 +21,8 @@ export async function obtenerMediosPagoFactura(schema: string, facturaIds: strin
   const { data: ants } = await supabase.from('anticipos_proveedores')
     .select('monto, fecha_pago').in('factura_id', facturaIds)
   for (const a of (ants ?? [])) {
-    medios.push({ tipo: 'anticipo', monto: (a.monto as number) || 0, fecha: (a.fecha_pago as string) || null, detalle: 'Anticipo (transferencia)' })
+    // "Anticipo" es término interno → hacia el proveedor se muestra como "Transferencia"
+    medios.push({ tipo: 'anticipo', monto: (a.monto as number) || 0, fecha: (a.fecha_pago as string) || null, detalle: 'Transferencia' })
   }
 
   // 2. Cheques (echeq)
