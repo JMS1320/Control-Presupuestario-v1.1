@@ -10,7 +10,7 @@ import { PanelMailsPago } from "@/components/panel-mails-pago"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
-import { resetearRetencionFactura, estadoQuincenaDeFactura } from "@/lib/sicore/resetear-retencion"
+import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
@@ -645,7 +645,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
 
       // Revertir FC (ARCA) a 'pendiente' = RESET completo (anula SICORE v2 + limpia sicore/tc/descuento +
-      // monto_a_abonar→imp_total), igual que "Resetear" del Modal. Sin esto quedaba pendiente con datos SICORE.
+      // restaura monto_a_abonar), igual que "Resetear" del Modal. Sin esto quedaba pendiente con datos SICORE.
       if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
         const fila = filaParaCambioEstado
         // Miembros a resetear: si es fila-grupo, todos; si es individual, ella sola.
@@ -661,16 +661,40 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             setFilaParaCambioEstado(null); setGuardandoCambio(false); return
           }
         }
+
+        // Anticipos vinculados (sobre todos los miembros) → decidir cómo tratarlos
+        const antsPorFactura: { id: string; ants: Awaited<ReturnType<typeof anticiposVinculadosAFactura>> }[] = []
+        for (const id of ids) antsPorFactura.push({ id, ants: await anticiposVinculadosAFactura(id) })
+        const totalAnts = antsPorFactura.reduce((s, x) => s + x.ants.length, 0)
+        const montoAnts = antsPorFactura.reduce((s, x) => s + x.ants.reduce((a, b) => a + (b.monto || 0), 0), 0)
+
+        // ADVERTENCIA SIEMPRE: qué va a pasar (más allá del estado de la quincena)
+        let msg = `¿Resetear ${ids.length > 1 ? `${ids.length} FC` : 'la FC'} a pendiente?\n\nSe hará:\n• Se anula la retención SICORE${fila.sicore ? ` (quincena ${fila.sicore})` : ''}\n• Se borra el descuento aplicado\n• El monto vuelve al importe original`
+        let modoAnticipo: 'mantener' | 'eliminar' = 'mantener'
+        if (totalAnts > 0) {
+          msg += `\n\n⚠️ Hay ${totalAnts} anticipo(s) vinculado(s) por $${montoAnts.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`
+          if (!window.confirm(msg + `\n\n¿Continuar con el reset?`)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+          // Segunda elección: mantener o eliminar el anticipo
+          const mantener = window.confirm(
+            `¿Cómo trato el/los anticipo(s)?\n\n• ACEPTAR = MANTENER el anticipo (la FC recuerda el saldo: monto = total − $${montoAnts.toLocaleString('es-AR', { minimumFractionDigits: 2 })}). El anticipo sigue vinculado.\n\n• CANCELAR = ELIMINAR el anticipo (se BORRA la fila del anticipo y sus datos; el monto vuelve al total).`
+          )
+          modoAnticipo = mantener ? 'mantener' : 'eliminar'
+        } else {
+          if (!window.confirm(msg + `\n\n¿Continuar?`)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+        }
+
         try {
           for (const id of ids) {
-            await resetearRetencionFactura('msa', id)
+            await resetearRetencionFactura('msa', id, { modoAnticipo })
           }
-          toast.success(ids.length > 1 ? `${ids.length} FC reseteadas a pendiente` : 'FC reseteada a pendiente')
+          const sufijo = totalAnts > 0 ? (modoAnticipo === 'eliminar' ? ' (anticipo eliminado)' : ' (anticipo mantenido)') : ''
+          toast.success((ids.length > 1 ? `${ids.length} FC reseteadas a pendiente` : 'FC reseteada a pendiente') + sufijo)
         } catch (e: any) {
           toast.error('Error al resetear: ' + (e?.message ?? e))
         }
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
+        await cargarAnticiposExistentes()
         await cargarDatos()
         return
       }

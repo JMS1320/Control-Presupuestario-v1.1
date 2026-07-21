@@ -14,26 +14,66 @@ export async function estadoQuincenaDeFactura(schema: string, facturaId: string)
   } catch { return null }
 }
 
+export interface AnticipoVinculado { id: string; monto: number; nombre_proveedor: string | null; sicore: string | null; monto_sicore: number | null }
+
+// Anticipos vinculados a una factura (para decidir el reset: mantener el saldo o eliminar el anticipo).
+export async function anticiposVinculadosAFactura(facturaId: string): Promise<AnticipoVinculado[]> {
+  const { data } = await supabase.from('anticipos_proveedores')
+    .select('id, monto, nombre_proveedor, sicore, monto_sicore').eq('factura_id', facturaId)
+  return (data ?? []) as AnticipoVinculado[]
+}
+
+export interface OpcionesReset {
+  // 'mantener' → monto_a_abonar = imp_total − Σanticipos (la FC "recuerda" el anticipo, que sigue vinculado).
+  // 'eliminar' → borra la fila de cada anticipo vinculado (+ sus dependencias) y monto_a_abonar = imp_total.
+  // Sin anticipos vinculados el flag es indiferente.
+  modoAnticipo?: 'mantener' | 'eliminar'
+}
+
 // Anula la retención v2 (conserva nro_comprobante/certificado) + limpia los campos SICORE de la FC + estado=pendiente.
-// monto_a_abonar vuelve a imp_total (moneda original) y fecha_pago se vacía; si hay fecha_vencimiento, fecha_estimada
-// vuelve a ese venc (sino queda como está). Todo lo busca la función sola. Lanza Error si falla el update.
-export async function resetearRetencionFactura(schema: string, facturaId: string): Promise<void> {
+// Maneja los anticipos vinculados según opts.modoAnticipo. Todo lo busca la función sola. Lanza Error si falla.
+export async function resetearRetencionFactura(schema: string, facturaId: string, opts: OpcionesReset = {}): Promise<void> {
+  const modo = opts.modoAnticipo ?? 'mantener'
+
   // 0. Datos para restaurar (imp_total en moneda original + vencimiento)
   const { data: fc } = await supabase.schema(schema).from('comprobantes_arca')
     .select('imp_total, fecha_vencimiento').eq('id', facturaId).single()
   const impTotal = (fc?.imp_total as number | undefined) ?? 0
   const fechaVenc = (fc?.fecha_vencimiento as string | null | undefined) ?? null
 
-  // 1. Anular registro v2 (si hay)
+  // 0b. Anticipos vinculados (para decidir el monto a restaurar / eliminarlos)
+  const anticipos = await anticiposVinculadosAFactura(facturaId)
+  const sumaAnticipos = anticipos.reduce((s, a) => s + (a.monto || 0), 0)
+
+  // 1. Anular registro v2 de la FACTURA (si hay)
   const { error: errAnul } = await supabase.schema(schema).from('sicore_retenciones')
     .update({ anulado: true, fecha_anulacion: new Date().toISOString(), motivo_anulacion: `Reset FC ${facturaId}` })
     .eq('factura_id', facturaId).eq('anulado', false)
   if (errAnul) console.error('Error anulando sicore_retenciones:', errAnul)
 
-  // 2. Limpiar la FC
+  // 2. Anticipos vinculados
+  let montoRestaurar = impTotal
+  if (anticipos.length > 0) {
+    if (modo === 'eliminar') {
+      const ids = anticipos.map(a => a.id)
+      // Limpiar dependencias del anticipo antes de borrarlo: anular su SICORE v2 + borrar su cheque
+      await supabase.schema(schema).from('sicore_retenciones')
+        .update({ anulado: true, fecha_anulacion: new Date().toISOString(), motivo_anulacion: `Reset FC ${facturaId} (elimina anticipo)` })
+        .in('anticipo_id', ids).eq('anulado', false)
+      await supabase.schema(schema).from('cheques').delete().in('anticipo_id', ids)
+      const { error: errDel } = await supabase.from('anticipos_proveedores').delete().in('id', ids)
+      if (errDel) throw errDel
+      montoRestaurar = impTotal // sin anticipos → total
+    } else {
+      // Mantener: la FC recuerda el anticipo → monto neto del anticipo (los anticipos siguen vinculados/pagados)
+      montoRestaurar = impTotal - sumaAnticipos
+    }
+  }
+
+  // 3. Limpiar la FC
   const updateData: Record<string, unknown> = {
     estado: 'pendiente', sicore: null, monto_sicore: null, tipo_sicore: null,
-    descuento_aplicado: null, tc_pago: null, monto_a_abonar: impTotal,
+    descuento_aplicado: null, tc_pago: null, monto_a_abonar: montoRestaurar,
     fecha_pago: null,
   }
   if (fechaVenc) updateData.fecha_estimada = fechaVenc // si hay venc, el orden del Cash Flow vuelve a lo firme
