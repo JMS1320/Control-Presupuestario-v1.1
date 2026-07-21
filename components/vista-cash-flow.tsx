@@ -14,6 +14,7 @@ import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosA
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
+import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -998,7 +999,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   // E2.3: Comprobante de pago PDF sobre las filas seleccionadas (agrupa por proveedor). Reusa lib/pagos/pdf-detalle-pago.
-  const generarPDFPagosSeleccionados = () => {
+  const generarPDFPagosSeleccionados = async () => {
     const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const fmtFecha = (s?: string | null) => {
@@ -1013,7 +1014,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       arr.push(f)
       grupos.set(k, arr)
     }
-    grupos.forEach((fs, k) => {
+    const tareas = Array.from(grupos.entries()).map(async ([k, fs]) => {
       const [cuit, proveedor] = k.split('||')
       const tipo = fs[0].origen === 'ARCA' ? 'arca' : 'template'
       const items = fs.map(f => {
@@ -1028,8 +1029,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
         }
       })
-      generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null)
+      // Medios de pago reales (anticipo/echeq/transferencia) para el desglose multimedio — solo ARCA (MSA)
+      let mediosPago: Awaited<ReturnType<typeof obtenerMediosPagoFactura>> = []
+      if (tipo === 'arca') {
+        const ids = fs.flatMap(f => (f.facturas_agrupadas && f.ids_grupo?.length) ? f.ids_grupo : [f.id])
+        mediosPago = await obtenerMediosPagoFactura('msa', ids)
+      }
+      await generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null, { mediosPago })
     })
+    await Promise.all(tareas)
     toast.success(`${grupos.size} comprobante(s) PDF generado(s)`)
   }
 

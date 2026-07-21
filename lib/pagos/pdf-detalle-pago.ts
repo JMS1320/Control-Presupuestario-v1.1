@@ -5,6 +5,7 @@
 
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import type { MedioPago } from './medios-pago'
 
 export const generarPDFDetallePago = async (
   tipo: 'arca' | 'template',
@@ -27,7 +28,7 @@ export const generarPDFDetallePago = async (
     sicore: string | null
     fecha_pago: string
   } | null,
-  opciones?: { returnBase64?: boolean }
+  opciones?: { returnBase64?: boolean; mediosPago?: MedioPago[] }
 ): Promise<string | void> => {
   try {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -76,6 +77,8 @@ export const generarPDFDetallePago = async (
     const hayDescuento = anticipo
       ? (anticipo.descuento_aplicado || 0) > 0
       : items.some(i => (i.descuento_aplicado || 0) > 0)
+    // Si hay desglose de medios, la tabla principal NO muestra Transferido/Cancelado (lo cubre el desglose)
+    const hayMedios = (opciones?.mediosPago ?? []).length > 0
 
     const head: string[][] = [[
       'Comprobante',
@@ -83,22 +86,21 @@ export const generarPDFDetallePago = async (
       'Total Factura',
       ...(hayRetencion ? ['Retención Ganancias'] : []),
       ...(hayDescuento ? ['Descuento'] : []),
-      'Monto Transferido',
-      'Total Cancelado',
+      ...(hayMedios ? [] : ['Monto Transferido', 'Total Cancelado']),
     ]]
 
     let body: string[][]
     if (anticipo) {
       const montoTransferido = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
       const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0)
+      const cols = (extra: string[]) => hayMedios ? extra : [...extra, fmt(montoTransferido), fmt(totalCancelado)]
       body = items.map(i => [
         i.comprobante,
         i.fecha,
         fmt(i.imp_total),
         ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
         ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
-        fmt(montoTransferido),
-        fmt(totalCancelado),
+        ...cols([]),
       ])
       const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
       body.push([
@@ -106,8 +108,7 @@ export const generarPDFDetallePago = async (
         fmt(totalBruto),
         ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
         ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
-        fmt(montoTransferido),
-        fmt(totalCancelado),
+        ...cols([]),
       ])
     } else {
       body = items.map(i => {
@@ -119,8 +120,7 @@ export const generarPDFDetallePago = async (
           fmt(i.imp_total),
           ...(hayRetencion ? [i.monto_sicore ? fmt(i.monto_sicore) : '-'] : []),
           ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
-          fmt(montoTransferido),
-          fmt(totalCancelado),
+          ...(hayMedios ? [] : [fmt(montoTransferido), fmt(totalCancelado)]),
         ]
       })
       const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
@@ -133,12 +133,10 @@ export const generarPDFDetallePago = async (
         fmt(totalBruto),
         ...(hayRetencion ? [fmt(totalRet)] : []),
         ...(hayDescuento ? [fmt(totalDesc)] : []),
-        fmt(totalTransferido),
-        fmt(totalCancelado),
+        ...(hayMedios ? [] : [fmt(totalTransferido), fmt(totalCancelado)]),
       ])
     }
 
-    const ncols = head[0].length
     autoTable(doc, {
       startY: 56,
       head,
@@ -147,10 +145,8 @@ export const generarPDFDetallePago = async (
       headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
       bodyStyles: { fontSize: 9 },
       columnStyles: {
-        2: { halign: 'right' },
-        [ncols - 3]: { halign: 'right' },
-        [ncols - 2]: { halign: 'right' },
-        [ncols - 1]: { halign: 'right', fontStyle: 'bold' },
+        2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
+        5: { halign: 'right' }, 6: { halign: 'right' },
       },
       didParseCell: (data: any) => {
         if (data.row.index === body.length - 1 && data.section === 'body') {
@@ -159,6 +155,54 @@ export const generarPDFDetallePago = async (
         }
       }
     })
+
+    // ── Desglose de MEDIOS de pago (transferencia/anticipo + echeq + ...) ──────
+    // Cuando un pago se reparte en varios medios (ej. anticipo por transferencia + echeq del saldo),
+    // se muestra cada tramo + la retención SICORE; la suma debe dar el total de la(s) factura(s).
+    const medios = opciones?.mediosPago ?? []
+    if (medios.length > 0) {
+      const fmtFechaMedio = (f?: string | null) => f ? fmtFechaStr(f) : ''
+      const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
+      const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
+      const totalFactura = items.reduce((s, i) => s + i.imp_total, 0)
+      const sumaMedios = medios.reduce((s, m) => s + m.monto, 0)
+      const totalDesglose = sumaMedios + totalRet + totalDesc
+
+      const mHead = [['Medio de pago', 'Fecha', 'Monto']]
+      const mBody: string[][] = medios.map(m => [m.detalle || m.tipo, fmtFechaMedio(m.fecha), fmt(m.monto)])
+      if (totalRet > 0) mBody.push(['Retención SICORE', '', fmt(totalRet)])
+      if (totalDesc > 0) mBody.push(['Descuento pronto pago', '', fmt(totalDesc)])
+      mBody.push(['TOTAL', '', fmt(totalDesglose)])
+
+      const startY2 = ((doc as any).lastAutoTable?.finalY ?? 56) + 8
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Desglose del pago', 15, startY2)
+      autoTable(doc, {
+        startY: startY2 + 3,
+        head: mHead,
+        body: mBody,
+        theme: 'grid',
+        headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: { 2: { halign: 'right' } },
+        didParseCell: (data: any) => {
+          if (data.row.index === mBody.length - 1 && data.section === 'body') {
+            data.cell.styles.fillColor = [220, 220, 220]
+            data.cell.styles.fontStyle = 'bold'
+          }
+        }
+      })
+      // Aviso si el desglose no cuadra con el total de la factura (tolerancia $1)
+      if (Math.abs(totalDesglose - totalFactura) > 1) {
+        const y3 = ((doc as any).lastAutoTable?.finalY ?? startY2) + 6
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'italic')
+        doc.setTextColor(180, 60, 60)
+        doc.text(`⚠ El desglose (${fmt(totalDesglose)}) no coincide con el total de factura (${fmt(totalFactura)}).`, 15, y3)
+        doc.setTextColor(0, 0, 0)
+      }
+    }
 
     if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
 
