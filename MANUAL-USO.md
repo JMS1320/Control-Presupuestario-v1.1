@@ -81,6 +81,7 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
   - **Distintivo visual:** las filas en echeq muestran un badge **"📝 ECHEQ"** en la columna proveedor + fondo verde con borde izquierdo.
   - **Para re-hacer el echeq de una FC que ya está en `echeq`:** primero cambiala a `pagado` (o pendiente) y volvé a ponerla en echeq (sino no reabre el modal).
   - Los cheques se ven/gestionan en la sección **Cheques** del Cash Flow.
+- **Detalle de pago multi-medio (PDF, 2026-07-21):** al **descargar el Detalle de pago** desde Cash Flow, si la FC se pagó con **varios medios** (ej. anticipo por transferencia + echeq del saldo), el PDF muestra una sección **"Desglose del pago"** con cada tramo (transferencia/anticipo, echeq con banco/nro/fecha de cobro, transferencia directa) + la **Retención SICORE** + descuento, que **suman el total de la factura** (avisa si no cuadra). Reúne los medios de `anticipos_proveedores` + `msa.cheques` + `msa_galicia`. Lib: `lib/pagos/medios-pago.ts`.
 - **Reset de FC a pendiente (2026-07-21):** al revertir una FC, **avisa siempre** lo que hará (anula SICORE, borra descuento, restaura el monto). Si tiene **anticipo vinculado**, ofrece 2 opciones: **Mantener** (la FC recuerda el saldo: monto = total − anticipo, el anticipo sigue vinculado) o **Eliminar** (borra la fila del anticipo + su SICORE/cheque, el monto vuelve al total).
 
 ### Inventario de funciones del Modal (qué debe existir en el "centro de mandos")
