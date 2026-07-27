@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
+import { AlertasFcVenta } from "./alertas-fc-venta"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
 import { toast } from "sonner"
@@ -196,6 +197,9 @@ export function VistaPrincipal() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Llegó FC de una venta: ¿es de esta venta? */}
+      <AlertasFcVenta />
 
       {/* Alertas SICORE — anticipos sin vincular */}
       <Card>

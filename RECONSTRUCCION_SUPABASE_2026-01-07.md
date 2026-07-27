@@ -11225,3 +11225,23 @@ ALTER TABLE public.contratos_arrendamiento
   ADD COLUMN IF NOT EXISTS dias_cobro_disponible integer NOT NULL DEFAULT 20;
 -- Dato: los contratos de Sanpa (Rojas 26/27 y 27/28) quedaron en 15.
 UPDATE public.contratos_arrendamiento SET dias_cobro_disponible = 15 WHERE cliente_nombre = 'Sanpa';
+
+-- Aplicado 2026-07-26: vinculacion VENTA <-> FACTURA + vista unificada de ventas.
+-- No se pudo reusar msa.ventas_comprobantes (su FK apunta a msa.ventas = granos).
+-- Se hizo generica/polimorfica, que ademas es lo coherente: los comprobantes viven en
+-- schema por empresa, asi que la FK cruzada ya era imposible.
+CREATE TABLE public.ventas_facturas (
+  id uuid PK, venta_tipo varchar(20) CHECK IN ('arrendamiento','granos','ganaderia'),
+  venta_id uuid, empresa varchar(10), comprobante_id uuid,
+  monto_asignado numeric(15,2),
+  vinculado boolean NOT NULL DEFAULT true,  -- false = "la FC responde a otra cosa"
+  nota text, created_at, UNIQUE (venta_tipo, venta_id, comprobante_id) );
+-- La fila existe en AMBOS casos (si y no) para que la alerta no vuelva a preguntar.
+CREATE INDEX idx_ventas_facturas_venta ON public.ventas_facturas(venta_tipo, venta_id);
+CREATE INDEX idx_ventas_facturas_comp  ON public.ventas_facturas(comprobante_id);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- VIEW public.ventas_unificadas: los tres tipos de venta en el formato comun que
+-- consumen Cash Flow y el motor (fecha, cliente, monto, cuenta contable, centro de
+-- costo) + `facturado` (suma de lo vinculado) + `falta_tc`. Hoy solo arrendamiento;
+-- granos y ganaderia se suman con UNION ALL cuando existan.

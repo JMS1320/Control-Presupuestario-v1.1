@@ -421,6 +421,43 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     })
   }
 
+  /**
+   * Ventas SIN factura todavía (arrendamiento y, cuando existan, granos/ganadería).
+   * Es el ingreso comprometido antes de que llegue la FC. Cuando la factura se
+   * vincula, la venta deja de contar acá y pasa a verse como comprobante — si es
+   * factura PARCIAL, sigue el remanente (monto − facturado).
+   */
+  const mapearVentasSinFactura = (ventas: any[]): CashFlowRow[] => {
+    return ventas.flatMap(v => {
+      const monto = Number(v.monto_pesos) || 0
+      const facturado = Number(v.facturado) || 0
+      const remanente = monto - facturado
+      if (remanente <= 0.01) return []   // ya está toda facturada: la muestra la FC
+
+      const parcial = facturado > 0
+      return [{
+        id: v.venta_id,
+        origen: 'VENTA' as const,
+        origen_tabla: 'public.ventas_unificadas',
+        fecha_estimada: v.fecha_cobro,
+        fecha_vencimiento: null,
+        categ: 'VENTAS',
+        centro_costo: v.centro_costo || '',
+        cuit_proveedor: v.cliente_cuit || '',
+        nombre_proveedor: v.cliente_nombre || '',
+        detalle: `Venta ${v.venta_tipo} ${v.centro_costo || ''} — ${Number(v.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${v.unidad}`
+          + (parcial ? ` (remanente sin facturar)` : ' (sin factura)')
+          + (v.falta_tc ? ' ⚠ falta fijar TC' : ''),
+        debitos: 0,
+        creditos: remanente,       // Cobro = crédito
+        saldo_cta_cte: 0,
+        estado: 'a cobrar',
+        imp_total: remanente,
+        comprobante_display: null,
+      }]
+    })
+  }
+
   // Calcular saldos acumulativos
   const calcularSaldosAcumulativos = (filas: CashFlowRow[]): CashFlowRow[] => {
     let saldoAcumulado = 0
@@ -590,6 +627,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         })
       }
 
+      // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).
+      //     Es el ingreso comprometido antes de que llegue la FC.
+      const { data: ventasSinFactura, error: errorVSF } = await supabase
+        .from('ventas_unificadas')
+        .select('*')
+        .order('fecha_cobro', { ascending: true, nullsFirst: false })
+      if (errorVSF) console.error('Error cargando ventas sin factura:', errorVSF)
+
       // 6. Mapear todas las fuentes a formato unificado
       const filasArca = mapearFacturasArca(facturasArca || [])
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
@@ -663,7 +708,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       // 7. Combinar y ordenar por fecha_estimada
       const filasVentas = mapearVentas(ventasACobrar || [], retencionesPorComp)
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas]
+      const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
+      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros
@@ -674,7 +720,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       setData(filasConSaldo)
 
-      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos + ${filasSueldos.length} Sueldos = ${filasConSaldo.length} total`)
+      console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos + ${filasSueldos.length} Sueldos + ${filasVentas.length} FC venta + ${filasVentasSinFC.length} ventas sin FC = ${filasConSaldo.length} total`)
 
     } catch (error) {
       console.error('Error en useMultiCashFlowData:', error)
