@@ -11184,3 +11184,10 @@ Verificado: tons y % coinciden con la planilla y el guardarraíl `Σ qq = qq_ha_
 
 ⚠️ **Pendiente de dato**: `cliente_cuit` en blanco — Sanpa y Provinvest **no están** en
 `public.proveedores` (el único `es_cliente` es AFA). Cargar cuando el usuario pase los CUITs.
+
+-- Aplicado 2026-07-26 (aditivo): precio manual por cuota de arrendamiento.
+-- Pisa el precio de `precios_granos`. Necesario para VALORIZAR las tons disponibles
+-- (al moverlas se les asigna precio) y para forzar un valor puntual en cualquier cuota.
+-- NULL = usa la posición. Se limpia con "volver a default".
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS precio_usd_override numeric(12,2);

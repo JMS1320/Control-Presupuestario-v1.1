@@ -6,14 +6,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   tonsCuota,
   tonsFijadas,
   estadoDerivado,
-  resolverPrecio,
+  precioEfectivo,
   resolverTC,
+  puedeMoverCuota,
+  fechaMinimaDisponible,
   type PrecioGrano,
   type TipoCambio,
+  type EstadoCuota,
 } from "@/lib/arrendamientos/calculo"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,6 +83,27 @@ interface FilaCampo {
   estimado: Record<string, boolean>
 }
 
+/** Cuota individual detrás de una celda — para poder moverla y valorizarla. */
+interface CuotaDetalle {
+  id: string
+  campo: string
+  campania: string
+  numeroCuota: number
+  tonsPend: number
+  fechaCobro: string
+  posicionAnio: number
+  posicionMes: number
+  precioUsd: number
+  precioManual: boolean
+  precioArrastrado: boolean
+  tc: number
+  monto: number
+  estado: EstadoCuota
+  fechaOriginal: string | null
+  posOrigAnio: number | null
+  posOrigMes: number | null
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function TabPresupuesto() {
@@ -85,6 +111,9 @@ export function TabPresupuesto() {
   const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
   const [campos, setCampos] = useState<FilaCampo[]>([])
+  // Cuotas detrás de cada celda: clave `${campo}|${YYYY-MM}|${presupuestado|disponible}`
+  const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
+  const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({})
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
@@ -188,7 +217,7 @@ export function TabPresupuesto() {
     const [{ data: cuotas }, { data: precios }, { data: tcs }] = await Promise.all([
       supabase
         .from("cuotas_arrendamiento")
-        .select("id, contrato_id, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, estado")
+        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, estado, precio_usd_override, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes")
         .in("contrato_id", contratoIds),
       supabase.from("precios_granos").select("grano, anio, mes, precio_usd"),
       supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
@@ -218,6 +247,7 @@ export function TabPresupuesto() {
     })
 
     const mapaCampos: Record<string, FilaCampo> = {}
+    const mapaDetalle: Record<string, CuotaDetalle[]> = {}
     const hoy = new Date()
     const claveMesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`
 
@@ -240,7 +270,8 @@ export function TabPresupuesto() {
         const tonsPend = tonsTot - tonsFijadas(fijs)
         if (tonsPend <= 0.001) continue
 
-        const p = resolverPrecio(listaPrecios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes)
+        // El override manual (si lo hay) pisa el precio de la posición
+        const p = precioEfectivo(contrato as any, cuota as any, listaPrecios)
         const [anioCobro, mesCobro] = String(cuota.fecha_cobro_estimada).split("-").map(Number)
         const t = resolverTC(listaTC, anioCobro, mesCobro)
         const monto = tonsPend * p.precio_usd * t.tc
@@ -262,10 +293,79 @@ export function TabPresupuesto() {
           fila.presupuestado[k] = (fila.presupuestado[k] || 0) + monto
         }
         if (p.arrastrado || t.arrastrado) fila.estimado[k] = true
+
+        // Detalle clickeable: qué cuotas hay detrás de esta celda
+        const claveDetalle = `${clave}|${k}|${vencida ? "disponible" : "presupuestado"}`
+        if (!mapaDetalle[claveDetalle]) mapaDetalle[claveDetalle] = []
+        mapaDetalle[claveDetalle].push({
+          id: cuota.id,
+          campo: clave,
+          campania: contrato.campania,
+          numeroCuota: cuota.numero_cuota,
+          tonsPend,
+          fechaCobro: String(cuota.fecha_cobro_estimada),
+          posicionAnio: cuota.posicion_anio,
+          posicionMes: cuota.posicion_mes,
+          precioUsd: p.precio_usd,
+          precioManual: p.manual,
+          precioArrastrado: p.arrastrado,
+          tc: t.tc,
+          monto,
+          estado: est,
+          fechaOriginal: cuota.fecha_cobro_original,
+          posOrigAnio: cuota.posicion_orig_anio,
+          posOrigMes: cuota.posicion_orig_mes,
+        })
       }
     }
 
     setCampos(Object.values(mapaCampos).sort((a, b) => a.campo.localeCompare(b.campo)))
+    setDetalleCeldas(mapaDetalle)
+  }
+
+  // ── Guardar cambios de una cuota (mover fecha / poner precio) ────────────────
+  const guardarCuota = async (
+    cuota: CuotaDetalle,
+    nuevaFecha: string,
+    nuevoPrecio: number | null,
+  ): Promise<string | null> => {
+    // Al mover, la posición pasa a ser el mes destino (regla R1 del diseño)
+    const check = puedeMoverCuota({ estado: cuota.estado, fecha_cobro_estimada: cuota.fechaCobro }, nuevaFecha)
+    if (!check.permitido) return check.motivo ?? "No se puede mover"
+
+    const [anio, mes] = nuevaFecha.split("-").map(Number)
+    const { error } = await supabase
+      .from("cuotas_arrendamiento")
+      .update({
+        fecha_cobro_estimada: nuevaFecha,
+        posicion_anio: anio,
+        posicion_mes: mes,
+        precio_usd_override: nuevoPrecio,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", cuota.id)
+
+    if (error) return error.message
+    await cargarIngresos()
+    return null
+  }
+
+  /** Vuelve la cuota a la fecha y posición originales del contrato y limpia el precio manual. */
+  const volverADefault = async (cuota: CuotaDetalle): Promise<string | null> => {
+    if (!cuota.fechaOriginal) return "Esta cuota no tiene fecha original guardada"
+    const { error } = await supabase
+      .from("cuotas_arrendamiento")
+      .update({
+        fecha_cobro_estimada: cuota.fechaOriginal,
+        posicion_anio: cuota.posOrigAnio,
+        posicion_mes: cuota.posOrigMes,
+        precio_usd_override: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", cuota.id)
+    if (error) return error.message
+    await cargarIngresos()
+    return null
   }
 
   const cargarSueldos = async () => {
@@ -453,10 +553,10 @@ export function TabPresupuesto() {
                       }
 
                       // Las 3 filas del campo: fijado / presupuestado / disponible
-                      const subFilas: { label: string; datos: Record<string, number>; clase: string }[] = [
-                        { label: "Fijado",             datos: c.fijado,        clase: "text-emerald-700 font-medium" },
-                        { label: "Presupuestado",      datos: c.presupuestado, clase: "text-gray-600" },
-                        { label: "Disponible a fijar", datos: c.disponible,    clase: "text-amber-700" },
+                      const subFilas: { label: string; tipo: string | null; datos: Record<string, number>; clase: string }[] = [
+                        { label: "Fijado",             tipo: null,             datos: c.fijado,        clase: "text-emerald-700 font-medium" },
+                        { label: "Presupuestado",      tipo: "presupuestado",  datos: c.presupuestado, clase: "text-gray-600" },
+                        { label: "Disponible a fijar", tipo: "disponible",     datos: c.disponible,    clase: "text-amber-700" },
                       ]
 
                       return (
@@ -501,19 +601,27 @@ export function TabPresupuesto() {
                                 const valor = sf.datos[clave] || 0
                                 const tons = sf.label === "Disponible a fijar" ? c.tonsDisponibles[clave] : undefined
                                 const estimado = valor > 0 && sf.label !== "Fijado" && c.estimado[clave]
+                                const cuotasCelda = sf.tipo ? detalleCeldas[`${c.campo}|${clave}|${sf.tipo}`] : undefined
+                                const clickeable = !!cuotasCelda?.length
                                 return (
                                   <td
                                     key={clave}
+                                    onClick={clickeable
+                                      ? () => setModalCuotas({
+                                          titulo: `${c.campo} — ${sf.label} — ${MESES[m.mes-1]} ${m.anio}`,
+                                          cuotas: cuotasCelda!,
+                                        })
+                                      : undefined}
                                     title={
-                                      tons
-                                        ? `${tons.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar`
+                                      clickeable
+                                        ? `${tons ? `${tons.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar · ` : ""}Click para mover la cuota o ponerle precio`
                                         : estimado
                                           ? "Precio o TC arrastrado de otro mes (estimado)"
                                           : undefined
                                     }
                                     className={`px-3 py-1.5 text-right text-xs ${sf.clase} ${
                                       esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
-                                    }`}
+                                    } ${clickeable ? "cursor-pointer hover:bg-amber-50 hover:underline" : ""}`}
                                   >
                                     {/* Sin precio cargado el monto da 0: mostrar las tn para que
                                         el disponible no quede invisible. */}
@@ -711,6 +819,14 @@ export function TabPresupuesto() {
         </CardContent>
       </Card>
 
+      {/* Modal: mover cuota / ponerle precio */}
+      <ModalCuotas
+        datos={modalCuotas}
+        onCerrar={() => setModalCuotas(null)}
+        onGuardar={guardarCuota}
+        onDefault={volverADefault}
+      />
+
       {/* Legend */}
       <div className="flex items-center gap-4 text-xs text-gray-400">
         <span className="flex items-center gap-1">
@@ -725,5 +841,140 @@ export function TabPresupuesto() {
         <Badge variant="outline" className="text-xs">Ingresos: arrendamientos · Egresos: templates + sueldos</Badge>
       </div>
     </div>
+  )
+}
+
+// ── Modal: mover una cuota y/o ponerle precio ─────────────────────────────────
+// Escribe sobre `cuotas_arrendamiento` (Ventas es la fuente): Presupuesto es sólo
+// la interfaz. Reglas de movimiento en lib/arrendamientos/calculo.ts.
+
+interface ModalCuotasProps {
+  datos: { titulo: string; cuotas: CuotaDetalle[] } | null
+  onCerrar: () => void
+  onGuardar: (cuota: CuotaDetalle, nuevaFecha: string, nuevoPrecio: number | null) => Promise<string | null>
+  onDefault: (cuota: CuotaDetalle) => Promise<string | null>
+}
+
+function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps) {
+  const [edits, setEdits] = useState<Record<string, { fecha: string; precio: string }>>({})
+  const [guardando, setGuardando] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!datos) { setEdits({}); setError(null); return }
+    const init: Record<string, { fecha: string; precio: string }> = {}
+    for (const c of datos.cuotas) {
+      init[c.id] = {
+        fecha: c.fechaCobro,
+        precio: c.precioUsd ? c.precioUsd.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+      }
+    }
+    setEdits(init)
+  }, [datos])
+
+  if (!datos) return null
+
+  const minimaDisponible = fechaMinimaDisponible()
+
+  const guardar = async (c: CuotaDetalle) => {
+    const e = edits[c.id]
+    if (!e) return
+    setGuardando(c.id); setError(null)
+    const precio = e.precio.trim() === ""
+      ? null
+      : parseFloat(e.precio.replace(/\./g, "").replace(",", ".")) || 0
+    const err = await onGuardar(c, e.fecha, precio)
+    setGuardando(null)
+    if (err) setError(err); else onCerrar()
+  }
+
+  const restaurar = async (c: CuotaDetalle) => {
+    setGuardando(c.id); setError(null)
+    const err = await onDefault(c)
+    setGuardando(null)
+    if (err) setError(err); else onCerrar()
+  }
+
+  return (
+    <Dialog open={!!datos} onOpenChange={o => { if (!o) onCerrar() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>{datos.titulo}</DialogTitle></DialogHeader>
+
+        <div className="space-y-4">
+          {datos.cuotas.map(c => {
+            const e = edits[c.id] ?? { fecha: c.fechaCobro, precio: "" }
+            const esDisponible = c.estado === "disponible" || c.estado === "parcial"
+            return (
+              <div key={c.id} className="rounded border p-3 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-gray-700">
+                    Campaña {c.campania} · cuota {c.numeroCuota}
+                  </span>
+                  <Badge variant="outline" className="text-xs">{c.estado}</Badge>
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  {c.tonsPend.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar ·
+                  TC {c.tc ? c.tc.toLocaleString("es-AR") : "— sin cargar"} ·
+                  {c.precioManual ? " precio manual" : c.precioArrastrado ? " precio arrastrado de otra posición" : " precio de la posición"}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500">Fecha de cobro</label>
+                    <Input
+                      type="date"
+                      className="h-8"
+                      value={e.fecha}
+                      min={esDisponible ? minimaDisponible : c.fechaCobro}
+                      onChange={ev => setEdits(p => ({ ...p, [c.id]: { ...e, fecha: ev.target.value } }))}
+                    />
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      {esDisponible
+                        ? `Lo antes posible: ${new Date(minimaDisponible).toLocaleDateString("es-AR")} (hoy + 20 días)`
+                        : "Una cuota presupuestada sólo se mueve hacia adelante"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500">Precio USD/ton</label>
+                    <Input
+                      type="text"
+                      placeholder="0,00"
+                      className="h-8 text-right"
+                      value={e.precio}
+                      onChange={ev => setEdits(p => ({ ...p, [c.id]: { ...e, precio: ev.target.value } }))}
+                    />
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      Vacío = usa el precio de la posición
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <Button variant="ghost" size="sm" className="text-xs"
+                    disabled={guardando === c.id || !c.fechaOriginal}
+                    onClick={() => restaurar(c)}>
+                    Volver a default
+                  </Button>
+                  <Button size="sm" disabled={guardando === c.id} onClick={() => guardar(c)}>
+                    {guardando === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Guardar"}
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+
+          {error && (
+            <p className="rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+          )}
+
+          <p className="text-[11px] text-gray-400">
+            Al mover la cuota, la posición pasa a ser el mes destino. Los cambios se guardan en
+            Ventas — Presupuesto es sólo la interfaz.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

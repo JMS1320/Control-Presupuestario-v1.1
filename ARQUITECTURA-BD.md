@@ -67,7 +67,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `tipos_cambio` | ✅ | — | TC mensual presupuestado/real. Dato **macro multiempresa**. Carga manual. (2026-07-26) |
 | `precios_granos` | ✅ | — | Precio por posición (grano, año, mes) en USD/ton. Macro multiempresa. Si falta un mes, la app arrastra el siguiente cargado. (2026-07-26) |
 | `contratos_arrendamiento` | ✅ | 4 | Contratos de arrendamiento agrícola cobrados en qq/ha. Columna `empresa` (MSA/PAM/MA) — **no se separa por schema**. `centro_costo` = FK lógica a `centros_costo.nombre`. (2026-07-26) |
-| `cuotas_arrendamiento` | ✅ | 14 | Cuotas de cobro del contrato (fecha + posición de fijación). Estados: presupuestado/parcial/fijado/disponible. (2026-07-26) |
+| `cuotas_arrendamiento` | ✅ | 14 | Cuotas de cobro del contrato (fecha + posición de fijación). Estado **se DERIVA** (fijaciones + fecha), la columna es sólo un hint. `precio_usd_override` pisa el precio de la posición. (2026-07-26) |
 | `fijaciones_arrendamiento` | ✅ | — | Fijación de precio **total o parcial** de una cuota. Precio y TC quedan **congelados**. `comprobante_id` = FK lógica a `{schema}.comprobantes_venta`. (2026-07-26) |
 | `tipos_comprobante_afip` | ✅ | 68 | Catálogo tipos comprobante AFIP (NC flag). |
 | `tipos_sicore_config` | ✅ | — | Config tipos SICORE (alícuota, mínimo, régimen). |

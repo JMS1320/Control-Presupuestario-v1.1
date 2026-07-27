@@ -44,6 +44,8 @@ export interface CuotaArrendamiento {
   posicion_orig_anio: number | null
   posicion_orig_mes: number | null
   estado: EstadoCuota
+  /** Precio manual que pisa el de la posición. NULL = usa `precios_granos`. */
+  precio_usd_override: number | null
   notas: string | null
 }
 
@@ -146,17 +148,28 @@ export function resolverPrecio(
   return { precio_usd: 0, arrastrado: false, posicion: null }
 }
 
-/** TC del mes: prioriza el real; si no hay, el presupuestado; si no, arrastra el último cargado. */
+/**
+ * TC del mes: prioriza el real; si no hay, el presupuestado.
+ * Si el mes no está cargado arrastra el ANTERIOR más cercano y, si tampoco hay
+ * (el mes pedido es previo a todo lo cargado), el SIGUIENTE más cercano.
+ * El fallback tiene que ser bidireccional: si no, una cuota vencida en un mes
+ * sin TC previo queda valuada en $0 y desaparece de la vista.
+ */
 export function resolverTC(tcs: TipoCambio[], anio: number, mes: number): { tc: number; arrastrado: boolean } {
+  const valorDe = (t: TipoCambio) => t.tc_real ?? t.tc_presupuestado
+
   const exacto = tcs.find(t => t.anio === anio && t.mes === mes)
-  const valor = exacto ? (exacto.tc_real ?? exacto.tc_presupuestado) : null
-  if (valor) return { tc: Number(valor), arrastrado: false }
+  if (exacto && valorDe(exacto) != null) return { tc: Number(valorDe(exacto)), arrastrado: false }
 
   const previos = tcs
-    .filter(t => t.anio < anio || (t.anio === anio && t.mes < mes))
+    .filter(t => valorDe(t) != null && (t.anio < anio || (t.anio === anio && t.mes < mes)))
     .sort((a, b) => b.anio - a.anio || b.mes - a.mes)
-  const ultimo = previos.find(t => (t.tc_real ?? t.tc_presupuestado) != null)
-  if (ultimo) return { tc: Number(ultimo.tc_real ?? ultimo.tc_presupuestado), arrastrado: true }
+  if (previos.length) return { tc: Number(valorDe(previos[0]!)), arrastrado: true }
+
+  const siguientes = tcs
+    .filter(t => valorDe(t) != null && (t.anio > anio || (t.anio === anio && t.mes > mes)))
+    .sort((a, b) => a.anio - b.anio || a.mes - b.mes)
+  if (siguientes.length) return { tc: Number(valorDe(siguientes[0]!)), arrastrado: true }
 
   return { tc: 0, arrastrado: false }
 }
@@ -172,15 +185,35 @@ export interface MontoCuota {
   estimado: boolean
 }
 
-/** Monto presupuestado de una cuota: tons × precio(posición) × TC(mes de cobro). */
+/**
+ * Precio efectivo de una cuota: el override manual si lo tiene, si no el de la posición.
+ * El override existe para valorizar las tons disponibles y para forzar un valor puntual.
+ */
+export function precioEfectivo(
+  contrato: Pick<ContratoArrendamiento, 'grano'>,
+  cuota: Pick<CuotaArrendamiento, 'posicion_anio' | 'posicion_mes' | 'precio_usd_override'>,
+  precios: PrecioGrano[],
+): PrecioResuelto & { manual: boolean } {
+  if (cuota.precio_usd_override != null) {
+    return {
+      precio_usd: Number(cuota.precio_usd_override),
+      arrastrado: false,
+      manual: true,
+      posicion: { anio: cuota.posicion_anio, mes: cuota.posicion_mes },
+    }
+  }
+  return { ...resolverPrecio(precios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes), manual: false }
+}
+
+/** Monto presupuestado de una cuota: tons × precio efectivo × TC(mes de cobro). */
 export function calcularMontoCuota(
   contrato: Pick<ContratoArrendamiento, 'has' | 'grano'>,
-  cuota: Pick<CuotaArrendamiento, 'qq_ha_cuota' | 'posicion_anio' | 'posicion_mes' | 'fecha_cobro_estimada'>,
+  cuota: Pick<CuotaArrendamiento, 'qq_ha_cuota' | 'posicion_anio' | 'posicion_mes' | 'fecha_cobro_estimada' | 'precio_usd_override'>,
   precios: PrecioGrano[],
   tcs: TipoCambio[],
 ): MontoCuota {
   const tons = tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota))
-  const p = resolverPrecio(precios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes)
+  const p = precioEfectivo(contrato, cuota, precios)
 
   const [anioCobro, mesCobro] = cuota.fecha_cobro_estimada.split('-').map(Number)
   const t = resolverTC(tcs, anioCobro, mesCobro)
