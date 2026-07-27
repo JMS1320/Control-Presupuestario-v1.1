@@ -383,3 +383,327 @@ Selector compacto a la izquierda de cada cuenta. Params cambian según método e
 - [ ] Responder preguntas anteriores
 - [ ] Definir tabla BD para configuración por cuenta
 - [ ] Implementar cálculos por método
+
+---
+---
+
+# 🌾 INGRESOS — Arrendamientos agrícolas (diseño cerrado 2026-07-26)
+
+> **Estado**: DISEÑO CERRADO — pendiente aprobación del DDL antes de tocar BD (MCP en read-only).
+> **Fuente**: `exports_app/- Desarrollo Presuesto..xlsx` (solapa "Primeros Pasos") + sesión 2026-07-26.
+> **Alcance**: MSA primero. PAM y MA se replican después (insertar filas, no migrar).
+
+## 🧭 Decisión arquitectural (la más importante)
+
+**El presupuesto de ingresos NO se carga en Presupuesto.** Se carga como **Ventas**, y Presupuesto lo lee.
+
+Cita del usuario (celda B19 de la planilla): *"La estrategia siempre fue: **Venta origina Factura/Liquidación que origina Cobro**"*.
+
+Patrón: **una sola fila que nace presupuestada y se vuelve real** — el mismo que ya usan las cuotas de
+templates (`proyectado` → … → `conciliado`). No hay copia ni migración entre "mundo presupuesto" y
+"mundo real": la cuota cambia de estado.
+
+```
+contrato_arrendamiento          (Ventas — BBDD fuente)
+  └ cuota_arrendamiento         estado: presupuestado
+      │                         tons × precio Matba(posición) × TC   ← proyección, recalcula sola
+      │  ← FIJÁS (total o parcial)
+      ▼
+    fijacion_arrendamiento      tons · precio_usd · tc  ← CONGELADOS, no se recalculan más
+      └→ comprobante en {schema}.comprobantes_venta = la factura
+         └→ motor rama VENTA → cobro → conciliación → retenciones_recibidas (dato real)
+```
+
+**Por qué congelar el precio en la fijación**: cuando después corregís la tabla de precios, no se te
+reescribe el pasado — sólo cambian las cuotas todavía no fijadas. Mismo criterio que Cash Flow con
+facturas en USD.
+
+### Schemas — decisión: TODO en `public`
+Se evaluó un schema `presupuesto` para agrupar. **Descartado**:
+- Cada schema nuevo hay que exponerlo en `pgrst.db_schemas` aparte de GRANTs/RLS (mordió con `ma`,
+  ver [[reference_schemas_expuestos_api]]) y no queda en el backup.
+- `.schema()` debe ir **antes** de `.from()` o se ignora en silencio (bug del motor de conciliación).
+- Contratos/cuotas son **tablas de Ventas**, no de presupuesto; TC/IPC/precios son **datos macro**
+  multiempresa que también usa Ventas para el precio real. Un schema `presupuesto` contendría cosas
+  que no son de presupuesto.
+- El orden lo da `ARQUITECTURA-BD.md`, no el namespace.
+
+### NO se crea tabla de campos
+Los campos ya existen como **centros de costo** (`public.centros_costo`: Nazarenas, Rojas, Lima ✓).
+Y las hectáreas **no son del campo sino del contrato** — Nazarenas tiene 144,93 ha para MSA y
+211,16 ha para PAM. El contrato apunta a `centro_costo` y listo.
+
+---
+
+## 📐 Fórmulas (extraídas de la planilla)
+
+```
+Tons_total  = has × qq_ha_total / 10          (E6 = C6*D6/10)      [output]
+Tons_cuota  = has × qq_ha_cuota / 10          (E7 = C$6*D7/10)     [output]
+pct_cuota   = qq_ha_cuota / qq_ha_total       (C7 = D7/D$6)        [output, informativo]
+Monto_cuota = Tons_cuota × Precio_USD(posición) × TC(mes)          [output]
+disponible  = Tons_cuota − Σ fijaciones.tons                       [output]
+```
+
+**INPUTS** (lo único que se tipea): `has`, `qq_ha_total`, y por cuota `fecha_cobro`,
+`qq_ha_cuota`, `posición`. Más dos series macro: precios de soja y TC.
+
+**Guardarraíl** (verificado en los 4 contratos: 15 · 24 · 15 · 15,5 ✓):
+`Σ qq_ha_cuota = qq_ha_total`. Es **advertencia**, no bloqueo (mismo criterio que
+[[project_generador_renovacion_templates]]).
+
+⚠️ La **fecha de cobro y la posición de fijación son independientes**: en la planilla hay una cuota
+que se cobra el 20/04/27 con posición 5/27. El precio sale de la **posición**; la fecha define el
+**flujo de caja**.
+
+---
+
+## 📊 Datos de origen — campaña 26/27
+
+| Empresa | Campo | Has | Arr. total | Tons | Cliente |
+|---|---|---:|---:|---:|---|
+| MSA | Nazarenas | 144,93 | 15 qq/ha | 217,395 | Provinvest |
+| MSA | Rojas | 242 | 24 qq/ha | 580,80 | Sanpa |
+| PAM | Nazarenas | 211,16 | 15 qq/ha | 316,74 | Provinvest |
+| MA | Lima | 84 | 15,5 qq/ha | 130,20 | Provinvest |
+
+> La planilla titula "MA 26/27" sobre los dos últimos, pero **contablemente Nazarenas es PAM** y
+> sólo Lima es MA.
+
+**Cuotas 26/27:**
+- MSA Nazarenas: 6qq→20/11/26 (pos 11/26) · 1,5qq→20/11/26 (pos 5/27) · 7,5qq→20/04/27 (pos 5/27)
+- MSA Rojas: 6,6→10/07/26 (7/26) · 6,6→10/11/26 (11/26) · 2→10/11/26 (11/26) · 8,8→10/05/27 (5/27)
+- PAM Nazarenas: mismo esquema que MSA Nazarenas
+- MA Lima: 7,75→20/11/26 (11/26) · 7,75→20/04/27 (5/27)
+
+**Campaña 27/28**: se replica la misma estructura corriendo las fechas un año; el usuario corrige
+después. (Objetivo: dejar 2 campañas cargadas para que Presupuesto las refleje.)
+
+---
+
+## 🎯 Estados y reglas de movimiento
+
+| Estado cuota | ¿Se puede mover? | Precio |
+|---|---|---|
+| `presupuestado` (posición Matba) | Sí, **sólo hacia adelante** | posición Matba del mes destino |
+| `disponible` (no fijada, vencida o liberada) | Sí, cualquier dirección · piso **hoy + 20 días** | idem |
+| `parcial` | la parte no fijada se mueve; la fijada no | mixto |
+| `fijado` | **NO** — ya generó factura | congelado |
+
+**Por qué mover**: es una herramienta de **simulación financiera** — *"¿qué pasa si la cobro ahora
+o la guardo hasta enero?"*. Ej.: la cuota está en noviembre, la movés a enero y toma el precio
+Matba de enero como referencia (Rosario no tiene futuros).
+
+- **R1** — Al mover, la **posición pasa a ser el mes destino**. Se guarda la fecha/posición
+  original para el botón **"volver a default"** (mismo patrón que templates).
+- **R2** — Fijación **parcial permitida** → por eso la fijación es una **fila hija**, no un estado.
+- **R3** — Modo `pizarra`: **fecha_cobro = fecha_fijación + 20 días corridos**. Sólo aplica a
+  disponibles; cuando fijás contra posición Matba manda la fecha contractual.
+- **R4** — Precio faltante en un mes → tomar el **siguiente mes cargado** y **marcar la celda**
+  (arrastrado, no cargado).
+- **R5** — Al mover una cuota también se le asigna precio, pero eso es **proyección**: no genera
+  factura. La factura nace **sólo al fijar**, y ahí la cuota se congela.
+- **R6** — **Exento de IVA**. Todo neto.
+
+---
+
+## 💸 Deducciones e impuestos
+
+### Ganancias 6%
+Se **descuenta del cobro** (menor ingreso), calculado **sobre el neto**. Se registra en su cuenta
+contable. Por ahora **no** se engancha con `retenciones_recibidas` — mejora futura para cuando se
+quiera recuperar contra el impuesto.
+
+### IIBB — son DOS cosas distintas, no mezclar
+
+**(A) Retención de IIBB sufrida** — ocurre **en el cobro**. El arrendatario retiene y esa plata no
+entra. **NO se presupuesta**: se carga sólo cuando ocurre el pago y le informan lo retenido.
+Va a `retenciones_recibidas` (dato real). Al cargarse, **descuenta el pago de IIBB del mes siguiente**.
+
+**(B) Pago mensual de IIBB al fisco** — ocurre el **mes siguiente al cobro**. Es el 5% del neto,
+menos las retenciones (A) del mes.
+
+```
+Cobro (mes N)        = Bruto − ret. IIBB sufrida (A) − 6% ganancias      → entra menos
+Pago IIBB (mes N+1)  = 5% del neto (B) − ret. IIBB sufridas del mes N    → sale menos
+```
+
+> La regla B13 de la planilla (*"para cada cobro se paga 5% de IIBB el mes siguiente"*) es **(B) sin
+> contemplar (A)**. Si hay retención, el pago del mes siguiente es menor o el presupuesto
+> sobreestima el egreso.
+
+### Dónde se registra el IIBB (B) — DECIDIDO: en el template
+**Se vuelca a la cuota del template IIBB Mensual del mes siguiente al cobro** → se ve en
+Presupuesto **y** en Cash Flow.
+
+Motivo: las cuotas del template ya existen mensualmente en $0. No volcarlo no es "no mostrarlo",
+es **mostrar un cero que es mentira**. Verificado: template **"IIBB Mensual MSA"**
+`fba5c3f9-c915-46ca-a5b5-492c8943031e` (categ `Impuesto IIBB`, agrupadora `Impuestos General`),
+cuotas mensuales al día 15, casi todas $0 salvo junio ($3.554.217,73). Existe el par PAM
+(`848b07e3`).
+
+**Patrón: el de SICORE** (`vista-facturas-arca.tsx:5053` `confirmarAsignacionCuotaSicore` +
+`lib/sicore/registrar-retencion.ts` + `resetear-retencion.ts`), o sea:
+- **explícito, nunca silencioso** — la app calcula y ofrece volcar;
+- **idempotente** — recalcular no duplica;
+- **con reset** — si cambia la cuota de venta, se recalcula/revierte;
+- **gatillable desde Ventas o desde Presupuesto**, escribiendo siempre en el mismo lugar.
+
+**Traza sin ALTER**: la cuota se marca en `detalle` = `"Auto: 5% arrendamientos · N cobros ·
+recalculado dd/mm"`. Si el usuario escribe un monto a mano (sin esa marca), el recálculo **no lo
+pisa**. Estados existentes alcanzan (`pendiente`, etc.); no hay estado `proyectado` en
+`cuotas_egresos_sin_factura`.
+
+> ⚠️ `KNOWLEDGE.md` tiene la lección "Templates Auto-Modificables — DEMASIADO COMPLEJO" (2025-08):
+> *"los templates pierden su rol de presupuesto limpio"*. Por eso el volcado es **explícito + reset**,
+> no automático y silencioso. Se respeta el espíritu de la lección sin dejar el cero mentiroso.
+
+---
+
+## 🗃️ DDL propuesto (a aprobar antes de aplicar)
+
+```sql
+-- 1) TIPO DE CAMBIO (macro, multiempresa)
+CREATE TABLE public.tipos_cambio (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  anio             integer NOT NULL,
+  mes              integer NOT NULL CHECK (mes BETWEEN 1 AND 12),
+  tc_presupuestado numeric(12,4),
+  tc_real          numeric(12,4),
+  fuente           varchar(20) DEFAULT 'manual',
+  updated_at       timestamptz DEFAULT now(),
+  UNIQUE (anio, mes)
+);
+
+-- 2) PRECIOS DE GRANOS por posición (macro). Una sola serie: Matba en USD.
+--    La pizarra Rosario NO es serie: es precio puntual congelado en la fijación.
+CREATE TABLE public.precios_granos (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  grano       varchar(20) NOT NULL DEFAULT 'soja',
+  anio        integer NOT NULL,
+  mes         integer NOT NULL CHECK (mes BETWEEN 1 AND 12),  -- posición
+  precio_usd  numeric(12,2) NOT NULL,
+  fuente      varchar(20) DEFAULT 'manual',   -- 'manual' | 'matba'
+  updated_at  timestamptz DEFAULT now(),
+  UNIQUE (grano, anio, mes)
+);
+
+-- 3) CONTRATOS
+CREATE TABLE public.contratos_arrendamiento (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa         varchar(10) NOT NULL,          -- 'MSA' | 'PAM' | 'MA'
+  campania        varchar(10) NOT NULL,          -- '26/27'
+  centro_costo    text        NOT NULL,          -- FK lógica a centros_costo.nombre
+  cliente_cuit    varchar(13),
+  cliente_nombre  varchar(200) NOT NULL,         -- Sanpa | Provinvest
+  has             numeric(10,2) NOT NULL,
+  qq_ha_total     numeric(8,2)  NOT NULL,
+  grano           varchar(20) DEFAULT 'soja',
+  cuenta_contable text DEFAULT 'ARRENDAMIENTOS Venta',   -- 4109 (imputable, ya existe)
+  activo          boolean DEFAULT true,
+  notas           text,
+  created_at      timestamptz DEFAULT now(),
+  updated_at      timestamptz DEFAULT now()
+);
+-- tons_total = has * qq_ha_total / 10   → CALCULADO, no se persiste
+
+-- 4) CUOTAS
+CREATE TABLE public.cuotas_arrendamiento (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contrato_id           uuid NOT NULL REFERENCES public.contratos_arrendamiento(id) ON DELETE CASCADE,
+  numero_cuota          integer NOT NULL,
+  qq_ha_cuota           numeric(8,2) NOT NULL,
+  fecha_cobro_estimada  date NOT NULL,
+  posicion_anio         integer NOT NULL,
+  posicion_mes          integer NOT NULL CHECK (posicion_mes BETWEEN 1 AND 12),
+  -- para "volver a default" tras mover la cuota
+  fecha_cobro_original  date,
+  posicion_orig_anio    integer,
+  posicion_orig_mes     integer,
+  estado                varchar(20) NOT NULL DEFAULT 'presupuestado',
+                        -- presupuestado | parcial | fijado | disponible
+  notas                 text,
+  created_at            timestamptz DEFAULT now(),
+  updated_at            timestamptz DEFAULT now(),
+  UNIQUE (contrato_id, numero_cuota)
+);
+-- tons_cuota = contrato.has * qq_ha_cuota / 10        → CALCULADO
+-- pct_cuota  = qq_ha_cuota / contrato.qq_ha_total     → CALCULADO
+-- disponible = tons_cuota - SUM(fijaciones.tons)      → CALCULADO
+
+-- 5) FIJACIONES (fila hija: permite fijación parcial)
+CREATE TABLE public.fijaciones_arrendamiento (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuota_id        uuid NOT NULL REFERENCES public.cuotas_arrendamiento(id) ON DELETE CASCADE,
+  fecha_fijacion  date NOT NULL,
+  tons            numeric(12,3) NOT NULL,
+  modo            varchar(10) NOT NULL,       -- 'matba' | 'pizarra'
+  precio_usd      numeric(12,2),              -- congelado (modo matba)
+  precio_pesos    numeric(15,2),              -- congelado (modo pizarra, ARS directo)
+  tc              numeric(12,4),              -- congelado
+  monto_pesos     numeric(15,2) NOT NULL,
+  fecha_cobro     date NOT NULL,              -- pizarra: fecha_fijacion + 20 días corridos
+  comprobante_id  uuid,                       -- FK lógica a {schema}.comprobantes_venta
+  created_at      timestamptz DEFAULT now()
+);
+```
+
+**Nota sobre `comprobante_id`**: es FK **lógica**, sin constraint, porque los comprobantes viven en
+schema por empresa (`msa.comprobantes_venta`, `ma.comprobantes_venta`; **PAM todavía no tiene**) y
+el schema sale de `contrato.empresa`.
+
+**`msa.comprobantes_venta` ya sirve tal cual** — tiene `toneladas`, `modo_precio`, `precio_usd`,
+`tc`, `precio_pesos`, `cuenta_contable`, `centro_costo`, `estado`, `fecha_cobro_estimada`,
+`moneda`, y está enganchada al motor rama VENTA. No se toca.
+
+**Falta**: `indices_ipc` existe pero está **vacía** (0 filas). Hay que cargarla.
+
+---
+
+## 📱 UI
+
+### Ventas (BBDD fuente)
+- ABM de contratos (empresa · campaña · centro de costo · cliente · has · qq/ha).
+- Grilla de cuotas con `tons`, `%`, fecha de cobro, posición, estado, disponible.
+- Acción **Fijar** (permite parcial): tons a fijar + modo + precio + TC → congela y genera comprobante.
+- Acción **Mover** (sólo no fijadas, respetando R1/R3) + **Volver a default**.
+
+### Presupuesto — 3 filas por campo
+```
+▼ INGRESOS
+  ▼ Nazarenas (MSA)
+      Fijado                 ← real, precio cerrado, con factura
+      Presupuestado          ← tons × Matba(posición) × TC
+      Disponible a fijar     ← tons sin fijar, valuadas a Matba del mes destino
+  ▼ Rojas (MSA)
+      ...
+▼ EGRESOS
+  ▶ Impuestos General
+      IIBB Mensual MSA       ← 5% de los cobros del mes anterior (volcado al template)
+```
+
+### Cash Flow
+Ve lo **fijado** como ingreso comprometido y la cuota de **IIBB** como egreso. Es la contraparte
+que hoy le falta (Cash Flow ve egresos y casi nada de ingresos). El movimiento de cuotas se puede
+hacer **desde Cash Flow**, pero como **interfaz**: escribe en la cuota de Ventas. Fuente única.
+
+---
+
+## 🗺️ Fases
+
+1. **BD** — 5 tablas + carga de `indices_ipc`.
+2. **Ventas** — ABM contratos + cuotas + carga de las 2 campañas MSA.
+3. **Precios/TC** — ABM de `precios_granos` y `tipos_cambio` (carga manual).
+4. **Fijación** — parcial, congelado, generación de comprobante, cadena al motor VENTA.
+5. **Presupuesto** — 3 filas por campo + fila IIBB derivada.
+6. **IIBB** — `lib/iibb/` con volcado explícito + reset (patrón SICORE).
+7. **Cash Flow** — ingresos fijados + edición de cuotas como interfaz.
+8. **Replicar** a PAM y MA (incluye crear `pam.comprobantes_venta`).
+
+## 🔮 Mejoras diferidas (anotadas, fuera de alcance)
+
+- **Precios automáticos** de Matba/Rofex (hoy carga manual, corrección esporádica).
+- **Ganancias 6% ↔ `retenciones_recibidas`** para recuperarlo contra el impuesto.
+- **Hoja1 de la planilla** — mapa grande sin abordar: agrícola por lote (CD/seguro/cosecha/rinde),
+  cría (% preñez/destete), recría por margen, costos de estructura, reinversión, amortización,
+  dividendos, y "aprovechar data vieja de subdiarios/tarjetas/AFIP".

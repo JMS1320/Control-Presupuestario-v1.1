@@ -5,7 +5,16 @@ import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Loader2, TrendingDown } from "lucide-react"
+import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale } from "lucide-react"
+import {
+  tonsCuota,
+  tonsFijadas,
+  estadoDerivado,
+  resolverPrecio,
+  resolverTC,
+  type PrecioGrano,
+  type TipoCambio,
+} from "@/lib/arrendamientos/calculo"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,15 +59,36 @@ interface Agrupador {
   templates: FilaTemplate[]
 }
 
+/**
+ * INGRESOS — arrendamientos agrícolas. Tres filas por campo (centro de costo):
+ *   fijado        → precio cerrado, con factura. Plata comprometida.
+ *   presupuestado → tons sin fijar × Matba(posición) × TC. Proyección.
+ *   disponible    → tons cuya fecha de cobro ya pasó sin fijar.
+ * Ver DISEÑO_PRESUPUESTO.md § INGRESOS — Arrendamientos agrícolas.
+ */
+interface FilaCampo {
+  campo: string
+  empresa: string
+  fijado: Record<string, number>
+  presupuestado: Record<string, number>
+  disponible: Record<string, number>
+  /** Tons sin fijar por mes — para el badge del "disponible a fijar". */
+  tonsDisponibles: Record<string, number>
+  /** Meses cuyo precio o TC se arrastró de otro mes (celda estimada). */
+  estimado: Record<string, boolean>
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function TabPresupuesto() {
   const [cargando, setCargando] = useState(true)
   const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
+  const [campos, setCampos] = useState<FilaCampo[]>([])
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({})
 
-  const meses = useMemo(() => getMeses(13), []) // mes actual + 12 siguientes
+  // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
+  const meses = useMemo(() => getMeses(24), [])
 
   // ── Carga de datos ──────────────────────────────────────────────────────────
 
@@ -69,7 +99,7 @@ export function TabPresupuesto() {
   const cargarDatos = async () => {
     setCargando(true)
     try {
-      await Promise.all([cargarTemplates(), cargarSueldos()])
+      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos()])
     } finally {
       setCargando(false)
     }
@@ -141,6 +171,101 @@ export function TabPresupuesto() {
     const initExpand: Record<string, boolean> = {}
     listaAgrupadores.forEach(a => { initExpand[a.nombre] = false })
     setExpandidos(initExpand)
+  }
+
+  // ── INGRESOS: arrendamientos agrícolas ──────────────────────────────────────
+  const cargarIngresos = async () => {
+    const { data: contratos } = await supabase
+      .from("contratos_arrendamiento")
+      .select("id, empresa, campania, centro_costo, has, qq_ha_total, grano")
+      .eq("empresa", "MSA")
+      .eq("activo", true)
+
+    if (!contratos || contratos.length === 0) { setCampos([]); return }
+
+    const contratoIds = contratos.map(c => c.id)
+
+    const [{ data: cuotas }, { data: precios }, { data: tcs }] = await Promise.all([
+      supabase
+        .from("cuotas_arrendamiento")
+        .select("id, contrato_id, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, estado")
+        .in("contrato_id", contratoIds),
+      supabase.from("precios_granos").select("grano, anio, mes, precio_usd"),
+      supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
+    ])
+
+    const cuotaIds = (cuotas || []).map(c => c.id)
+    const { data: fijaciones } = cuotaIds.length
+      ? await supabase
+          .from("fijaciones_arrendamiento")
+          .select("cuota_id, tons, monto_pesos, fecha_cobro")
+          .in("cuota_id", cuotaIds)
+      : { data: [] as any[] }
+
+    const listaPrecios = (precios || []) as PrecioGrano[]
+    const listaTC = (tcs || []) as TipoCambio[]
+
+    // Fijaciones por cuota
+    const fijPorCuota: Record<string, any[]> = {}
+    for (const f of fijaciones || []) {
+      if (!fijPorCuota[f.cuota_id]) fijPorCuota[f.cuota_id] = []
+      fijPorCuota[f.cuota_id].push(f)
+    }
+
+    const nuevaFila = (campo: string, empresa: string): FilaCampo => ({
+      campo, empresa,
+      fijado: {}, presupuestado: {}, disponible: {}, tonsDisponibles: {}, estimado: {},
+    })
+
+    const mapaCampos: Record<string, FilaCampo> = {}
+    const hoy = new Date()
+    const claveMesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`
+
+    for (const contrato of contratos) {
+      const clave = contrato.centro_costo
+      if (!mapaCampos[clave]) mapaCampos[clave] = nuevaFila(clave, contrato.empresa)
+      const fila = mapaCampos[clave]
+
+      for (const cuota of (cuotas || []).filter(q => q.contrato_id === contrato.id)) {
+        const fijs = fijPorCuota[cuota.id] || []
+
+        // 1) Fijado — monto congelado, en el mes de su fecha de cobro
+        for (const f of fijs) {
+          const k = String(f.fecha_cobro).slice(0, 7)
+          fila.fijado[k] = (fila.fijado[k] || 0) + Number(f.monto_pesos || 0)
+        }
+
+        // 2) Lo que queda sin fijar
+        const tonsTot = tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota))
+        const tonsPend = tonsTot - tonsFijadas(fijs)
+        if (tonsPend <= 0.001) continue
+
+        const p = resolverPrecio(listaPrecios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes)
+        const [anioCobro, mesCobro] = String(cuota.fecha_cobro_estimada).split("-").map(Number)
+        const t = resolverTC(listaTC, anioCobro, mesCobro)
+        const monto = tonsPend * p.precio_usd * t.tc
+
+        // El estado se DERIVA (fijaciones + fecha), no se lee de la columna: la columna
+        // se desactualiza sola cuando pasa la fecha de cobro. Si no se fijó y ya venció,
+        // las tons quedan DISPONIBLES y se muestran en el mes actual hasta que el usuario
+        // les asigne fecha nueva (el selector propone el mes siguiente por default).
+        const est = estadoDerivado(
+          Number(contrato.has), Number(cuota.qq_ha_cuota), fijs, cuota.fecha_cobro_estimada, hoy,
+        )
+        const vencida = est === 'disponible'
+        const k = vencida ? claveMesActual : String(cuota.fecha_cobro_estimada).slice(0, 7)
+
+        if (vencida) {
+          fila.disponible[k] = (fila.disponible[k] || 0) + monto
+          fila.tonsDisponibles[k] = (fila.tonsDisponibles[k] || 0) + tonsPend
+        } else {
+          fila.presupuestado[k] = (fila.presupuestado[k] || 0) + monto
+        }
+        if (p.arrastrado || t.arrastrado) fila.estimado[k] = true
+      }
+    }
+
+    setCampos(Object.values(mapaCampos).sort((a, b) => a.campo.localeCompare(b.campo)))
   }
 
   const cargarSueldos = async () => {
@@ -221,6 +346,20 @@ export function TabPresupuesto() {
     return totales
   }, [sueldoFilas, meses])
 
+  const totalIngresosPorMes = useMemo(() => {
+    const totales: Record<string, number> = {}
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      totales[clave] = campos.reduce(
+        (s, c) => s + (c.fijado[clave] || 0) + (c.presupuestado[clave] || 0) + (c.disponible[clave] || 0),
+        0,
+      )
+    }
+    return totales
+  }, [campos, meses])
+
+  const hayIngresos = campos.length > 0
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (cargando) {
@@ -240,7 +379,9 @@ export function TabPresupuesto() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-800">Presupuesto MSA</h2>
-          <p className="text-sm text-gray-500">Proyección por templates · {meses[0].label} – {meses[meses.length-1].label}</p>
+          <p className="text-sm text-gray-500">
+            Ingresos (arrendamientos) + egresos (templates y sueldos) · {meses[0].label} – {meses[meses.length-1].label}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => toggleTodos(true)}>Expandir todo</Button>
@@ -277,6 +418,120 @@ export function TabPresupuesto() {
               </thead>
 
               <tbody>
+                {/* ══ INGRESOS — Arrendamientos agrícolas ══ */}
+                {hayIngresos && (
+                  <>
+                    <tr className="border-b-2 border-emerald-300 bg-emerald-50">
+                      <td className="sticky left-0 z-10 bg-emerald-50 px-4 py-2 font-bold text-emerald-800 flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4" />
+                        INGRESOS — Arrendamientos
+                      </td>
+                      {meses.map(m => {
+                        const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                        const esActual = clave === mesActualClave
+                        return (
+                          <td
+                            key={clave}
+                            className={`px-3 py-2 text-right font-bold text-emerald-800 ${
+                              esActual ? "bg-emerald-100 border-l-2 border-blue-300" : ""
+                            }`}
+                          >
+                            {fmt(totalIngresosPorMes[clave] || 0)}
+                          </td>
+                        )
+                      })}
+                    </tr>
+
+                    {campos.map(c => {
+                      const claveCampo = `__campo_${c.campo}__`
+                      const expandido = expandidos[claveCampo] ?? true
+
+                      const totalCampo: Record<string, number> = {}
+                      for (const m of meses) {
+                        const k = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                        totalCampo[k] = (c.fijado[k] || 0) + (c.presupuestado[k] || 0) + (c.disponible[k] || 0)
+                      }
+
+                      // Las 3 filas del campo: fijado / presupuestado / disponible
+                      const subFilas: { label: string; datos: Record<string, number>; clase: string }[] = [
+                        { label: "Fijado",             datos: c.fijado,        clase: "text-emerald-700 font-medium" },
+                        { label: "Presupuestado",      datos: c.presupuestado, clase: "text-gray-600" },
+                        { label: "Disponible a fijar", datos: c.disponible,    clase: "text-amber-700" },
+                      ]
+
+                      return (
+                        <>
+                          <tr
+                            key={`campo-${c.campo}`}
+                            className="border-b bg-emerald-50/40 cursor-pointer hover:bg-emerald-50 transition-colors"
+                            onClick={() => toggleAgrupador(claveCampo)}
+                          >
+                            <td className="sticky left-0 z-10 bg-emerald-50/40 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                              {expandido
+                                ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                              }
+                              {c.campo}
+                              <span className="ml-2 text-xs text-gray-400">{c.empresa}</span>
+                            </td>
+                            {meses.map(m => {
+                              const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                              const esActual = clave === mesActualClave
+                              return (
+                                <td
+                                  key={clave}
+                                  className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                    esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                                  }`}
+                                >
+                                  {fmt(totalCampo[clave] || 0)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+
+                          {expandido && subFilas.map(sf => (
+                            <tr key={`${c.campo}-${sf.label}`} className="border-b hover:bg-gray-50 transition-colors">
+                              <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                                {sf.label}
+                              </td>
+                              {meses.map(m => {
+                                const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                                const esActual = clave === mesActualClave
+                                const valor = sf.datos[clave] || 0
+                                const tons = sf.label === "Disponible a fijar" ? c.tonsDisponibles[clave] : undefined
+                                const estimado = valor > 0 && sf.label !== "Fijado" && c.estimado[clave]
+                                return (
+                                  <td
+                                    key={clave}
+                                    title={
+                                      tons
+                                        ? `${tons.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar`
+                                        : estimado
+                                          ? "Precio o TC arrastrado de otro mes (estimado)"
+                                          : undefined
+                                    }
+                                    className={`px-3 py-1.5 text-right text-xs ${sf.clase} ${
+                                      esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                                    }`}
+                                  >
+                                    {/* Sin precio cargado el monto da 0: mostrar las tn para que
+                                        el disponible no quede invisible. */}
+                                    {valor === 0 && tons
+                                      ? <span className="text-amber-600">{tons.toLocaleString("es-AR", { maximumFractionDigits: 1 })} tn</span>
+                                      : fmt(valor)}
+                                    {estimado && <span className="ml-0.5 text-amber-500">*</span>}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </>
+                      )
+                    })}
+                  </>
+                )}
+
                 {/* ── Agrupadores / Templates ── */}
                 {agrupadores.map(ag => {
                   const expandido = expandidos[ag.nombre] ?? false
@@ -425,6 +680,31 @@ export function TabPresupuesto() {
                     )
                   })}
                 </tr>
+
+                {/* ── RESULTADO (Ingresos − Egresos) ── */}
+                {hayIngresos && (
+                  <tr className="border-t-2 border-gray-400 bg-slate-700">
+                    <td className="sticky left-0 z-10 bg-slate-700 px-4 py-3 font-bold text-white flex items-center gap-2">
+                      <Scale className="h-4 w-4" />
+                      RESULTADO
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      const esActual = clave === mesActualClave
+                      const resultado = (totalIngresosPorMes[clave] || 0) - (totalesPorMes[clave] || 0)
+                      return (
+                        <td
+                          key={clave}
+                          className={`px-3 py-3 text-right font-bold text-sm ${
+                            resultado < 0 ? "text-red-300" : "text-emerald-300"
+                          } ${esActual ? "bg-slate-900 border-l-2 border-blue-400" : ""}`}
+                        >
+                          ${Math.round(resultado).toLocaleString("es-AR")}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -437,8 +717,12 @@ export function TabPresupuesto() {
           <span className="inline-block w-3 h-3 bg-blue-100 border border-blue-300 rounded-sm"></span>
           Mes actual
         </span>
-        <span>· Montos en pesos · Solo templates activos con responsable MSA</span>
-        <Badge variant="outline" className="text-xs">Fase 1 — solo templates + sueldos</Badge>
+        <span className="flex items-center gap-1">
+          <span className="text-amber-500">*</span>
+          Precio o TC arrastrado de otro mes
+        </span>
+        <span>· Montos en pesos · Solo MSA</span>
+        <Badge variant="outline" className="text-xs">Ingresos: arrendamientos · Egresos: templates + sueldos</Badge>
       </div>
     </div>
   )

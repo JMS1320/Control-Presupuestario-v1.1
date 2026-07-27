@@ -117,6 +117,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 ### Features a medio hacer
 | ID | Estado | Prio | Ítem |
 |----|--------|------|------|
+| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) |
 | B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar |
 | B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `PLAN_DASHBOARD_REDISEÑO.md` |
@@ -984,6 +985,56 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 - Grandes créditos "Transferencias Cash Proveedores" ($89,5M, $5M, $11,8M) → ingresos/movimientos entre cuentas, probablemente no son egresos conciliables por regla.
 
 **Pendiente de análisis profundo:** cruzar cada pendiente con su posible match (mismo monto en ARCA/template/sueldo no conciliado) para listar (a) los que deberían haber conciliado solos y por qué no, y (b) el set de reglas nuevas a proponer. Requiere una corrida de query de cruce monto↔candidatos.
+
+---
+
+## <a id="b-feat-presu-ingresos"></a>B-FEAT-PRESU-INGRESOS — Presupuesto de INGRESOS: arrendamientos agrícolas (2026-07-26)
+
+**Diseño completo** (fórmulas, reglas, DDL, UI, fases) → `DISEÑO_PRESUPUESTO.md`
+§ INGRESOS — Arrendamientos agrícolas. **Origen**: `exports_app/- Desarrollo Presuesto..xlsx`.
+
+**Decisión arquitectural**: el presupuesto de ingresos NO se carga en Presupuesto — se carga como
+**Ventas** (contrato → cuota → fijación → factura → cobro) y Presupuesto **lee**. Una sola fila que
+nace presupuestada y se vuelve real, igual que las cuotas de templates. Todo en `public` (sin schema
+propio); contratos con columna `empresa`.
+
+### ✅ HECHO (2026-07-26, sin testear)
+1. **BD** — 5 tablas: `tipos_cambio`, `precios_granos`, `contratos_arrendamiento`,
+   `cuotas_arrendamiento`, `fijaciones_arrendamiento`. **No están en el backup** → DDL en
+   `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+2. **Datos MSA sembrados** — 4 contratos (Nazarenas/Rojas × campañas 26/27 y 27/28) + 14 cuotas.
+   Verificado contra la planilla: tons, % y guardarraíl `Σ qq = qq_ha_total` OK en los 4.
+3. **`lib/arrendamientos/calculo.ts`** — fuente única de fórmulas: tons, %, guardarraíl, resolución
+   de precio con arrastre, TC (real > presupuestado > arrastre), monto de cuota, tons
+   fijadas/disponibles, estado derivado, reglas de movimiento, IIBB 5%, ganancias 6%,
+   pizarra +20 días.
+4. **`components/configurador-precios-tc.tsx`** — ABM de las dos series macro (precio USD/ton por
+   posición + TC presupuestado/real), 36 meses, edición inline es-AR, guarda al salir del campo.
+   Se abre con el botón "Precios y TC" en la solapa Presupuesto.
+5. **`components/tab-presupuesto.tsx`** — horizonte 13 → **24 meses**; bloque **INGRESOS** con
+   **3 filas por campo** (Fijado / Presupuestado / Disponible a fijar), badge de tn sin fijar,
+   marca `*` cuando el precio o el TC se arrastraron, y fila **RESULTADO** (Ingresos − Egresos).
+
+### ⏳ FALTA
+- **ABM de contratos y cuotas en Ventas** (hoy se cargaron por SQL). Incluye mover cuota
+  (adelante si presupuestada · piso hoy+20d si disponible · nunca si fijada) + "volver a default".
+- **Acción Fijar** (total o **parcial**) → congela precio/TC, genera comprobante en
+  `msa.comprobantes_venta`, engancha al motor rama VENTA.
+- **Volcado del IIBB al template** `IIBB Mensual MSA` (`fba5c3f9-…`), patrón SICORE: explícito,
+  idempotente, con reset; traza en `detalle` para no pisar montos escritos a mano. → `lib/iibb/`.
+- **Cash Flow**: ingresos fijados + edición de cuotas como interfaz sobre Ventas.
+- **Replicar a PAM y MA** (incluye crear `pam.comprobantes_venta`, que no existe).
+- **Cargar `indices_ipc`** (tabla vacía).
+
+### ❓ ABIERTO — a resolver con el usuario
+1. **CUITs de Sanpa y Provinvest** — no están en `public.proveedores` (el único `es_cliente` es
+   AFA). Los contratos quedaron con `cliente_cuit` NULL.
+2. **Rojas cuota 1 (10/07/2026) ya venció** y quedó `presupuestado`. ¿Se fijó y cobró, o pasó a
+   disponible?
+3. **Campaña 27/28** es réplica de 26/27 con fechas +1 año — confirmar contra los contratos reales.
+4. **Precios**: hoy carga manual. Mejora futura: traer Matba/Rofex automático.
+5. **Ganancias 6% ↔ `retenciones_recibidas`**: hoy sólo menor ingreso. Futuro: encadenar para
+   recuperarlo contra el impuesto.
 
 ---
 ---

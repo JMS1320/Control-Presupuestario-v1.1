@@ -11109,3 +11109,78 @@ CREATE INDEX IF NOT EXISTS idx_mails_pago_estado ON public.mails_pago (estado);
 
 -- Aplicado 2026-07-10 (aditivo): toggle para adjuntar (o no) el Detalle PDF
 ALTER TABLE public.mails_pago ADD COLUMN IF NOT EXISTS adjuntar_detalle boolean DEFAULT true;
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-26 · Presupuesto de INGRESOS (arrendamientos agrícolas)
+
+5 tablas nuevas en `public`. **NO están en el backup** — re-crearlas ante una reconstrucción.
+Diseño completo (fórmulas, reglas de movimiento, IIBB, UI) → `DISEÑO_PRESUPUESTO.md`
+§ INGRESOS — Arrendamientos agrícolas.
+
+**Por qué todo en `public` y no en un schema propio**: TC/IPC/precios son datos macro
+multiempresa; contratos/cuotas son tablas de Ventas. Un schema aparte obliga a exponerlo en
+`pgrst.db_schemas` (no queda en el backup) y arrastra la trampa de `.schema()` antes de `.from()`.
+Los contratos llevan columna `empresa` en vez de triplicar estructura por schema.
+
+```sql
+CREATE TABLE public.tipos_cambio (
+  id uuid PK, anio int, mes int CHECK 1..12,
+  tc_presupuestado numeric(12,4), tc_real numeric(12,4),
+  fuente varchar(20) DEFAULT 'manual', created_at, updated_at,
+  UNIQUE (anio, mes) );
+
+CREATE TABLE public.precios_granos (
+  id uuid PK, grano varchar(20) DEFAULT 'soja', anio int, mes int CHECK 1..12,
+  precio_usd numeric(12,2) NOT NULL, fuente varchar(20) DEFAULT 'manual',
+  created_at, updated_at, UNIQUE (grano, anio, mes) );
+
+CREATE TABLE public.contratos_arrendamiento (
+  id uuid PK, empresa varchar(10) CHECK IN ('MSA','PAM','MA'), campania varchar(10),
+  centro_costo text, cliente_cuit varchar(13), cliente_nombre varchar(200),
+  has numeric(10,2) CHECK >0, qq_ha_total numeric(8,2) CHECK >0,
+  grano varchar(20) DEFAULT 'soja',
+  cuenta_contable text DEFAULT 'ARRENDAMIENTOS Venta',   -- 4109, ya existe e imputable
+  activo boolean DEFAULT true, notas text, created_at, updated_at );
+CREATE INDEX idx_contratos_arr_empresa_camp ON contratos_arrendamiento(empresa, campania);
+
+CREATE TABLE public.cuotas_arrendamiento (
+  id uuid PK, contrato_id uuid FK->contratos_arrendamiento ON DELETE CASCADE,
+  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,
+  fecha_cobro_estimada date, posicion_anio int, posicion_mes int CHECK 1..12,
+  fecha_cobro_original date, posicion_orig_anio int, posicion_orig_mes int,  -- "volver a default"
+  estado varchar(20) DEFAULT 'presupuestado'
+    CHECK IN ('presupuestado','parcial','fijado','disponible'),
+  notas text, created_at, updated_at, UNIQUE (contrato_id, numero_cuota) );
+CREATE INDEX idx_cuotas_arr_contrato ON cuotas_arrendamiento(contrato_id);
+CREATE INDEX idx_cuotas_arr_fecha    ON cuotas_arrendamiento(fecha_cobro_estimada);
+
+CREATE TABLE public.fijaciones_arrendamiento (
+  id uuid PK, cuota_id uuid FK->cuotas_arrendamiento ON DELETE CASCADE,
+  fecha_fijacion date, tons numeric(12,3) CHECK >0,
+  modo varchar(10) CHECK IN ('matba','pizarra'),
+  precio_usd numeric(12,2), precio_pesos numeric(15,2), tc numeric(12,4),  -- CONGELADOS
+  monto_pesos numeric(15,2), fecha_cobro date,   -- pizarra: fijacion + 20 días corridos
+  comprobante_id uuid,  -- FK LÓGICA a {schema}.comprobantes_venta (schema = contrato.empresa)
+  notas text, created_at );
+CREATE INDEX idx_fijaciones_arr_cuota ON fijaciones_arrendamiento(cuota_id);
+```
+
+**RLS + grants**: mismo patrón que el resto de `public` — RLS ON + policy `allow_all_*` FOR ALL
+USING(true) WITH CHECK(true) + `GRANT ALL TO anon, authenticated, service_role`.
+(Ver A-SEC-01 en PENDIENTES: `anon` tiene grants plenos en toda la app.)
+
+**Datos sembrados (MSA, campañas 26/27 y 27/28)** — 4 contratos + 14 cuotas, tomados de
+`exports_app/- Desarrollo Presuesto..xlsx` solapa "Primeros Pasos". La campaña 27/28 es
+**réplica de 26/27 con fechas +1 año**, a confirmar con datos reales.
+Verificado: tons y % coinciden con la planilla y el guardarraíl `Σ qq = qq_ha_total` da OK en los 4.
+
+| Campaña | Campo | Has | qq/ha | Tons | Cuotas |
+|---|---|---:|---:|---:|---:|
+| 26/27 | Nazarenas | 144,93 | 15 | 217,395 | 3 |
+| 26/27 | Rojas | 242,00 | 24 | 580,800 | 4 |
+| 27/28 | Nazarenas | 144,93 | 15 | 217,395 | 3 |
+| 27/28 | Rojas | 242,00 | 24 | 580,800 | 4 |
+
+⚠️ **Pendiente de dato**: `cliente_cuit` en blanco — Sanpa y Provinvest **no están** en
+`public.proveedores` (el único `es_cliente` es AFA). Cargar cuando el usuario pase los CUITs.
