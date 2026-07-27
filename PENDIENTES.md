@@ -1031,10 +1031,23 @@ propio); contratos con columna `empresa`.
    estado), **Fijar** (total o parcial), **Fijar TC** sobre una venta ya hecha, guardarraíl
    visible. Fijar **parcial parte la cuota**: el saldo pasa a una cuota nueva (`cuota_padre_id`).
 
+10. **Cash Flow ve las ventas** — vista **`public.ventas_unificadas`** (formato común de los 3
+    tipos + `facturado` + `falta_tc`). Cash Flow tenía origen `VENTA` pero leía
+    `msa.comprobantes_venta` (**facturas**): la venta fijada no aparecía en ningún lado.
+    Ahora entra como ingreso comprometido, y si hay factura parcial sigue el **remanente**.
+11. **Vinculación FC ↔ venta** — tabla **`public.ventas_facturas`** (polimórfica: no se pudo
+    reusar `msa.ventas_comprobantes`, su FK apunta a `msa.ventas`). Alerta en Vista Principal
+    (`components/alertas-fc-venta.tsx`): match **por CUIT** (las ventas son pocas), monto
+    asignado editable con default = mín(factura, remanente). **Sí** → Cash Flow muestra sólo
+    la FC · **No** → dos ingresos y la venta sigue esperando. La decisión se guarda en ambos
+    casos para no repreguntar.
+12. **`MANUAL-USO.md`** — sección "Arrendamientos agrícolas" con el flujo completo.
+
 ### ⏳ FALTA
-- **Generar el comprobante** (factura/liquidación) desde la venta y vincularlo por
-  `msa.ventas_comprobantes` → motor rama VENTA → cobro.
-- **Vista `ventas_unificadas`** (arrendamiento + granos + ganadería) para Cash Flow y el motor.
+- **Cargar los CUITs de Sanpa y Provinvest** en los contratos → sin CUIT **la vinculación no
+  puede matchear** (la alerta lo avisa explícitamente). Es lo primero que bloquea.
+- **Generar el comprobante** (factura/liquidación) desde la venta → motor rama VENTA → cobro.
+- **Granos y ganadería** en `ventas_unificadas` (hoy la vista sólo trae arrendamiento).
 - **Volcado del IIBB al template** `IIBB Mensual MSA` (`fba5c3f9-…`), patrón SICORE: explícito,
   idempotente, con reset; traza en `detalle` para no pisar montos escritos a mano. → `lib/iibb/`.
   ⚠️ La alícuota **no puede ser una constante global**: arrendamiento 5%, ganadería 1%. Hoy
@@ -1084,6 +1097,30 @@ Hay que agregarle período o hacer tabla de stock proyectado.
 
 **Decisión heredada**: igual que el arrendamiento, **Productivo calcula el stock proyectado →
 genera las ventas → Presupuesto lee**. Lo dice el propio usuario en la planilla (B20).
+
+#### 🚧 Qué falta decidir antes de implementar ganadería
+1. **Precio $/kg a futuro**: el usuario lo quiere **editable desde Presupuesto** (mismo
+   mecanismo que el override de soja). Falta definir si hay algún índice de referencia
+   (novillo Cañuelas, Rosgan) o es 100% carga manual. Acá **no hay Matba**.
+2. **Plazos de cobro**: dijo "hay plazos" pero no cuáles. En arrendamiento esto terminó siendo
+   `dias_cobro_disponible` **por contrato** — acá probablemente sea por comprador/consignatario.
+3. **Vaca de descarte**: es una línea de ingreso que **no está en la grilla del Excel**. Falta
+   cuántas por año, peso y precio. Ya hay un movimiento real cargado (4 Vaca CUT/Descarte,
+   30/03/2026, sin peso ni precio).
+4. **Roll-forward del stock**: dónde vive. `productivo.stock_hacienda` está vacía y **sin
+   dimensión temporal** → hay que agregarle período o hacer tabla de stock proyectado.
+5. **Parámetros**: ¿derivados del historial de `ciclos_cria` con override, o carga manual?
+   (El usuario todavía no lo respondió; la recomendación es derivar + override.)
+
+#### ⚠️ Deuda técnica que ganadería DESTAPA (arreglar antes del volcado de IIBB)
+En `lib/arrendamientos/calculo.ts` quedaron dos **constantes globales** que ganadería rompe:
+- `ALICUOTA_IIBB = 0.05` → arrendamiento 5%, **ganadería 1%**.
+- `EXENTO_IVA = true` → arrendamiento exento, **ganadería IVA 10,5%**.
+
+Tienen que pasar a ser **configurables por concepto** (probablemente por tipo de venta o por
+cuenta contable). Si se hace el volcado del IIBB al template antes de esto, mezcla alícuotas.
+
+**Estado**: 0 líneas de código. Sólo relevamiento + decisiones. Nada en BD.
 
 ---
 ---

@@ -306,3 +306,111 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 **Los campos que lo alimentan** (`egresos_sin_factura`): **`periodicidad`** (anual/bianual) y **`aplica_generacion`** — se cargan en el **wizard** al crear el template (paso 1). Los **abiertos** (comisiones, Caja…) **no se renuevan**: persisten entre años solos (el selector de Pago Manual los busca por `tipo_template`+`activo`, no por `año`).
 
 **⚠️ Estado: v1 SIN TESTEAR end-to-end.** Falta probar en bianual (crear 26/27 real + revisar cuotas/fechas/descripciones/detalle/vencimiento). Pendiente contable: si Acciones necesita la cuota 25/26 intermedia (cae en 2028 saltando 2027).
+
+---
+
+## 🌾 Módulo: Arrendamientos agrícolas (Ingresos → Ventas) 🟡 (nuevo, sin testear)
+
+> **La regla que ordena todo**: *"Venta origina Factura/Liquidación que origina Cobro"*.
+> El presupuesto de ingresos **no se carga en Presupuesto**: se carga en **Ventas**, y
+> Presupuesto lo lee. **Fijar = vender.**
+> Arquitectura y fórmulas → `DISEÑO_PRESUPUESTO.md` § INGRESOS — Arrendamientos agrícolas.
+
+### Dónde está cada cosa
+
+| Necesito… | Voy a… |
+|---|---|
+| Cargar/editar un contrato, ver cuotas, **fijar** | **Ingresos → Arrendamiento** |
+| Cargar precios de soja y TC | **Presupuesto → botón "Precios y TC"** |
+| Ver la proyección mes a mes, mover o valorizar cuotas | **Presupuesto** (filas por campo) |
+| Ver el ingreso comprometido a corto plazo | **Cash Flow** |
+| Vincular la factura que llegó con la venta | **Vista Principal** (alerta) |
+
+### 1. El contrato
+
+`Has × qq/ha ÷ 10 = toneladas`. Ej.: Rojas = 242 ha × 24 qq/ha = 580,80 tn.
+Se reparte en **cuotas**, cada una con **fecha de cobro** y **posición de fijación**
+(que son **independientes**: podés cobrar el 20/04 con posición mayo).
+
+La suma de qq de las cuotas debería dar el arrendamiento total. Si no da, la app **avisa
+pero no bloquea**.
+
+**`Días de cobro del disponible`**: días corridos entre la fijación y el cobro cuando vendés
+disponible. **Es por cliente**: Sanpa 15, el resto 20.
+
+### 2. Fijar = vender
+
+Botón **Fijar** en cada cuota que tenga disponible. Se elige:
+
+- **Fecha de fijación** = la **fecha de la venta**. No es necesariamente hoy, y es **desde
+  donde se cuentan los días de cobro**.
+- **Toneladas**: todo o parte.
+- **Modo**:
+  - **Matba** → precio USD/ton × TC. La fecha de cobro es la de la cuota.
+  - **Pizarra disponible** → precio en **pesos**, sin TC. El cobro se calcula solo:
+    fijación + los días del cliente.
+
+**El precio y el TC son dos momentos distintos.** Podés fijar el precio y dejar el TC para
+después: la venta queda registrada, el monto en USD ya es cierto y el de pesos queda
+**estimado** (marcado con `*`) hasta que uses **Fijar TC**.
+
+**Fijación parcial**: si fijás menos toneladas que las disponibles, la app **parte la cuota**.
+La original queda con lo vendido y el saldo pasa a una **cuota nueva** marcada `(saldo)`, que
+después movés y valorizás por su cuenta. Una cuota se fija entera o se parte.
+
+### 3. Mover y valorizar (simulación financiera)
+
+En **Presupuesto**, las celdas de *Presupuestado* y *Disponible a fijar* son **clickeables**.
+Sirve para probar *"¿qué pasa si la cobro ahora o la guardo hasta enero?"*.
+
+- **Presupuestada** → sólo se mueve **hacia adelante**.
+- **Disponible** → cualquier dirección, con piso **hoy + los días del cliente**.
+- **Fijada** → **no se mueve**: ya es una venta.
+- Al mover, **la posición pasa a ser el mes destino** (Rosario no tiene futuros).
+- **El precio cambia de unidad según la fecha**: si el cobro cae en el **mes actual** se carga
+  en **pesos** (pizarra, sin TC); de ahí en adelante en **USD** (Matba). Si el cambio de fecha
+  cambia la unidad, **el campo se limpia solo** para que no guardes dólares como pesos.
+- **"Volver a default"** restaura fecha, posición y borra el precio manual.
+
+### 4. Precios y TC
+
+Botón **"Precios y TC"** arriba en Presupuesto. Precio USD/ton por posición y TC
+presupuestado/real, mes a mes. Se guarda al salir del campo.
+
+**Si falta un mes**, la app toma el **siguiente cargado** (o el anterior, para el TC) y marca
+la celda con `*` para que sepas que es arrastrado, no cargado.
+
+### 5. Las tres filas del Presupuesto, por campo
+
+| Fila | Qué es |
+|---|---|
+| **Fijado** | ya vendido. Si falta el TC, el peso es estimado (`*`) |
+| **Presupuestado** | tons sin vender × Matba de la posición × TC |
+| **Disponible a fijar** | tons cuya fecha de cobro pasó sin fijar. Se muestran en el mes actual hasta que les des fecha nueva |
+
+### 6. Cuando llega la factura
+
+En **Vista Principal** aparece la alerta: *"Llegó la factura X de Sanpa por $Y. ¿Es de la venta
+de Rojas?"* — el match es **por CUIT** (las ventas son pocas).
+
+- **Sí** → Cash Flow deja de mostrar la venta y **muestra la factura**.
+- **No** → la factura es de otra cosa: quedan **dos ingresos** y la venta **sigue esperando**
+  la suya.
+
+En los dos casos la decisión queda guardada y **no vuelve a preguntar** por ese par.
+
+**Factura parcial**: el monto asignado es editable. Si cubre menos que la venta, Cash Flow
+sigue mostrando el **remanente** hasta que termines de facturar.
+
+> ⚠️ **Si el contrato no tiene CUIT cargado, no hay match posible** y la alerta te lo avisa.
+> Cargalo en Ingresos → Arrendamiento → Editar contrato.
+
+### 7. Impuestos
+
+- **Exento de IVA**.
+- **Ganancias 6%**: se descuenta del cobro (menor ingreso), sobre el neto.
+- **IIBB**: son **dos cosas distintas**.
+  - La **retención que te practican al cobrar** no se presupuesta: se carga cuando ocurre y
+    **descuenta el pago del mes siguiente**.
+  - El **pago mensual al fisco** es 5% del neto, menos esas retenciones, y vence el mes
+    siguiente al cobro. *(Todavía no se vuelca solo al template IIBB Mensual — pendiente.)*
