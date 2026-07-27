@@ -8,8 +8,12 @@
 export const ALICUOTA_IIBB = 0.05
 /** Ganancias: 6% deducido del cobro (menor ingreso, sobre el neto). */
 export const ALICUOTA_GANANCIAS = 0.06
-/** Pizarra Rosario disponible: se cobra a los 20 días corridos de la fijación. */
-export const DIAS_COBRO_PIZARRA = 20
+/**
+ * Días corridos entre fijación y cobro al vender disponible (pizarra).
+ * DEFAULT nada más: el plazo real es **por contrato/cliente**
+ * (`contratos_arrendamiento.dias_cobro_disponible`) — Sanpa paga a 15.
+ */
+export const DIAS_COBRO_PIZARRA_DEFAULT = 20
 /** Arrendamiento agrícola: exento de IVA. */
 export const EXENTO_IVA = true
 
@@ -373,16 +377,25 @@ export function estadoDerivado(
   return new Date(fechaCobro) < hoy ? 'disponible' : 'presupuestado'
 }
 
-/** Pizarra Rosario disponible: el cobro cae a los 20 días corridos de la fijación. */
-export function fechaCobroPizarra(fechaFijacion: string | Date): string {
-  const d = new Date(fechaFijacion)
-  d.setDate(d.getDate() + DIAS_COBRO_PIZARRA)
+/**
+ * Pizarra disponible: el cobro cae a N días corridos de la FECHA DE FIJACIÓN
+ * (que es la fecha de la venta, y no necesariamente hoy).
+ * `dias` sale del contrato; el default es sólo un fallback.
+ */
+export function fechaCobroPizarra(
+  fechaFijacion: string | Date,
+  dias = DIAS_COBRO_PIZARRA_DEFAULT,
+): string {
+  const d = typeof fechaFijacion === 'string'
+    ? new Date(fechaFijacion + 'T00:00:00')
+    : new Date(fechaFijacion)
+  d.setDate(d.getDate() + dias)
   return d.toISOString().slice(0, 10)
 }
 
-/** Fecha más temprana a la que se puede mover un disponible: hoy + 20 días corridos. */
-export function fechaMinimaDisponible(hoy = new Date()): string {
-  return fechaCobroPizarra(hoy)
+/** Fecha más temprana a la que se puede mover un disponible: hoy + N días corridos. */
+export function fechaMinimaDisponible(hoy = new Date(), dias = DIAS_COBRO_PIZARRA_DEFAULT): string {
+  return fechaCobroPizarra(hoy, dias)
 }
 
 // ── Reglas de movimiento ──────────────────────────────────────────────────────
@@ -398,7 +411,8 @@ export interface ResultadoMover {
  * Reglas (DISEÑO_PRESUPUESTO.md § Estados y reglas de movimiento):
  *  - fijado    → NO se mueve (ya generó factura).
  *  - presupuestado → sólo hacia ADELANTE.
- *  - disponible/parcial → cualquier dirección, piso hoy + 20 días corridos.
+ *  - disponible/parcial → cualquier dirección, piso hoy + N días corridos (N = plazo
+ *    de cobro del contrato: Sanpa 15, default 20).
  *  - Al mover, la posición pasa a ser el mes destino.
  *
  * ⚠️ `cuota.estado` debe venir de `estadoDerivado()`, NO de la columna de la BD (ver allí el porqué).
@@ -407,6 +421,7 @@ export function puedeMoverCuota(
   cuota: Pick<CuotaArrendamiento, 'estado' | 'fecha_cobro_estimada'>,
   nuevaFecha: string,
   hoy = new Date(),
+  diasCobro = DIAS_COBRO_PIZARRA_DEFAULT,
 ): ResultadoMover {
   if (cuota.estado === 'fijado') {
     return { permitido: false, motivo: 'La cuota ya está fijada y generó factura: no se puede mover.' }
@@ -423,11 +438,11 @@ export function puedeMoverCuota(
   }
 
   if (cuota.estado === 'disponible' || cuota.estado === 'parcial') {
-    const minima = new Date(fechaMinimaDisponible(hoy))
+    const minima = new Date(fechaMinimaDisponible(hoy, diasCobro) + 'T00:00:00')
     if (destino < minima) {
       return {
         permitido: false,
-        motivo: `Lo antes que puede cobrarse es ${minima.toLocaleDateString('es-AR')} (hoy + ${DIAS_COBRO_PIZARRA} días corridos).`,
+        motivo: `Lo antes que puede cobrarse es ${minima.toLocaleDateString('es-AR')} (hoy + ${diasCobro} días corridos).`,
       }
     }
   }

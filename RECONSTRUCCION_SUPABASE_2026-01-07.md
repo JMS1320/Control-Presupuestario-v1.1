@@ -11217,3 +11217,11 @@ ALTER TABLE public.cuotas_arrendamiento
   ADD COLUMN IF NOT EXISTS cuota_padre_id uuid REFERENCES public.cuotas_arrendamiento(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_cuotas_arr_padre ON public.cuotas_arrendamiento(cuota_padre_id);
 CREATE INDEX IF NOT EXISTS idx_ventas_arr_cuota ON public.ventas_arrendamiento(cuota_id);
+
+-- Aplicado 2026-07-26 (aditivo): plazo de cobro del disponible POR CONTRATO.
+-- Los 20 dias no podian ser constante global: Sanpa paga a 15. El plazo se cuenta
+-- desde la FECHA DE FIJACION (= fecha de la venta), que no siempre es hoy.
+ALTER TABLE public.contratos_arrendamiento
+  ADD COLUMN IF NOT EXISTS dias_cobro_disponible integer NOT NULL DEFAULT 20;
+-- Dato: los contratos de Sanpa (Rojas 26/27 y 27/28) quedaron en 15.
+UPDATE public.contratos_arrendamiento SET dias_cobro_disponible = 15 WHERE cliente_nombre = 'Sanpa';

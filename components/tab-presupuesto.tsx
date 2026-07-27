@@ -103,6 +103,8 @@ interface CuotaDetalle {
   tc: number | null
   monto: number
   estado: EstadoCuota
+  /** Días de cobro del disponible del contrato (Sanpa 15, resto 20). */
+  diasCobro: number
   fechaOriginal: string | null
   posOrigAnio: number | null
   posOrigMes: number | null
@@ -210,7 +212,7 @@ export function TabPresupuesto() {
   const cargarIngresos = async () => {
     const { data: contratos } = await supabase
       .from("contratos_arrendamiento")
-      .select("id, empresa, campania, centro_costo, has, qq_ha_total, grano")
+      .select("id, empresa, campania, centro_costo, has, qq_ha_total, grano, dias_cobro_disponible")
       .eq("empresa", "MSA")
       .eq("activo", true)
 
@@ -319,6 +321,7 @@ export function TabPresupuesto() {
           tc: p.tc,
           monto,
           estado: est,
+          diasCobro: Number(contrato.dias_cobro_disponible ?? 20),
           fechaOriginal: cuota.fecha_cobro_original,
           posOrigAnio: cuota.posicion_orig_anio,
           posOrigMes: cuota.posicion_orig_mes,
@@ -337,7 +340,10 @@ export function TabPresupuesto() {
     nuevoPrecio: number | null,
   ): Promise<string | null> => {
     // Al mover, la posición pasa a ser el mes destino (regla R1 del diseño)
-    const check = puedeMoverCuota({ estado: cuota.estado, fecha_cobro_estimada: cuota.fechaCobro }, nuevaFecha)
+    const check = puedeMoverCuota(
+      { estado: cuota.estado, fecha_cobro_estimada: cuota.fechaCobro },
+      nuevaFecha, new Date(), cuota.diasCobro,
+    )
     if (!check.permitido) return check.motivo ?? "No se puede mover"
 
     const [anio, mes] = nuevaFecha.split("-").map(Number)
@@ -890,7 +896,6 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
 
   if (!datos) return null
 
-  const minimaDisponible = fechaMinimaDisponible()
 
   const guardar = async (c: CuotaDetalle) => {
     const e = edits[c.id]
@@ -923,6 +928,7 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
             // El modo lo manda la fecha ELEGIDA en el input, no la guardada:
             // mes actual → pizarra en pesos · mes posterior → Matba en USD.
             const modoEdit = modoPrecioSegunFecha(e.fecha)
+            const minimaDisponible = fechaMinimaDisponible(new Date(), c.diasCobro)
             return (
               <div key={c.id} className="rounded border p-3 space-y-3">
                 <div className="flex items-center justify-between text-sm">
@@ -958,7 +964,7 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
                     />
                     <p className="mt-1 text-[10px] text-gray-400">
                       {esDisponible
-                        ? `Lo antes posible: ${new Date(minimaDisponible).toLocaleDateString("es-AR")} (hoy + 20 días)`
+                        ? `Lo antes posible: ${new Date(minimaDisponible + "T00:00:00").toLocaleDateString("es-AR")} (hoy + ${c.diasCobro} días)`
                         : "Una cuota presupuestada sólo se mueve hacia adelante"}
                     </p>
                   </div>

@@ -34,6 +34,8 @@ interface Contrato {
   id: string; empresa: string; campania: string; centro_costo: string
   cliente_cuit: string | null; cliente_nombre: string
   has: number; qq_ha_total: number; grano: string; activo: boolean
+  /** Días corridos entre fijación y cobro al vender disponible. Sanpa 15, default 20. */
+  dias_cobro_disponible: number
 }
 interface Cuota {
   id: string; contrato_id: string; numero_cuota: number; qq_ha_cuota: number
@@ -105,6 +107,7 @@ export function VistaArrendamientos() {
       cliente_cuit: c.cliente_cuit || null,
       has: c.has, qq_ha_total: c.qq_ha_total,
       grano: c.grano || "soja",
+      dias_cobro_disponible: c.dias_cobro_disponible ?? 20,
       updated_at: new Date().toISOString(),
     }
     const { error } = c.id
@@ -375,6 +378,14 @@ function ModalContrato({ datos, onCerrar, onGuardar }: {
             <Input className="h-8 text-right" placeholder="0,00" value={f.qq_ha_total || ""}
               onChange={e => setF({ ...f, qq_ha_total: e.target.value })} />
           </div>
+          <div className="col-span-2">
+            <label className="text-xs text-gray-500">Días de cobro del disponible</label>
+            <Input className="h-8 text-right" type="number" value={f.dias_cobro_disponible ?? 20}
+              onChange={e => setF({ ...f, dias_cobro_disponible: Number(e.target.value) })} />
+            <p className="mt-1 text-[10px] text-gray-400">
+              Días corridos entre la fijación y el cobro al vender disponible. Sanpa 15, resto 20.
+            </p>
+          </div>
           <p className="col-span-2 text-xs text-gray-500">
             Total: <strong>{fmtAR(tons, 3)} tn</strong> (has × qq/ha ÷ 10)
           </p>
@@ -403,6 +414,9 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const [precio, setPrecio] = useState("")
   const [tc, setTc] = useState("")
   const [fechaCobro, setFechaCobro] = useState("")
+  // La fecha de fijación ES la fecha de la venta, y desde ahí se cuentan los días
+  // de cobro del disponible. No siempre es hoy.
+  const [fechaFijacion, setFechaFijacion] = useState("")
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -421,6 +435,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
     setPrecio(p.precio_usd ? fmtAR(p.precio_usd) : "")
     setTc(t.tc ? fmtAR(t.tc) : "")
     setFechaCobro(cuota.fecha_cobro_estimada)
+    setFechaFijacion(new Date().toISOString().slice(0, 10))
     setError(null)
   }, [datos, ventas, precios, tcs])
 
@@ -434,8 +449,11 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const esParcial = tonsAFijar > 0 && tonsAFijar < disponible - 0.001
   const saldo = Math.max(0, disponible - tonsAFijar)
 
-  // En pizarra el cobro es a 20 días corridos de la fijación
-  const fechaCobroEfectiva = modo === "pizarra" ? fechaCobroPizarra(hoy) : fechaCobro
+  // En pizarra el cobro sale de la FECHA DE FIJACIÓN + los días del contrato
+  const diasCobro = Number(contrato.dias_cobro_disponible ?? 20)
+  const fechaCobroEfectiva = modo === "pizarra" && fechaFijacion
+    ? fechaCobroPizarra(fechaFijacion, diasCobro)
+    : fechaCobro
 
   const montoPreview = modo === "pizarra"
     ? tonsAFijar * parseAR(precio)
@@ -446,6 +464,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
     if (tonsAFijar <= 0) return setError("Indicá cuántas toneladas fijás")
     if (tonsAFijar > disponible + 0.001) return setError(`Sólo hay ${fmtAR(disponible, 2)} tn disponibles`)
     if (!precio.trim()) return setError("Falta el precio")
+    if (!fechaFijacion) return setError("Falta la fecha de fijación (es la fecha de la venta)")
 
     setGuardando(true)
     try {
@@ -493,11 +512,11 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
         cuota_id: cuotaDestino,
         tons: tonsAFijar,
         modo,
-        fecha_fijacion_precio: hoy,
+        fecha_fijacion_precio: fechaFijacion || hoy,
         precio_usd: modo === "matba" ? precioNum : null,
         precio_pesos: modo === "pizarra" ? precioNum : null,
         // El TC es un momento aparte: si no lo fijás ahora queda pendiente
-        fecha_fijacion_tc: modo === "matba" && tcNum ? hoy : null,
+        fecha_fijacion_tc: modo === "matba" && tcNum ? (fechaFijacion || hoy) : null,
         tc: modo === "matba" ? tcNum : null,
         monto_pesos: monto,
         fecha_cobro: fechaCobroEfectiva,
@@ -529,6 +548,11 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
           </p>
 
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-gray-500">Fecha de fijación (fecha de la venta)</label>
+              <Input type="date" className="h-8" value={fechaFijacion}
+                onChange={e => setFechaFijacion(e.target.value)} />
+            </div>
             <div>
               <label className="text-xs text-gray-500">Toneladas a fijar</label>
               <Input className="h-8 text-right" value={tons} onChange={e => setTons(e.target.value)} />
@@ -563,9 +587,11 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
               </div>
             ) : (
               <div>
-                <label className="text-xs text-gray-500">Cobro</label>
+                <label className="text-xs text-gray-500">Cobro (calculado)</label>
                 <Input className="h-8" value={fechaCobroEfectiva} disabled />
-                <p className="mt-1 text-[10px] text-gray-400">Fijación + 20 días corridos</p>
+                <p className="mt-1 text-[10px] text-gray-400">
+                  Fijación + {diasCobro} días corridos ({contrato.cliente_nombre})
+                </p>
               </div>
             )}
 
