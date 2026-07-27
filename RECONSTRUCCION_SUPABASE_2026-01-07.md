@@ -11191,3 +11191,10 @@ Verificado: tons y % coinciden con la planilla y el guardarraíl `Σ qq = qq_ha_
 -- NULL = usa la posición. Se limpia con "volver a default".
 ALTER TABLE public.cuotas_arrendamiento
   ADD COLUMN IF NOT EXISTS precio_usd_override numeric(12,2);
+
+-- Aplicado 2026-07-26 (aditivo): precio en PESOS por cuota (pizarra Rosario disponible).
+-- Regla: si la cuota se cobra en el MES ACTUAL se vende disponible y la pizarra cotiza en
+-- ARS (no tiene futuros) -> precio en pesos directo, SIN TC. Si se cobra en un mes posterior
+-- va por Matba (USD de la posicion x TC). Los dos overrides son EXCLUYENTES.
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS precio_pesos_override numeric(15,2);

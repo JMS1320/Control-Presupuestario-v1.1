@@ -44,8 +44,10 @@ export interface CuotaArrendamiento {
   posicion_orig_anio: number | null
   posicion_orig_mes: number | null
   estado: EstadoCuota
-  /** Precio manual que pisa el de la posición. NULL = usa `precios_granos`. */
+  /** Precio USD/ton manual que pisa el de la posición. NULL = usa `precios_granos`. */
   precio_usd_override: number | null
+  /** Precio ARS/ton (pizarra disponible). Gana sobre el USD y NO aplica TC. */
+  precio_pesos_override: number | null
   notas: string | null
 }
 
@@ -205,25 +207,82 @@ export function precioEfectivo(
   return { ...resolverPrecio(precios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes), manual: false }
 }
 
-/** Monto presupuestado de una cuota: tons × precio efectivo × TC(mes de cobro). */
-export function calcularMontoCuota(
-  contrato: Pick<ContratoArrendamiento, 'has' | 'grano'>,
-  cuota: Pick<CuotaArrendamiento, 'qq_ha_cuota' | 'posicion_anio' | 'posicion_mes' | 'fecha_cobro_estimada' | 'precio_usd_override'>,
+/**
+ * Modo de precio según CUÁNDO se cobra:
+ *  - mes actual  → `pizarra`: se vende disponible y la pizarra Rosario cotiza en PESOS
+ *                  (no tiene futuros), así que el precio se carga en ARS/ton directo.
+ *  - mes posterior → `matba`: precio USD de la posición × TC.
+ */
+export function modoPrecioSegunFecha(fechaCobro: string, hoy = new Date()): 'pizarra' | 'matba' {
+  const [anio, mes] = fechaCobro.split('-').map(Number)
+  return anio === hoy.getFullYear() && mes === hoy.getMonth() + 1 ? 'pizarra' : 'matba'
+}
+
+export interface PrecioCuotaResuelto {
+  /** ARS por tonelada ya resuelto, venga de pizarra directa o de Matba × TC. */
+  pesos_por_ton: number
+  modo: 'pizarra' | 'matba'
+  precio_usd: number | null
+  tc: number | null
+  /** El precio lo puso el usuario a mano (no salió de las tablas). */
+  manual: boolean
+  /** El precio o el TC se arrastraron de otro mes. */
+  arrastrado: boolean
+}
+
+/**
+ * Precio de la cuota en ARS/ton. Prioridad:
+ *   1. `precio_pesos_override` (pizarra) — gana siempre y NO aplica TC.
+ *   2. `precio_usd_override` × TC.
+ *   3. precio de la posición × TC.
+ */
+export function resolverPrecioCuota(
+  contrato: Pick<ContratoArrendamiento, 'grano'>,
+  cuota: Pick<CuotaArrendamiento, 'posicion_anio' | 'posicion_mes' | 'fecha_cobro_estimada' | 'precio_usd_override' | 'precio_pesos_override'>,
   precios: PrecioGrano[],
   tcs: TipoCambio[],
-): MontoCuota {
-  const tons = tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota))
-  const p = precioEfectivo(contrato, cuota, precios)
+): PrecioCuotaResuelto {
+  if (cuota.precio_pesos_override != null) {
+    return {
+      pesos_por_ton: Number(cuota.precio_pesos_override),
+      modo: 'pizarra',
+      precio_usd: null,
+      tc: null,
+      manual: true,
+      arrastrado: false,
+    }
+  }
 
+  const p = precioEfectivo(contrato, cuota, precios)
   const [anioCobro, mesCobro] = cuota.fecha_cobro_estimada.split('-').map(Number)
   const t = resolverTC(tcs, anioCobro, mesCobro)
 
   return {
-    tons,
+    pesos_por_ton: p.precio_usd * t.tc,
+    modo: 'matba',
     precio_usd: p.precio_usd,
     tc: t.tc,
-    monto_pesos: tons * p.precio_usd * t.tc,
-    estimado: p.arrastrado || t.arrastrado,
+    manual: p.manual,
+    arrastrado: p.arrastrado || t.arrastrado,
+  }
+}
+
+/** Monto presupuestado de una cuota: tons × precio ARS/ton resuelto. */
+export function calcularMontoCuota(
+  contrato: Pick<ContratoArrendamiento, 'has' | 'grano'>,
+  cuota: Pick<CuotaArrendamiento, 'qq_ha_cuota' | 'posicion_anio' | 'posicion_mes' | 'fecha_cobro_estimada' | 'precio_usd_override' | 'precio_pesos_override'>,
+  precios: PrecioGrano[],
+  tcs: TipoCambio[],
+): MontoCuota {
+  const tons = tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota))
+  const p = resolverPrecioCuota(contrato, cuota, precios, tcs)
+
+  return {
+    tons,
+    precio_usd: p.precio_usd ?? 0,
+    tc: p.tc ?? 0,
+    monto_pesos: tons * p.pesos_por_ton,
+    estimado: p.arrastrado,
   }
 }
 

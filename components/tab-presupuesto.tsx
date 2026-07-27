@@ -12,8 +12,8 @@ import {
   tonsCuota,
   tonsFijadas,
   estadoDerivado,
-  precioEfectivo,
-  resolverTC,
+  resolverPrecioCuota,
+  modoPrecioSegunFecha,
   puedeMoverCuota,
   fechaMinimaDisponible,
   type PrecioGrano,
@@ -93,10 +93,13 @@ interface CuotaDetalle {
   fechaCobro: string
   posicionAnio: number
   posicionMes: number
-  precioUsd: number
+  /** ARS/ton ya resuelto (pizarra directa o Matba × TC). */
+  pesosPorTon: number
+  modo: "pizarra" | "matba"
+  precioUsd: number | null
   precioManual: boolean
   precioArrastrado: boolean
-  tc: number
+  tc: number | null
   monto: number
   estado: EstadoCuota
   fechaOriginal: string | null
@@ -217,7 +220,7 @@ export function TabPresupuesto() {
     const [{ data: cuotas }, { data: precios }, { data: tcs }] = await Promise.all([
       supabase
         .from("cuotas_arrendamiento")
-        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, estado, precio_usd_override, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes")
+        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, estado, precio_usd_override, precio_pesos_override, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes")
         .in("contrato_id", contratoIds),
       supabase.from("precios_granos").select("grano, anio, mes, precio_usd"),
       supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
@@ -270,11 +273,9 @@ export function TabPresupuesto() {
         const tonsPend = tonsTot - tonsFijadas(fijs)
         if (tonsPend <= 0.001) continue
 
-        // El override manual (si lo hay) pisa el precio de la posición
-        const p = precioEfectivo(contrato as any, cuota as any, listaPrecios)
-        const [anioCobro, mesCobro] = String(cuota.fecha_cobro_estimada).split("-").map(Number)
-        const t = resolverTC(listaTC, anioCobro, mesCobro)
-        const monto = tonsPend * p.precio_usd * t.tc
+        // Precio ARS/ton: pizarra en pesos (mes actual) o Matba USD × TC (meses futuros)
+        const p = resolverPrecioCuota(contrato as any, cuota as any, listaPrecios, listaTC)
+        const monto = tonsPend * p.pesos_por_ton
 
         // El estado se DERIVA (fijaciones + fecha), no se lee de la columna: la columna
         // se desactualiza sola cuando pasa la fecha de cobro. Si no se fijó y ya venció,
@@ -292,7 +293,7 @@ export function TabPresupuesto() {
         } else {
           fila.presupuestado[k] = (fila.presupuestado[k] || 0) + monto
         }
-        if (p.arrastrado || t.arrastrado) fila.estimado[k] = true
+        if (p.arrastrado) fila.estimado[k] = true
 
         // Detalle clickeable: qué cuotas hay detrás de esta celda
         const claveDetalle = `${clave}|${k}|${vencida ? "disponible" : "presupuestado"}`
@@ -306,10 +307,12 @@ export function TabPresupuesto() {
           fechaCobro: String(cuota.fecha_cobro_estimada),
           posicionAnio: cuota.posicion_anio,
           posicionMes: cuota.posicion_mes,
+          pesosPorTon: p.pesos_por_ton,
+          modo: p.modo,
           precioUsd: p.precio_usd,
           precioManual: p.manual,
           precioArrastrado: p.arrastrado,
-          tc: t.tc,
+          tc: p.tc,
           monto,
           estado: est,
           fechaOriginal: cuota.fecha_cobro_original,
@@ -334,13 +337,19 @@ export function TabPresupuesto() {
     if (!check.permitido) return check.motivo ?? "No se puede mover"
 
     const [anio, mes] = nuevaFecha.split("-").map(Number)
+
+    // El modo lo decide la fecha destino: mes actual = pizarra (ARS directo, sin TC),
+    // meses siguientes = Matba (USD × TC). Los dos overrides son excluyentes.
+    const modo = modoPrecioSegunFecha(nuevaFecha)
+
     const { error } = await supabase
       .from("cuotas_arrendamiento")
       .update({
         fecha_cobro_estimada: nuevaFecha,
         posicion_anio: anio,
         posicion_mes: mes,
-        precio_usd_override: nuevoPrecio,
+        precio_pesos_override: modo === "pizarra" ? nuevoPrecio : null,
+        precio_usd_override:   modo === "matba"   ? nuevoPrecio : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", cuota.id)
@@ -360,6 +369,7 @@ export function TabPresupuesto() {
         posicion_anio: cuota.posOrigAnio,
         posicion_mes: cuota.posOrigMes,
         precio_usd_override: null,
+        precio_pesos_override: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", cuota.id)
@@ -864,9 +874,11 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
     if (!datos) { setEdits({}); setError(null); return }
     const init: Record<string, { fecha: string; precio: string }> = {}
     for (const c of datos.cuotas) {
+      // El input arranca con el valor del modo que corresponde a la fecha actual de la cuota
+      const valor = c.modo === "pizarra" ? c.pesosPorTon : c.precioUsd
       init[c.id] = {
         fecha: c.fechaCobro,
-        precio: c.precioUsd ? c.precioUsd.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
+        precio: valor ? valor.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "",
       }
     }
     setEdits(init)
@@ -904,6 +916,9 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
           {datos.cuotas.map(c => {
             const e = edits[c.id] ?? { fecha: c.fechaCobro, precio: "" }
             const esDisponible = c.estado === "disponible" || c.estado === "parcial"
+            // El modo lo manda la fecha ELEGIDA en el input, no la guardada:
+            // mes actual → pizarra en pesos · mes posterior → Matba en USD.
+            const modoEdit = modoPrecioSegunFecha(e.fecha)
             return (
               <div key={c.id} className="rounded border p-3 space-y-3">
                 <div className="flex items-center justify-between text-sm">
@@ -915,7 +930,9 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
 
                 <div className="text-xs text-gray-500">
                   {c.tonsPend.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar ·
-                  TC {c.tc ? c.tc.toLocaleString("es-AR") : "— sin cargar"} ·
+                  {modoEdit === "pizarra"
+                    ? " pizarra Rosario (ARS, sin TC)"
+                    : ` Matba × TC ${c.tc ? c.tc.toLocaleString("es-AR") : "— sin cargar"}`} ·
                   {c.precioManual ? " precio manual" : c.precioArrastrado ? " precio arrastrado de otra posición" : " precio de la posición"}
                 </div>
 
@@ -927,7 +944,13 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
                       className="h-8"
                       value={e.fecha}
                       min={esDisponible ? minimaDisponible : c.fechaCobro}
-                      onChange={ev => setEdits(p => ({ ...p, [c.id]: { ...e, fecha: ev.target.value } }))}
+                      onChange={ev => {
+                        const nueva = ev.target.value
+                        // Si el cambio de fecha cambia la unidad (USD ↔ pesos), limpiar el
+                        // precio: dejarlo sería guardar 343 pesos donde había 343 dólares.
+                        const cambiaModo = nueva && modoPrecioSegunFecha(nueva) !== modoEdit
+                        setEdits(p => ({ ...p, [c.id]: { fecha: nueva, precio: cambiaModo ? "" : e.precio } }))
+                      }}
                     />
                     <p className="mt-1 text-[10px] text-gray-400">
                       {esDisponible
@@ -937,16 +960,20 @@ function ModalCuotas({ datos, onCerrar, onGuardar, onDefault }: ModalCuotasProps
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-500">Precio USD/ton</label>
+                    <label className="text-xs text-gray-500">
+                      {modoEdit === "pizarra" ? "Precio $/ton (pizarra)" : "Precio USD/ton (Matba)"}
+                    </label>
                     <Input
                       type="text"
                       placeholder="0,00"
-                      className="h-8 text-right"
+                      className={`h-8 text-right ${modoEdit === "pizarra" ? "border-amber-400 bg-amber-50" : ""}`}
                       value={e.precio}
                       onChange={ev => setEdits(p => ({ ...p, [c.id]: { ...e, precio: ev.target.value } }))}
                     />
                     <p className="mt-1 text-[10px] text-gray-400">
-                      Vacío = usa el precio de la posición
+                      {modoEdit === "pizarra"
+                        ? "Se cobra este mes → disponible: pesos directos, sin TC"
+                        : `Vacío = usa el Matba de la posición ${MESES[Number(e.fecha.split("-")[1]) - 1]} ${e.fecha.split("-")[0]}`}
                     </p>
                   </div>
                 </div>
