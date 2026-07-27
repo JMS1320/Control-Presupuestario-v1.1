@@ -399,6 +399,52 @@ Selector compacto a la izquierda de cada cuenta. Params cambian según método e
 
 Cita del usuario (celda B19 de la planilla): *"La estrategia siempre fue: **Venta origina Factura/Liquidación que origina Cobro**"*.
 
+> ### ⚠️ Corrección de modelo (2026-07-26) — LA FIJACIÓN ES LA VENTA
+> La primera versión de este diseño decía *"al fijar se genera el comprobante"*, razonando
+> como si el comprobante fuera el hecho principal. **Es al revés**: la fijación **es** la
+> venta; el comprobante (factura/liquidación) viene **después**. Por eso la tabla se llama
+> `ventas_arrendamiento` (antes `fijaciones_arrendamiento`): **cada fijación —total o
+> parcial— es una venta**.
+>
+> **Estructura de Ventas** (sub-solapas dentro de Ingresos), tal como la planteó el usuario:
+> ```
+> Ventas
+>  ├── Arrendamiento   contratos → cuotas → FIJAR (= vender)   ← public.ventas_arrendamiento
+>  ├── Granos          msa.ventas (ya existía, vacía)
+>  └── Ganadería       (pendiente — solapa Ganadería del Excel)
+>         ↓ las tres
+>    Comprobantes (factura/liquidación) → Cobros → Conciliación
+> ```
+> Ya existe `msa.ventas_comprobantes` (N:N venta↔comprobante). Arriba de las tres irá una
+> vista SQL `ventas_unificadas` (fecha, tipo, cliente, monto, cuenta contable, centro de
+> costo) — que es donde las tres sí son iguales — para que la consuman Cash Flow y el motor.
+> Se descartó una única tabla `ventas` con campo `tipo`: las tres tienen forma genuinamente
+> distinta (arrendamiento: cuota/posición/qq-ha · granos: corredor/puerto/COE · ganadería:
+> cabezas/categoría/kg) y quedarían treinta columnas nulables sin nada que valide nada.
+
+### 🕐 La fijación son DOS momentos: precio y TC
+
+Fijar el **precio** (USD/ton) y fijar el **TC** son actos distintos y pueden pasar en momentos
+distintos. La venta **nace al fijar el primero de los dos**; hasta que estén ambos, el monto en
+USD ya es cierto pero **el monto en pesos es estimado** (se proyecta con el TC del mes de cobro
+y la celda queda marcada con `*`).
+
+**Excepción**: modo `pizarra` (disponible) cierra en **un solo acto**, en pesos, **sin TC**.
+
+| Estado de la venta | Significa |
+|---|---|
+| `sin_precio` | existe la venta pero falta fijar el precio |
+| `sin_tc` | precio fijado, falta el TC → monto en pesos estimado |
+| `cerrada` | ambos fijados (o pizarra con su precio en pesos) → monto exacto |
+
+### ✂️ Fijación parcial: se PARTE la cuota
+
+**Invariante: una cuota se fija entera o se parte.** Al fijar parcialmente, la cuota original
+queda con lo que se vendió y **el saldo pasa a una cuota nueva** (`cuota_padre_id` apunta a la
+original). Así cada cuota tiene una sola fecha, un solo precio y un solo destino, y el saldo se
+puede **mover y valorizar por su cuenta**. Los qq se reparten proporcionalmente, con lo que el
+guardarraíl `Σ qq = qq_ha_total` sigue cerrando.
+
 Patrón: **una sola fila que nace presupuestada y se vuelve real** — el mismo que ya usan las cuotas de
 templates (`proyectado` → … → `conciliado`). No hay copia ni migración entre "mundo presupuesto" y
 "mundo real": la cuota cambia de estado.

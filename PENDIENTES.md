@@ -1015,13 +1015,32 @@ propio); contratos con columna `empresa`.
    **3 filas por campo** (Fijado / Presupuestado / Disponible a fijar), badge de tn sin fijar,
    marca `*` cuando el precio o el TC se arrastraron, y fila **RESULTADO** (Ingresos − Egresos).
 
+### ✅ HECHO (2026-07-26, 2ª tanda — sin testear)
+6. **Fix arrastre TC** — `resolverTC` sólo arrastraba hacia atrás mientras `resolverPrecio`
+   arrastra hacia adelante: una cuota con mes de cobro previo a todo el TC cargado quedaba en
+   $0 (caso Rojas jul-26). Ahora es bidireccional.
+7. **Mover y valorizar desde Presupuesto** — celdas de Presupuestado/Disponible clickeables →
+   modal con fecha de cobro + precio + "volver a default". Columnas `precio_usd_override` y
+   `precio_pesos_override`. **El modo lo decide la fecha**: mes actual → pizarra en **pesos**
+   sin TC; mes posterior → Matba en **USD** × TC. Al cambiar de unidad el campo se limpia.
+8. **LA FIJACIÓN ES LA VENTA** — `fijaciones_arrendamiento` → **`ventas_arrendamiento`**.
+   Precio y TC en **dos momentos** (`fecha_fijacion_precio` / `fecha_fijacion_tc`); hasta que
+   estén los dos el monto en pesos es estimado. Estados: sin_precio / sin_tc / cerrada.
+9. **Sub-solapa Arrendamiento en Ventas** (`components/vista-arrendamientos.tsx`, dentro de
+   Ingresos): ABM de contratos, grilla de cuotas (tons/%/cobro/posición/vendido/disponible/
+   estado), **Fijar** (total o parcial), **Fijar TC** sobre una venta ya hecha, guardarraíl
+   visible. Fijar **parcial parte la cuota**: el saldo pasa a una cuota nueva (`cuota_padre_id`).
+
 ### ⏳ FALTA
-- **ABM de contratos y cuotas en Ventas** (hoy se cargaron por SQL). Incluye mover cuota
-  (adelante si presupuestada · piso hoy+20d si disponible · nunca si fijada) + "volver a default".
-- **Acción Fijar** (total o **parcial**) → congela precio/TC, genera comprobante en
-  `msa.comprobantes_venta`, engancha al motor rama VENTA.
+- **Generar el comprobante** (factura/liquidación) desde la venta y vincularlo por
+  `msa.ventas_comprobantes` → motor rama VENTA → cobro.
+- **Vista `ventas_unificadas`** (arrendamiento + granos + ganadería) para Cash Flow y el motor.
 - **Volcado del IIBB al template** `IIBB Mensual MSA` (`fba5c3f9-…`), patrón SICORE: explícito,
   idempotente, con reset; traza en `detalle` para no pisar montos escritos a mano. → `lib/iibb/`.
+  ⚠️ La alícuota **no puede ser una constante global**: arrendamiento 5%, ganadería 1%. Hoy
+  está hardcodeada en `lib/arrendamientos/calculo.ts` (`ALICUOTA_IIBB`), igual que `EXENTO_IVA`
+  (arrendamiento exento, ganadería 10,5%). Volverlas configurables **por concepto**.
+- **Ganadería** — solapa nueva del Excel, ver bloque al final de este dossier.
 - **Cash Flow**: ingresos fijados + edición de cuotas como interfaz sobre Ventas.
 - **Replicar a PAM y MA** (incluye crear `pam.comprobantes_venta`, que no existe).
 - **Cargar `indices_ipc`** (tabla vacía).
@@ -1035,6 +1054,36 @@ propio); contratos con columna `empresa`.
 4. **Precios**: hoy carga manual. Mejora futura: traer Matba/Rofex automático.
 5. **Ganancias 6% ↔ `retenciones_recibidas`**: hoy sólo menor ingreso. Futuro: encadenar para
    recuperarlo contra el impuesto.
+
+### 🐄 GANADERÍA — relevado 2026-07-26, sin implementar
+
+Solapa nueva del Excel. Modelo: `stock vientres × % destete → terneros`, split machos/hembras,
+menos reposición (% sobre vientres) = cabezas a vender × peso × precio $/kg → **IVA 10,5%** →
+total cobro. Más **IIBB 1%** el mes siguiente (vs 5% del arrendamiento) y retenciones reales
+de los compradores.
+
+**Respuestas del usuario**: precio **editable desde Presupuesto** (mismo mecanismo que el
+override de soja) · IIBB 1% **sobre el neto** · el IVA impacta **sólo el flujo de caja** (después
+va la factura de venta) · vaca de descarte **a afinar** · siempre **MSA** · **hay plazos** entre
+venta y cobro · reposición = **parámetro aproximado**.
+
+**Hallazgo**: los parámetros ya están en `productivo.ciclos_cria` con valores reales, y difieren
+de los de la planilla. Ciclo 2025 (el que se cobra en marzo 2027): **220 vientres** a servicio
+(192 vaca + 28 vaquillona), no 200. Ciclo 2024 cerrado: **88,3% de destete** (189/214) vs 85%
+supuesto, y split **56,6/43,4** machos/hembras vs 50/50 supuesto, `kg_promedio` real 197,34.
+→ La app puede **derivar los parámetros del historial** y ofrecerlos como default con override.
+*(Nota de dato: en el ciclo 2025 la Vaca tiene 192 servicio − 181 preñadas − 7 vacías = 4 cabezas
+sin explicar; en Vaquillona cierra perfecto.)*
+
+**Ya existe y sirve**: las 15 `productivo.categorias_hacienda` cubren el roll-forward
+(`Vaca`, `Vaca CUT/Descarte`, `Vaquillona de Reposicion`, `Vaquillona Preñada`, `Ternero/a al Pie`,
+`Ternero/a Recria`). **`productivo.stock_hacienda` existe pero está VACÍA y no tiene dimensión
+temporal** — es una foto del stock de hoy, no sirve para el roll-forward año a año que el usuario
+describe (marzo 28 = stock − descartes + reposición; marzo 29 = ese número − descarte + reposición).
+Hay que agregarle período o hacer tabla de stock proyectado.
+
+**Decisión heredada**: igual que el arrendamiento, **Productivo calcula el stock proyectado →
+genera las ventas → Presupuesto lee**. Lo dice el propio usuario en la planilla (B20).
 
 ---
 ---

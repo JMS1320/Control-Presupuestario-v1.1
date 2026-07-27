@@ -11198,3 +11198,22 @@ ALTER TABLE public.cuotas_arrendamiento
 -- va por Matba (USD de la posicion x TC). Los dos overrides son EXCLUYENTES.
 ALTER TABLE public.cuotas_arrendamiento
   ADD COLUMN IF NOT EXISTS precio_pesos_override numeric(15,2);
+
+-- Aplicado 2026-07-26: LA FIJACION ES LA VENTA. Renombre + fijacion en DOS MOMENTOS.
+-- Correccion de modelo: se habia planteado "la fijacion genera un comprobante", como si
+-- el comprobante fuera el hecho principal. Es al reves: la fijacion ES la venta, y el
+-- comprobante (factura/liquidacion) viene DESPUES. Cita del usuario: "Venta origina
+-- Factura/Liquidacion que origina Cobro".
+ALTER TABLE public.fijaciones_arrendamiento RENAME TO ventas_arrendamiento;
+ALTER TABLE public.ventas_arrendamiento RENAME COLUMN fecha_fijacion TO fecha_fijacion_precio;
+ALTER TABLE public.ventas_arrendamiento ADD COLUMN IF NOT EXISTS fecha_fijacion_tc date;
+-- Precio y TC se fijan en momentos distintos -> los tres pasan a nullable:
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN fecha_fijacion_precio DROP NOT NULL;
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN monto_pesos           DROP NOT NULL;
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN fecha_cobro           DROP NOT NULL;
+-- Split al fijar parcial: una cuota se fija ENTERA o se parte (la original queda con lo
+-- vendido, el saldo pasa a una cuota nueva que se puede mover/valorizar por su cuenta).
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS cuota_padre_id uuid REFERENCES public.cuotas_arrendamiento(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_cuotas_arr_padre ON public.cuotas_arrendamiento(cuota_padre_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_arr_cuota ON public.ventas_arrendamiento(cuota_id);

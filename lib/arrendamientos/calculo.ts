@@ -51,18 +51,64 @@ export interface CuotaArrendamiento {
   notas: string | null
 }
 
-export interface FijacionArrendamiento {
+/**
+ * VENTA de arrendamiento. Cada fila = una fijación = una venta.
+ * "Venta origina Factura/Liquidación que origina Cobro": el comprobante viene después.
+ *
+ * Precio y TC se fijan en MOMENTOS DISTINTOS. La venta nace al fijar el primero de los
+ * dos; hasta que estén ambos el monto en pesos es estimado. Excepción: modo `pizarra`
+ * (disponible) se cierra en un solo acto, en ARS, sin TC.
+ */
+export interface VentaArrendamiento {
   id: string
   cuota_id: string
-  fecha_fijacion: string
   tons: number
   modo: 'matba' | 'pizarra'
+  fecha_fijacion_precio: string | null
   precio_usd: number | null
-  precio_pesos: number | null
+  fecha_fijacion_tc: string | null
   tc: number | null
-  monto_pesos: number
-  fecha_cobro: string
+  precio_pesos: number | null
+  monto_pesos: number | null
+  fecha_cobro: string | null
   comprobante_id: string | null
+}
+
+/** Qué le falta a la venta para estar cerrada. */
+export type EstadoVenta = 'sin_precio' | 'sin_tc' | 'cerrada'
+
+/**
+ * En modo `pizarra` alcanza el precio en pesos: no hay TC que fijar.
+ * En modo `matba` hacen falta los dos momentos.
+ */
+export function estadoVenta(v: Pick<VentaArrendamiento, 'modo' | 'precio_usd' | 'tc' | 'precio_pesos'>): EstadoVenta {
+  if (v.modo === 'pizarra') return v.precio_pesos != null ? 'cerrada' : 'sin_precio'
+  if (v.precio_usd == null) return 'sin_precio'
+  if (v.tc == null) return 'sin_tc'
+  return 'cerrada'
+}
+
+/**
+ * Monto en pesos de la venta. Si falta fijar el TC usa el proyectado del mes de cobro
+ * y lo marca como estimado — el monto en USD ya es cierto, el de pesos todavía no.
+ */
+export function montoVenta(
+  v: Pick<VentaArrendamiento, 'modo' | 'tons' | 'precio_usd' | 'tc' | 'precio_pesos' | 'fecha_cobro'>,
+  tcs: TipoCambio[] = [],
+): { monto: number; estimado: boolean } {
+  if (v.modo === 'pizarra') {
+    return { monto: Number(v.tons) * Number(v.precio_pesos ?? 0), estimado: v.precio_pesos == null }
+  }
+  if (v.precio_usd == null) return { monto: 0, estimado: true }
+
+  if (v.tc != null) {
+    return { monto: Number(v.tons) * Number(v.precio_usd) * Number(v.tc), estimado: false }
+  }
+
+  // Precio fijado, TC pendiente → estimar con el TC del mes de cobro
+  const [anio, mes] = (v.fecha_cobro ?? '').split('-').map(Number)
+  const t = anio && mes ? resolverTC(tcs, anio, mes) : { tc: 0 }
+  return { monto: Number(v.tons) * Number(v.precio_usd) * t.tc, estimado: true }
 }
 
 export interface PrecioGrano {
@@ -289,7 +335,7 @@ export function calcularMontoCuota(
 // ── Fijaciones ────────────────────────────────────────────────────────────────
 
 /** Tons ya fijadas de una cuota. */
-export function tonsFijadas(fijaciones: Pick<FijacionArrendamiento, 'tons'>[]): number {
+export function tonsFijadas(fijaciones: Pick<VentaArrendamiento, 'tons'>[]): number {
   return fijaciones.reduce((s, f) => s + Number(f.tons || 0), 0)
 }
 
@@ -297,7 +343,7 @@ export function tonsFijadas(fijaciones: Pick<FijacionArrendamiento, 'tons'>[]): 
 export function tonsDisponibles(
   has: number,
   qqHaCuota: number,
-  fijaciones: Pick<FijacionArrendamiento, 'tons'>[],
+  fijaciones: Pick<VentaArrendamiento, 'tons'>[],
 ): number {
   const total = tonsCuota(Number(has), Number(qqHaCuota))
   return Math.max(0, total - tonsFijadas(fijaciones))
@@ -314,7 +360,7 @@ export function tonsDisponibles(
 export function estadoDerivado(
   has: number,
   qqHaCuota: number,
-  fijaciones: Pick<FijacionArrendamiento, 'tons'>[],
+  fijaciones: Pick<VentaArrendamiento, 'tons'>[],
   fechaCobro: string,
   hoy = new Date(),
 ): EstadoCuota {

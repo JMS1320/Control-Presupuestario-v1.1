@@ -14,6 +14,7 @@ import {
   estadoDerivado,
   resolverPrecioCuota,
   modoPrecioSegunFecha,
+  montoVenta,
   puedeMoverCuota,
   fechaMinimaDisponible,
   type PrecioGrano,
@@ -229,8 +230,8 @@ export function TabPresupuesto() {
     const cuotaIds = (cuotas || []).map(c => c.id)
     const { data: fijaciones } = cuotaIds.length
       ? await supabase
-          .from("fijaciones_arrendamiento")
-          .select("cuota_id, tons, monto_pesos, fecha_cobro")
+          .from("ventas_arrendamiento")
+          .select("cuota_id, tons, modo, precio_usd, tc, precio_pesos, monto_pesos, fecha_cobro")
           .in("cuota_id", cuotaIds)
       : { data: [] as any[] }
 
@@ -262,10 +263,13 @@ export function TabPresupuesto() {
       for (const cuota of (cuotas || []).filter(q => q.contrato_id === contrato.id)) {
         const fijs = fijPorCuota[cuota.id] || []
 
-        // 1) Fijado — monto congelado, en el mes de su fecha de cobro
+        // 1) Vendido (fijado). Si el precio está fijado pero el TC todavía no, el monto
+        //    en pesos se estima con el TC del mes de cobro y la celda queda marcada.
         for (const f of fijs) {
-          const k = String(f.fecha_cobro).slice(0, 7)
-          fila.fijado[k] = (fila.fijado[k] || 0) + Number(f.monto_pesos || 0)
+          const k = String(f.fecha_cobro ?? cuota.fecha_cobro_estimada).slice(0, 7)
+          const m = montoVenta(f as any, listaTC)
+          fila.fijado[k] = (fila.fijado[k] || 0) + m.monto
+          if (m.estimado) fila.estimado[k] = true
         }
 
         // 2) Lo que queda sin fijar
