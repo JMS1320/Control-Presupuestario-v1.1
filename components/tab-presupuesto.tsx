@@ -21,6 +21,11 @@ import {
   type TipoCambio,
   type EstadoCuota,
 } from "@/lib/arrendamientos/calculo"
+import {
+  calcularGanaderia,
+  type PresupuestoGanaderia,
+  type PrecioHacienda,
+} from "@/lib/ganaderia/calculo"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -117,6 +122,10 @@ export function TabPresupuesto() {
   const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
   const [campos, setCampos] = useState<FilaCampo[]>([])
+  // Ganadería: una fila por proyección, con su IIBB derivado el mes siguiente al cobro
+  const [ganaderia, setGanaderia] = useState<{
+    nombre: string; montos: Record<string, number>; iibb: Record<string, number>; estimado: boolean
+  }[]>([])
   // Cuotas detrás de cada celda: clave `${campo}|${YYYY-MM}|${presupuestado|disponible}`
   const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
   const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
@@ -134,7 +143,7 @@ export function TabPresupuesto() {
   const cargarDatos = async () => {
     setCargando(true)
     try {
-      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos()])
+      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarGanaderia()])
     } finally {
       setCargando(false)
     }
@@ -388,6 +397,29 @@ export function TabPresupuesto() {
     return null
   }
 
+  // ── INGRESOS: ganadería (venta de destete) ──────────────────────────────────
+  const cargarGanaderia = async () => {
+    const [{ data: proyecciones }, { data: preciosHac }] = await Promise.all([
+      supabase.from("presupuesto_ganaderia").select("*").eq("activo", true).eq("empresa", "MSA"),
+      supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg"),
+    ])
+    if (!proyecciones || proyecciones.length === 0) { setGanaderia([]); return }
+
+    const out = (proyecciones as PresupuestoGanaderia[]).map(p => {
+      const r = calcularGanaderia(p, (preciosHac || []) as PrecioHacienda[])
+      const mesCobro = String(p.fecha_cobro_estimada).slice(0, 7)
+      return {
+        nombre: p.descripcion || `Ganadería ${p.campania}`,
+        // El total COBRADO incluye IVA: es lo que entra al banco
+        montos: { [mesCobro]: r.total },
+        // El IIBB es un EGRESO derivado, el mes siguiente al cobro
+        iibb: { [r.mes_pago_iibb]: r.iibb },
+        estimado: r.estimado,
+      }
+    })
+    setGanaderia(out)
+  }
+
   const cargarSueldos = async () => {
     const primerMes = meses[0]
     const ultimoMes = meses[meses.length - 1]
@@ -452,10 +484,11 @@ export function TabPresupuesto() {
       for (const s of sueldoFilas) {
         suma += s.montos[clave] || 0
       }
+      suma += ganaderia.reduce((acc, g) => acc + (g.iibb[clave] || 0), 0)
       totales[clave] = suma
     }
     return totales
-  }, [agrupadores, sueldoFilas, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, meses])
 
   const totalSueldosPorMes = useMemo(() => {
     const totales: Record<string, number> = {}
@@ -473,12 +506,22 @@ export function TabPresupuesto() {
       totales[clave] = campos.reduce(
         (s, c) => s + (c.fijado[clave] || 0) + (c.presupuestado[clave] || 0) + (c.disponible[clave] || 0),
         0,
-      )
+      ) + ganaderia.reduce((s, g) => s + (g.montos[clave] || 0), 0)
     }
     return totales
-  }, [campos, meses])
+  }, [campos, ganaderia, meses])
 
-  const hayIngresos = campos.length > 0
+  // IIBB de ganadería: egreso derivado, se suma al total de egresos
+  const totalIibbGanaderiaPorMes = useMemo(() => {
+    const totales: Record<string, number> = {}
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      totales[clave] = ganaderia.reduce((s, g) => s + (g.iibb[clave] || 0), 0)
+    }
+    return totales
+  }, [ganaderia, meses])
+
+  const hayIngresos = campos.length > 0 || ganaderia.length > 0
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -657,6 +700,33 @@ export function TabPresupuesto() {
                         </>
                       )
                     })}
+
+                    {/* Ganadería — venta de destete */}
+                    {ganaderia.map(g => (
+                      <tr key={`gan-${g.nombre}`} className="border-b bg-emerald-50/40 hover:bg-emerald-50">
+                        <td className="sticky left-0 z-10 bg-emerald-50/40 px-4 py-2 font-semibold text-gray-700">
+                          🐄 {g.nombre}
+                          <span className="ml-2 text-xs font-normal text-gray-400">ganadería</span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          const esActual = clave === mesActualClave
+                          const valor = g.montos[clave] || 0
+                          return (
+                            <td
+                              key={clave}
+                              title={valor > 0 ? "Total cobrado (neto + IVA)" : undefined}
+                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                              }`}
+                            >
+                              {fmt(valor)}
+                              {valor > 0 && g.estimado && <span className="ml-0.5 text-amber-500">*</span>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
                   </>
                 )}
 
@@ -786,6 +856,32 @@ export function TabPresupuesto() {
                     </>
                   )
                 })()}
+
+                {/* ── IIBB de ganadería (egreso derivado, mes siguiente al cobro) ── */}
+                {ganaderia.length > 0 && (
+                  <tr className="border-b bg-amber-50/40">
+                    <td className="sticky left-0 z-10 bg-amber-50/40 px-4 py-2 font-semibold text-gray-700">
+                      IIBB ganadería
+                      <span className="ml-2 text-xs font-normal text-gray-400">
+                        mes siguiente al cobro
+                      </span>
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      const esActual = clave === mesActualClave
+                      return (
+                        <td
+                          key={clave}
+                          className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                            esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                          }`}
+                        >
+                          {fmt(totalIibbGanaderiaPorMes[clave] || 0)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
 
                 {/* ── Total general ── */}
                 <tr className="border-t-2 border-gray-400 bg-gray-800">

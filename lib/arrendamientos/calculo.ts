@@ -4,18 +4,22 @@
 
 // ── Constantes de negocio ─────────────────────────────────────────────────────
 
-/** IIBB: 5% de cada cobro, se paga el mes SIGUIENTE (template IIBB Mensual). */
-export const ALICUOTA_IIBB = 0.05
-/** Ganancias: 6% deducido del cobro (menor ingreso, sobre el neto). */
-export const ALICUOTA_GANANCIAS = 0.06
+// ⚠️ Estas alícuotas son de ARRENDAMIENTO, no del sistema. Ganadería usa otras
+// (IIBB 1% e IVA 10,5%) y las lleva en la fila, no como constante. No generalizar
+// estas constantes a otros conceptos.
+
+/** Arrendamiento — IIBB: 5% de cada cobro, se paga el mes SIGUIENTE (template IIBB Mensual). */
+export const ALICUOTA_IIBB_ARRENDAMIENTO = 0.05
+/** Arrendamiento — Ganancias: 6% deducido del cobro (menor ingreso, sobre el neto). */
+export const ALICUOTA_GANANCIAS_ARRENDAMIENTO = 0.06
 /**
  * Días corridos entre fijación y cobro al vender disponible (pizarra).
  * DEFAULT nada más: el plazo real es **por contrato/cliente**
  * (`contratos_arrendamiento.dias_cobro_disponible`) — Sanpa paga a 15.
  */
 export const DIAS_COBRO_PIZARRA_DEFAULT = 20
-/** Arrendamiento agrícola: exento de IVA. */
-export const EXENTO_IVA = true
+/** Arrendamiento agrícola: exento de IVA. (Ganadería NO lo es: 10,5%.) */
+export const ARRENDAMIENTO_EXENTO_IVA = true
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -455,7 +459,7 @@ export function puedeMoverCuota(
 
 /** Ganancias 6%: se descuenta del cobro (menor ingreso), sobre el neto. */
 export function deduccionGanancias(montoNeto: number): number {
-  return montoNeto * ALICUOTA_GANANCIAS
+  return montoNeto * ALICUOTA_GANANCIAS_ARRENDAMIENTO
 }
 
 /**
@@ -464,7 +468,7 @@ export function deduccionGanancias(montoNeto: number): number {
  * Las retenciones sufridas NO se presupuestan: entran sólo cuando el cobro ocurre.
  */
 export function iibbAPagar(montoNeto: number, retencionesSufridas = 0): number {
-  return Math.max(0, montoNeto * ALICUOTA_IIBB - retencionesSufridas)
+  return Math.max(0, montoNeto * ALICUOTA_IIBB_ARRENDAMIENTO - retencionesSufridas)
 }
 
 /** Mes en que se paga el IIBB de un cobro: el siguiente. Devuelve 'YYYY-MM'. */

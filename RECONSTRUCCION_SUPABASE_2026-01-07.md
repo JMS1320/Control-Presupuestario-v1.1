@@ -11245,3 +11245,26 @@ CREATE INDEX idx_ventas_facturas_comp  ON public.ventas_facturas(comprobante_id)
 -- consumen Cash Flow y el motor (fecha, cliente, monto, cuenta contable, centro de
 -- costo) + `facturado` (suma de lo vinculado) + `falta_tc`. Hoy solo arrendamiento;
 -- granos y ganaderia se suman con UNION ALL cuando existan.
+
+-- Aplicado 2026-07-26: GANADERIA (presupuesto de venta de destete). NO en el backup.
+CREATE TABLE public.precios_hacienda (
+  id uuid PK, categoria varchar(60), anio int, mes int CHECK 1..12,
+  precio_pesos_kg numeric(12,2), fuente varchar(20) DEFAULT 'manual',
+  created_at, updated_at, UNIQUE (categoria, anio, mes) );
+-- ARS por KG y por CATEGORIA. Se mantiene SEPARADA de precios_granos (USD por TONELADA
+-- y por posicion) a proposito: distinta unidad, moneda y dimension.
+
+CREATE TABLE public.presupuesto_ganaderia (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA' CHECK IN ('MSA','PAM','MA'),
+  campania varchar(10), centro_costo text, descripcion text,
+  stock_vientres int, pct_destete numeric(6,4) DEFAULT 0.85,
+  pct_machos numeric(6,4) DEFAULT 0.50, pct_reposicion numeric(6,4) DEFAULT 0.20,
+  peso_macho_kg numeric(8,2) DEFAULT 200, peso_hembra_kg numeric(8,2) DEFAULT 170,
+  precio_kg_override numeric(12,2), fecha_cobro_estimada date,
+  -- ALICUOTAS POR CONCEPTO, no constantes globales:
+  alicuota_iva numeric(6,4) DEFAULT 0.105,   -- ganaderia 10,5% (arrendamiento exento)
+  alicuota_iibb numeric(6,4) DEFAULT 0.01,   -- ganaderia 1%    (arrendamiento 5%)
+  cuenta_contable text DEFAULT 'VENTA DESTETE MACHO Y HEMBRA',
+  activo boolean DEFAULT true, notas text, created_at, updated_at );
+CREATE INDEX idx_presu_gan_empresa ON public.presupuesto_ganaderia(empresa, campania);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).

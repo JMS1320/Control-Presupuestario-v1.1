@@ -30,7 +30,12 @@ interface Fila {
   precio_usd: string
   tc_presupuestado: string
   tc_real: string
+  /** Precio ARS/kg de hacienda por categoría (clave = categoría). */
+  hacienda: Record<string, string>
 }
+
+// Categorías de hacienda con precio presupuestable. Ternero/Ternera = destete.
+const CATEGORIAS_HACIENDA = ["Ternero", "Ternera", "Vaca CUT/Descarte"]
 
 function mesesDesde(anioInicio: number, cantidad: number): { anio: number; mes: number }[] {
   const out: { anio: number; mes: number }[] = []
@@ -53,9 +58,10 @@ export function ConfiguradorPreciosTC() {
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [{ data: precios }, { data: tcs }] = await Promise.all([
+      const [{ data: precios }, { data: tcs }, { data: hac }] = await Promise.all([
         supabase.from("precios_granos").select("*").eq("grano", grano),
         supabase.from("tipos_cambio").select("*"),
+        supabase.from("precios_hacienda").select("*"),
       ])
 
       const mapa: Record<string, Fila> = {}
@@ -63,12 +69,18 @@ export function ConfiguradorPreciosTC() {
         const clave = `${m.anio}-${m.mes}`
         const p = (precios || []).find((x: any) => x.anio === m.anio && x.mes === m.mes)
         const t = (tcs || []).find((x: any) => x.anio === m.anio && x.mes === m.mes)
+        const haciendaMes: Record<string, string> = {}
+        for (const cat of CATEGORIAS_HACIENDA) {
+          const h = (hac || []).find((x: any) => x.categoria === cat && x.anio === m.anio && x.mes === m.mes)
+          haciendaMes[cat] = h ? fmtAR(h.precio_pesos_kg) : ""
+        }
         mapa[clave] = {
           anio: m.anio,
           mes: m.mes,
           precio_usd: p ? fmtAR(p.precio_usd) : "",
           tc_presupuestado: t ? fmtAR(t.tc_presupuestado) : "",
           tc_real: t ? fmtAR(t.tc_real) : "",
+          hacienda: haciendaMes,
         }
       }
       setFilas(mapa)
@@ -81,6 +93,34 @@ export function ConfiguradorPreciosTC() {
 
   const setCampo = (clave: string, campo: keyof Fila, valor: string) => {
     setFilas(prev => ({ ...prev, [clave]: { ...prev[clave], [campo]: valor } }))
+  }
+
+  const setHacienda = (clave: string, categoria: string, valor: string) => {
+    setFilas(prev => ({
+      ...prev,
+      [clave]: { ...prev[clave], hacienda: { ...prev[clave].hacienda, [categoria]: valor } },
+    }))
+  }
+
+  // Hacienda: ARS por kg. No hay Matba, es carga manual.
+  const guardarHacienda = async (clave: string, categoria: string) => {
+    const f = filas[clave]
+    if (!f) return
+    setGuardando(clave)
+    try {
+      const v = f.hacienda[categoria] ?? ""
+      if (v.trim() === "") {
+        await supabase.from("precios_hacienda").delete()
+          .eq("categoria", categoria).eq("anio", f.anio).eq("mes", f.mes)
+      } else {
+        await supabase.from("precios_hacienda").upsert({
+          categoria, anio: f.anio, mes: f.mes,
+          precio_pesos_kg: parseAR(v),
+          fuente: "manual",
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "categoria,anio,mes" })
+      }
+    } finally { setGuardando(null) }
   }
 
   // Guarda al salir del input (upsert por la unique key)
@@ -149,6 +189,8 @@ export function ConfiguradorPreciosTC() {
         <p className="text-sm text-gray-500">
           Series macro compartidas por MSA, PAM y MA. Si un mes queda sin precio, el presupuesto
           toma el <strong>siguiente mes cargado</strong> y marca la celda como arrastrada.
+          Granos en <strong>USD/ton</strong> por posición; hacienda en <strong>$/kg</strong> por
+          categoría (no hay Matba de hacienda: es carga manual).
         </p>
       </CardHeader>
 
@@ -193,6 +235,11 @@ export function ConfiguradorPreciosTC() {
                   </th>
                   <th className="px-3 py-2 text-right font-semibold text-gray-700">TC presupuestado</th>
                   <th className="px-3 py-2 text-right font-semibold text-gray-700">TC real</th>
+                  {CATEGORIAS_HACIENDA.map(cat => (
+                    <th key={cat} className="px-3 py-2 text-right font-semibold text-emerald-800 whitespace-nowrap">
+                      {cat} ($/kg)
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -243,6 +290,18 @@ export function ConfiguradorPreciosTC() {
                           onBlur={() => guardarTC(clave)}
                         />
                       </td>
+                      {CATEGORIAS_HACIENDA.map(cat => (
+                        <td key={cat} className="px-2 py-1">
+                          <Input
+                            type="text"
+                            placeholder="0,00"
+                            className="h-8 text-right bg-emerald-50/40"
+                            value={f.hacienda?.[cat] ?? ""}
+                            onChange={e => setHacienda(clave, cat, e.target.value)}
+                            onBlur={() => guardarHacienda(clave, cat)}
+                          />
+                        </td>
+                      ))}
                     </tr>
                   )
                 })}

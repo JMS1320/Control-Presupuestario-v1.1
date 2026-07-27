@@ -1112,15 +1112,36 @@ genera las ventas → Presupuesto lee**. Lo dice el propio usuario en la planill
 5. **Parámetros**: ¿derivados del historial de `ciclos_cria` con override, o carga manual?
    (El usuario todavía no lo respondió; la recomendación es derivar + override.)
 
-#### ⚠️ Deuda técnica que ganadería DESTAPA (arreglar antes del volcado de IIBB)
-En `lib/arrendamientos/calculo.ts` quedaron dos **constantes globales** que ganadería rompe:
-- `ALICUOTA_IIBB = 0.05` → arrendamiento 5%, **ganadería 1%**.
-- `EXENTO_IVA = true` → arrendamiento exento, **ganadería IVA 10,5%**.
+#### ✅ HECHO (2026-07-26, sin testear) — ganadería ya se muestra en Presupuesto
+- **BD**: `public.precios_hacienda` (ARS/kg por categoría y mes — **separada** de
+  `precios_granos`, que es USD/ton por posición) + `public.presupuesto_ganaderia`
+  (vientres, %destete, %machos, %reposición, pesos, fecha de cobro, **alícuotas en la fila**).
+- **`lib/ganaderia/calculo.ts`**: fórmulas de la planilla + `resolverPrecioHacienda` (con
+  arrastre) + `referenciaHistorica()` que saca vientres/%destete/%machos/kg del último ciclo
+  cerrado de `productivo.ciclos_cria`. Verificado contra el Excel: $190.667.750 exacto.
+- **`components/vista-ganaderia.tsx`** en **Ingresos → Ganadería**: ABM de proyecciones +
+  grilla igual a la del Excel (cantidad/reposición/venta/peso/kg/precio/neto/IVA/total) + línea
+  de IIBB con su mes. Muestra la **referencia histórica real** al lado de cada campo, sin pisar.
+- **Precios y TC**: 3 columnas nuevas de hacienda (`Ternero`, `Ternera`, `Vaca CUT/Descarte`).
+- **Presupuesto**: fila 🐄 por proyección en INGRESOS (total cobrado = neto + IVA) + fila
+  **IIBB ganadería** en EGRESOS el mes siguiente al cobro.
 
-Tienen que pasar a ser **configurables por concepto** (probablemente por tipo de venta o por
-cuenta contable). Si se hace el volcado del IIBB al template antes de esto, mezcla alícuotas.
+#### ⚠️ Deuda técnica que ganadería DESTAPÓ — PARCIALMENTE resuelta
+- ✅ Ganadería lleva **`alicuota_iva` y `alicuota_iibb` en la fila**, no en el código.
+- ✅ Las constantes de arrendamiento se renombraron para que no se generalicen por accidente:
+  `ALICUOTA_IIBB_ARRENDAMIENTO`, `ALICUOTA_GANANCIAS_ARRENDAMIENTO`, `ARRENDAMIENTO_EXENTO_IVA`.
+- ⏳ **Falta**: cuando se haga el volcado del IIBB al template, tiene que tomar la alícuota
+  **del concepto** (5% arrendamiento / 1% ganadería), no una constante.
 
-**Estado**: 0 líneas de código. Sólo relevamiento + decisiones. Nada en BD.
+#### ⏳ FALTA en ganadería
+- **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
+  proyección. Falta cuántas por año, peso y precio.
+- **Plazos de cobro**: hoy se carga la fecha de cobro directo. El usuario dijo "hay plazos" pero
+  no cuáles — en arrendamiento esto terminó siendo `dias_cobro_disponible` por contrato.
+- **Roll-forward del stock** (marzo 28 = stock − descartes + reposición; marzo 29 = ídem):
+  hoy los vientres se tipean por campaña. `productivo.stock_hacienda` sigue **vacía y sin
+  dimensión temporal**.
+- **Ganadería en `ventas_unificadas`** → hoy no llega a Cash Flow (sí a Presupuesto).
 
 ---
 ---

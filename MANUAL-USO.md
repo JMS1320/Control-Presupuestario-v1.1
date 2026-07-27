@@ -414,3 +414,56 @@ sigue mostrando el **remanente** hasta que termines de facturar.
     **descuenta el pago del mes siguiente**.
   - El **pago mensual al fisco** es 5% del neto, menos esas retenciones, y vence el mes
     siguiente al cobro. *(Todavía no se vuelca solo al template IIBB Mensual — pendiente.)*
+
+---
+
+## 🐄 Módulo: Ganadería — venta de destete (Ingresos → Ganadería) 🟡 (nuevo, sin testear)
+
+> Mismo criterio que arrendamiento: **la venta vive en Ventas y Presupuesto la lee**.
+> Modelo tomado de la solapa "Ganadería" de `- Desarrollo Presuesto..xlsx`.
+
+### Dónde está cada cosa
+| Necesito… | Voy a… |
+|---|---|
+| Cargar/editar la proyección de una campaña | **Ingresos → Ganadería** |
+| Cargar el precio **$/kg** por categoría | **Presupuesto → "Precios y TC"** (columnas verdes) |
+| Ver el ingreso en el mes de cobro y el IIBB del mes siguiente | **Presupuesto** |
+
+### Cómo se calcula
+```
+terneros    = vientres × % destete
+machos      = terneros × % machos       ·  hembras = terneros − machos
+reposición  = vientres × % reposición   ← sale de las HEMBRAS
+venta       = cabezas − reposición
+kg          = venta × peso
+neto        = kg × precio $/kg
+IVA         = neto × 10,5%              →  total cobrado = neto + IVA
+IIBB        = neto × 1%                 →  se paga el MES SIGUIENTE al cobro
+```
+Ejemplo de la planilla: 200 vientres × 85% = 170 terneros → 85 machos × 200 kg y 45 hembras
+× 170 kg → 24.650 kg × $7.000 = **$172.550.000** neto + IVA = **$190.667.750**.
+
+### El precio
+Se busca en **Precios y TC** por **categoría** (`Ternero`, `Ternera`, `Vaca CUT/Descarte`) y
+mes de cobro. Si falta el mes, arrastra el siguiente cargado y marca con `*`.
+En la proyección hay un **precio $/kg opcional** que **pisa** la tabla (marcado con `m`).
+No hay Matba de hacienda: es carga manual.
+
+### Referencia del historial real
+Arriba de la lista se muestran los valores **reales del último ciclo cerrado** de
+`productivo.ciclos_cria` (vientres a servicio, % destete, % machos, kg promedio) y también al
+lado de cada campo del formulario. **Es sólo referencia: no pisa lo que cargues** — la
+proyección puede ser deliberadamente más conservadora.
+
+> ⚠️ Ojo: el ciclo 2025 real tiene **220 vientres** (192 vaca + 28 vaquillona), no 200; el
+> ciclo 2024 cerró con **88,3%** de destete (no 85%) y split **56,6/43,4** (no 50/50).
+
+### Lo que ve el Presupuesto
+- Una fila **🐄 por proyección** en INGRESOS, con el **total cobrado (neto + IVA)** en el mes
+  de cobro. `*` si falta cargar algún precio.
+- Una fila **IIBB ganadería** en EGRESOS, en el **mes siguiente** al cobro.
+
+### Alícuotas
+**Viven en la proyección, no en el código**: IVA 10,5% e IIBB 1% son editables por fila.
+Es a propósito — arrendamiento es exento con IIBB 5%, y meterlas como constantes globales fue
+un error que esta solapa destapó.
