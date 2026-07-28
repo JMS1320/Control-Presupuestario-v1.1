@@ -11268,3 +11268,13 @@ CREATE TABLE public.presupuesto_ganaderia (
   activo boolean DEFAULT true, notas text, created_at, updated_at );
 CREATE INDEX idx_presu_gan_empresa ON public.presupuesto_ganaderia(empresa, campania);
 -- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- Dato 2026-07-28: CUITs de clientes en los contratos de arrendamiento.
+-- Se alinearon A LA FACTURA (msa.comprobantes_venta), que es la fuente de verdad del
+-- usuario, no al dato tipeado en el chat.
+UPDATE public.contratos_arrendamiento
+   SET cliente_cuit='30712200662', cliente_nombre='Sanpa Semillas SA' WHERE centro_costo='Rojas';
+UPDATE public.contratos_arrendamiento
+   SET cliente_cuit='33710346939', cliente_nombre='Provinvest'        WHERE centro_costo='Nazarenas';
+-- Nota sin accion: 30712200662 NO pasa la validacion de digito verificador (le
+-- corresponderia terminar en 5). El usuario confirmo que la factura es el dato real.

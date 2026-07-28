@@ -125,6 +125,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos |
 | B-FEAT-06 | 🔴 | Media | Subdiario Ventas — igualar flujo a Compras (esperando que el usuario explique diferencias) |
 | B-FEAT-07 | 🔴 | Media | Proveedores — carga orgánica (poblar desde facturas/extractos, no de a uno) |
+| B-BUG-CLIENTE-NO-SE-CREA | 🔴 | Alta | **Las VENTAS no dan de alta el cliente en `proveedores`** (compras sí) — rompe la regla consensuada "si hay factura, tiene que estar en proveedores/clientes". Causa raíz identificada, ver [dossier](#b-bug-cliente-no-se-crea). (2026-07-28) |
 | B-FEAT-08 | 🔴 | Baja | Margen por superposición — órdenes agrícolas (diseño aprobado, ~25-30 líneas) |
 | B-FEAT-09 | 🔴 | Baja | Editar empleado existente (hoy sólo SQL) |
 | B-FEAT-10 | 🔴 | Baja | `formatoCantidad('L')` — muestra ml como L ("1122 L" vs "1,122 L") |
@@ -988,6 +989,43 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 
 ---
 
+## <a id="b-bug-cliente-no-se-crea"></a>B-BUG-CLIENTE-NO-SE-CREA — Las ventas no dan de alta el cliente en `proveedores` (2026-07-28)
+
+**Cómo apareció**: al cargar los CUITs de Sanpa y Provinvest en los contratos de arrendamiento
+se vio que **ninguno de los dos está en `public.proveedores`**, aunque los dos **ya tienen
+factura de venta cargada** en `msa.comprobantes_venta`. El usuario lo marcó como violación de
+la regla consensuada: *"si estaba la factura, tendría que estar cargado en proveedores/clientes"*.
+
+**Causa raíz — asimetría compras vs ventas** (verificado en el código):
+
+| Flujo | Qué hace con `proveedores` |
+|---|---|
+| **Compras** — `app/api/import-facturas-arca/route.ts:624` | ✅ **auto-crea** los que faltan, en bloque, sin romper el import si falla |
+| **Ventas** — `components/modal-venta-msa.tsx:200` | ❌ sólo `UPDATE … SET es_cliente=true WHERE cuit=X` |
+| **Ventas** — `components/modal-comprobante-venta-msa.tsx:217` | ❌ ídem, sólo UPDATE |
+| **Ventas** — `components/modal-import-ventas.tsx` | ❌ **no toca `proveedores` en absoluto** |
+
+El `UPDATE` **matchea 0 filas y no falla**: si el cliente no existe, no pasa nada y nadie se
+entera. Por eso el hueco es silencioso.
+
+**Fix**: replicar del lado de ventas lo que ya hace el importador de compras — **upsert** en vez
+de update (crear si no existe, con `es_cliente = true`), en los **tres** puntos. Conviene
+extraerlo a una función compartida en `lib/` (regla DRY) en vez de repetirlo 3 veces.
+
+**Relacionado**: es la misma familia que **B-FEAT-07** (carga orgánica de proveedores). Este es
+el caso concreto y acotado; B-FEAT-07 es el barrido general.
+
+**Datos afectados hoy**: `Sanpa Semillas SA` (`30712200662`) y `PROVINVEST S.A.`
+(`33710346939`) — ambos con factura, ninguno en `proveedores`. **Pendiente de decisión del
+usuario**: darlos de alta (no se insertó nada sin consultar).
+
+> 🔎 **Nota de dato, sin acción**: el CUIT de Sanpa en la factura (`30712200662`) **no pasa la
+> validación de dígito verificador** (le correspondería terminar en 5). El usuario confirmó que
+> *"las facturas tienen los datos reales"*, así que los contratos se alinearon a la factura.
+> Queda anotado por si algún día ARCA lo rechaza.
+
+---
+
 ## <a id="b-feat-presu-ingresos"></a>B-FEAT-PRESU-INGRESOS — Presupuesto de INGRESOS: arrendamientos agrícolas (2026-07-26)
 
 **Diseño completo** (fórmulas, reglas, DDL, UI, fases) → `DISEÑO_PRESUPUESTO.md`
@@ -1044,8 +1082,9 @@ propio); contratos con columna `empresa`.
 12. **`MANUAL-USO.md`** — sección "Arrendamientos agrícolas" con el flujo completo.
 
 ### ⏳ FALTA
-- **Cargar los CUITs de Sanpa y Provinvest** en los contratos → sin CUIT **la vinculación no
-  puede matchear** (la alerta lo avisa explícitamente). Es lo primero que bloquea.
+- ✅ ~~Cargar los CUITs de Sanpa y Provinvest~~ — **HECHO 2026-07-28**: Rojas → `Sanpa Semillas
+  SA` `30712200662` (alineado a la factura, ver B-BUG-CLIENTE-NO-SE-CREA) · Nazarenas →
+  `Provinvest` `33710346939`. La vinculación FC↔venta ya puede matchear.
 - **Generar el comprobante** (factura/liquidación) desde la venta → motor rama VENTA → cobro.
 - **Granos y ganadería** en `ventas_unificadas` (hoy la vista sólo trae arrendamiento).
 - **Volcado del IIBB al template** `IIBB Mensual MSA` (`fba5c3f9-…`), patrón SICORE: explícito,
