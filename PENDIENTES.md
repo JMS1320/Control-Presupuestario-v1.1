@@ -1015,9 +1015,14 @@ extraerlo a una función compartida en `lib/` (regla DRY) en vez de repetirlo 3 
 **Relacionado**: es la misma familia que **B-FEAT-07** (carga orgánica de proveedores). Este es
 el caso concreto y acotado; B-FEAT-07 es el barrido general.
 
-**Datos afectados hoy**: `Sanpa Semillas SA` (`30712200662`) y `PROVINVEST S.A.`
-(`33710346939`) — ambos con factura, ninguno en `proveedores`. **Pendiente de decisión del
-usuario**: darlos de alta (no se insertó nada sin consultar).
+**Datos — ✅ RESUELTO 2026-07-28** (el bug de código sigue abierto): se dieron de alta los 2
+clientes faltantes tomando `cuit` y `razon_social` de **`msa.comprobantes_venta`** (los datos
+que vienen de ARCA), con `es_cliente = true` y `es_proveedor` calculado según tengan o no
+factura de compra — los dos son **clientes puros**, así que quedaron en `false`.
+Ahora los 4 contratos de arrendamiento resuelven contra `proveedores`.
+
+El INSERT se escribió **genérico** (todo `cuit_cliente` de `comprobantes_venta` que no esté en
+`proveedores`), así que se puede volver a correr como parche manual hasta que esté el fix.
 
 > 🔎 **Nota de dato, sin acción**: el CUIT de Sanpa en la factura (`30712200662`) **no pasa la
 > validación de dígito verificador** (le correspondería terminar en 5). El usuario confirmó que

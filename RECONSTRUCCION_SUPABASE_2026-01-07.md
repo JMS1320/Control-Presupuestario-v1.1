@@ -11278,3 +11278,18 @@ UPDATE public.contratos_arrendamiento
    SET cliente_cuit='33710346939', cliente_nombre='Provinvest'        WHERE centro_costo='Nazarenas';
 -- Nota sin accion: 30712200662 NO pasa la validacion de digito verificador (le
 -- corresponderia terminar en 5). El usuario confirmo que la factura es el dato real.
+
+-- Dato 2026-07-28: alta de clientes faltantes en proveedores desde los comprobantes de
+-- venta (datos de ARCA). Parche manual del bug B-BUG-CLIENTE-NO-SE-CREA: las ventas no
+-- dan de alta el cliente. Es GENERICO -> se puede re-correr hasta que este el fix.
+INSERT INTO public.proveedores (cuit, razon_social, es_cliente, es_proveedor, fc_modo, notas)
+SELECT DISTINCT ON (cv.cuit_cliente)
+       cv.cuit_cliente, cv.denominacion_cliente, true,
+       EXISTS (SELECT 1 FROM msa.comprobantes_arca a WHERE a.cuit = cv.cuit_cliente),
+       'sin_config', 'Alta automatica desde comprobantes de venta (ARCA) — 2026-07-28'
+FROM msa.comprobantes_venta cv
+WHERE cv.cuit_cliente IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.proveedores p WHERE p.cuit = cv.cuit_cliente)
+ORDER BY cv.cuit_cliente, cv.fecha_liquidacion DESC;
+-- Dio de alta: Sanpa Semillas SA (30712200662) y PROVINVEST S.A. (33710346939), ambos
+-- clientes puros (es_proveedor=false, no tienen facturas de compra).
