@@ -20,6 +20,21 @@ import {
 } from "@/lib/ganaderia/calculo"
 
 const parseAR = (v: string) => parseFloat(String(v).replace(/\./g, "").replace(",", ".")) || 0
+
+/**
+ * Porcentajes: NO usar parseAR. `parseAR` es para MONTOS es-AR, donde el punto es
+ * separador de MILES y por eso lo borra ("0.85" → 85). En un % el punto es decimal.
+ * Acepta las dos escrituras: "85", "10,5" y también "10.5".
+ * Devuelve la FRACCIÓN (85 → 0,85), que es como se guarda en la BD.
+ */
+const parsePct = (v: string): number => {
+  const n = parseFloat(String(v).trim().replace(",", "."))
+  return Number.isFinite(n) ? n / 100 : 0
+}
+/** Fracción de la BD → texto en % es-AR para el input (0,105 → "10,5"). */
+const fmtPct1 = (frac: number | null | undefined): string =>
+  frac == null ? "" : (Math.round(Number(frac) * 100 * 1e6) / 1e6)
+    .toLocaleString("es-AR", { maximumFractionDigits: 4 })
 const fmtAR = (n: number | null | undefined, dec = 2) =>
   n == null ? "—" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 const fmtPesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
@@ -59,15 +74,15 @@ export function VistaGanaderia() {
       centro_costo: p.centro_costo || null,
       descripcion: p.descripcion || null,
       stock_vientres: Math.round(parseAR(String(p.stock_vientres))),
-      pct_destete: parseAR(String(p.pct_destete)) / 100,
-      pct_machos: parseAR(String(p.pct_machos)) / 100,
-      pct_reposicion: parseAR(String(p.pct_reposicion)) / 100,
+      pct_destete: parsePct(String(p.pct_destete)),
+      pct_machos: parsePct(String(p.pct_machos)),
+      pct_reposicion: parsePct(String(p.pct_reposicion)),
       peso_macho_kg: parseAR(String(p.peso_macho_kg)),
       peso_hembra_kg: parseAR(String(p.peso_hembra_kg)),
       precio_kg_override: p.precio_kg_override ? parseAR(String(p.precio_kg_override)) : null,
       fecha_cobro_estimada: p.fecha_cobro_estimada,
-      alicuota_iva: parseAR(String(p.alicuota_iva)) / 100,
-      alicuota_iibb: parseAR(String(p.alicuota_iibb)) / 100,
+      alicuota_iva: parsePct(String(p.alicuota_iva)),
+      alicuota_iibb: parsePct(String(p.alicuota_iibb)),
       updated_at: new Date().toISOString(),
     }
     const { error } = p.id
@@ -86,9 +101,10 @@ export function VistaGanaderia() {
 
   const nuevo = () => setModal({
     empresa: "MSA", campania: "", stock_vientres: ref?.vientres ?? 200,
-    pct_destete: 0.85, pct_machos: 0.5, pct_reposicion: 0.2,
-    peso_macho_kg: 200, peso_hembra_kg: 170,
-    alicuota_iva: 0.105, alicuota_iibb: 0.01,
+    // En PORCENTAJE, igual que los labels. Nunca en fracción: el input dice "% Destete".
+    pct_destete: "85", pct_machos: "50", pct_reposicion: "20",
+    peso_macho_kg: "200", peso_hembra_kg: "170",
+    alicuota_iva: "10,5", alicuota_iibb: "1",
     fecha_cobro_estimada: "",
   } as any)
 
@@ -146,11 +162,11 @@ export function VistaGanaderia() {
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => setModal({
                     ...p,
-                    pct_destete: (Number(p.pct_destete) * 100) as any,
-                    pct_machos: (Number(p.pct_machos) * 100) as any,
-                    pct_reposicion: (Number(p.pct_reposicion) * 100) as any,
-                    alicuota_iva: (Number(p.alicuota_iva) * 100) as any,
-                    alicuota_iibb: (Number(p.alicuota_iibb) * 100) as any,
+                    pct_destete: fmtPct1(p.pct_destete) as any,
+                    pct_machos: fmtPct1(p.pct_machos) as any,
+                    pct_reposicion: fmtPct1(p.pct_reposicion) as any,
+                    alicuota_iva: fmtPct1(p.alicuota_iva) as any,
+                    alicuota_iibb: fmtPct1(p.alicuota_iibb) as any,
                   })}>Editar</Button>
                   <Button variant="ghost" size="sm" onClick={() => baja(p.id)}>
                     <Trash2 className="h-3.5 w-3.5 text-gray-400" />
@@ -257,10 +273,50 @@ function ModalGanaderia({ datos, referencia, onCerrar, onGuardar }: {
     </div>
   )
 
+  /**
+   * Campo de PORCENTAJE. Se escribe en % (85 · 10,5) y se guarda como fracción.
+   * Muestra en vivo el valor que va a quedar guardado y marca en rojo lo fuera de rango:
+   * un 0,85 tipeado donde va 85 se guardaría como 0,0085 sin que nadie se entere.
+   */
+  const campoPct = (k: string, label: string, ayuda?: string) => {
+    const crudo = String(f[k] ?? "")
+    const frac = parsePct(crudo)
+    const fuera = crudo.trim() !== "" && (frac < 0 || frac > 1)
+    const sospechoso = crudo.trim() !== "" && frac > 0 && frac < 0.001
+    return (
+      <div>
+        <label className="text-xs text-gray-500">{label}</label>
+        <div className="relative">
+          <Input
+            className={`h-8 pr-6 text-right ${fuera || sospechoso ? "border-red-400 bg-red-50" : ""}`}
+            value={f[k] ?? ""}
+            onChange={e => setF({ ...f, [k]: e.target.value })}
+          />
+          <span className="pointer-events-none absolute right-2 top-1.5 text-xs text-gray-400">%</span>
+        </div>
+        <p className={`mt-1 text-[10px] ${fuera || sospechoso ? "text-red-600" : "text-gray-400"}`}>
+          {fuera
+            ? `Fuera de rango: ${crudo} % no es un porcentaje válido`
+            : sospechoso
+              ? `¿Seguro? Se guardaría ${frac.toLocaleString("es-AR", { maximumFractionDigits: 6 })} — parece que escribiste la fracción en vez del %`
+              : `${ayuda ? ayuda + " · " : ""}se guarda ${frac.toLocaleString("es-AR", { maximumFractionDigits: 4 })}`}
+        </p>
+      </div>
+    )
+  }
+
   const submit = () => {
     if (!f.campania || !f.fecha_cobro_estimada || !f.stock_vientres) {
       alert("Campaña, fecha de cobro y stock de vientres son obligatorios")
       return
+    }
+    const pcts: [string, string][] = [
+      ["pct_destete", "% Destete"], ["pct_machos", "% Machos"],
+      ["pct_reposicion", "% Reposición"], ["alicuota_iva", "% IVA"], ["alicuota_iibb", "% IIBB"],
+    ]
+    for (const [k, label] of pcts) {
+      const frac = parsePct(String(f[k] ?? ""))
+      if (frac < 0 || frac > 1) { alert(`${label}: ${f[k]} no es un porcentaje válido (0 a 100)`); return }
     }
     onGuardar(f)
   }
@@ -296,19 +352,19 @@ function ModalGanaderia({ datos, referencia, onCerrar, onGuardar }: {
 
           {campo("stock_vientres", "Stock vientres",
             referencia ? `Real ciclo ${referencia.anio}: ${referencia.vientres}` : undefined)}
-          {campo("pct_destete", "% Destete",
+          {campoPct("pct_destete", "% Destete",
             referencia?.pct_destete != null ? `Real: ${fmtPct(referencia.pct_destete)}` : undefined)}
-          {campo("pct_machos", "% Machos",
+          {campoPct("pct_machos", "% Machos",
             referencia?.pct_machos != null ? `Real: ${fmtPct(referencia.pct_machos)}` : undefined)}
 
-          {campo("pct_reposicion", "% Reposición", "sobre vientres, sale de hembras")}
+          {campoPct("pct_reposicion", "% Reposición", "sobre vientres, sale de hembras")}
           {campo("peso_macho_kg", "Peso macho (kg)",
             referencia?.kg_promedio != null ? `Prom. real: ${fmtAR(referencia.kg_promedio)}` : undefined)}
           {campo("peso_hembra_kg", "Peso hembra (kg)")}
 
           {campo("precio_kg_override", "Precio $/kg (opcional)", "vacío = usa Precios y TC")}
-          {campo("alicuota_iva", "% IVA", "ganadería 10,5")}
-          {campo("alicuota_iibb", "% IIBB", "ganadería 1 — mes siguiente")}
+          {campoPct("alicuota_iva", "% IVA", "ganadería 10,5")}
+          {campoPct("alicuota_iibb", "% IIBB", "ganadería 1 — mes siguiente")}
         </div>
 
         <div className="flex justify-end gap-2">
