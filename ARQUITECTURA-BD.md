@@ -117,6 +117,22 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Sanidad/aplicaciones** | `ordenes_aplicacion`, `ordenes_aplicacion_rodeos`, `lineas_orden_aplicacion`, `lineas_orden_labores` |
 | **Agrícola** | `lotes_agricolas`, `ordenes_agricolas`, `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
+| **Evolución del rodeo** (2026-07-29) | `stock_ciclos`, `stock_lotes`, `stock_ventas` |
+
+**Evolución del rodeo** — línea de tiempo proyectada del stock de cría (modelo de la solapa
+"ciclo ganadero" del Excel). **No están en el backup.**
+
+| Tabla | Propósito |
+|-------|-----------|
+| `stock_ciclos` | Un **ciclo anual** por fila (servicio oct → destete mar). Cada período **abre con el cierre del anterior**; `vacas_apertura`/`vaquillonas_apertura` en NULL = hereda, cargadas = foto manual. Parámetros **por período**, no constantes globales (la reposición es decisión de estrategia y cambia año a año). Los `real_*` **pisan el cálculo** y recalculan todo lo posterior. |
+| `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
+| `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
+
+Motor del ciclo (en `lib/ganaderia/ciclo.ts`):
+`rodeo = vacas + vaquillonas` · `destete = rodeo × %destete` (se parte por `%machos`) ·
+`falladas = rodeo − destetados` · `descarte = falladas × %descarte` (sale de vaca **y**
+vaquillona) · al cierre **las vaquillonas paren y pasan a vaca**, y las terneras retenidas
+son las vaquillonas del año siguiente.
 
 ### `sueldos` — módulo sueldos (storage real, no expuesto en API)
 | Tabla | RLS | Filas~ | Propósito |

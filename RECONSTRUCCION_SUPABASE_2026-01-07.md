@@ -11293,3 +11293,37 @@ WHERE cv.cuit_cliente IS NOT NULL
 ORDER BY cv.cuit_cliente, cv.fecha_liquidacion DESC;
 -- Dio de alta: Sanpa Semillas SA (30712200662) y PROVINVEST S.A. (33710346939), ambos
 -- clientes puros (es_proveedor=false, no tienen facturas de compra).
+
+-- Aplicado 2026-07-29: EVOLUCION PROYECTADA DEL RODEO (linea de tiempo). NO en el backup.
+-- Modelo de la solapa "ciclo ganadero" del Excel. El rodeo rueda solo anio a anio.
+CREATE TABLE productivo.stock_ciclos (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA', campania varchar(10), orden int,
+  fecha_servicio date, fecha_destete date,
+  -- NULL = hereda del cierre del periodo anterior. El 1ro se carga a mano (foto de hoy).
+  vacas_apertura numeric(10,2), vaquillonas_apertura numeric(10,2),
+  -- Parametros POR PERIODO (la reposicion es decision de estrategia, cambia anio a anio)
+  pct_destete numeric(6,4) DEFAULT 0.85, pct_machos numeric(6,4) DEFAULT 0.50,
+  pct_descarte_falladas numeric(6,4) DEFAULT 0.50, pct_reposicion numeric(6,4) DEFAULT 0.20,
+  peso_destete_kg numeric(8,2) DEFAULT 200,
+  -- Reales: pisan el calculo y recalculan todo lo posterior
+  real_destetados numeric(10,2), real_machos numeric(10,2),
+  real_hembras numeric(10,2), real_descarte numeric(10,2),
+  notas text, created_at, updated_at, UNIQUE (empresa, campania) );
+CREATE INDEX idx_stock_ciclos_orden ON productivo.stock_ciclos(empresa, orden);
+
+CREATE TABLE productivo.stock_lotes (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA',
+  ciclo_id uuid FK->stock_ciclos ON DELETE CASCADE (NULL = viene del stock inicial),
+  categoria varchar(60), origen varchar(20) CHECK IN ('destete','descarte','stock_inicial'),
+  cantidad numeric(10,2), fecha_disponible date, peso_base_kg numeric(8,2),
+  ganancia_diaria_kg numeric(6,3) DEFAULT 0,  -- engorde si no se vende al destete
+  notas text, created_at, updated_at );
+CREATE INDEX idx_stock_lotes_ciclo ON productivo.stock_lotes(ciclo_id);
+
+CREATE TABLE productivo.stock_ventas (
+  id uuid PK, lote_id uuid FK->stock_lotes ON DELETE CASCADE,
+  fecha_venta date, cantidad numeric(10,2) CHECK >0,
+  peso_kg numeric(8,2), precio_kg numeric(12,2),  -- congelados al vender
+  monto_neto numeric(15,2), notas text, created_at );
+CREATE INDEX idx_stock_ventas_lote ON productivo.stock_ventas(lote_id);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
@@ -916,10 +917,14 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
+              </TabsTrigger>
+              <TabsTrigger value="evolucion" className="flex items-center gap-2">
+                📈
+                Evolución Rodeo
               </TabsTrigger>
               <TabsTrigger value="cria" className="flex items-center gap-2">
                 🐮
@@ -941,6 +946,9 @@ export function VistaSectorProductivo() {
 
             <TabsContent value="hacienda">
               <TabHacienda />
+            </TabsContent>
+            <TabsContent value="evolucion">
+              <TabEvolucionRodeo />
             </TabsContent>
             <TabsContent value="cria">
               <TabTerneros modo="cria" />
