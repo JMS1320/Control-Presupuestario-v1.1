@@ -1184,6 +1184,54 @@ genera las ventas → Presupuesto lee**. Lo dice el propio usuario en la planill
 - ⏳ **Falta**: cuando se haga el volcado del IIBB al template, tiene que tomar la alícuota
   **del concepto** (5% arrendamiento / 1% ganadería), no una constante.
 
+#### 🔄 CICLO GANADERO — modelo de evolución del stock (solapa "ciclo ganadero" del Excel, 2026-07-29)
+
+El usuario agregó una solapa con el **modelo del ciclo**. Es la base que faltaba: en vez de
+tipear el stock campaña por campaña, **el rodeo rueda solo año a año** y de ahí salen las ventas.
+
+**Foto de stock (hoy)** — es el arranque, se carga una vez:
+```
+Vacas 177 + Vaquillonas Preñadas 27 = 204   ← rodeo de cría (de acá sale el % de preñez)
+Vacas Descarte 8                             → a vender
+Ternero Recría 97                            → a vender
+Ternera Recría 81 − Reserva Reposición 60 = 21 → a vender
+Reserva Reposición 60                        → entra al rodeo
+```
+> ⚠️ El **204** es esto (177 + 27). **No** confundir con el **214** que sugería la app, que salía
+> de `ciclos_cria` del último ciclo cerrado (2024: 160 + 54). La referencia estaba mal elegida:
+> mira el pasado cuando lo que hace falta es la foto de hoy.
+
+**Motor del ciclo (anual: servicio octubre → tacto → destete marzo):**
+```
+Rodeo      = Vacas + Vaquillonas de reposición
+Destete    = Rodeo × %destete          → mitad ternera, mitad ternero
+Falladas   = Rodeo × (1 − %destete)    ← la merma entre vaca entorada y vaca destetada
+Descarte   = Falladas × %descarte      → VENTA (default 50%)
+───────── cierre del período ─────────
+Vacas(t+1)       = Vacas(t) − Descarte
+Vaquillonas(t+1) = Ternera(t) × %reposición
+```
+
+**Respuestas del usuario (2026-07-29)** a las dudas del modelo:
+1. **El descarte sale de AMBAS** (vaca y vaquillona), no sólo de vaca. Default: la mitad de las
+   fallas se le imputa a la vaca → se descarta. **Editable.**
+2. El descarte 0 en octubre era **un error de la fórmula del Excel** (`F28` vacía). **Todos los
+   años es igual.**
+3. Split ternera/ternero: **50/50 por defecto** (editable; el real histórico es 56,6/43,4).
+4. **El 20% de reposición es para MANTENER el rodeo.** Hoy están **incrementando**, así que este
+   año guardan más. → el % **no puede ser constante: es por período**, es una decisión de
+   estrategia.
+5. **La recría de 2026 se iba a vender en marzo (destete) y se decidió retenerla.** Falta definir
+   cuándo se vende, y puede ser **venta parcial o todo junto**.
+
+**Lo que pidió** (validado, a implementar): un lugar donde ver la **evolución del stock
+proyectado como línea de tiempo**, que arranque del stock actual, proponga los pasos futuros por
+defecto, y sea un **espacio de trabajo interactivo** donde editar a medida que las cosas se hacen
+reales. **De ahí salen las ventas proyectadas.**
+
+Es el mismo patrón que arrendamiento (contrato → cuotas → fijar): acá es
+**stock → períodos → lotes vendibles → venta (parcial o total)**.
+
 #### ⏳ FALTA en ganadería
 - **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
   proyección. Falta cuántas por año, peso y precio.
