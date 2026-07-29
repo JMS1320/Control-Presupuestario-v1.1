@@ -996,21 +996,28 @@ se vio que **ninguno de los dos está en `public.proveedores`**, aunque los dos 
 factura de venta cargada** en `msa.comprobantes_venta`. El usuario lo marcó como violación de
 la regla consensuada: *"si estaba la factura, tendría que estar cargado en proveedores/clientes"*.
 
-**Causa raíz — asimetría compras vs ventas** (verificado en el código):
+**Causa raíz — asimetría compras vs ventas** (verificado en el código, 4 entradas de ventas):
 
 | Flujo | Qué hace con `proveedores` |
 |---|---|
 | **Compras** — `app/api/import-facturas-arca/route.ts:624` | ✅ **auto-crea** los que faltan, en bloque, sin romper el import si falla |
+| **Ventas · IMPORT** — `app/api/import-ventas/route.ts` | ❌🔴 **no toca `proveedores` en absoluto** — el peor caso: es la vía masiva |
 | **Ventas** — `components/modal-venta-msa.tsx:200` | ❌ sólo `UPDATE … SET es_cliente=true WHERE cuit=X` |
 | **Ventas** — `components/modal-comprobante-venta-msa.tsx:217` | ❌ ídem, sólo UPDATE |
-| **Ventas** — `components/modal-import-ventas.tsx` | ❌ **no toca `proveedores` en absoluto** |
+| **Ventas** — `components/modal-liquidacion-msa.tsx:573` | ❌ ídem, sólo UPDATE |
 
-El `UPDATE` **matchea 0 filas y no falla**: si el cliente no existe, no pasa nada y nadie se
-entera. Por eso el hueco es silencioso.
+Dos fallas distintas:
+- El **`UPDATE` matchea 0 filas y no falla** → si el cliente no existe, no pasa nada y nadie se
+  entera. Hueco silencioso.
+- El **importador de ventas ni siquiera lo intenta** → es por donde entra el volumen (ARCA
+  Comprobantes Emitidos), así que es el que más clientes deja sin registrar.
 
-**Fix**: replicar del lado de ventas lo que ya hace el importador de compras — **upsert** en vez
-de update (crear si no existe, con `es_cliente = true`), en los **tres** puntos. Conviene
-extraerlo a una función compartida en `lib/` (regla DRY) en vez de repetirlo 3 veces.
+**Fix**: replicar del lado de ventas lo que ya hace el importador de compras — **upsert** (crear
+si no existe con `es_cliente = true`, y si existe marcar el flag), en los **4 puntos**.
+Extraerlo a una **función compartida en `lib/`** (regla DRY) en vez de repetirlo 4 veces; el
+importador de compras debería terminar usando la misma.
+Criterio para `es_proveedor`: `true` sólo si tiene factura de compra a su nombre (los clientes
+puros van en `false`).
 
 **Relacionado**: es la misma familia que **B-FEAT-07** (carga orgánica de proveedores). Este es
 el caso concreto y acotado; B-FEAT-07 es el barrido general.

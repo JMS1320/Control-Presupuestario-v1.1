@@ -45,6 +45,20 @@ No es un solo archivo: evaluar **TODAS** estas dimensiones y actualizar las que 
 6. **Error baseline** → `ERRORES_CONOCIDOS.md`.
 Al terminar de registrar, decir explícitamente qué dimensiones se tocaron (para que el usuario controle que no quedó nada desparramado).
 
+### 👥 Contrapartes — toda importación debe registrarlas (REGLA)
+**Si entra un comprobante, su contraparte tiene que quedar en `public.proveedores`.** Vale para
+**compras (proveedor) y ventas (cliente)**, y para **todas** las vías: importadores masivos y
+altas manuales.
+- Al importar/registrar: **upsert** — crear si no existe (`es_cliente` / `es_proveedor` según
+  corresponda), y si ya existe marcar el flag que falte.
+- ⚠️ **Nunca sólo `UPDATE`**: si la contraparte no existe, matchea 0 filas, **no falla**, y el
+  hueco queda invisible. Ese es exactamente el bug B-BUG-CLIENTE-NO-SE-CREA.
+- `es_proveedor = true` sólo si tiene factura de compra a su nombre; los clientes puros van
+  en `false`.
+- Motivo: `proveedores` es el maestro del que salen CBU, mails, mensajes de transferencia y el
+  pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
+  cobros y conciliación aguas abajo.
+
 ### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
 - **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
 - Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).
