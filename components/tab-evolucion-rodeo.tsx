@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw } from "lucide-react"
 import {
-  calcularLineaTiempo, type CicloStock, type CicloCalculado,
+  calcularLineaTiempo, fechasCampania, etiquetaFechas,
+  type CicloStock, type CicloCalculado,
 } from "@/lib/ganaderia/ciclo"
 
 const parseNum = (v: string) => {
@@ -58,6 +59,8 @@ export function TabEvolucionRodeo() {
       empresa: "MSA",
       campania: f.campania,
       orden: Math.round(parseNum(String(f.orden))),
+      // Las fechas proyectadas NO se guardan: se derivan de la campaña. Sólo persisten
+      // las REALES, que hoy no se cargan desde acá (vendrán de ciclos_cria).
       fecha_servicio: f.fecha_servicio || null,
       fecha_destete: f.fecha_destete || null,
       // Vacío = hereda del cierre del período anterior
@@ -76,6 +79,10 @@ export function TabEvolucionRodeo() {
       updated_at: new Date().toISOString(),
     }
     if (!payload.campania) { alert("La campaña es obligatoria"); return }
+    if (!fechasCampania(payload.campania)) {
+      alert(`La campaña debe tener formato AA/BB (ej. 27/28). Recibí: "${payload.campania}"`)
+      return
+    }
     for (const [k, label] of [["pct_destete","% Destete"],["pct_machos","% Machos"],
       ["pct_descarte_falladas","% Descarte"],["pct_reposicion","% Reposición"]] as [string,string][]) {
       const v = (payload as any)[k]
@@ -108,7 +115,6 @@ export function TabEvolucionRodeo() {
       pct_descarte_falladas: ultimo ? fmtPctTxt(ultimo.ciclo.pct_descarte_falladas) : "50",
       pct_reposicion: ultimo ? fmtPctTxt(ultimo.ciclo.pct_reposicion) : "20",
       peso_destete_kg: ultimo ? String(ultimo.ciclo.peso_destete_kg) : "200",
-      fecha_servicio: "", fecha_destete: "",
     })
   }
 
@@ -198,10 +204,8 @@ export function TabEvolucionRodeo() {
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] font-normal text-gray-400">
-                        {c.ciclo.fecha_destete
-                          ? `destete ${new Date(c.ciclo.fecha_destete + "T00:00:00").toLocaleDateString("es-AR")}`
-                          : "sin fecha de destete"}
+                      <div className="text-[10px] font-normal text-gray-400 whitespace-nowrap">
+                        {etiquetaFechas(c.ciclo.campania)}
                       </div>
                     </th>
                   ))}
@@ -303,23 +307,36 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-gray-500">Campaña</label>
-              <Input className="h-8" placeholder="26/27" value={f.campania || ""}
+              <Input className="h-8" placeholder="27/28" value={f.campania || ""}
                 onChange={e => setF({ ...f, campania: e.target.value })} />
             </div>
             {campo("orden", "Orden", "posición en la línea de tiempo")}
-            <div>
-              <label className="text-xs text-gray-500">Servicio</label>
-              <Input type="date" className="h-8" value={f.fecha_servicio || ""}
-                onChange={e => setF({ ...f, fecha_servicio: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Destete</label>
-              <Input type="date" className="h-8" value={f.fecha_destete || ""}
-                onChange={e => setF({ ...f, fecha_destete: e.target.value })} />
-            </div>
+          </div>
+
+          {/* Las fechas NO se piden: la campaña ya las determina. Se muestran para que
+              se vea qué asume la app y se detecte una campaña mal escrita. */}
+          <div className="rounded bg-gray-50 px-3 py-2 text-xs">
+            {(() => {
+              const fc = fechasCampania(String(f.campania ?? ""))
+              if (!fc) return (
+                <span className="text-gray-400">
+                  Escribí la campaña como <strong>AA/BB</strong> (ej. 27/28) y acá vas a ver
+                  el servicio, la parición y el destete que le corresponden.
+                </span>
+              )
+              const mes = (s: string) =>
+                new Date(s + "T00:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" })
+              return (
+                <span className="text-gray-600">
+                  Servicio <strong>{mes(fc.servicio)}</strong> · parición{" "}
+                  <strong>{mes(fc.paricion)}</strong> · destete <strong>{mes(fc.destete)}</strong>
+                  <span className="ml-2 text-gray-400">(el servicio cae en la campaña anterior)</span>
+                </span>
+              )
+            })()}
           </div>
 
           <div>

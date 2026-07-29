@@ -1224,6 +1224,21 @@ Vaquillonas(t+1) = Ternera(t) × %reposición
 5. **La recría de 2026 se iba a vender en marzo (destete) y se decidió retenerla.** Falta definir
    cuándo se vende, y puede ser **venta parcial o todo junto**.
 
+**Fechas del ciclo — DERIVADAS, no se piden** (decisión del usuario 2026-07-29): la campaña
+siempre tiene **un servicio, una parición y un destete**, así que el nombre de la campaña ya los
+determina. Pedirlos como input era ruido y encima invitaba a que el dato tipeado se contradijera
+con la campaña.
+```
+campaña 27/28  →  servicio  oct-2026   ← ojo: cae en la campaña ANTERIOR
+                  parición  jul-2027
+                  destete   mar-2028
+```
+Constantes `MES_SERVICIO=10 · MES_PARICION=7 · MES_DESTETE=3` en `lib/ganaderia/ciclo.ts`
+(`fechasCampania()`). Las columnas `fecha_servicio`/`fecha_destete` de la BD quedan **sólo para
+las fechas REALES** cuando ocurren; `fechaDestete()` devuelve la real si existe y si no la
+derivada. Las reales ya viven en `ciclos_cria` → **pendiente**: traerlas de ahí en vez de
+retipearlas.
+
 **Lo que pidió** (validado, a implementar): un lugar donde ver la **evolución del stock
 proyectado como línea de tiempo**, que arranque del stock actual, proponga los pasos futuros por
 defecto, y sea un **espacio de trabajo interactivo** donde editar a medida que las cosas se hacen

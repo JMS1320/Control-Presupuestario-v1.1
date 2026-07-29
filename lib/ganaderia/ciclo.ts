@@ -5,11 +5,64 @@
 // Regla del módulo (igual que arrendamiento): el default se calcula solo, el dato real
 // lo pisa, y lo pisado no se recalcula. Cada período se encadena con el anterior.
 
+// ── Fechas del ciclo — DERIVADAS de la campaña ────────────────────────────────
+//
+// La campaña tiene siempre un servicio, una parición y un destete, a offsets fijos.
+// Por eso NO se piden como input: pedirlas es ruido y además invita a que el dato
+// tipeado se contradiga con el nombre de la campaña.
+//
+//   campaña 27/28  →  servicio  oct-2026   ← ojo: cae en la campaña ANTERIOR
+//                     parición  jul-2027
+//                     destete   mar-2028
+//
+// (una vaca servida en 10/26 pare en 7/27 y se desteta en 3/28)
+
+/** Meses del ciclo. Si alguna vez se corren, se cambian acá y no en 20 lugares. */
+export const MES_SERVICIO = 10
+export const MES_PARICION = 7
+export const MES_DESTETE  = 3
+
+export interface FechasCiclo {
+  servicio: string   // 'YYYY-MM-DD'
+  paricion: string
+  destete: string
+}
+
+/**
+ * Deriva las tres fechas de la campaña `"27/28"`.
+ * El servicio cae en octubre del año ANTERIOR al primero de la campaña.
+ * Devuelve null si la campaña no tiene el formato AA/BB.
+ */
+export function fechasCampania(campania: string): FechasCiclo | null {
+  const m = /^(\d{2})\s*\/\s*(\d{2})$/.exec(String(campania ?? '').trim())
+  if (!m) return null
+  const anioA = 2000 + Number(m[1])   // 27 → 2027
+  const anioB = 2000 + Number(m[2])   // 28 → 2028
+  const d = (a: number, mes: number) => `${a}-${String(mes).padStart(2, '0')}-01`
+  return {
+    servicio: d(anioA - 1, MES_SERVICIO),
+    paricion: d(anioA, MES_PARICION),
+    destete:  d(anioB, MES_DESTETE),
+  }
+}
+
+/** Etiqueta corta para mostrar en la columna: "serv 10/26 · pare 7/27 · dest 3/28". */
+export function etiquetaFechas(campania: string): string {
+  const f = fechasCampania(campania)
+  if (!f) return 'campaña sin formato AA/BB'
+  const mm = (s: string) => `${Number(s.slice(5, 7))}/${s.slice(2, 4)}`
+  return `serv ${mm(f.servicio)} · pare ${mm(f.paricion)} · dest ${mm(f.destete)}`
+}
+
 export interface CicloStock {
   id: string
   empresa: string
   campania: string
   orden: number
+  /**
+   * Fechas REALES, cuando ya ocurrieron. Las proyectadas NO se guardan: se derivan de la
+   * campaña con `fechasCampania()`. Usar `fechaDestete()` para obtener la que corresponda.
+   */
   fecha_servicio: string | null
   fecha_destete: string | null
   /** NULL = hereda del cierre del período anterior. El primero se carga a mano. */
@@ -159,6 +212,19 @@ export interface VentaStock {
   peso_kg: number | null
   precio_kg: number | null
   monto_neto: number | null
+}
+
+/**
+ * Fecha de destete del ciclo: la real si ya ocurrió, si no la derivada de la campaña.
+ * Es la que manda para saber cuándo quedan disponibles las cabezas a vender.
+ */
+export function fechaDestete(ciclo: Pick<CicloStock, 'campania' | 'fecha_destete'>): string | null {
+  return ciclo.fecha_destete ?? fechasCampania(ciclo.campania)?.destete ?? null
+}
+
+/** Ídem para el servicio: el rodeo se cuenta a servicio. */
+export function fechaServicio(ciclo: Pick<CicloStock, 'campania' | 'fecha_servicio'>): string | null {
+  return ciclo.fecha_servicio ?? fechasCampania(ciclo.campania)?.servicio ?? null
 }
 
 /** Días corridos entre dos fechas 'YYYY-MM-DD'. */
