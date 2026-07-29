@@ -163,21 +163,27 @@ export function TabPresupuesto() {
 
     const templateIds = templates.map(t => t.id)
 
-    // Rango de fechas: primer día del mes actual → último día del mes 12
+    // Rango: primer día del primer mes → primer día del mes SIGUIENTE al último (exclusivo).
+    // Ojo: no armar el tope con "-31" fijo — si el último mes no tiene 31 días
+    // (p.ej. "2028-06-31") Postgres rechaza la fecha y la query falla ENTERA, con lo que
+    // los templates desaparecen de la vista sin ningún aviso.
     const primerMes = meses[0]
     const ultimoMes = meses[meses.length - 1]
     const fechaDesde = `${primerMes.anio}-${String(primerMes.mes).padStart(2,"0")}-01`
-    const fechaHasta = `${ultimoMes.anio}-${String(ultimoMes.mes).padStart(2,"0")}-31`
+    const finExclusivo = new Date(ultimoMes.anio, ultimoMes.mes, 1) // mes es 1-based → mes siguiente
+    const fechaHasta = `${finExclusivo.getFullYear()}-${String(finExclusivo.getMonth()+1).padStart(2,"0")}-01`
 
     // Traer cuotas del período
-    const { data: cuotas } = await supabase
+    const { data: cuotas, error: errorCuotas } = await supabase
       .from("cuotas_egresos_sin_factura")
       .select("egreso_id, fecha_estimada, fecha_vencimiento, monto, estado")
       .in("egreso_id", templateIds)
       .gte("fecha_estimada", fechaDesde)
-      .lte("fecha_estimada", fechaHasta)
+      .lt("fecha_estimada", fechaHasta)
       .neq("estado", "desactivado")
       .neq("estado", "conciliado")
+
+    if (errorCuotas) console.error("Error cargando cuotas de templates:", errorCuotas)
 
     // Armar mapa egreso_id → { "YYYY-MM": suma_montos }
     const mapaMontos: Record<string, Record<string, number>> = {}

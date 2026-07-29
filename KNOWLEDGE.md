@@ -774,3 +774,31 @@ ARCA_WSFE_URL=https://wswhomo.afip.gov.ar/wsfev1/service.asmx
 ---
 
 *📝 Final del archivo - Total secciones: 6 principales + índice navegable*
+---
+
+## Fechas de corte con "-31" fijo — ROMPE LA QUERY ENTERA `#fechas #supabase #bug #2026-07-29`
+**Contexto**: en Presupuesto, al ampliar el horizonte de 13 a 24 meses **desaparecieron todos
+los templates** de la vista (sueldos e ingresos seguían bien).
+
+**Causa**: el tope del rango se armaba concatenando `-31`:
+```ts
+const fechaHasta = `${ultimoMes.anio}-${String(ultimoMes.mes).padStart(2,"0")}-31`
+```
+Con 13 meses caía en julio (31 días, válido). Con 24 caía en **junio** → `"2028-06-31"` →
+Postgres: `date/time field value out of range`. La query fallaba **entera** y devolvía `null`.
+
+**Por qué fue invisible**: el código hacía `const { data: cuotas } = await …` **sin mirar
+`error`**. Sin cuotas, el filtro "agrupadores con algún monto > 0" descartaba todos los
+agrupadores → tabla sin templates, sin ningún mensaje.
+
+**Solución**: tope **exclusivo** en el primer día del mes siguiente + `.lt()` en vez de `.lte()`:
+```ts
+const finExclusivo = new Date(ultimoMes.anio, ultimoMes.mes, 1) // mes es 1-based → mes siguiente
+const fechaHasta = `${finExclusivo.getFullYear()}-${String(finExclusivo.getMonth()+1).padStart(2,"0")}-01`
+… .gte("fecha_estimada", fechaDesde).lt("fecha_estimada", fechaHasta)
+```
+**NO repetir**: armar fechas de fin de mes por concatenación (`-31`, `-30`). Usar día 0 del mes
+siguiente (`new Date(a, m, 0)`) o rango exclusivo.
+**Lección transversal**: **siempre desestructurar `error`** en las queries de supabase-js y
+loguearlo. Un `data` en `null` silencioso se ve igual que "no hay datos".
+**Tags**: `#fechas` `#supabase` `#silent-failure` `#presupuesto`
