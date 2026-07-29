@@ -227,6 +227,98 @@ export function fechaServicio(ciclo: Pick<CicloStock, 'campania' | 'fecha_servic
   return ciclo.fecha_servicio ?? fechasCampania(ciclo.campania)?.servicio ?? null
 }
 
+// ── Vínculo con los ciclos REALES de Productivo ───────────────────────────────
+//
+// `productivo.ciclos_cria` guarda lo que pasó de verdad, una fila por rodeo
+// (Vaca / Vaquillona Preñada) y por año de servicio. La línea de tiempo del
+// presupuesto se puede PROPONER desde ahí, y se va autocorrigiendo sola a medida
+// que los ciclos avanzan y se cargan los datos reales.
+
+export interface FilaCicloCria {
+  anio_servicio: number
+  rodeo: string | null
+  cabezas_servicio: number | null
+  cabezas_prenadas: number | null
+  terneros_destetados: number | null
+  machos_destetados: number | null
+  hembras_destetados: number | null
+  kg_promedio: number | null
+  fecha_servicio: string | null
+  fecha_destete: string | null
+}
+
+export interface PropuestaCiclo {
+  campania: string
+  anio_servicio: number
+  /** Rodeo al servicio, separado por categoría. */
+  vacas: number
+  vaquillonas: number
+  a_servicio: number
+  prenadas: number
+  /** Reales del destete, si el ciclo ya cerró. */
+  destetados: number | null
+  machos: number | null
+  hembras: number | null
+  kg_promedio: number | null
+  /** %destete real medido contra el rodeo a servicio (sólo si cerró). */
+  pct_destete_real: number | null
+  pct_machos_real: number | null
+  cerrado: boolean
+  fecha_servicio: string | null
+  fecha_destete: string | null
+}
+
+/**
+ * `anio_servicio` → campaña. El servicio de octubre de 2025 corresponde a la campaña
+ * 26/27 (pare jul-26, desteta mar-27).
+ */
+export function campaniaDeServicio(anioServicio: number): string {
+  const a = (anioServicio + 1) % 100
+  const b = (anioServicio + 2) % 100
+  return `${String(a).padStart(2, '0')}/${String(b).padStart(2, '0')}`
+}
+
+/** Agrupa `ciclos_cria` por año de servicio y arma la propuesta por campaña. */
+export function proponerDesdeCiclosCria(filas: FilaCicloCria[]): PropuestaCiclo[] {
+  const porAnio = new Map<number, FilaCicloCria[]>()
+  for (const f of filas) {
+    if (!porAnio.has(f.anio_servicio)) porAnio.set(f.anio_servicio, [])
+    porAnio.get(f.anio_servicio)!.push(f)
+  }
+
+  const num = (v: number | null | undefined) => Number(v) || 0
+  const esVaquillona = (rodeo: string | null) => /vaquillona/i.test(rodeo ?? '')
+
+  return Array.from(porAnio.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([anio, fs]) => {
+      const vacas = fs.filter(f => !esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
+      const vaquillonas = fs.filter(f => esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
+      const aServicio = vacas + vaquillonas
+      const prenadas = fs.reduce((s, f) => s + num(f.cabezas_prenadas), 0)
+
+      const cerrado = fs.some(f => f.terneros_destetados != null)
+      const destetados = cerrado ? fs.reduce((s, f) => s + num(f.terneros_destetados), 0) : null
+      const machos = cerrado ? fs.reduce((s, f) => s + num(f.machos_destetados), 0) : null
+      const hembras = cerrado ? fs.reduce((s, f) => s + num(f.hembras_destetados), 0) : null
+
+      const kgs = fs.map(f => Number(f.kg_promedio)).filter(k => k > 0)
+
+      return {
+        campania: campaniaDeServicio(anio),
+        anio_servicio: anio,
+        vacas, vaquillonas, a_servicio: aServicio, prenadas,
+        destetados, machos, hembras,
+        kg_promedio: kgs.length ? kgs.reduce((s, k) => s + k, 0) / kgs.length : null,
+        pct_destete_real: cerrado && aServicio > 0 ? destetados! / aServicio : null,
+        pct_machos_real: cerrado && destetados! > 0 ? machos! / destetados! : null,
+        cerrado,
+        fecha_servicio: fs.map(f => f.fecha_servicio).filter(Boolean)[0] ?? null,
+        fecha_destete: fs.map(f => f.fecha_destete).filter(Boolean)[0] ?? null,
+      }
+    })
+}
+
 /** Días corridos entre dos fechas 'YYYY-MM-DD'. */
 export function diasEntre(desde: string, hasta: string): number {
   const a = new Date(desde + 'T00:00:00').getTime()

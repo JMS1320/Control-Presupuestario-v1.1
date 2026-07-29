@@ -14,10 +14,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw } from "lucide-react"
+import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2 } from "lucide-react"
 import {
-  calcularLineaTiempo, fechasCampania, etiquetaFechas,
-  type CicloStock, type CicloCalculado,
+  calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria,
+  type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
 
 const parseNum = (v: string) => {
@@ -38,15 +38,24 @@ const pct = (f: number) => `${(Number(f) * 100).toLocaleString("es-AR", { maximu
 export function TabEvolucionRodeo() {
   const [cargando, setCargando] = useState(true)
   const [ciclos, setCiclos] = useState<CicloStock[]>([])
+  const [cria, setCria] = useState<FilaCicloCria[]>([])
   const [modal, setModal] = useState<any>(null)
+  const [modalPropuesta, setModalPropuesta] = useState(false)
+  const [aplicando, setAplicando] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const { data, error } = await supabase.schema("productivo")
-        .from("stock_ciclos").select("*").eq("empresa", "MSA").order("orden")
+      const [{ data, error }, { data: cc, error: errCria }] = await Promise.all([
+        supabase.schema("productivo")
+          .from("stock_ciclos").select("*").eq("empresa", "MSA").order("orden"),
+        supabase.schema("productivo").from("ciclos_cria")
+          .select("anio_servicio, rodeo, cabezas_servicio, cabezas_prenadas, terneros_destetados, machos_destetados, hembras_destetados, kg_promedio, fecha_servicio, fecha_destete"),
+      ])
       if (error) console.error("Error cargando ciclos:", error)
+      if (errCria) console.error("Error cargando ciclos_cria:", errCria)
       setCiclos((data || []) as CicloStock[])
+      setCria((cc || []) as FilaCicloCria[])
     } finally { setCargando(false) }
   }, [])
 
@@ -94,6 +103,52 @@ export function TabEvolucionRodeo() {
     if (error) { alert("Error: " + error.message); return }
     setModal(null)
     await cargar()
+  }
+
+  const propuestas = proponerDesdeCiclosCria(cria)
+
+  /**
+   * Crea o actualiza los períodos desde los ciclos REALES de Productivo.
+   * La apertura sale del rodeo A SERVICIO, y si el ciclo ya cerró se cargan los
+   * destetados/machos/hembras como datos reales. Es idempotente: re-correrlo
+   * actualiza en vez de duplicar — así se va autocorrigiendo con cada ciclo.
+   */
+  const aplicarPropuesta = async (seleccionadas: PropuestaCiclo[]) => {
+    setAplicando(true)
+    try {
+      for (const [i, p] of seleccionadas.entries()) {
+        const existente = ciclos.find(c => c.campania === p.campania)
+        const base = {
+          empresa: "MSA",
+          campania: p.campania,
+          orden: existente?.orden ?? (ciclos.length + i + 1),
+          vacas_apertura: p.vacas,
+          vaquillonas_apertura: p.vaquillonas,
+          // Si el ciclo cerró, los reales pisan el cálculo
+          real_destetados: p.destetados,
+          real_machos: p.machos,
+          real_hembras: p.hembras,
+          fecha_servicio: p.fecha_servicio,
+          fecha_destete: p.fecha_destete,
+          notas: `Propuesto desde ciclos_cria (servicio ${p.anio_servicio}) — ${p.a_servicio} a servicio, ${p.prenadas} preñadas`,
+          updated_at: new Date().toISOString(),
+        }
+        const { error } = existente
+          ? await supabase.schema("productivo").from("stock_ciclos").update(base).eq("id", existente.id)
+          : await supabase.schema("productivo").from("stock_ciclos").insert({
+              ...base,
+              // Defaults sólo al crear: si ya existe no le pisamos los parámetros editados
+              pct_destete: p.pct_destete_real ?? 0.85,
+              pct_machos: p.pct_machos_real ?? 0.50,
+              pct_descarte_falladas: 0.50,
+              pct_reposicion: 0.20,
+              peso_destete_kg: p.kg_promedio ?? 200,
+            })
+        if (error) { alert(`Error en ${p.campania}: ${error.message}`); return }
+      }
+      setModalPropuesta(false)
+      await cargar()
+    } finally { setAplicando(false) }
   }
 
   const borrar = async (id: string) => {
@@ -161,7 +216,14 @@ export function TabEvolucionRodeo() {
             como <strong>real</strong> pisa el cálculo y recalcula todo lo posterior.
           </p>
         </div>
-        <Button size="sm" onClick={nuevo}><Plus className="mr-1 h-4 w-4" /> Agregar período</Button>
+        <div className="flex gap-2">
+          {propuestas.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => setModalPropuesta(true)}>
+              <Wand2 className="mr-1 h-4 w-4" /> Proponer desde Productivo
+            </Button>
+          )}
+          <Button size="sm" onClick={nuevo}><Plus className="mr-1 h-4 w-4" /> Agregar período</Button>
+        </div>
       </div>
 
       <p className="flex items-start gap-2 rounded bg-blue-50 px-3 py-2 text-xs text-blue-800">
@@ -181,8 +243,10 @@ export function TabEvolucionRodeo() {
         </div>
       ) : linea.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-gray-400">
-          Todavía no hay períodos. Agregá el primero con la foto del stock de hoy
-          (vacas y vaquillonas preñadas) y de ahí en adelante rueda solo.
+          Todavía no hay períodos.
+          {propuestas.length > 0
+            ? " Usá «Proponer desde Productivo» para traer los ciclos reales que ya están cargados, y de ahí en adelante rueda solo."
+            : " Agregá el primero con la foto del stock de hoy (vacas y vaquillonas preñadas)."}
         </CardContent></Card>
       ) : (
         <Card>
@@ -254,6 +318,14 @@ export function TabEvolucionRodeo() {
       )}
 
       <ModalCiclo datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
+      <ModalPropuesta
+        abierto={modalPropuesta}
+        propuestas={propuestas}
+        existentes={ciclos}
+        aplicando={aplicando}
+        onCerrar={() => setModalPropuesta(false)}
+        onAplicar={aplicarPropuesta}
+      />
     </div>
   )
 }
@@ -381,6 +453,101 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
             <Button onClick={() => onGuardar(f)}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Modal: proponer períodos desde los ciclos reales de Productivo ────────────
+// `productivo.ciclos_cria` es la fuente de lo que pasó de verdad. Traerlo de acá evita
+// retipear y hace que la línea de tiempo se autocorrija a medida que los ciclos avanzan.
+
+function ModalPropuesta({ abierto, propuestas, existentes, aplicando, onCerrar, onAplicar }: {
+  abierto: boolean
+  propuestas: PropuestaCiclo[]
+  existentes: CicloStock[]
+  aplicando: boolean
+  onCerrar: () => void
+  onAplicar: (sel: PropuestaCiclo[]) => Promise<void>
+}) {
+  const [sel, setSel] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!abierto) return
+    const init: Record<string, boolean> = {}
+    propuestas.forEach(p => { init[p.campania] = true })
+    setSel(init)
+  }, [abierto, propuestas])
+
+  if (!abierto) return null
+  const elegidas = propuestas.filter(p => sel[p.campania])
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader><DialogTitle>Proponer desde Productivo</DialogTitle></DialogHeader>
+
+        <p className="text-xs text-gray-500">
+          Sale de <strong>ciclos de cría</strong> (lo que pasó de verdad). La apertura del rodeo
+          es el <strong>rodeo a servicio</strong>, y si el ciclo ya cerró se cargan los
+          destetados como <strong>dato real</strong>. Si la campaña ya existe se{" "}
+          <strong>actualiza</strong>, no se duplica — y los parámetros que hayas editado a mano
+          no se pisan.
+        </p>
+
+        <div className="space-y-2">
+          {propuestas.map(p => {
+            const yaExiste = existentes.some(c => c.campania === p.campania)
+            return (
+              <label key={p.campania}
+                className="flex cursor-pointer items-start gap-3 rounded border p-3 hover:bg-gray-50">
+                <input type="checkbox" className="mt-1"
+                  checked={sel[p.campania] ?? false}
+                  onChange={e => setSel(s => ({ ...s, [p.campania]: e.target.checked }))} />
+                <div className="flex-1 text-sm">
+                  <div className="flex items-center gap-2">
+                    <strong>{p.campania}</strong>
+                    <span className="text-xs text-gray-400">servicio {p.anio_servicio}</span>
+                    {p.cerrado
+                      ? <Badge variant="default" className="text-[10px]">cerrado</Badge>
+                      : <Badge variant="outline" className="text-[10px]">en curso</Badge>}
+                    {yaExiste && <Badge variant="outline" className="text-[10px]">actualiza</Badge>}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    Rodeo a servicio: <strong>{p.a_servicio}</strong> ({p.vacas} vacas +{" "}
+                    {p.vaquillonas} vaquillonas) · {p.prenadas} preñadas
+                  </div>
+                  {p.cerrado ? (
+                    <div className="mt-0.5 text-xs text-emerald-700">
+                      Destete real: <strong>{p.destetados}</strong> ({p.machos} machos /{" "}
+                      {p.hembras} hembras) · {pct(p.pct_destete_real ?? 0)} destete ·{" "}
+                      {pct(p.pct_machos_real ?? 0)} machos
+                      {p.kg_promedio ? ` · ${n1(p.kg_promedio)} kg prom.` : ""}
+                    </div>
+                  ) : (
+                    <div className="mt-0.5 text-xs text-amber-700">
+                      Todavía sin destete: se proyecta. Cuando cargues el destete en Productivo,
+                      volvé a correr esto y pasa a real.
+                    </div>
+                  )}
+                </div>
+              </label>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-gray-400">
+            {elegidas.length} de {propuestas.length} seleccionadas
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+            <Button disabled={aplicando || elegidas.length === 0}
+              onClick={() => onAplicar(elegidas)}>
+              {aplicando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Aplicar"}
+            </Button>
           </div>
         </div>
       </DialogContent>
