@@ -135,6 +135,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-BUG-PDF-DETALLE | 🟢 | Media | **PDF "Detalle de pago" no muestra descuentos / SICORE** — ✅ **RESUELTO (2026-07-21, commit 0d21d58, sin testear).** Causa: el generador (`lib/pagos/pdf-detalle-pago.ts`) SÍ maneja SICORE/descuento (columnas condicionales), pero la **`CashFlowRow`** del hook (`useMultiCashFlowData`) NO incluía `monto_sicore`/`descuento_aplicado`/`monto_a_abonar` (solo `sicore`/`imp_total`) → el caller del Cash Flow (`generarPDFPagosSeleccionados`) recibía `undefined` → columnas no aparecían. **Fix:** exponer los 3 campos en la fila ARCA individual + de grupo (suma). El **Modal** (`mapFacsAItems`) ya los pasaba bien (bug era solo Cash Flow). **Testear: descargar detalle desde Cash Flow y ver Retención/Descuento.** |
 | B-FEAT-PAGO-MULTIMEDIO | 🟢 | Media | **Detalle de pago con VARIOS medios (transferencia + echeq)** — ✅ **HECHO (2026-07-21, commit 4e033f1, sin testear).** Nueva lib `lib/pagos/medios-pago.ts` (`obtenerMediosPagoFactura`: reúne anticipos=transferencia + cheques=echeq + transferencias directas del extracto `msa_galicia`, por `factura_id`/`template_cuota_id`). El **PDF Detalle de pago** ahora agrega una sección **"Desglose del pago"**: cada medio (con banco/nro/fecha del echeq) + Retención SICORE + Descuento = **Total factura** (con aviso ⚠ si no cuadra ±$1); la tabla principal oculta Transferido/Cancelado cuando hay desglose. Lo pasa el caller del Cash Flow (`generarPDFPagosSeleccionados`, solo ARCA). **Caso testigo Longo:** anticipo 6.505.867,50 + echeq 1.456.737,50 + SICORE 129.270 = 8.091.875. **✅ FASE 2 HECHA (2026-07-21, commit 3819fb5):** el **✉ mail-detalle** también usa el desglose — PDF adjunto con la sección + cuerpo del mail listando cada medio (transferencia/echeq). Seleccionando **solo el echeq** el mail incluye la transferencia automáticamente. **BUG CORREGIDO (mismo commit):** el cert SICORE no se adjuntaba al seleccionar echeq+transferencia juntos → el `tipo` se decidía por `fs[0].origen` (si la 1ra fila del grupo era la transferencia/ANTICIPO, `tipo=template` y se salteaba el cert). Fix: `tipo='arca'` si CUALQUIER fila es ARCA (mail + PDF). **Testear.** Residual menor: seleccionar las 2 líneas duplica el anticipo en los totales del cuerpo → mejor marcar solo el echeq (o pulir para que la transferencia no haga falta seleccionarla). **Falta:** la vista pantalla-detalle (secundario). |
 | B-FEAT-14 | 🔴 | Media | **Análisis productivo-económico (engorde)** — módulo NUEVO en Historial pesadas (`components/analisis-productivo.tsx` + `segmentador.tsx`). Incluye: multi-segmentador · marcado reposición (es_torito) · análisis margen (calcular) · escenario B dinámico (16 vars) · cadena de etapas · punto de equilibrio · análisis de sensibilidad · guardar/cargar/borrar estudios (localStorage+.json) · **precios de mercado** (scraping entresurcosycorralesya, botón mkt auto-poblar por kg neto+sexo). **Falta TESTEAR TODO** contra el Excel del usuario (ver `MANUAL-USO.md` + memoria `project_analisis_productivo`). **v2 pendiente:** (a) **sub-modal** para ver la sensibilidad más ancha; (b) **persistir** la config de sensibilidad en el estudio (hoy sesión); (c) **export Excel/PDF**: hoy cada segmento exporta lo suyo, PERO no hay export **COMBINADO** (todos los segmentos + la combinada) y el export **no refleja** el punto de salida (sigue "punta a punta") ni el tilde incluido/A-vs-B. El **guardado local + JSON SÍ captura todo** (incluido, salidaEtapa, duplicados). (d) agrupador de segmentos + sensibilidad de cadena. (2026-07-09) · **HECHO 2026-07-10/11 (commits 0551bb8/2941fb5/aff89e6/88a3a5a):** (1) precios de mercado scrapeados se **guardan/restauran CON el estudio**; (2) **congelar segmentado** con foto + receta → al cargar la app pregunta **📌 foto** (snapshot, no toca BD) vs **🔄 re-link** (reproduce del config); (3) **Estimado configurable** *desde* (pesada base) / *hasta* (fecha del análisis) → reproduce el kilaje exacto y permite recuperar estudios viejos a mano; (4) **import pesadas por columna `Caravana` no oficial** (CUT/Descarte en `caravana_oficial`, toros en `caravana_interna`). Testeado visualmente OK por el usuario. · **HECHO 2026-07-13:** (5) **export COMBINADO del estudio** (⬇ PDF total = resumen + detalle por segmento · ⬇ Excel total = hoja Resumen + hoja por segmento; PDF declarativo reusado del export individual; respeta tilde `incluido`) → cierra el v2-(c); (6) **💾 Actualizar «estudio»** (sobrescribe el estudio abierto sin re-tipear nombre) + **Guardar como…** (nuevo) → evita duplicados. · **⏳ PENDIENTE DE TEST (2026-07-13, el usuario testea luego):** commits `9150fdb` (export combinado PDF/Excel + Actualizar), `93f540e` (detalle por etapa en el export), `9da43e8` (panel de sección Fase 1: individuos + sub-segmentar), `f58bf39` (panel de sección Fase 2: índices históricos ganancia p-p / últimas pesadas + promedio grupo). Todo en `desarrollo`, sin mergear. |
+| B-FEAT-COSTOS-PRODUCTIVOS | 🔴 | Alta | **Costos productivos atados a la venta (ganadería)** — cada venta presupuestada lleva su costo variable: maíz, concentrado, sanidad, verdeos. **La unidad de planificación es la ACTIVIDAD**: se carga "este lote hace recría del 1/4 al 30/9" y salen solos la curva de peso, el consumo mes a mes, lo que falta comprar y el egreso. El motor de ración YA existe (`calcular()` en `analisis-productivo.tsx:150`) y el stock de insumos también (`productivo.stock_insumos` / `movimientos_insumos`). Plan C-1..C-8 en el dossier § FASE C. **0 código** — planificado 2026-07-30. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1513,6 +1514,136 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
    editable), precio, plazo de cobro. **Congela peso y precio.**
 8. **`ventas_unificadas`** incorpora ganadería → Cash Flow la ve.
 9. **Deprecar `presupuesto_ganaderia`** y borrar la fila que quedó corrupta del bug de %.
+
+---
+
+#### 🌾 FASE C — COSTOS PRODUCTIVOS ATADOS A LA VENTA `B-FEAT-COSTOS-PRODUCTIVOS` 🔴
+*(planificado 2026-07-30, 0 código — leer esto entero antes de empezar)*
+
+> *"cada decisión productiva conlleva gastos variables aparejados. cada venta presupuestada
+> podría tener siempre un costo productivo adjudicado. cantidad de maíz a dar, concentrado,
+> siembra de verdeos… lo más simple para empezar es maíz y concentrado. podría poner el stock
+> que hay y calcule la dif a comprar. (…) tendremos que dejar asentado los parámetros de la
+> recría y el engorde para poder simplemente decir este rodeo va a recría desde tal fecha a tal
+> y el sistema sepa qué calcular de insumos. Así cargando la actividad se calculan los ingresos
+> y costos, y es fácil de manejar."*
+
+##### La idea en una línea
+**La unidad de planificación es la ACTIVIDAD, no el insumo.** El usuario carga *"este lote hace
+recría del 1/4 al 30/9"* y de ahí salen solos: la curva de peso, el consumo de maíz y
+concentrado mes a mes, lo que falta comprar, y el egreso en el presupuesto. Nadie tipea kilos.
+
+##### Lo que YA está construido (no rehacer)
+
+| Pieza | Dónde | Estado |
+|---|---|---|
+| **Motor de ración** | `calcular()` en `components/analisis-productivo.tsx:150` | ✅ funciona, hay que **extraerlo a lib** |
+| **Stock de insumos** | `productivo.stock_insumos` (categoria, producto, cantidad, costo_unitario, unidad) | ✅ tabla viva |
+| **Movimientos** | `productivo.movimientos_insumos` (fecha, tipo, cantidad, costo, proveedor, cuit) | ✅ tabla viva |
+| **Categorías** | `productivo.categorias_insumo` con `ambito` agrícola/ganadero/ambos | ✅ sembrada |
+| **Motor de sanidad** | `ordenes_aplicacion` + `lineas_orden_aplicacion` (`dosis_cada_kg`, `peso_promedio_kg`) | ✅ **ya modela dosis por kg de peso vivo** |
+| **Curva de peso** | `stock_lotes.peso_base_kg` + `ganancia_diaria_kg` + `fecha_peso` | ✅ |
+
+El motor de ración es exactamente lo que hace falta, y es **por cabeza y por día**:
+
+```
+racKgDia  = pesoPromedio × racionPV        ← % del peso vivo
+maizKgDia = racKgDia × maizPct
+concKgDia = racKgDia × concPct
+kg lote   = kgDia × días × cabezas
+costo     = kg × precio
+```
+
+Como `pesoPromedio` y `días` **ya salen del lote**, el cálculo de consumo casi no necesita input
+nuevo: sólo los parámetros de la actividad. Ése es el punto que hace barato todo esto.
+
+##### Lo que falta
+
+**C-1 · Extraer el motor a `lib/productivo/racion.ts`** 🔑 *hacer primero*
+`calcular()` vive adentro de un componente de 1.367 líneas. Sacarlo a lib y que el análisis de
+engorde lo importe. Si el presupuesto reimplementa la fórmula, en tres meses dan distinto y no
+se va a saber cuál está bien. Es el mismo patrón de `lib/pagos/` y `lib/arrendamientos/calculo.ts`.
+
+**C-2 · Tabla de parámetros por actividad** — `productivo.actividades`
+Es el *"dejar asentado los parámetros de la recría y el engorde"*. Una fila por actividad:
+
+| campo | ejemplo | para qué |
+|---|---|---|
+| `tipo` | `recria` / `engorde` / `pastoreo` | qué proceso es |
+| `nombre` | "Recría verdeo invierno" | puede haber varias del mismo tipo |
+| `racion_pct_pv` | 1,5 % | ración diaria como % del peso vivo |
+| `pct_maiz` / `pct_concentrado` | 85 / 15 | mezcla |
+| `ganancia_diaria_kg` | 0,5 | **la curva de peso sale de acá** (ver C-4) |
+| `pct_mortandad` | 1 % | |
+| `costo_ha` + `has_por_cabeza` | verdeo | sólo para actividades con superficie |
+
+Defaults del análisis actual: ración 1,5 % PV · 85 % maíz · 15 % concentrado · maíz $270/kg.
+
+**C-3 · Tramos: la actividad se le asigna al lote** — `productivo.lote_tramos`
+`(lote_id, actividad_id, fecha_desde, fecha_hasta, orden)`. Varios tramos encadenados por lote
+— recría y después engorde — que es **la misma "cadena de etapas" que ya existe** en el análisis
+de engorde. Reusar ese concepto y, si se puede, la estructura.
+
+**C-4 · 🔑 El tramo debe MANEJAR la curva de peso, no sólo el costo**
+Hoy `stock_lotes.ganancia_diaria_kg` se tipea a mano y la actividad tendría su propia ganancia
+esperada. **Son el mismo número y van a divergir.** Si divergen, el peso con que se factura la
+venta y los kilos de maíz que se compran describen dos animales distintos.
+
+→ Al asignar el tramo, la ganancia diaria del lote **sale del tramo**. El campo del lote queda
+como override manual explícito (y marcado, como el `*` de precio arrastrado). Esto además le da
+al usuario la segunda punta de input que pidió: cargar la actividad define ingreso **y** costo
+de una sola vez.
+
+**C-5 · Consumo MENSUAL, no total**
+El presupuesto es mensual, así que el consumo hay que integrarlo por mes: para cada mes, días
+del tramo dentro de ese mes × kg/día al peso promedio **de ese mes** (el peso sube, la ración
+sube con él). Devolver `Record<'YYYY-MM', { maiz_kg, conc_kg, ... }>`.
+
+**C-6 · Diferencia a comprar** — *lo que pidió textualmente*
+`a_comprar = consumo_proyectado − stock_actual`, contra `productivo.stock_insumos`. Dos avisos:
+- **El maíz puede ser propio.** MSA produce maíz. Consumir maíz propio **no es una salida de
+  caja**: es una venta que no se hace (costo de oportunidad). Mezclarlo con el maíz comprado
+  infla los egresos y rompe el Cash Flow. Hay que separar `propio` de `a comprar` desde el
+  principio — meterlo después es rehacer.
+- **Falta la categoría Maíz**: hoy sólo existen `Alimento balanceado` y `Sal/Minerales` (ámbito
+  ganadero) y ninguna tiene stock cargado. Sanidad sí está cargada y en uso.
+
+**C-7 · Al presupuesto (EGRESOS)**
+Una fila por actividad o por insumo, en el mes del consumo. **Decisión abierta, la misma que
+quedó pendiente con el IIBB de arrendamiento**: si el costo tiene que verse en Cash Flow hay que
+registrarlo en algún lado (template), y si no, es una línea derivada que sólo vive en el
+presupuesto. Preguntarle al usuario antes de implementar — no asumir.
+
+**C-8 · Enlace con el análisis de engorde** *(último, opcional)*
+El usuario fue explícito: *"para enlazar si creemos bueno con esa otra parte, pero más que nada
+por los conceptos"*. O sea **reusar conceptos ahora, decidir el enlace después**. C-1 ya captura
+casi todo el valor. Un enlace real (que un estudio guardado genere tramos) recién tiene sentido
+cuando C-2..C-6 estén andando y testeados.
+
+##### Tres familias de costo — no se calculan igual
+No forzarlas al mismo molde; cada una tiene su unidad:
+
+| familia | escala con | ejemplo | motor |
+|---|---|---|---|
+| **por cabeza-día** | cabezas × días × peso | maíz, concentrado | ✅ `calcular()` |
+| **por cabeza-evento** | cabezas × dosis (a veces por kg) | vacunas, antiparasitarios | ✅ `lineas_orden_aplicacion` |
+| **por hectárea** | superficie, **no** cabezas | siembra de verdeos | ❌ falta |
+
+El verdeo es el que rompe el patrón: es un costo fijo por hectárea que después se reparte entre
+las cabezas que lo pastorean. Dejarlo para el final y **no** intentar expresarlo como $/cabeza/día
+hasta tener el caso claro.
+
+##### Orden sugerido
+**C-1** (extraer motor) → **C-2 + C-3** (parámetros + tramos) → **C-4** (curva de peso desde el
+tramo) → **C-5** (mensualizar) → **C-6** (stock y diferencia, con propio vs comprado) →
+**C-7** (presupuesto, previa decisión) → **C-8** (enlace, si vale la pena).
+
+Arrancar por maíz y concentrado, como pidió. Sanidad después: el motor está pero es otra unidad.
+
+##### Deuda que este plan roza
+- `productivo.stock_insumos` tiene **stock negativo** (`Fasiolisida −216 ml`): hay consumos sin
+  la compra correspondiente. No es bloqueante para planificar, pero si C-6 lee ese stock para
+  calcular la diferencia a comprar, la va a calcular de más. Revisar antes de C-6.
 
 ##### 🔑 Dos principios de arquitectura (pedidos por el usuario, 2026-07-30)
 
