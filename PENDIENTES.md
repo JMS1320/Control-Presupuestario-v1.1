@@ -138,6 +138,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-COSTOS-PRODUCTIVOS | 🔴 | Alta | **Costos productivos atados a la venta (ganadería)** — cada venta presupuestada lleva su costo variable: maíz, concentrado, sanidad, verdeos. **La unidad de planificación es la ACTIVIDAD**: se carga "este lote hace recría del 1/4 al 30/9" y salen solos la curva de peso, el consumo mes a mes, lo que falta comprar y el egreso. El motor de ración YA existe (`calcular()` en `analisis-productivo.tsx:150`) y el stock de insumos también (`productivo.stock_insumos` / `movimientos_insumos`). Plan C-1..C-8 en el dossier § FASE C. **0 código** — planificado 2026-07-30. |
 | B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
 | B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
+| C-17 / C-19 | 🔴 | Alta | **Cerrar el presupuesto como una sola cosa.** (a) **C-19**: bajar el bloque de cuentas contables a la grilla y sumarlo al TOTAL EGRESOS (hoy está en un panel aparte a propósito, ver cierre de sesión); (b) **C-7**: ídem costos de producción, que ya se calculan por tramo pero no bajan; (c) **C-17**: proyectar los templates donde no hay cuota cargada — las cuotas se cortan en dic-2026. La distinción de qué template quiere el usuario cargado a mano ya existe en `egresos_sin_factura.aplica_generacion` (true = Cargas Sociales, SICORE, UATRE… = avisar 'falta generar la campaña'; false/null = proyectar en silencio). 2026-07-30. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1524,6 +1525,138 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 ---
 
 ---
+
+---
+
+## 🔚 CIERRE DE SESIÓN 2026-07-30 — Presupuesto (ingresos, costos, cuentas, proveedores)
+
+**Todo en `desarrollo`, nada mergeado a `main`. Build OK, tipos en 120 (baseline), 6 verificadores
+en verde. Sólo el export de caravanas está testeado por el usuario; el resto NO.**
+
+### Commits de la sesión
+| Commit | Qué |
+|---|---|
+| `29efaa4` | fix parser es-AR (`5700` se leía 5,7) → `lib/format/numero.ts` |
+| `ae81b48` | Hacienda por categoría + disponible **por diferencia** (cierra G-8, agrega G-9) |
+| `4853da8` | Plan FASE C (costos productivos) |
+| `1400ebc` | C-1 motor de ración a lib + C-2 actividades y costos directos |
+| `6b78758` | C-3 tramos + C-4 **curva de peso quebrada** |
+| `156e7e2` | moneda USD, `momento: ciclo`, `pct_produccion` + 2 bugs propios |
+| `d279453` | **saldo acumulado**, IIBB en un renglón, sub-agrupación por categoría |
+| `8014c07` · `33b2f9c` | export de **caravanas** para declarar (✅ **testeado OK**) |
+| `ff5edf9` | presupuestar **cuentas contables**: 6 modos + control de cordura |
+| `5b5f885` | **control de subas de proveedores** vs IPC + Excel y PDF |
+| `15661d7` | fuente facturas ↔ canales conmutable · IPC en escalones · Fed Patronal |
+| `d3cf7eb` | exclusión **por proveedor** y no por cuenta |
+
+### Verificadores (`npx tsx scripts/verificar-<x>.ts`)
+`disponibilidad-hacienda` (9) · `actividades` (18) · `tramos` (11) · `caravanas` (15) ·
+`presupuesto-cuentas` (23) · `control-proveedores` (16).
+Encontraron **tres bugs reales** que ya estaban escritos: la ventana del promedio cerrando en el
+último mes con dato (inflaba 35 %), los costos "al terminar" que no caían nunca, y el reparto del
+mes en curso.
+
+### BD nueva (nada de esto está en el backup)
+`productivo`: `actividades`, `actividad_insumos`, `lote_tramos`, `stock_lotes.ganancia_override`.
+`public`: `presupuesto_config` (+`inflacion_mensual`), `presupuesto_cuenta_config`
+(+`cuits_excluidos`), y las vistas `presupuesto_historia_cuentas`,
+`presupuesto_historia_cuenta_proveedor`, `presupuesto_historia_canales`,
+`presupuesto_cobertura_canales`. Todo con DDL en `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+
+⚠️ **El MCP de Supabase quedó en modo write** — hay que volverlo a `--read-only` (A-OP-01).
+
+---
+
+### 📌 Preguntas del usuario al cierre — respondidas
+
+#### 1 · ¿Las cuentas contables están separadas del presupuesto a propósito?
+**Sí, a propósito, y es transitorio.** El panel está arriba y **no suma al TOTAL EGRESOS** porque
+al construirlo no estaba verificado si se pisaba con templates. Ahora sí está verificado (no se
+pisan, salvo Federación Patronal que ya se resolvió), así que **el próximo paso es integrarlo**.
+
+**La intención**: que sea un bloque más de la grilla, al lado de templates y sueldos, sumando al
+TOTAL EGRESOS y por lo tanto al RESULTADO y al SALDO ACUMULADO. El panel de arriba queda como el
+lugar donde se **configura** el modo de cada cuenta (igual que Precios y TC configura y la grilla
+muestra).
+
+→ **C-19**: integrar el bloque de cuentas contables a la grilla del presupuesto. No lo hice en
+esta tanda porque cambia el TOTAL y el SALDO, y no quería dejar eso sin testear al cierre.
+
+#### 2 · IPC cargado ✅ — verificado que funciona
+El usuario cargó **3 escalones**: jul-26 `2 %`, dic-26 `1,5 %`, jun-27 `1 %`. El arrastre los
+completa como corresponde:
+
+```
+jul-26  2,0 % exacto      dic-26  1,5 % exacto      jun-27  1,0 % exacto
+ago-26  2,0 % arrastrado  ene-27  1,5 % arrastrado   jul-27  1,0 % arrastrado
+… nov-26 2,0 %            … may-27 1,5 %             … ago-27 1,0 %
+```
+Acumulado ago-26 → ago-27: **21,9 %**. Ya lo usan el presupuesto de cuentas y el control de
+proveedores.
+
+#### 3 · ¿Cómo hacen los templates para presupuestar si no está cargada la campaña siguiente?
+**Hoy NO lo hacen: es el hueco.** El presupuesto lee las cuotas cargadas, y las cuotas se cortan:
+
+| jul-26 | ago-26 | sep-26 | oct-26 | nov-26 | dic-26 | ene-27 |
+|---|---|---|---|---|---|---|
+| 30 · $61,4 M | **16 · $2,3 M** | 54 · $12,8 M | 14 · $3,6 M | 36 · $18,9 M | 33 · $9,2 M | **2 · $0,55 M** |
+
+Desparejo y **se termina en dic-2026**. Un presupuesto a 24 meses muestra el segundo año casi
+vacío, y eso no es que no haya gasto.
+
+#### 4 · ¿Cómo distingue el sistema qué template quiere el usuario cargado y cuál proyectado?
+**Ya existe el campo y ya está bien cargado: `egresos_sin_factura.aplica_generacion`.**
+Es el que usa el generador de campaña, y su semántica es justo la que el usuario describe —
+*"cargas sociales me sirve crear la campaña con datos estimados porque me recuerda el compromiso
+de pago, pero otros no"*.
+
+| `aplica_generacion` | Cuántos | Cuáles |
+|---|---|---|
+| `true` | 12 | **Cargas Sociales**, UATRE, SICORE 1ra y 2da, IIBB Mensual, Anticipo Ganancias, Imp. Ganancias, Acciones y Participaciones, Seguro Flota, Seguro Accidentes, Tarjeta Visa, Interbancaria BAPRO |
+| `false` | 2 | Caja, Interbancaria Santander |
+| `null` | 50 | impuestos rurales y automotores, comisiones bancarias, retiros, etc. |
+
+Cargas Sociales está en `true`, que es exactamente lo que el usuario dijo que quiere. **El dato ya
+está**, no hay que inventar ninguna clasificación nueva.
+
+**La regla que sale de eso** (a implementar, C-17):
+
+| Situación | Qué hace el presupuesto |
+|---|---|
+| El mes **tiene cuota** cargada | Usa la cuota. Dato firme, no se toca. |
+| Sin cuota y `aplica_generacion = true` | **Proyecta y avisa** *"falta generar la campaña"*. El aviso es el punto: es el recordatorio del compromiso de pago que el usuario quiere. |
+| Sin cuota y `false`/`null` | **Proyecta en silencio** con su modo. No hace falta cargar nada. |
+
+Y para proyectar se reusan los mismos modos de las cuentas contables, eligiendo según
+`periodicidad`: mensual → propagar la última cuota + IPC; anual/bianual → mismo mes del año
+anterior + IPC. Sin escribir **nada** en el template, que es la regla acordada hace tiempo: la
+estimación vive en el Presupuesto, el dato firme en el template.
+
+#### 5 · Costos de producción al presupuesto
+Los tramos ya calculan el costo mes a mes y se ve en el modal del lote, pero **todavía no baja a
+la grilla**. Es C-7, que ya está decidido conceptualmente (línea derivada, no template): falta
+sólo pintarlo. Va junto con C-19 — los dos son "sumar un bloque más al TOTAL EGRESOS".
+
+---
+
+### 🗺️ Orden sugerido para retomar
+1. **C-19 + C-7** — bajar cuentas contables y costos de producción a la grilla, sumando al TOTAL
+   EGRESOS y al SALDO ACUMULADO. Es lo que cierra el presupuesto como una sola cosa.
+2. **C-17** — proyectar templates sin cuotas, con el aviso para los de `aplica_generacion = true`.
+3. **Testear** lo de esta sesión, que es mucho y está todo sin probar.
+4. **C-11** — control por canales (pagado vs facturado) para cazar el gasto sin comprobante.
+5. Resto: C-6 stock e insumos a comprar · C-12 cabezas automáticas · C-18 chequeo de cruce por
+   CUIT · A-OP-01 devolver el MCP a read-only.
+
+### ⏳ Sin testear (todo lo de esta sesión menos caravanas)
+**Presupuesto**: saldo acumulado · IIBB en un renglón · sub-agrupación de Impuestos Rurales ·
+venta de hacienda colapsable y por categoría · disponible por diferencia · 6 modos de cuentas ·
+control de cordura · fuente facturas/canales · exclusión por proveedor · control de subas.
+**Costos productivos**: actividades y costos con simulador · tramos en el lote · curva de peso
+quebrada.
+**Dato del usuario sin corregir**: la actividad *Engorde* tiene la ración en **8 % / 10 %** donde
+debería ser 85 / 15 (quedó del bug del input que se reformateaba). No se tocó: es su dato.
+
 
 #### 🔀 FUENTE DEL PRESUPUESTO: FACTURAS ↔ CANALES *(2026-07-30)*
 
