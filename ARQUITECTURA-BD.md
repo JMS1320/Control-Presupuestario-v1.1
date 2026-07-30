@@ -141,11 +141,18 @@ El costo directo **no se registra en ningún lado** — no es template ni factur
 **consecuencia calculada** de la actividad que se decide hacer, igual que el IIBB de la venta de
 arrendamiento. Decisión del usuario, 2026-07-30.
 
-`actividad_insumos.modo` decide el **cuánto y el cuándo**, y con eso las tres familias de costo
-(por cabeza-día · por cabeza-evento · por hectárea) entran en un solo mecanismo:
-`pct_racion` · `kg_cabeza_dia` · `unid_cabeza_mes` · `unid_cabeza_evento` ·
-`dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_mes`.
-`momento` (`diario`/`mensual`/`inicio`/`fin`) ubica el gasto en el tramo.
+`actividad_insumos.modo` decide el **cuánto y el cuándo**, y con eso las familias de costo
+(por cabeza-día · por cabeza-evento · por hectárea · por valor producido) entran en un solo
+mecanismo: `pct_racion` · `kg_cabeza_dia` · `unid_cabeza_mes` · `unid_cabeza_evento` ·
+`dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_mes` · `pct_produccion`.
+`momento` (`diario`/`mensual`/`inicio`/`fin`/`ciclo`) ubica el gasto en el tramo; `ciclo` es
+"tantos USD por hectárea en el cultivo entero" y hoy se prorratea por días (provisorio, ver
+FASE C · C-9).
+
+`moneda` (`ARS`/`USD`) — un costo agrícola se piensa en USD/ha. En USD el monto se pasa a pesos
+al **TC presupuestado del mes de cada gasto**, con `resolverSerie` sobre `public.tipos_cambio`:
+un ciclo largo puede usar varios TC. `tipo = 'agricola'` no usa `racion_pct_pv` ni
+`ganancia_diaria_kg`.
 
 **La curva de peso sale de los tramos y es QUEBRADA** (`lib/productivo/tramos.ts`). Con recría a
 0,5 kg/día y engorde a 0,7 el peso deja de ser `base + días × ganancia`: hay que integrar tramo

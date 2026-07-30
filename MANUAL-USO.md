@@ -518,13 +518,29 @@ concentrado); otra actividad tendrá los suyos. Cada concepto dice **cómo escal
 | **unid. / cabeza / mes** | sal, minerales |
 | **unid. / cabeza (evento)** | una vacuna, una vez |
 | **dosis cada N kg** | antiparasitario que se dosifica por peso |
-| **$ / cabeza · $ / hectárea · $ / mes** | flete · **verdeo** · alquiler de campo |
+| **por cabeza · por hectárea · por mes** | flete · **verdeo** · alquiler de campo |
+| **% de lo producido** | cosecha, aparcería — sale del valor de la producción, no de una cantidad |
 
 El verdeo es el único que **no** escala con cabezas sino con hectáreas: es un costo por
 superficie que después aprovecha la hacienda que la pastorea.
 
-**Cuándo** (diario / mensual / inicio / fin) ubica el gasto dentro del período. Cada modo trae
-el suyo por defecto y lo podés cambiar.
+**Cuándo** ubica el gasto dentro del período: *todos los días* · *todos los meses* · *al empezar*
+· *al terminar* · **en el ciclo**. Cada modo trae el suyo por defecto y lo podés cambiar.
+
+*En el ciclo* es para lo que se piensa como un total del cultivo — *"tantos dólares por hectárea
+en el ciclo de la soja"*. Hoy se reparte parejo por días: **el total del ciclo queda bien, el mes
+a mes es aproximado**, porque un cultivo gasta en picos (siembra, cosecha). Si necesitás el mes
+exacto, partilo en varios conceptos con *al empezar* / *al terminar*.
+
+### Pesos o dólares
+Cada concepto tiene su **moneda**. En US$ el monto se pasa a pesos con el **TC presupuestado del
+mes de ese gasto** (el de Precios y TC, que arrastra el último cargado). Un ciclo largo puede usar
+varios TC distintos — pasá el mouse por la celda para ver cuál se aplicó. Si a un mes le falta el
+TC, ese monto da $0 y la pantalla te avisa.
+
+### Actividades agrícolas
+Poné el tipo en **agricola** y desaparecen ración y ganancia diaria, que no aplican. Los conceptos
+nuevos arrancan por hectárea, en el ciclo y en US$.
 
 ### Asignarle la actividad a un lote
 En **Productivo → Evolución Rodeo → editar un lote** hay un bloque violeta *"Actividades del
@@ -551,8 +567,14 @@ El costo de alimentación del lote aparece abajo de la curva, total y por cabeza
 
 ### El simulador
 Abajo de cada actividad, **"Simular cómo cae el gasto en el tiempo"**. Ponés cabezas, peso
-inicial y fechas y ves el reparto mes a mes. **No guarda nada** — es para chequear que los
-parámetros estén bien antes de atarlos a un lote real.
+inicial y fechas y ves el reparto mes a mes.
+
+**Sólo muestra: no guarda nada y no crea ningún tramo.** Es un tablero de prueba para chequear
+que los parámetros estén bien cargados. Lo que se plasma en el presupuesto son los tramos que le
+asignás al lote (Productivo → Evolución Rodeo).
+
+Las fechas arrancan **vacías** a propósito: podés estar presupuestando la campaña que viene, así
+que no se asume que el período empieza hoy.
 
 Vas a ver que **el consumo sube mes a mes**, y está bien: la ración es un % del peso vivo y el
 animal engorda. 200 cabezas de 220 kg pasan de ~580 kg de maíz por día en abril a ~775 en

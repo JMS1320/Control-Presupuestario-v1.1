@@ -856,11 +856,17 @@ export function TabPresupuesto() {
                         cabezas que todavía no tienen venta (calculadas por diferencia
                         contra la pesada / el destete, no contra los lotes). */}
                     {hacienda.categorias.length > 0 && (
-                      <tr className="border-b bg-emerald-100/60">
-                        <td className="sticky left-0 z-10 bg-emerald-100/60 px-4 py-2 font-semibold text-gray-700">
+                      <tr className="border-b bg-emerald-100/60 cursor-pointer hover:bg-emerald-100 transition-colors"
+                        onClick={() => toggleAgrupador("__hacienda__")}>
+                        <td className="sticky left-0 z-10 bg-emerald-100/60 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                          {(expandidos["__hacienda__"] ?? true)
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                          }
                           🐄 Venta de hacienda
                           <span className="ml-2 text-xs font-normal text-gray-400">
-                            con IVA, neto de comercialización
+                            {hacienda.categorias.length} {hacienda.categorias.length === 1 ? "categoría" : "categorías"}
+                            {" · con IVA, neto de comercialización"}
                           </span>
                         </td>
                         {meses.map(m => {
@@ -876,7 +882,7 @@ export function TabPresupuesto() {
                       </tr>
                     )}
 
-                    {hacienda.categorias.map(c => (
+                    {(expandidos["__hacienda__"] ?? true) && hacienda.categorias.map(c => (
                       <tr key={`hac-${c.categoria}`} className="border-b bg-emerald-50/30 hover:bg-emerald-50">
                         <td className="sticky left-0 z-10 bg-emerald-50/30 px-4 py-1.5 pl-8 text-xs text-gray-600">
                           {c.categoria}

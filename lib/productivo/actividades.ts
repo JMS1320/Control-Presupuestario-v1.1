@@ -23,10 +23,16 @@
 // pueden describir dos animales distintos. Ver PENDIENTES § FASE C · C-4.
 
 import { racionDiariaKg, pesoFinal, pesoPromedio } from './racion'
+import { resolverSerie, type PuntoSerie } from '../precios/serie'
 
 // ── Modelo ────────────────────────────────────────────────────────────────────
 
-export type TipoActividad = 'recria' | 'engorde' | 'pastoreo' | 'cria' | 'otro'
+export type TipoActividad = 'recria' | 'engorde' | 'pastoreo' | 'cria' | 'agricola' | 'otro'
+
+/** Las agrícolas no comen: no usan ración ni ganancia diaria. */
+export function usaRacion(tipo: TipoActividad): boolean {
+  return tipo !== 'agricola'
+}
 
 export interface Actividad {
   id: string
@@ -64,9 +70,15 @@ export type ModoCosto =
   | 'monto_ha'
   /** Monto fijo por mes (alquiler de campo, personal afectado). → mensual */
   | 'monto_mes'
+  /**
+   * El costo es un % de LO PRODUCIDO, no una cantidad por una cantidad: cosecha,
+   * aparcería, comisiones. Necesita que el tramo traiga `valor_produccion`.
+   */
+  | 'pct_produccion'
 
 /** Cuándo cae el gasto dentro del tramo. */
-export type MomentoCosto = 'diario' | 'mensual' | 'inicio' | 'fin'
+export type MomentoCosto = 'diario' | 'mensual' | 'inicio' | 'fin' | 'ciclo'
+
 
 export interface InsumoActividad {
   id: string
@@ -80,6 +92,8 @@ export interface InsumoActividad {
   /** kg · dosis · ml · ha · $ — para mostrar y para netear contra el stock. */
   unidad: string | null
   momento: MomentoCosto
+  /** ARS | USD. En USD el monto se pasa al TC presupuestado del mes del gasto. */
+  moneda: 'ARS' | 'USD'
   /** $ por unidad. Si es null y hay `producto`, se puede tomar del stock. */
   precio_unitario: number | null
   /** Para descontar del stock real y calcular qué falta comprar. */
@@ -96,8 +110,9 @@ export const MOMENTO_POR_DEFECTO: Record<ModoCosto, MomentoCosto> = {
   unid_cabeza_evento: 'inicio',
   dosis_cada_kg: 'inicio',
   monto_cabeza: 'inicio',
-  monto_ha: 'inicio',
+  monto_ha: 'ciclo',
   monto_mes: 'mensual',
+  pct_produccion: 'fin',
 }
 
 export const ETIQUETA_MODO: Record<ModoCosto, string> = {
@@ -107,13 +122,23 @@ export const ETIQUETA_MODO: Record<ModoCosto, string> = {
   unid_cabeza_evento: 'unid. / cabeza (evento)',
   dosis_cada_kg: 'dosis cada N kg de peso',
   monto_cabeza: '$ / cabeza',
-  monto_ha: '$ / hectárea',
-  monto_mes: '$ / mes',
+  monto_ha: 'por hectárea',
+  monto_mes: 'por mes',
+  pct_produccion: '% de lo producido',
 }
 
 /** true si el modo se expresa directamente en pesos (no en cantidad × precio). */
 export function esMontoDirecto(modo: ModoCosto): boolean {
   return modo === 'monto_cabeza' || modo === 'monto_ha' || modo === 'monto_mes'
+    || modo === 'pct_produccion'
+}
+
+export const ETIQUETA_MOMENTO: Record<MomentoCosto, string> = {
+  diario: 'todos los días',
+  mensual: 'todos los meses',
+  inicio: 'al empezar',
+  fin: 'al terminar',
+  ciclo: 'en el ciclo (se prorratea)',
 }
 
 // ── Tramo: la actividad aplicada a un lote entre dos fechas ───────────────────
@@ -128,6 +153,13 @@ export interface Tramo {
   peso_inicial_kg: number
   /** Sólo para los costos por hectárea. */
   hectareas?: number
+  /**
+   * Valor de lo producido, para los costos que salen como % de eso (cosecha, aparcería).
+   * En hacienda es la venta del lote; en agricultura, el valor del cultivo.
+   */
+  valor_produccion?: number
+  /** Serie de TC presupuestado, para pasar a pesos los ítems cargados en USD. */
+  tiposCambio?: PuntoSerie[]
 }
 
 export interface ConsumoMes {
@@ -142,6 +174,10 @@ export interface ConsumoMes {
     cantidad: number
     unidad: string | null
     costo: number
+    /** Monto en la moneda de carga y el TC usado — para poder explicar el número. */
+    moneda: 'ARS' | 'USD'
+    monto_origen: number
+    tc: number | null
     categoria_insumo_id: string | null
     producto: string | null
   }[]
@@ -165,11 +201,16 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
   if (isNaN(desde.getTime()) || isNaN(hasta.getTime()) || hasta <= desde) return []
 
   const diasTotales = Math.round((hasta.getTime() - desde.getTime()) / 86400000)
-  const salida: ConsumoMes[] = []
 
-  // Recorrido mes a mes desde el mes del inicio hasta el del fin
+  // ── Pasada 1: los meses con días, sin mirar los insumos todavía.
+  //
+  // Va aparte porque "el primero" y "el último" se saben recién cuando está la lista
+  // entera. Calcularlos dentro del recorrido fallaba: con un tramo que termina un día 1
+  // (oct→abr), el mes de abril tiene CERO días y se descarta, pero marzo tampoco daba
+  // `esUltimo` porque su fin (31/3) es menor que `hasta` (1/4) — y los costos "al
+  // terminar", como la cosecha, no caían nunca.
+  const buckets: { anio: number; mes: number; dias: number }[] = []
   const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1)
-  let diasAcumulados = 0
 
   while (cursor <= hasta) {
     const anio = cursor.getFullYear()
@@ -180,42 +221,55 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
     const fin = finMes > hasta ? hasta : finMes
     const dias = Math.max(0, Math.round((fin.getTime() - ini.getTime()) / 86400000) + (iso(fin) === iso(hasta) ? 0 : 1))
 
-    if (dias > 0) {
-      // Peso al principio y al final del tramo que cae en este mes
-      const pIni = t.peso_inicial_kg + diasAcumulados * t.actividad.ganancia_diaria_kg
-      const pFin = pesoFinal(pIni, dias, t.actividad.ganancia_diaria_kg)
-      const pProm = pesoPromedio(pIni, pFin)
-      const racKgDia = racionDiariaKg(pProm, t.actividad.racion_pct_pv)
-
-      const esPrimero = ini <= desde
-      const esUltimo = fin >= hasta
-
-      const items: ConsumoMes['items'] = []
-      for (const ins of t.insumos) {
-        const { cantidad, aplica } = cantidadDelItem(ins, {
-          racKgDia, dias, diasTotales, cabezas: t.cabezas, pesoProm: pProm,
-          hectareas: t.hectareas ?? 0, esPrimero, esUltimo,
-        })
-        if (!aplica || Math.abs(cantidad) < 1e-9) continue
-        const costo = esMontoDirecto(ins.modo) ? cantidad : cantidad * (ins.precio_unitario ?? 0)
-        items.push({
-          concepto: ins.concepto, modo: ins.modo, cantidad,
-          unidad: esMontoDirecto(ins.modo) ? '$' : ins.unidad,
-          costo,
-          categoria_insumo_id: ins.categoria_insumo_id, producto: ins.producto,
-        })
-      }
-
-      salida.push({
-        mes: `${anio}-${String(mes).padStart(2, '0')}`,
-        dias, peso_prom_kg: pProm, items,
-        costo_total: items.reduce((s, i) => s + i.costo, 0),
-      })
-      diasAcumulados += dias
-    }
-
+    if (dias > 0) buckets.push({ anio, mes, dias })
     cursor.setMonth(cursor.getMonth() + 1)
   }
+
+  // ── Pasada 2: el costo de cada mes.
+  const salida: ConsumoMes[] = []
+  let diasAcumulados = 0
+
+  buckets.forEach((b, idx) => {
+    const { anio, mes, dias } = b
+    // Peso al principio y al final del tramo que cae en este mes
+    const pIni = t.peso_inicial_kg + diasAcumulados * t.actividad.ganancia_diaria_kg
+    const pFin = pesoFinal(pIni, dias, t.actividad.ganancia_diaria_kg)
+    const pProm = pesoPromedio(pIni, pFin)
+    const racKgDia = racionDiariaKg(pProm, t.actividad.racion_pct_pv)
+
+    const esPrimero = idx === 0
+    const esUltimo = idx === buckets.length - 1
+
+    const items: ConsumoMes['items'] = []
+    for (const ins of t.insumos) {
+      const { cantidad, aplica } = cantidadDelItem(ins, {
+        racKgDia, dias, diasTotales, cabezas: t.cabezas, pesoProm: pProm,
+        hectareas: t.hectareas ?? 0, valorProduccion: t.valor_produccion ?? 0,
+        esPrimero, esUltimo,
+      })
+      if (!aplica || Math.abs(cantidad) < 1e-9) continue
+      const bruto = esMontoDirecto(ins.modo) ? cantidad : cantidad * (ins.precio_unitario ?? 0)
+      // USD → pesos al TC presupuestado del mes del gasto (arrastre hacia adelante,
+      // misma serie que usa el arrendamiento).
+      const tc = ins.moneda === 'USD'
+        ? resolverSerie(t.tiposCambio ?? [], anio, mes).valor
+        : null
+      const costo = ins.moneda === 'USD' ? bruto * (tc || 0) : bruto
+      items.push({
+        concepto: ins.concepto, modo: ins.modo, cantidad,
+        unidad: esMontoDirecto(ins.modo) ? (ins.moneda === 'USD' ? 'US$' : '$') : ins.unidad,
+        costo, moneda: ins.moneda, monto_origen: bruto, tc,
+        categoria_insumo_id: ins.categoria_insumo_id, producto: ins.producto,
+      })
+    }
+
+    salida.push({
+      mes: `${anio}-${String(mes).padStart(2, '0')}`,
+      dias, peso_prom_kg: pProm, items,
+      costo_total: items.reduce((s, i) => s + i.costo, 0),
+    })
+    diasAcumulados += dias
+  })
 
   return salida
 }
@@ -227,6 +281,7 @@ interface ContextoItem {
   cabezas: number
   pesoProm: number
   hectareas: number
+  valorProduccion: number
   esPrimero: boolean
   esUltimo: boolean
 }
@@ -241,6 +296,17 @@ function cantidadDelItem(ins: InsumoActividad, c: ContextoItem): { cantidad: num
   // Un costo mensual en un mes partido se prorratea por los días que corresponden
   const proporcionMes = c.dias / 30
 
+  /**
+   * momento = 'ciclo': el monto pertenece al ciclo entero ("tantos USD por hectárea en el
+   * cultivo de soja"), no a un día ni a un mes. Se prorratea por días sobre el tramo.
+   *
+   * ⚠️ PROVISORIO. El usuario lo dijo: *"luego el ver cómo se distribuye en el tiempo
+   * tenemos que ver"*. Un cultivo NO gasta parejo — la siembra y la cosecha son picos.
+   * El reparto uniforme da bien el TOTAL del ciclo pero mal el mes a mes. Ver FASE C · C-9.
+   */
+  const proporcionCiclo = c.diasTotales > 0 ? c.dias / c.diasTotales : 1
+  const escalaMomento = ins.momento === 'ciclo' ? proporcionCiclo : 1
+
   switch (ins.modo) {
     case 'pct_racion':
       return { cantidad: c.racKgDia * ins.valor * c.dias * c.cabezas, aplica: true }
@@ -254,11 +320,15 @@ function cantidadDelItem(ins: InsumoActividad, c: ContextoItem): { cantidad: num
       // "1 dosis cada 50 kg" → valor = 50
       return { cantidad: ins.valor > 0 ? (c.pesoProm / ins.valor) * c.cabezas : 0, aplica: true }
     case 'monto_cabeza':
-      return { cantidad: ins.valor * c.cabezas, aplica: true }
+      return { cantidad: ins.valor * c.cabezas * escalaMomento, aplica: true }
     case 'monto_ha':
-      return { cantidad: ins.valor * c.hectareas, aplica: true }
+      return { cantidad: ins.valor * c.hectareas * escalaMomento, aplica: true }
     case 'monto_mes':
       return { cantidad: ins.valor * proporcionMes, aplica: true }
+    case 'pct_produccion':
+      // El costo sale de lo producido: cosecha, aparcería. Sin valor de producción da 0
+      // y la UI avisa, en vez de inventar un número.
+      return { cantidad: c.valorProduccion * ins.valor * escalaMomento, aplica: true }
     default:
       return { cantidad: 0, aplica: false }
   }

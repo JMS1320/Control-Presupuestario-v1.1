@@ -11506,3 +11506,26 @@ GRANT ALL ON productivo.lote_tramos TO anon, authenticated, service_role;
 ALTER TABLE productivo.stock_lotes
   ADD COLUMN IF NOT EXISTS ganancia_override boolean NOT NULL DEFAULT false;
 ```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Moneda en los costos de actividad (FASE C)
+
+Pedido del usuario: *"pesos por ha y dólar por ha deben estar"*. Un costo agrícola se piensa en
+USD/ha; se convierte al TC presupuestado del mes de cada gasto (serie `public.tipos_cambio`, con
+arrastre hacia adelante, igual que el arrendamiento).
+
+```sql
+ALTER TABLE productivo.actividad_insumos
+  ADD COLUMN IF NOT EXISTS moneda text NOT NULL DEFAULT 'ARS';
+
+COMMENT ON COLUMN productivo.actividad_insumos.moneda IS
+  'ARS | USD. En USD el monto se convierte al TC presupuestado del mes de cada gasto.';
+COMMENT ON COLUMN productivo.actividades.tipo IS
+  'recria | engorde | pastoreo | cria | agricola | otro. Las agrícolas no usan racion_pct_pv ni ganancia_diaria_kg.';
+```
+
+Sin cambio de esquema, pero nuevos valores admitidos por la app en columnas ya existentes:
+- `actividad_insumos.modo` suma **`pct_produccion`** (el costo es un % de lo producido: cosecha,
+  aparcería).
+- `actividad_insumos.momento` suma **`ciclo`** (el monto pertenece al ciclo entero).

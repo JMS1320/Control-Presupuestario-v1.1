@@ -1756,6 +1756,78 @@ huecos sin tramo, peso inicial encadenado, solapamientos).
 template) → **C-6** stock y diferencia a comprar (ojo maíz propio) → **C-8** enlace con el
 análisis de engorde, opcional.
 
+##### ✅ Tanda 2026-07-30 (b) — moneda, ciclo, % de lo producido, y dos bugs
+
+**Pedidos del usuario mientras testeaba, todos resueltos:**
+
+**1 · Moneda por ítem** — *"pesos por ha y dólar por ha deben estar"*.
+`actividad_insumos.moneda` (`ARS` | `USD`). En USD el monto se pasa a pesos al **TC
+presupuestado del mes de cada gasto**, con `resolverSerie` sobre `public.tipos_cambio` — la
+misma serie con arrastre que usa el arrendamiento. Un ciclo de seis meses puede usar varios TC,
+y la celda muestra en el tooltip cuál se aplicó. Si falta el TC de un mes el monto da $0 y la UI
+lo avisa en vez de esconderlo.
+
+**2 · `momento = 'ciclo'`** — *"una respuesta es ciclo. ej cultivo de soja: se sabe que se gastan
+tantos dólares en el ciclo del cultivo"*. El monto pertenece al ciclo entero, no a un día ni a un
+mes. Es el default de `monto_ha`.
+
+**3 · `modo = 'pct_produccion'`** — *"el precio del costo se determina según % de lo producido"*
+(cosecha, aparcería). Sale del `valor_produccion` del tramo. Sin ese valor da $0 y avisa; no
+inventa un número.
+
+**4 · `tipo = 'agricola'`** — no lleva ración ni ganancia diaria, así que esos campos **se
+esconden** en vez de mostrarse vacíos. Un concepto nuevo en una actividad agrícola arranca con
+los defaults útiles: por hectárea, en el ciclo, en USD.
+
+###### 🐛 Bug — el input se reformateaba mientras se escribía
+El usuario quiso cargar la ración de Engorde en **85 % maíz / 15 % concentrado** y quedó
+**8 % / 10 %**. No fue error suyo.
+
+**Causa**: el `value` del input se derivaba del estado y se re-formateaba en **cada tecla**. Al
+tipear `8` el campo ya decía `8,00` con el cursor al final, así que el `5` siguiente caía en el
+lugar equivocado. El mismo campo hacía imposible escribir cualquier número de dos dígitos.
+
+**Fix**: `InputNumero` (en `configurador-actividades.tsx`) guarda el **texto crudo** mientras
+está tocado y recién parsea y formatea al salir del campo. Lección general en `KNOWLEDGE.md`.
+
+Efecto colateral del fix: el guardado ya no puede leer del estado, porque el commit y el guardado
+pasan en el mismo tick. `guardarInsumo(i, cambios)` recibe los cambios explícitos.
+
+###### 🐛 Bug — los costos "al terminar" nunca caían
+`momento: 'fin'` (la cosecha) no aparecía nunca en un tramo que termina un día 1 — el caso normal
+de un cultivo (oct → abr).
+
+**Causa**: `esUltimo` se calculaba dentro del recorrido como `fin >= hasta`. En marzo `fin` es el
+31/3, menor que `hasta` (1/4); y abril tiene **cero días** y se descartaba. Ningún mes quedaba
+marcado como último.
+
+**Fix**: `consumoMensual()` pasó a **dos pasadas** — primero arma los meses con días, después
+calcula los costos con `esPrimero`/`esUltimo` por índice sobre la lista ya filtrada. Saber cuál
+es el último exige tener la lista entera; calcularlo al vuelo era el error.
+
+###### Otros ajustes
+- **`unidad` no se pide de más**: con `% de la ración` ya se sabe que son kg, y un monto directo
+  no tiene unidad. Era la fricción que reportó el usuario.
+- **El simulador no asume que arranca hoy**: las fechas empiezan **vacías**. Se puede estar
+  presupuestando la campaña que viene, y poner "hoy" por defecto es meter una suposición.
+- **El simulador SÓLO MUESTRA**: no guarda ni crea tramos. Lo que se plasma en el presupuesto son
+  los tramos del lote. Aclarado en pantalla.
+- **Borrar una actividad en uso** ahora explica el motivo (la FK de `lote_tramos` es RESTRICT) en
+  vez de mostrar el error crudo de Postgres.
+- **`🐄 Venta de hacienda` es colapsable** en el presupuesto, con el mismo patrón que Nazarenas y
+  Rojas, y muestra cuántas categorías tiene.
+
+**C-9 · Cómo se distribuye el costo del CICLO en el tiempo** 🟡 *(abierto, 2026-07-30)*
+> *"luego el ver cómo se distribuye en el tiempo tenemos que ver"* — el usuario.
+
+Hoy `momento: 'ciclo'` **prorratea por días** sobre el tramo. El **total del ciclo queda bien**,
+pero el mes a mes no: un cultivo no gasta parejo — la siembra y la cosecha son picos, y en el
+medio hay meses casi sin desembolso. Para el Cash Flow eso importa.
+
+Opciones a conversar: (a) una curva por tipo de cultivo (% del gasto por mes desde la siembra);
+(b) partir el ítem en varios con `momento: inicio/fin`; (c) un campo de "mes del ciclo" por ítem.
+La (b) ya se puede hacer hoy a mano y quizás alcance.
+
 ##### Tres familias de costo — no se calculan igual
 No forzarlas al mismo molde; cada una tiene su unidad:
 

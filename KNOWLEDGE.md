@@ -852,6 +852,52 @@ mirar primero si se arregla en el primitivo. Es la diferencia entre un cambio y 
 
 ---
 
+## Input que se reformatea mientras se escribe: imposible tipear `#ui #inputs #bug #2026-07-30`
+
+El usuario quiso cargar 85 % y 15 % de ración y quedaron 8 % y 10 %. No fue error suyo.
+
+El campo mostraba `value={fmt(valorDelEstado)}` y guardaba en `onChange`. Al tipear `8` el estado
+pasaba a 8, el `value` se volvía `"8,00"` y el cursor saltaba al final: el `5` siguiente caía
+después de los decimales. **Cualquier número de más de un dígito era imposible de escribir.**
+
+**La regla**: un input controlado no puede reformatear su contenido en cada tecla. Mientras el
+campo está tocado hay que conservar el **texto crudo** y parsear/formatear recién en `onBlur`.
+
+```tsx
+const [crudo, setCrudo] = useState<string | null>(null)
+value={crudo ?? fmt(valor)}
+onChange={e => setCrudo(e.target.value)}
+onBlur={() => { if (crudo !== null) { onCommit(parse(crudo)); setCrudo(null) } }}
+```
+
+Es la contracara del bug de parseo es-AR (más abajo): allá el problema era **leer** el formato,
+acá es **imponerlo antes de tiempo**. Los dos salen de formatear y parsear en el mismo campo.
+
+**Ojo con el guardado**: si el commit pasa en `onBlur`, un `onBlur={() => guardar(item)}` al lado
+lee el estado **anterior** — los dos corren en el mismo tick. El guardado tiene que recibir los
+cambios explícitos, no leerlos del estado.
+
+**Tags**: `#input-controlado` `#onBlur` `#texto-crudo` `#es-ar`
+
+---
+
+## "El último mes" no se sabe hasta tener la lista entera `#fechas #calculo #bug #2026-07-30`
+
+Un costo marcado "al terminar" (la cosecha) nunca aparecía en un tramo que termina un día 1
+— o sea, en el caso normal de un cultivo (oct → abr).
+
+El recorrido mes a mes marcaba `esUltimo = fin >= hasta` sobre la marcha. En marzo `fin` es el
+31/3, menor que `hasta` (1/4). Y abril tiene **cero días** de tramo, así que se descartaba antes
+de evaluarse. Ningún mes quedaba marcado como último y el costo se perdía en silencio.
+
+**La regla**: "el primero" y "el último" son propiedades de la **lista filtrada**, no de cada
+elemento mientras se lo genera. Dos pasadas: armar los buckets con contenido, después recorrerlos
+por índice. Vale para cualquier reparto en el que algunos períodos pueden quedar vacíos.
+
+**Tags**: `#dos-pasadas` `#primero-ultimo` `#periodos-vacios` `#mes-partido`
+
+---
+
 ## Netear stock: cruzar por NOMBRE de categoría duplica `#ganaderia #modelado #2026-07-30`
 
 Al desglosar la venta de hacienda por categoría, el disponible salía duplicado.

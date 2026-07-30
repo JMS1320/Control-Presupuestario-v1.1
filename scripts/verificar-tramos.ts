@@ -13,8 +13,8 @@ const acts: Actividad[] = [
   { id: "ENG", empresa: "MSA", tipo: "engorde", nombre: "Engorde", ganancia_diaria_kg: 0.7, racion_pct_pv: 0.015, pct_mortandad: 0.01, notas: null, activo: true },
 ]
 const insumos: InsumoActividad[] = ["REC", "ENG"].flatMap(id => ([
-  { id: id + "m", actividad_id: id, orden: 1, concepto: "Maíz", modo: "pct_racion" as const, valor: 0.85, unidad: "kg", momento: "diario" as const, precio_unitario: 270, categoria_insumo_id: null, producto: null, notas: null },
-  { id: id + "c", actividad_id: id, orden: 2, concepto: "Concentrado", modo: "pct_racion" as const, valor: 0.15, unidad: "kg", momento: "diario" as const, precio_unitario: 745, categoria_insumo_id: null, producto: null, notas: null },
+  { id: id + "m", actividad_id: id, orden: 1, concepto: "Maíz", modo: "pct_racion" as const, valor: 0.85, unidad: "kg", momento: "diario" as const, moneda: "ARS" as const, precio_unitario: 270, categoria_insumo_id: null, producto: null, notas: null },
+  { id: id + "c", actividad_id: id, orden: 2, concepto: "Concentrado", modo: "pct_racion" as const, valor: 0.15, unidad: "kg", momento: "diario" as const, moneda: "ARS" as const, precio_unitario: 745, categoria_insumo_id: null, producto: null, notas: null },
 ]))
 
 // Lote: 100 cab, 220 kg al 1/4. Recría 1/4→1/10 (183 d), engorde 1/10→1/1 (92 d).
