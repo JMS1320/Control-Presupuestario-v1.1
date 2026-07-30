@@ -827,6 +827,11 @@ function ModalPropuesta({ abierto, propuestas, existentes, aplicando, onCerrar, 
         <div className="space-y-2">
           {propuestas.map(p => {
             const yaExiste = existentes.some(c => c.campania === p.campania)
+            // El destete de la campaña ya ocurrió? Distinto es "no ocurrió todavía" que
+            // "ocurrió pero no tenemos el dato" (viene de un ciclo anterior al que hay
+            // cargado en ciclos_cria, y no va a aparecer nunca).
+            const fd = fechasCampania(p.campania)?.destete
+            const destetePasado = fd ? new Date(fd + "T00:00:00") < new Date() : false
             return (
               <label key={p.campania}
                 className="flex cursor-pointer items-start gap-3 rounded border p-3 hover:bg-gray-50">
@@ -839,7 +844,9 @@ function ModalPropuesta({ abierto, propuestas, existentes, aplicando, onCerrar, 
                     <span className="text-xs text-gray-400">servicio {p.anio_servicio}</span>
                     {p.cerrado
                       ? <Badge variant="default" className="text-[10px]">cerrado</Badge>
-                      : <Badge variant="outline" className="text-[10px]">en curso</Badge>}
+                      : destetePasado
+                        ? <Badge variant="outline" className="text-[10px]">sin dato de destete</Badge>
+                        : <Badge variant="outline" className="text-[10px]">proyectada</Badge>}
                     {yaExiste && <Badge variant="outline" className="text-[10px]">actualiza</Badge>}
                   </div>
                   <div className="mt-1 text-xs text-gray-600">
@@ -848,14 +855,24 @@ function ModalPropuesta({ abierto, propuestas, existentes, aplicando, onCerrar, 
                   </div>
                   {p.cerrado ? (
                     <div className="mt-0.5 text-xs text-emerald-700">
-                      Destete real: <strong>{p.destetados}</strong> ({p.machos} machos /{" "}
-                      {p.hembras} hembras) · {pct(p.pct_destete_real ?? 0)} destete ·{" "}
-                      {pct(p.pct_machos_real ?? 0)} machos
+                      Destete real ({fd ? `${Number(fd.slice(5,7))}/${fd.slice(2,4)}` : "—"}):{" "}
+                      <strong>{p.destetados}</strong> ({p.machos} machos / {p.hembras} hembras)
+                      {p.pct_destete_real != null && (
+                        <> · {pct(p.pct_destete_real)} sobre el rodeo servido en la campaña anterior</>
+                      )}
+                      {p.pct_machos_real != null && <> · {pct(p.pct_machos_real)} machos</>}
                       {p.kg_promedio ? ` · ${n1(p.kg_promedio)} kg prom.` : ""}
+                    </div>
+                  ) : destetePasado ? (
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      Su destete ({fd ? `${Number(fd.slice(5,7))}/${fd.slice(2,4)}` : "—"}) ya
+                      ocurrió, pero <strong>no hay dato</strong>: viene de un servicio anterior al
+                      más viejo cargado en ciclos de cría. Cargá el refugo y la reposición a mano
+                      si querés que el cierre cuadre.
                     </div>
                   ) : (
                     <div className="mt-0.5 text-xs text-amber-700">
-                      Todavía sin destete: se proyecta. Cuando cargues el destete en Productivo,
+                      Destete todavía por venir: se proyecta. Cuando lo cargues en Productivo,
                       volvé a correr esto y pasa a real.
                     </div>
                   )}
