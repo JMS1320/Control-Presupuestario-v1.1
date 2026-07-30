@@ -1414,7 +1414,7 @@ ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  �
 | **Presupuestado** | venta planificada (lote con fecha) | de tabla, se recalcula |
 | **Disponible** | existe, sin fecha de venta | de tabla, informativo |
 
-##### FASE A — Proyecciones de venta → Presupuesto ← **EN CURSO**
+##### FASE A — Proyecciones de venta → Presupuesto ← **HECHA (sin testear)**
 1. **Categorías completas.** Hoy faltan `Ternero al Pie`, `Ternera al Pie` y `Toro`. La
    categoría depende de **cuándo se vende**: el destete de 3/27 se vende *al pie*, la recría
    actual se vende como *recría*. Y hay **toros de refugo**, que no salen del ciclo (los toros
@@ -1425,8 +1425,11 @@ ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  �
    con selector de categoría.
 4. **Proyección en el lote**: `fecha_venta_estimada` + precio (de tabla u override) + plazo de
    cobro → mes de cobro.
-5. **Presupuesto lee**: las tres capas por categoría, más **IVA 10,5%** en el cobro y
-   **IIBB 1%** al mes siguiente.
+5. **Presupuesto lee**: fila 🐄 *Venta de hacienda* con el monto en el mes de cobro, y una
+   fila por categoría con lo **disponible sin fecha** en **cabezas y kg** (no en plata) —
+   igual que las toneladas de soja disponibles a fijar.
+   ⏳ **Falta**: el **IVA 10,5%** en el cobro y el **IIBB 1%** al mes siguiente. Hoy el monto
+   del lote es NETO.
 
 ##### FASE B — Acople con Ventas *(después)*
 6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con

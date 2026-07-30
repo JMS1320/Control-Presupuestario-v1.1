@@ -17,15 +17,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle } from "lucide-react"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete, pesoDestete,
-  categoriaSegunFecha, valuarLote, CATEGORIAS_VENTA,
+  categoriaSegunFecha, valuarLoteConPrecios, CATEGORIAS_VENTA,
   type LoteStock, type VentaStock, type CicloCalculado,
 } from "@/lib/ganaderia/ciclo"
+import { type PrecioHacienda } from "@/lib/ganaderia/calculo"
 
 const parseNum = (v: string) => {
   const n = parseFloat(String(v).trim().replace(",", "."))
   return Number.isFinite(n) ? n : 0
 }
 const n1 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 1 })
+const fmtAR = (n: number) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtPesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })
 
 /** Categorías vendibles — de la lib, para no duplicar la lista. */
@@ -49,6 +52,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
    * auto-modificables en KNOWLEDGE.md).
    */
   const [fotoPesada, setFotoPesada] = useState<Record<string, { cabezas: number; peso: number }>>({})
+  const [precios, setPrecios] = useState<PrecioHacienda[]>([])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -64,6 +68,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
       setLotes((ls || []) as LoteStock[])
       setVentas((vs || []) as VentaStock[])
+
+      const { data: pr } = await supabase.from("precios_hacienda")
+        .select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta")
+      setPrecios((pr || []) as PrecioHacienda[])
 
       // Foto viva de las pesadas, para detectar lotes desactualizados
       const { data: pes } = await supabase.schema("productivo")
@@ -107,6 +115,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       fecha_disponible: f.fecha_disponible,
       peso_base_kg: parseNum(String(f.peso_base_kg)),
       ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
+      fecha_venta_estimada: f.fecha_venta_estimada || null,
+      precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
+        ? null : parseNum(String(f.precio_kg_override)),
+      dias_cobro: Math.round(parseNum(String(f.dias_cobro ?? "0"))),
       notas: f.notas || null,
       updated_at: new Date().toISOString(),
     }
@@ -192,6 +204,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
     categoria: "Ternero Recria",
     cantidad: "", peso_base_kg: "197,34", ganancia_diaria_kg: "0,5",
     fecha_disponible: "2026-02-23",
+    fecha_venta_estimada: "", precio_kg_override: "", dias_cobro: "0",
     notas: "Stock inicial — retenido para recría",
   })
 
@@ -274,7 +287,11 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   <th className="px-3 py-2 text-right">Quedan</th>
                   <th className="px-3 py-2 text-right">Peso base</th>
                   <th className="px-3 py-2 text-right">kg/día</th>
-                  <th className="px-3 py-2 text-right">Peso hoy</th>
+                  <th className="px-3 py-2 text-left">Fecha venta</th>
+                  <th className="px-3 py-2 text-right">Peso venta</th>
+                  <th className="px-3 py-2 text-right">$/kg</th>
+                  <th className="px-3 py-2 text-right">MONTO</th>
+                  <th className="px-3 py-2 text-left">Cobro</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -286,6 +303,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   const hoy = new Date().toISOString().slice(0, 10)
                   const pesoHoy = pesoEstimado(l, hoy)
                   const des = desactualizado(l)
+                  const val = valuarLoteConPrecios(l, vs, precios)
                   return (
                     <tr key={l.id} className={`border-b hover:bg-gray-50 ${des ? "bg-amber-50/40" : ""}`}>
                       <td className="px-3 py-2">{l.categoria}</td>
@@ -327,12 +345,34 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       <td className="px-3 py-2 text-right text-gray-600">
                         {Number(l.ganancia_diaria_kg) > 0 ? n1(l.ganancia_diaria_kg) : "—"}
                       </td>
-                      <td className="px-3 py-2 text-right font-medium">
-                        {n1(pesoHoy)}
-                        {pesoHoy > Number(l.peso_base_kg) && (
-                          <span className="ml-1 text-[10px] text-emerald-600">
-                            +{n0(pesoHoy - Number(l.peso_base_kg))}
+                      <td className="px-3 py-2">
+                        {l.fecha_venta_estimada
+                          ? new Date(l.fecha_venta_estimada + "T00:00:00").toLocaleDateString("es-AR")
+                          : <span className="text-amber-600">sin fecha</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {val.proyectado ? n1(val.peso_unitario) : n1(pesoHoy)}
+                        {val.banda && (
+                          <span className="ml-1 text-[9px] text-gray-400" title={`Banda de precio: ${val.banda}`}>
+                            ⓘ
                           </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {val.proyectado
+                          ? (val.precio_kg > 0
+                              ? fmtAR(val.precio_kg) + (l.precio_kg_override != null ? " m" : "")
+                              : <span className="text-red-500">sin precio</span>)
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-emerald-800">
+                        {val.proyectado && val.monto > 0 ? fmtPesos(val.monto) : "—"}
+                        {val.proyectado && val.estimado && <span className="text-amber-500">*</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {val.mes_cobro ?? "—"}
+                        {Number(l.dias_cobro) > 0 && (
+                          <span className="ml-1 text-[10px] text-gray-400">+{l.dias_cobro}d</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -343,6 +383,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                               cantidad: String(l.cantidad),
                               peso_base_kg: String(l.peso_base_kg),
                               ganancia_diaria_kg: String(l.ganancia_diaria_kg),
+                              precio_kg_override: l.precio_kg_override ?? "",
+                              dias_cobro: String(l.dias_cobro ?? 0),
                             })}>Editar</Button>
                           <Button variant="ghost" size="sm" className="h-6 px-1"
                             onClick={() => borrar(l.id)}>
@@ -358,6 +400,24 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           </div>
         )}
       </CardContent>
+
+      {lotes.length > 0 && (
+        <div className="flex items-center justify-between border-t px-4 py-2 text-sm">
+          <span className="text-gray-500">
+            {lotes.filter(l => !l.fecha_venta_estimada).length > 0 && (
+              <span className="text-amber-700">
+                {lotes.filter(l => !l.fecha_venta_estimada).length} lote(s) sin fecha de venta —
+                no entran al presupuesto como ingreso
+              </span>
+            )}
+          </span>
+          <span className="font-semibold text-emerald-800">
+            Total presupuestado:{" "}
+            {fmtPesos(lotes.reduce((s, l) =>
+              s + valuarLoteConPrecios(l, ventasDe(l.id), precios).monto, 0))}
+          </span>
+        </div>
+      )}
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
       <ModalDesdePesada abierto={modalPesada} lotes={lotes} ventasDe={ventasDe}
@@ -417,6 +477,22 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
             </div>
             {campo("peso_base_kg", "Peso a esa fecha (kg)")}
             {campo("ganancia_diaria_kg", "Ganancia diaria (kg/día)", "0 = se vende sin engordar")}
+          </div>
+
+          {/* Proyección de venta: sin fecha el lote es sólo inventario */}
+          <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5">
+            <p className="mb-2 text-[11px] font-medium text-emerald-900">
+              Venta presupuestada — sin fecha, el lote no entra al presupuesto como ingreso
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">Fecha de venta</label>
+                <Input type="date" className="h-8" value={f.fecha_venta_estimada || ""}
+                  onChange={e => setF({ ...f, fecha_venta_estimada: e.target.value })} />
+              </div>
+              {campo("precio_kg_override", "Precio $/kg", "vacío = usa la banda de peso")}
+              {campo("dias_cobro", "Días de cobro", "0 = contado")}
+            </div>
           </div>
 
           {dias > 0 && parseNum(String(f.ganancia_diaria_kg ?? "0")) > 0 && (

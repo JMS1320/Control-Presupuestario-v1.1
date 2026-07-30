@@ -1,3 +1,5 @@
+import { categoriaPrecio, resolverPrecioHacienda, type PrecioHacienda } from './calculo'
+
 // Motor del CICLO GANADERO — evolución proyectada del rodeo (línea de tiempo).
 // Modelo: solapa "ciclo ganadero" de `exports_app/- Desarrollo Presuesto..xlsx`.
 // Capa UI-agnóstica: la consumen Productivo, Ventas y Presupuesto.
@@ -549,6 +551,27 @@ export function valuarLote(
     estimado: p.arrastrado || p.precio === 0,
     proyectado: true,
   }
+}
+
+/**
+ * Valúa el lote resolviendo el precio solo: el peso a la fecha de venta define la BANDA,
+ * y la banda + el mes definen el precio (con arrastre hacia adelante).
+ * Es la función que usan tanto Productivo como Presupuesto, para que den lo mismo.
+ */
+export function valuarLoteConPrecios(
+  lote: LoteStock,
+  ventas: Pick<VentaStock, 'cantidad'>[],
+  precios: PrecioHacienda[],
+): ValuacionLote & { banda: string | null } {
+  const fv = lote.fecha_venta_estimada
+  const peso = fv ? pesoEstimado(lote, fv) : Number(lote.peso_base_kg)
+  const banda = categoriaPrecio(lote.categoria, peso)
+
+  const v = valuarLote(lote, ventas, (_cat, anio, mes) => {
+    const r = resolverPrecioHacienda(precios, banda, anio, mes, null)
+    return { precio: r.precio_pesos_kg, arrastrado: r.arrastrado }
+  })
+  return { ...v, banda }
 }
 
 /** Días corridos entre dos fechas 'YYYY-MM-DD'. */
