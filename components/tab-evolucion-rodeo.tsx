@@ -167,7 +167,9 @@ export function TabEvolucionRodeo() {
         const base = {
           empresa: "MSA",
           campania: p.campania,
-          orden: existente?.orden ?? (ciclos.length + i + 1),
+          // Derivado del año de servicio para que quede cronológico aunque se cargue
+          // un período viejo después de uno nuevo.
+          orden: existente?.orden ?? p.anio_servicio,
           vacas_apertura: p.vacas,
           vaquillonas_apertura: p.vaquillonas,
           // Si el ciclo cerró, los reales pisan el cálculo
@@ -206,6 +208,7 @@ export function TabEvolucionRodeo() {
   const nuevo = () => {
     const ultimo = linea[linea.length - 1]
     const sigOrden = ciclos.length ? Math.max(...ciclos.map(c => c.orden)) + 1 : 1
+    // (el orden real de la tabla sale de la campaña; esto es sólo un valor inicial)
     setModal({
       campania: "", orden: sigOrden,
       // El primero arranca con la foto de hoy; los siguientes heredan (apertura vacía)

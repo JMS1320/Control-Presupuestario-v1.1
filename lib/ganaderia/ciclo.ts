@@ -189,11 +189,26 @@ export function calcularCiclo(
 }
 
 /**
+ * Orden cronológico de la línea de tiempo. Se deriva de la CAMPAÑA, no del campo
+ * `orden`: la campaña ya dice cuándo va, y un número manual se desincroniza apenas se
+ * agrega un período viejo (cargar 25/26 después de 26/27 lo mandaba al final).
+ * `orden` queda sólo como desempate.
+ */
+export function ordenarPorCampania(a: CicloStock, b: CicloStock): number {
+  const anio = (c: CicloStock) => {
+    const m = /^(\d{2})\s*\/\s*(\d{2})$/.exec(String(c.campania ?? '').trim())
+    return m ? 2000 + Number(m[1]) : Number.POSITIVE_INFINITY
+  }
+  const d = anio(a) - anio(b)
+  return d !== 0 ? d : (a.orden - b.orden)
+}
+
+/**
  * Encadena toda la línea de tiempo: cada período abre con el cierre del anterior,
  * salvo que tenga apertura cargada a mano (el primero siempre la tiene: es la foto de hoy).
  */
 export function calcularLineaTiempo(ciclos: CicloStock[]): CicloCalculado[] {
-  const ordenados = [...ciclos].sort((a, b) => a.orden - b.orden)
+  const ordenados = [...ciclos].sort(ordenarPorCampania)
   const out: CicloCalculado[] = []
   let apertura: { vacas: number; vaquillonas: number } | undefined
 
