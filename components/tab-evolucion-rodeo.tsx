@@ -242,10 +242,16 @@ export function TabEvolucionRodeo() {
   })
 
   // Filas de la tabla: concepto + valor por período
-  const filas: { label: string; get: (c: CicloCalculado) => string; clase?: string; sep?: boolean }[] = [
+  const filas: { label: string; get: (c: CicloCalculado, i: number) => string; clase?: string; sep?: boolean }[] = [
     { label: "Vacas",                 get: c => n1(c.vacas) },
     { label: "Vaquillonas de rep.",   get: c => n1(c.vaquillonas) },
-    { label: "RODEO (a servicio)",    get: c => n1(c.rodeo), clase: "font-semibold bg-gray-50" },
+    { label: "RODEO (a servicio)",    get: (c, i) => {
+        const prev = linea[i - 1]
+        if (!prev || prev.rodeo <= 0) return n1(c.rodeo)
+        const v = ((c.rodeo - prev.rodeo) / prev.rodeo) * 100
+        const signo = v > 0 ? "+" : ""
+        return `${n1(c.rodeo)}  (${signo}${v.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`
+      }, clase: "font-semibold bg-gray-50" },
     { label: "% Destete",             get: c => pct(c.ciclo.pct_destete), clase: "text-gray-500", sep: true },
     { label: "Destetados",            get: c => n1(c.destetados), clase: "font-medium" },
     { label: "→ Terneros",            get: c => n1(c.terneros), clase: "text-gray-600" },
@@ -253,10 +259,17 @@ export function TabEvolucionRodeo() {
     { label: "No destetaron (merma)", get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
     // No es todo venta: parte se vende como refugo y parte se muere. La cantidad que
     // efectivamente va al lote se ajusta a mano.
-    { label: "Vacas refugo + mortandad", get: c => n1(c.descarte), clase: "font-medium text-amber-700" },
+    { label: "Vacas refugo + mortandad", get: c =>
+        // El % que importa es sobre el RODEO, no sobre las falladas: es el dato que se
+        // lee y se compara. El % sobre falladas es sólo la mecánica del cálculo.
+        `${n1(c.descarte)}  (${pct(c.rodeo > 0 ? c.descarte / c.rodeo : 0)} del rodeo)`,
+      clase: "font-medium text-amber-700" },
     { label: "Terneras retenidas",    get: c => {
         const chk = chequeoReposicion(c)
-        return n1(c.retenidas) + (c.retencion_excede ? " ⚠" : "") + (chk ? ` (marcadas ${n1(chk.marcadas)})` : "")
+        const sobreRodeo = pct(c.rodeo > 0 ? c.retenidas / c.rodeo : 0)
+        return `${n1(c.retenidas)}  (${sobreRodeo} del rodeo)`
+          + (c.retencion_excede ? " ⚠" : "")
+          + (chk ? ` · marcadas ${n1(chk.marcadas)}` : "")
       }, clase: "text-blue-700", sep: true },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },
@@ -356,9 +369,9 @@ export function TabEvolucionRodeo() {
                     <td className={`sticky left-0 z-10 bg-white px-4 py-1.5 text-xs text-gray-700 ${f.clase ?? ""}`}>
                       {f.label}
                     </td>
-                    {linea.map(c => (
+                    {linea.map((c, i) => (
                       <td key={c.ciclo.id} className={`px-3 py-1.5 text-right text-xs ${f.clase ?? ""}`}>
-                        {f.get(c)}
+                        {f.get(c, i)}
                       </td>
                     ))}
                   </tr>
@@ -605,6 +618,9 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                       {n1(descarte)}
                       {descEsReal && <span className="ml-1 text-[10px] font-normal text-amber-600">real</span>}
                     </span>
+                    <span className="text-[10px] font-medium text-amber-700">
+                      {rodeo > 0 ? `${((descarte / rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}% del rodeo` : ""}
+                    </span>
                     {descEsReal && (
                       <button type="button" className="mt-0.5 text-left text-[10px] text-amber-700 underline"
                         onClick={() => set("real_descarte", "")}>
@@ -639,6 +655,9 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                     <span className="text-lg font-semibold text-blue-800">
                       {n1(retenidas)}
                       {repoEsReal && <span className="ml-1 text-[10px] font-normal text-blue-600">real</span>}
+                    </span>
+                    <span className="text-[10px] font-medium text-blue-700">
+                      {rodeo > 0 ? `${((retenidas / rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}% del rodeo` : ""}
                     </span>
                     {repoEsReal && (
                       <button type="button" className="mt-0.5 text-left text-[10px] text-blue-600 underline"
@@ -703,6 +722,34 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                   ))}
                 </tbody>
               </table>
+
+              {rodeo > 0 && (
+                <div className="mt-2 rounded border border-gray-200 bg-white p-2">
+                  <p className="mb-1 text-[10px] font-semibold text-gray-600">Efecto sobre el rodeo</p>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-amber-700">Sale (refugo + mort.)</span>
+                    <strong className="text-amber-700">
+                      −{((descarte / rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%
+                    </strong>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-blue-700">Entra (reposición)</span>
+                    <strong className="text-blue-700">
+                      +{((retenidas / rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%
+                    </strong>
+                  </div>
+                  <div className="mt-1 flex justify-between border-t pt-1 text-xs">
+                    <span className="font-medium">Neto</span>
+                    <strong className={retenidas >= descarte ? "text-emerald-700" : "text-red-700"}>
+                      {retenidas >= descarte ? "+" : ""}
+                      {(((retenidas - descarte) / rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%
+                      <span className="ml-1 font-normal text-gray-500">
+                        {retenidas > descarte ? "crece" : retenidas < descarte ? "se achica" : "se mantiene"}
+                      </span>
+                    </strong>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-2 rounded bg-white p-2">
                 <p className="mb-1 text-[10px] font-semibold text-gray-600">Cierre → abre el siguiente</p>
