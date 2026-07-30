@@ -640,7 +640,13 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                 <label className="text-xs text-gray-500">
                   Precio $/kg bruto {modoPrecio === "bruto" && <span className="text-emerald-600">←</span>}
                 </label>
-                <Input className="h-8 text-right" value={f.precio_kg_override ?? ""}
+                <Input className="h-8 text-right"
+                  // Cuando manda el NETO, este campo muestra el bruto DERIVADO — no el
+                  // guardado. Si no, se computaba bien por dentro pero el input quedaba
+                  // vacío y no se veía el resultado ni el efecto de cambiar la CZ.
+                  value={modoPrecio === "neto"
+                    ? (precioNetoManual.trim() === "" ? "" : fmtAR(precioBruto))
+                    : (f.precio_kg_override ?? "")}
                   onChange={e => { setModoPrecio("bruto"); setF({ ...f, precio_kg_override: e.target.value }) }} />
                 <p className="mt-1 text-[10px] text-gray-400">vacío = usa la banda</p>
               </div>
