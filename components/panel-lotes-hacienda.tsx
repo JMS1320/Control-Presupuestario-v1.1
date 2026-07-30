@@ -142,7 +142,9 @@ export function PanelLotesHacienda({ linea, onCambio }: {
         const aCrear = [
           { categoria: "Ternero Recria",     origen: "destete",  cantidad: c.terneros_venta, peso },
           { categoria: "Ternera Recria",     origen: "destete",  cantidad: c.terneras_venta, peso },
-          // La vaca de descarte se vende con su propio peso, no el del destete
+          // Vaca refugo: se vende con su propio peso, no el del destete. OJO: la
+          // cantidad viene del "refugo + mortandad" del ciclo, asi que incluye las que
+          // se mueren -- hay que descontarlas a mano (queda marcado con ✎).
           { categoria: "Vaca CUT/Descarte",  origen: "descarte", cantidad: c.descarte,
             peso: Number(c.ciclo.peso_descarte_kg) || 450 },
         ]

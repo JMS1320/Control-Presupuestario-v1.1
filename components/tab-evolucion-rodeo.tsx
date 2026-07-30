@@ -250,8 +250,10 @@ export function TabEvolucionRodeo() {
     { label: "Destetados",            get: c => n1(c.destetados), clase: "font-medium" },
     { label: "→ Terneros",            get: c => n1(c.terneros), clase: "text-gray-600" },
     { label: "→ Terneras",            get: c => n1(c.terneras), clase: "text-gray-600" },
-    { label: "Falladas (merma)",      get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
-    { label: "Vaca descarte → venta", get: c => n1(c.descarte), clase: "font-medium text-amber-700" },
+    { label: "No destetaron (merma)", get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
+    // No es todo venta: parte se vende como refugo y parte se muere. La cantidad que
+    // efectivamente va al lote se ajusta a mano.
+    { label: "Vacas refugo + mortandad", get: c => n1(c.descarte), clase: "font-medium text-amber-700" },
     { label: "Terneras retenidas",    get: c => {
         const chk = chequeoReposicion(c)
         return n1(c.retenidas) + (c.retencion_excede ? " ⚠" : "") + (chk ? ` (marcadas ${n1(chk.marcadas)})` : "")
@@ -385,8 +387,9 @@ export function TabEvolucionRodeo() {
       {linea.length > 0 && (
         <p className="flex items-center gap-2 text-xs text-gray-400">
           <TrendingUp className="h-3.5 w-3.5" />
-          De <strong>Vaca descarte</strong>, <strong>Terneros a venta</strong> y{" "}
-          <strong>Terneras a venta</strong> salen las cabezas vendibles de cada período.
+          De <strong>refugo</strong>, <strong>terneros</strong> y <strong>terneras a venta</strong>{" "}
+          salen las cabezas vendibles. Ojo: del refugo hay que descontar a mano la mortandad,
+          que no se vende.
         </p>
       )}
 
@@ -453,10 +456,27 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
   const descarte = String(f.real_descarte ?? "").trim() !== ""
     ? parseNum(String(f.real_descarte)) : falladas * pDescarte
 
+
+  const descEsReal = String(f.real_descarte ?? "").trim() !== ""
   const repoEsReal = String(f.real_retenidas ?? "").trim() !== ""
   const retenidasBruto = repoEsReal ? parseNum(String(f.real_retenidas)) : rodeo * pRepo
   const retenidas = Math.min(retenidasBruto, terneras)
   const excede = retenidasBruto > terneras + 0.01
+
+  /** El % del descarte va sobre las FALLADAS, no sobre el rodeo. */
+  const editarPctDesc = (v: string) => {
+    setF((p: any) => ({ ...p, pct_descarte_falladas: v, real_descarte: "" }))
+  }
+  const editarCabezasDesc = (v: string) => {
+    const cab = parseNum(v)
+    const pctEquiv = falladas > 0 ? (cab / falladas) * 100 : 0
+    setF((p: any) => ({
+      ...p,
+      real_descarte: v,
+      pct_descarte_falladas: v.trim() === "" ? p.pct_descarte_falladas
+        : pctEquiv.toLocaleString("es-AR", { maximumFractionDigits: 2 }),
+    }))
+  }
 
   /**
    * % y cabezas son dos formas de decir lo mismo, así que se mantienen sincronizados.
@@ -558,10 +578,45 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
             </Seccion>
 
             <Seccion titulo="3 · Parámetros de proyección">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {campoPct("pct_destete", "% Destete", "sobre la base entorada")}
                 {campoPct("pct_machos", "% Machos", "del destete")}
-                {campoPct("pct_descarte_falladas", "% Descarte", "80 = falla de la vaca")}
+              </div>
+
+              {/* Refugo + mortandad: % sobre las falladas, o el número exacto */}
+              <div className="mt-3 rounded border border-amber-200 bg-amber-50/50 p-2.5">
+                <p className="mb-2 text-[11px] font-medium text-amber-900">
+                  Vacas refugo + mortandad — {n1(falladas)} no destetaron
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  {campoPct("pct_descarte_falladas", "% de las falladas", "80 = falla de la vaca",
+                    editarPctDesc)}
+                  <div>
+                    <label className="text-xs text-gray-500">Cabezas</label>
+                    <Input className="h-8 text-right" value={f.real_descarte ?? ""}
+                      onChange={e => editarCabezasDesc(e.target.value)} />
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      {descEsReal ? "dato firme, no escala" : "vacío = se usa el %"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <span className="text-[10px] text-gray-500">Salen del rodeo</span>
+                    <span className="text-lg font-semibold text-amber-800">
+                      {n1(descarte)}
+                      {descEsReal && <span className="ml-1 text-[10px] font-normal text-amber-600">real</span>}
+                    </span>
+                    {descEsReal && (
+                      <button type="button" className="mt-0.5 text-left text-[10px] text-amber-700 underline"
+                        onClick={() => set("real_descarte", "")}>
+                        volver al %
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[10px] text-amber-700">
+                  No todas van a venta: parte se vende como refugo y parte se muere. La mortandad
+                  se descuenta a mano en el lote.
+                </p>
               </div>
 
               {/* Reposición: % y cabezas, sincronizados */}
@@ -608,12 +663,14 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
 
             <Seccion titulo="4 · Datos reales del destete"
               nota="cuando llega el dato real pisa el cálculo y recalcula todo lo posterior · vacío = sigue proyectado">
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {campo("real_destetados", "Destetados")}
                 {campo("real_machos", "Machos")}
                 {campo("real_hembras", "Hembras")}
-                {campo("real_descarte", "Descarte")}
               </div>
+              <p className="mt-2 text-[10px] text-gray-400">
+                El refugo y la reposición se cargan arriba, en sus propios bloques.
+              </p>
             </Seccion>
 
             <div>
@@ -633,8 +690,8 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                     ["Destetados", n1(destetados), ""],
                     ["→ Terneros", n1(terneros), "text-gray-500"],
                     ["→ Terneras", n1(terneras), "text-gray-500"],
-                    ["Falladas", n1(falladas), "text-gray-500"],
-                    ["Vaca descarte → venta", n1(descarte), "text-amber-700 font-medium"],
+                    ["No destetaron", n1(falladas), "text-gray-500"],
+                    ["Refugo + mortandad", n1(descarte), "text-amber-700 font-medium"],
                     ["Terneras retenidas", n1(retenidas), "text-blue-700"],
                     ["Terneros a venta", n1(terneros), "text-emerald-700 font-medium"],
                     ["Terneras a venta", n1(Math.max(0, terneras - retenidas)), "text-emerald-700 font-medium"],
