@@ -1444,6 +1444,27 @@ IIBB 1% sobre la venta neta → egreso el mes SIGUIENTE
    ⏳ **Pendiente menor**: la comisión de CZ probablemente lleve su propio IVA (21%); hoy se
    descuenta sin IVA. A confirmar con el usuario.
 
+**G-8 · Los kg por vender deberían salir del CICLO, no del lote** 🟡 *(2026-07-30)*
+Hoy la fila *"Disponible sin fecha"* del presupuesto necesita que el **lote exista**. El usuario
+lo señaló: el paralelo real con la soja es que **las toneladas disponibles se ven sin que exista
+ninguna venta** — salen del contrato. Acá deberían salir del **ciclo**.
+
+> *"como sabemos por las campañas los kg producidos y a partir de qué fecha, que el presupuesto
+> lo muestre como en soja, sin necesidad de crear la venta. Más como un control para que no se
+> olvide que hay stock sin vender."*
+
+Y como control es más útil así: si hace falta generar el lote para que te avise que hay stock sin
+vender, el aviso llega tarde.
+
+**Cómo sería**: Presupuesto lee `stock_ciclos`, calcula la línea de tiempo y muestra en el mes
+del destete las cabezas y kg de `terneros_venta`, `terneras_venta` y `descarte`. Cuando se
+genera un lote con fecha, esa parte pasa de *"por vender"* a *"presupuestado"* y deja de
+contarse dos veces.
+
+**Ojo con el doble conteo**: hay que descontar del ciclo lo que ya tiene lote. Es el mismo
+problema que resuelve `cantidad_calculada`, y otra razón más para **G-7** (que el lote derive la
+cantidad en vez de copiarla).
+
 ##### FASE B — Acople con Ventas *(después)*
 6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con
    arrendamiento la venta debería registrarse del lado comercial (Ventas → Ganadería). Mueve
