@@ -489,7 +489,7 @@ un error que esta solapa destapó.
 
 ---
 
-## 🏷️ Productivo → Terneros → exportar caravanas (para declarar)
+## 🏷️ Productivo → Terneros → exportar caravanas (para declarar) ✅
 
 Botón **Descargar Excel**. El modal pregunta primero qué querés bajar:
 

@@ -1875,7 +1875,7 @@ Hoy se tipea. Lo correcto sería tomar el saldo real de las cuentas a una fecha 
 anticipó (*"luego vemos cómo emprolijamos"*). Ojo con el alcance: el presupuesto es sólo MSA y los
 saldos son por cuenta bancaria; hay que decidir qué cuentas entran.
 
-##### ✅ Export de caravanas para declarar — HECHO 2026-07-30 (sin testear)
+##### ✅ Export de caravanas para declarar — HECHO y **TESTEADO OK** (2026-07-30)
 
 > *"quisiera un export de productivo para declarar las caravanas… un simple excel, machos por
 > un lado y hembras por el otro… primero debo decirle qué categorías quiero exportar… si pongo
