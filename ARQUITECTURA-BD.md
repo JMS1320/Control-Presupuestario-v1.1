@@ -129,6 +129,29 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
 | `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
 
+**Presupuesto de cuentas contables** (2026-07-30) — **No están en el backup.**
+
+| Objeto | Propósito |
+|---|---|
+| `public.presupuesto_cuenta_config` | Cómo se presupuesta cada cuenta: `modo` (`ultima_fc`/`promedio_n`/`estacional`/`por_cabeza`/`manual`/`excluida`) + sus parámetros. Sin fila, la cuenta usa la sugerencia automática. |
+| `public.presupuesto_historia_cuentas` (vista) | Historia mensual unificada por cuenta: monto, facturas y proveedores. |
+
+La vista resuelve tres cosas que impedían comparar contra el pasado: (1) la misma cuenta estaba
+**partida por las mayúsculas** entre `msa.comprobantes_historico` (Title Case) y
+`msa.comprobantes_arca` (UPPER) — la identidad es **`nro_cuenta`, no el nombre**; (2) 85 filas de
+ARCA sin `nro_cuenta` se resuelven por nombre contra `cuentas_contables`; (3) las dos fuentes se
+**solapan en dic-2025** con las mismas facturas, así que manda el histórico (cierre contable) y
+ARCA aporta desde ene-2026.
+
+Motor en `lib/presupuesto/modos.ts`. Dos reglas que no son obvias: el **mes en curso nunca se
+usa** (está a medio facturar) y el promedio **divide por los meses de la ventana**, no por los
+que tienen factura — un mes sin factura es un mes de cero, y la ventana cierra en el último mes
+**cerrado**, no en el último con dato.
+
+La jerarquía de `nro_cuenta` clasifica sola: `421*` agricultura · `422*` administración y
+estructura · `423*` ganadería (`42305*` alimentación) · `425*` maquinarias. De ahí sale qué
+cuentas se excluyen por estar ya en Actividades y costos.
+
 **Presupuesto — saldo de arranque** (2026-07-30) — `public.presupuesto_config`
 (`empresa` único, `saldo_inicial`, `mes_inicial`, `notas`). **No está en el backup.**
 Es el punto de partida del **saldo acumulado** del presupuesto: sin él la grilla sólo dice el

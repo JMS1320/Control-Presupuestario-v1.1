@@ -512,6 +512,53 @@ de declarar.
 
 ---
 
+## 📒 Presupuesto → Cuentas contables 🟡 *(nuevo 2026-07-30, sin testear)*
+
+> Botón **"Cuentas contables"** arriba a la derecha del Presupuesto.
+
+Presupuesta lo que viene **por factura**, cuenta por cuenta. Cada una se calcula con el **modo**
+que mejor le va, y el modo se cambia cuando querés.
+
+### Los modos
+
+| Modo | Qué hace | Cuándo conviene |
+|---|---|---|
+| **Propagar última factura** | Repite la última factura conocida | Un proveedor, monto parejo — *Asesor ganadero* sube en escalones y el promedio quedaría siempre atrasado |
+| **Promedio últimos N meses** | Promedia una ventana (default 3) | Cuentas variadas — *Repuestos* tiene 21 proveedores |
+| **Mismo mes del año anterior** | Toma el año pasado + inflación | Lo estacional. Necesita 12 meses; hoy casi no hay |
+| **Por cabeza** | $/cabeza histórico × cabezas proyectadas | Veterinaria y sanidad, que siguen al rodeo |
+| **Monto fijo a mano** | Lo que vos pongas | Sin historia |
+| **No presupuestar** | Cero, y dice por qué | Lo que ya entra por Actividades y costos |
+
+Si no elegiste nada, la cuenta usa una **sugerencia automática** (badge punteado con *auto*).
+Se decide mirando cómo se comportó: cuántos proveedores tiene, cuánto varía y cuántos meses de
+historia hay.
+
+### Ver de dónde salió un número
+**Clic en la cuenta** y se abre: la explicación del cálculo en castellano, el selector de modo
+con sus parámetros, y **los meses reales** que gastó, para comparar. Las notas de crédito
+aparecen en rojo. También podés pasar el mouse por cualquier celda y ver la explicación.
+
+El gris de la celda indica la confianza: cuanto más claro, menos datos hay detrás.
+
+### El control de arriba
+Compara lo presupuestado contra los **últimos 6 meses cerrados** y avisa de tres cosas:
+el total se despegó de la realidad · una cuenta que siempre gastó quedó en cero · una cuenta se
+disparó respecto de su historia. No busca precisión: busca que **no se escape nada grande**.
+
+### Dos detalles del cálculo
+- **El mes en curso no se usa nunca.** Está a medio facturar y arrastraría todo para abajo.
+- **Un mes sin factura cuenta como cero.** *Luz* no facturó en febrero y facturó doble en marzo:
+  la factura se corrió, no desapareció el gasto. Por eso el promedio divide por los meses de la
+  ventana y no por los que tienen factura.
+
+### Lo que no entra acá
+Agroquímicos, siembra, cosecha, maíz, rollos y el verdeo salen como **No presupuestar**: ya se
+presupuestan en *Actividades y costos*. Si entraran por los dos lados se contarían dos veces.
+Veterinaria **sí** entra, porque no hay módulo de insumos para cría.
+
+---
+
 ## 📊 Presupuesto → leer la grilla
 
 ### Saldo acumulado

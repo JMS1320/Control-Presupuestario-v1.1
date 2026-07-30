@@ -11553,3 +11553,39 @@ ALTER TABLE public.presupuesto_config ENABLE ROW LEVEL SECURITY;
 CREATE POLICY presupuesto_config_all ON public.presupuesto_config FOR ALL USING (true) WITH CHECK (true);
 GRANT ALL ON public.presupuesto_config TO anon, authenticated, service_role;
 ```
+
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Presupuesto de cuentas contables
+
+```sql
+CREATE TABLE public.presupuesto_cuenta_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  nro_cuenta text NOT NULL,
+  -- ultima_fc | promedio_n | estacional | por_cabeza | manual | excluida
+  modo text NOT NULL DEFAULT 'promedio_n',
+  meses_promedio integer,
+  monto_manual numeric(16,2),
+  cabezas_referencia numeric(10,2),
+  cabezas_proyectadas numeric(10,2),
+  inflacion_mensual numeric(6,5),
+  motivo_exclusion text,
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (empresa, nro_cuenta)
+);
+ALTER TABLE public.presupuesto_cuenta_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_cuenta_config_all ON public.presupuesto_cuenta_config FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_cuenta_config TO anon, authenticated, service_role;
+
+ALTER TABLE public.presupuesto_config
+  ADD COLUMN IF NOT EXISTS inflacion_mensual numeric(6,5) NOT NULL DEFAULT 0;
+```
+
+Y la vista `public.presupuesto_historia_cuentas`, que unifica `msa.comprobantes_historico` con
+`msa.comprobantes_arca` por `nro_cuenta` — el DDL completo está en la migración
+`presupuesto_cuentas_modo_y_vista_historia`. Los tres problemas que resuelve (nombres partidos
+por mayúsculas, `nro_cuenta` faltante en ARCA, solape de dic-2025) están explicados en
+`ARQUITECTURA-BD.md` y en el propio comentario de la vista.

@@ -136,6 +136,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-PAGO-MULTIMEDIO | 🟢 | Media | **Detalle de pago con VARIOS medios (transferencia + echeq)** — ✅ **HECHO (2026-07-21, commit 4e033f1, sin testear).** Nueva lib `lib/pagos/medios-pago.ts` (`obtenerMediosPagoFactura`: reúne anticipos=transferencia + cheques=echeq + transferencias directas del extracto `msa_galicia`, por `factura_id`/`template_cuota_id`). El **PDF Detalle de pago** ahora agrega una sección **"Desglose del pago"**: cada medio (con banco/nro/fecha del echeq) + Retención SICORE + Descuento = **Total factura** (con aviso ⚠ si no cuadra ±$1); la tabla principal oculta Transferido/Cancelado cuando hay desglose. Lo pasa el caller del Cash Flow (`generarPDFPagosSeleccionados`, solo ARCA). **Caso testigo Longo:** anticipo 6.505.867,50 + echeq 1.456.737,50 + SICORE 129.270 = 8.091.875. **✅ FASE 2 HECHA (2026-07-21, commit 3819fb5):** el **✉ mail-detalle** también usa el desglose — PDF adjunto con la sección + cuerpo del mail listando cada medio (transferencia/echeq). Seleccionando **solo el echeq** el mail incluye la transferencia automáticamente. **BUG CORREGIDO (mismo commit):** el cert SICORE no se adjuntaba al seleccionar echeq+transferencia juntos → el `tipo` se decidía por `fs[0].origen` (si la 1ra fila del grupo era la transferencia/ANTICIPO, `tipo=template` y se salteaba el cert). Fix: `tipo='arca'` si CUALQUIER fila es ARCA (mail + PDF). **Testear.** Residual menor: seleccionar las 2 líneas duplica el anticipo en los totales del cuerpo → mejor marcar solo el echeq (o pulir para que la transferencia no haga falta seleccionarla). **Falta:** la vista pantalla-detalle (secundario). |
 | B-FEAT-14 | 🔴 | Media | **Análisis productivo-económico (engorde)** — módulo NUEVO en Historial pesadas (`components/analisis-productivo.tsx` + `segmentador.tsx`). Incluye: multi-segmentador · marcado reposición (es_torito) · análisis margen (calcular) · escenario B dinámico (16 vars) · cadena de etapas · punto de equilibrio · análisis de sensibilidad · guardar/cargar/borrar estudios (localStorage+.json) · **precios de mercado** (scraping entresurcosycorralesya, botón mkt auto-poblar por kg neto+sexo). **Falta TESTEAR TODO** contra el Excel del usuario (ver `MANUAL-USO.md` + memoria `project_analisis_productivo`). **v2 pendiente:** (a) **sub-modal** para ver la sensibilidad más ancha; (b) **persistir** la config de sensibilidad en el estudio (hoy sesión); (c) **export Excel/PDF**: hoy cada segmento exporta lo suyo, PERO no hay export **COMBINADO** (todos los segmentos + la combinada) y el export **no refleja** el punto de salida (sigue "punta a punta") ni el tilde incluido/A-vs-B. El **guardado local + JSON SÍ captura todo** (incluido, salidaEtapa, duplicados). (d) agrupador de segmentos + sensibilidad de cadena. (2026-07-09) · **HECHO 2026-07-10/11 (commits 0551bb8/2941fb5/aff89e6/88a3a5a):** (1) precios de mercado scrapeados se **guardan/restauran CON el estudio**; (2) **congelar segmentado** con foto + receta → al cargar la app pregunta **📌 foto** (snapshot, no toca BD) vs **🔄 re-link** (reproduce del config); (3) **Estimado configurable** *desde* (pesada base) / *hasta* (fecha del análisis) → reproduce el kilaje exacto y permite recuperar estudios viejos a mano; (4) **import pesadas por columna `Caravana` no oficial** (CUT/Descarte en `caravana_oficial`, toros en `caravana_interna`). Testeado visualmente OK por el usuario. · **HECHO 2026-07-13:** (5) **export COMBINADO del estudio** (⬇ PDF total = resumen + detalle por segmento · ⬇ Excel total = hoja Resumen + hoja por segmento; PDF declarativo reusado del export individual; respeta tilde `incluido`) → cierra el v2-(c); (6) **💾 Actualizar «estudio»** (sobrescribe el estudio abierto sin re-tipear nombre) + **Guardar como…** (nuevo) → evita duplicados. · **⏳ PENDIENTE DE TEST (2026-07-13, el usuario testea luego):** commits `9150fdb` (export combinado PDF/Excel + Actualizar), `93f540e` (detalle por etapa en el export), `9da43e8` (panel de sección Fase 1: individuos + sub-segmentar), `f58bf39` (panel de sección Fase 2: índices históricos ganancia p-p / últimas pesadas + promedio grupo). Todo en `desarrollo`, sin mergear. |
 | B-FEAT-COSTOS-PRODUCTIVOS | 🔴 | Alta | **Costos productivos atados a la venta (ganadería)** — cada venta presupuestada lleva su costo variable: maíz, concentrado, sanidad, verdeos. **La unidad de planificación es la ACTIVIDAD**: se carga "este lote hace recría del 1/4 al 30/9" y salen solos la curva de peso, el consumo mes a mes, lo que falta comprar y el egreso. El motor de ración YA existe (`calcular()` en `analisis-productivo.tsx:150`) y el stock de insumos también (`productivo.stock_insumos` / `movimientos_insumos`). Plan C-1..C-8 en el dossier § FASE C. **0 código** — planificado 2026-07-30. |
+| B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1516,6 +1517,156 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 9. **Deprecar `presupuesto_ganaderia`** y borrar la fila que quedó corrupta del bug de %.
 
 ---
+
+---
+
+#### 📒 PRESUPUESTAR CUENTAS CONTABLES `B-FEAT-PRESUPUESTO-CUENTAS` 🟡
+*(primera versión 2026-07-30, sin testear — leer el análisis antes de tocar nada)*
+
+> *"hay distintos indicios de cómo es mejor en cada caso… si una cuenta se compone siempre de
+> una fac de un proveedor simplemente se puede propagar esa FC… si es muy variada, la suma del
+> último mes… si tiene estacionalidad, un año atrás más inflación… que sea versátil, yo poder
+> cambiar la forma de presupuestarlo de un modo a otro."*
+
+##### 1 · Lo que dicen los datos (relevado 2026-07-30)
+
+**Cuánto hay**: 13 meses corridos, **jul-2025 → jul-2026**, 50 cuentas, $301 M.
+`msa.comprobantes_historico` (jul→dic 2025) + `msa.comprobantes_arca` (dic-2025→jul-2026).
+
+**Tres problemas que había que resolver antes de poder calcular nada:**
+
+1. **La misma cuenta estaba partida en dos por las mayúsculas.** El histórico guarda
+   `"Insumos veterinarios"` y ARCA `"INSUMOS VETERINARIOS"`: son la misma cuenta y quedaban
+   como dos series de 6 meses en vez de una de 11. Pasaba con LUZ, GASTOS MEDICOS, ASESOR
+   GANADERO, TELEFONOS y varias más. **La identidad es `nro_cuenta`, no el nombre.**
+2. **85 filas de ARCA no tienen `nro_cuenta`.** Se resuelven por nombre contra
+   `cuentas_contables` — verificado: las 85 resuelven sin ambigüedad.
+3. **Las dos fuentes se solapan en dic-2025** (40 fc / $16,39 M en ARCA contra 44 fc /
+   $16,48 M en el histórico: son las mismas facturas). Sumarlas duplicaba el mes.
+
+Resuelto en la vista **`public.presupuesto_historia_cuentas`**: clave `nro_cuenta`, el
+histórico manda donde existe y ARCA aporta desde ene-2026.
+
+**Cómo se comporta cada cuenta** — de acá salen los modos:
+
+| Cuenta | Perfil | Qué le sirve |
+|---|---|---|
+| ASESOR GANADERO | 1 prov, 1 fc/mes, escalones: 1.427k → 1.563k×3 → 1.633k×3 → 1.748k → 1.896k×2 → 2.067k×2 | **última factura** (el promedio queda siempre atrasado) |
+| ASESORAMIENTO CONTABLE · LUZ · TELÉFONOS · GASTOS MÉDICOS | 1-2 prov, monto parejo | **última factura** |
+| INSUMOS VETERINARIOS | 176k · 3.018k · 1.451k · **−28k** · 109k · 3.110k · — · 1.127k · 3.303k | **promedio** (propagar la última es una lotería) |
+| REPUESTOS Y REPARACIONES | 21 proveedores, CV 115 % | **promedio** |
+| IATF | 3 meses en 13, uno es nota de crédito | **por cabeza** o a mano |
+| AGROQUÍMICOS · SIEMBRA · COSECHA · MAÍZ · ROLLOS | ya se presupuestan en Actividades | **excluir** |
+
+##### 2 · Los modos
+
+`lib/presupuesto/modos.ts`. Cada cuenta elige el suyo; sin elección se usa la **sugerencia
+automática**, marcada con `(auto)` y con el motivo a la vista.
+
+| Modo | Qué hace | Para qué cuenta |
+|---|---|---|
+| `ultima_fc` | Propaga la última factura + inflación | 1 proveedor, monto parejo |
+| `promedio_n` | Promedio de los últimos N meses (default 3) | variadas, muchos proveedores |
+| `estacional` | Mismo mes del año pasado + inflación × 12 | estacional — **necesita 12 meses** |
+| `por_cabeza` | $/cabeza histórico × cabezas proyectadas | veterinaria, sanidad, sales |
+| `manual` | Monto fijo | sin historia |
+| `excluida` | No presupuesta, y dice por qué | lo que ya entra por Actividades |
+
+**Regla de sugerencia**: excluida si es producción → por cabeza si es sanidad → última factura
+si hay 1 proveedor, ≤2,5 fc/mes, CV ≤ 40 % y 6+ meses → si no, promedio. Menos de 3 meses, manual.
+
+##### 3 · Las dos trampas de los datos (y por qué el motor las trata así)
+
+**El mes en curso está a medio facturar.** Al 30/7/2026 julio tenía 29 facturas contra ~45 de
+promedio. Si entra como "último mes" o al promedio, subestima todo. **Se excluye siempre.**
+
+**Un mes sin factura no es un mes sin gasto.** LUZ no facturó en feb-2026 y en marzo aparece el
+doble: la factura se corrió. Por eso el promedio **divide por los meses de la ventana**, no por
+los que tienen factura. Con INSUMOS VETERINARIOS la diferencia es de 50 %:
+$1.472.602 dividiendo por 6 contra $2.208.903 dividiendo por los 4 con factura.
+
+Y la ventana **cierra en el último mes CERRADO**, no en el último con factura. Si una cuenta
+dejó de facturar en mayo y estamos en julio, junio fue un mes de cero y tiene que pesar. Este
+punto lo encontró el verificador: la primera versión cerraba en el último mes con dato e
+inflaba el promedio un 35 %.
+
+##### 4 · El control de cordura
+
+Arriba del panel, siempre visible. No busca precisión, busca que **no se escape nada grande**:
+
+- **El total se despegó**: presupuestado/mes contra el real de los últimos 6 meses cerrados.
+  Avisa si la diferencia pasa el 35 %.
+- **Una cuenta que gastó quedó en cero** — el olvido que más duele. Nivel alto si pesa más del
+  3 % del total.
+- **Una cuenta se despegó de su propia historia** (±60 %), pero sólo si además el monto pesa:
+  una cuenta chica que se duplica no importa.
+
+##### 5 · Dos maneras de armar el presupuesto — el planteo del usuario
+
+> *"mientras no haya detalle de caja todo lo que va a caja es un egreso, ídem tarjeta… se saca
+> la info de banco, echeqs endosados, caja y tarjeta. Lo bueno es que no se escapa nada, aun si
+> el proveedor se olvidó de facturar. Lo malo es que se ensucia con las retenciones SICORE…
+> luego se puede hacer por facturas recibidas y lo malo es que si hubo gastos sin factura se
+> presupuesta mal."*
+
+| | **Por canales de pago** (banco, echeq, caja, tarjeta) | **Por facturas recibidas** ← lo implementado |
+|---|---|---|
+| Cobertura | **Total**: nada se escapa, ni el gasto sin factura | Se pierde lo que no tiene factura |
+| Imputación | Pobre: caja y tarjeta son una bolsa hasta que se detallan | **Buena**: cada factura trae su cuenta contable |
+| SICORE | **Lo ensucia**: la retención sale de veterinaria y aparece como impuesto — dos cuentas mal | Limpio: la factura es por el total |
+| Timing | Fecha de pago | Fecha de la factura |
+| Datos hoy | Hay que armarlo | **13 meses ya listos y con cuenta imputada** |
+
+**Mi opinión**: **facturas para presupuestar, canales para controlar.** Son preguntas distintas
+y conviene no mezclarlas.
+
+Presupuestar es decir *"cuánto va a costar la luz"*, y eso necesita saber **qué** se compró —
+sólo la factura lo dice. La caja y la tarjeta, sin detalle, no se pueden imputar; y el SICORE
+rompe el dato en el peor lugar: la retención de veterinaria aparece como impuesto, así que
+**las dos** cuentas quedan mal (una de menos, otra de más). Un presupuesto construido sobre eso
+te da un total correcto con una composición equivocada — y la composición es justo lo que se
+presupuesta.
+
+Pero la fortaleza de los canales es real y no se resuelve con facturas: **no se escapa nada**.
+Ahí es donde sirve, y es exactamente el control que el usuario pidió: el total pagado por todos
+los canales de un período contra el total facturado del mismo período. Si el pago supera a la
+factura de manera sostenida, hay gasto sin comprobante y aparece como un número, no como una
+sospecha. **El SICORE deja de molestar** porque en el total se compensa: lo que se le resta a
+veterinaria se le suma a impuestos.
+
+→ Propuesta: mantener el presupuesto por facturas (ya está) y agregar el control por canales
+como **C-11**, un solo número por mes con su brecha. Es barato y cierra el agujero.
+
+##### 6 · Pendientes de esto
+
+**C-11 · Control por canales de pago** 🟡 — pagado total (banco + echeq + caja + tarjeta) contra
+facturado total, por mes. Detecta el gasto sin comprobante. No para presupuestar: para controlar.
+
+**C-12 · Cabezas proyectadas automáticas** 🟡 — hoy el modo `por_cabeza` toma dos números a mano
+(cabezas del histórico y proyectadas). El rodeo por campaña ya está en `stock_ciclos` +
+`calcularLineaTiempo`: se puede enganchar y que el gasto de sanidad siga solo a la evolución del
+rodeo.
+
+**C-13 · Estacionalidad real** 🟡 — hay 13 meses, así que el modo `estacional` casi no tiene con
+qué (y jul-2026 está incompleto). Recién en 2027 va a haber dos años comparables. Mientras tanto
+el modo existe y avisa que le faltan datos.
+
+**C-14 · Templates** ⏸️ — este panel presupuesta **cuentas contables** (lo que viene por
+factura). Los templates ya se proyectan por sus cuotas cargadas, que es información más firme
+que cualquier estimación: no necesitan modos. Lo que sí falta es decidir **cómo conviven** —
+hoy un gasto podría entrar por los dos lados. Ver la nota de doble conteo abajo.
+
+##### ⚠️ Doble conteo — lo que hay que vigilar
+El presupuesto de MSA junta ahora tres fuentes de egresos: **templates** (cuotas cargadas),
+**cuentas contables** (este panel) y **actividades** (costos de producción). Un mismo gasto no
+puede entrar por dos.
+
+- Producción ya está resuelto: las cuentas `421*`, `42305*` y las del verdeo salen `excluida`
+  con el motivo escrito.
+- **Templates vs cuentas contables NO está resuelto todavía**: si un impuesto está como template
+  y además tiene facturas imputadas a una cuenta, se cuenta dos veces. Hay que cruzarlo antes de
+  sumar los dos bloques en el TOTAL EGRESOS.
+
 
 #### 🌾 FASE C — COSTOS PRODUCTIVOS ATADOS A LA VENTA `B-FEAT-COSTOS-PRODUCTIVOS` 🔴
 *(planificado 2026-07-30, 0 código — leer esto entero antes de empezar)*
