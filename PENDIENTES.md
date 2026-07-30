@@ -1247,6 +1247,25 @@ reales. **De ahí salen las ventas proyectadas.**
 Es el mismo patrón que arrendamiento (contrato → cuotas → fijar): acá es
 **stock → períodos → lotes vendibles → venta (parcial o total)**.
 
+#### 🐛 `terneros.es_torito` está SOBRECARGADO — y se usa distinto en dos lugares
+
+El flag marca dos cosas según el sexo: en **machos** = torito · en **hembras** = retenida para
+reposición. La convención la fija `tab-terneros.tsx` (modo reposición) y ahí está bien aplicada:
+```ts
+toritos     = es_torito && sexo === 'Macho'     // tab-terneros.tsx:626,731
+ternerasRep = es_torito && sexo === 'Hembra'    // tab-terneros.tsx:627,732
+```
+**Pero `vista-sector-productivo.tsx` NO distingue el sexo**, y ahí es un bug:
+```ts
+categoriaPropuesta()  // :4131 — if (es_torito) → 'Torito', sin mirar el sexo
+const toritos = asignaciones.filter(t => t.es_torito)   // :4051 — incluye hembras marcadas
+```
+→ En el flujo de **cambio de categoría**, una ternera marcada para reposición se propone como
+**"Torito"**. Verificar y corregir (debería proponer `Vaquillona de Reposicion`).
+
+Aparte del bug: el nombre engaña. Convendría partirlo en dos flags (`es_torito` /
+`es_reposicion`) o renombrarlo a algo neutro tipo `marcado_retencion`.
+
 #### ⏳ FALTA en ganadería
 - **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
   proyección. Falta cuántas por año, peso y precio.

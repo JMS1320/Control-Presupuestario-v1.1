@@ -269,7 +269,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       </CardContent>
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
-      <ModalDesdePesada abierto={modalPesada} onCerrar={() => setModalPesada(false)}
+      <ModalDesdePesada abierto={modalPesada} lotes={lotes} ventasDe={ventasDe}
+        onCerrar={() => setModalPesada(false)}
         onListo={async () => { await cargar(); onCambio?.() }} />
     </Card>
   )
@@ -369,8 +370,12 @@ interface GrupoPesada {
   esRetencion: boolean
 }
 
-function ModalDesdePesada({ abierto, onCerrar, onListo }: {
-  abierto: boolean; onCerrar: () => void; onListo: () => Promise<void>
+function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
+  abierto: boolean
+  lotes: LoteStock[]
+  ventasDe: (loteId: string) => VentaStock[]
+  onCerrar: () => void
+  onListo: () => Promise<void>
 }) {
   const [cargando, setCargando] = useState(false)
   const [fechas, setFechas] = useState<{ fecha: string; n: number }[]>([])
@@ -453,20 +458,43 @@ function ModalDesdePesada({ abierto, onCerrar, onListo }: {
   if (!abierto) return null
   const elegidos = grupos.filter(g => sel[g.clave])
 
+  /**
+   * IDEMPOTENTE por (pesada, categoría): si el lote ya existe lo ACTUALIZA en vez de
+   * duplicar. Es lo que permite marcar más animales de reposición en Productivo y volver
+   * a correr esto: la cantidad y el peso promedio se recalculan solos desde los animales
+   * que quedaron. Corregir la cantidad a mano dejaría el peso mal — el promedio cambia
+   * según qué animales se van.
+   */
   const aplicar = async () => {
     setGuardando(true)
     try {
       for (const g of elegidos) {
-        const { error } = await supabase.schema("productivo").from("stock_lotes").insert({
-          empresa: "MSA", ciclo_id: null,
-          categoria: g.categoria, origen: "stock_inicial",
+        const existente = lotes.find(l =>
+          l.origen === "stock_inicial" && l.categoria === g.categoria && l.fecha_disponible === fecha)
+
+        const payload = {
           cantidad: g.cabezas,
-          fecha_disponible: fecha,
           peso_base_kg: Math.round(g.peso_prom * 100) / 100,
           ganancia_diaria_kg: parseNum(ganancia),
           notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${g.cabezas} cab, promedio real`,
-        })
-        if (error) { alert("Error: " + error.message); return }
+          updated_at: new Date().toISOString(),
+        }
+
+        if (existente) {
+          // No pisar un lote que ya tiene ventas: ahí manda lo que se decidió
+          if (ventasDe(existente.id).length > 0) continue
+          const { error } = await supabase.schema("productivo").from("stock_lotes")
+            .update(payload).eq("id", existente.id)
+          if (error) { alert("Error: " + error.message); return }
+        } else {
+          const { error } = await supabase.schema("productivo").from("stock_lotes").insert({
+            empresa: "MSA", ciclo_id: null,
+            categoria: g.categoria, origen: "stock_inicial",
+            fecha_disponible: fecha,
+            ...payload,
+          })
+          if (error) { alert("Error: " + error.message); return }
+        }
       }
       onCerrar()
       await onListo()
@@ -533,6 +561,10 @@ function ModalDesdePesada({ abierto, onCerrar, onListo }: {
                       <div className="text-xs text-gray-600">
                         <strong>{g.cabezas}</strong> cabezas · promedio{" "}
                         <strong>{n1(g.peso_prom)} kg</strong> · {n0(g.kg_total)} kg totales
+                        {lotes.some(l => l.origen === "stock_inicial"
+                          && l.categoria === g.categoria && l.fecha_disponible === fecha) && (
+                          <span className="ml-2 text-blue-600">· ya existe, se actualiza</span>
+                        )}
                       </div>
                     </div>
                   </label>
@@ -542,6 +574,10 @@ function ModalDesdePesada({ abierto, onCerrar, onListo }: {
                 El flag <code>es_torito</code> está sobrecargado: en los <strong>machos</strong>{" "}
                 marca los toritos, y en las <strong>hembras</strong> marca las retenidas para
                 reposición. Por eso las hembras marcadas vienen destildadas.
+                <br />
+                <strong>Si cambiás la reposición</strong>, marcá los animales en Productivo →
+                Recría (modo reposición) y volvé a correr esto: la cantidad y el peso promedio se
+                recalculan solos. Corregir la cantidad a mano dejaría el peso mal.
               </p>
             </>
           )}
