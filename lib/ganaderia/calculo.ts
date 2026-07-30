@@ -13,6 +13,72 @@ export interface PrecioHacienda {
   anio: number
   mes: number
   precio_pesos_kg: number
+  peso_desde?: number | null
+  peso_hasta?: number | null
+}
+
+// ── Bandas de precio por peso ─────────────────────────────────────────────────
+//
+// La hacienda se cotiza por KILO y el precio depende del PESO: un ternero de 190 kg no
+// vale lo mismo por kilo que uno de 260. Por eso el precio no se busca por categoría
+// sino por la banda en la que cae el peso del lote.
+//
+// Las categorías sin banda (hembras, vaca de refugo, toro) se buscan por nombre.
+
+export interface BandaPrecio {
+  nombre: string
+  peso_desde: number | null
+  peso_hasta: number | null
+}
+
+export const BANDAS_HACIENDA: BandaPrecio[] = [
+  { nombre: 'Ternero 180/200',       peso_desde: 180, peso_hasta: 200 },
+  { nombre: 'Ternero 200/220',       peso_desde: 200, peso_hasta: 220 },
+  { nombre: 'Ternero 220/240',       peso_desde: 220, peso_hasta: 240 },
+  { nombre: 'Ternero 240/270',       peso_desde: 240, peso_hasta: 270 },
+  { nombre: 'Novillito 270/300',     peso_desde: 270, peso_hasta: 300 },
+  { nombre: 'Novillito 300/320',     peso_desde: 300, peso_hasta: 320 },
+  { nombre: 'Novillo gordo 320/350', peso_desde: 320, peso_hasta: 350 },
+  { nombre: 'Novillo gordo 350/390', peso_desde: 350, peso_hasta: 390 },
+  // Sin banda: se eligen por categoría
+  { nombre: 'Ternera',           peso_desde: null, peso_hasta: null },
+  { nombre: 'Vaquillona',        peso_desde: null, peso_hasta: null },
+  { nombre: 'Vaca CUT/Descarte', peso_desde: null, peso_hasta: null },
+  { nombre: 'Toro',              peso_desde: null, peso_hasta: null },
+]
+
+/**
+ * Banda que corresponde a un peso. Fuera de rango se toma la más cercana: por debajo
+ * la primera, por encima la última — mejor eso que quedarse sin precio.
+ */
+export function bandaPorPeso(peso: number): BandaPrecio | null {
+  const conBanda = BANDAS_HACIENDA.filter(b => b.peso_desde != null)
+  if (!conBanda.length || !Number.isFinite(peso)) return null
+  const dentro = conBanda.find(b => peso >= b.peso_desde! && peso < b.peso_hasta!)
+  if (dentro) return dentro
+  return peso < conBanda[0]!.peso_desde! ? conBanda[0]! : conBanda[conBanda.length - 1]!
+}
+
+/** Sexo → categorías sin banda (las hembras no se cotizan por peso por ahora). */
+export function categoriaPrecioSinBanda(categoriaVenta: string): string {
+  if (/hembra|ternera/i.test(categoriaVenta)) return 'Ternera'
+  if (/vaquillona/i.test(categoriaVenta)) return 'Vaquillona'
+  if (/vaca/i.test(categoriaVenta)) return 'Vaca CUT/Descarte'
+  if (/toro|torito/i.test(categoriaVenta)) return 'Toro'
+  return categoriaVenta
+}
+
+/**
+ * Categoría de PRECIO de un lote: si es macho se busca la banda por peso; si no, la
+ * categoría plana. Separa "qué animal es" de "en qué banda cotiza".
+ */
+export function categoriaPrecio(categoriaVenta: string, peso: number): string {
+  const esMachoJoven = /ternero|novillo|torito/i.test(categoriaVenta) && !/ternera/i.test(categoriaVenta)
+  if (esMachoJoven) {
+    const b = bandaPorPeso(peso)
+    if (b) return b.nombre
+  }
+  return categoriaPrecioSinBanda(categoriaVenta)
 }
 
 export interface PresupuestoGanaderia {

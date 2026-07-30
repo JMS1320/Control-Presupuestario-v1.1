@@ -11349,3 +11349,26 @@ ALTER TABLE productivo.stock_ciclos
   ADD COLUMN IF NOT EXISTS real_retenidas numeric(10,2);
 -- Pisa a pct_reposicion. Es un numero firme y NO escala si despues cambia el rodeo --
 -- por eso no alcanzaba con guardar solo el %.
+
+-- Aplicado 2026-07-30: ganaderia -- proyeccion de venta, toritos, pesos por sexo y
+-- bandas de precio por peso. NO en el backup.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS fecha_venta_estimada date,
+  ADD COLUMN IF NOT EXISTS precio_kg_override   numeric(12,2),
+  ADD COLUMN IF NOT EXISTS dias_cobro           integer NOT NULL DEFAULT 0;
+-- Sin fecha_venta_estimada el lote es inventario; con fecha es ingreso presupuestado.
+
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS toritos_retenidos      numeric(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS peso_destete_macho_kg  numeric(8,2),
+  ADD COLUMN IF NOT EXISTS peso_destete_hembra_kg numeric(8,2);
+-- G-4: los toritos no van a venta. G-5: el peso al destete difiere por sexo
+-- (198,17 machos vs 169,30 hembras); peso_destete_kg queda de fallback.
+
+ALTER TABLE public.precios_hacienda
+  ADD COLUMN IF NOT EXISTS peso_desde numeric(8,2),
+  ADD COLUMN IF NOT EXISTS peso_hasta numeric(8,2);
+CREATE INDEX IF NOT EXISTS idx_precios_hacienda_banda
+  ON public.precios_hacienda(peso_desde, peso_hasta);
+-- La hacienda se cotiza por BANDA DE PESO: un ternero de 190 kg no vale lo mismo por
+-- kilo que uno de 260. Las bandas viven en lib/ganaderia/calculo.ts (BANDAS_HACIENDA).
