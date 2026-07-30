@@ -14,10 +14,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2 } from "lucide-react"
+import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2, AlertTriangle } from "lucide-react"
 import { PanelLotesHacienda } from "./panel-lotes-hacienda"
 import {
-  calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria,
+  calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria, fechaDestete,
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
 
@@ -40,6 +40,13 @@ export function TabEvolucionRodeo() {
   const [cargando, setCargando] = useState(true)
   const [ciclos, setCiclos] = useState<CicloStock[]>([])
   const [cria, setCria] = useState<FilaCicloCria[]>([])
+  /**
+   * Hembras marcadas para reposición por fecha de pesada. Sirve para avisar cuando el
+   * número que se presupuestó en la línea de tiempo no coincide con las que están
+   * efectivamente marcadas en Productivo — son dos lugares distintos (cuántas salen del
+   * rodeo vs quiénes se quedan) y conviene que no se desincronicen en silencio.
+   */
+  const [marcadasPorPesada, setMarcadasPorPesada] = useState<Record<string, number>>({})
   const [modal, setModal] = useState<any>(null)
   const [modalPropuesta, setModalPropuesta] = useState(false)
   const [aplicando, setAplicando] = useState(false)
@@ -57,6 +64,20 @@ export function TabEvolucionRodeo() {
       if (errCria) console.error("Error cargando ciclos_cria:", errCria)
       setCiclos((data || []) as CicloStock[])
       setCria((cc || []) as FilaCicloCria[])
+
+      // Hembras marcadas (es_torito en hembra = reposición) por fecha de pesada
+      const { data: pes } = await supabase.schema("productivo")
+        .from("pesadas_terneros")
+        .select("fecha, ternero:terneros!inner(sexo, es_torito)")
+      const marc: Record<string, number> = {}
+      for (const r of (pes || []) as any[]) {
+        const t = r.ternero
+        if (!t) continue
+        if (/hembra/i.test(String(t.sexo ?? "")) && t.es_torito) {
+          marc[r.fecha] = (marc[r.fecha] ?? 0) + 1
+        }
+      }
+      setMarcadasPorPesada(marc)
     } finally { setCargando(false) }
   }, [])
 
@@ -110,6 +131,27 @@ export function TabEvolucionRodeo() {
   }
 
   const propuestas = proponerDesdeCiclosCria(cria)
+
+  /**
+   * Compara las terneras retenidas del período contra las marcadas en la pesada de su
+   * destete. Sólo aplica a destetes que ya ocurrieron (busca una pesada dentro de ±90
+   * días); para los proyectados no hay con qué comparar y devuelve null.
+   */
+  const chequeoReposicion = (c: CicloCalculado): { marcadas: number; fecha: string } | null => {
+    const fd = fechaDestete(c.ciclo)
+    if (!fd) return null
+    const objetivo = new Date(fd + "T00:00:00").getTime()
+    let mejor: { fecha: string; dias: number } | null = null
+    for (const fecha of Object.keys(marcadasPorPesada)) {
+      const dias = Math.abs(new Date(fecha + "T00:00:00").getTime() - objetivo) / 86400000
+      if (dias <= 90 && (!mejor || dias < mejor.dias)) mejor = { fecha, dias }
+    }
+    if (!mejor) return null
+    const marcadas = marcadasPorPesada[mejor.fecha] ?? 0
+    return Math.abs(marcadas - c.retenidas) > 0.5 ? { marcadas, fecha: mejor.fecha } : null
+  }
+
+  const desincronizados = linea.filter(c => chequeoReposicion(c))
 
   /**
    * Crea o actualiza los períodos desde los ciclos REALES de Productivo.
@@ -206,7 +248,10 @@ export function TabEvolucionRodeo() {
     { label: "→ Terneras",            get: c => n1(c.terneras), clase: "text-gray-600" },
     { label: "Falladas (merma)",      get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
     { label: "Vaca descarte → venta", get: c => n1(c.descarte), clase: "font-medium text-amber-700" },
-    { label: "Terneras retenidas",    get: c => n1(c.retenidas) + (c.retencion_excede ? " ⚠" : ""), clase: "text-blue-700", sep: true },
+    { label: "Terneras retenidas",    get: c => {
+        const chk = chequeoReposicion(c)
+        return n1(c.retenidas) + (c.retencion_excede ? " ⚠" : "") + (chk ? ` (marcadas ${n1(chk.marcadas)})` : "")
+      }, clase: "text-blue-700", sep: true },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },
     { label: "Vacas (cierre)",        get: c => n1(c.vacas_cierre), clase: "bg-gray-50", sep: true },
@@ -243,6 +288,23 @@ export function TabEvolucionRodeo() {
           año que viene.
         </span>
       </p>
+
+      {desincronizados.length > 0 && (
+        <p className="flex items-start gap-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            La <strong>reposición presupuestada</strong> no coincide con las terneras{" "}
+            <strong>marcadas en Productivo</strong>:{" "}
+            {desincronizados.map(c => {
+              const chk = chequeoReposicion(c)!
+              return `${c.ciclo.campania}: presupuesto ${n1(c.retenidas)} vs marcadas ${n1(chk.marcadas)}`
+            }).join(" · ")}.
+            {" "}Son dos cosas distintas —cuántas salen del rodeo vs <em>quiénes</em> se quedan—
+            pero deberían dar el mismo número. Si la decisión cambió, marcá los animales en
+            Productivo → Recría y volvé a traer los lotes: ahí se recalcula también el peso.
+          </span>
+        </p>
+      )}
 
       {cargando ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
