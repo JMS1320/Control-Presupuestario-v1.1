@@ -624,6 +624,28 @@ Veterinaria **sí** entra, porque no hay módulo de insumos para cría.
 
 ## 📊 Presupuesto → leer la grilla
 
+### Qué bloques suman
+El presupuesto junta en un solo TOTAL EGRESOS: **templates** (sus cuotas), **sueldos**,
+**cuentas contables** (lo que llega por factura), **costos de producción** (derivados de las
+actividades del lote) e **IIBB**. Ninguno se pisa con otro: las cuentas de producción salen
+excluidas porque ya entran por Actividades, y Federación Patronal se descuenta de su cuenta
+porque va por template.
+
+Cada bloque se abre con el ▶ y se puede ver su detalle.
+
+### Templates: cuota cargada vs proyectada
+Donde hay **cuota cargada** el presupuesto la usa tal cual. Donde no la hay, **proyecta** desde
+el mismo mes del año pasado (o la última cuota) más IPC, y lo muestra **en cursiva** para que no
+se confunda con un dato firme.
+
+La proyección respeta **en qué meses paga cada template**: un inmobiliario que paga cinco cuotas
+al año sigue pagando cinco, no doce.
+
+Si el template es de los que **cargás a mano** porque te recuerda un compromiso de pago (Cargas
+Sociales, SICORE, UATRE, Ganancias…), además aparece un **aviso ámbar arriba** diciendo cuántos
+faltan generar, en cuántos meses y cuánta plata. La celda lleva un `◦`. El resto se proyecta en
+silencio: no hace falta cargarlos.
+
 ### Saldo acumulado
 Abajo de todo, después de RESULTADO, está el **SALDO ACUMULADO**: arrastra el resultado de cada
 mes desde un saldo de arranque. El resultado mensual solo no dice si la caja alcanza — un mes malo

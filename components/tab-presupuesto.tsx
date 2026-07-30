@@ -36,8 +36,21 @@ import {
   disponiblePorDiferencia, existenciasDePesada, existenciasDeCiclos,
   type DisponibleCategoria,
 } from "@/lib/ganaderia/disponibilidad"
-import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
-import type { Actividad } from "@/lib/productivo/actividades"
+import {
+  curvaDeLote, tramosParaCosto, type TramoLote, type LoteCurva,
+} from "@/lib/productivo/tramos"
+import {
+  consumoMensual, type Actividad, type InsumoActividad,
+} from "@/lib/productivo/actividades"
+import {
+  calcularCuenta, sugerirModo, esProduccion, netearExcluidos,
+  type ConfigCuenta, type PuntoHistorico, type PuntoProveedor, type CeldaPresupuesto,
+} from "@/lib/presupuesto/modos"
+import {
+  proyectarTemplate, avisoFaltaGenerar,
+  type TemplateInfo, type CuotaMes, type CeldaTemplate,
+} from "@/lib/presupuesto/templates"
+import type { PuntoSerie } from "@/lib/precios/serie"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +81,10 @@ interface FilaTemplate {
   agrupador: string                    // cuenta_agrupadora
   categ: string
   montos: Record<string, number>       // clave: "YYYY-MM"
+  /** De dónde salió cada mes: cuota cargada o proyección. */
+  celdas: Record<string, CeldaTemplate>
+  /** Es de los que el usuario carga a mano (aplica_generacion). */
+  cargaManual: boolean
 }
 
 interface FilaSueldo {
@@ -125,6 +142,24 @@ interface CuotaDetalle {
   fechaOriginal: string | null
   posOrigAnio: number | null
   posOrigMes: number | null
+}
+
+/**
+ * Celda de un template. Distingue la cuota CARGADA (dato firme) de la PROYECTADA, que es una
+ * estimación del presupuesto y no está escrita en ningún lado.
+ */
+function CeldaTpl({ t, clave, esActual }: { t: FilaTemplate; clave: string; esActual: boolean }) {
+  const celda = t.celdas[clave]
+  const proyectado = celda?.origen === "proyectado"
+  return (
+    <td title={celda?.explicacion}
+      className={`px-3 py-1.5 text-right text-xs ${
+        proyectado ? "italic text-gray-400" : "text-gray-600"
+      } ${esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+      {fmt(t.montos[clave] || 0)}
+      {proyectado && celda.faltaGenerar && <span className="ml-0.5 text-amber-500">◦</span>}
+    </td>
+  )
 }
 
 /** Templates de un agrupador, juntados por su categoria y en orden alfabetico. */
@@ -196,6 +231,12 @@ export function TabPresupuesto() {
   const [mesInicial, setMesInicial] = useState<string | null>(null)
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
+  /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
+  const [cuentas, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[] }[]>([])
+  /** Costo de los tramos de actividad de cada lote, por mes. */
+  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number> }[]>([])
+  const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
+  const [avisoGen, setAvisoGen] = useState<{ templates: number; meses: string[]; monto: number; nombres: string[] } | null>(null)
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
@@ -213,10 +254,126 @@ export function TabPresupuesto() {
       // línea de tiempo del rodeo + los lotes, que es lo que lee `cargarHacienda`.
       // Se dejó de llamar porque mostraba un ingreso fantasma en abr-27 desde una fila
       // con los porcentajes corruptos (IVA 105%). La fila sigue en la BD sin usarse.
-      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarHacienda(), cargarConfig()])
+      // El IPC se carga primero: lo usan la proyección de templates y las cuentas contables.
+      const ipc = await cargarIpc()
+      await Promise.all([
+        cargarTemplates(ipc), cargarSueldos(), cargarIngresos(), cargarHacienda(),
+        cargarConfig(), cargarCuentas(ipc), cargarCostosProduccion(),
+      ])
     } finally {
       setCargando(false)
     }
+  }
+
+  const cargarIpc = async (): Promise<PuntoSerie[]> => {
+    const { data } = await supabase.from("indices_ipc").select("anio, mes, valor_ipc")
+    const serie = ((data || []) as any[]).map(r => ({
+      anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.valor_ipc) || 0,
+    }))
+    setIpcSerie(serie)
+    return serie
+  }
+
+  /**
+   * Presupuesto de cuentas contables. El modo de cada cuenta se configura en su panel
+   * (botón "Cuentas contables"); acá se lee la configuración y se muestra el resultado.
+   */
+  const cargarCuentas = async (ipc: PuntoSerie[]) => {
+    const [{ data: hist }, { data: conf }, { data: prov }, { data: cfgGen }] = await Promise.all([
+      supabase.from("presupuesto_historia_cuentas")
+        .select("nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores"),
+      supabase.from("presupuesto_cuenta_config").select("*").eq("empresa", "MSA"),
+      supabase.from("presupuesto_historia_cuenta_proveedor").select("nro_cuenta, cuit, anio, mes, monto"),
+      supabase.from("presupuesto_config").select("inflacion_mensual").eq("empresa", "MSA").maybeSingle(),
+    ])
+    const historia: PuntoHistorico[] = ((hist || []) as any[]).map(r => ({
+      nro_cuenta: String(r.nro_cuenta), anio: Number(r.anio), mes: Number(r.mes),
+      monto: Number(r.monto) || 0, facturas: Number(r.facturas) || 0,
+      proveedores: Number(r.proveedores) || 0,
+    }))
+    const nombres: Record<string, string> = {}
+    for (const r of ((hist || []) as any[])) {
+      if (r.cuenta_contable) nombres[String(r.nro_cuenta)] = String(r.cuenta_contable)
+    }
+    const guardadas: Record<string, ConfigCuenta> = {}
+    for (const c of ((conf || []) as any[])) {
+      guardadas[String(c.nro_cuenta)] = {
+        nro_cuenta: String(c.nro_cuenta), modo: c.modo,
+        meses_promedio: c.meses_promedio,
+        monto_manual: c.monto_manual == null ? null : Number(c.monto_manual),
+        cabezas_referencia: c.cabezas_referencia == null ? null : Number(c.cabezas_referencia),
+        cabezas_proyectadas: c.cabezas_proyectadas == null ? null : Number(c.cabezas_proyectadas),
+        inflacion_mensual: c.inflacion_mensual == null ? null : Number(c.inflacion_mensual),
+        cuits_excluidos: (c.cuits_excluidos as string[] | null) ?? [],
+        motivo_exclusion: c.motivo_exclusion,
+      }
+    }
+    const nros = Array.from(new Set(historia.map(h => h.nro_cuenta)))
+    const cfgDe = (nro: string): ConfigCuenta => guardadas[nro] ?? {
+      nro_cuenta: nro, modo: sugerirModo(nro, historia).modo, meses_promedio: 3,
+      motivo_exclusion: esProduccion(nro),
+    }
+    const excluidos: Record<string, string[]> = {}
+    for (const nro of nros) {
+      const l = cfgDe(nro).cuits_excluidos ?? []
+      if (l.length > 0) excluidos[nro] = l
+    }
+    const porProveedor: PuntoProveedor[] = ((prov || []) as any[]).map(r => ({
+      nro_cuenta: String(r.nro_cuenta), cuit: String(r.cuit ?? ""),
+      anio: Number(r.anio), mes: Number(r.mes), monto: Number(r.monto) || 0,
+    }))
+    const neta = netearExcluidos(historia, porProveedor, excluidos)
+
+    const ctx = {
+      meses: meses.map(m => ({ anio: m.anio, mes: m.mes })),
+      inflacionMensual: Number(cfgGen?.inflacion_mensual) || 0,
+      ipc: ipc.length > 0 ? ipc : undefined,
+    }
+    const filas = nros
+      .map(nro => ({ nro, nombre: nombres[nro] || nro, celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
+      .filter(f => f.celdas.some(c => c.monto > 0))
+      .sort((a, b) => b.celdas.reduce((s, c) => s + c.monto, 0) - a.celdas.reduce((s, c) => s + c.monto, 0))
+    setCuentas(filas)
+  }
+
+  /**
+   * Costo de producción: sale de los tramos de actividad de cada lote. Es una línea DERIVADA
+   * (decisión del usuario: los costos directos no se registran, se calculan) — por eso no hay
+   * nada que leer más que la actividad y el tramo.
+   */
+  const cargarCostosProduccion = async () => {
+    const [{ data: lotes }, { data: tra }, { data: acts }, { data: ins }, { data: tc }] = await Promise.all([
+      supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
+      supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
+      supabase.schema("productivo").from("actividades").select("*"),
+      supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
+      supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado"),
+    ])
+    const listaTramos = (tra || []) as TramoLote[]
+    if (listaTramos.length === 0) { setCostoProd([]); return }
+    const listaActs = (acts || []) as Actividad[]
+    const listaIns = (ins || []) as InsumoActividad[]
+    const tcs: PuntoSerie[] = ((tc || []) as any[]).map(r => ({
+      anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_presupuestado) || 0,
+    }))
+
+    // Una fila por ACTIVIDAD, no por lote: en el presupuesto interesa "cuánto cuesta la
+    // recría", no cuánto cuesta cada lote por separado.
+    const porActividad: Record<string, Record<string, number>> = {}
+    for (const l of ((lotes || []) as LoteStock[])) {
+      const mios = listaTramos.filter(t => t.lote_id === l.id)
+      if (mios.length === 0) continue
+      for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, listaIns)) {
+        const nombre = t.actividad.nombre
+        for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
+          ;(porActividad[nombre] ??= {})[m.mes] = (porActividad[nombre]?.[m.mes] || 0) + m.costo_total
+        }
+      }
+    }
+    setCostoProd(Object.entries(porActividad)
+      .map(([nombre, montos]) => ({ nombre, montos }))
+      .sort((a, b) => Object.values(b.montos).reduce((x, y) => x + y, 0)
+        - Object.values(a.montos).reduce((x, y) => x + y, 0)))
   }
 
   const cargarConfig = async () => {
@@ -234,11 +391,11 @@ export function TabPresupuesto() {
     setSaldoInicial(monto); setMesInicial(mes); setEditandoSaldo(false)
   }
 
-  const cargarTemplates = async () => {
+  const cargarTemplates = async (ipc: PuntoSerie[]) => {
     // Traer templates activos MSA (responsable contiene MSA)
     const { data: templates } = await supabase
       .from("egresos_sin_factura")
-      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable")
+      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion")
       .eq("activo", true)
       .or("responsable.ilike.%MSA%,responsable.eq.ambas")
       .not("cuenta_agrupadora", "is", null)
@@ -254,7 +411,10 @@ export function TabPresupuesto() {
     // los templates desaparecen de la vista sin ningún aviso.
     const primerMes = meses[0]
     const ultimoMes = meses[meses.length - 1]
-    const fechaDesde = `${primerMes.anio}-${String(primerMes.mes).padStart(2,"0")}-01`
+    // Se pide desde 18 meses ANTES del presupuesto: las cuotas pasadas son la base para
+    // proyectar los meses donde la campaña todavía no se generó.
+    const inicioHistoria = new Date(primerMes.anio, primerMes.mes - 1 - 18, 1)
+    const fechaDesde = `${inicioHistoria.getFullYear()}-${String(inicioHistoria.getMonth()+1).padStart(2,"0")}-01`
     const finExclusivo = new Date(ultimoMes.anio, ultimoMes.mes, 1) // mes es 1-based → mes siguiente
     const fechaHasta = `${finExclusivo.getFullYear()}-${String(finExclusivo.getMonth()+1).padStart(2,"0")}-01`
 
@@ -266,19 +426,43 @@ export function TabPresupuesto() {
       .gte("fecha_estimada", fechaDesde)
       .lt("fecha_estimada", fechaHasta)
       .neq("estado", "desactivado")
-      .neq("estado", "conciliado")
 
     if (errorCuotas) console.error("Error cargando cuotas de templates:", errorCuotas)
 
-    // Armar mapa egreso_id → { "YYYY-MM": suma_montos }
-    const mapaMontos: Record<string, Record<string, number>> = {}
+    // Toda la historia de cuotas por template: la pasada sirve para proyectar, la futura
+    // es el dato firme que manda donde existe.
+    const historiaCuotas: Record<string, CuotaMes[]> = {}
     for (const c of cuotas || []) {
       const fecha = c.fecha_estimada || c.fecha_vencimiento
       if (!fecha) continue
-      const clave = fecha.slice(0, 7) // "YYYY-MM"
-      if (!mapaMontos[c.egreso_id]) mapaMontos[c.egreso_id] = {}
-      mapaMontos[c.egreso_id][clave] = (mapaMontos[c.egreso_id][clave] || 0) + Number(c.monto || 0)
+      ;(historiaCuotas[c.egreso_id] ??= []).push({
+        egreso_id: c.egreso_id, mes: fecha.slice(0, 7), monto: Number(c.monto || 0),
+      })
     }
+
+    const mesesCtx = meses.map(m => ({ anio: m.anio, mes: m.mes }))
+    const proyeccion: Record<string, { info: TemplateInfo; celdas: CeldaTemplate[] }> = {}
+    const mapaMontos: Record<string, Record<string, number>> = {}
+    const mapaCeldas: Record<string, Record<string, CeldaTemplate>> = {}
+
+    for (const t of templates) {
+      const info: TemplateInfo = {
+        id: t.id, nombre: t.nombre_referencia,
+        periodicidad: t.periodicidad ?? null,
+        aplica_generacion: t.aplica_generacion ?? null,
+      }
+      const celdas = proyectarTemplate(info, historiaCuotas[t.id] || [], mesesCtx, { ipc })
+      proyeccion[t.id] = { info, celdas }
+      mapaMontos[t.id] = {}
+      mapaCeldas[t.id] = {}
+      for (const c of celdas) {
+        mapaMontos[t.id]![c.mes] = c.monto
+        mapaCeldas[t.id]![c.mes] = c
+      }
+    }
+
+    const aviso = avisoFaltaGenerar(proyeccion)
+    setAvisoGen(aviso.templates > 0 ? aviso : null)
 
     // Construir filas por agrupador
     const mapaAgrupadores: Record<string, FilaTemplate[]> = {}
@@ -291,6 +475,8 @@ export function TabPresupuesto() {
         agrupador,
         categ: t.categ,
         montos: mapaMontos[t.id] || {},
+        celdas: mapaCeldas[t.id] || {},
+        cargaManual: t.aplica_generacion === true,
       })
     }
 
@@ -685,10 +871,29 @@ export function TabPresupuesto() {
       const ventaAnt = campos.reduce(
         (a, c) => a + (c.fijado[claveAnt] || 0) + (c.presupuestado[claveAnt] || 0) + (c.disponible[claveAnt] || 0), 0)
       suma += ventaAnt * ALICUOTA_IIBB_ARRENDAMIENTO
+      // Cuentas contables (lo que llega por factura) y costos de producción (derivados de
+      // las actividades). Los tres bloques no se pisan: verificado que templates y cuentas
+      // no comparten conceptos, y las cuentas de producción salen `excluida`.
+      for (const c of cuentas) suma += c.celdas.find(x => x.mes === clave)?.monto || 0
+      for (const c of costoProd) suma += c.montos[clave] || 0
       totales[clave] = suma
     }
     return totales
-  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, meses])
+
+  const totalCuentasPorMes = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const c of cuentas) for (const x of c.celdas) t[x.mes] = (t[x.mes] || 0) + x.monto
+    return t
+  }, [cuentas])
+
+  const totalCostoProdPorMes = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const c of costoProd) {
+      for (const [m, v] of Object.entries(c.montos)) t[m] = (t[m] || 0) + v
+    }
+    return t
+  }, [costoProd])
 
   const totalSueldosPorMes = useMemo(() => {
     const totales: Record<string, number> = {}
@@ -800,7 +1005,8 @@ export function TabPresupuesto() {
         <div>
           <h2 className="text-xl font-semibold text-gray-800">Presupuesto MSA</h2>
           <p className="text-sm text-gray-500">
-            Ingresos (arrendamientos) + egresos (templates y sueldos) · {meses[0].label} – {meses[meses.length-1].label}
+            Ingresos (arrendamientos y hacienda) + egresos (templates, sueldos, cuentas
+            contables y costos de producción) · {meses[0].label} – {meses[meses.length-1].label}
           </p>
         </div>
         <div className="flex gap-2">
@@ -808,6 +1014,25 @@ export function TabPresupuesto() {
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
         </div>
       </div>
+
+      {/* Aviso: hay templates proyectados que el usuario suele cargar a mano.
+          El aviso ES el punto: son los que le recuerdan un compromiso de pago
+          (Cargas Sociales, SICORE, UATRE…) y sin campaña generada quedarían invisibles. */}
+      {avisoGen && (
+        <div className="rounded border border-amber-300 bg-amber-50/60 px-3 py-2 text-xs">
+          <p className="text-amber-900">
+            <strong>Falta generar la campaña de {avisoGen.templates}{" "}
+            {avisoGen.templates === 1 ? "template" : "templates"}.</strong>{" "}
+            El presupuesto los estimó ({avisoGen.meses.length}{" "}
+            {avisoGen.meses.length === 1 ? "mes" : "meses"}, ${Math.round(avisoGen.monto).toLocaleString("es-AR")}),
+            pero como son compromisos de pago conviene cargarles las cuotas.
+          </p>
+          <p className="mt-0.5 text-[11px] text-amber-800">
+            {avisoGen.nombres.slice(0, 8).join(" · ")}
+            {avisoGen.nombres.length > 8 ? ` · y ${avisoGen.nombres.length - 8} más` : ""}
+          </p>
+        </div>
+      )}
 
       {/* Tabla */}
       <Card>
@@ -1149,13 +1374,7 @@ export function TabPresupuesto() {
                                   </td>
                                   {meses.map(m => {
                                     const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                                    return (
-                                      <td key={clave}
-                                        className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
-                                          clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
-                                        {fmt(t.montos[clave] || 0)}
-                                      </td>
-                                    )
+                                    return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
                                   })}
                                 </tr>
                               ))}
@@ -1170,17 +1389,7 @@ export function TabPresupuesto() {
                             </td>
                             {meses.map(m => {
                               const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                              const esActual = clave === mesActualClave
-                              return (
-                                <td
-                                  key={clave}
-                                  className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
-                                    esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
-                                  }`}
-                                >
-                                  {fmt(t.montos[clave] || 0)}
-                                </td>
-                              )
+                              return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
                             })}
                           </tr>
                         ))
@@ -1236,6 +1445,105 @@ export function TabPresupuesto() {
                                 }`}
                               >
                                 {fmt(s.montos[clave] || 0)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
+
+                {/* ── Cuentas contables (lo que llega por factura) ──
+                    El modo de cada cuenta se configura en el panel "Cuentas contables"; acá
+                    se muestra el resultado y suma al total. */}
+                {cuentas.length > 0 && (() => {
+                  const abierto = expandidos["__cuentas__"] ?? false
+                  return (
+                    <>
+                      <tr className="border-b bg-sky-50 cursor-pointer hover:bg-sky-100 transition-colors"
+                        onClick={() => toggleAgrupador("__cuentas__")}>
+                        <td className="sticky left-0 z-10 bg-sky-50 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                          {abierto
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />}
+                          📒 Cuentas contables
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            {cuentas.length} cuentas · lo que llega por factura
+                          </span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(totalCuentasPorMes[clave] || 0)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {abierto && cuentas.map(c => (
+                        <tr key={`cta-${c.nro}`} className="border-b hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                            {c.nombre}
+                          </td>
+                          {meses.map(m => {
+                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            const celda = c.celdas.find(x => x.mes === clave)
+                            return (
+                              <td key={clave} title={celda?.explicacion}
+                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                {fmt(celda?.monto || 0)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
+
+                {/* ── Costos de producción (derivados de las actividades del lote) ── */}
+                {costoProd.length > 0 && (() => {
+                  const abierto = expandidos["__costoprod__"] ?? false
+                  return (
+                    <>
+                      <tr className="border-b bg-violet-50 cursor-pointer hover:bg-violet-100 transition-colors"
+                        onClick={() => toggleAgrupador("__costoprod__")}>
+                        <td className="sticky left-0 z-10 bg-violet-50 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                          {abierto
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />}
+                          🌾 Costos de producción
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            derivado de las actividades — no se registra, se calcula
+                          </span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(totalCostoProdPorMes[clave] || 0)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {abierto && costoProd.map(c => (
+                        <tr key={`cp-${c.nombre}`} className="border-b hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                            {c.nombre}
+                          </td>
+                          {meses.map(m => {
+                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            return (
+                              <td key={clave}
+                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                {fmt(c.montos[clave] || 0)}
                               </td>
                             )
                           })}
@@ -1395,6 +1703,12 @@ export function TabPresupuesto() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="border-t px-4 py-2 text-[11px] text-gray-500">
+            <span className="italic text-gray-400">En cursiva</span>: mes sin cuota cargada, el
+            presupuesto lo proyectó (respetando en qué meses paga cada template).
+            {" "}<span className="text-amber-500">◦</span> además es un template que se suele
+            cargar a mano. Pasá el mouse por cualquier celda para ver de dónde salió.
           </div>
         </CardContent>
       </Card>

@@ -1528,6 +1528,70 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### ✅ C-19 · C-7 · C-17 — EL PRESUPUESTO QUEDÓ COMO UNA SOLA COSA *(2026-07-30, sin testear)*
+
+Los tres bloques que estaban afuera ahora bajan a la grilla, suman al **TOTAL EGRESOS** y por lo
+tanto al **RESULTADO** y al **SALDO ACUMULADO**.
+
+##### C-19 · Cuentas contables en la grilla
+Fila colapsable `📒 Cuentas contables`, con una sub-fila por cuenta. El **modo se sigue
+configurando en su panel** (botón "Cuentas contables"), igual que Precios y TC configura y la
+grilla muestra. Cada celda lleva su explicación en el tooltip.
+
+##### C-7 · Costos de producción en la grilla
+Fila `🌾 Costos de producción`, **una sub-fila por actividad** (no por lote): en el presupuesto
+interesa cuánto cuesta la recría, no cuánto cuesta cada lote. Sale de los tramos vía
+`tramosParaCosto()` + `consumoMensual()`, con el TC para los ítems en USD.
+
+Es una línea **derivada**, como quedó decidido: los costos directos no se registran en ningún
+lado, se calculan a partir de la actividad.
+
+##### C-17 · Los templates se proyectan donde no hay cuota
+`lib/presupuesto/templates.ts`. Las cuotas se cortaban en dic-2026 y el segundo año del
+presupuesto quedaba casi vacío — que no es lo mismo que no tener gasto.
+
+**Donde hay cuota, manda la cuota.** Donde no, se proyecta desde el mismo mes del año anterior
+(o la última cuota) más IPC. Las celdas proyectadas van **en cursiva** para que nunca se
+confundan con un dato firme.
+
+**Lo que NO se podía hacer: propagar la última cuota todos los meses.** Convertiría un impuesto
+anual en un gasto mensual — *Inmobiliario Cuota Rojas* paga en cinco meses y daría doce pagos.
+La proyección respeta **en qué meses paga cada template**, sacado de su historia (se piden las
+cuotas desde 18 meses antes justamente para tener con qué).
+
+**Y hubo que distinguir mensual de puntual por DENSIDAD, no por el patrón de meses.** El
+verificador lo encontró: *Cargas Sociales* con seis meses cargados (ene-jun) parecía no pagar de
+julio en adelante. La densidad — meses con cuota sobre meses del tramo — lo resuelve: ≥ 80 % es
+mensual y se proyecta todo el año; menos es de meses puntuales y se respeta el patrón.
+
+##### El aviso, que era la mitad del pedido
+> *"por ej cargas sociales a mí me sirve crear la campaña con datos estimados porque me recuerda
+> el compromiso de pago, pero otros no. ¿Cómo haría el sistema para poder interpretar?"*
+
+**El campo ya existía y ya estaba bien cargado**: `egresos_sin_factura.aplica_generacion`.
+No hubo que inventar ninguna clasificación.
+
+| `aplica_generacion` | Qué hace el presupuesto |
+|---|---|
+| `true` (12: **Cargas Sociales**, SICORE 1ra/2da, UATRE, IIBB Mensual, Anticipo Ganancias, Imp. Ganancias, Acciones y Participaciones, Seguro Flota/Accidentes, Tarjeta Visa, Interbancaria BAPRO) | Proyecta **y avisa**: banda ámbar arriba con cuántos templates, cuántos meses y cuánta plata, y un `◦` en la celda. El aviso **es** el recordatorio del compromiso de pago. |
+| `false` / `null` (52) | Proyecta en silencio. No hace falta cargar nada. |
+
+Sin escribir **nada** en el template: la estimación vive en el Presupuesto, el compromiso en el
+template. Es la regla que el usuario recordó.
+
+**Verificador**: `npx tsx scripts/verificar-templates.ts` — 12 checks, incluido que un impuesto
+anual no se vuelva mensual y que la cuota cargada pise a la proyección.
+
+##### Lo que queda para verificar cuando se pruebe
+- El **TOTAL EGRESOS cambió**: ahora incluye cuentas contables y costos de producción. Vale la
+  pena mirar el salto contra lo que mostraba antes.
+- El **doble conteo** está cubierto por construcción (templates y cuentas no comparten conceptos;
+  las cuentas de producción salen `excluida`; Federación Patronal se descuenta por CUIT), pero
+  es lo primero a revisar si un número parece alto.
+
+
 ## 🔚 CIERRE DE SESIÓN 2026-07-30 — Presupuesto (ingresos, costos, cuentas, proveedores)
 
 **Todo en `desarrollo`, nada mergeado a `main`. Build OK, tipos en 120 (baseline), 6 verificadores
@@ -1579,8 +1643,9 @@ TOTAL EGRESOS y por lo tanto al RESULTADO y al SALDO ACUMULADO. El panel de arri
 lugar donde se **configura** el modo de cada cuenta (igual que Precios y TC configura y la grilla
 muestra).
 
-→ **C-19**: integrar el bloque de cuentas contables a la grilla del presupuesto. No lo hice en
-esta tanda porque cambia el TOTAL y el SALDO, y no quería dejar eso sin testear al cierre.
+→ **C-19 ✅ HECHO** justo después (ver la sección de arriba): las cuentas contables ya bajan a la
+grilla y suman al TOTAL EGRESOS, junto con los costos de producción (C-7) y la proyección de
+templates (C-17).
 
 #### 2 · IPC cargado ✅ — verificado que funciona
 El usuario cargó **3 escalones**: jul-26 `2 %`, dic-26 `1,5 %`, jun-27 `1 %`. El arrastre los
@@ -1595,7 +1660,8 @@ Acumulado ago-26 → ago-27: **21,9 %**. Ya lo usan el presupuesto de cuentas y 
 proveedores.
 
 #### 3 · ¿Cómo hacen los templates para presupuestar si no está cargada la campaña siguiente?
-**Hoy NO lo hacen: es el hueco.** El presupuesto lee las cuotas cargadas, y las cuotas se cortan:
+**✅ RESUELTO en C-17** (ver arriba). Cuando se escribió esto todavía no estaba; el diagnóstico
+sigue valiendo: El presupuesto lee las cuotas cargadas, y las cuotas se cortan:
 
 | jul-26 | ago-26 | sep-26 | oct-26 | nov-26 | dic-26 | ene-27 |
 |---|---|---|---|---|---|---|
@@ -1619,7 +1685,7 @@ de pago, pero otros no"*.
 Cargas Sociales está en `true`, que es exactamente lo que el usuario dijo que quiere. **El dato ya
 está**, no hay que inventar ninguna clasificación nueva.
 
-**La regla que sale de eso** (a implementar, C-17):
+**La regla, ya implementada:**
 
 | Situación | Qué hace el presupuesto |
 |---|---|
@@ -1633,17 +1699,14 @@ anterior + IPC. Sin escribir **nada** en el template, que es la regla acordada h
 estimación vive en el Presupuesto, el dato firme en el template.
 
 #### 5 · Costos de producción al presupuesto
-Los tramos ya calculan el costo mes a mes y se ve en el modal del lote, pero **todavía no baja a
-la grilla**. Es C-7, que ya está decidido conceptualmente (línea derivada, no template): falta
-sólo pintarlo. Va junto con C-19 — los dos son "sumar un bloque más al TOTAL EGRESOS".
+**✅ HECHO (C-7)**: los costos ya bajan a la grilla, una fila por actividad, sumando al TOTAL.
 
 ---
 
 ### 🗺️ Orden sugerido para retomar
-1. **C-19 + C-7** — bajar cuentas contables y costos de producción a la grilla, sumando al TOTAL
-   EGRESOS y al SALDO ACUMULADO. Es lo que cierra el presupuesto como una sola cosa.
-2. **C-17** — proyectar templates sin cuotas, con el aviso para los de `aplica_generacion = true`.
-3. **Testear** lo de esta sesión, que es mucho y está todo sin probar.
+1. ~~C-19 + C-7 + C-17~~ ✅ **HECHOS** — el presupuesto ya es una sola cosa.
+2. **Testear** lo de esta sesión, que es mucho y está todo sin probar. Empezar por el TOTAL
+   EGRESOS, que ahora incluye dos bloques nuevos.
 4. **C-11** — control por canales (pagado vs facturado) para cazar el gasto sin comprobante.
 5. Resto: C-6 stock e insumos a comprar · C-12 cabezas automáticas · C-18 chequeo de cruce por
    CUIT · A-OP-01 devolver el MCP a read-only.
@@ -1654,8 +1717,8 @@ venta de hacienda colapsable y por categoría · disponible por diferencia · 6 
 control de cordura · fuente facturas/canales · exclusión por proveedor · control de subas.
 **Costos productivos**: actividades y costos con simulador · tramos en el lote · curva de peso
 quebrada.
-**Dato del usuario sin corregir**: la actividad *Engorde* tiene la ración en **8 % / 10 %** donde
-debería ser 85 / 15 (quedó del bug del input que se reformateaba). No se tocó: es su dato.
+**Corregido por el usuario**: la actividad *Engorde* quedó en **90 / 10** (suma 100 %). El bug del
+input que se reformateaba está arreglado y la carga funciona.
 
 
 #### 🔀 FUENTE DEL PRESUPUESTO: FACTURAS ↔ CANALES *(2026-07-30)*
