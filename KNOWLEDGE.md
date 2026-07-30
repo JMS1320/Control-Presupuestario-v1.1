@@ -852,6 +852,32 @@ mirar primero si se arregla en el primitivo. Es la diferencia entre un cambio y 
 
 ---
 
+## Netear stock: cruzar por NOMBRE de categoría duplica `#ganaderia #modelado #2026-07-30`
+
+Al desglosar la venta de hacienda por categoría, el disponible salía duplicado.
+
+**Por qué**: el mismo animal cambia de nombre según cuándo se vende. Sale `Ternero al Pie` si se
+vende dentro de los 45 días del destete y `Ternero Recria` si se vende después
+(`categoriaSegunFecha`). Entonces la existencia del destete (`Ternero al Pie`) y el lote que la
+consumía podían quedar bajo nombres distintos: no neteaban, y las cabezas se contaban dos veces.
+
+**La regla**: para restar stock hay que cruzar por **de dónde salió el animal**, no por cómo se
+lo llama hoy. La identidad de la tropa (`pesada|macho`, `ciclo:<uuid>|hembra`) es estable; el
+nombre de la categoría es una etiqueta de presentación que depende de una fecha.
+
+Vale para cualquier stock cuya categoría dependa del momento: hacienda, granos por posición,
+cualquier cosa que se reclasifique con el tiempo. Si la clave de agrupación puede cambiar sola,
+no sirve como clave de neteo.
+
+**Y el promedio del saldo no es el promedio general.** Si se retiran los más pesados, los que
+quedan pesan menos. Hay que restar cabezas **y** kilos, medidos a la **misma fecha** — mezclar un
+peso de hoy con uno proyectado a la venta (que ya tiene la ganancia diaria adentro) mete kilos
+que todavía no existen.
+
+**Tags**: `#neteo` `#doble-conteo` `#clave-estable` `#promedio-ponderado`
+
+---
+
 ## Parseo es-AR: el punto de miles rompe el round-trip `#es-ar #numeros #bug #2026-07-30`
 **Rompió dos veces en el mismo módulo**, con síntomas distintos:
 1. **Porcentajes**: los defaults venían en fracción con punto (`0.105`) y el parser de montos

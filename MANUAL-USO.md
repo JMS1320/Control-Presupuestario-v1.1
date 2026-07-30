@@ -459,9 +459,28 @@ proyección puede ser deliberadamente más conservadora.
 > ciclo 2024 cerró con **88,3%** de destete (no 85%) y split **56,6/43,4** (no 50/50).
 
 ### Lo que ve el Presupuesto
-- Una fila **🐄 por proyección** en INGRESOS, con el **total cobrado (neto + IVA)** en el mes
-  de cobro. `*` si falta cargar algún precio.
-- Una fila **IIBB ganadería** en EGRESOS, en el **mes siguiente** al cobro.
+
+**`🐄 Venta de hacienda`** es un total, y debajo va **una fila por categoría** (sólo las que
+tienen algo). Cada fila mezcla las dos cosas en la misma línea:
+
+| | qué muestra |
+|---|---|
+| Mes con venta presupuestada | **plata** — total cobrado (neto + IVA, menos comercialización). `*` = algún precio arrastrado de otro mes |
+| Mes en que se disponibiliza | **cabezas + kg promedio** en ámbar — hay hacienda sin vender |
+
+Una categoría **sin ninguna venta** igual aparece, marcada *"sin venta presupuestada"*: es el
+aviso de que hay stock parado. Pasar el mouse por la celda ámbar explica la resta
+(*"98 cab. existentes − 55 con venta presupuestada · stock de hoy"*).
+
+**No hace falta crear el lote para que te avise.** Las cabezas salen de la **fuente** — la
+pesada para el stock de hoy, el ciclo para los destetes que vienen — y se descuenta lo que ya
+tiene venta. Si tuvieras que armar el lote primero, el aviso llegaría tarde. Es el mismo
+criterio que las toneladas de soja disponibles a fijar.
+
+**El promedio del saldo baja si vendés los pesados**, y eso es correcto: de 98 machos a 245 kg,
+si te llevás los 55 más pesados (275 kg) los 43 que quedan promedian 207 kg, no 245.
+
+Y una fila **IIBB ganadería** en EGRESOS, en el **mes siguiente** al cobro.
 
 ### Alícuotas
 **Viven en la proyección, no en el código**: IVA 10,5% e IIBB 1% son editables por fila.

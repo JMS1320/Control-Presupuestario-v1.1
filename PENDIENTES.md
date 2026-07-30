@@ -1444,10 +1444,10 @@ IIBB 1% sobre la venta neta → egreso el mes SIGUIENTE
    ⏳ **Pendiente menor**: la comisión de CZ probablemente lleve su propio IVA (21%); hoy se
    descuenta sin IVA. A confirmar con el usuario.
 
-**G-8 · Los kg por vender deberían salir del CICLO, no del lote** 🟡 *(2026-07-30)*
-Hoy la fila *"Disponible sin fecha"* del presupuesto necesita que el **lote exista**. El usuario
-lo señaló: el paralelo real con la soja es que **las toneladas disponibles se ven sin que exista
-ninguna venta** — salen del contrato. Acá deberían salir del **ciclo**.
+**G-8 · Los kg por vender salen del CICLO, no del lote** ✅ **HECHO 2026-07-30**
+Antes la fila *"Disponible sin fecha"* del presupuesto necesitaba que el **lote existiera**. El
+usuario lo señaló: el paralelo real con la soja es que **las toneladas disponibles se ven sin que
+exista ninguna venta** — salen del contrato. Acá tienen que salir del **ciclo**.
 
 > *"como sabemos por las campañas los kg producidos y a partir de qué fecha, que el presupuesto
 > lo muestre como en soja, sin necesidad de crear la venta. Más como un control para que no se
@@ -1456,14 +1456,54 @@ ninguna venta** — salen del contrato. Acá deberían salir del **ciclo**.
 Y como control es más útil así: si hace falta generar el lote para que te avise que hay stock sin
 vender, el aviso llega tarde.
 
-**Cómo sería**: Presupuesto lee `stock_ciclos`, calcula la línea de tiempo y muestra en el mes
-del destete las cabezas y kg de `terneros_venta`, `terneras_venta` y `descarte`. Cuando se
-genera un lote con fecha, esa parte pasa de *"por vender"* a *"presupuestado"* y deja de
-contarse dos veces.
+**Resuelto en `lib/ganaderia/disponibilidad.ts`.** El presupuesto ya no le pregunta al lote
+cuántas cabezas hay: se lo pregunta a la **fuente** y resta.
 
-**Ojo con el doble conteo**: hay que descontar del ciclo lo que ya tiene lote. Es el mismo
-problema que resuelve `cantidad_calculada`, y otra razón más para **G-7** (que el lote derive la
-cantidad en vez de copiarla).
+    disponible = existencia − lo comprometido en un lote CON fecha de venta
+
+- **Existencia del stock de hoy** → `existenciasDePesada()`, última pesada de cada animal
+  (excluye toritos y terneras de reposición, que no se venden).
+- **Existencia de los destetes futuros** → `existenciasDeCiclos()`, sobre `calcularLineaTiempo`.
+  Sólo los destetes **posteriores** al mes actual: los pasados ya están en la pesada y contarlos
+  otra vez duplicaría el stock.
+- Un lote **sin** fecha de venta **no** se resta: no hay venta presupuestada, así que sigue siendo
+  disponible (y no se duplica, porque salió de la misma existencia).
+
+**El doble conteo se resuelve por CLAVE DE TROPA, no por nombre de categoría.** Es la parte no
+obvia: el mismo animal se llama *"al Pie"* si se vende en el destete y *"Recría"* si se vende
+después. Cruzar por el nombre hacía que el lote del destete no neteara contra su propia
+existencia y el disponible saliera duplicado. La clave es `pesada|macho` o `ciclo:<uuid>|hembra`,
+derivada de `stock_lotes.ciclo_id` (que está poblado en los lotes de destete y `null` en los de
+stock inicial). Ver `claveDeLote()`.
+
+**El promedio del saldo baja, como tiene que bajar.** Se restan también los KILOS, al peso
+promedio de lo comprometido — si se venden los más pesados, los que quedan pesan menos:
+
+    98 cab · 245,5 kg prom = 24.063 kg
+    − 55 cab · 275,2 kg    = −15.137 kg
+    ─────────────────────────────────────
+      43 cab ·  8.926 kg  → 207,6 kg prom     ← NO 245,5
+
+Los dos lados tienen que estar medidos a la **misma fecha** o se mezclan kilos de momentos
+distintos: por eso se usa `peso_base_kg` (peso a `fecha_peso`, la pesada) y **no** el peso
+proyectado a la venta, que ya incluye la ganancia diaria.
+
+Verificado contra los datos reales con `scripts/verificar-disponibilidad-hacienda.ts`
+(`npx tsx scripts/verificar-disponibilidad-hacienda.ts`) — 9 checks, incluido que el lote de un
+ciclo NO netee contra el stock de hoy. ⏳ **Falta test del usuario en pantalla.**
+
+**G-9 · Venta de hacienda desglosada por categoría** ✅ **HECHO 2026-07-30**
+`🐄 Venta de hacienda` pasó de ser **una fila sumada** a **una fila por categoría**, con el total
+arriba. Cada fila lleva las dos capas en la misma línea:
+- meses con venta presupuestada → **plata**;
+- el mes en que se disponibilizan → **cabezas + peso promedio** (ámbar), si quedó saldo sin vender.
+
+Se listan sólo las categorías que tienen algo. Una categoría sin ninguna venta (el caso del
+usuario: machos livianos y terneras de recría) igual aparece, marcada *"sin venta presupuestada"*,
+mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab. existentes −
+55 con venta presupuestada · stock de hoy"*.
+
+⏳ **Falta test del usuario.**
 
 ##### FASE B — Acople con Ventas *(después)*
 6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con

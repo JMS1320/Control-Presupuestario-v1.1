@@ -27,9 +27,13 @@ import {
   type PrecioHacienda,
 } from "@/lib/ganaderia/calculo"
 import {
-  valuarLoteConPrecios, cantidadDisponible, pesoEstimado,
-  type LoteStock, type VentaStock,
+  valuarLoteConPrecios, calcularLineaTiempo, fechaDestete, pesoDestete,
+  type LoteStock, type VentaStock, type CicloStock,
 } from "@/lib/ganaderia/ciclo"
+import {
+  disponiblePorDiferencia, existenciasDePesada, existenciasDeCiclos,
+  type DisponibleCategoria,
+} from "@/lib/ganaderia/disponibilidad"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -131,16 +135,30 @@ export function TabPresupuesto() {
     nombre: string; montos: Record<string, number>; iibb: Record<string, number>; estimado: boolean
   }[]>([])
   /**
-   * Hacienda: dos capas, igual que el arrendamiento.
-   *  · presupuestado → lote con fecha de venta → monto en el mes de cobro
-   *  · disponible    → lote SIN fecha → no hay plata, se muestran cabezas y kg
+   * Hacienda: UNA FILA POR CATEGORÍA, y cada fila lleva las dos capas.
+   *  · montos     → lote con fecha de venta → plata en el mes de cobro
+   *  · disponible → cabezas que existen y NO tienen venta presupuestada, en el mes en
+   *                 que se disponibilizan. Sin plata: cabezas y peso promedio, igual que
+   *                 las toneladas de soja a fijar.
+   * Se listan sólo las categorías que tienen algo (venta o disponible).
    */
   const [hacienda, setHacienda] = useState<{
-    presupuestado: Record<string, number>
+    categorias: {
+      categoria: string
+      montos: Record<string, number>
+      estimado: Record<string, boolean>
+      disponible: Record<string, DisponibleCategoria>
+    }[]
     iibb: Record<string, number>
-    estimado: Record<string, boolean>
-    disponible: { categoria: string; cabezas: number; kg: number }[]
-  }>({ presupuestado: {}, iibb: {}, estimado: {}, disponible: [] })
+  }>({ categorias: [], iibb: {} })
+  /** Total por mes de la venta de hacienda — es la suma de las categorías. */
+  const haciendaTotal = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const c of hacienda.categorias) {
+      for (const [m, v] of Object.entries(c.montos)) t[m] = (t[m] || 0) + v
+    }
+    return t
+  }, [hacienda])
   // Cuotas detrás de cada celda: clave `${campo}|${YYYY-MM}|${presupuestado|disponible}`
   const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
   const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
@@ -447,56 +465,94 @@ export function TabPresupuesto() {
 
   // ── INGRESOS: venta de hacienda (lotes de Productivo) ───────────────────────
   const cargarHacienda = async () => {
-    const [{ data: lotes }, { data: precios }] = await Promise.all([
+    const [{ data: lotes }, { data: precios }, { data: ciclos }, { data: pes }] = await Promise.all([
       supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
       supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
+      supabase.schema("productivo").from("stock_ciclos").select("*").eq("empresa", "MSA"),
+      // Pesada viva: es la fuente real de cuántas cabezas hay hoy. El lote es un recorte
+      // de esto, no el total — por eso lo disponible se calcula por diferencia.
+      supabase.schema("productivo").from("pesadas_terneros")
+        .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)"),
     ])
-    if (!lotes || lotes.length === 0) {
-      setHacienda({ presupuestado: {}, iibb: {}, estimado: {}, disponible: [] })
-      return
-    }
 
-    const ids = (lotes as any[]).map(l => l.id)
+    const listaLotes = ((lotes || []) as LoteStock[])
+    const ids = listaLotes.map(l => l.id)
     const { data: vs } = ids.length
       ? await supabase.schema("productivo").from("stock_ventas").select("lote_id, cantidad").in("lote_id", ids)
       : { data: [] as any[] }
 
-    const ventasDe = (id: string) => ((vs || []) as any[]).filter(v => v.lote_id === id)
+    const listaVentas = ((vs || []) as VentaStock[])
+    const ventasDe = (id: string) => listaVentas.filter(v => v.lote_id === id)
     const listaPrecios = (precios || []) as PrecioHacienda[]
 
-    const presupuestado: Record<string, number> = {}
+    // ── Capa 1: ventas presupuestadas, agrupadas POR CATEGORÍA
+    const porCat: Record<string, {
+      montos: Record<string, number>
+      estimado: Record<string, boolean>
+      disponible: Record<string, DisponibleCategoria>
+    }> = {}
+    const fila = (cat: string) => (porCat[cat] ??= { montos: {}, estimado: {}, disponible: {} })
     const iibbPorMes: Record<string, number> = {}
-    const estimado: Record<string, boolean> = {}
-    const dispPorCat: Record<string, { cabezas: number; kg: number }> = {}
-    const hoy = new Date().toISOString().slice(0, 10)
 
-    for (const l of lotes as LoteStock[]) {
-      const v = valuarLoteConPrecios(l, ventasDe(l.id) as VentaStock[], listaPrecios)
-
-      if (v.proyectado && v.cuotas.length > 0) {
-        // El cobro puede venir en varias cuotas: cada una cae en su mes
-        for (const q of v.cuotas) {
-          presupuestado[q.mes] = (presupuestado[q.mes] || 0) + q.monto
-          if (v.estimado) estimado[q.mes] = true
-        }
-        // El IIBB de la venta se paga el mes SIGUIENTE al cobro
-        if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
-      } else {
-        // Sin fecha de venta no hay plata: se informa en cabezas y kg, igual que las
-        // toneladas de soja disponibles a fijar.
-        const cab = cantidadDisponible(l, ventasDe(l.id) as VentaStock[])
-        if (cab <= 0.01) continue
-        const kg = cab * pesoEstimado(l, hoy)
-        const acc = dispPorCat[l.categoria] ?? { cabezas: 0, kg: 0 }
-        acc.cabezas += cab; acc.kg += kg
-        dispPorCat[l.categoria] = acc
+    for (const l of listaLotes) {
+      const v = valuarLoteConPrecios(l, ventasDe(l.id), listaPrecios)
+      if (!v.proyectado || v.cuotas.length === 0) continue
+      const f = fila(l.categoria)
+      // El cobro puede venir en varias cuotas: cada una cae en su mes
+      for (const q of v.cuotas) {
+        f.montos[q.mes] = (f.montos[q.mes] || 0) + q.monto
+        if (v.estimado) f.estimado[q.mes] = true
       }
+      // El IIBB de la venta se paga el mes SIGUIENTE al cobro
+      if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
     }
 
+    // ── Capa 2: lo que existe y no tiene venta, por diferencia contra la fuente
+    const mesActual = new Date().toISOString().slice(0, 7)
+    const primero = `${meses[0].anio}-${String(meses[0].mes).padStart(2, "0")}`
+    const mesBase = mesActual < primero ? primero : mesActual
+
+    // Última pesada de cada animal: es el stock de hoy
+    const ultima: Record<string, any> = {}
+    for (const r of ((pes || []) as any[])) {
+      const prev = ultima[r.ternero_id]
+      if (!prev || String(r.fecha) > String(prev.fecha)) ultima[r.ternero_id] = r
+    }
+    const filasPesada = Object.values(ultima)
+      .filter((r: any) => r.ternero)
+      .map((r: any) => ({
+        peso_kg: r.peso_kg,
+        sexo: String(r.ternero.sexo ?? ""),
+        es_torito: Boolean(r.ternero.es_torito),
+      }))
+
+    // Destetes que todavía no ocurrieron: los pasados ya están en la pesada
+    const linea = calcularLineaTiempo((ciclos || []) as CicloStock[])
+    const existenciasCiclos = existenciasDeCiclos(
+      linea.map(c => ({
+        id: c.ciclo.id,
+        campania: c.ciclo.campania,
+        fecha_destete: fechaDestete(c.ciclo),
+        terneros_venta: c.terneros_venta,
+        terneras_venta: c.terneras_venta,
+        peso_macho: pesoDestete(c.ciclo, "macho"),
+        peso_hembra: pesoDestete(c.ciclo, "hembra"),
+      })),
+      mesBase,
+    )
+
+    const disponibles = disponiblePorDiferencia(
+      [...existenciasDePesada(filasPesada, mesBase, "stock de hoy"), ...existenciasCiclos],
+      listaLotes,
+      listaVentas,
+    )
+    for (const d of disponibles) fila(d.categoria).disponible[d.mes] = d
+
     setHacienda({
-      presupuestado, iibb: iibbPorMes, estimado,
-      disponible: Object.entries(dispPorCat)
-        .map(([categoria, d]) => ({ categoria, ...d }))
+      iibb: iibbPorMes,
+      categorias: Object.entries(porCat)
+        .map(([categoria, v]) => ({ categoria, ...v }))
+        .filter(c => Object.keys(c.montos).length > 0 || Object.keys(c.disponible).length > 0)
         .sort((a, b) => a.categoria.localeCompare(b.categoria)),
     })
   }
@@ -589,7 +645,7 @@ export function TabPresupuesto() {
         (s, c) => s + (c.fijado[clave] || 0) + (c.presupuestado[clave] || 0) + (c.disponible[clave] || 0),
         0,
       ) + ganaderia.reduce((s, g) => s + (g.montos[clave] || 0), 0)
-        + (hacienda.presupuestado[clave] || 0)
+        + (haciendaTotal[clave] || 0)
     }
     return totales
   }, [campos, ganaderia, hacienda, meses])
@@ -605,7 +661,7 @@ export function TabPresupuesto() {
   }, [ganaderia, meses])
 
   const hayIngresos = campos.length > 0 || ganaderia.length > 0
-    || Object.keys(hacienda.presupuestado).length > 0 || hacienda.disponible.length > 0
+    || hacienda.categorias.length > 0
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -785,10 +841,13 @@ export function TabPresupuesto() {
                       )
                     })}
 
-                    {/* Hacienda — venta presupuestada (lotes con fecha) */}
-                    {Object.keys(hacienda.presupuestado).length > 0 && (
-                      <tr className="border-b bg-emerald-50/40 hover:bg-emerald-50">
-                        <td className="sticky left-0 z-10 bg-emerald-50/40 px-4 py-2 font-semibold text-gray-700">
+                    {/* Hacienda — una fila por categoría. Cada fila lleva la plata de las
+                        ventas presupuestadas y, en el mes en que se disponibilizan, las
+                        cabezas que todavía no tienen venta (calculadas por diferencia
+                        contra la pesada / el destete, no contra los lotes). */}
+                    {hacienda.categorias.length > 0 && (
+                      <tr className="border-b bg-emerald-100/60">
+                        <td className="sticky left-0 z-10 bg-emerald-100/60 px-4 py-2 font-semibold text-gray-700">
                           🐄 Venta de hacienda
                           <span className="ml-2 text-xs font-normal text-gray-400">
                             con IVA, neto de comercialización
@@ -796,37 +855,55 @@ export function TabPresupuesto() {
                         </td>
                         {meses.map(m => {
                           const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                          const esActual = clave === mesActualClave
-                          const valor = hacienda.presupuestado[clave] || 0
                           return (
                             <td key={clave}
                               className={`px-3 py-2 text-right font-semibold text-gray-700 ${
-                                esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
-                              {fmt(valor)}
-                              {valor > 0 && hacienda.estimado[clave] && (
-                                <span className="ml-0.5 text-amber-500">*</span>
-                              )}
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(haciendaTotal[clave] || 0)}
                             </td>
                           )
                         })}
                       </tr>
                     )}
 
-                    {/* Hacienda disponible — sin fecha de venta no hay plata: cabezas y kg,
-                        igual que las toneladas de soja disponibles a fijar. */}
-                    {hacienda.disponible.map(d => (
-                      <tr key={`disp-${d.categoria}`} className="border-b bg-amber-50/30">
-                        <td className="sticky left-0 z-10 bg-amber-50/30 px-4 py-1.5 pl-8 text-xs text-amber-800">
-                          Disponible sin fecha — {d.categoria}
+                    {hacienda.categorias.map(c => (
+                      <tr key={`hac-${c.categoria}`} className="border-b bg-emerald-50/30 hover:bg-emerald-50">
+                        <td className="sticky left-0 z-10 bg-emerald-50/30 px-4 py-1.5 pl-8 text-xs text-gray-600">
+                          {c.categoria}
+                          {Object.keys(c.montos).length === 0 && (
+                            <span className="ml-2 text-[10px] text-amber-600">sin venta presupuestada</span>
+                          )}
                         </td>
-                        <td colSpan={meses.length} className="px-3 py-1.5 text-xs text-amber-700">
-                          <strong>{Math.round(d.cabezas).toLocaleString("es-AR")} cabezas</strong>
-                          {" · "}
-                          <strong>{Math.round(d.kg).toLocaleString("es-AR")} kg</strong>
-                          <span className="ml-2 text-gray-500">
-                            — poné fecha de venta en Productivo → Evolución Rodeo para que entre al presupuesto
-                          </span>
-                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          const esActual = clave === mesActualClave
+                          const valor = c.montos[clave] || 0
+                          const disp = c.disponible[clave]
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-1.5 text-right text-xs ${
+                                esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {valor > 0 ? (
+                                <>
+                                  {fmt(valor)}
+                                  {c.estimado[clave] && <span className="ml-0.5 text-amber-500">*</span>}
+                                </>
+                              ) : disp ? (
+                                /* Sin venta no hay plata: se informan cabezas y peso promedio,
+                                   igual que las toneladas de soja disponibles a fijar. */
+                                <span className="text-amber-700"
+                                  title={`${Math.round(disp.existentes)} cab. existentes − ${Math.round(disp.comprometidas)} con venta presupuestada${disp.detalle ? ` · ${disp.detalle}` : ""}`}>
+                                  <strong>{Math.round(disp.cabezas).toLocaleString("es-AR")}</strong> cab
+                                  <span className="block text-[10px] text-amber-600">
+                                    {disp.peso_prom.toLocaleString("es-AR", { maximumFractionDigits: 0 })} kg prom
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
 

@@ -921,14 +921,20 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
   const promedios = (g: GrupoPesada, cant: number, cual: "pesados" | "livianos" | "todos") => {
     const n = Math.max(0, Math.min(Math.round(cant), g.pesos.length))
     if (!g.pesos.length) return { tomados: g.peso_prom, resto: g.peso_prom, quedan: 0 }
-    const orden = cual === "livianos" ? [...g.pesos].reverse() : g.pesos
-    const sel = cual === "todos" ? orden.slice(0, n) : orden.slice(0, n)
-    const resto = orden.slice(n)
     const prom = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0
+
+    // "Indistinto": se llevan cabezas al azar, así que los dos lados quedan en el
+    // promedio general. Antes tomaba el promedio general para los que se iban pero el
+    // de los más livianos para el resto — inconsistente.
+    if (cual === "todos") {
+      return { tomados: g.peso_prom, resto: g.peso_prom, quedan: g.pesos.length - n }
+    }
+
+    const orden = cual === "livianos" ? [...g.pesos].reverse() : g.pesos
     return {
-      tomados: cual === "todos" ? g.peso_prom : prom(sel),
-      resto: prom(resto),
-      quedan: resto.length,
+      tomados: prom(orden.slice(0, n)),
+      resto: prom(orden.slice(n)),
+      quedan: g.pesos.length - n,
     }
   }
 
