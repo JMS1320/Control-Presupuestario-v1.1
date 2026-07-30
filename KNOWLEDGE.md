@@ -828,3 +828,24 @@ componente. El problema es sólo cuando se usa como `<Componente>` en JSX.
 
 **NO repetir**: definir componentes (usados como `<X/>`) dentro del cuerpo de otro componente.
 **Tags**: `#react` `#focus` `#remount` `#modal`
+
+---
+
+## Modales más altos que la pantalla — se corta el fondo `#ui #modales #2026-07-30`
+**Síntoma**: en modales largos no se llegaba a los botones de abajo; había que hacer zoom out
+del navegador. Pasaba en **varios** modales del sistema, no en uno.
+
+**Causa**: `components/ui/dialog.tsx` → `DialogContent` no tenía `max-height` ni scroll. Los
+modales que sí funcionaban era porque cada uno se había puesto su `max-h-[90vh] overflow-y-auto`
+a mano. Al 2026-07-30 había **~30 sin él**.
+
+**Solución**: se arregla **UNA vez en el componente base**, no modal por modal:
+```tsx
+// components/ui/dialog.tsx — DialogContent
+"… max-w-lg max-h-[90vh] overflow-y-auto …"
+```
+Los que ya traían su propio `max-h` lo siguen pisando por orden de clases.
+
+**Regla**: cuando algo se repite en muchos componentes que usan un primitivo de `components/ui/`,
+mirar primero si se arregla en el primitivo. Es la diferencia entre un cambio y treinta.
+**Tags**: `#dialog` `#shadcn` `#overflow` `#un-solo-lugar`
