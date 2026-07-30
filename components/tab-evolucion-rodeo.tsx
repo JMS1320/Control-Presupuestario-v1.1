@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2 } from "lucide-react"
+import { PanelLotesHacienda } from "./panel-lotes-hacienda"
 import {
   calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria,
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
@@ -316,6 +317,9 @@ export function TabEvolucionRodeo() {
           <strong>Terneras a venta</strong> salen las cabezas vendibles de cada período.
         </p>
       )}
+
+      {/* Lo que sale del rodeo y espera venderse */}
+      <PanelLotesHacienda linea={linea} />
 
       <ModalCiclo datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
       <ModalPropuesta

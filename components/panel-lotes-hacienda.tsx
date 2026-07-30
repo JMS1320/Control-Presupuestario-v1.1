@@ -1,0 +1,344 @@
+"use client"
+
+// Cabezas disponibles para vender. Dos orígenes:
+//   · stock_inicial → la foto de arranque (la recría que se retuvo y no se vendió)
+//   · destete / descarte → generados desde cada período de la línea de tiempo
+// El peso crece con `ganancia_diaria_kg` si se vende después de la fecha disponible.
+// Ver PENDIENTES § CICLO GANADERO.
+
+import { useState, useEffect, useCallback } from "react"
+import { supabase } from "@/lib/supabase"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Plus, Trash2, PackageOpen, Wand2 } from "lucide-react"
+import {
+  pesoEstimado, cantidadDisponible, fechaDestete,
+  type LoteStock, type VentaStock, type CicloCalculado,
+} from "@/lib/ganaderia/ciclo"
+
+const parseNum = (v: string) => {
+  const n = parseFloat(String(v).trim().replace(",", "."))
+  return Number.isFinite(n) ? n : 0
+}
+const n1 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 1 })
+const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })
+
+/** Categorías vendibles. Coinciden con `productivo.categorias_hacienda`. */
+const CATEGORIAS = [
+  "Ternero Recria", "Ternera Recria", "Torito",
+  "Vaca CUT/Descarte", "Novillo", "Vaquillona Engorde",
+]
+
+export function PanelLotesHacienda({ linea, onCambio }: {
+  linea: CicloCalculado[]
+  onCambio?: () => void
+}) {
+  const [cargando, setCargando] = useState(true)
+  const [lotes, setLotes] = useState<LoteStock[]>([])
+  const [ventas, setVentas] = useState<VentaStock[]>([])
+  const [modal, setModal] = useState<any>(null)
+  const [generando, setGenerando] = useState(false)
+
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    try {
+      const { data: ls, error } = await supabase.schema("productivo")
+        .from("stock_lotes").select("*").eq("empresa", "MSA").order("fecha_disponible")
+      if (error) console.error("Error cargando lotes:", error)
+
+      const ids = (ls || []).map((l: any) => l.id)
+      const { data: vs } = ids.length
+        ? await supabase.schema("productivo").from("stock_ventas").select("*").in("lote_id", ids)
+        : { data: [] as any[] }
+
+      setLotes((ls || []) as LoteStock[])
+      setVentas((vs || []) as VentaStock[])
+    } finally { setCargando(false) }
+  }, [])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const ventasDe = (loteId: string) => ventas.filter(v => v.lote_id === loteId)
+
+  const guardar = async (f: any) => {
+    if (!f.categoria || !f.fecha_disponible || !f.cantidad) {
+      alert("Categoría, cantidad y fecha disponible son obligatorias"); return
+    }
+    const payload = {
+      empresa: "MSA",
+      ciclo_id: f.ciclo_id || null,
+      categoria: f.categoria,
+      origen: f.origen || "stock_inicial",
+      cantidad: parseNum(String(f.cantidad)),
+      fecha_disponible: f.fecha_disponible,
+      peso_base_kg: parseNum(String(f.peso_base_kg)),
+      ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
+      notas: f.notas || null,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = f.id
+      ? await supabase.schema("productivo").from("stock_lotes").update(payload).eq("id", f.id)
+      : await supabase.schema("productivo").from("stock_lotes").insert(payload)
+    if (error) { alert("Error: " + error.message); return }
+    setModal(null)
+    await cargar(); onCambio?.()
+  }
+
+  const borrar = async (id: string) => {
+    if (!confirm("¿Borrar este lote? Se borran también sus ventas.")) return
+    await supabase.schema("productivo").from("stock_lotes").delete().eq("id", id)
+    await cargar(); onCambio?.()
+  }
+
+  /**
+   * Genera los lotes vendibles de cada período: vaca de descarte, terneros y las
+   * terneras que no se retuvieron. Idempotente por (ciclo, categoría, origen):
+   * re-correrlo actualiza la cantidad en vez de duplicar.
+   */
+  const generarDesdeLinea = async () => {
+    setGenerando(true)
+    try {
+      for (const c of linea) {
+        const fecha = fechaDestete(c.ciclo)
+        if (!fecha) continue
+        const peso = Number(c.ciclo.peso_destete_kg) || 200
+
+        const aCrear = [
+          { categoria: "Ternero Recria",     origen: "destete",  cantidad: c.terneros_venta, peso },
+          { categoria: "Ternera Recria",     origen: "destete",  cantidad: c.terneras_venta, peso },
+          // La vaca de descarte se vende con su propio peso, no el del destete
+          { categoria: "Vaca CUT/Descarte",  origen: "descarte", cantidad: c.descarte,       peso: 400 },
+        ]
+
+        for (const a of aCrear) {
+          if (a.cantidad <= 0.01) continue
+          const existente = lotes.find(l =>
+            l.ciclo_id === c.ciclo.id && l.categoria === a.categoria && l.origen === a.origen)
+
+          if (existente) {
+            // No pisar un lote que ya tiene ventas: ahí manda lo que se decidió
+            if (ventasDe(existente.id).length > 0) continue
+            await supabase.schema("productivo").from("stock_lotes")
+              .update({ cantidad: a.cantidad, fecha_disponible: fecha, updated_at: new Date().toISOString() })
+              .eq("id", existente.id)
+          } else {
+            await supabase.schema("productivo").from("stock_lotes").insert({
+              empresa: "MSA", ciclo_id: c.ciclo.id,
+              categoria: a.categoria, origen: a.origen,
+              cantidad: a.cantidad, fecha_disponible: fecha,
+              peso_base_kg: a.peso, ganancia_diaria_kg: 0,
+              notas: `Generado desde el período ${c.ciclo.campania}`,
+            })
+          }
+        }
+      }
+      await cargar(); onCambio?.()
+    } finally { setGenerando(false) }
+  }
+
+  /** Precarga la foto de arranque: la recría que se retuvo y no se vendió. */
+  const cargarStockInicial = () => setModal({
+    origen: "stock_inicial",
+    categoria: "Ternero Recria",
+    cantidad: "", peso_base_kg: "197,34", ganancia_diaria_kg: "0,5",
+    fecha_disponible: "2026-02-23",
+    notas: "Stock inicial — retenido para recría",
+  })
+
+  const totalDisponible = lotes.reduce((s, l) => s + cantidadDisponible(l, ventasDe(l.id)), 0)
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between text-base">
+          <span className="flex items-center gap-2">
+            <PackageOpen className="h-4 w-4" />
+            Cabezas disponibles para vender
+            {totalDisponible > 0 && <Badge variant="outline">{n0(totalDisponible)}</Badge>}
+          </span>
+          <div className="flex gap-2">
+            {linea.length > 0 && (
+              <Button size="sm" variant="outline" disabled={generando} onClick={generarDesdeLinea}>
+                {generando ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  : <Wand2 className="mr-1 h-3.5 w-3.5" />}
+                Generar desde los períodos
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={cargarStockInicial}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Stock inicial
+            </Button>
+          </div>
+        </CardTitle>
+        <p className="text-xs text-gray-500">
+          Lo que sale del rodeo (destete no retenido y vaca de descarte) más la recría que ya
+          tenías. Si se vende después de la fecha disponible, el peso crece por la ganancia diaria.
+        </p>
+      </CardHeader>
+
+      <CardContent className="p-0">
+        {cargando ? (
+          <div className="flex items-center justify-center py-10 text-gray-400">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando…
+          </div>
+        ) : lotes.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-gray-400">
+            Todavía no hay lotes. Cargá el <strong>stock inicial</strong> (la recría retenida) y
+            usá <strong>Generar desde los períodos</strong> para el resto.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-600">
+                <tr className="border-y">
+                  <th className="px-3 py-2 text-left">Categoría</th>
+                  <th className="px-3 py-2 text-left">Origen</th>
+                  <th className="px-3 py-2 text-left">Disponible desde</th>
+                  <th className="px-3 py-2 text-right">Cabezas</th>
+                  <th className="px-3 py-2 text-right">Vendidas</th>
+                  <th className="px-3 py-2 text-right">Quedan</th>
+                  <th className="px-3 py-2 text-right">Peso base</th>
+                  <th className="px-3 py-2 text-right">kg/día</th>
+                  <th className="px-3 py-2 text-right">Peso hoy</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {lotes.map(l => {
+                  const vs = ventasDe(l.id)
+                  const vendidas = vs.reduce((s, v) => s + Number(v.cantidad || 0), 0)
+                  const quedan = cantidadDisponible(l, vs)
+                  const hoy = new Date().toISOString().slice(0, 10)
+                  const pesoHoy = pesoEstimado(l, hoy)
+                  return (
+                    <tr key={l.id} className="border-b hover:bg-gray-50">
+                      <td className="px-3 py-2">{l.categoria}</td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="text-[10px]">{l.origen}</Badge>
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {new Date(l.fecha_disponible + "T00:00:00").toLocaleDateString("es-AR")}
+                      </td>
+                      <td className="px-3 py-2 text-right">{n1(l.cantidad)}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">
+                        {vendidas > 0 ? n1(vendidas) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-emerald-700">{n1(quedan)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">{n1(l.peso_base_kg)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">
+                        {Number(l.ganancia_diaria_kg) > 0 ? n1(l.ganancia_diaria_kg) : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium">
+                        {n1(pesoHoy)}
+                        {pesoHoy > Number(l.peso_base_kg) && (
+                          <span className="ml-1 text-[10px] text-emerald-600">
+                            +{n0(pesoHoy - Number(l.peso_base_kg))}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="sm" className="h-6 text-xs"
+                            onClick={() => setModal({
+                              ...l,
+                              cantidad: String(l.cantidad),
+                              peso_base_kg: String(l.peso_base_kg),
+                              ganancia_diaria_kg: String(l.ganancia_diaria_kg),
+                            })}>Editar</Button>
+                          <Button variant="ghost" size="sm" className="h-6 px-1"
+                            onClick={() => borrar(l.id)}>
+                            <Trash2 className="h-3 w-3 text-gray-400" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+
+      <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
+    </Card>
+  )
+}
+
+// ── Modal de lote ─────────────────────────────────────────────────────────────
+
+function ModalLote({ datos, onCerrar, onGuardar }: {
+  datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
+}) {
+  const [f, setF] = useState<any>({})
+  useEffect(() => { if (datos) setF({ ...datos }) }, [datos])
+  if (!datos) return null
+
+  const campo = (k: string, label: string, ayuda?: string, tipo = "text") => (
+    <div>
+      <label className="text-xs text-gray-500">{label}</label>
+      <Input type={tipo} className="h-8 text-right" value={f[k] ?? ""}
+        onChange={e => setF({ ...f, [k]: e.target.value })} />
+      {ayuda && <p className="mt-1 text-[10px] text-gray-400">{ayuda}</p>}
+    </div>
+  )
+
+  const dias = f.fecha_disponible
+    ? Math.max(0, Math.round((Date.now() - new Date(f.fecha_disponible + "T00:00:00").getTime()) / 86400000))
+    : 0
+  const pesoHoy = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{datos.id ? "Editar lote" : "Cargar stock inicial"}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500">Categoría</label>
+              <Select value={f.categoria || ""} onValueChange={v => setF({ ...f, categoria: v })}>
+                <SelectTrigger className="h-8"><SelectValue placeholder="Elegir…" /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORIAS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {campo("cantidad", "Cabezas")}
+            <div>
+              <label className="text-xs text-gray-500">Disponible desde</label>
+              <Input type="date" className="h-8" value={f.fecha_disponible || ""}
+                onChange={e => setF({ ...f, fecha_disponible: e.target.value })} />
+              <p className="mt-1 text-[10px] text-gray-400">fecha del destete</p>
+            </div>
+            {campo("peso_base_kg", "Peso a esa fecha (kg)")}
+            {campo("ganancia_diaria_kg", "Ganancia diaria (kg/día)", "0 = se vende sin engordar")}
+          </div>
+
+          {dias > 0 && parseNum(String(f.ganancia_diaria_kg ?? "0")) > 0 && (
+            <p className="rounded bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              Pasaron <strong>{dias} días</strong> → peso estimado hoy:{" "}
+              <strong>{n1(pesoHoy)} kg</strong>
+            </p>
+          )}
+
+          <div>
+            <label className="text-xs text-gray-500">Notas</label>
+            <Input className="h-8" value={f.notas || ""}
+              onChange={e => setF({ ...f, notas: e.target.value })} />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+            <Button onClick={() => onGuardar(f)}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
