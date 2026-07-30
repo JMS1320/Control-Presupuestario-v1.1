@@ -215,7 +215,8 @@ export function ConfiguradorPreciosTC() {
         categoria: "Ternera", anio: f.anio, mes: f.mes,
         precio_pesos_kg: Math.round(macho * rel * 100) / 100,
         peso_desde: null, peso_hasta: null,
-        fuente: `rel ${relHembra}% de ${bandaBase}`,
+        // La columna es varchar(60): se recorta por las dudas
+        fuente: `rel ${relHembra}% de ${bandaBase}`.slice(0, 60),
         updated_at: new Date().toISOString(),
       }, { onConflict: "categoria,anio,mes" })
       if (error) errores.push(`${f.mes}/${f.anio}: ${error.message}`)

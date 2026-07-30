@@ -11393,3 +11393,10 @@ ALTER TABLE productivo.stock_lotes ADD COLUMN IF NOT EXISTS fecha_peso date;
 UPDATE productivo.stock_lotes SET fecha_peso = fecha_disponible WHERE fecha_peso IS NULL;
 -- Bug que corrige: el usuario cargaba el peso de HOY y la app lo tomaba como del destete,
 -- sumandole despues la ganancia diaria desde el destete -> engordaba dos veces.
+
+-- Aplicado 2026-07-30: `fuente` de 20 a 60 chars. No alcanzaba para la procedencia de un
+-- precio derivado ("rel 80% de Ternero 200/220" son 27) y el upsert fallaba con
+-- "value too long for type character varying(20)".
+ALTER TABLE public.precios_hacienda ALTER COLUMN fuente TYPE varchar(60);
+ALTER TABLE public.precios_granos   ALTER COLUMN fuente TYPE varchar(60);
+ALTER TABLE public.tipos_cambio     ALTER COLUMN fuente TYPE varchar(60);
