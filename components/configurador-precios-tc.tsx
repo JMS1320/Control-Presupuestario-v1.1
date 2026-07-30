@@ -20,12 +20,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, DollarSign, TrendingUp } from "lucide-react"
 import { BANDAS_HACIENDA } from "@/lib/ganaderia/calculo"
 import { resolverSerie, explicarOrigen, type PuntoSerie } from "@/lib/precios/serie"
+import { parseNumeroAR } from "@/lib/format/numero"
 
 const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
 
 // ── Helpers es-AR (convención obligatoria del proyecto) ──────────────────────
-const parseAR = (v: string): number =>
-  parseFloat(String(v).replace(/\./g, "").replace(",", ".")) || 0
+const parseAR = parseNumeroAR
 
 const fmtAR = (n: number | null | undefined, dec = 2): string =>
   n == null ? "" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })

@@ -14,12 +14,13 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Loader2, Plus, Trash2, Beef, Info } from "lucide-react"
+import { parseNumeroAR, parsePorcentajeAR } from "@/lib/format/numero"
 import {
   calcularGanaderia, referenciaHistorica,
   type PresupuestoGanaderia, type PrecioHacienda, type CicloCria,
 } from "@/lib/ganaderia/calculo"
 
-const parseAR = (v: string) => parseFloat(String(v).replace(/\./g, "").replace(",", ".")) || 0
+const parseAR = parseNumeroAR
 
 /**
  * Porcentajes: NO usar parseAR. `parseAR` es para MONTOS es-AR, donde el punto es
@@ -27,10 +28,7 @@ const parseAR = (v: string) => parseFloat(String(v).replace(/\./g, "").replace("
  * Acepta las dos escrituras: "85", "10,5" y también "10.5".
  * Devuelve la FRACCIÓN (85 → 0,85), que es como se guarda en la BD.
  */
-const parsePct = (v: string): number => {
-  const n = parseFloat(String(v).trim().replace(",", "."))
-  return Number.isFinite(n) ? n / 100 : 0
-}
+const parsePct = parsePorcentajeAR
 /** Fracción de la BD → texto en % es-AR para el input (0,105 → "10,5"). */
 const fmtPct1 = (frac: number | null | undefined): string =>
   frac == null ? "" : (Math.round(Number(frac) * 100 * 1e6) / 1e6)

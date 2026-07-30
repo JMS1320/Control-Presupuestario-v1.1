@@ -849,3 +849,29 @@ Los que ya traían su propio `max-h` lo siguen pisando por orden de clases.
 **Regla**: cuando algo se repite en muchos componentes que usan un primitivo de `components/ui/`,
 mirar primero si se arregla en el primitivo. Es la diferencia entre un cambio y treinta.
 **Tags**: `#dialog` `#shadcn` `#overflow` `#un-solo-lugar`
+
+---
+
+## Parseo es-AR: el punto de miles rompe el round-trip `#es-ar #numeros #bug #2026-07-30`
+**Rompió dos veces en el mismo módulo**, con síntomas distintos:
+1. **Porcentajes**: los defaults venían en fracción con punto (`0.105`) y el parser de montos
+   borra el punto → `105` → `/100` → **IVA 105%**. (`0.85` daba bien de casualidad.)
+2. **Precios**: la app formatea con `toLocaleString("es-AR")` → muestra `5.700,00`; ese texto
+   vuelve a entrar al parser, que hacía `parseFloat("5.700")` → **5,7**.
+
+**La raíz es la misma**: el punto es **separador de miles** en es-AR pero **decimal** para mucha
+gente que tipea, y encima el formateo de salida mete puntos que la entrada tiene que entender.
+Un `replace(/\./g,'')` a secas rompe `0.5`; un `parseFloat` a secas rompe `5.700`.
+
+**Solución**: `lib/format/numero.ts` → `parseNumeroAR()`, tolerante a las dos escrituras:
+```
+hay coma            → coma decimal, puntos miles    "7.000,50" → 7000.5
+empieza con "0."    → punto decimal                 "0.105"    → 0.105
+punto + 3 dígitos   → eran miles                    "5.700"    → 5700
+si no               → punto decimal                 "5.75"     → 5.75
+```
+Más `fmtNumeroAR()` (inverso) y `parsePorcentajeAR()` (% → fracción).
+
+**NO repetir**: escribir el parser inline en cada componente. Si un campo se **formatea** al
+mostrarlo, su parser tiene que poder **leer ese mismo formato**.
+**Tags**: `#parseAR` `#round-trip` `#toLocaleString` `#un-solo-lugar`

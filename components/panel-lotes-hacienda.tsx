@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
+import { parseNumeroAR } from "@/lib/format/numero"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete, pesoDestete,
   categoriaSegunFecha, valuarLoteConPrecios, CATEGORIAS_VENTA,
@@ -24,10 +25,9 @@ import {
   type PrecioHacienda, pctDesbaste, pctCz, brutoDesdeNeto, netoDesdeBruto, categoriaPrecio,
 } from "@/lib/ganaderia/calculo"
 
-const parseNum = (v: string) => {
-  const n = parseFloat(String(v).trim().replace(",", "."))
-  return Number.isFinite(n) ? n : 0
-}
+// Parser único del proyecto: entiende "5.700", "5700", "0,5" y "0.5". Ver
+// lib/format/numero.ts — el punto de miles rompía el round-trip con fmtAR.
+const parseNum = parseNumeroAR
 const n1 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 1 })
 const fmtAR = (n: number) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtPesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`

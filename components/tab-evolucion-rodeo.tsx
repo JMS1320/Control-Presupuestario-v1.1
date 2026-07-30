@@ -16,21 +16,16 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2, AlertTriangle } from "lucide-react"
 import { PanelLotesHacienda } from "./panel-lotes-hacienda"
+import { parseNumeroAR, parsePorcentajeAR } from "@/lib/format/numero"
 import {
   calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria, fechaDestete,
   ordenDeCampania,
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
 
-const parseNum = (v: string) => {
-  const n = parseFloat(String(v).trim().replace(",", "."))
-  return Number.isFinite(n) ? n : 0
-}
-/** % → fracción. El punto es DECIMAL acá (no es un monto es-AR). */
-const parsePct = (v: string) => {
-  const n = parseFloat(String(v).trim().replace(",", "."))
-  return Number.isFinite(n) ? n / 100 : 0
-}
+// Parser único del proyecto. Ver lib/format/numero.ts
+const parseNum = parseNumeroAR
+const parsePct = parsePorcentajeAR
 const fmtPctTxt = (frac: number | null | undefined) =>
   frac == null ? "" : (Math.round(Number(frac) * 1e8) / 1e6).toLocaleString("es-AR", { maximumFractionDigits: 4 })
 const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })
