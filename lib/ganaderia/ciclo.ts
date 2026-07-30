@@ -483,6 +483,8 @@ export function pesoDestete(ciclo: CicloStock, sexo: 'macho' | 'hembra'): number
 export const CATEGORIAS_VENTA = [
   'Ternero al Pie', 'Ternera al Pie',
   'Ternero Recria', 'Ternera Recria',
+  // A igual peso un macho puede estar de invernada o gordo: es el estado, no el kilaje
+  'Novillo Invernada', 'Novillo Gordo',
   'Novillo', 'Vaquillona Engorde',
   'Vaca CUT/Descarte', 'Toro', 'Torito',
 ] as const

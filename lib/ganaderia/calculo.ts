@@ -25,28 +25,50 @@ export interface PrecioHacienda {
 //
 // Las categorías sin banda (hembras, vaca de refugo, toro) se buscan por nombre.
 
+export type FamiliaBanda = 'joven' | 'invernada' | 'gordo' | 'plana'
+
 export interface BandaPrecio {
   nombre: string
   peso_desde: number | null
   peso_hasta: number | null
+  familia: FamiliaBanda
 }
 
+/**
+ * Las bandas se agrupan en FAMILIAS. A igual kilaje un macho puede estar de invernada o
+ * de gordo -- no es el peso el que decide, es el estado del animal. Por eso la familia
+ * sale de la CATEGORIA del lote, y dentro de ella el peso elige la etapa.
+ * Invernada llega hasta 380; gordo va de 320 a 490 y se solapa a proposito.
+ * Cortes parejos por ahora; se afinaran contra las categorias de pizarra.
+ */
 export const BANDAS_HACIENDA: BandaPrecio[] = [
-  { nombre: 'Ternero 180/200',       peso_desde: 180, peso_hasta: 200 },
-  { nombre: 'Ternero 200/220',       peso_desde: 200, peso_hasta: 220 },
-  { nombre: 'Ternero 220/240',       peso_desde: 220, peso_hasta: 240 },
-  { nombre: 'Ternero 240/270',       peso_desde: 240, peso_hasta: 270 },
-  { nombre: 'Novillito 270/300',     peso_desde: 270, peso_hasta: 300 },
-  { nombre: 'Novillito 300/320',     peso_desde: 300, peso_hasta: 320 },
-  // Invernada: no es lo mismo que gordo, tiene su propio desbaste y CZ
-  { nombre: 'Invernada 320/380',     peso_desde: 320, peso_hasta: 380 },
-  { nombre: 'Novillo gordo 380/450', peso_desde: 380, peso_hasta: 450 },
-  // Sin banda: se eligen por categoría
-  { nombre: 'Ternera',           peso_desde: null, peso_hasta: null },
-  { nombre: 'Vaquillona',        peso_desde: null, peso_hasta: null },
-  { nombre: 'Vaca CUT/Descarte', peso_desde: null, peso_hasta: null },
-  { nombre: 'Toro',              peso_desde: null, peso_hasta: null },
+  // Machos jovenes: la escalera de siempre
+  { nombre: 'Ternero 180/200',   peso_desde: 180, peso_hasta: 200, familia: 'joven' },
+  { nombre: 'Ternero 200/220',   peso_desde: 200, peso_hasta: 220, familia: 'joven' },
+  { nombre: 'Ternero 220/240',   peso_desde: 220, peso_hasta: 240, familia: 'joven' },
+  { nombre: 'Ternero 240/270',   peso_desde: 240, peso_hasta: 270, familia: 'joven' },
+  { nombre: 'Novillito 270/295', peso_desde: 270, peso_hasta: 295, familia: 'joven' },
+  { nombre: 'Novillito 295/320', peso_desde: 295, peso_hasta: 320, familia: 'joven' },
+  // Invernada: hasta 380
+  { nombre: 'Invernada 320/350', peso_desde: 320, peso_hasta: 350, familia: 'invernada' },
+  { nombre: 'Invernada 350/380', peso_desde: 350, peso_hasta: 380, familia: 'invernada' },
+  // Gordo: 320 a 490, se solapa con invernada a proposito
+  { nombre: 'Gordo 320/380',     peso_desde: 320, peso_hasta: 380, familia: 'gordo' },
+  { nombre: 'Gordo 380/435',     peso_desde: 380, peso_hasta: 435, familia: 'gordo' },
+  { nombre: 'Gordo 435/490',     peso_desde: 435, peso_hasta: 490, familia: 'gordo' },
+  // Sin banda: se eligen por categoria
+  { nombre: 'Ternera',           peso_desde: null, peso_hasta: null, familia: 'plana' },
+  { nombre: 'Vaquillona',        peso_desde: null, peso_hasta: null, familia: 'plana' },
+  { nombre: 'Vaca CUT/Descarte', peso_desde: null, peso_hasta: null, familia: 'plana' },
+  { nombre: 'Toro',              peso_desde: null, peso_hasta: null, familia: 'plana' },
 ]
+
+/** Familia que corresponde a una categoria de venta. */
+export function familiaDeCategoria(categoria: string): FamiliaBanda {
+  if (/gordo/i.test(categoria)) return 'gordo'
+  if (/invernada/i.test(categoria)) return 'invernada'
+  return 'joven'
+}
 
 // ── Desbaste y comercialización por peso ──────────────────────────────────────
 //
@@ -62,7 +84,7 @@ export function pctDesbaste(categoria: string, peso: number): number {
 }
 
 export function pctCz(categoria: string, peso: number): number {
-  return (/gordo/i.test(categoria) || peso > 380) ? 0.06 : 0.03
+  return (familiaDeCategoria(categoria) === 'gordo' || peso > 380) ? 0.06 : 0.03
 }
 
 // ── Precio neto ↔ bruto ───────────────────────────────────────────────────────
@@ -94,12 +116,17 @@ export function precioHembraDesdeMacho(precioMacho: number, pctRelacion: number)
  * Banda que corresponde a un peso. Fuera de rango se toma la más cercana: por debajo
  * la primera, por encima la última — mejor eso que quedarse sin precio.
  */
-export function bandaPorPeso(peso: number): BandaPrecio | null {
-  const conBanda = BANDAS_HACIENDA.filter(b => b.peso_desde != null)
-  if (!conBanda.length || !Number.isFinite(peso)) return null
-  const dentro = conBanda.find(b => peso >= b.peso_desde! && peso < b.peso_hasta!)
+export function bandaPorPeso(peso: number, familia: FamiliaBanda = 'joven'): BandaPrecio | null {
+  // La familia acota el juego de bandas; el peso elige la etapa dentro de ella. Un macho
+  // joven que supera el techo de su escalera pasa a invernada.
+  let candidatas = BANDAS_HACIENDA.filter(b => b.peso_desde != null && b.familia === familia)
+  if (familia === 'joven' && peso >= 320) {
+    candidatas = BANDAS_HACIENDA.filter(b => b.peso_desde != null && b.familia === 'invernada')
+  }
+  if (!candidatas.length || !Number.isFinite(peso)) return null
+  const dentro = candidatas.find(b => peso >= b.peso_desde! && peso < b.peso_hasta!)
   if (dentro) return dentro
-  return peso < conBanda[0]!.peso_desde! ? conBanda[0]! : conBanda[conBanda.length - 1]!
+  return peso < candidatas[0]!.peso_desde! ? candidatas[0]! : candidatas[candidatas.length - 1]!
 }
 
 /** Sexo → categorías sin banda (las hembras no se cotizan por peso por ahora). */
@@ -116,9 +143,10 @@ export function categoriaPrecioSinBanda(categoriaVenta: string): string {
  * categoría plana. Separa "qué animal es" de "en qué banda cotiza".
  */
 export function categoriaPrecio(categoriaVenta: string, peso: number): string {
-  const esMachoJoven = /ternero|novillo|torito/i.test(categoriaVenta) && !/ternera/i.test(categoriaVenta)
-  if (esMachoJoven) {
-    const b = bandaPorPeso(peso)
+  const esMacho = /ternero|novillo|torito|invernada|gordo/i.test(categoriaVenta)
+    && !/ternera|vaquillona|vaca/i.test(categoriaVenta)
+  if (esMacho) {
+    const b = bandaPorPeso(peso, familiaDeCategoria(categoriaVenta))
     if (b) return b.nombre
   }
   return categoriaPrecioSinBanda(categoriaVenta)
