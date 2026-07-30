@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle } from "lucide-react"
+import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete, pesoDestete,
   categoriaSegunFecha, valuarLoteConPrecios, CATEGORIAS_VENTA,
@@ -34,6 +34,15 @@ const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDig
 /** Categorías vendibles — de la lib, para no duplicar la lista. */
 const CATEGORIAS = [...CATEGORIAS_VENTA]
 
+/** Ajustes editables por fila antes de generar el lote. */
+interface AjusteFila {
+  cantidad: string
+  peso: string
+  ganancia: string
+  fecha_venta: string
+  dias_cobro: string
+}
+
 export function PanelLotesHacienda({ linea, onCambio }: {
   linea: CicloCalculado[]
   onCambio?: () => void
@@ -44,6 +53,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const [modal, setModal] = useState<any>(null)
   const [modalPesada, setModalPesada] = useState(false)
   const [generando, setGenerando] = useState(false)
+  const [modalGenerar, setModalGenerar] = useState(false)
   /**
    * Foto ACTUAL de las pesadas, por `fecha|categoria`. Se compara contra lo que quedó
    * guardado en el lote para avisar cuando el origen cambió (p.ej. se marcaron más
@@ -145,59 +155,70 @@ export function PanelLotesHacienda({ linea, onCambio }: {
    * terneras que no se retuvieron. Idempotente por (ciclo, categoría, origen):
    * re-correrlo actualiza la cantidad en vez de duplicar.
    */
-  const generarDesdeLinea = async () => {
+  /** Arma la propuesta para previsualizar, sin tocar nada. */
+  const filasGenerar = (): FilaGenerar[] => {
+    const out: FilaGenerar[] = []
+    for (const c of linea) {
+      const fecha = fechaDestete(c.ciclo)
+      if (!fecha) continue
+      const items = [
+        { categoria: categoriaSegunFecha("macho", fecha, fecha), origen: "destete" as const,
+          cantidad: c.terneros_venta, peso: pesoDestete(c.ciclo, "macho"),
+          procedencia: `Terneros del destete (${n1(c.terneros)}) − ${n1(c.toritos)} toritos retenidos` },
+        { categoria: categoriaSegunFecha("hembra", fecha, fecha), origen: "destete" as const,
+          cantidad: c.terneras_venta, peso: pesoDestete(c.ciclo, "hembra"),
+          procedencia: `Terneras del destete (${n1(c.terneras)}) − ${n1(c.retenidas)} de reposición` },
+        { categoria: "Vaca CUT/Descarte", origen: "descarte" as const,
+          cantidad: c.descarte, peso: Number(c.ciclo.peso_descarte_kg) || 450,
+          procedencia: `Refugo + mortandad del período (incluye las que se mueren — descontalas)` },
+      ]
+      for (const it of items) {
+        if (it.cantidad <= 0.01) continue
+        const ex = lotes.find(l => l.ciclo_id === c.ciclo.id && l.categoria === it.categoria && l.origen === it.origen)
+        out.push({
+          clave: `${c.ciclo.id}|${it.categoria}|${it.origen}`,
+          campania: c.ciclo.campania, ciclo_id: c.ciclo.id,
+          categoria: it.categoria, origen: it.origen,
+          cantidad: it.cantidad, peso: it.peso, fecha_disponible: fecha,
+          procedencia: it.procedencia,
+          yaExiste: !!ex, tieneVentas: !!ex && ventasDe(ex.id).length > 0,
+        })
+      }
+    }
+    return out
+  }
+
+  const aplicarGenerar = async (sel: { fila: FilaGenerar; ajustes: AjusteFila }[]) => {
     setGenerando(true)
     try {
-      for (const c of linea) {
-        const fecha = fechaDestete(c.ciclo)
-        if (!fecha) continue
+      for (const { fila, ajustes } of sel) {
+        const existente = lotes.find(l =>
+          l.ciclo_id === fila.ciclo_id && l.categoria === fila.categoria && l.origen === fila.origen)
+        if (existente && ventasDe(existente.id).length > 0) continue
 
-        // Por defecto se vende AL PIE, en el destete. Si después se mueve la fecha de
-        // venta, la categoría se recalcula sola (al pie vs recría).
-        const aCrear = [
-          { categoria: categoriaSegunFecha("macho", fecha, fecha),
-            origen: "destete", cantidad: c.terneros_venta, peso: pesoDestete(c.ciclo, "macho") },
-          { categoria: categoriaSegunFecha("hembra", fecha, fecha),
-            origen: "destete", cantidad: c.terneras_venta, peso: pesoDestete(c.ciclo, "hembra") },
-          // Vaca refugo: se vende con su propio peso, no el del destete. OJO: la
-          // cantidad viene del "refugo + mortandad" del ciclo, asi que incluye las que
-          // se mueren -- hay que descontarlas a mano (queda marcado con ✎).
-          { categoria: "Vaca CUT/Descarte",  origen: "descarte", cantidad: c.descarte,
-            peso: Number(c.ciclo.peso_descarte_kg) || 450 },
-        ]
-
-        for (const a of aCrear) {
-          if (a.cantidad <= 0.01) continue
-          const existente = lotes.find(l =>
-            l.ciclo_id === c.ciclo.id && l.categoria === a.categoria && l.origen === a.origen)
-
-          if (existente) {
-            // No pisar un lote que ya tiene ventas: ahí manda lo que se decidió
-            if (ventasDe(existente.id).length > 0) continue
-            // Tampoco pisar lo que el usuario ajustó a mano (p.ej. descontando la
-            // mortandad de las vacas de refugo). Se actualiza sólo `cantidad_calculada`
-            // para que la fila pueda avisar que el cálculo cambió.
-            const editadoAMano = existente.cantidad_calculada != null
-              && Math.abs(Number(existente.cantidad) - Number(existente.cantidad_calculada)) > 0.01
-            await supabase.schema("productivo").from("stock_lotes")
-              .update({
-                ...(editadoAMano ? {} : { cantidad: a.cantidad }),
-                cantidad_calculada: a.cantidad,
-                fecha_disponible: fecha,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", existente.id)
-          } else {
-            await supabase.schema("productivo").from("stock_lotes").insert({
-              empresa: "MSA", ciclo_id: c.ciclo.id,
-              categoria: a.categoria, origen: a.origen,
-              cantidad: a.cantidad, cantidad_calculada: a.cantidad, fecha_disponible: fecha,
-              peso_base_kg: a.peso, ganancia_diaria_kg: 0,
-              notas: `Generado desde el período ${c.ciclo.campania}`,
-            })
-          }
+        const cantidad = parseNum(ajustes.cantidad)
+        const payload = {
+          cantidad,
+          cantidad_calculada: fila.cantidad,
+          fecha_disponible: fila.fecha_disponible,
+          peso_base_kg: parseNum(ajustes.peso),
+          ganancia_diaria_kg: parseNum(ajustes.ganancia),
+          fecha_venta_estimada: ajustes.fecha_venta || null,
+          dias_cobro: Math.round(parseNum(ajustes.dias_cobro)),
+          updated_at: new Date().toISOString(),
         }
+
+        const { error } = existente
+          ? await supabase.schema("productivo").from("stock_lotes").update(payload).eq("id", existente.id)
+          : await supabase.schema("productivo").from("stock_lotes").insert({
+              empresa: "MSA", ciclo_id: fila.ciclo_id,
+              categoria: fila.categoria, origen: fila.origen,
+              notas: `Generado desde el período ${fila.campania}`,
+              ...payload,
+            })
+        if (error) { alert(`Error en ${fila.categoria}: ${error.message}`); return }
       }
+      setModalGenerar(false)
       await cargar(); onCambio?.()
     } finally { setGenerando(false) }
   }
@@ -237,9 +258,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           </span>
           <div className="flex gap-2">
             {linea.length > 0 && (
-              <Button size="sm" variant="outline" disabled={generando} onClick={generarDesdeLinea}>
-                {generando ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                  : <Wand2 className="mr-1 h-3.5 w-3.5" />}
+              <Button size="sm" variant="outline" onClick={() => setModalGenerar(true)}>
+                <Wand2 className="mr-1 h-3.5 w-3.5" />
                 Generar desde los períodos
               </Button>
             )}
@@ -436,6 +456,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       )}
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
+      <ModalGenerar abierto={modalGenerar} filas={modalGenerar ? filasGenerar() : []}
+        guardando={generando}
+        onCerrar={() => setModalGenerar(false)} onAplicar={aplicarGenerar} />
+
       <ModalDesdePesada abierto={modalPesada} lotes={lotes} ventasDe={ventasDe}
         onCerrar={() => setModalPesada(false)}
         onListo={async () => { await cargar(); onCambio?.() }} />
@@ -612,6 +636,8 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
   const [fecha, setFecha] = useState("")
   const [grupos, setGrupos] = useState<GrupoPesada[]>([])
   const [sel, setSel] = useState<Record<string, boolean>>({})
+  /** Cantidad y peso por grupo: se puede traer sólo una parte, y el peso se puede pisar. */
+  const [edits, setEdits] = useState<Record<string, { cant: string; peso: string }>>({})
   const [ganancia, setGanancia] = useState("0,5")
   const [guardando, setGuardando] = useState(false)
 
@@ -679,14 +705,22 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         setGrupos(out)
         // Por defecto se traen los vendibles; la retencion queda destildada
         const init: Record<string, boolean> = {}
-        out.forEach(g => { init[g.clave] = !g.esRetencion })
+        const ini: Record<string, { cant: string; peso: string }> = {}
+        out.forEach(g => {
+          init[g.clave] = !g.esRetencion
+          ini[g.clave] = { cant: String(g.cabezas), peso: "" }
+        })
         setSel(init)
+        setEdits(ini)
       } finally { setCargando(false) }
     })()
   }, [abierto, fecha])
 
   if (!abierto) return null
   const elegidos = grupos.filter(g => sel[g.clave])
+  const diasDesdePesada = fecha
+    ? Math.max(0, Math.round((Date.now() - new Date(fecha + "T00:00:00").getTime()) / 86400000))
+    : 0
 
   /**
    * IDEMPOTENTE por (pesada, categoría): si el lote ya existe lo ACTUALIZA en vez de
@@ -702,11 +736,16 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         const existente = lotes.find(l =>
           l.origen === "stock_inicial" && l.categoria === g.categoria && l.fecha_disponible === fecha)
 
+        const e = edits[g.clave]
+        const cant = e && e.cant.trim() !== "" ? parseNum(e.cant) : g.cabezas
+        const pesoManual = e && e.peso.trim() !== "" ? parseNum(e.peso) : null
+
         const payload = {
-          cantidad: g.cabezas,
-          peso_base_kg: Math.round(g.peso_prom * 100) / 100,
+          cantidad: cant,
+          peso_base_kg: pesoManual ?? Math.round(g.peso_prom * 100) / 100,
           ganancia_diaria_kg: parseNum(ganancia),
-          notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${g.cabezas} cab, promedio real`,
+          notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${cant} de ${g.cabezas} cab`
+            + (pesoManual ? `, peso puesto a mano` : `, promedio real`),
           updated_at: new Date().toISOString(),
         }
 
@@ -788,9 +827,32 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
                         )}
                       </div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-[10px] text-gray-500">Traer</span>
+                        <Input className="h-7 w-16 text-right text-xs"
+                          value={edits[g.clave]?.cant ?? ""}
+                          onClick={e => e.preventDefault()}
+                          onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "" }), cant: e.target.value } }))} />
+                        <span className="text-[10px] text-gray-500">de {g.cabezas} · peso</span>
+                        <Input className="h-7 w-20 text-right text-xs"
+                          placeholder={n1(g.peso_prom + diasDesdePesada * parseNum(ganancia))}
+                          value={edits[g.clave]?.peso ?? ""}
+                          onClick={e => e.preventDefault()}
+                          onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "" }), peso: e.target.value } }))} />
+                        <span className="text-[10px] text-gray-400">kg — vacío usa el de la pesada</span>
+                      </div>
                       <div className="text-xs text-gray-600">
-                        <strong>{g.cabezas}</strong> cabezas · promedio{" "}
-                        <strong>{n1(g.peso_prom)} kg</strong> · {n0(g.kg_total)} kg totales
+                        <strong>{g.cabezas}</strong> cabezas · pesada{" "}
+                        <strong>{n1(g.peso_prom)} kg</strong>
+                        {/* El peso de la pesada es histórico; lo que importa hoy es el
+                            proyectado con la ganancia diaria. Antes no se veía y parecía
+                            que cambiar la ganancia no hacía nada. */}
+                        {diasDesdePesada > 0 && parseNum(ganancia) > 0 && (
+                          <> → hoy <strong className="text-emerald-700">
+                            {n1(g.peso_prom + diasDesdePesada * parseNum(ganancia))} kg
+                          </strong>{" "}
+                          <span className="text-gray-400">({diasDesdePesada} días)</span></>
+                        )}
                         {lotes.some(l => l.origen === "stock_inicial"
                           && l.categoria === g.categoria && l.fecha_disponible === fecha) && (
                           <span className="ml-2 text-blue-600">· ya existe, se actualiza</span>
@@ -822,6 +884,167 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                 {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cargar lotes"}
               </Button>
             </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Modal: previsualizar y elegir qué lotes generar desde los períodos ────────
+// Antes generaba todo de una sin preguntar. Ahora se ve de dónde sale cada fila, se
+// tildan las que se quieren, y se pueden abrir para ajustar los defaults antes de crear.
+
+interface FilaGenerar {
+  clave: string
+  campania: string
+  ciclo_id: string
+  categoria: string
+  origen: "destete" | "descarte"
+  cantidad: number
+  peso: number
+  fecha_disponible: string
+  /** De dónde sale el número, para que se entienda sin tener que deducirlo. */
+  procedencia: string
+  yaExiste: boolean
+  tieneVentas: boolean
+}
+
+function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
+  abierto: boolean
+  filas: FilaGenerar[]
+  onCerrar: () => void
+  onAplicar: (sel: { fila: FilaGenerar; ajustes: AjusteFila }[]) => Promise<void>
+  guardando: boolean
+}) {
+  const [sel, setSel] = useState<Record<string, boolean>>({})
+  const [abierta, setAbierta] = useState<Record<string, boolean>>({})
+  const [ajustes, setAjustes] = useState<Record<string, AjusteFila>>({})
+
+  useEffect(() => {
+    if (!abierto) return
+    const s: Record<string, boolean> = {}
+    const a: Record<string, AjusteFila> = {}
+    for (const f of filas) {
+      // Los que ya tienen ventas no se tocan: ahí manda lo que se decidió
+      s[f.clave] = !f.tieneVentas
+      a[f.clave] = {
+        cantidad: String(f.cantidad.toFixed(1)),
+        peso: String(f.peso),
+        ganancia: "0",
+        fecha_venta: f.fecha_disponible,
+        dias_cobro: "0",
+      }
+    }
+    setSel(s); setAjustes(a); setAbierta({})
+  }, [abierto, filas])
+
+  if (!abierto) return null
+  const elegidas = filas.filter(f => sel[f.clave])
+
+  const setAj = (clave: string, campo: keyof AjusteFila, v: string) =>
+    setAjustes(p => ({ ...p, [clave]: { ...p[clave]!, [campo]: v } }))
+
+  // Agrupadas por campaña para que se entienda la procedencia
+  const porCampania = filas.reduce((acc, f) => {
+    (acc[f.campania] ??= []).push(f); return acc
+  }, {} as Record<string, FilaGenerar[]>)
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader><DialogTitle>Generar lotes desde los períodos</DialogTitle></DialogHeader>
+
+        <p className="text-xs text-gray-500">
+          Sale de la línea de tiempo del rodeo. Tildá lo que quieras crear y abrí cualquier fila
+          para ajustar los valores antes de generarla. Si el lote ya existe se{" "}
+          <strong>actualiza</strong>; si ya tiene ventas registradas no se toca.
+        </p>
+
+        {Object.entries(porCampania).map(([camp, fs]) => (
+          <div key={camp} className="rounded border">
+            <div className="border-b bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700">
+              Campaña {camp}
+            </div>
+            <div className="divide-y">
+              {fs.map(f => {
+                const a = ajustes[f.clave]
+                if (!a) return null
+                const abiertaF = abierta[f.clave] ?? false
+                return (
+                  <div key={f.clave} className={f.tieneVentas ? "bg-gray-50 opacity-60" : ""}>
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <input type="checkbox" disabled={f.tieneVentas}
+                        checked={sel[f.clave] ?? false}
+                        onChange={e => setSel(p => ({ ...p, [f.clave]: e.target.checked }))} />
+                      <button type="button" className="flex-1 text-left"
+                        onClick={() => setAbierta(p => ({ ...p, [f.clave]: !abiertaF }))}>
+                        <div className="flex items-center gap-2 text-sm">
+                          {abiertaF ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+                          <strong>{f.categoria}</strong>
+                          <Badge variant="outline" className="text-[10px]">{f.origen}</Badge>
+                          <span className="text-gray-600">
+                            {n1(f.cantidad)} cab · {n1(f.peso)} kg
+                          </span>
+                          {f.yaExiste && !f.tieneVentas && (
+                            <Badge variant="outline" className="text-[10px]">actualiza</Badge>
+                          )}
+                          {f.tieneVentas && (
+                            <Badge variant="outline" className="text-[10px]">tiene ventas — no se toca</Badge>
+                          )}
+                        </div>
+                        <p className="ml-5 text-[11px] text-gray-400">{f.procedencia}</p>
+                      </button>
+                    </div>
+
+                    {abiertaF && (
+                      <div className="grid grid-cols-5 gap-2 border-t bg-gray-50/50 px-3 py-2 pl-10">
+                        <div>
+                          <label className="text-[10px] text-gray-500">Cabezas</label>
+                          <Input className="h-7 text-right text-xs" value={a.cantidad}
+                            onChange={e => setAj(f.clave, "cantidad", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">Peso base kg</label>
+                          <Input className="h-7 text-right text-xs" value={a.peso}
+                            onChange={e => setAj(f.clave, "peso", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">kg/día</label>
+                          <Input className="h-7 text-right text-xs" value={a.ganancia}
+                            onChange={e => setAj(f.clave, "ganancia", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">Fecha venta</label>
+                          <Input type="date" className="h-7 text-xs" value={a.fecha_venta}
+                            onChange={e => setAj(f.clave, "fecha_venta", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">Días cobro</label>
+                          <Input className="h-7 text-right text-xs" value={a.dias_cobro}
+                            onChange={e => setAj(f.clave, "dias_cobro", e.target.value)} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        <div className="flex items-center justify-between border-t pt-3">
+          <p className="text-[11px] text-gray-400">
+            {elegidas.length} de {filas.length} · {n0(elegidas.reduce((s, f) =>
+              s + parseNum(ajustes[f.clave]?.cantidad ?? "0"), 0))} cabezas
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+            <Button disabled={guardando || elegidas.length === 0}
+              onClick={() => onAplicar(elegidas.map(f => ({ fila: f, ajustes: ajustes[f.clave]! })))}>
+              {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Generar"}
+            </Button>
           </div>
         </div>
       </DialogContent>

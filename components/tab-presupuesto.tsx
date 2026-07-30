@@ -158,7 +158,11 @@ export function TabPresupuesto() {
   const cargarDatos = async () => {
     setCargando(true)
     try {
-      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarGanaderia(), cargarHacienda()])
+      // `cargarGanaderia` (tabla presupuesto_ganaderia) quedó OBSOLETA: la reemplazan la
+      // línea de tiempo del rodeo + los lotes, que es lo que lee `cargarHacienda`.
+      // Se dejó de llamar porque mostraba un ingreso fantasma en abr-27 desde una fila
+      // con los porcentajes corruptos (IVA 105%). La fila sigue en la BD sin usarse.
+      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarHacienda()])
     } finally {
       setCargando(false)
     }
