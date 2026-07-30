@@ -11327,3 +11327,10 @@ CREATE TABLE productivo.stock_ventas (
   monto_neto numeric(15,2), notas text, created_at );
 CREATE INDEX idx_stock_ventas_lote ON productivo.stock_ventas(lote_id);
 -- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- Aplicado 2026-07-29: ciclo ganadero, correccion de criterios (charla con el usuario).
+ALTER TABLE productivo.stock_ciclos ALTER COLUMN pct_descarte_falladas SET DEFAULT 0.80;
+-- pct_reposicion se calcula sobre la BASE ENTORADA (rodeo a servicio), no sobre las
+-- terneras destetadas. 220 x 20% = 44, que coincide con las 45 que el usuario marco.
+-- pct_descarte_falladas default 0.80: del 15% que no desteta, la mayor parte es falla de
+-- la vaca (se vende); el resto es falla del ternero y la vaca puede quedarse.

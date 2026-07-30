@@ -95,8 +95,10 @@ export interface CicloCalculado {
   falladas: number
   /** Vacas que se van del rodeo → venta. */
   descarte: number
-  /** Terneras retenidas para reposición (no se venden). */
+  /** Terneras retenidas para reposición (no se venden). Se calcula sobre la BASE ENTORADA. */
   retenidas: number
+  /** No se pueden retener más terneras de las que se destetaron. */
+  retencion_excede: boolean
   /** Lo que queda para vender. */
   terneros_venta: number
   terneras_venta: number
@@ -150,15 +152,21 @@ export function calcularCiclo(
     ? Number(ciclo.real_descarte)
     : falladas * Number(ciclo.pct_descarte_falladas)
 
-  // Reposición: se retienen terneras. Es decisión de estrategia y cambia año a año
-  // (20% mantiene el rodeo; más que eso lo hace crecer).
-  const retenidas = terneras * Number(ciclo.pct_reposicion)
+  // Reposición: se calcula sobre la BASE ENTORADA (el rodeo a servicio), no sobre las
+  // terneras destetadas. El 20% "para mantener" es reponer una quinta parte del rodeo,
+  // que es lo que compensa el descarte; sobre terneras daría ~16 y el rodeo se caería.
+  // Es decisión de estrategia y cambia año a año: más de 20% hace crecer el rodeo.
+  const retenidasTeorica = rodeo * Number(ciclo.pct_reposicion)
+  // Guardarraíl: no se puede retener más de lo que se destetó.
+  const retenidas = Math.min(retenidasTeorica, terneras)
+  const retencionExcede = retenidasTeorica > terneras + 0.01
 
   return {
     ciclo,
     vacas, vaquillonas, rodeo,
     destetados, terneros, terneras,
     falladas, descarte, retenidas,
+    retencion_excede: retencionExcede,
     terneros_venta: terneros,
     terneras_venta: Math.max(0, terneras - retenidas),
     // Las vaquillonas paren y pasan a vaca; las retenidas de este año son las

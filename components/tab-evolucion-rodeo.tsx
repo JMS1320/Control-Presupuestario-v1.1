@@ -168,7 +168,7 @@ export function TabEvolucionRodeo() {
       vaquillonas_apertura: ciclos.length ? "" : "27",
       pct_destete: ultimo ? fmtPctTxt(ultimo.ciclo.pct_destete) : "85",
       pct_machos: ultimo ? fmtPctTxt(ultimo.ciclo.pct_machos) : "50",
-      pct_descarte_falladas: ultimo ? fmtPctTxt(ultimo.ciclo.pct_descarte_falladas) : "50",
+      pct_descarte_falladas: ultimo ? fmtPctTxt(ultimo.ciclo.pct_descarte_falladas) : "80",
       pct_reposicion: ultimo ? fmtPctTxt(ultimo.ciclo.pct_reposicion) : "20",
       peso_destete_kg: ultimo ? String(ultimo.ciclo.peso_destete_kg) : "200",
     })
@@ -200,7 +200,7 @@ export function TabEvolucionRodeo() {
     { label: "→ Terneras",            get: c => n1(c.terneras), clase: "text-gray-600" },
     { label: "Falladas (merma)",      get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
     { label: "Vaca descarte → venta", get: c => n1(c.descarte), clase: "font-medium text-amber-700" },
-    { label: "Terneras retenidas",    get: c => n1(c.retenidas), clase: "text-blue-700", sep: true },
+    { label: "Terneras retenidas",    get: c => n1(c.retenidas) + (c.retencion_excede ? " ⚠" : ""), clase: "text-blue-700", sep: true },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },
     { label: "Vacas (cierre)",        get: c => n1(c.vacas_cierre), clase: "bg-gray-50", sep: true },
@@ -428,8 +428,8 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
             <div className="grid grid-cols-3 gap-3">
               {campoPct("pct_destete", "% Destete", "sobre el rodeo")}
               {campoPct("pct_machos", "% Machos", "del destete")}
-              {campoPct("pct_descarte_falladas", "% Descarte de falladas", "default 50")}
-              {campoPct("pct_reposicion", "% Reposición", "20 mantiene · más, crece")}
+              {campoPct("pct_descarte_falladas", "% Descarte de falladas", "80 = falla de la vaca")}
+              {campoPct("pct_reposicion", "% Reposición", "sobre la base entorada · 20 mantiene")}
               {campo("peso_destete_kg", "Peso al destete (kg)")}
             </div>
           </div>
