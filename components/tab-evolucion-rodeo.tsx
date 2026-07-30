@@ -188,7 +188,8 @@ export function TabEvolucionRodeo() {
               // Defaults sólo al crear: si ya existe no le pisamos los parámetros editados
               pct_destete: p.pct_destete_real ?? 0.85,
               pct_machos: p.pct_machos_real ?? 0.50,
-              pct_descarte_falladas: 0.50,
+              // 80%: del 15% que no desteta, la mayor parte es falla de la vaca y se vende
+              pct_descarte_falladas: 0.80,
               pct_reposicion: 0.20,
               peso_destete_kg: p.kg_promedio ?? 200,
             })
