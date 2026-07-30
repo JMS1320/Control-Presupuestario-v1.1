@@ -245,7 +245,13 @@ export function TabEvolucionRodeo() {
   // Filas de la tabla: concepto + valor por período
   const filas: { label: string; get: (c: CicloCalculado, i: number) => string; clase?: string; sep?: boolean }[] = [
     { label: "Vacas",                 get: c => n1(c.vacas) },
-    { label: "Vaquillonas de rep.",   get: c => n1(c.vaquillonas) },
+    // Se ve de dónde vienen: son las retenidas en el destete de la campaña anterior.
+    { label: "Vaquillonas de rep.",   get: (c, i) => {
+        const prev = linea[i - 1]
+        const fd = prev ? fechasCampania(prev.ciclo.campania)?.destete : null
+        const origen = fd ? ` (ret. ${Number(fd.slice(5,7))}/${fd.slice(2,4)})` : ""
+        return n1(c.vaquillonas) + origen
+      } },
     { label: "RODEO (a servicio)",    get: (c, i) => {
         const prev = linea[i - 1]
         if (!prev || prev.rodeo <= 0) return n1(c.rodeo)
@@ -271,7 +277,7 @@ export function TabEvolucionRodeo() {
         const sobreRodeo = pct(c.rodeo > 0 ? c.retenidas / c.rodeo : 0)
         return `${n1(c.retenidas)}  (${sobreRodeo} del rodeo)`
           + (c.retencion_excede ? " ⚠" : "")
-          + (chk ? ` · marcadas ${n1(chk.marcadas)}` : "")
+          + (chk ? ` · hoy marcadas ${n1(chk.marcadas)}` : "")
       }, clase: "text-blue-700", sep: true },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },

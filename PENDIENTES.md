@@ -1201,6 +1201,18 @@ Reserva Reposición 60                        → entra al rodeo
 > de `ciclos_cria` del último ciclo cerrado (2024: 160 + 54). La referencia estaba mal elegida:
 > mira el pasado cuando lo que hace falta es la foto de hoy.
 
+**📅 LA CAMPAÑA ES LA COMERCIAL JULIO–JUNIO**, igual que en el resto de la app. Con ese
+calendario cada campaña contiene **exactamente un servicio y un destete**:
+```
+campaña 25/26 (jul-25 → jun-26):  servicio 10/2025 (220 cab)  ·  destete 3/2026 (189)
+campaña 26/27 (jul-26 → jun-27):  servicio 10/2026 (264 cab)  ·  destete 3/2027
+```
+`campaniaDeServicio(Y) = Y/(Y+1)` — octubre de Y cae en jul-Y/jun-(Y+1).
+
+> Estuvo mal mapeado una campaña de más (el servicio de oct-2025 iba a la 26/27). Síntoma:
+> el chequeo de reposición mostraba "marcadas 45" en **dos** campañas a la vez, porque las
+> dos caían dentro de los ±90 días de la misma pesada.
+
 **⚠️ EL PERÍODO VA DE SERVICIO A SERVICIO** (definición final, 2026-07-30). Un servicio y su
 propio destete abarcan 17 meses y se superponen con el ciclo siguiente; en cambio de servicio a
 servicio son 12 meses limpios, y ahí **el cierre de un período ES la apertura del siguiente**:

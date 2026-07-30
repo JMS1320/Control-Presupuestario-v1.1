@@ -11,11 +11,14 @@
 // destete (17 meses). Es la definición que hace que **el cierre de un período sea la
 // apertura del siguiente**, sin desfasajes.
 //
-//   campaña 26/27 = 1/10/2025 → 1/10/2026
-//     · servicio            1/10/2025   ← abre el período
-//     · destete EN el período  3/2026    ← ¡del servicio ANTERIOR!
-//     · parición            7/2026
-//     · su propio destete      3/2027    ← cae en la campaña SIGUIENTE
+// La campaña es la COMERCIAL julio–junio, igual que en el resto de la app. Con ese
+// calendario cada campaña contiene exactamente un servicio y un destete:
+//
+//   campaña 25/26 (jul-25 → jun-26)
+//     · servicio            1/10/2025   ← abre el ciclo productivo
+//     · destete EN la campaña  3/2026    ← ¡del servicio ANTERIOR (oct-2024)!
+//     · parición del propio servicio 7/2026  (ya en la campaña siguiente)
+//     · su propio destete      3/2027    ← cae en la campaña siguiente
 //
 // El único corrimiento del modelo está acá: el destete que ocurre durante un período
 // es el producto del servicio del período anterior (16 meses antes). El stock, en
@@ -47,10 +50,10 @@ export function fechasCampania(campania: string): FechasCiclo | null {
   const anioB = 2000 + Number(m[2])   // 28 → 2028
   const d = (a: number, mes: number) => `${a}-${String(mes).padStart(2, '0')}-01`
   return {
-    servicio:       d(anioA - 1, MES_SERVICIO),   // 1/10/2025 para 26/27
-    destete:        d(anioA, MES_DESTETE),        // 3/2026 — el que ocurre EN el período
-    paricion:       d(anioA, MES_PARICION),       // 7/2026
-    destete_propio: d(anioB, MES_DESTETE),        // 3/2027 — cae en la campaña siguiente
+    servicio:       d(anioA, MES_SERVICIO),       // 1/10/2025 para 25/26
+    destete:        d(anioB, MES_DESTETE),        // 3/2026 — el que ocurre EN la campaña
+    paricion:       d(anioB, MES_PARICION),       // 7/2026 — ya en la campaña siguiente
+    destete_propio: d(anioB + 1, MES_DESTETE),    // 3/2027 — cae en la campaña siguiente
   }
 }
 
@@ -59,8 +62,7 @@ export function etiquetaFechas(campania: string): string {
   const f = fechasCampania(campania)
   if (!f) return 'campaña sin formato AA/BB'
   const mm = (s: string) => `${Number(s.slice(5, 7))}/${s.slice(2, 4)}`
-  const anioFin = Number(f.servicio.slice(0, 4)) + 1
-  return `serv ${mm(f.servicio)} → ${MES_SERVICIO}/${String(anioFin).slice(-2)} · destete ${mm(f.destete)}`
+  return `servicio ${mm(f.servicio)} · destete ${mm(f.destete)}`
 }
 
 export interface CicloStock {
@@ -351,12 +353,12 @@ export interface PropuestaCiclo {
 }
 
 /**
- * `anio_servicio` → campaña. El servicio de octubre de 2025 corresponde a la campaña
- * 26/27 (pare jul-26, desteta mar-27).
+ * `anio_servicio` → campaña COMERCIAL (julio–junio) que lo contiene.
+ * Octubre de 2025 cae en jul-25/jun-26 → campaña 25/26.
  */
 export function campaniaDeServicio(anioServicio: number): string {
-  const a = (anioServicio + 1) % 100
-  const b = (anioServicio + 2) % 100
+  const a = anioServicio % 100
+  const b = (anioServicio + 1) % 100
   return `${String(a).padStart(2, '0')}/${String(b).padStart(2, '0')}`
 }
 
