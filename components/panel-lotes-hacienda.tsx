@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale } from "lucide-react"
+import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle } from "lucide-react"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete,
   type LoteStock, type VentaStock, type CicloCalculado,
@@ -43,6 +43,14 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const [modal, setModal] = useState<any>(null)
   const [modalPesada, setModalPesada] = useState(false)
   const [generando, setGenerando] = useState(false)
+  /**
+   * Foto ACTUAL de las pesadas, por `fecha|categoria`. Se compara contra lo que quedó
+   * guardado en el lote para avisar cuando el origen cambió (p.ej. se marcaron más
+   * terneras de reposición). NO se actualiza solo: el presupuesto no debe moverse bajo
+   * los pies del usuario — se avisa y él decide (misma lección que los templates
+   * auto-modificables en KNOWLEDGE.md).
+   */
+  const [fotoPesada, setFotoPesada] = useState<Record<string, { cabezas: number; peso: number }>>({})
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -58,6 +66,29 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
       setLotes((ls || []) as LoteStock[])
       setVentas((vs || []) as VentaStock[])
+
+      // Foto viva de las pesadas, para detectar lotes desactualizados
+      const { data: pes } = await supabase.schema("productivo")
+        .from("pesadas_terneros")
+        .select("fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)")
+      const acc: Record<string, { n: number; kg: number }> = {}
+      for (const r of (pes || []) as any[]) {
+        const t = r.ternero
+        if (!t) continue
+        const esMacho = /macho/i.test(String(t.sexo ?? ""))
+        const categoria = esMacho
+          ? (t.es_torito ? "Torito" : "Ternero Recria")
+          : (t.es_torito ? "__reposicion__" : "Ternera Recria")
+        const k = `${r.fecha}|${categoria}`
+        acc[k] = acc[k] ?? { n: 0, kg: 0 }
+        acc[k].n += 1
+        acc[k].kg += Number(r.peso_kg) || 0
+      }
+      const foto: Record<string, { cabezas: number; peso: number }> = {}
+      for (const [k, v] of Object.entries(acc)) {
+        foto[k] = { cabezas: v.n, peso: v.n ? v.kg / v.n : 0 }
+      }
+      setFotoPesada(foto)
     } finally { setCargando(false) }
   }, [])
 
@@ -150,6 +181,17 @@ export function PanelLotesHacienda({ linea, onCambio }: {
     notas: "Stock inicial — retenido para recría",
   })
 
+  /** Un lote de stock inicial está desactualizado si la pesada hoy dice otra cosa. */
+  const desactualizado = (l: LoteStock) => {
+    if (l.origen !== "stock_inicial") return null
+    const f = fotoPesada[`${l.fecha_disponible}|${l.categoria}`]
+    if (!f) return null
+    const difCab = Math.abs(f.cabezas - Number(l.cantidad)) > 0.01
+    const difPeso = Math.abs(f.peso - Number(l.peso_base_kg)) > 0.5
+    return (difCab || difPeso) ? f : null
+  }
+
+  const hayDesactualizados = lotes.some(l => desactualizado(l))
   const totalDisponible = lotes.reduce((s, l) => s + cantidadDisponible(l, ventasDe(l.id)), 0)
 
   return (
@@ -184,6 +226,17 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       </CardHeader>
 
       <CardContent className="p-0">
+        {hayDesactualizados && (
+          <p className="mx-4 mb-2 flex items-start gap-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              Hay lotes <strong>desactualizados</strong>: la pesada de origen cambió (por
+              ejemplo, se marcaron más terneras para reposición). El presupuesto{" "}
+              <strong>no se actualiza solo</strong> a propósito — corré{" "}
+              <strong>«Desde pesada»</strong> cuando quieras traer los números nuevos.
+            </span>
+          </p>
+        )}
         {cargando ? (
           <div className="flex items-center justify-center py-10 text-gray-400">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando…
@@ -218,8 +271,9 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   const quedan = cantidadDisponible(l, vs)
                   const hoy = new Date().toISOString().slice(0, 10)
                   const pesoHoy = pesoEstimado(l, hoy)
+                  const des = desactualizado(l)
                   return (
-                    <tr key={l.id} className="border-b hover:bg-gray-50">
+                    <tr key={l.id} className={`border-b hover:bg-gray-50 ${des ? "bg-amber-50/40" : ""}`}>
                       <td className="px-3 py-2">{l.categoria}</td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className="text-[10px]">{l.origen}</Badge>
@@ -227,12 +281,28 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       <td className="px-3 py-2 text-gray-600">
                         {new Date(l.fecha_disponible + "T00:00:00").toLocaleDateString("es-AR")}
                       </td>
-                      <td className="px-3 py-2 text-right">{n1(l.cantidad)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {n1(l.cantidad)}
+                        {des && Math.abs(des.cabezas - Number(l.cantidad)) > 0.01 && (
+                          <span className="ml-1 text-[10px] text-amber-600"
+                            title="La pesada hoy dice otra cantidad">
+                            → {n1(des.cabezas)}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right text-gray-500">
                         {vendidas > 0 ? n1(vendidas) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right font-medium text-emerald-700">{n1(quedan)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600">{n1(l.peso_base_kg)}</td>
+                      <td className="px-3 py-2 text-right text-gray-600">
+                        {n1(l.peso_base_kg)}
+                        {des && Math.abs(des.peso - Number(l.peso_base_kg)) > 0.5 && (
+                          <span className="ml-1 text-[10px] text-amber-600"
+                            title="La pesada hoy da otro promedio">
+                            → {n1(des.peso)}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right text-gray-600">
                         {Number(l.ganancia_diaria_kg) > 0 ? n1(l.ganancia_diaria_kg) : "—"}
                       </td>

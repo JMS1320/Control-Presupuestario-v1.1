@@ -1260,8 +1260,13 @@ ternerasRep = es_torito && sexo === 'Hembra'    // tab-terneros.tsx:627,732
 categoriaPropuesta()  // :4131 — if (es_torito) → 'Torito', sin mirar el sexo
 const toritos = asignaciones.filter(t => t.es_torito)   // :4051 — incluye hembras marcadas
 ```
-→ En el flujo de **cambio de categoría**, una ternera marcada para reposición se propone como
-**"Torito"**. Verificar y corregir (debería proponer `Vaquillona de Reposicion`).
+→ En el flujo de **cambio de categoría**, una ternera marcada para reposición se proponía como
+**"Torito"**, y encima caía en DOS grupos a la vez (`hembras` y `toritos`) porque `toritos` no
+filtraba por sexo: doble conteo.
+
+✅ **CORREGIDO 2026-07-29**: `categoriaPropuesta()` lee el flag junto con el sexo
+(macho+marcado → Torito · hembra+marcada → Vaquillona de Reposicion), los 4 grupos pasaron a ser
+**excluyentes**, y se agregó el grupo **"Terneras reposición"** que faltaba.
 
 Aparte del bug: el nombre engaña. Convendría partirlo en dos flags (`es_torito` /
 `es_reposicion`) o renombrarlo a algo neutro tipo `marcado_retencion`.
