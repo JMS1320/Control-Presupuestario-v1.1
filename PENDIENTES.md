@@ -1828,6 +1828,53 @@ Opciones a conversar: (a) una curva por tipo de cultivo (% del gasto por mes des
 (b) partir el ítem en varios con `momento: inicio/fin`; (c) un campo de "mes del ciclo" por ítem.
 La (b) ya se puede hacer hoy a mano y quizás alcance.
 
+##### ✅ Tanda 2026-07-30 (c) — saldo acumulado, IIBB unificado, sub-agrupación
+
+**1 · SALDO ACUMULADO** — *"debe estar el saldo acumulado de cada mes y no sólo el neto entre
+ingresos y egresos mes x mes"*.
+Fila nueva al pie, debajo de RESULTADO. Arrastra el resultado mes a mes desde un **saldo de
+arranque**. Sin esto el presupuesto sólo dice el resultado de cada mes, que no alcanza para saber
+si la caja da: un mes malo después de varios buenos no es lo mismo que ese mes con la caja en cero.
+
+`public.presupuesto_config` (empresa, `saldo_inicial`, `mes_inicial`, notas) — **no está en el
+backup**. Se carga a mano desde la propia fila (botón *"arranca en $X — editar"*).
+**Provisorio y a propósito**: el usuario lo pidió así, *"por ahora para poner a mano y luego vemos
+cómo emprolijamos"*. Lo natural sería derivarlo de los saldos bancarios reales → **C-10**.
+
+`mes_inicial` guarda a qué mes corresponde el saldo. Los meses **anteriores** a ese muestran `—`
+en vez de un número: no se puede acumular hacia atrás desde un saldo de otro momento. Es el aviso
+de que el saldo quedó viejo cuando la grilla avanza.
+
+**2 · IIBB en un solo renglón colapsable** — *"así como pusiste IIBB sobre venta de hacienda
+habría que poner de arrendamiento. Renglón aparte y colapsable a un solo renglón de IIBB total"*.
+`IIBB total` se abre en sus orígenes: venta hacienda · **arrendamiento (nuevo)** · ganadería.
+Sólo aparecen los que tienen monto.
+
+El de arrendamiento es **derivado igual que los otros**: 5 %
+(`ALICUOTA_IIBB_ARRENDAMIENTO`) de la venta del mes, cobrado el mes siguiente. No se registra en
+ningún template — sale de la venta, como el resto. Ya suma al TOTAL EGRESOS.
+
+**3 · Sub-agrupación de templates por categoría** — *"impuestos rurales tiene mezclado inmob y
+red vial. Tal vez una subagrupación con datos existentes sin crear nada nuevo"*.
+Se usa `egresos_sin_factura.categ`, que **ya existe**: no se creó ninguna categoría ni columna.
+
+**El criterio general** (aplicable a cualquier agrupador, que era el pedido):
+sub-agrupar sólo si hay **2+ categorías** y **alguna junta más de un template**.
+
+| agrupador | categs / templates | qué hace |
+|---|---|---|
+| Impuestos Rurales | 3 / 22 | **sub-agrupa** — 11 inmobiliarios + 10 red vial + 1 complementario |
+| Impuestos General | 5 / 9 | **sub-agrupa** — ARCA 3, laborales 2, retenciones 2 |
+| Gastos Bancarios | 7 / 7 | plano — una categ por template, anidar sería vacío |
+| Impuestos Automotores | 1 / 4 | plano — una sola categoría |
+
+`porCateg()` y `subAgrupa()` en `tab-presupuesto.tsx`.
+
+**C-10 · El saldo de arranque debería salir de los bancos** 🟡 *(abierto, 2026-07-30)*
+Hoy se tipea. Lo correcto sería tomar el saldo real de las cuentas a una fecha — el usuario ya lo
+anticipó (*"luego vemos cómo emprolijamos"*). Ojo con el alcance: el presupuesto es sólo MSA y los
+saldos son por cuenta bancaria; hay que decidir qué cuentas entran.
+
 ##### Tres familias de costo — no se calculan igual
 No forzarlas al mismo molde; cada una tiene su unidad:
 

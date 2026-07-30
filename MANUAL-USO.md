@@ -489,6 +489,37 @@ un error que esta solapa destapó.
 
 ---
 
+## 📊 Presupuesto → leer la grilla
+
+### Saldo acumulado
+Abajo de todo, después de RESULTADO, está el **SALDO ACUMULADO**: arrastra el resultado de cada
+mes desde un saldo de arranque. El resultado mensual solo no dice si la caja alcanza — un mes malo
+después de varios buenos no es lo mismo que ese mes con la caja en cero.
+
+El **saldo de arranque se carga a mano** (link *"arranca en $X — editar"* en la misma fila). Por
+ahora es así a propósito; más adelante saldrá de los saldos bancarios reales.
+
+Los meses **anteriores** al mes del saldo muestran `—`: no se puede acumular hacia atrás desde un
+saldo que corresponde a otro momento. Si ves guiones al principio de la grilla, el saldo quedó
+viejo y hay que recargarlo.
+
+### IIBB
+Un solo renglón **IIBB total**, que se abre en sus orígenes: venta de hacienda, arrendamiento
+(5 % de la venta) y ganadería. Todos caen el **mes siguiente al cobro**.
+
+Ninguno se registra en un template: son **derivados de la venta**. Si cambia la venta, cambia el
+IIBB solo.
+
+### Sub-agrupación de templates
+Los agrupadores que mezclan cosas distintas se abren en un nivel más. *Impuestos Rurales* ahora
+separa los 11 inmobiliarios de los 10 de red vial en vez de tirar 22 renglones juntos.
+
+Se usa la **categoría que el template ya tiene** — no hay nada nuevo que cargar. Y sólo se
+sub-agrupa donde ordena algo: si cada template tiene su propia categoría (como *Gastos
+Bancarios*), queda plano, porque anidar ahí sería un clic de más para ver lo mismo.
+
+---
+
 ## 🌾 Presupuesto → Actividades y costos 🟡 *(nuevo 2026-07-30, sin testear)*
 
 > Botón **"Actividades y costos"** arriba a la derecha del Presupuesto, al lado de "Precios y TC".

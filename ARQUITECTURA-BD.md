@@ -129,6 +129,13 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
 | `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
 
+**Presupuesto — saldo de arranque** (2026-07-30) — `public.presupuesto_config`
+(`empresa` único, `saldo_inicial`, `mes_inicial`, `notas`). **No está en el backup.**
+Es el punto de partida del **saldo acumulado** del presupuesto: sin él la grilla sólo dice el
+resultado de cada mes, que no alcanza para saber si la caja da. Se carga a mano — provisorio,
+lo natural sería derivarlo de los saldos bancarios (FASE C · C-10). `mes_inicial` indica a qué
+mes corresponde el saldo; los meses anteriores no se acumulan.
+
 **Actividades productivas y costos directos** (2026-07-30) — **No están en el backup.**
 
 | Tabla | Propósito |

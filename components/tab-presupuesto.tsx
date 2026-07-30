@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
+import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale } from "lucide-react"
+import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -17,6 +18,7 @@ import {
   montoVenta,
   puedeMoverCuota,
   fechaMinimaDisponible,
+  ALICUOTA_IIBB_ARRENDAMIENTO,
   type PrecioGrano,
   type TipoCambio,
   type EstadoCuota,
@@ -125,7 +127,27 @@ interface CuotaDetalle {
   posOrigMes: number | null
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
+/** Templates de un agrupador, juntados por su categoria y en orden alfabetico. */
+function porCateg(templates: FilaTemplate[]): [string, FilaTemplate[]][] {
+  const acc: Record<string, FilaTemplate[]> = {}
+  for (const t of templates) (acc[t.categ || "(sin categoria)"] ??= []).push(t)
+  return Object.entries(acc).sort((a, b) => a[0].localeCompare(b[0]))
+}
+
+/**
+ * Conviene abrir un nivel de sub-agrupacion en este agrupador?
+ *
+ * Si cuando hay varias categorias Y alguna junta mas de un template: ahi el nivel extra
+ * ordena de verdad (Impuestos Rurales = 11 inmobiliarios + 10 red vial).
+ * No cuando hay una sola categoria, o cuando hay tantas como templates (Gastos Bancarios,
+ * una categoria por template): seria anidado vacio, mas clics para ver lo mismo.
+ */
+function subAgrupa(ag: Agrupador): boolean {
+  const categs = new Set(ag.templates.map(t => t.categ || "(sin categoria)")).size
+  return categs >= 2 && categs < ag.templates.length
+}
+
+// -- Componente principal ------------------------------------------------------
 
 export function TabPresupuesto() {
   const [cargando, setCargando] = useState(true)
@@ -165,6 +187,15 @@ export function TabPresupuesto() {
   const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
   const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({})
+  /**
+   * Saldo de arranque, a mano por ahora. Sin esto el presupuesto sólo dice el resultado
+   * de cada mes, que no alcanza para saber si la caja da: un mes malo después de varios
+   * buenos no es lo mismo que el mismo mes con la caja en cero.
+   */
+  const [saldoInicial, setSaldoInicial] = useState(0)
+  const [mesInicial, setMesInicial] = useState<string | null>(null)
+  const [editandoSaldo, setEditandoSaldo] = useState(false)
+  const [saldoTxt, setSaldoTxt] = useState("")
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
@@ -182,10 +213,25 @@ export function TabPresupuesto() {
       // línea de tiempo del rodeo + los lotes, que es lo que lee `cargarHacienda`.
       // Se dejó de llamar porque mostraba un ingreso fantasma en abr-27 desde una fila
       // con los porcentajes corruptos (IVA 105%). La fila sigue en la BD sin usarse.
-      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarHacienda()])
+      await Promise.all([cargarTemplates(), cargarSueldos(), cargarIngresos(), cargarHacienda(), cargarConfig()])
     } finally {
       setCargando(false)
     }
+  }
+
+  const cargarConfig = async () => {
+    const { data } = await supabase.from("presupuesto_config")
+      .select("saldo_inicial, mes_inicial").eq("empresa", "MSA").maybeSingle()
+    setSaldoInicial(Number(data?.saldo_inicial) || 0)
+    setMesInicial(data?.mes_inicial ?? null)
+  }
+
+  const guardarSaldoInicial = async (monto: number, mes: string) => {
+    const { error } = await supabase.from("presupuesto_config")
+      .upsert({ empresa: "MSA", saldo_inicial: monto, mes_inicial: mes, updated_at: new Date().toISOString() },
+        { onConflict: "empresa" })
+    if (error) { alert("Error: " + error.message); return }
+    setSaldoInicial(monto); setMesInicial(mes); setEditandoSaldo(false)
   }
 
   const cargarTemplates = async () => {
@@ -633,10 +679,16 @@ export function TabPresupuesto() {
       }
       suma += ganaderia.reduce((acc, g) => acc + (g.iibb[clave] || 0), 0)
       suma += hacienda.iibb[clave] || 0
+      // IIBB del arrendamiento: 5 % de la venta del mes anterior
+      const ant = new Date(m.anio, m.mes - 2, 1)
+      const claveAnt = `${ant.getFullYear()}-${String(ant.getMonth() + 1).padStart(2,"0")}`
+      const ventaAnt = campos.reduce(
+        (a, c) => a + (c.fijado[claveAnt] || 0) + (c.presupuestado[claveAnt] || 0) + (c.disponible[claveAnt] || 0), 0)
+      suma += ventaAnt * ALICUOTA_IIBB_ARRENDAMIENTO
       totales[clave] = suma
     }
     return totales
-  }, [agrupadores, sueldoFilas, ganaderia, hacienda, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, meses])
 
   const totalSueldosPorMes = useMemo(() => {
     const totales: Record<string, number> = {}
@@ -669,6 +721,61 @@ export function TabPresupuesto() {
     }
     return totales
   }, [ganaderia, meses])
+
+  /**
+   * IIBB del arrendamiento: 5 % de la venta, el mes SIGUIENTE al cobro. Es derivado igual
+   * que el de hacienda — no se registra en ningún lado, sale de la venta.
+   */
+  const iibbArrendamientoPorMes = useMemo(() => {
+    const totales: Record<string, number> = {}
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      const venta = campos.reduce(
+        (s, c) => s + (c.fijado[clave] || 0) + (c.presupuestado[clave] || 0) + (c.disponible[clave] || 0), 0)
+      if (venta <= 0) continue
+      const sig = new Date(m.anio, m.mes, 1)   // mes + 1
+      const claveSig = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2,"0")}`
+      totales[claveSig] = (totales[claveSig] || 0) + venta * ALICUOTA_IIBB_ARRENDAMIENTO
+    }
+    return totales
+  }, [campos, meses])
+
+  /** Las tres fuentes de IIBB, para la fila colapsable. */
+  const iibbFilas = useMemo(() => [
+    { nombre: "IIBB venta hacienda", datos: hacienda.iibb },
+    { nombre: "IIBB arrendamiento", datos: iibbArrendamientoPorMes },
+    { nombre: "IIBB ganadería", datos: totalIibbGanaderiaPorMes },
+  ].filter(f => Object.values(f.datos).some(v => v > 0)),
+  [hacienda.iibb, iibbArrendamientoPorMes, totalIibbGanaderiaPorMes])
+
+  const iibbTotalPorMes = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const f of iibbFilas) {
+      for (const [k, v] of Object.entries(f.datos)) t[k] = (t[k] || 0) + v
+    }
+    return t
+  }, [iibbFilas])
+
+  /**
+   * Saldo acumulado: arrastra el resultado mes a mes desde el saldo de arranque.
+   * Los meses ANTERIORES a `mesInicial` quedan vacíos — no se puede acumular hacia atrás
+   * desde un saldo que corresponde a otro momento.
+   */
+  const saldoAcumuladoPorMes = useMemo(() => {
+    const primero = meses[0] ? `${meses[0].anio}-${String(meses[0].mes).padStart(2,"0")}` : ""
+    const arranque = mesInicial || primero
+    const salida: Record<string, number | null> = {}
+    let acum = saldoInicial
+    let empezo = false
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      if (!empezo && clave < arranque) { salida[clave] = null; continue }
+      empezo = true
+      acum += (totalIngresosPorMes[clave] || 0) - (totalesPorMes[clave] || 0)
+      salida[clave] = acum
+    }
+    return salida
+  }, [meses, saldoInicial, mesInicial, totalIngresosPorMes, totalesPorMes])
 
   const hayIngresos = campos.length > 0 || ganaderia.length > 0
     || hacienda.categorias.length > 0
@@ -996,29 +1103,88 @@ export function TabPresupuesto() {
                         })}
                       </tr>
 
-                      {/* Filas de templates hijos */}
-                      {expandido && ag.templates.map(t => (
-                        <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
-                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-gray-600 text-xs">
-                            {t.nombre}
-                            <span className="ml-2 text-gray-400">{t.categ}</span>
-                          </td>
-                          {meses.map(m => {
-                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                            const esActual = clave === mesActualClave
-                            return (
-                              <td
-                                key={clave}
-                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
-                                  esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
-                                }`}
-                              >
-                                {fmt(t.montos[clave] || 0)}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
+                      {/* Filas hijas: sub-agrupadas por categoria cuando eso ordena algo.
+                          "Impuestos Rurales" mezcla 11 inmobiliarios con 10 de red vial y
+                          leerlo es imposible; "Gastos Bancarios" tiene una categoria por
+                          template y sub-agruparlo seria puro anidado vacio. Por eso solo se
+                          sub-agrupa si hay 2+ categorias y alguna junta mas de un template.
+                          Sale todo de datos que YA existen: no se creo ninguna categoria. */}
+                      {expandido && (subAgrupa(ag)
+                        ? porCateg(ag.templates).map(([categ, hijos]) => {
+                          const claveSub = `${ag.nombre}||${categ}`
+                          const subAbierto = expandidos[claveSub] ?? false
+                          const totalesSub: Record<string, number> = {}
+                          for (const m of meses) {
+                            const k = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            totalesSub[k] = hijos.reduce((x, f) => x + (f.montos[k] || 0), 0)
+                          }
+                          return (
+                            <>
+                              <tr key={`sub-${claveSub}`}
+                                className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100"
+                                onClick={() => toggleAgrupador(claveSub)}>
+                                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-1.5 pl-8 text-xs font-medium text-gray-600 flex items-center gap-1">
+                                  {subAbierto
+                                    ? <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />
+                                    : <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
+                                  }
+                                  {categ}
+                                  <span className="ml-1 text-gray-400">({hijos.length})</span>
+                                </td>
+                                {meses.map(m => {
+                                  const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                                  return (
+                                    <td key={clave}
+                                      className={`px-3 py-1.5 text-right text-xs font-medium text-gray-600 ${
+                                        clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                      {fmt(totalesSub[clave] || 0)}
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                              {subAbierto && hijos.map(t => (
+                                <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
+                                  <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-14 text-gray-600 text-xs">
+                                    {t.nombre}
+                                  </td>
+                                  {meses.map(m => {
+                                    const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                                    return (
+                                      <td key={clave}
+                                        className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                          clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                        {fmt(t.montos[clave] || 0)}
+                                      </td>
+                                    )
+                                  })}
+                                </tr>
+                              ))}
+                            </>
+                          )
+                        })
+                        : ag.templates.map(t => (
+                          <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-gray-600 text-xs">
+                              {t.nombre}
+                              <span className="ml-2 text-gray-400">{t.categ}</span>
+                            </td>
+                            {meses.map(m => {
+                              const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                              const esActual = clave === mesActualClave
+                              return (
+                                <td
+                                  key={clave}
+                                  className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                    esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                                  }`}
+                                >
+                                  {fmt(t.montos[clave] || 0)}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))
+                      )}
                     </>
                   )
                 })}
@@ -1079,54 +1245,57 @@ export function TabPresupuesto() {
                   )
                 })()}
 
-                {/* ── IIBB de la venta de hacienda (mes siguiente al cobro) ── */}
-                {Object.keys(hacienda.iibb).length > 0 && (
-                  <tr className="border-b bg-amber-50/40">
-                    <td className="sticky left-0 z-10 bg-amber-50/40 px-4 py-2 font-semibold text-gray-700">
-                      IIBB venta hacienda
-                      <span className="ml-2 text-xs font-normal text-gray-400">
-                        mes siguiente al cobro
-                      </span>
-                    </td>
-                    {meses.map(m => {
-                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                      const esActual = clave === mesActualClave
-                      return (
-                        <td key={clave}
-                          className={`px-3 py-2 text-right font-semibold text-gray-700 ${
-                            esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
-                          {fmt(hacienda.iibb[clave] || 0)}
+                {/* ── IIBB: un solo renglón que se abre en sus fuentes ──
+                    Todos son derivados (5 % arrendamiento, 1 % ganadería): no se registran
+                    en ningún template, salen de la venta. */}
+                {iibbFilas.length > 0 && (() => {
+                  const abierto = expandidos["__iibb__"] ?? false
+                  return (
+                    <>
+                      <tr className="border-b bg-amber-50/40 cursor-pointer hover:bg-amber-50 transition-colors"
+                        onClick={() => toggleAgrupador("__iibb__")}>
+                        <td className="sticky left-0 z-10 bg-amber-50/40 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                          {abierto
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                          }
+                          IIBB total
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            {iibbFilas.length} {iibbFilas.length === 1 ? "origen" : "orígenes"} · mes siguiente al cobro
+                          </span>
                         </td>
-                      )
-                    })}
-                  </tr>
-                )}
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(iibbTotalPorMes[clave] || 0)}
+                            </td>
+                          )
+                        })}
+                      </tr>
 
-                {/* ── IIBB de ganadería (egreso derivado, mes siguiente al cobro) ── */}
-                {ganaderia.length > 0 && (
-                  <tr className="border-b bg-amber-50/40">
-                    <td className="sticky left-0 z-10 bg-amber-50/40 px-4 py-2 font-semibold text-gray-700">
-                      IIBB ganadería
-                      <span className="ml-2 text-xs font-normal text-gray-400">
-                        mes siguiente al cobro
-                      </span>
-                    </td>
-                    {meses.map(m => {
-                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                      const esActual = clave === mesActualClave
-                      return (
-                        <td
-                          key={clave}
-                          className={`px-3 py-2 text-right font-semibold text-gray-700 ${
-                            esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
-                          }`}
-                        >
-                          {fmt(totalIibbGanaderiaPorMes[clave] || 0)}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )}
+                      {abierto && iibbFilas.map(f => (
+                        <tr key={`iibb-${f.nombre}`} className="border-b hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                            {f.nombre}
+                          </td>
+                          {meses.map(m => {
+                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            return (
+                              <td key={clave}
+                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                {fmt(f.datos[clave] || 0)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
 
                 {/* ── Total general ── */}
                 <tr className="border-t-2 border-gray-400 bg-gray-800">
@@ -1169,6 +1338,56 @@ export function TabPresupuesto() {
                           } ${esActual ? "bg-slate-900 border-l-2 border-blue-400" : ""}`}
                         >
                           ${Math.round(resultado).toLocaleString("es-AR")}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
+
+                {/* ── SALDO ACUMULADO ──
+                    El resultado mes a mes no dice si la caja alcanza: un mes malo después
+                    de varios buenos no es lo mismo que ese mes con la caja en cero. */}
+                {hayIngresos && (
+                  <tr className="border-t-2 border-gray-400 bg-slate-900">
+                    <td className="sticky left-0 z-10 bg-slate-900 px-4 py-3 font-bold text-white">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="h-4 w-4" />
+                        SALDO ACUMULADO
+                      </div>
+                      {editandoSaldo ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <Input className="h-6 w-32 text-right text-xs text-gray-800"
+                            value={saldoTxt} placeholder="0,00"
+                            onChange={e => setSaldoTxt(e.target.value)} />
+                          <Button size="sm" className="h-6 text-[10px]"
+                            onClick={() => guardarSaldoInicial(
+                              parseNumeroAR(saldoTxt),
+                              mesInicial || (meses[0] ? `${meses[0].anio}-${String(meses[0].mes).padStart(2,"0")}` : ""),
+                            )}>OK</Button>
+                          <button type="button" className="text-[10px] text-gray-400 underline"
+                            onClick={() => setEditandoSaldo(false)}>cancelar</button>
+                        </div>
+                      ) : (
+                        <button type="button"
+                          className="mt-0.5 block text-[10px] font-normal text-gray-400 underline hover:text-gray-200"
+                          onClick={() => { setSaldoTxt(fmtNumeroAR(saldoInicial)); setEditandoSaldo(true) }}>
+                          arranca en ${Math.round(saldoInicial).toLocaleString("es-AR")}
+                          {mesInicial ? ` (${mesInicial})` : ""} — editar
+                        </button>
+                      )}
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      const esActual = clave === mesActualClave
+                      const saldo = saldoAcumuladoPorMes[clave]
+                      return (
+                        <td key={clave}
+                          className={`px-3 py-3 text-right font-bold text-sm ${
+                            saldo == null ? "text-gray-600"
+                              : saldo < 0 ? "text-red-300" : "text-emerald-300"
+                          } ${esActual ? "border-l-2 border-blue-400" : ""}`}
+                          title={saldo == null ? "El saldo de arranque corresponde a un mes posterior" : undefined}>
+                          {saldo == null ? "—" : `$${Math.round(saldo).toLocaleString("es-AR")}`}
                         </td>
                       )
                     })}

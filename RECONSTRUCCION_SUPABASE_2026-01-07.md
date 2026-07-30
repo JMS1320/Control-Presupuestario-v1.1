@@ -11529,3 +11529,27 @@ Sin cambio de esquema, pero nuevos valores admitidos por la app en columnas ya e
 - `actividad_insumos.modo` suma **`pct_produccion`** (el costo es un % de lo producido: cosecha,
   aparcería).
 - `actividad_insumos.momento` suma **`ciclo`** (el monto pertenece al ciclo entero).
+
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Saldo de arranque del presupuesto
+
+Punto de partida del **saldo acumulado**. Se carga a mano; provisorio hasta derivarlo de los
+saldos bancarios (ver `PENDIENTES.md` § FASE C · C-10).
+
+```sql
+CREATE TABLE public.presupuesto_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL UNIQUE,
+  saldo_inicial numeric(16,2) NOT NULL DEFAULT 0,
+  -- Mes al que corresponde ese saldo (YYYY-MM): es el saldo AL EMPEZAR ese mes.
+  -- Permite avisar cuando quedó viejo respecto de la grilla.
+  mes_inicial text,
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.presupuesto_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_config_all ON public.presupuesto_config FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_config TO anon, authenticated, service_role;
+```
