@@ -81,6 +81,16 @@ export function ConfiguradorPreciosTC() {
         supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
       ])
 
+      // Categorías guardadas que ya no corresponden a ninguna banda vigente
+      const vigentes = new Set(CATEGORIAS_HACIENDA)
+      const conteo = new Map<string, number>()
+      for (const h of (hac || []) as any[]) {
+        if (!vigentes.has(h.categoria) && Number(h.precio_pesos_kg) > 0) {
+          conteo.set(h.categoria, (conteo.get(h.categoria) ?? 0) + 1)
+        }
+      }
+      setHuerfanos(Array.from(conteo.entries()).map(([categoria, n]) => ({ categoria, n })))
+
       const mapa: Record<string, Fila> = {}
       for (const m of mesesDesde(anioDesde, 36)) {
         const clave = `${m.anio}-${m.mes}`
@@ -191,20 +201,30 @@ export function ConfiguradorPreciosTC() {
     if (rel <= 0) return
     const aGuardar = Object.values(filas).filter(f => (f.hacienda?.[bandaBase] ?? "").trim() !== "")
     if (!aGuardar.length) {
-      alert(`No hay precios cargados en "${bandaBase}" para propagar a Ternera.`)
+      alert('No hay precios cargados en "' + bandaBase + '". '
+        + 'Cargá al menos un mes en esa banda (vista "Hacienda $/kg") y volvé a intentar. '
+        + 'Sólo se copian los meses con precio PUESTO, no los propagados.')
       return
     }
+    let ok = 0
+    const errores: string[] = []
     for (const f of aGuardar) {
       const macho = parseAR(f.hacienda[bandaBase]!)
-      await supabase.from("precios_hacienda").upsert({
+      if (macho <= 0) continue
+      const { error } = await supabase.from("precios_hacienda").upsert({
         categoria: "Ternera", anio: f.anio, mes: f.mes,
         precio_pesos_kg: Math.round(macho * rel * 100) / 100,
         peso_desde: null, peso_hasta: null,
         fuente: `rel ${relHembra}% de ${bandaBase}`,
         updated_at: new Date().toISOString(),
       }, { onConflict: "categoria,anio,mes" })
+      if (error) errores.push(`${f.mes}/${f.anio}: ${error.message}`)
+      else ok++
     }
     await cargar()
+    alert(errores.length
+      ? "Se cargaron " + ok + " meses. Errores: " + errores.slice(0, 3).join(" | ")
+      : "Listo: " + ok + " mes(es) de Ternera al " + relHembra + "% de " + bandaBase + ".")
   }
 
   const guardarTC = async (clave: string) => {
@@ -284,6 +304,13 @@ export function ConfiguradorPreciosTC() {
     )
   }
 
+  /**
+   * Precios guardados con una categoría que ya no está en BANDAS_HACIENDA. Pasa cuando
+   * se renombran las bandas: el dato queda en la BD pero nadie lo lee. Se avisa en vez
+   * de borrarlo o remapearlo por las nuestras.
+   */
+  const [huerfanos, setHuerfanos] = useState<{ categoria: string; n: number }[]>([])
+
   const serieSoja = serieDe(f => f.precio_usd)
   const serieTcP = serieDe(f => f.tc_presupuestado)
   const serieTcR = serieDe(f => f.tc_real)
@@ -342,6 +369,14 @@ export function ConfiguradorPreciosTC() {
               onClick={() => setVista("hacienda")}>Hacienda $/kg</Button>
           </div>
         </div>
+
+        {huerfanos.length > 0 && (
+          <p className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            ⚠ Hay precios guardados con categorías que <strong>ya no existen</strong> como banda
+            (se renombraron): {huerfanos.map(h => `${h.categoria} (${h.n})`).join(" · ")}.
+            No se están usando. Volvé a cargarlos en la banda que corresponda.
+          </p>
+        )}
 
         {vista === "hacienda" && (
           <div className="flex flex-wrap items-end gap-2 rounded border border-pink-200 bg-pink-50/50 p-2.5">

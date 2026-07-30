@@ -41,7 +41,9 @@ const clave = (anio: number, mes: number) => anio * 12 + (mes - 1)
  */
 export function resolverSerie(puntos: PuntoSerie[], anio: number, mes: number): ValorSerie {
   const objetivo = clave(anio, mes)
-  const validos = puntos.filter(p => Number.isFinite(Number(p.valor)))
+  // Un 0 NO es un precio: si se propagara, mataría todos los meses siguientes. Se
+  // ignora igual que un mes sin cargar.
+  const validos = puntos.filter(p => Number.isFinite(Number(p.valor)) && Number(p.valor) > 0)
 
   let exacto: PuntoSerie | undefined
   let anterior: PuntoSerie | undefined

@@ -714,6 +714,10 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
   /** Cantidad y peso por grupo: se puede traer sólo una parte, y el peso se puede pisar. */
   const [edits, setEdits] = useState<Record<string, { cant: string; peso: string; cual: "pesados" | "livianos" | "todos" }>>({})
   const [ganancia, setGanancia] = useState("0,5")
+  // Variables de la venta, comunes a todos los grupos que se traigan de una vez
+  const [fechaVenta, setFechaVenta] = useState("")
+  const [plazo, setPlazo] = useState("0")
+  const [precio, setPrecio] = useState("")
   const [guardando, setGuardando] = useState(false)
 
   // Fechas de pesada disponibles
@@ -864,6 +868,18 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           // (en ese caso es de hoy).
           fecha_peso: pesoManual ? new Date().toISOString().slice(0, 10) : (g.fecha_pesada ?? fecha),
           ganancia_diaria_kg: parseNum(ganancia),
+          fecha_venta_estimada: fechaVenta || null,
+          plazo_cobro: plazo || "0",
+          precio_kg_override: precio.trim() === "" ? null : parseNum(precio),
+          // El desbaste y la CZ salen de la tabla segun el peso proyectado a la venta
+          pct_desbaste: pctDesbaste(g.categoria,
+            (pesoManual ?? pr.tomados) + (fechaVenta
+              ? Math.max(0, Math.round((new Date(fechaVenta + "T00:00:00").getTime()
+                  - Date.now()) / 86400000)) * parseNum(ganancia) : 0)) ,
+          pct_cz: pctCz(g.categoria,
+            (pesoManual ?? pr.tomados) + (fechaVenta
+              ? Math.max(0, Math.round((new Date(fechaVenta + "T00:00:00").getTime()
+                  - Date.now()) / 86400000)) * parseNum(ganancia) : 0)),
           notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${cant} de ${g.cabezas} cab`
             + (pesoManual ? `, peso puesto a mano` : `, promedio real`),
           updated_at: new Date().toISOString(),
@@ -931,6 +947,35 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                 onChange={e => setGanancia(e.target.value)} />
               <p className="mt-1 text-[10px] text-gray-400">se aplica a todos los lotes que traigas</p>
             </div>
+          </div>
+
+          {/* Venta presupuestada — sin fecha el lote entra como stock, no como ingreso */}
+          <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5">
+            <p className="mb-2 text-[11px] font-medium text-emerald-900">
+              Venta presupuestada (opcional) — se aplica a todo lo que traigas ahora
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">Fecha de venta</label>
+                <Input type="date" className="h-8" value={fechaVenta}
+                  onChange={e => setFechaVenta(e.target.value)} />
+                <p className="mt-1 text-[10px] text-gray-400">vacío = queda como stock</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Plazo de cobro</label>
+                <Input className="h-8 text-right" placeholder="30/60/90" value={plazo}
+                  onChange={e => setPlazo(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Precio $/kg</label>
+                <Input className="h-8 text-right" placeholder="de la banda" value={precio}
+                  onChange={e => setPrecio(e.target.value)} />
+              </div>
+            </div>
+            <p className="mt-1.5 text-[10px] text-gray-500">
+              El desbaste y la CZ se toman de la tabla según el peso a la fecha de venta.
+              Todo se puede ajustar después por lote.
+            </p>
           </div>
 
           {cargando ? (
