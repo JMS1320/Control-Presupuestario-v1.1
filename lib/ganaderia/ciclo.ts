@@ -83,9 +83,15 @@ export interface CicloStock {
   pct_machos: number
   pct_descarte_falladas: number
   pct_reposicion: number
+  /** Promedio de la tropa. Fallback si no están los pesos por sexo. */
   peso_destete_kg: number
+  /** Peso al destete por sexo — más preciso, se venden por separado (G-5). */
+  peso_destete_macho_kg: number | null
+  peso_destete_hembra_kg: number | null
   /** Peso de venta de la vaca de descarte (refugo). */
   peso_descarte_kg: number
+  /** Machos retenidos como toritos: NO van a venta (G-4). */
+  toritos_retenidos: number
   /** Datos reales: si están, pisan el cálculo. */
   real_destetados: number | null
   real_machos: number | null
@@ -112,6 +118,8 @@ export interface CicloCalculado {
   descarte: number
   /** Terneras retenidas para reposición (no se venden). Se calcula sobre la BASE ENTORADA. */
   retenidas: number
+  /** Machos retenidos como toritos (no se venden). */
+  toritos: number
   /** No se pueden retener más terneras de las que se destetaron. */
   retencion_excede: boolean
   /** Lo que queda para vender. */
@@ -197,13 +205,16 @@ export function calcularCiclo(
   const retenidas = desteteConocido ? Math.min(retenidasTeorica, terneras) : retenidasTeorica
   const retencionExcede = desteteConocido && retenidasTeorica > terneras + 0.01
 
+  // Los toritos se retienen para servicio: no van a venta (G-4).
+  const toritos = Math.min(Number(ciclo.toritos_retenidos ?? 0), terneros)
+
   return {
     ciclo,
     vacas, vaquillonas, rodeo,
     destetados, terneros, terneras,
-    falladas, descarte, retenidas,
+    falladas, descarte, retenidas, toritos,
     retencion_excede: retencionExcede,
-    terneros_venta: terneros,
+    terneros_venta: desteteConocido ? Math.max(0, terneros - toritos) : 0,
     // Si no se conoce el destete no hay nada que vender (no restar contra un 0 ficticio)
     terneras_venta: desteteConocido ? Math.max(0, terneras - retenidas) : 0,
     // Placeholders: los completa `calcularLineaTiempo`, que es la única que ve los
@@ -297,6 +308,12 @@ export interface LoteStock {
   ganancia_diaria_kg: number
   /** Lo que dio el cálculo la última vez. Si difiere de `cantidad`, se editó a mano. */
   cantidad_calculada: number | null
+  /** Cuándo se piensa vender. NULL = disponible sin fecha, no es ingreso presupuestado. */
+  fecha_venta_estimada: string | null
+  /** Precio ARS/kg manual. NULL = sale de `precios_hacienda`. */
+  precio_kg_override: number | null
+  /** Días corridos entre la venta y el cobro. 0 = contado. */
+  dias_cobro: number
   notas: string | null
 }
 
@@ -436,6 +453,102 @@ export function proponerDesdeCiclosCria(filas: FilaCicloCria[]): PropuestaCiclo[
   }
 
   return Array.from(acc.values()).sort((a, b) => a.campania.localeCompare(b.campania))
+}
+
+/** Peso al destete por sexo: el específico si está, si no el promedio de la tropa. */
+export function pesoDestete(ciclo: CicloStock, sexo: 'macho' | 'hembra'): number {
+  const esp = sexo === 'macho' ? ciclo.peso_destete_macho_kg : ciclo.peso_destete_hembra_kg
+  return Number(esp ?? ciclo.peso_destete_kg ?? 0)
+}
+
+// ── Categorías vendibles ──────────────────────────────────────────────────────
+//
+// La categoría de un ternero depende de CUÁNDO se vende: si sale en el destete es
+// "al Pie", si se retuvo y se vende después es "Recría". Los toritos y las terneras de
+// reposición no se venden (van al rodeo). Los toros de refugo no salen del ciclo — el
+// modelo no lleva toros — así que son lote manual.
+
+export const CATEGORIAS_VENTA = [
+  'Ternero al Pie', 'Ternera al Pie',
+  'Ternero Recria', 'Ternera Recria',
+  'Novillo', 'Vaquillona Engorde',
+  'Vaca CUT/Descarte', 'Toro', 'Torito',
+] as const
+
+/**
+ * Categoría que corresponde según cuándo se vende respecto del destete.
+ * Dentro de la ventana se considera venta al pie; después, recría.
+ */
+export const DIAS_VENTA_AL_PIE = 45
+
+export function categoriaSegunFecha(
+  sexo: 'macho' | 'hembra',
+  fechaDestete: string | null,
+  fechaVenta: string | null,
+): string {
+  const esMacho = sexo === 'macho'
+  if (!fechaDestete || !fechaVenta) return esMacho ? 'Ternero Recria' : 'Ternera Recria'
+  const dias = diasEntre(fechaDestete, fechaVenta)
+  return dias <= DIAS_VENTA_AL_PIE
+    ? (esMacho ? 'Ternero al Pie' : 'Ternera al Pie')
+    : (esMacho ? 'Ternero Recria' : 'Ternera Recria')
+}
+
+// ── Valuación del lote ────────────────────────────────────────────────────────
+
+export interface ValuacionLote {
+  cabezas: number
+  peso_unitario: number
+  kg_totales: number
+  precio_kg: number
+  monto: number
+  /** Mes de cobro 'YYYY-MM'. */
+  mes_cobro: string | null
+  /** El precio se arrastró de otro mes o no hay precio cargado. */
+  estimado: boolean
+  /** Hay fecha de venta → es ingreso presupuestado. Si no, es sólo stock. */
+  proyectado: boolean
+}
+
+/**
+ * Valúa lo que queda del lote a su fecha de venta estimada.
+ * El peso crece con la ganancia diaria; el precio sale del override o de la tabla.
+ */
+export function valuarLote(
+  lote: LoteStock,
+  ventas: Pick<VentaStock, 'cantidad'>[],
+  precioDeTabla: (categoria: string, anio: number, mes: number) => { precio: number; arrastrado: boolean },
+): ValuacionLote {
+  const cabezas = cantidadDisponible(lote, ventas)
+  const fv = lote.fecha_venta_estimada
+
+  if (!fv) {
+    return { cabezas, peso_unitario: Number(lote.peso_base_kg), kg_totales: 0,
+      precio_kg: 0, monto: 0, mes_cobro: null, estimado: true, proyectado: false }
+  }
+
+  const peso = pesoEstimado(lote, fv)
+  const [anio, mes] = fv.split('-').map(Number)
+
+  const manual = lote.precio_kg_override != null
+  const p = manual
+    ? { precio: Number(lote.precio_kg_override), arrastrado: false }
+    : precioDeTabla(lote.categoria, anio!, mes!)
+
+  const kg = cabezas * peso
+  const cobro = new Date(fv + 'T00:00:00')
+  cobro.setDate(cobro.getDate() + Number(lote.dias_cobro || 0))
+
+  return {
+    cabezas,
+    peso_unitario: peso,
+    kg_totales: kg,
+    precio_kg: p.precio,
+    monto: kg * p.precio,
+    mes_cobro: `${cobro.getFullYear()}-${String(cobro.getMonth() + 1).padStart(2, '0')}`,
+    estimado: p.arrastrado || p.precio === 0,
+    proyectado: true,
+  }
 }
 
 /** Días corridos entre dos fechas 'YYYY-MM-DD'. */

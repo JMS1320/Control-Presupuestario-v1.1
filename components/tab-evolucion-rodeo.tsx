@@ -112,7 +112,10 @@ export function TabEvolucionRodeo() {
       pct_descarte_falladas: parsePct(String(f.pct_descarte_falladas)),
       pct_reposicion: parsePct(String(f.pct_reposicion)),
       peso_destete_kg: parseNum(String(f.peso_destete_kg)),
+      peso_destete_macho_kg: String(f.peso_destete_macho_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_destete_macho_kg)),
+      peso_destete_hembra_kg: String(f.peso_destete_hembra_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_destete_hembra_kg)),
       peso_descarte_kg: parseNum(String(f.peso_descarte_kg)),
+      toritos_retenidos: parseNum(String(f.toritos_retenidos ?? "0")),
       real_destetados: String(f.real_destetados ?? "").trim() === "" ? null : parseNum(String(f.real_destetados)),
       real_machos: String(f.real_machos ?? "").trim() === "" ? null : parseNum(String(f.real_machos)),
       real_hembras: String(f.real_hembras ?? "").trim() === "" ? null : parseNum(String(f.real_hembras)),
@@ -235,6 +238,9 @@ export function TabEvolucionRodeo() {
       pct_reposicion: ultimo ? fmtPctTxt(ultimo.ciclo.pct_reposicion) : "20",
       peso_destete_kg: ultimo ? String(ultimo.ciclo.peso_destete_kg) : "200",
       peso_descarte_kg: ultimo ? String(ultimo.ciclo.peso_descarte_kg) : "450",
+      peso_destete_macho_kg: ultimo?.ciclo.peso_destete_macho_kg ?? "",
+      peso_destete_hembra_kg: ultimo?.ciclo.peso_destete_hembra_kg ?? "",
+      toritos_retenidos: String(ultimo?.ciclo.toritos_retenidos ?? 0),
     })
   }
 
@@ -250,6 +256,9 @@ export function TabEvolucionRodeo() {
     pct_reposicion: fmtPctTxt(c.pct_reposicion),
     peso_destete_kg: String(c.peso_destete_kg),
     peso_descarte_kg: String(c.peso_descarte_kg ?? 450),
+    peso_destete_macho_kg: c.peso_destete_macho_kg ?? "",
+    peso_destete_hembra_kg: c.peso_destete_hembra_kg ?? "",
+    toritos_retenidos: String(c.toritos_retenidos ?? 0),
     real_destetados: c.real_destetados ?? "",
     real_machos: c.real_machos ?? "",
     real_hembras: c.real_hembras ?? "",
@@ -302,6 +311,7 @@ dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
           + (c.retencion_excede ? " ⚠" : "")
           + (chk ? ` · hoy marcadas ${n1(chk.marcadas)}` : "")
       }, clase: "text-blue-700", sep: true },
+    { label: "Toritos retenidos",     get: c => c.toritos > 0 ? n1(c.toritos) : "—", clase: "text-blue-700" },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },
     { label: "Vacas (cierre)",        get: c => n1(c.vacas_cierre), clase: "bg-gray-50", sep: true },
@@ -722,9 +732,12 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                 )}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                {campo("peso_destete_kg", "Peso al destete (kg)")}
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                {campo("peso_destete_macho_kg", "Peso destete macho", "vacío = usa el promedio")}
+                {campo("peso_destete_hembra_kg", "Peso destete hembra", "vacío = usa el promedio")}
+                {campo("peso_destete_kg", "Promedio tropa (kg)", "fallback")}
                 {campo("peso_descarte_kg", "Peso vaca refugo (kg)")}
+                {campo("toritos_retenidos", "Toritos retenidos", "no van a venta")}
               </div>
             </Seccion>
 
@@ -761,7 +774,8 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                     ["No destetaron", n1(falladas), "text-gray-500"],
                     ["Refugo + mortandad", n1(descarte), "text-amber-700 font-medium"],
                     ["Terneras retenidas", n1(retenidas), "text-blue-700"],
-                    ["Terneros a venta", n1(terneros), "text-emerald-700 font-medium"],
+                    ["Toritos retenidos", n1(parseNum(String(f.toritos_retenidos ?? "0"))), "text-blue-700"],
+                    ["Terneros a venta", n1(Math.max(0, terneros - parseNum(String(f.toritos_retenidos ?? "0")))), "text-emerald-700 font-medium"],
                     ["Terneras a venta", n1(Math.max(0, terneras - retenidas)), "text-emerald-700 font-medium"],
                   ].map(([l, v, c]) => (
                     <tr key={l as string} className="border-b border-gray-200 last:border-0">

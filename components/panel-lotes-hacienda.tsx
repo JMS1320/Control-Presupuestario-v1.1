@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle } from "lucide-react"
 import {
-  pesoEstimado, cantidadDisponible, fechaDestete,
+  pesoEstimado, cantidadDisponible, fechaDestete, pesoDestete,
+  categoriaSegunFecha, valuarLote, CATEGORIAS_VENTA,
   type LoteStock, type VentaStock, type CicloCalculado,
 } from "@/lib/ganaderia/ciclo"
 
@@ -27,11 +28,8 @@ const parseNum = (v: string) => {
 const n1 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 1 })
 const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })
 
-/** Categorías vendibles. Coinciden con `productivo.categorias_hacienda`. */
-const CATEGORIAS = [
-  "Ternero Recria", "Ternera Recria", "Torito",
-  "Vaca CUT/Descarte", "Novillo", "Vaquillona Engorde",
-]
+/** Categorías vendibles — de la lib, para no duplicar la lista. */
+const CATEGORIAS = [...CATEGORIAS_VENTA]
 
 export function PanelLotesHacienda({ linea, onCambio }: {
   linea: CicloCalculado[]
@@ -137,11 +135,14 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       for (const c of linea) {
         const fecha = fechaDestete(c.ciclo)
         if (!fecha) continue
-        const peso = Number(c.ciclo.peso_destete_kg) || 200
 
+        // Por defecto se vende AL PIE, en el destete. Si después se mueve la fecha de
+        // venta, la categoría se recalcula sola (al pie vs recría).
         const aCrear = [
-          { categoria: "Ternero Recria",     origen: "destete",  cantidad: c.terneros_venta, peso },
-          { categoria: "Ternera Recria",     origen: "destete",  cantidad: c.terneras_venta, peso },
+          { categoria: categoriaSegunFecha("macho", fecha, fecha),
+            origen: "destete", cantidad: c.terneros_venta, peso: pesoDestete(c.ciclo, "macho") },
+          { categoria: categoriaSegunFecha("hembra", fecha, fecha),
+            origen: "destete", cantidad: c.terneras_venta, peso: pesoDestete(c.ciclo, "hembra") },
           // Vaca refugo: se vende con su propio peso, no el del destete. OJO: la
           // cantidad viene del "refugo + mortandad" del ciclo, asi que incluye las que
           // se mueren -- hay que descontarlas a mano (queda marcado con ✎).
