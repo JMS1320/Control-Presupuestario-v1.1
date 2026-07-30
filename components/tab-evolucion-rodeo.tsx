@@ -36,6 +36,14 @@ const n0 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDig
 const n1 = (n: number) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 1 })
 const pct = (f: number) => `${(Number(f) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`
 
+/** "2025-10-01" → "oct 2025". Con `masAnios` corre el año (el cierre es el servicio siguiente). */
+const mesAnio = (fecha: string | null | undefined, masAnios = 0): string => {
+  if (!fecha) return ""
+  const d = new Date(fecha + "T00:00:00")
+  d.setFullYear(d.getFullYear() + masAnios)
+  return d.toLocaleDateString("es-AR", { month: "short", year: "numeric" }).replace(".", "")
+}
+
 export function TabEvolucionRodeo() {
   const [cargando, setCargando] = useState(true)
   const [ciclos, setCiclos] = useState<CicloStock[]>([])
@@ -253,11 +261,13 @@ export function TabEvolucionRodeo() {
         return n1(c.vaquillonas) + origen
       } },
     { label: "RODEO (a servicio)",    get: (c, i) => {
+        const serv = mesAnio(fechasCampania(c.ciclo.campania)?.servicio)
         const prev = linea[i - 1]
-        if (!prev || prev.rodeo <= 0) return n1(c.rodeo)
-        const v = ((c.rodeo - prev.rodeo) / prev.rodeo) * 100
-        const signo = v > 0 ? "+" : ""
-        return `${n1(c.rodeo)}  (${signo}${v.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`
+        const varia = prev && prev.rodeo > 0
+          ? ` (${((c.rodeo - prev.rodeo) / prev.rodeo) * 100 > 0 ? "+" : ""}${(((c.rodeo - prev.rodeo) / prev.rodeo) * 100).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`
+          : ""
+        return `${n1(c.rodeo)}${varia}
+serv. ${serv}`
       }, clase: "font-semibold bg-gray-50" },
     { label: "% Destete",             get: c => pct(c.ciclo.pct_destete), clase: "text-gray-500", sep: true },
     // El destete que ocurre en este período es el producto del servicio ANTERIOR.
@@ -283,6 +293,12 @@ export function TabEvolucionRodeo() {
     { label: "Terneras a venta",      get: c => n1(c.terneras_venta), clase: "font-medium text-emerald-700" },
     { label: "Vacas (cierre)",        get: c => n1(c.vacas_cierre), clase: "bg-gray-50", sep: true },
     { label: "Vaquillonas (cierre)",  get: c => n1(c.vaquillonas_cierre), clase: "bg-gray-50" },
+    // El cierre ES el rodeo que entra al servicio siguiente: se muestra sumado y fechado.
+    { label: "TOTAL A SERVICIO",      get: c => {
+        const serv = mesAnio(fechasCampania(c.ciclo.campania)?.servicio, 1)
+        return `${n1(c.vacas_cierre + c.vaquillonas_cierre)}
+${serv}`
+      }, clase: "font-bold bg-emerald-50 text-emerald-900" },
   ]
 
   return (
@@ -378,7 +394,7 @@ export function TabEvolucionRodeo() {
                       {f.label}
                     </td>
                     {linea.map((c, i) => (
-                      <td key={c.ciclo.id} className={`px-3 py-1.5 text-right text-xs ${f.clase ?? ""}`}>
+                      <td key={c.ciclo.id} className={`px-3 py-1.5 text-right text-xs whitespace-pre-line ${f.clase ?? ""}`}>
                         {f.get(c, i)}
                       </td>
                     ))}
