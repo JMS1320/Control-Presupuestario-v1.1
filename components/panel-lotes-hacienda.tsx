@@ -119,6 +119,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
         ? null : parseNum(String(f.precio_kg_override)),
       dias_cobro: Math.round(parseNum(String(f.dias_cobro ?? "0"))),
+      pct_desbaste: parseNum(String(f.pct_desbaste ?? "5")) / 100,
+      pct_cz: parseNum(String(f.pct_cz ?? "4")) / 100,
+      alicuota_iva: parseNum(String(f.alicuota_iva ?? "10,5")) / 100,
+      alicuota_iibb: parseNum(String(f.alicuota_iibb ?? "1")) / 100,
       notas: f.notas || null,
       updated_at: new Date().toISOString(),
     }
@@ -205,6 +209,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
     cantidad: "", peso_base_kg: "197,34", ganancia_diaria_kg: "0,5",
     fecha_disponible: "2026-02-23",
     fecha_venta_estimada: "", precio_kg_override: "", dias_cobro: "0",
+    pct_desbaste: "5", pct_cz: "4", alicuota_iva: "10,5", alicuota_iibb: "1",
     notas: "Stock inicial — retenido para recría",
   })
 
@@ -365,7 +370,14 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                               : <span className="text-red-500">sin precio</span>)
                           : "—"}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold text-emerald-800">
+                      <td className="px-3 py-2 text-right font-semibold text-emerald-800"
+                        title={val.proyectado
+                          ? `${n0(val.kg_brutos)} kg brutos − ${n0(val.kg_desbaste)} desbaste = ${n0(val.kg_netos)} netos
+`
+                            + `venta ${fmtPesos(val.venta_neta)} + IVA ${fmtPesos(val.iva)} − CZ ${fmtPesos(val.cz)}
+`
+                            + `IIBB ${fmtPesos(val.iibb)} en ${val.mes_iibb}`
+                          : undefined}>
                         {val.proyectado && val.monto > 0 ? fmtPesos(val.monto) : "—"}
                         {val.proyectado && val.estimado && <span className="text-amber-500">*</span>}
                       </td>
@@ -385,6 +397,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                               ganancia_diaria_kg: String(l.ganancia_diaria_kg),
                               precio_kg_override: l.precio_kg_override ?? "",
                               dias_cobro: String(l.dias_cobro ?? 0),
+                              pct_desbaste: fmtAR(Number(l.pct_desbaste ?? 0.05) * 100),
+                              pct_cz: fmtAR(Number(l.pct_cz ?? 0.04) * 100),
+                              alicuota_iva: fmtAR(Number(l.alicuota_iva ?? 0.105) * 100),
+                              alicuota_iibb: fmtAR(Number(l.alicuota_iibb ?? 0.01) * 100),
                             })}>Editar</Button>
                           <Button variant="ghost" size="sm" className="h-6 px-1"
                             onClick={() => borrar(l.id)}>
@@ -493,6 +509,53 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
               {campo("precio_kg_override", "Precio $/kg", "vacío = usa la banda de peso")}
               {campo("dias_cobro", "Días de cobro", "0 = contado")}
             </div>
+
+            <div className="mt-3 grid grid-cols-4 gap-3">
+              {campo("pct_desbaste", "% Desbaste", "merma de kg")}
+              {campo("pct_cz", "% CZ", "comercialización")}
+              {campo("alicuota_iva", "% IVA", "hacienda 10,5")}
+              {campo("alicuota_iibb", "% IIBB", "mes siguiente")}
+            </div>
+
+            {/* Desglose en vivo: se ve la cadena completa antes de guardar */}
+            {f.fecha_venta_estimada && (() => {
+              const cab = parseNum(String(f.cantidad ?? "0"))
+              const dias = Math.max(0, Math.round(
+                (new Date(f.fecha_venta_estimada + "T00:00:00").getTime()
+                 - new Date((f.fecha_disponible || f.fecha_venta_estimada) + "T00:00:00").getTime()) / 86400000))
+              const peso = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+              const kgB = cab * peso
+              const kgD = kgB * parseNum(String(f.pct_desbaste ?? "0")) / 100
+              const kgN = kgB - kgD
+              const pr = parseNum(String(f.precio_kg_override ?? "0"))
+              const vn = kgN * pr
+              const iva = vn * parseNum(String(f.alicuota_iva ?? "0")) / 100
+              const cz = vn * parseNum(String(f.pct_cz ?? "0")) / 100
+              const iibb = vn * parseNum(String(f.alicuota_iibb ?? "0")) / 100
+              return (
+                <table className="mt-3 w-full text-[11px]">
+                  <tbody>
+                    {[
+                      ["Peso a la venta", `${n1(peso)} kg/cab`, ""],
+                      ["Kg brutos", `${n0(kgB)} kg`, ""],
+                      ["− Desbaste", `−${n0(kgD)} kg`, "text-amber-700"],
+                      ["Kg netos (los que se cobran)", `${n0(kgN)} kg`, "font-semibold"],
+                      ["Venta neta", pr > 0 ? fmtPesos(vn) : "falta precio", "font-semibold"],
+                      ["+ IVA", fmtPesos(iva), "text-gray-500"],
+                      ["Total factura", fmtPesos(vn + iva), ""],
+                      ["− CZ comercialización", `−${fmtPesos(cz)}`, "text-amber-700"],
+                      ["INGRESA AL BANCO", fmtPesos(vn + iva - cz), "font-bold text-emerald-800"],
+                      ["IIBB (mes siguiente)", `−${fmtPesos(iibb)}`, "text-amber-700"],
+                    ].map(([l, v, c]) => (
+                      <tr key={l as string} className="border-b border-gray-100 last:border-0">
+                        <td className={`py-0.5 ${c}`}>{l}</td>
+                        <td className={`py-0.5 text-right ${c}`}>{v}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            })()}
           </div>
 
           {dias > 0 && parseNum(String(f.ganancia_diaria_kg ?? "0")) > 0 && (

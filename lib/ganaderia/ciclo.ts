@@ -316,6 +316,12 @@ export interface LoteStock {
   precio_kg_override: number | null
   /** Días corridos entre la venta y el cobro. 0 = contado. */
   dias_cobro: number
+  /** Merma de kg al pesar en destino. El precio va sobre el kg NETO. */
+  pct_desbaste: number
+  /** Comercialización (comisión del consignatario) sobre el monto de la venta. */
+  pct_cz: number
+  alicuota_iva: number
+  alicuota_iibb: number
   notas: string | null
 }
 
@@ -500,10 +506,26 @@ export function categoriaSegunFecha(
 
 export interface ValuacionLote {
   cabezas: number
+  /** Peso vivo por cabeza a la fecha de venta (bruto, antes del desbaste). */
   peso_unitario: number
+  kg_brutos: number
+  kg_desbaste: number
+  /** Kg sobre los que se cobra: el precio SIEMPRE va por el neto de desbaste. */
+  kg_netos: number
+  /** @deprecated usar kg_netos. Se mantiene por compatibilidad. */
   kg_totales: number
   precio_kg: number
+  /** Lo que se factura: kg netos × precio. Es el neto gravado. */
+  venta_neta: number
+  iva: number
+  total_factura: number
+  /** Comisión de comercialización, sobre la venta neta. */
+  cz: number
+  /** Lo que efectivamente entra al banco = total factura − CZ. */
   monto: number
+  /** IIBB sobre la venta neta, se paga el mes SIGUIENTE al cobro. */
+  iibb: number
+  mes_iibb: string | null
   /** Mes de cobro 'YYYY-MM'. */
   mes_cobro: string | null
   /** El precio se arrastró de otro mes o no hay precio cargado. */
@@ -524,30 +546,55 @@ export function valuarLote(
   const cabezas = cantidadDisponible(lote, ventas)
   const fv = lote.fecha_venta_estimada
 
-  if (!fv) {
-    return { cabezas, peso_unitario: Number(lote.peso_base_kg), kg_totales: 0,
-      precio_kg: 0, monto: 0, mes_cobro: null, estimado: true, proyectado: false }
-  }
+  const vacio = (peso: number): ValuacionLote => ({
+    cabezas, peso_unitario: peso,
+    kg_brutos: 0, kg_desbaste: 0, kg_netos: 0, kg_totales: 0,
+    precio_kg: 0, venta_neta: 0, iva: 0, total_factura: 0, cz: 0, monto: 0,
+    iibb: 0, mes_iibb: null, mes_cobro: null, estimado: true, proyectado: false,
+  })
+
+  if (!fv) return vacio(Number(lote.peso_base_kg))
 
   const peso = pesoEstimado(lote, fv)
   const [anio, mes] = fv.split('-').map(Number)
 
-  const manual = lote.precio_kg_override != null
-  const p = manual
+  const p = lote.precio_kg_override != null
     ? { precio: Number(lote.precio_kg_override), arrastrado: false }
     : precioDeTabla(lote.categoria, anio!, mes!)
 
-  const kg = cabezas * peso
+  // El precio va SIEMPRE por el kg neto de desbaste
+  const kgBrutos = cabezas * peso
+  const kgDesbaste = kgBrutos * Number(lote.pct_desbaste ?? 0)
+  const kgNetos = kgBrutos - kgDesbaste
+
+  const ventaNeta = kgNetos * p.precio          // neto gravado: lo que se factura
+  const iva = ventaNeta * Number(lote.alicuota_iva ?? 0)
+  const totalFactura = ventaNeta + iva
+  const cz = ventaNeta * Number(lote.pct_cz ?? 0)   // comisión del consignatario
+
   const cobro = new Date(fv + 'T00:00:00')
   cobro.setDate(cobro.getDate() + Number(lote.dias_cobro || 0))
+  const mesCobro = `${cobro.getFullYear()}-${String(cobro.getMonth() + 1).padStart(2, '0')}`
+
+  // El IIBB se paga el mes siguiente al cobro
+  const sig = new Date(cobro.getFullYear(), cobro.getMonth() + 1, 1)
 
   return {
     cabezas,
     peso_unitario: peso,
-    kg_totales: kg,
+    kg_brutos: kgBrutos,
+    kg_desbaste: kgDesbaste,
+    kg_netos: kgNetos,
+    kg_totales: kgNetos,
     precio_kg: p.precio,
-    monto: kg * p.precio,
-    mes_cobro: `${cobro.getFullYear()}-${String(cobro.getMonth() + 1).padStart(2, '0')}`,
+    venta_neta: ventaNeta,
+    iva,
+    total_factura: totalFactura,
+    cz,
+    monto: totalFactura - cz,      // lo que entra al banco
+    iibb: ventaNeta * Number(lote.alicuota_iibb ?? 0),
+    mes_iibb: `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, '0')}`,
+    mes_cobro: mesCobro,
     estimado: p.arrastrado || p.precio === 0,
     proyectado: true,
   }

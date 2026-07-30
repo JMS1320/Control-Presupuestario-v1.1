@@ -11372,3 +11372,12 @@ CREATE INDEX IF NOT EXISTS idx_precios_hacienda_banda
   ON public.precios_hacienda(peso_desde, peso_hasta);
 -- La hacienda se cotiza por BANDA DE PESO: un ternero de 190 kg no vale lo mismo por
 -- kilo que uno de 260. Las bandas viven en lib/ganaderia/calculo.ts (BANDAS_HACIENDA).
+
+-- Aplicado 2026-07-30: cadena de la venta de hacienda (desbaste, CZ, IVA, IIBB).
+-- Mismos criterios que el analisis de engorde (components/analisis-productivo.tsx), que
+-- ya modelaba desbaste 5% y CZ 4%. El precio SIEMPRE va por el kg NETO de desbaste.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS pct_desbaste  numeric(6,4) NOT NULL DEFAULT 0.05,
+  ADD COLUMN IF NOT EXISTS pct_cz        numeric(6,4) NOT NULL DEFAULT 0.04,
+  ADD COLUMN IF NOT EXISTS alicuota_iva  numeric(6,4) NOT NULL DEFAULT 0.105,
+  ADD COLUMN IF NOT EXISTS alicuota_iibb numeric(6,4) NOT NULL DEFAULT 0.01;

@@ -1428,8 +1428,21 @@ ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  �
 5. **Presupuesto lee**: fila 🐄 *Venta de hacienda* con el monto en el mes de cobro, y una
    fila por categoría con lo **disponible sin fecha** en **cabezas y kg** (no en plata) —
    igual que las toneladas de soja disponibles a fijar.
-   ⏳ **Falta**: el **IVA 10,5%** en el cobro y el **IIBB 1%** al mes siguiente. Hoy el monto
-   del lote es NETO.
+   ✅ Incluye la **cadena completa de la venta**, con los mismos criterios del análisis de
+   engorde (que ya modelaba desbaste 5% y CZ 4%):
+```
+kg brutos = cabezas × peso a la fecha de venta
+− desbaste %                → merma de kg
+= kg NETOS                  ← el precio SIEMPRE va por el neto de desbaste
+× precio $/kg  = VENTA NETA ← el neto gravado, lo que se factura
++ IVA 10,5%    = total factura
+− CZ % (comercialización)   → comisión del consignatario
+= INGRESA AL BANCO          ← lo que ve el presupuesto
+IIBB 1% sobre la venta neta → egreso el mes SIGUIENTE
+```
+   Los cuatro porcentajes van **en el lote**, no como constantes.
+   ⏳ **Pendiente menor**: la comisión de CZ probablemente lleve su propio IVA (21%); hoy se
+   descuenta sin IVA. A confirmar con el usuario.
 
 ##### FASE B — Acople con Ventas *(después)*
 6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con

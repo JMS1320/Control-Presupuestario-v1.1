@@ -137,9 +137,10 @@ export function TabPresupuesto() {
    */
   const [hacienda, setHacienda] = useState<{
     presupuestado: Record<string, number>
+    iibb: Record<string, number>
     estimado: Record<string, boolean>
     disponible: { categoria: string; cabezas: number; kg: number }[]
-  }>({ presupuestado: {}, estimado: {}, disponible: [] })
+  }>({ presupuestado: {}, iibb: {}, estimado: {}, disponible: [] })
   // Cuotas detrás de cada celda: clave `${campo}|${YYYY-MM}|${presupuestado|disponible}`
   const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
   const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
@@ -447,7 +448,7 @@ export function TabPresupuesto() {
       supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
     ])
     if (!lotes || lotes.length === 0) {
-      setHacienda({ presupuestado: {}, estimado: {}, disponible: [] })
+      setHacienda({ presupuestado: {}, iibb: {}, estimado: {}, disponible: [] })
       return
     }
 
@@ -460,6 +461,7 @@ export function TabPresupuesto() {
     const listaPrecios = (precios || []) as PrecioHacienda[]
 
     const presupuestado: Record<string, number> = {}
+    const iibbPorMes: Record<string, number> = {}
     const estimado: Record<string, boolean> = {}
     const dispPorCat: Record<string, { cabezas: number; kg: number }> = {}
     const hoy = new Date().toISOString().slice(0, 10)
@@ -470,6 +472,8 @@ export function TabPresupuesto() {
       if (v.proyectado && v.mes_cobro) {
         presupuestado[v.mes_cobro] = (presupuestado[v.mes_cobro] || 0) + v.monto
         if (v.estimado) estimado[v.mes_cobro] = true
+        // El IIBB de la venta se paga el mes SIGUIENTE al cobro
+        if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
       } else {
         // Sin fecha de venta no hay plata: se informa en cabezas y kg, igual que las
         // toneladas de soja disponibles a fijar.
@@ -483,7 +487,7 @@ export function TabPresupuesto() {
     }
 
     setHacienda({
-      presupuestado, estimado,
+      presupuestado, iibb: iibbPorMes, estimado,
       disponible: Object.entries(dispPorCat)
         .map(([categoria, d]) => ({ categoria, ...d }))
         .sort((a, b) => a.categoria.localeCompare(b.categoria)),
@@ -555,10 +559,11 @@ export function TabPresupuesto() {
         suma += s.montos[clave] || 0
       }
       suma += ganaderia.reduce((acc, g) => acc + (g.iibb[clave] || 0), 0)
+      suma += hacienda.iibb[clave] || 0
       totales[clave] = suma
     }
     return totales
-  }, [agrupadores, sueldoFilas, ganaderia, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, meses])
 
   const totalSueldosPorMes = useMemo(() => {
     const totales: Record<string, number> = {}
@@ -778,7 +783,9 @@ export function TabPresupuesto() {
                       <tr className="border-b bg-emerald-50/40 hover:bg-emerald-50">
                         <td className="sticky left-0 z-10 bg-emerald-50/40 px-4 py-2 font-semibold text-gray-700">
                           🐄 Venta de hacienda
-                          <span className="ml-2 text-xs font-normal text-gray-400">lotes con fecha</span>
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            con IVA, neto de comercialización
+                          </span>
                         </td>
                         {meses.map(m => {
                           const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -971,6 +978,29 @@ export function TabPresupuesto() {
                     </>
                   )
                 })()}
+
+                {/* ── IIBB de la venta de hacienda (mes siguiente al cobro) ── */}
+                {Object.keys(hacienda.iibb).length > 0 && (
+                  <tr className="border-b bg-amber-50/40">
+                    <td className="sticky left-0 z-10 bg-amber-50/40 px-4 py-2 font-semibold text-gray-700">
+                      IIBB venta hacienda
+                      <span className="ml-2 text-xs font-normal text-gray-400">
+                        mes siguiente al cobro
+                      </span>
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      const esActual = clave === mesActualClave
+                      return (
+                        <td key={clave}
+                          className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                            esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                          {fmt(hacienda.iibb[clave] || 0)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )}
 
                 {/* ── IIBB de ganadería (egreso derivado, mes siguiente al cobro) ── */}
                 {ganaderia.length > 0 && (
