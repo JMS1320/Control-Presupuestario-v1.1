@@ -489,6 +489,29 @@ un error que esta solapa destapó.
 
 ---
 
+## 🏷️ Productivo → Terneros → exportar caravanas (para declarar)
+
+Botón **Descargar Excel**. El modal pregunta primero qué querés bajar:
+
+- **Pesadas** — la planilla de siempre, con trazabilidad y las pesadas que elijas.
+- **Caravanas** — el listado para declarar.
+
+Con *Caravanas* elegís **qué categorías** entran y sale **una solapa por cada una**: Ternero
+Recría, Torito, Ternera Recría, Ternera Reposición. Cada solapa lleva la caravana oficial y la
+interna, ordenadas por caravana.
+
+**La caravana sale sin el espacio y empezando con el cero.** En la app se guarda
+`032 010012326481`; en el archivo va `032010012326481`. La celda se escribe como **texto** a
+propósito: si fuera número, Excel se comería el cero y quedaría `32010012326481`, que es otra
+caravana. Puede aparecer el triangulito verde de "número guardado como texto" — está bien, es lo
+que hace falta.
+
+**Qué no entra:** las bajas (no se declaran) y los activos a los que les falta la caravana
+oficial. Esos últimos el modal te los avisa con su caravana interna, para que los completes antes
+de declarar.
+
+---
+
 ## 📊 Presupuesto → leer la grilla
 
 ### Saldo acumulado

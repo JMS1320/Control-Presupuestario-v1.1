@@ -32,6 +32,7 @@
 
 import type { LoteStock, VentaStock } from './ciclo'
 import { cantidadDisponible } from './ciclo'
+import { categoriaDeTernero, esVendible } from '../productivo/caravanas'
 
 /**
  * De qué tropa sale la cabeza. Es lo que permite netear bien: NO se puede cruzar por
@@ -172,8 +173,11 @@ export function existenciasDePesada(
 ): ExistenciaHacienda[] {
   const acc: Record<string, { cabezas: number; kg: number }> = {}
   for (const f of filas) {
-    if (f.es_torito) continue // reposición: no se vende
-    const categoria = /macho/i.test(String(f.sexo ?? '')) ? 'Ternero Recria' : 'Ternera Recria'
+    // La categoría sale de `lib/productivo/caravanas.ts`, que es el único lugar donde se
+    // interpreta `es_torito` — el flag significa cosas distintas según el sexo (torito en
+    // un macho, ternera retenida en una hembra) y tenerlo escrito dos veces ya causó un bug.
+    const categoria = categoriaDeTernero(f.sexo, f.es_torito)
+    if (!esVendible(categoria)) continue // reposición: no se vende
     const a = acc[categoria] ?? { cabezas: 0, kg: 0 }
     a.cabezas += 1
     a.kg += Number(f.peso_kg) || 0

@@ -1875,6 +1875,38 @@ Hoy se tipea. Lo correcto sería tomar el saldo real de las cuentas a una fecha 
 anticipó (*"luego vemos cómo emprolijamos"*). Ojo con el alcance: el presupuesto es sólo MSA y los
 saldos son por cuenta bancaria; hay que decidir qué cuentas entran.
 
+##### ✅ Export de caravanas para declarar — HECHO 2026-07-30 (sin testear)
+
+> *"quisiera un export de productivo para declarar las caravanas… un simple excel, machos por
+> un lado y hembras por el otro… primero debo decirle qué categorías quiero exportar… si pongo
+> las 3 me da una solapa por categoría… es importante borrar el espacio entre los primeros 3
+> dígitos (empezando por el cero) y el resto, pero debe empezar con el 0 y no omitirlo por ser
+> un nro."*
+
+**Dónde**: Productivo → Terneros → **Descargar Excel**. El modal ahora pregunta primero **qué**
+se baja — *Pesadas* (lo de siempre) o *Caravanas* (para declarar) — porque son dos archivos
+distintos, no una columna más.
+
+**Qué genera**: una **solapa por categoría** elegida, con `Caravana Oficial` y
+`Caravana Interna`. Categorías: Ternero Recría · Torito · Ternera Recría · Ternera Reposición.
+
+**El cero de la caravana** es el punto delicado. En la BD viene `"032 010012326481"`; para
+declarar va sin espacio y **empezando con 0**. Si la celda se escribe como número Excel se come
+el cero y queda `32010012326481`, que es **otra caravana**. Por eso se fuerza `t:'s'` y formato
+`@` en la columna. Verificado escribiendo y volviendo a leer el archivo:
+`scripts/verificar-caravanas.ts` (15 checks).
+
+**Qué queda afuera, a propósito**: las bajas (no se declaran) y los activos **sin caravana
+oficial cargada** — una fila vacía en un archivo de declaración no sirve. El modal dice cuántos
+son y lista sus caravanas internas para poder completarlos. Con los datos de hoy son **9**:
+8 toritos y 1 ternera de recría.
+
+**`lib/productivo/caravanas.ts`** — `normalizarCaravana()` + `categoriaDeTernero()`.
+Esta última es ahora el **único lugar** donde se interpreta `es_torito`, que está sobrecargado:
+en un macho significa "torito", en una hembra "ternera retenida para reposición". Tenerlo escrito
+en varios lados ya causó un bug (una hembra marcada aparecía como Torito y se contaba dos veces).
+`lib/ganaderia/disponibilidad.ts` pasó a usarlo.
+
 ##### Tres familias de costo — no se calculan igual
 No forzarlas al mismo molde; cada una tiene su unidad:
 
