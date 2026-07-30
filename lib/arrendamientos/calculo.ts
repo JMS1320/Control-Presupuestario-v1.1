@@ -1,3 +1,5 @@
+import { resolverSerie } from '@/lib/precios/serie'
+
 // Capa compartida (UI-agnóstica): fórmulas de arrendamientos agrícolas.
 // Fuente única para Ventas, Presupuesto y Cash Flow — que nadie recalcule por su cuenta.
 // Diseño: DISEÑO_PRESUPUESTO.md § INGRESOS — Arrendamientos agrícolas.
@@ -174,8 +176,10 @@ export interface PrecioResuelto {
 }
 
 /**
- * Precio de una posición. Si el mes pedido no está cargado, toma el SIGUIENTE mes
- * con precio y lo marca como arrastrado (la UI debe distinguirlo visualmente).
+ * Precio de una posición, con ARRASTRE HACIA ADELANTE: si el mes no está cargado se usa
+ * el último cargado antes de él. Ver `lib/precios/serie.ts` — es la misma regla para
+ * todas las series del presupuesto, así alcanza con cargar los meses donde el precio
+ * cambia y nada queda en cero.
  */
 export function resolverPrecio(
   precios: PrecioGrano[],
@@ -183,51 +187,27 @@ export function resolverPrecio(
   anio: number,
   mes: number,
 ): PrecioResuelto {
-  const delGrano = precios
-    .filter(p => p.grano === grano)
-    .sort((a, b) => a.anio - b.anio || a.mes - b.mes)
-
-  const exacto = delGrano.find(p => p.anio === anio && p.mes === mes)
-  if (exacto) {
-    return { precio_usd: Number(exacto.precio_usd), arrastrado: false, posicion: { anio, mes } }
+  const v = resolverSerie(
+    precios.filter(p => p.grano === grano).map(p => ({ anio: p.anio, mes: p.mes, valor: Number(p.precio_usd) })),
+    anio, mes,
+  )
+  return {
+    precio_usd: v.valor,
+    arrastrado: v.origen !== 'exacto' && v.origen !== 'sin_dato',
+    posicion: v.desde ?? (v.origen === 'exacto' ? { anio, mes } : null),
   }
-
-  const siguiente = delGrano.find(p => p.anio > anio || (p.anio === anio && p.mes > mes))
-  if (siguiente) {
-    return {
-      precio_usd: Number(siguiente.precio_usd),
-      arrastrado: true,
-      posicion: { anio: siguiente.anio, mes: siguiente.mes },
-    }
-  }
-
-  return { precio_usd: 0, arrastrado: false, posicion: null }
 }
 
 /**
- * TC del mes: prioriza el real; si no hay, el presupuestado.
- * Si el mes no está cargado arrastra el ANTERIOR más cercano y, si tampoco hay
- * (el mes pedido es previo a todo lo cargado), el SIGUIENTE más cercano.
- * El fallback tiene que ser bidireccional: si no, una cuota vencida en un mes
- * sin TC previo queda valuada en $0 y desaparece de la vista.
+ * TC del mes: prioriza el real; si no hay, el presupuestado. Con ARRASTRE HACIA
+ * ADELANTE (`lib/precios/serie.ts`): alcanza con cargar los meses donde el TC cambia.
  */
 export function resolverTC(tcs: TipoCambio[], anio: number, mes: number): { tc: number; arrastrado: boolean } {
-  const valorDe = (t: TipoCambio) => t.tc_real ?? t.tc_presupuestado
-
-  const exacto = tcs.find(t => t.anio === anio && t.mes === mes)
-  if (exacto && valorDe(exacto) != null) return { tc: Number(valorDe(exacto)), arrastrado: false }
-
-  const previos = tcs
-    .filter(t => valorDe(t) != null && (t.anio < anio || (t.anio === anio && t.mes < mes)))
-    .sort((a, b) => b.anio - a.anio || b.mes - a.mes)
-  if (previos.length) return { tc: Number(valorDe(previos[0]!)), arrastrado: true }
-
-  const siguientes = tcs
-    .filter(t => valorDe(t) != null && (t.anio > anio || (t.anio === anio && t.mes > mes)))
-    .sort((a, b) => a.anio - b.anio || a.mes - b.mes)
-  if (siguientes.length) return { tc: Number(valorDe(siguientes[0]!)), arrastrado: true }
-
-  return { tc: 0, arrastrado: false }
+  const puntos = tcs
+    .map(t => ({ anio: t.anio, mes: t.mes, valor: Number(t.tc_real ?? t.tc_presupuestado) }))
+    .filter(p => Number.isFinite(p.valor) && p.valor > 0)
+  const v = resolverSerie(puntos, anio, mes)
+  return { tc: v.valor, arrastrado: v.origen !== 'exacto' && v.origen !== 'sin_dato' }
 }
 
 // ── Monto de una cuota ────────────────────────────────────────────────────────

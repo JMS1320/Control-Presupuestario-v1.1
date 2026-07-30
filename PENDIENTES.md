@@ -1437,6 +1437,35 @@ ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  �
 8. **`ventas_unificadas`** incorpora ganadería → Cash Flow la ve.
 9. **Deprecar `presupuesto_ganaderia`** y borrar la fila que quedó corrupta del bug de %.
 
+##### 🔑 Dos principios de arquitectura (pedidos por el usuario, 2026-07-30)
+
+**1 · Las series de precios ARRASTRAN HACIA ADELANTE** — `lib/precios/serie.ts`
+> *"pongo algunos precios actuales y quiero que los otros meses se propaguen hasta el próximo
+> input. Si algo se mueve de mes ya tiene el precio."*
+
+El valor de un mes es **el último cargado hasta ese mes**. Alcanza con cargar los meses donde el
+precio cambia. Si el mes es previo a toda la serie se toma el primero hacia adelante, para que
+no quede en cero.
+```
+ene  feb  mar  abr  may  jun          ene  feb  mar  abr  may  jun
+100   ·    ·   120   ·    ·     →     100  100  100  120  120  120
+```
+**Regla única para TODAS las series**: precios de granos, precios de hacienda, TC e IPC.
+`resolverSerie()` es la implementación; `resolverPrecio`, `resolverTC` y `resolverPrecioHacienda`
+la usan. ⚠️ Cambió el comportamiento de granos: antes tomaba el **siguiente** mes cargado.
+
+**2 · Dos puntas de input para el mismo dato**
+> *"desde presupuesto también pueda alterar las cifras de las ventas o los lotes. Como muchas
+> cosas en este sistema, muchas veces tiene dos puntas para input."*
+
+El precio se carga en **Presupuesto**; el *cuándo se vende* en **Productivo**; y desde
+**Presupuesto** se debe poder tocar la venta también. Igual que el arrendamiento, donde el modal
+de Presupuesto escribe sobre la cuota de Ventas.
+
+**Cómo se sostiene**: la lógica de mutación vive en `lib/`, no en el componente. Cualquier
+pantalla llama la misma función y escribe en la misma tabla — nunca hay copia ni sincronización.
+Al agregar una pantalla que edita algo existente, **extraer primero la función a `lib/`**.
+
 ##### Datos que faltan del usuario
 - **Plazo de cobro** típico de hacienda (en arrendamiento fueron 15 y 20 días por cliente).
 - Si los **toritos** se venden en algún momento o son sólo reposición.

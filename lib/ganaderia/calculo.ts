@@ -6,6 +6,8 @@
 // Ganadería es IVA 10,5% + IIBB 1%; arrendamiento es exento + IIBB 5%. Meterlas como
 // constantes globales fue el error que destapó esta solapa.
 
+import { resolverSerie } from '@/lib/precios/serie'
+
 export interface PrecioHacienda {
   categoria: string
   anio: number
@@ -60,17 +62,16 @@ export function resolverPrecioHacienda(
 ): PrecioHaciendaResuelto {
   if (override != null) return { precio_pesos_kg: Number(override), arrastrado: false, manual: true }
 
-  const deCategoria = precios
-    .filter(p => p.categoria === categoria)
-    .sort((a, b) => a.anio - b.anio || a.mes - b.mes)
-
-  const exacto = deCategoria.find(p => p.anio === anio && p.mes === mes)
-  if (exacto) return { precio_pesos_kg: Number(exacto.precio_pesos_kg), arrastrado: false, manual: false }
-
-  const siguiente = deCategoria.find(p => p.anio > anio || (p.anio === anio && p.mes > mes))
-  if (siguiente) return { precio_pesos_kg: Number(siguiente.precio_pesos_kg), arrastrado: true, manual: false }
-
-  return { precio_pesos_kg: 0, arrastrado: false, manual: false }
+  const v = resolverSerie(
+    precios.filter(p => p.categoria === categoria)
+      .map(p => ({ anio: p.anio, mes: p.mes, valor: Number(p.precio_pesos_kg) })),
+    anio, mes,
+  )
+  return {
+    precio_pesos_kg: v.valor,
+    arrastrado: v.origen !== 'exacto' && v.origen !== 'sin_dato',
+    manual: false,
+  }
 }
 
 // ── Cálculo del presupuesto ───────────────────────────────────────────────────
