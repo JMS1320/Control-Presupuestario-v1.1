@@ -512,6 +512,40 @@ de declarar.
 
 ---
 
+## 📈 Presupuesto → Subas de proveedores 🟡 *(nuevo 2026-07-30, sin testear)*
+
+> Botón **"Subas de proveedores"** arriba a la derecha del Presupuesto. Exporta **Excel** y **PDF**.
+
+Responde una pregunta: **¿quién nos está aumentando por encima de la inflación?** Mira a todos
+los que facturan mes a mes, no de a uno, porque el que se pasa no avisa.
+
+Por cada proveedor: cuánto subió de punta a punta, el equivalente mensual, el **IPC acumulado del
+mismo período** y la **brecha** en puntos. Verde en línea, ámbar por encima, rojo muy por encima.
+Clic en el proveedor y ves la serie mes a mes con la variación contra el IPC de cada mes.
+
+### Por qué no dice simplemente "subió de X a Y"
+Porque **el monto de una factura mezcla precio y cantidad**. Autopistas figura +160 % y no
+aumentó nada: se viajó más. Alcorta +690 % porque se compró más veterinaria.
+
+Entonces la herramienta mide **primero contra último** (no el mínimo contra el máximo, que agarra
+dos meses cualesquiera) y cuenta **cuántas veces bajó**: un abono sube en escalones y casi nunca
+baja, un consumo rebota. A los que rebotan los marca *"varía por consumo"* y **no** los compara
+con el IPC — el número está, pero no significa un aumento. Los podés esconder con el tilde
+*"sólo los de precio"*.
+
+### Hace falta cargar el IPC
+Hoy no hay IPC cargado, así que ves cuánto subió cada uno pero no contra qué compararlo. Se carga
+en **Precios y TC**, columna IPC: la **variación mensual en %**.
+
+Si a algún mes del período le falta el IPC, esa comparación queda en blanco en vez de mostrar un
+número. Es a propósito: un acumulado al que le faltan meses queda corto y haría ver a *todos* por
+encima de la inflación.
+
+### El mes en curso no entra
+Está a medio facturar, y justo es la punta que define la suba.
+
+---
+
 ## 📒 Presupuesto → Cuentas contables 🟡 *(nuevo 2026-07-30, sin testear)*
 
 > Botón **"Cuentas contables"** arriba a la derecha del Presupuesto.

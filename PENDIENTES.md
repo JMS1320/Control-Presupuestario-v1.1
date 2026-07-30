@@ -137,6 +137,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-14 | 🔴 | Media | **Análisis productivo-económico (engorde)** — módulo NUEVO en Historial pesadas (`components/analisis-productivo.tsx` + `segmentador.tsx`). Incluye: multi-segmentador · marcado reposición (es_torito) · análisis margen (calcular) · escenario B dinámico (16 vars) · cadena de etapas · punto de equilibrio · análisis de sensibilidad · guardar/cargar/borrar estudios (localStorage+.json) · **precios de mercado** (scraping entresurcosycorralesya, botón mkt auto-poblar por kg neto+sexo). **Falta TESTEAR TODO** contra el Excel del usuario (ver `MANUAL-USO.md` + memoria `project_analisis_productivo`). **v2 pendiente:** (a) **sub-modal** para ver la sensibilidad más ancha; (b) **persistir** la config de sensibilidad en el estudio (hoy sesión); (c) **export Excel/PDF**: hoy cada segmento exporta lo suyo, PERO no hay export **COMBINADO** (todos los segmentos + la combinada) y el export **no refleja** el punto de salida (sigue "punta a punta") ni el tilde incluido/A-vs-B. El **guardado local + JSON SÍ captura todo** (incluido, salidaEtapa, duplicados). (d) agrupador de segmentos + sensibilidad de cadena. (2026-07-09) · **HECHO 2026-07-10/11 (commits 0551bb8/2941fb5/aff89e6/88a3a5a):** (1) precios de mercado scrapeados se **guardan/restauran CON el estudio**; (2) **congelar segmentado** con foto + receta → al cargar la app pregunta **📌 foto** (snapshot, no toca BD) vs **🔄 re-link** (reproduce del config); (3) **Estimado configurable** *desde* (pesada base) / *hasta* (fecha del análisis) → reproduce el kilaje exacto y permite recuperar estudios viejos a mano; (4) **import pesadas por columna `Caravana` no oficial** (CUT/Descarte en `caravana_oficial`, toros en `caravana_interna`). Testeado visualmente OK por el usuario. · **HECHO 2026-07-13:** (5) **export COMBINADO del estudio** (⬇ PDF total = resumen + detalle por segmento · ⬇ Excel total = hoja Resumen + hoja por segmento; PDF declarativo reusado del export individual; respeta tilde `incluido`) → cierra el v2-(c); (6) **💾 Actualizar «estudio»** (sobrescribe el estudio abierto sin re-tipear nombre) + **Guardar como…** (nuevo) → evita duplicados. · **⏳ PENDIENTE DE TEST (2026-07-13, el usuario testea luego):** commits `9150fdb` (export combinado PDF/Excel + Actualizar), `93f540e` (detalle por etapa en el export), `9da43e8` (panel de sección Fase 1: individuos + sub-segmentar), `f58bf39` (panel de sección Fase 2: índices históricos ganancia p-p / últimas pesadas + promedio grupo). Todo en `desarrollo`, sin mergear. |
 | B-FEAT-COSTOS-PRODUCTIVOS | 🔴 | Alta | **Costos productivos atados a la venta (ganadería)** — cada venta presupuestada lleva su costo variable: maíz, concentrado, sanidad, verdeos. **La unidad de planificación es la ACTIVIDAD**: se carga "este lote hace recría del 1/4 al 30/9" y salen solos la curva de peso, el consumo mes a mes, lo que falta comprar y el egreso. El motor de ración YA existe (`calcular()` en `analisis-productivo.tsx:150`) y el stock de insumos también (`productivo.stock_insumos` / `movimientos_insumos`). Plan C-1..C-8 en el dossier § FASE C. **0 código** — planificado 2026-07-30. |
 | B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
+| B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1520,6 +1521,124 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 📈 CONTROL DE SUBAS DE PROVEEDORES vs IPC `B-FEAT-CONTROL-PROVEEDORES` 🟡
+*(2026-07-30, sin testear)*
+
+> *"analizar el ritmo de subas que viene teniendo y en comparación con el IPC… tal vez en vez
+> de ser algo individual puede aplicar a todos los proveedores que nos llega factura mensual,
+> que debería ser siempre igual y aumentar como máximo por IPC."*
+
+Panel en **Presupuesto → "Subas de proveedores"**. Export **Excel** (resumen + detalle mensual)
+y **PDF** apaisado.
+
+##### La decisión de fondo: NO se mide mínimo contra máximo
+Sería lo obvio y da cualquier cosa, porque **el monto de una factura mezcla precio y cantidad**
+y sólo el precio se compara con el IPC. Con los datos reales:
+
+| Proveedor | Mín→Máx | Qué es en realidad |
+|---|---|---|
+| AUTOPISTAS URBANAS | +160 % | no aumentó: se viajó más |
+| ALCORTA (veterinaria) | +690 % | no aumentó: se compró más |
+| FEDERACIÓN PATRONAL | +12.295 % | pólizas distintas |
+| MEDICUS | +23 % | **esto sí es un aumento de precio** |
+
+Entonces:
+- se mide **primero contra último** (la tendencia), no dos outliers cualesquiera;
+- se cuenta **cuántas veces bajó**. Un abono sube en escalones y casi nunca baja; un consumo
+  rebota. Ésa es la señal que separa precio de volumen.
+
+Los de volumen igual se listan, marcados como *"varía por consumo"* y sin semáforo: el número
+está, la conclusión no se saca sola. Se pueden esconder con un tilde.
+
+##### Cómo se lee
+`suba total` (punta a punta) · `suba mensual equivalente` · `IPC acumulado del mismo período` ·
+**brecha** en puntos. Semáforo: en línea (≤5 pts) · por encima · muy por encima (>20 pts).
+Al abrir un proveedor: la serie mes a mes con la variación de cada mes contra el IPC de ese mes.
+
+**El mes en curso no entra**: está a medio facturar y arruinaría justo la punta que importa.
+
+**Si falta IPC no se inventa la comparación.** `ipcAcumulado()` devuelve `null` cuando la serie
+tiene huecos — un acumulado calculado con meses faltantes queda corto y haría ver a *todos* por
+encima del IPC. Hoy `public.indices_ipc` está **vacía**: el panel muestra las subas igual y avisa
+dónde cargarlo (Precios y TC, columna IPC = variación mensual en %).
+
+Motor en `lib/proveedores/control-subas.ts`. Verificador:
+`npx tsx scripts/verificar-control-proveedores.ts` — 13 checks con los casos reales, incluido que
+Autopistas (+22 %) NO se marque como aumento por bajar 3 de 7 meses.
+
+##### Pendiente
+**C-15** — el análisis usa sólo `msa.comprobantes_arca` (dic-2025 en adelante). Podría extenderse
+al histórico para tener 13 meses en vez de 8, pero el histórico no trae CUIT normalizado del
+mismo modo; hay que verificarlo antes.
+
+---
+
+#### 🔄 CORRECCIONES a lo escrito antes *(el usuario, 2026-07-30)*
+
+##### 1 · El objetivo del presupuesto es el saldo, no la composición
+Yo había escrito *"la composición es justo lo que estás presupuestando"*. **Está mal.**
+
+> *"el objetivo del presupuesto es el análisis económico y financiero más allá de en qué se
+> gastó. Si debe ser prolijo, pero si el saldo a fin de mes proyectado es 1000 y sale 1000 el
+> presupuesto es un éxito más allá de estar mejor compuesto en sus partes. Para el análisis de
+> los gastos realizados tenemos los subdiarios y ahí no hay error."*
+
+El criterio de éxito es **el saldo proyectado**. La composición es un medio, no el fin — y para
+mirar el gasto en detalle ya están los subdiarios, que son exactos.
+
+**La recomendación no cambia, el motivo sí.** Sigue siendo *facturas para presupuestar, canales
+para controlar*, pero no porque la composición sea el objetivo. Es porque **no se puede proyectar
+un canal**: "banco" no es un concepto que crezca con el IPC ni que dependa de una decisión
+productiva. Se proyectan conceptos (la luz, el veterinario, el asesor) y después caen en un
+canal. El canal es el lado real, no el proyectado.
+
+Y con el objetivo bien planteado, **el control por canales sube de prioridad** (C-11): si lo que
+importa es que el saldo cierre, la cobertura total pesa más de lo que yo le había dado. La brecha
+entre pagado y facturado es exactamente el error del saldo.
+
+##### 2 · Templates y cuentas contables NO se pisan — verificado
+Yo había marcado un riesgo sistémico de doble conteo. **El usuario tenía razón**: los templates
+son, por definición, lo que **no** tiene factura.
+
+Verificado contra los datos: los 66 templates activos de MSA tienen `codigo_contable` en
+`"No lleva"` / `"Desglosar"` / `"CTA MA"` / `null`. **Ninguno** mapea a una cuenta con facturas
+imputadas. El cruce por cuenta da cero solapamiento.
+
+**La excepción, una sola y concreta:** cruzando por **CUIT** aparece
+**FEDERACIÓN PATRONAL SEGUROS** como templates *Seguro Flota* y *Seguro Accidentes de Trabajo*
+**y además** con 12 facturas ($7,77 M) en `SEGUROS ESTRUCTURA` (422113). Ese sí se contaría dos
+veces. No es un problema de arquitectura: es un caso para revisar con el usuario — probablemente
+el seguro deje de necesitar template ahora que llega por factura.
+
+→ **C-16**: revisar Federación Patronal (¿template o factura?) y dejar un chequeo por CUIT que
+avise si vuelve a pasar.
+
+##### 3 · Templates sin cuotas — el hueco real
+> *"para estos habría cuotas, y si no hubiera cuotas se presupuestaría? recuerda que muchas
+> veces me dijiste de no poner datos estimados en templates salvo raros casos ya que en
+> presupuesto usaría su lógica."*
+
+Exacto, y ése es el criterio correcto: **el dato firme vive en el template, la estimación vive
+en el Presupuesto.**
+
+Los datos muestran que el hueco es real. Cuotas cargadas por mes:
+
+| jul-26 | ago-26 | sep-26 | oct-26 | nov-26 | dic-26 | ene-27 |
+|---|---|---|---|---|---|---|
+| 30 · $61,4 M | 16 · $2,3 M | 54 · $12,8 M | 14 · $3,6 M | 36 · $18,9 M | 33 · $9,2 M | 2 · $0,55 M |
+
+La cobertura es **despareja** (ago tiene 16 cuotas contra 54 de sep) y **se corta en dic-2026**.
+Un presupuesto a 24 meses que lea sólo cuotas muestra los últimos 12 meses casi vacíos, y eso no
+es que no haya gasto: es que no está cargado.
+
+→ **C-17**: donde el template se queda sin cuotas, el Presupuesto tiene que **proyectar con su
+propia lógica** (los mismos modos que las cuentas contables: propagar la última cuota, promedio,
+o el mismo mes del año anterior según la periodicidad del template). Sin escribir nada en el
+template. Es la contracara de la regla de no cargar estimaciones ahí.
+
+
 #### 📒 PRESUPUESTAR CUENTAS CONTABLES `B-FEAT-PRESUPUESTO-CUENTAS` 🟡
 *(primera versión 2026-07-30, sin testear — leer el análisis antes de tocar nada)*
 
@@ -1663,9 +1782,11 @@ puede entrar por dos.
 
 - Producción ya está resuelto: las cuentas `421*`, `42305*` y las del verdeo salen `excluida`
   con el motivo escrito.
-- **Templates vs cuentas contables NO está resuelto todavía**: si un impuesto está como template
-  y además tiene facturas imputadas a una cuenta, se cuenta dos veces. Hay que cruzarlo antes de
-  sumar los dos bloques en el TOTAL EGRESOS.
+- **Templates vs cuentas contables: verificado, NO se pisan** (2026-07-30). Los templates son
+  por definición lo que no tiene factura: los 66 activos de MSA tienen `codigo_contable` en
+  "No lleva" / "Desglosar" / null y ninguno mapea a una cuenta con facturas. El aviso anterior
+  de riesgo sistémico estaba equivocado. **La única excepción real** es FEDERACIÓN PATRONAL
+  SEGUROS, que está como 2 templates y además factura $7,77 M en SEGUROS ESTRUCTURA → ver C-16.
 
 
 #### 🌾 FASE C — COSTOS PRODUCTIVOS ATADOS A LA VENTA `B-FEAT-COSTOS-PRODUCTIVOS` 🔴
