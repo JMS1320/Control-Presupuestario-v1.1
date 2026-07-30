@@ -1311,6 +1311,55 @@ filtraba por sexo: doble conteo.
 Aparte del bug: el nombre engaña. Convendría partirlo en dos flags (`es_torito` /
 `es_reposicion`) o renombrarlo a algo neutro tipo `marcado_retencion`.
 
+#### 🔍 REVISIÓN DEL MODELO — 5 puntos abiertos (2026-07-30)
+
+Salieron de analizar la primera carga real. **No son del arranque**: salvo el 1, todos vuelven
+cada año. Verificados contra la línea de tiempo generada con datos reales (24/25 y 25/26).
+
+**G-1 · El guardarraíl de retención ANULA el dato cargado** 🔴 *(bloqueante — se arregla ya)*
+`retenidas = min(retenidasTeorica, terneras)`. Si el período no tiene destete cargado,
+`terneras = 0` y **cualquier número que el usuario cargue se topea a cero**. Caso real: cargó
+`real_retenidas = 28` en la 24/25, se guardó bien en la BD, y la app mostraba 0.
+El tope sólo debe aplicar cuando el destete **se conoce**; si no hay dato, `terneras` es
+desconocido, no cero. Ídem la advertencia ⚠, que hoy es un falso positivo permanente en el
+primer período.
+
+**G-2 · El % de refugo no se calibra con la realidad** 🟡
+El default es 80% de las falladas; el realizado del 25/26 dio **64%** (16 sobre 25). Un dato no
+hace tendencia, pero la app debería **mostrar el ratio realizado** cuando es derivable, para
+ajustar el supuesto con evidencia. Hoy no lo calcula ni lo muestra.
+
+**G-3 · Falta un período para presupuestar el último destete** 🔴 *(afecta el resultado)*
+El destete de un período viene del servicio del **anterior**, así que **el servicio del último
+período nunca desteta**:
+```
+26/27  servicio oct-2026 (rodeo 244)  →  desteta marzo 2028 = período 27/28
+```
+Si la línea llega hasta 26/27, **esas ventas no existen en el presupuesto**.
+**Regla: para N campañas de ventas hacen falta N+1 períodos de stock.** El usuario quiere 2
+campañas presentes → 3 o 4 períodos cargados. Convendría que la app lo avise.
+
+**G-4 · Los toritos no existen en el modelo del ciclo** 🟡
+`terneros_venta = terneros`: manda todos los machos a venta. Pero se retienen 9 toritos, así que
+el número del ciclo está inflado respecto de lo que realmente se vende. Es el espejo de lo que
+sí se contempló con las terneras de reposición. Hoy se corrige en el panel de lotes.
+
+**G-5 · Un solo peso al destete para ambos sexos** 🟡
+`peso_destete_kg` = 197,34 es el promedio de la tropa; el real es **198,17 machos / 169,30
+hembras** (29 kg de diferencia). Los lotes lo resuelven bien porque se traen separados de la
+pesada, pero el número del ciclo induce a error si se usa para estimar.
+
+##### Lo que sí es sólo del arranque
+- El refugo y la reposición del **24/25** (22 y 28) faltan porque su destete viene de un ciclo
+  anterior al más viejo de `ciclos_cria`. El primer período siempre va a estar cojo; una vez
+  cargado no vuelve a pasar.
+
+##### Automatizaciones posibles (hoy se hacen a mano)
+- **Refugo por diferencia**: `refugo(N) = rodeo(N) + retenidas(N) − rodeo(N+1)`, cuando se conoce
+  el rodeo real del período siguiente. Cada octubre queda derivable.
+- **Reposición desde las marcadas**: el chequeo ya compara contra las hembras marcadas en la
+  pesada; falta el botón que la traiga en vez de sólo avisar.
+
 #### ⏳ FALTA en ganadería
 - **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
   proyección. Falta cuántas por año, peso y precio.

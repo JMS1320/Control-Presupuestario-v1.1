@@ -188,9 +188,14 @@ export function calcularCiclo(
   const retenidasTeorica = ciclo.real_retenidas != null
     ? Number(ciclo.real_retenidas)
     : rodeo * Number(ciclo.pct_reposicion)
+
   // Guardarraíl: no se puede retener más de lo que se destetó.
-  const retenidas = Math.min(retenidasTeorica, terneras)
-  const retencionExcede = retenidasTeorica > terneras + 0.01
+  // ⚠️ SÓLO aplica si el destete se CONOCE. Si no hay dato, `terneras` es desconocido,
+  // no cero — topear contra 0 anulaba cualquier número que el usuario cargara a mano
+  // (caso real: cargó 28 retenidas en el primer período y la app mostraba 0). Ver G-1.
+  const desteteConocido = ciclo.real_destetados != null || base > 0
+  const retenidas = desteteConocido ? Math.min(retenidasTeorica, terneras) : retenidasTeorica
+  const retencionExcede = desteteConocido && retenidasTeorica > terneras + 0.01
 
   return {
     ciclo,
@@ -199,7 +204,8 @@ export function calcularCiclo(
     falladas, descarte, retenidas,
     retencion_excede: retencionExcede,
     terneros_venta: terneros,
-    terneras_venta: Math.max(0, terneras - retenidas),
+    // Si no se conoce el destete no hay nada que vender (no restar contra un 0 ficticio)
+    terneras_venta: desteteConocido ? Math.max(0, terneras - retenidas) : 0,
     // Placeholders: los completa `calcularLineaTiempo`, que es la única que ve los
     // períodos vecinos y puede aplicar el desfasaje de dos.
     vacas_cierre: 0,
