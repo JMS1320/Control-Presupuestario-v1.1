@@ -802,3 +802,29 @@ siguiente (`new Date(a, m, 0)`) o rango exclusivo.
 **Lección transversal**: **siempre desestructurar `error`** en las queries de supabase-js y
 loguearlo. Un `data` en `null` silencioso se ve igual que "no hay datos".
 **Tags**: `#fechas` `#supabase` `#silent-failure` `#presupuesto`
+
+---
+
+## Componente definido DENTRO de otro — el input pierde el foco al tipear `#react #ui #bug #2026-07-29`
+**Síntoma**: en el modal del ciclo ganadero, al editar un porcentaje se perdía la selección
+después de **cada tecla**. Borrabas un dígito y tenías que volver a hacer click para borrar el
+siguiente.
+
+**Causa**: `Seccion` estaba definido **adentro** de `ModalCiclo`:
+```tsx
+function ModalCiclo(...) {
+  const Seccion = ({ titulo, children }) => (<div>…</div>)   // ❌
+  return <Seccion titulo="…"><Input value={f.x} onChange={…} /></Seccion>
+}
+```
+Cada render crea una **función nueva**, o sea un **tipo de componente distinto** para React →
+desmonta y remonta todo el subárbol → el `<Input>` se recrea y pierde foco y selección.
+
+**Solución**: definirlo a **nivel de módulo**.
+
+**Ojo con la distinción**: `const campo = (k, label) => (<div>…</div>)` invocado como
+`{campo("x", "X")}` **NO tiene el problema** — devuelve elementos inline, no crea un tipo de
+componente. El problema es sólo cuando se usa como `<Componente>` en JSX.
+
+**NO repetir**: definir componentes (usados como `<X/>`) dentro del cuerpo de otro componente.
+**Tags**: `#react` `#focus` `#remount` `#modal`

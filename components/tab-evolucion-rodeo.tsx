@@ -342,6 +342,23 @@ export function TabEvolucionRodeo() {
 
 // ── Modal de período ──────────────────────────────────────────────────────────
 
+/**
+ * ⚠️ A NIVEL DE MÓDULO a propósito. Si se define adentro del componente, cada tecleo
+ * crea un tipo de componente nuevo, React desmonta y remonta todo el subárbol, y los
+ * inputs PIERDEN EL FOCO y la selección en cada carácter.
+ */
+function Seccion({ titulo, nota, children }: { titulo: string; nota?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-white">
+      <div className="border-b bg-gray-50 px-3 py-1.5">
+        <p className="text-xs font-semibold text-gray-700">{titulo}</p>
+        {nota && <p className="text-[10px] text-gray-400">{nota}</p>}
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  )
+}
+
 function ModalCiclo({ datos, onCerrar, onGuardar }: {
   datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
 }) {
@@ -426,16 +443,6 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
       </div>
     )
   }
-
-  const Seccion = ({ titulo, nota, children }: { titulo: string; nota?: string; children: any }) => (
-    <div className="rounded-lg border bg-white">
-      <div className="border-b bg-gray-50 px-3 py-1.5">
-        <p className="text-xs font-semibold text-gray-700">{titulo}</p>
-        {nota && <p className="text-[10px] text-gray-400">{nota}</p>}
-      </div>
-      <div className="p-3">{children}</div>
-    </div>
-  )
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
