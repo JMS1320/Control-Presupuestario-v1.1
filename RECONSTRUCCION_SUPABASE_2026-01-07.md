@@ -11400,3 +11400,75 @@ UPDATE productivo.stock_lotes SET fecha_peso = fecha_disponible WHERE fecha_peso
 ALTER TABLE public.precios_hacienda ALTER COLUMN fuente TYPE varchar(60);
 ALTER TABLE public.precios_granos   ALTER COLUMN fuente TYPE varchar(60);
 ALTER TABLE public.tipos_cambio     ALTER COLUMN fuente TYPE varchar(60);
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Actividades productivas y costos directos
+
+**FASE C · C-2.** El costo directo NO es un template: es una consecuencia calculada de la
+actividad que se decide hacer. Y como cada actividad tiene sus propios insumos, la lista de
+costos es una **tabla hija**, no un juego fijo de columnas — así una actividad nueva no exige
+migrar nada. Ver `PENDIENTES.md` § FASE C.
+
+```sql
+CREATE TABLE productivo.actividades (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  tipo text NOT NULL DEFAULT 'recria',        -- recria | engorde | pastoreo | cria | otro
+  nombre text NOT NULL,
+  ganancia_diaria_kg numeric(6,3) NOT NULL DEFAULT 0,   -- el RINDE
+  racion_pct_pv numeric(6,5) NOT NULL DEFAULT 0,        -- fracción: 1,5 % -> 0.015
+  pct_mortandad numeric(6,5) NOT NULL DEFAULT 0,
+  notas text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE productivo.actividad_insumos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actividad_id uuid NOT NULL REFERENCES productivo.actividades(id) ON DELETE CASCADE,
+  orden integer NOT NULL DEFAULT 0,
+  concepto text NOT NULL,
+  -- pct_racion | kg_cabeza_dia | unid_cabeza_mes | unid_cabeza_evento
+  -- dosis_cada_kg | monto_cabeza | monto_ha | monto_mes
+  modo text NOT NULL DEFAULT 'pct_racion',
+  valor numeric(14,5) NOT NULL DEFAULT 0,
+  unidad text,
+  momento text NOT NULL DEFAULT 'diario',     -- diario | mensual | inicio | fin
+  precio_unitario numeric(14,4),
+  categoria_insumo_id uuid REFERENCES productivo.categorias_insumo(id) ON DELETE SET NULL,
+  producto text,
+  notas text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_actividades_empresa ON productivo.actividades(empresa, activo);
+CREATE INDEX idx_actividad_insumos_act ON productivo.actividad_insumos(actividad_id, orden);
+
+ALTER TABLE productivo.actividades       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE productivo.actividad_insumos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY actividades_all       ON productivo.actividades       FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY actividad_insumos_all ON productivo.actividad_insumos FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON productivo.actividades       TO anon, authenticated, service_role;
+GRANT ALL ON productivo.actividad_insumos TO anon, authenticated, service_role;
+```
+
+**Semilla** (defaults del análisis de engorde — punto de partida, todo editable desde la UI):
+
+```sql
+WITH a AS (
+  INSERT INTO productivo.actividades (empresa, tipo, nombre, ganancia_diaria_kg, racion_pct_pv, pct_mortandad, notas)
+  VALUES
+    ('MSA','recria','Recría',  0.500, 0.01500, 0.01000, 'Defaults del análisis de engorde. Ajustar con datos reales.'),
+    ('MSA','engorde','Engorde', 0.700, 0.01500, 0.01000, 'Defaults del análisis de engorde. Ajustar con datos reales.')
+  RETURNING id, tipo
+)
+INSERT INTO productivo.actividad_insumos (actividad_id, orden, concepto, modo, valor, unidad, momento, precio_unitario)
+SELECT a.id, v.orden, v.concepto, v.modo, v.valor, v.unidad, v.momento, v.precio
+FROM a CROSS JOIN (VALUES
+  (1,'Maíz',        'pct_racion', 0.85, 'kg', 'diario', 270.0),
+  (2,'Concentrado', 'pct_racion', 0.15, 'kg', 'diario', 745.0)
+) AS v(orden, concepto, modo, valor, unidad, momento, precio);
+```

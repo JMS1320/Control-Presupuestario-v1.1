@@ -21,12 +21,13 @@ import { VistaSectorProductivo } from "./components/vista-sector-productivo"
 import { TabSueldos } from "./components/tab-sueldos"
 import { TabPresupuesto } from "./components/tab-presupuesto"
 import { ConfiguradorPreciosTC } from "./components/configurador-precios-tc"
+import { ConfiguradorActividades } from "./components/configurador-actividades"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -43,6 +44,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const [showCategorias, setShowCategorias] = useState(false)
   const [showInterno, setShowInterno] = useState(false)
   const [showPreciosTC, setShowPreciosTC] = useState(false)
+  const [showActividades, setShowActividades] = useState(false)
 
   const { resumen, loading } = useFinancialData(año, semestre)
   const { resumenPorSeccion, estadisticas, loading: loadingDistribucion } = useDistribucionSociosData(año, semestre)
@@ -265,7 +267,11 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
 
           {/* PRESUPUESTO */}
           <TabsContent value="presupuesto" className="space-y-6">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" className="shrink-0" onClick={() => setShowActividades(!showActividades)}>
+                <Sprout className="mr-2 h-4 w-4" />
+                {showActividades ? "Ocultar actividades" : "Actividades y costos"}
+              </Button>
               <Button variant="secondary" className="shrink-0" onClick={() => setShowPreciosTC(!showPreciosTC)}>
                 <DollarSign className="mr-2 h-4 w-4" />
                 {showPreciosTC ? "Ocultar precios y TC" : "Precios y TC"}
@@ -273,6 +279,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             </div>
 
             {showPreciosTC && <ConfiguradorPreciosTC />}
+            {showActividades && <ConfiguradorActividades />}
 
             <TabPresupuesto />
           </TabsContent>

@@ -118,6 +118,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Agrícola** | `lotes_agricolas`, `ordenes_agricolas`, `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
 | **Evolución del rodeo** (2026-07-29) | `stock_ciclos`, `stock_lotes`, `stock_ventas` |
+| **Actividades y costos** (2026-07-30) | `actividades`, `actividad_insumos` |
 
 **Evolución del rodeo** — línea de tiempo proyectada del stock de cría (modelo de la solapa
 "ciclo ganadero" del Excel). **No están en el backup.**
@@ -127,6 +128,27 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `stock_ciclos` | Un **ciclo anual** por fila (servicio oct → destete mar). Cada período **abre con el cierre del anterior**; `vacas_apertura`/`vaquillonas_apertura` en NULL = hereda, cargadas = foto manual. Parámetros **por período**, no constantes globales (la reposición es decisión de estrategia y cambia año a año). Los `real_*` **pisan el cálculo** y recalculan todo lo posterior. |
 | `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
 | `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
+
+**Actividades productivas y costos directos** (2026-07-30) — **No están en el backup.**
+
+| Tabla | Propósito |
+|-------|-----------|
+| `actividades` | Parámetros de una actividad (recría, engorde, …): **el rinde** (`ganancia_diaria_kg`), la ración como % del peso vivo y la mortandad. Asignar la actividad define el ingreso **y** el costo de una sola vez, porque la curva de peso con que se factura la venta sale del mismo número que los kilos de maíz que se compran. |
+| `actividad_insumos` | Los costos directos de esa actividad, **uno por fila**. Es tabla hija y no columnas fijas a propósito: cada actividad tiene sus propios insumos, y una nueva no debe exigir migrar la tabla. |
+
+El costo directo **no se registra en ningún lado** — no es template ni factura esperada. Es una
+**consecuencia calculada** de la actividad que se decide hacer, igual que el IIBB de la venta de
+arrendamiento. Decisión del usuario, 2026-07-30.
+
+`actividad_insumos.modo` decide el **cuánto y el cuándo**, y con eso las tres familias de costo
+(por cabeza-día · por cabeza-evento · por hectárea) entran en un solo mecanismo:
+`pct_racion` · `kg_cabeza_dia` · `unid_cabeza_mes` · `unid_cabeza_evento` ·
+`dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_mes`.
+`momento` (`diario`/`mensual`/`inicio`/`fin`) ubica el gasto en el tramo.
+
+Motor en `lib/productivo/racion.ts` (ración y margen, compartido con el análisis de engorde) y
+`lib/productivo/actividades.ts` (`consumoMensual()` reparte el tramo mes a mes; el consumo
+diario **sube** porque la ración es un % del peso vivo y el animal engorda).
 
 Motor del ciclo (en `lib/ganaderia/ciclo.ts`):
 `rodeo = vacas + vaquillonas` · `destete = rodeo × %destete` (se parte por `%machos`) ·

@@ -1559,12 +1559,12 @@ nuevo: sólo los parámetros de la actividad. Ése es el punto que hace barato t
 
 ##### Lo que falta
 
-**C-1 · Extraer el motor a `lib/productivo/racion.ts`** 🔑 *hacer primero*
+**C-1 · Extraer el motor a `lib/productivo/racion.ts`** ✅ **HECHO** — ver arriba
 `calcular()` vive adentro de un componente de 1.367 líneas. Sacarlo a lib y que el análisis de
 engorde lo importe. Si el presupuesto reimplementa la fórmula, en tres meses dan distinto y no
 se va a saber cuál está bien. Es el mismo patrón de `lib/pagos/` y `lib/arrendamientos/calculo.ts`.
 
-**C-2 · Tabla de parámetros por actividad** — `productivo.actividades`
+**C-2 · Tabla de parámetros por actividad** — `productivo.actividades` ✅ **HECHO** (el esquema final es el de arriba: los insumos son tabla hija, no columnas fijas)
 Es el *"dejar asentado los parámetros de la recría y el engorde"*. Una fila por actividad:
 
 | campo | ejemplo | para qué |
@@ -1594,7 +1594,7 @@ como override manual explícito (y marcado, como el `*` de precio arrastrado). E
 al usuario la segunda punta de input que pidió: cargar la actividad define ingreso **y** costo
 de una sola vez.
 
-**C-5 · Consumo MENSUAL, no total**
+**C-5 · Consumo MENSUAL, no total** ✅ **HECHO** dentro de `consumoMensual()`
 El presupuesto es mensual, así que el consumo hay que integrarlo por mes: para cada mes, días
 del tramo dentro de ese mes × kg/día al peso promedio **de ese mes** (el peso sube, la ración
 sube con él). Devolver `Record<'YYYY-MM', { maiz_kg, conc_kg, ... }>`.
@@ -1608,7 +1608,7 @@ sube con él). Devolver `Record<'YYYY-MM', { maiz_kg, conc_kg, ... }>`.
 - **Falta la categoría Maíz**: hoy sólo existen `Alimento balanceado` y `Sal/Minerales` (ámbito
   ganadero) y ninguna tiene stock cargado. Sanidad sí está cargada y en uso.
 
-**C-7 · Al presupuesto (EGRESOS)**
+**C-7 · Al presupuesto (EGRESOS)** — ✅ **decidido por el usuario 2026-07-30: NO es template, es línea derivada.** Falta sólo pintarla.
 Una fila por actividad o por insumo, en el mes del consumo. **Decisión abierta, la misma que
 quedó pendiente con el IIBB de arrendamiento**: si el costo tiene que verse en Cash Flow hay que
 registrarlo en algún lado (template), y si no, es una línea derivada que sólo vive en el
@@ -1619,6 +1619,82 @@ El usuario fue explícito: *"para enlazar si creemos bueno con esa otra parte, p
 por los conceptos"*. O sea **reusar conceptos ahora, decidir el enlace después**. C-1 ya captura
 casi todo el valor. Un enlace real (que un estudio guardado genere tramos) recién tiene sentido
 cuando C-2..C-6 estén andando y testeados.
+
+##### ✅ C-1 y C-2 — HECHO 2026-07-30 (sin testear)
+
+**Decisión del usuario que fijó la arquitectura** *(la respuesta a C-7, adelantada)*:
+> *"costos directos debe ser algo que muta con la actividad propuesta. **no será un template ni
+> nada así**. de acuerdo a la actividad se ponen los costos directos. así como para recría y
+> engorde hay ciertos insumos y **rindes**, para cada actividad lo habrá. lógico que debe ser
+> editable desde presupuesto los parámetros de cada actividad."*
+
+**C-7 queda resuelto**: el costo directo **no se registra en ningún lado** — no es template, no
+es factura esperada. Es una **consecuencia calculada** de la actividad que se decidió hacer.
+Cambia la actividad, cambia el costo solo. Misma naturaleza que el IIBB de arrendamiento: línea
+derivada que vive en el presupuesto.
+
+**Corrección al plan original**: el borrador de C-2 tenía columnas fijas (`pct_maiz`,
+`pct_concentrado`). Con *"para cada actividad lo habrá"* eso no sirve — cada actividad tiene sus
+propios insumos. Pasó a ser **tabla hija**: una lista de ítems que el usuario arma. Recría son
+dos renglones, engorde otros, y la actividad que se invente el año que viene tiene los suyos sin
+tocar código ni migrar la tabla.
+
+###### C-1 · Motor extraído — `lib/productivo/racion.ts`
+`calcular()` salió de `analisis-productivo.tsx` (1.367 líneas) a lib; el componente ahora lo
+importa. Fuente única: si el presupuesto reimplementara la fórmula, en tres meses dan distinto.
+Se sumaron los primitivos `pesoPromedio()`, `pesoFinal()`, `racionDiariaKg()`.
+
+⚠️ **Nombre heredado**: el campo `conversion` de la pantalla **no es conversión alimenticia**, es
+la **ganancia diaria en kg** (`kgGanados = días × conv`). Es el mismo número que
+`stock_lotes.ganancia_diaria_kg` y que `actividades.ganancia_diaria_kg`. Documentado en la lib
+para que nadie lo interprete mal; renombrar la etiqueta de la pantalla queda pendiente.
+
+###### C-2 · Actividades y costos — BD + lib + UI
+**Tablas nuevas** (`productivo`, RLS abierta + grants como el resto del schema, **no** en el backup):
+
+| tabla | qué guarda |
+|---|---|
+| `actividades` | `tipo`, `nombre`, **`ganancia_diaria_kg`** (el rinde), `racion_pct_pv`, `pct_mortandad`, `activo` |
+| `actividad_insumos` | `concepto`, `modo`, `valor`, `unidad`, `momento`, `precio_unitario`, `categoria_insumo_id`, `producto` |
+
+**Sembradas** con los defaults del análisis de engorde (Recría 0,5 kg/día · Engorde 0,7 kg/día ·
+ración 1,5 % PV · maíz 85 % a $270/kg · concentrado 15 % a $745/kg). Son punto de partida, todo
+editable.
+
+**`modo` es la pieza central**: decide el cuánto **y** el cuándo, y con eso las tres familias de
+costo entran en una sola tabla en vez de tres mecanismos distintos.
+
+| modo | escala con | ejemplo |
+|---|---|---|
+| `pct_racion` | % de la ración diaria | maíz 85 %, concentrado 15 % |
+| `kg_cabeza_dia` | kg fijos por cabeza y día | suplemento |
+| `unid_cabeza_mes` | por cabeza y mes | sal, minerales |
+| `unid_cabeza_evento` | por cabeza, puntual | vacuna |
+| `dosis_cada_kg` | 1 dosis cada N kg de peso vivo | el modelo de `lineas_orden_aplicacion` |
+| `monto_cabeza` / `monto_ha` / `monto_mes` | $ directos | flete · **verdeo** · alquiler |
+
+`momento` (`diario`/`mensual`/`inicio`/`fin`) define dónde cae; cada modo trae su default.
+
+**`consumoMensual()`** reparte el tramo mes a mes. El punto fino: **el consumo diario sube a lo
+largo del tramo** porque la ración es un % del peso vivo y el animal engorda. Cada mes se calcula
+con **su propio peso promedio** — usar el promedio de todo el período subestima el final y
+sobrestima el arranque. Verificado: 200 cab de 220 kg del 1/4 al 30/9 van de 580 kg de maíz/día
+en abril a 775 en septiembre.
+
+**UI**: `components/configurador-actividades.tsx`, botón *"Actividades y costos"* en Presupuesto
+al lado de *"Precios y TC"*. Parámetros y lista de conceptos editables inline, aviso si los
+`% de la ración` no suman 100 %, y un **simulador** (cabezas · peso · desde/hasta · hectáreas)
+que muestra el reparto mes a mes sin guardar nada — la forma más rápida de ver si un parámetro
+quedó mal cargado.
+
+**Verificador**: `npx tsx scripts/verificar-actividades.ts` — 9 checks (días que cierran, el maíz
+que crece con el peso, los puntuales una sola vez, el verdeo escalando por hectárea y no por
+cabeza).
+
+###### Lo que sigue
+**C-3** (tramos: atar la actividad al lote) → **C-4** (que el tramo maneje la curva de peso) →
+**C-5** ya está resuelto dentro de `consumoMensual()` → **C-6** (stock y diferencia a comprar,
+ojo maíz propio) → **C-8** (enlace con el análisis, opcional).
 
 ##### Tres familias de costo — no se calculan igual
 No forzarlas al mismo molde; cada una tiene su unidad:

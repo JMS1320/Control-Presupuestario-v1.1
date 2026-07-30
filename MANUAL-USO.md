@@ -489,6 +489,59 @@ un error que esta solapa destapó.
 
 ---
 
+## 🌾 Presupuesto → Actividades y costos 🟡 *(nuevo 2026-07-30, sin testear)*
+
+> Botón **"Actividades y costos"** arriba a la derecha del Presupuesto, al lado de "Precios y TC".
+
+Acá se dejan asentados **los parámetros de cada actividad** (recría, engorde, y las que vengan).
+La idea es no volver a tipear kilos nunca: cargás la actividad una vez y después alcanza con
+decir *"este lote hace recría del 1/4 al 30/9"* para que salgan solos el consumo, el costo y la
+curva de peso.
+
+**El costo directo no se registra en ningún lado.** No es un template ni una factura esperada:
+es una **consecuencia** de la actividad que decidís hacer. Cambiás la actividad y cambia el costo
+solo. Por eso no lo vas a encontrar en Egresos.
+
+### Cada actividad tiene dos cosas
+
+**Los rindes** — ganancia diaria (kg/día), ración como % del peso vivo, mortandad.
+La ganancia diaria es la misma que usa la venta para calcular el peso, así que el animal que
+facturás y el que alimentás son el mismo.
+
+**Los costos directos** — una lista de conceptos que armás vos. Recría son dos renglones (maíz y
+concentrado); otra actividad tendrá los suyos. Cada concepto dice **cómo escala**:
+
+| Cómo escala | Cuándo usarlo |
+|---|---|
+| **% de la ración** | maíz 85 %, concentrado 15 % — lo normal |
+| **kg / cabeza / día** | un suplemento aparte de la ración |
+| **unid. / cabeza / mes** | sal, minerales |
+| **unid. / cabeza (evento)** | una vacuna, una vez |
+| **dosis cada N kg** | antiparasitario que se dosifica por peso |
+| **$ / cabeza · $ / hectárea · $ / mes** | flete · **verdeo** · alquiler de campo |
+
+El verdeo es el único que **no** escala con cabezas sino con hectáreas: es un costo por
+superficie que después aprovecha la hacienda que la pastorea.
+
+**Cuándo** (diario / mensual / inicio / fin) ubica el gasto dentro del período. Cada modo trae
+el suyo por defecto y lo podés cambiar.
+
+### El simulador
+Abajo de cada actividad, **"Simular cómo cae el gasto en el tiempo"**. Ponés cabezas, peso
+inicial y fechas y ves el reparto mes a mes. **No guarda nada** — es para chequear que los
+parámetros estén bien antes de atarlos a un lote real.
+
+Vas a ver que **el consumo sube mes a mes**, y está bien: la ración es un % del peso vivo y el
+animal engorda. 200 cabezas de 220 kg pasan de ~580 kg de maíz por día en abril a ~775 en
+septiembre.
+
+### Ojo
+- Los **"% de la ración" deberían sumar 100 %**; si no, la pantalla te lo avisa abajo de la tabla.
+- Los valores que vienen cargados son los **defaults del análisis de engorde** (0,5 y 0,7 kg/día ·
+  1,5 % PV · maíz 70 · concentrado 45). Son un punto de partida: ajustalos con datos reales.
+
+---
+
 ## 🐮 Módulo: Evolución del rodeo (Productivo → Evolución Rodeo) 🟡 (nuevo, sin testear)
 
 > El presupuesto de ganadería necesita saber **cuántas cabezas va a haber**. Esta pantalla
