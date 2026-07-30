@@ -534,7 +534,10 @@ a la vez**: el peso a la venta y el costo de alimentación.
 **El peso deja de crecer en línea recta.** Si la recría gana 0,5 kg/día y el engorde 0,7, el
 animal no engorda parejo — y el bloque te muestra la curva por tramo:
 
-
+```
+Recría    183 días × 0,5 kg     220,0 → 311,5 kg
+Engorde    92 días × 0,7 kg     311,5 → 375,9 kg
+```
 
 Con la ganancia suelta del lote (0,3 kg/día) ese mismo animal daba 302 kg. Son 73 kg de
 diferencia por cabeza, y como **el peso define la banda de precio**, cambia también el $/kg.
