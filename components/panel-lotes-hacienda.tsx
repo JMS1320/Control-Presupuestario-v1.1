@@ -21,7 +21,7 @@ import {
   type LoteStock, type VentaStock, type CicloCalculado,
 } from "@/lib/ganaderia/ciclo"
 import {
-  type PrecioHacienda, pctDesbaste, pctCz, brutoDesdeNeto, netoDesdeBruto,
+  type PrecioHacienda, pctDesbaste, pctCz, brutoDesdeNeto, netoDesdeBruto, categoriaPrecio,
 } from "@/lib/ganaderia/calculo"
 
 const parseNum = (v: string) => {
@@ -504,7 +504,14 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
   datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
 }) {
   const [f, setF] = useState<any>({})
-  useEffect(() => { if (datos) setF({ ...datos }) }, [datos])
+  /** Cual de los dos precios manda: el que se escribio ultimo. El otro se recalcula,
+   *  tambien cuando cambia la CZ. */
+  const [modoPrecio, setModoPrecio] = useState<"bruto" | "neto">("bruto")
+  const [precioNetoManual, setPrecioNetoManual] = useState("")
+  useEffect(() => {
+    if (!datos) return
+    setF({ ...datos }); setModoPrecio("bruto"); setPrecioNetoManual("")
+  }, [datos])
   if (!datos) return null
 
   const campo = (k: string, label: string, ayuda?: string, tipo = "text") => (
@@ -522,6 +529,41 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
     ? Math.max(0, Math.round((Date.now() - new Date(baseFecha + "T00:00:00").getTime()) / 86400000))
     : 0
   const pesoHoy = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+
+  // ── Peso y banda a la fecha de venta
+  const fv = f.fecha_venta_estimada || ""
+  const diasVenta = fv && baseFecha
+    ? Math.max(0, Math.round((new Date(fv + "T00:00:00").getTime()
+        - new Date(baseFecha + "T00:00:00").getTime()) / 86400000))
+    : 0
+  const pesoVenta = parseNum(String(f.peso_base_kg ?? "0"))
+    + diasVenta * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+  const bandaVenta = categoriaPrecio(String(f.categoria ?? ""), pesoVenta)
+
+  // Lo que dice la TABLA para ese peso, para poder comparar con lo guardado
+  const desbTabla = pctDesbaste(String(f.categoria ?? ""), pesoVenta) * 100
+  const czTabla = pctCz(String(f.categoria ?? ""), pesoVenta) * 100
+  const pctCzNum = parseNum(String(f.pct_cz ?? "0")) / 100
+
+  // Bruto y neto enlazados: manda el que se escribio ultimo
+  const precioBruto = modoPrecio === "neto"
+    ? brutoDesdeNeto(parseNum(precioNetoManual), pctCzNum)
+    : parseNum(String(f.precio_kg_override ?? "0"))
+  const precioNetoTxt = modoPrecio === "neto"
+    ? precioNetoManual
+    : (precioBruto > 0 ? fmtAR(netoDesdeBruto(precioBruto, pctCzNum)) : "")
+
+  // ── Desglose por cabeza y por lote
+  const cab = parseNum(String(f.cantidad ?? "0"))
+  const pesoNetoUni = pesoVenta * (1 - parseNum(String(f.pct_desbaste ?? "0")) / 100)
+  const kgB = cab * pesoVenta
+  const kgD = kgB - cab * pesoNetoUni
+  const kgN = cab * pesoNetoUni
+  const pr = precioBruto
+  const vn = kgN * pr
+  const iva = vn * parseNum(String(f.alicuota_iva ?? "0")) / 100
+  const cz = vn * pctCzNum
+  const iibb = vn * parseNum(String(f.alicuota_iibb ?? "0")) / 100
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
@@ -565,6 +607,7 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
             <p className="mb-2 text-[11px] font-medium text-emerald-900">
               Venta presupuestada — sin fecha, el lote no entra al presupuesto como ingreso
             </p>
+
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-xs text-gray-500">Fecha de venta</label>
@@ -572,76 +615,113 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                   onChange={e => setF({ ...f, fecha_venta_estimada: e.target.value })} />
               </div>
               <div>
-                <label className="text-xs text-gray-500">Precio $/kg bruto</label>
-                <Input className="h-8 text-right" value={f.precio_kg_override ?? ""}
-                  onChange={e => setF({ ...f, precio_kg_override: e.target.value })} />
-                <p className="mt-1 text-[10px] text-gray-400">vacío = usa la banda de peso</p>
+                <label className="text-xs text-gray-500">Plazo de cobro</label>
+                <Input className="h-8 text-right" placeholder="0/30/60"
+                  value={f.plazo_cobro ?? "0"}
+                  onChange={e => setF({ ...f, plazo_cobro: e.target.value })} />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  días separados por / — 0 · 30 · 0/30 · 37/67
+                </p>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">…o precio NETO de CZ</label>
-                <Input className="h-8 text-right"
-                  placeholder={f.precio_kg_override
-                    ? fmtAR(netoDesdeBruto(parseNum(String(f.precio_kg_override)), parseNum(String(f.pct_cz ?? "0")) / 100))
-                    : ""}
-                  value={f.__precio_neto ?? ""}
-                  onChange={e => {
-                    const neto = e.target.value
-                    const bruto = neto.trim() === "" ? "" : fmtAR(
-                      brutoDesdeNeto(parseNum(neto), parseNum(String(f.pct_cz ?? "0")) / 100))
-                    setF({ ...f, __precio_neto: neto, precio_kg_override: bruto })
-                  }} />
-                <p className="mt-1 text-[10px] text-gray-400">se calcula el bruto en reversa</p>
+              <div className="flex flex-col justify-center rounded bg-white px-2 py-1">
+                <span className="text-[10px] text-gray-500">Peso a la venta</span>
+                <span className="text-base font-semibold text-gray-800">{n1(pesoVenta)} kg</span>
+                <span className="text-[9px] text-gray-400">{bandaVenta}</span>
               </div>
-              {campo("plazo_cobro", "Plazo de cobro", "0 · 30 · 30/60 · 30/60/90")}
             </div>
 
+            {/* Bruto ↔ neto: el que se escribe manda y el otro se recalcula, también
+                cuando cambia la CZ. */}
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-gray-500">
+                  Precio $/kg bruto {modoPrecio === "bruto" && <span className="text-emerald-600">←</span>}
+                </label>
+                <Input className="h-8 text-right" value={f.precio_kg_override ?? ""}
+                  onChange={e => { setModoPrecio("bruto"); setF({ ...f, precio_kg_override: e.target.value }) }} />
+                <p className="mt-1 text-[10px] text-gray-400">vacío = usa la banda</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">
+                  …o neto de CZ {modoPrecio === "neto" && <span className="text-emerald-600">←</span>}
+                </label>
+                <Input className="h-8 text-right" value={precioNetoTxt}
+                  onChange={e => { setModoPrecio("neto"); setPrecioNetoManual(e.target.value) }} />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  {modoPrecio === "neto" ? "manda este; el bruto se calcula" : "se calcula del bruto"}
+                </p>
+              </div>
+              <div className="flex flex-col justify-center rounded bg-white px-2 py-1">
+                <span className="text-[10px] text-gray-500">Se cobra por kg</span>
+                <span className="text-base font-semibold text-emerald-800">
+                  {precioBruto > 0 ? fmtAR(precioBruto * (1 - pctCzNum)) : "—"}
+                </span>
+                <span className="text-[9px] text-gray-400">bruto {fmtAR(precioBruto)} − CZ</span>
+              </div>
+            </div>
+
+            {/* Desbaste y CZ, con lo que dice la tabla al lado */}
             <div className="mt-3 grid grid-cols-4 gap-3">
-              {campo("pct_desbaste", "% Desbaste", "merma de kg")}
-              {campo("pct_cz", "% CZ", "comercialización")}
+              <div>
+                <label className="text-xs text-gray-500">% Desbaste</label>
+                <Input className="h-8 text-right" value={f.pct_desbaste ?? ""}
+                  onChange={e => setF({ ...f, pct_desbaste: e.target.value })} />
+                <p className={`mt-1 text-[10px] ${desbTabla !== parseNum(String(f.pct_desbaste ?? "0")) ? "text-amber-600" : "text-gray-400"}`}>
+                  tabla: {n1(desbTabla)}%
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">% CZ</label>
+                <Input className="h-8 text-right" value={f.pct_cz ?? ""}
+                  onChange={e => setF({ ...f, pct_cz: e.target.value })} />
+                <p className={`mt-1 text-[10px] ${czTabla !== parseNum(String(f.pct_cz ?? "0")) ? "text-amber-600" : "text-gray-400"}`}>
+                  tabla: {n1(czTabla)}%
+                </p>
+              </div>
               {campo("alicuota_iva", "% IVA", "hacienda 10,5")}
               {campo("alicuota_iibb", "% IIBB", "mes siguiente")}
             </div>
 
-            {/* Desglose en vivo: se ve la cadena completa antes de guardar */}
-            {f.fecha_venta_estimada && (() => {
-              const cab = parseNum(String(f.cantidad ?? "0"))
-              const desde = f.fecha_peso || f.fecha_disponible || f.fecha_venta_estimada
-              const dias = Math.max(0, Math.round(
-                (new Date(f.fecha_venta_estimada + "T00:00:00").getTime()
-                 - new Date(desde + "T00:00:00").getTime()) / 86400000))
-              const peso = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
-              const kgB = cab * peso
-              const kgD = kgB * parseNum(String(f.pct_desbaste ?? "0")) / 100
-              const kgN = kgB - kgD
-              const pr = parseNum(String(f.precio_kg_override ?? "0"))
-              const vn = kgN * pr
-              const iva = vn * parseNum(String(f.alicuota_iva ?? "0")) / 100
-              const cz = vn * parseNum(String(f.pct_cz ?? "0")) / 100
-              const iibb = vn * parseNum(String(f.alicuota_iibb ?? "0")) / 100
-              return (
-                <table className="mt-3 w-full text-[11px]">
-                  <tbody>
-                    {[
-                      ["Peso a la venta", `${n1(peso)} kg/cab`, ""],
-                      ["Kg brutos", `${n0(kgB)} kg`, ""],
-                      ["− Desbaste", `−${n0(kgD)} kg`, "text-amber-700"],
-                      ["Kg netos (los que se cobran)", `${n0(kgN)} kg`, "font-semibold"],
-                      ["Venta neta", pr > 0 ? fmtPesos(vn) : "falta precio", "font-semibold"],
-                      ["+ IVA", fmtPesos(iva), "text-gray-500"],
-                      ["Total factura", fmtPesos(vn + iva), ""],
-                      ["− CZ comercialización", `−${fmtPesos(cz)}`, "text-amber-700"],
-                      ["INGRESA AL BANCO", fmtPesos(vn + iva - cz), "font-bold text-emerald-800"],
-                      ["IIBB (mes siguiente)", `−${fmtPesos(iibb)}`, "text-amber-700"],
-                    ].map(([l, v, c]) => (
-                      <tr key={l as string} className="border-b border-gray-100 last:border-0">
-                        <td className={`py-0.5 ${c}`}>{l}</td>
-                        <td className={`py-0.5 text-right ${c}`}>{v}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            })()}
+            {(desbTabla !== parseNum(String(f.pct_desbaste ?? "0"))
+              || czTabla !== parseNum(String(f.pct_cz ?? "0"))) && (
+              <button type="button"
+                className="mt-1.5 text-[11px] text-blue-600 underline"
+                onClick={() => setF({ ...f, pct_desbaste: n1(desbTabla), pct_cz: n1(czTabla) })}>
+                Aplicar los valores de la tabla ({n1(desbTabla)}% y {n1(czTabla)}%)
+              </button>
+            )}
+
+            {/* Desglose: por cabeza y por lote, siempre las dos columnas */}
+            {f.fecha_venta_estimada && (
+              <table className="mt-3 w-full text-[11px]">
+                <thead>
+                  <tr className="border-b text-gray-500">
+                    <th className="py-0.5 text-left font-medium"></th>
+                    <th className="py-0.5 text-right font-medium">por cabeza</th>
+                    <th className="py-0.5 text-right font-medium">por lote ({n0(cab)})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    ["Peso bruto", `${n1(pesoVenta)} kg`, `${n0(kgB)} kg`, ""],
+                    ["− Desbaste", `−${n1(pesoVenta - pesoNetoUni)} kg`, `−${n0(kgD)} kg`, "text-amber-700"],
+                    ["Kg netos (se cobran)", `${n1(pesoNetoUni)} kg`, `${n0(kgN)} kg`, "font-semibold"],
+                    ["Venta neta", pr > 0 ? fmtPesos(vn / (cab || 1)) : "falta precio", pr > 0 ? fmtPesos(vn) : "—", "font-semibold"],
+                    ["+ IVA", fmtPesos(iva / (cab || 1)), fmtPesos(iva), "text-gray-500"],
+                    ["Total factura", fmtPesos((vn + iva) / (cab || 1)), fmtPesos(vn + iva), ""],
+                    ["− CZ", `−${fmtPesos(cz / (cab || 1))}`, `−${fmtPesos(cz)}`, "text-amber-700"],
+                    ["INGRESA", fmtPesos((vn + iva - cz) / (cab || 1)), fmtPesos(vn + iva - cz), "font-bold text-emerald-800"],
+                    ["IIBB (mes sig.)", `−${fmtPesos(iibb / (cab || 1))}`, `−${fmtPesos(iibb)}`, "text-amber-700"],
+                  ].map(([l, u, t, c]) => (
+                    <tr key={l as string} className="border-b border-gray-100 last:border-0">
+                      <td className={`py-0.5 ${c}`}>{l}</td>
+                      <td className={`py-0.5 text-right ${c}`}>{u}</td>
+                      <td className={`py-0.5 text-right ${c}`}>{t}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {dias > 0 && parseNum(String(f.ganancia_diaria_kg ?? "0")) > 0 && (
@@ -659,7 +739,13 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
-            <Button onClick={() => onGuardar(f)}>Guardar</Button>
+            <Button onClick={() => onGuardar({
+              ...f,
+              // Si se escribio el NETO, lo que se persiste es el bruto equivalente
+              precio_kg_override: modoPrecio === "neto"
+                ? (precioNetoManual.trim() === "" ? "" : fmtAR(precioBruto))
+                : f.precio_kg_override,
+            })}>Guardar</Button>
           </div>
         </div>
       </DialogContent>
