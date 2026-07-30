@@ -15,7 +15,14 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
-import { parseNumeroAR } from "@/lib/format/numero"
+import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
+import {
+  segmentosCurva, curvaDeLote, tramosParaCosto, solapamientos, gananciaEsManual,
+  type TramoLote, type LoteCurva,
+} from "@/lib/productivo/tramos"
+import {
+  consumoMensual, type Actividad, type InsumoActividad,
+} from "@/lib/productivo/actividades"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete, pesoDestete,
   categoriaSegunFecha, valuarLoteConPrecios, CATEGORIAS_VENTA,
@@ -68,6 +75,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
    */
   const [fotoPesada, setFotoPesada] = useState<Record<string, { cabezas: number; peso: number }>>({})
   const [precios, setPrecios] = useState<PrecioHacienda[]>([])
+  // Actividades y tramos: definen la curva de peso del lote y su costo de alimentacion
+  const [tramos, setTramos] = useState<TramoLote[]>([])
+  const [actividades, setActividades] = useState<Actividad[]>([])
+  const [insumosAct, setInsumosAct] = useState<InsumoActividad[]>([])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -83,6 +94,15 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
       setLotes((ls || []) as LoteStock[])
       setVentas((vs || []) as VentaStock[])
+
+      const [{ data: tr }, { data: acts }, { data: insAct }] = await Promise.all([
+        supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
+        supabase.schema("productivo").from("actividades").select("*").eq("activo", true).order("nombre"),
+        supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
+      ])
+      setTramos((tr || []) as TramoLote[])
+      setActividades((acts || []) as Actividad[])
+      setInsumosAct((insAct || []) as InsumoActividad[])
 
       const { data: pr } = await supabase.from("precios_hacienda")
         .select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta")
@@ -116,6 +136,9 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   useEffect(() => { cargar() }, [cargar])
 
   const ventasDe = (loteId: string) => ventas.filter(v => v.lote_id === loteId)
+  const tramosDe = (loteId: string) => tramos.filter(t => t.lote_id === loteId)
+  /** Curva de peso del lote: quebrada si tiene tramos de actividad, recta si no. */
+  const curvaDe = (l: LoteStock) => curvaDeLote(l as unknown as LoteCurva, tramosDe(l.id), actividades)
 
   const guardar = async (f: any) => {
     if (!f.categoria || !f.fecha_disponible || !f.cantidad) {
@@ -131,6 +154,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       peso_base_kg: parseNum(String(f.peso_base_kg)),
       fecha_peso: f.fecha_peso || f.fecha_disponible || null,
       ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
+      ganancia_override: Boolean(f.ganancia_override),
       fecha_venta_estimada: f.fecha_venta_estimada || null,
       precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
         ? null : parseNum(String(f.precio_kg_override)),
@@ -343,9 +367,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   const vendidas = vs.reduce((s, v) => s + Number(v.cantidad || 0), 0)
                   const quedan = cantidadDisponible(l, vs)
                   const hoy = new Date().toISOString().slice(0, 10)
-                  const pesoHoy = pesoEstimado(l, hoy)
+                  const curva = curvaDe(l)
+                  const pesoHoy = pesoEstimado(l, hoy, curva)
                   const des = desactualizado(l)
-                  const val = valuarLoteConPrecios(l, vs, precios)
+                  const val = valuarLoteConPrecios(l, vs, precios, curva)
                   return (
                     <tr key={l.id} className={`border-b hover:bg-gray-50 ${des ? "bg-amber-50/40" : ""}`}>
                       <td className="px-3 py-2">{l.categoria}</td>
@@ -481,12 +506,13 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           <span className="font-semibold text-emerald-800">
             Total presupuestado:{" "}
             {fmtPesos(lotes.reduce((s, l) =>
-              s + valuarLoteConPrecios(l, ventasDe(l.id), precios).monto, 0))}
+              s + valuarLoteConPrecios(l, ventasDe(l.id), precios, curvaDe(l)).monto, 0))}
           </span>
         </div>
       )}
 
-      <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
+      <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar}
+        tramos={tramos} actividades={actividades} insumos={insumosAct} onCambio={cargar} />
       <ModalGenerar abierto={modalGenerar} filas={modalGenerar ? filasGenerar() : []}
         guardando={generando}
         onCerrar={() => setModalGenerar(false)} onAplicar={aplicarGenerar} />
@@ -500,8 +526,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
 // ── Modal de lote ─────────────────────────────────────────────────────────────
 
-function ModalLote({ datos, onCerrar, onGuardar }: {
+function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, onCambio }: {
   datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
+  tramos: TramoLote[]; actividades: Actividad[]; insumos: InsumoActividad[]
+  onCambio: () => Promise<void>
 }) {
   const [f, setF] = useState<any>({})
   /** Cual de los dos precios manda: el que se escribio ultimo. El otro se recalcula,
@@ -528,7 +556,20 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
   const dias = baseFecha
     ? Math.max(0, Math.round((Date.now() - new Date(baseFecha + "T00:00:00").getTime()) / 86400000))
     : 0
-  const pesoHoy = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+  // El peso sale de la CURVA: con tramos de actividad la ganancia cambia en el camino,
+  // asi que ya no alcanza con base + dias x ganancia.
+  const loteCurva: LoteCurva = {
+    cantidad: parseNum(String(f.cantidad ?? "0")),
+    peso_base_kg: parseNum(String(f.peso_base_kg ?? "0")),
+    ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg ?? "0")),
+    fecha_disponible: String(f.fecha_disponible ?? ""),
+    fecha_peso: f.fecha_peso ?? null,
+    ganancia_override: Boolean(f.ganancia_override),
+  }
+  const misTramos = tramos.filter(t => t.lote_id === f.id)
+  const curvaModal = curvaDeLote(loteCurva, misTramos, actividades)
+  const hoyIso = new Date().toISOString().slice(0, 10)
+  const pesoHoy = curvaModal(hoyIso)
 
   // ── Peso y banda a la fecha de venta
   const fv = f.fecha_venta_estimada || ""
@@ -538,9 +579,7 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
     : 0
   // Sin fecha de venta se calcula a HOY: el desglose tiene que verse igual, es el dato
   // que el usuario quiere tener siempre a la vista.
-  const pesoVenta = fv
-    ? parseNum(String(f.peso_base_kg ?? "0")) + diasVenta * parseNum(String(f.ganancia_diaria_kg ?? "0"))
-    : pesoHoy
+  const pesoVenta = fv ? curvaModal(fv) : pesoHoy
   const bandaVenta = categoriaPrecio(String(f.categoria ?? ""), pesoVenta)
 
   // Lo que dice la TABLA para ese peso, para poder comparar con lo guardado
@@ -604,6 +643,9 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
             </div>
             {campo("ganancia_diaria_kg", "Ganancia diaria (kg/día)", "0 = se vende sin engordar")}
           </div>
+
+          <SeccionTramos loteId={f.id ?? null} lote={{ ...loteCurva, fecha_venta_estimada: fv } as LoteCurva}
+            tramos={tramos} actividades={actividades} insumos={insumos} onCambio={onCambio} />
 
           {/* Proyección de venta: sin fecha el lote es sólo inventario */}
           <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5">
@@ -1389,5 +1431,207 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ── Tramos de actividad del lote ──────────────────────────────────────────────
+//
+// Acá se dice "este lote hace recría del 1/4 al 30/9 y engorde después". De eso salen dos
+// cosas a la vez: la CURVA DE PESO (que define el peso a la venta, y por lo tanto la banda de
+// precio y la factura) y el COSTO de alimentación. Antes la ganancia diaria se tipeaba suelta
+// en el lote y podía no tener nada que ver con lo que se le estaba dando de comer.
+
+function SeccionTramos({
+  loteId, lote, tramos, actividades, insumos, onCambio,
+}: {
+  loteId: string | null
+  lote: LoteCurva
+  tramos: TramoLote[]
+  actividades: Actividad[]
+  insumos: InsumoActividad[]
+  onCambio: () => Promise<void>
+}) {
+  const [guardando, setGuardando] = useState(false)
+
+  const mios = tramos.filter(t => t.lote_id === loteId)
+    .sort((a, b) => a.fecha_desde.localeCompare(b.fecha_desde) || a.orden - b.orden)
+  const pisados = solapamientos(mios)
+  const manual = gananciaEsManual(lote, mios)
+
+  // Hasta dónde dibujar la curva: la venta si está, si no el final del último tramo
+  const hasta = String(lote.fecha_peso || lote.fecha_disponible || "")
+  const fin = (lote as any).fecha_venta_estimada || mios[mios.length - 1]?.fecha_hasta || hasta
+  const segs = segmentosCurva(lote, mios, actividades, fin)
+
+  const costo = tramosParaCosto(lote, mios, actividades, insumos)
+    .flatMap(t => consumoMensual(t))
+  const costoTotal = costo.reduce((s, m) => s + m.costo_total, 0)
+  const cab = Number(lote.cantidad) || 0
+
+  const agregar = async () => {
+    if (!loteId) return
+    const ultimo = mios[mios.length - 1]
+    const desde = ultimo?.fecha_hasta || String(lote.fecha_peso || lote.fecha_disponible || "").slice(0, 10)
+    const d = new Date(desde + "T00:00:00")
+    d.setMonth(d.getMonth() + 6)
+    setGuardando(true)
+    const { error } = await supabase.schema("productivo").from("lote_tramos").insert({
+      lote_id: loteId,
+      actividad_id: actividades[0]?.id,
+      orden: mios.length + 1,
+      fecha_desde: desde,
+      fecha_hasta: d.toISOString().slice(0, 10),
+    })
+    setGuardando(false)
+    if (error) { alert("Error: " + error.message); return }
+    await onCambio()
+  }
+
+  const actualizar = async (id: string, campos: Record<string, unknown>) => {
+    setGuardando(true)
+    const { error } = await supabase.schema("productivo").from("lote_tramos")
+      .update({ ...campos, updated_at: new Date().toISOString() }).eq("id", id)
+    setGuardando(false)
+    if (error) { alert("Error: " + error.message); return }
+    await onCambio()
+  }
+
+  const borrar = async (id: string) => {
+    const { error } = await supabase.schema("productivo").from("lote_tramos").delete().eq("id", id)
+    if (error) { alert("Error: " + error.message); return }
+    await onCambio()
+  }
+
+  return (
+    <div className="rounded border border-violet-200 bg-violet-50/40 p-2.5">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[11px] font-medium text-violet-900">
+          Actividades del lote — de acá salen el peso a la venta y el costo de alimentación
+        </p>
+        {loteId && actividades.length > 0 && (
+          <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={agregar} disabled={guardando}>
+            <Plus className="mr-1 h-3 w-3" /> tramo
+          </Button>
+        )}
+      </div>
+
+      {!loteId ? (
+        <p className="py-2 text-center text-[11px] text-gray-500">
+          Guardá el lote primero y después le asignás las actividades.
+        </p>
+      ) : actividades.length === 0 ? (
+        <p className="py-2 text-center text-[11px] text-gray-500">
+          No hay actividades cargadas. Se crean en Presupuesto → Actividades y costos.
+        </p>
+      ) : (
+        <>
+          {mios.length === 0 ? (
+            <p className="py-2 text-center text-[11px] text-gray-500">
+              Sin actividades. El peso crece con la ganancia diaria de arriba.
+            </p>
+          ) : (
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b text-[10px] text-gray-500">
+                  <th className="py-0.5 text-left font-medium">Actividad</th>
+                  <th className="py-0.5 text-left font-medium">Desde</th>
+                  <th className="py-0.5 text-left font-medium">Hasta</th>
+                  <th className="py-0.5 text-right font-medium">Ha</th>
+                  <th className="py-0.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {mios.map(t => (
+                  <tr key={t.id} className="border-b border-gray-100 last:border-0">
+                    <td className="py-1 pr-2">
+                      <select className="h-7 w-full rounded border border-gray-200 px-1 text-[11px]"
+                        value={t.actividad_id}
+                        onChange={e => actualizar(t.id, { actividad_id: e.target.value })}>
+                        {actividades.map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.nombre} ({n1(Number(a.ganancia_diaria_kg))} kg/día)
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-1 pr-2">
+                      <Input type="date" className="h-7 text-[11px]" value={t.fecha_desde}
+                        onChange={e => actualizar(t.id, { fecha_desde: e.target.value })} />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <Input type="date" className="h-7 text-[11px]" value={t.fecha_hasta}
+                        onChange={e => actualizar(t.id, { fecha_hasta: e.target.value })} />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <Input className="h-7 w-16 text-right text-[11px]"
+                        value={t.hectareas == null ? "" : fmtNumeroAR(Number(t.hectareas), 0)}
+                        onChange={e => actualizar(t.id, { hectareas: parseNumeroAR(e.target.value) || null })} />
+                    </td>
+                    <td className="py-1 text-right">
+                      <button type="button" className="text-gray-300 hover:text-red-500"
+                        onClick={() => borrar(t.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {pisados.length > 0 && (
+            <p className="mt-1.5 rounded bg-amber-100 px-2 py-1 text-[10px] text-amber-800">
+              ⚠️ Hay tramos que se pisan. El peso se calcula igual, pero el costo cuenta los dos
+              — revisá las fechas.
+            </p>
+          )}
+
+          {/* La curva resultante: es lo que hace visible que el peso ya no es una recta */}
+          {segs.length > 0 && (
+            <div className="mt-2 rounded bg-white p-2">
+              <p className="mb-1 text-[10px] font-medium text-gray-600">Curva de peso</p>
+              {segs.map((s, idx) => (
+                <div key={idx} className="flex items-baseline justify-between text-[10px]">
+                  <span className={s.actividad ? "text-gray-700" : "text-amber-700"}>
+                    {s.actividad ?? "sin actividad asignada"}
+                    <span className="ml-1 text-gray-400">
+                      {s.dias} días × {n1(s.ganancia_diaria_kg)} kg
+                    </span>
+                  </span>
+                  <span className="font-medium text-gray-700">
+                    {n1(s.peso_inicio)} → {n1(s.peso_fin)} kg
+                  </span>
+                </div>
+              ))}
+              {costoTotal > 0 && (
+                <p className="mt-1 border-t pt-1 text-[10px] text-gray-600">
+                  Costo de alimentación:{" "}
+                  <strong>${Math.round(costoTotal).toLocaleString("es-AR")}</strong>
+                  {cab > 0 && (
+                    <span className="text-gray-400">
+                      {" "}· ${Math.round(costoTotal / cab).toLocaleString("es-AR")} por cabeza
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
+          {mios.length > 0 && (
+            <label className="mt-2 flex items-center gap-1.5 text-[10px] text-gray-600">
+              <input type="checkbox" checked={Boolean(lote.ganancia_override)}
+                onChange={async e => {
+                  if (!loteId) return
+                  await supabase.schema("productivo").from("stock_lotes")
+                    .update({ ganancia_override: e.target.checked }).eq("id", loteId)
+                  await onCambio()
+                }} />
+              Usar la ganancia diaria de arriba en vez de la de las actividades
+              {manual && <span className="ml-1 font-medium text-amber-700">← activo</span>}
+            </label>
+          )}
+        </>
+      )}
+    </div>
   )
 }

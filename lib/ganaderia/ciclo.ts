@@ -297,6 +297,13 @@ export function calcularLineaTiempo(ciclos: CicloStock[]): CicloCalculado[] {
 
 // ── Lotes vendibles ───────────────────────────────────────────────────────────
 
+/**
+ * Peso por cabeza en una fecha. Con tramos de actividad la ganancia diaria cambia a lo
+ * largo del tiempo, así que el peso deja de ser una recta y hay que preguntárselo a la
+ * curva. La arma `curvaDeLote()` en `lib/productivo/tramos.ts`.
+ */
+export type CurvaPeso = (fecha: string) => number
+
 export interface LoteStock {
   id: string
   empresa: string
@@ -310,6 +317,8 @@ export interface LoteStock {
   fecha_peso: string | null
   /** Si no se vende al destete y se recría, engorda esto por día. */
   ganancia_diaria_kg: number
+  /** true = la ganancia del lote pisa la de los tramos de actividad (override manual). */
+  ganancia_override?: boolean | null
   /** Lo que dio el cálculo la última vez. Si difiere de `cantidad`, se editó a mano. */
   cantidad_calculada: number | null
   /** Cuándo se piensa vender. NULL = disponible sin fecha, no es ingreso presupuestado. */
@@ -569,6 +578,7 @@ export function valuarLote(
   lote: LoteStock,
   ventas: Pick<VentaStock, 'cantidad'>[],
   precioDeTabla: (categoria: string, anio: number, mes: number) => { precio: number; arrastrado: boolean },
+  curva?: CurvaPeso,
 ): ValuacionLote {
   const cabezas = cantidadDisponible(lote, ventas)
   const fv = lote.fecha_venta_estimada
@@ -582,7 +592,7 @@ export function valuarLote(
 
   if (!fv) return vacio(Number(lote.peso_base_kg))
 
-  const peso = pesoEstimado(lote, fv)
+  const peso = pesoEstimado(lote, fv, curva)
   const [anio, mes] = fv.split('-').map(Number)
 
   const p = lote.precio_kg_override != null
@@ -650,15 +660,16 @@ export function valuarLoteConPrecios(
   lote: LoteStock,
   ventas: Pick<VentaStock, 'cantidad'>[],
   precios: PrecioHacienda[],
+  curva?: CurvaPeso,
 ): ValuacionLote & { banda: string | null } {
   const fv = lote.fecha_venta_estimada
-  const peso = fv ? pesoEstimado(lote, fv) : Number(lote.peso_base_kg)
+  const peso = fv ? pesoEstimado(lote, fv, curva) : Number(lote.peso_base_kg)
   const banda = categoriaPrecio(lote.categoria, peso)
 
   const v = valuarLote(lote, ventas, (_cat, anio, mes) => {
     const r = resolverPrecioHacienda(precios, banda, anio, mes, null)
     return { precio: r.precio_pesos_kg, arrastrado: r.arrastrado }
-  })
+  }, curva)
   return { ...v, banda }
 }
 
@@ -679,7 +690,12 @@ export function diasEntre(desde: string, hasta: string): number {
 export function pesoEstimado(
   lote: Pick<LoteStock, 'fecha_disponible' | 'fecha_peso' | 'peso_base_kg' | 'ganancia_diaria_kg'>,
   fechaVenta: string,
+  curva?: CurvaPeso,
 ): number {
+  // Con tramos de actividad la ganancia NO es constante (recría 0,5 → engorde 0,7): la
+  // curva se pasa como callback desde `lib/productivo/tramos.ts`. Se recibe como función
+  // y no importando ese módulo para no armar un import circular.
+  if (curva) return curva(fechaVenta)
   const desde = lote.fecha_peso ?? lote.fecha_disponible
   const dias = diasEntre(desde, fechaVenta)
   return Number(lote.peso_base_kg) + dias * Number(lote.ganancia_diaria_kg)

@@ -11472,3 +11472,37 @@ FROM a CROSS JOIN (VALUES
   (2,'Concentrado', 'pct_racion', 0.15, 'kg', 'diario', 745.0)
 ) AS v(orden, concepto, modo, valor, unidad, momento, precio);
 ```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Tramos de actividad por lote (FASE C · C-3/C-4)
+
+La actividad aplicada a un lote entre dos fechas. De acá salen **la curva de peso** (que define
+el peso a la venta, la banda de precio y la factura) **y el costo** de alimentación.
+
+```sql
+CREATE TABLE productivo.lote_tramos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lote_id uuid NOT NULL REFERENCES productivo.stock_lotes(id) ON DELETE CASCADE,
+  -- restrict a propósito: borrar una actividad usada por un tramo tiene que fallar fuerte,
+  -- no dejar el tramo sin parámetros en silencio.
+  actividad_id uuid NOT NULL REFERENCES productivo.actividades(id) ON DELETE RESTRICT,
+  orden integer NOT NULL DEFAULT 0,
+  fecha_desde date NOT NULL,
+  fecha_hasta date NOT NULL,
+  hectareas numeric(10,2),        -- sólo para los costos por hectárea (verdeo)
+  notas text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT lote_tramos_fechas CHECK (fecha_hasta > fecha_desde)
+);
+CREATE INDEX idx_lote_tramos_lote ON productivo.lote_tramos(lote_id, orden);
+ALTER TABLE productivo.lote_tramos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY lote_tramos_all ON productivo.lote_tramos FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON productivo.lote_tramos TO anon, authenticated, service_role;
+
+-- C-4: la ganancia diaria del lote pasa a salir de los tramos. `ganancia_diaria_kg` queda
+-- como fallback (días sin tramo) y, con este flag, como override manual explícito.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS ganancia_override boolean NOT NULL DEFAULT false;
+```

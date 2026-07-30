@@ -118,7 +118,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Agrícola** | `lotes_agricolas`, `ordenes_agricolas`, `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
 | **Evolución del rodeo** (2026-07-29) | `stock_ciclos`, `stock_lotes`, `stock_ventas` |
-| **Actividades y costos** (2026-07-30) | `actividades`, `actividad_insumos` |
+| **Actividades y costos** (2026-07-30) | `actividades`, `actividad_insumos`, `lote_tramos` |
 
 **Evolución del rodeo** — línea de tiempo proyectada del stock de cría (modelo de la solapa
 "ciclo ganadero" del Excel). **No están en el backup.**
@@ -135,6 +135,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 |-------|-----------|
 | `actividades` | Parámetros de una actividad (recría, engorde, …): **el rinde** (`ganancia_diaria_kg`), la ración como % del peso vivo y la mortandad. Asignar la actividad define el ingreso **y** el costo de una sola vez, porque la curva de peso con que se factura la venta sale del mismo número que los kilos de maíz que se compran. |
 | `actividad_insumos` | Los costos directos de esa actividad, **uno por fila**. Es tabla hija y no columnas fijas a propósito: cada actividad tiene sus propios insumos, y una nueva no debe exigir migrar la tabla. |
+| `lote_tramos` | La actividad aplicada a un lote entre dos fechas, encadenables (recría y después engorde). `actividad_id` con `ON DELETE RESTRICT`: borrar una actividad en uso tiene que fallar fuerte. |
 
 El costo directo **no se registra en ningún lado** — no es template ni factura esperada. Es una
 **consecuencia calculada** de la actividad que se decide hacer, igual que el IIBB de la venta de
@@ -145,6 +146,18 @@ arrendamiento. Decisión del usuario, 2026-07-30.
 `pct_racion` · `kg_cabeza_dia` · `unid_cabeza_mes` · `unid_cabeza_evento` ·
 `dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_mes`.
 `momento` (`diario`/`mensual`/`inicio`/`fin`) ubica el gasto en el tramo.
+
+**La curva de peso sale de los tramos y es QUEBRADA** (`lib/productivo/tramos.ts`). Con recría a
+0,5 kg/día y engorde a 0,7 el peso deja de ser `base + días × ganancia`: hay que integrar tramo
+por tramo. Precedencia: `stock_lotes.ganancia_override` (override manual) → la ganancia de la
+actividad del tramo → la del lote para los días sin tramo. Motivo: si el lote y la actividad
+llevan cada uno su ganancia y divergen, el peso con que se factura la venta y los kilos de maíz
+que se compran describen dos animales distintos.
+
+`pesoEstimado()`, `valuarLote()` y `valuarLoteConPrecios()` de `lib/ganaderia/ciclo.ts` reciben
+un `curva?: CurvaPeso` **opcional** — una función `(fecha) => peso`. Se pasa como callback y no
+importando `lib/productivo/tramos.ts` para evitar un import circular entre ganadería y
+productivo; sin ella se comportan como antes.
 
 Motor en `lib/productivo/racion.ts` (ración y margen, compartido con el análisis de engorde) y
 `lib/productivo/actividades.ts` (`consumoMensual()` reparte el tramo mes a mes; el consumo

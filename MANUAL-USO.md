@@ -526,6 +526,26 @@ superficie que después aprovecha la hacienda que la pastorea.
 **Cuándo** (diario / mensual / inicio / fin) ubica el gasto dentro del período. Cada modo trae
 el suyo por defecto y lo podés cambiar.
 
+### Asignarle la actividad a un lote
+En **Productivo → Evolución Rodeo → editar un lote** hay un bloque violeta *"Actividades del
+lote"*. Ahí decís *"recría del 1/4 al 1/10, engorde del 1/10 al 1/1"* y de eso salen **dos cosas
+a la vez**: el peso a la venta y el costo de alimentación.
+
+**El peso deja de crecer en línea recta.** Si la recría gana 0,5 kg/día y el engorde 0,7, el
+animal no engorda parejo — y el bloque te muestra la curva por tramo:
+
+
+
+Con la ganancia suelta del lote (0,3 kg/día) ese mismo animal daba 302 kg. Son 73 kg de
+diferencia por cabeza, y como **el peso define la banda de precio**, cambia también el $/kg.
+
+- Los días **sin actividad asignada** aparecen en ámbar y usan la ganancia diaria del lote.
+- Si dos tramos **se pisan**, te avisa: el peso sale igual pero el costo contaría los dos.
+- El checkbox **"usar la ganancia diaria de arriba"** ignora las actividades y vuelve a la recta.
+  Es la salida de emergencia cuando sabés algo que el sistema no.
+
+El costo de alimentación del lote aparece abajo de la curva, total y por cabeza.
+
 ### El simulador
 Abajo de cada actividad, **"Simular cómo cae el gasto en el tiempo"**. Ponés cabezas, peso
 inicial y fechas y ves el reparto mes a mes. **No guarda nada** — es para chequear que los

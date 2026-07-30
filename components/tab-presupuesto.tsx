@@ -34,6 +34,8 @@ import {
   disponiblePorDiferencia, existenciasDePesada, existenciasDeCiclos,
   type DisponibleCategoria,
 } from "@/lib/ganaderia/disponibilidad"
+import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
+import type { Actividad } from "@/lib/productivo/actividades"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -465,10 +467,14 @@ export function TabPresupuesto() {
 
   // ── INGRESOS: venta de hacienda (lotes de Productivo) ───────────────────────
   const cargarHacienda = async () => {
-    const [{ data: lotes }, { data: precios }, { data: ciclos }, { data: pes }] = await Promise.all([
+    const [{ data: lotes }, { data: precios }, { data: ciclos }, { data: tra }, { data: acts }, { data: pes }] = await Promise.all([
       supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
       supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
       supabase.schema("productivo").from("stock_ciclos").select("*").eq("empresa", "MSA"),
+      // Tramos y actividades: la curva de peso del lote es quebrada si cambia de actividad,
+      // y el peso a la venta define la banda de precio -> tiene que ser la MISMA que en Productivo.
+      supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
+      supabase.schema("productivo").from("actividades").select("*"),
       // Pesada viva: es la fuente real de cuántas cabezas hay hoy. El lote es un recorte
       // de esto, no el total — por eso lo disponible se calcula por diferencia.
       supabase.schema("productivo").from("pesadas_terneros")
@@ -484,6 +490,10 @@ export function TabPresupuesto() {
     const listaVentas = ((vs || []) as VentaStock[])
     const ventasDe = (id: string) => listaVentas.filter(v => v.lote_id === id)
     const listaPrecios = (precios || []) as PrecioHacienda[]
+    const listaTramos = (tra || []) as TramoLote[]
+    const listaActs = (acts || []) as Actividad[]
+    const curvaDe = (l: LoteStock) =>
+      curvaDeLote(l as unknown as LoteCurva, listaTramos.filter(t => t.lote_id === l.id), listaActs)
 
     // ── Capa 1: ventas presupuestadas, agrupadas POR CATEGORÍA
     const porCat: Record<string, {
@@ -495,7 +505,7 @@ export function TabPresupuesto() {
     const iibbPorMes: Record<string, number> = {}
 
     for (const l of listaLotes) {
-      const v = valuarLoteConPrecios(l, ventasDe(l.id), listaPrecios)
+      const v = valuarLoteConPrecios(l, ventasDe(l.id), listaPrecios, curvaDe(l))
       if (!v.proyectado || v.cuotas.length === 0) continue
       const f = fila(l.categoria)
       // El cobro puede venir en varias cuotas: cada una cae en su mes

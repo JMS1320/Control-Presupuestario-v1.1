@@ -1579,12 +1579,12 @@ Es el *"dejar asentado los parámetros de la recría y el engorde"*. Una fila po
 
 Defaults del análisis actual: ración 1,5 % PV · 85 % maíz · 15 % concentrado · maíz $270/kg.
 
-**C-3 · Tramos: la actividad se le asigna al lote** — `productivo.lote_tramos`
+**C-3 · Tramos: la actividad se le asigna al lote** — `productivo.lote_tramos` ✅ **HECHO**
 `(lote_id, actividad_id, fecha_desde, fecha_hasta, orden)`. Varios tramos encadenados por lote
 — recría y después engorde — que es **la misma "cadena de etapas" que ya existe** en el análisis
 de engorde. Reusar ese concepto y, si se puede, la estructura.
 
-**C-4 · 🔑 El tramo debe MANEJAR la curva de peso, no sólo el costo**
+**C-4 · 🔑 El tramo debe MANEJAR la curva de peso, no sólo el costo** ✅ **HECHO**
 Hoy `stock_lotes.ganancia_diaria_kg` se tipea a mano y la actividad tendría su propia ganancia
 esperada. **Son el mismo número y van a divergir.** Si divergen, el peso con que se factura la
 venta y los kilos de maíz que se compran describen dos animales distintos.
@@ -1696,6 +1696,66 @@ cabeza).
 **C-5** ya está resuelto dentro de `consumoMensual()` → **C-6** (stock y diferencia a comprar,
 ojo maíz propio) → **C-8** (enlace con el análisis, opcional).
 
+##### ✅ C-3 y C-4 — HECHO 2026-07-30 (sin testear)
+
+###### C-3 · Tramos — `productivo.lote_tramos`
+`(lote_id, actividad_id, orden, fecha_desde, fecha_hasta, hectareas, notas)`, con
+`check (fecha_hasta > fecha_desde)`. **No está en el backup.** `actividad_id` va con
+`on delete restrict` a propósito: borrar una actividad usada por un tramo tiene que fallar
+fuerte, no dejar el tramo sin parámetros en silencio.
+
+UI en el **modal del lote** (Productivo → Evolución Rodeo → editar lote): agregar/quitar tramos,
+elegir actividad, fechas y hectáreas. Muestra la curva resultante y el costo de alimentación.
+Avisa si dos tramos **se pisan** (`solapamientos()`) — el peso se calcula igual pero el costo
+contaría los dos.
+
+###### C-4 · La curva de peso sale del tramo 🔑
+**El problema que resuelve**: `stock_lotes.ganancia_diaria_kg` se tipeaba a mano y la actividad
+trae su propia ganancia esperada. Son el mismo número. Si divergen, el peso con el que se
+factura la venta y los kilos de maíz que se compran **describen dos animales distintos**, y nada
+avisa.
+
+**La curva pasa a ser QUEBRADA, no una recta.** Con recría a 0,5 kg/día hasta octubre y engorde
+a 0,7 después, el peso ya no es `base + días × ganancia`: hay que integrar tramo por tramo. Caso
+verificado — 100 cab de 220 kg, recría 1/4→1/10 y engorde 1/10→1/1:
+
+| | |
+|---|---|
+| Recta vieja (0,3 kg/día del lote) | 302,5 kg |
+| **Curva quebrada** (183 d × 0,5 + 92 d × 0,7) | **375,9 kg** |
+
+73 kg de diferencia por cabeza — y como el peso define la **banda de precio**, cambia también
+el $/kg, no sólo los kilos.
+
+**Precedencia** (`lib/productivo/tramos.ts`):
+1. `ganancia_override = true` → manda la del lote y la curva vuelve a ser recta. Es el override
+   manual explícito, con checkbox marcado en el modal.
+2. Días cubiertos por un tramo → la ganancia de **esa actividad**.
+3. Días sin tramo → la del lote (fallback), y la UI los muestra en ámbar como
+   *"sin actividad asignada"*.
+
+**Cómo se enchufó sin romper nada**: `pesoEstimado()`, `valuarLote()` y `valuarLoteConPrecios()`
+de `lib/ganaderia/ciclo.ts` toman un parámetro **opcional** `curva?: CurvaPeso`, que es una
+función `(fecha) => peso`. Se pasa como callback y no importando `lib/productivo/tramos.ts` para
+**no armar un import circular** entre ganadería y productivo. Sin `curva` se comportan igual que
+antes, así que ningún llamador viejo cambia de resultado.
+
+Pasan la curva: `panel-lotes-hacienda` (lista, modal y total) y `tab-presupuesto`
+(`cargarHacienda`). Es la misma en las dos pantallas, que era el requisito.
+
+**El costo también arranca del peso real**: `tramosParaCosto()` le da a cada tramo su
+`peso_inicial_kg` sacado de la curva, así que el tramo de engorde empieza en 311,5 kg (lo que el
+animal pesa después de la recría) y no en los 220 del lote. Sin eso, la ración del engorde se
+calcularía sobre un animal chico.
+
+**Verificador**: `npx tsx scripts/verificar-tramos.ts` — 11 checks (curva quebrada, override,
+huecos sin tramo, peso inicial encadenado, solapamientos).
+
+###### Lo que sigue
+**C-7** pintar la línea de costo en EGRESOS del presupuesto (ya decidido: es línea derivada, no
+template) → **C-6** stock y diferencia a comprar (ojo maíz propio) → **C-8** enlace con el
+análisis de engorde, opcional.
+
 ##### Tres familias de costo — no se calculan igual
 No forzarlas al mismo molde; cada una tiene su unidad:
 
@@ -1710,9 +1770,11 @@ las cabezas que lo pastorean. Dejarlo para el final y **no** intentar expresarlo
 hasta tener el caso claro.
 
 ##### Orden sugerido
-**C-1** (extraer motor) → **C-2 + C-3** (parámetros + tramos) → **C-4** (curva de peso desde el
+~~**C-1** (extraer motor) → **C-2 + C-3** (parámetros + tramos) → **C-4** (curva de peso desde el
 tramo) → **C-5** (mensualizar) → **C-6** (stock y diferencia, con propio vs comprado) →
-**C-7** (presupuesto, previa decisión) → **C-8** (enlace, si vale la pena).
+**C-7** (presupuesto, previa decisión) → **C-8** (enlace, si vale la pena).~~
+
+**Estado 2026-07-30: C-1..C-5 y C-7(decisión) hechos. Queda C-7 (pintar la línea), C-6 (stock y diferencia a comprar) y C-8 (enlace, opcional).**
 
 Arrancar por maíz y concentrado, como pidió. Sanidad después: el motor está pero es otra unidad.
 
