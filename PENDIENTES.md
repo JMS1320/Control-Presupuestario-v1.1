@@ -1399,6 +1399,49 @@ ser esta.
 - **Reposición desde las marcadas**: el chequeo ya compara contra las hembras marcadas en la
   pesada; falta el botón que la traiga en vez de sólo avisar.
 
+#### 🗺️ PLAN DE ACCIÓN — de las cabezas al presupuesto (acordado 2026-07-30)
+
+**Principio** (mismo que arrendamiento): *Productivo dice qué hay · Ventas decide vender ·
+Presupuesto lee.*
+```
+ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  →  Presupuesto
+```
+**Tres capas en el presupuesto**, igual que en arrendamiento (Fijado/Presupuestado/Disponible):
+
+| Capa | Qué es | Precio |
+|---|---|---|
+| **Vendido** | fecha y precio decididos | congelado |
+| **Presupuestado** | venta planificada (lote con fecha) | de tabla, se recalcula |
+| **Disponible** | existe, sin fecha de venta | de tabla, informativo |
+
+##### FASE A — Proyecciones de venta → Presupuesto ← **EN CURSO**
+1. **Categorías completas.** Hoy faltan `Ternero al Pie`, `Ternera al Pie` y `Toro`. La
+   categoría depende de **cuándo se vende**: el destete de 3/27 se vende *al pie*, la recría
+   actual se vende como *recría*. Y hay **toros de refugo**, que no salen del ciclo (los toros
+   no están modelados en el rodeo) → lote manual.
+2. **Arreglar la generación** — G-4 (los toritos no deben ir a venta) y G-5 (peso por sexo, no
+   el promedio de la tropa).
+3. **Precios por categoría** en Precios y TC. Son ~9 categorías: no entran como columnas, va
+   con selector de categoría.
+4. **Proyección en el lote**: `fecha_venta_estimada` + precio (de tabla u override) + plazo de
+   cobro → mes de cobro.
+5. **Presupuesto lee**: las tres capas por categoría, más **IVA 10,5%** en el cobro y
+   **IIBB 1%** al mes siguiente.
+
+##### FASE B — Acople con Ventas *(después)*
+6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con
+   arrendamiento la venta debería registrarse del lado comercial (Ventas → Ganadería). Mueve
+   una tabla de schema: requiere acuerdo.
+7. **Pantalla de venta**: cantidad parcial, fecha, peso (calculado con ganancia diaria,
+   editable), precio, plazo de cobro. **Congela peso y precio.**
+8. **`ventas_unificadas`** incorpora ganadería → Cash Flow la ve.
+9. **Deprecar `presupuesto_ganaderia`** y borrar la fila que quedó corrupta del bug de %.
+
+##### Datos que faltan del usuario
+- **Plazo de cobro** típico de hacienda (en arrendamiento fueron 15 y 20 días por cliente).
+- Si los **toritos** se venden en algún momento o son sólo reposición.
+- Cuántos **toros de refugo** por año, peso y precio.
+
 #### ⏳ FALTA en ganadería
 - **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
   proyección. Falta cuántas por año, peso y precio.
