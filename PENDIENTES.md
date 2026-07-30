@@ -1371,6 +1371,23 @@ sí se contempló con las terneras de reposición. Hoy se corrige en el panel de
 hembras** (29 kg de diferencia). Los lotes lo resuelven bien porque se traen separados de la
 pesada, pero el número del ciclo induce a error si se usa para estimar.
 
+**G-7 · El lote duplica la cantidad en vez de derivarla** 🟡 *(idea de simplificación, 2026-07-30)*
+Hoy `stock_lotes.cantidad` **copia** el número del ciclo, y protegemos las ediciones manuales con
+`cantidad_calculada` + la marca ✎. Funciona, pero deja **dos lugares que pueden decir cosas
+distintas** sobre cuántas cabezas hay.
+
+Alternativa más limpia: que **la línea de tiempo sea la única dueña del "cuánto"** y el lote sólo
+dueño del "cuándo, a cuánto y en cuántas veces".
+- El lote **deriva** la cantidad del ciclo en vez de copiarla.
+- La **mortandad se descuenta en el ciclo**, no en el lote — que es donde conceptualmente
+  pertenece, porque la fila ya se llama *"refugo + mortandad"*.
+- Desaparecen `cantidad_calculada`, la marca ✎ y el aviso de desactualizado: no puede haber
+  desfasaje si hay una sola fuente.
+
+Costo: hay que separar en el ciclo lo que se vende de lo que se muere, hoy juntos en una fila.
+No urge, pero cada vez que aparezca un bug de sincronización entre ciclo y lote, la causa va a
+ser esta.
+
 ##### Lo que sí es sólo del arranque
 - El refugo y la reposición del **24/25** (22 y 28) faltan porque su destete viene de un ciclo
   anterior al más viejo de `ciclos_cria`. El primer período siempre va a estar cojo; una vez
