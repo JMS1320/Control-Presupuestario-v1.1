@@ -536,8 +536,11 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
     ? Math.max(0, Math.round((new Date(fv + "T00:00:00").getTime()
         - new Date(baseFecha + "T00:00:00").getTime()) / 86400000))
     : 0
-  const pesoVenta = parseNum(String(f.peso_base_kg ?? "0"))
-    + diasVenta * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+  // Sin fecha de venta se calcula a HOY: el desglose tiene que verse igual, es el dato
+  // que el usuario quiere tener siempre a la vista.
+  const pesoVenta = fv
+    ? parseNum(String(f.peso_base_kg ?? "0")) + diasVenta * parseNum(String(f.ganancia_diaria_kg ?? "0"))
+    : pesoHoy
   const bandaVenta = categoriaPrecio(String(f.categoria ?? ""), pesoVenta)
 
   // Lo que dice la TABLA para ese peso, para poder comparar con lo guardado
@@ -692,11 +695,12 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
             )}
 
             {/* Desglose: por cabeza y por lote, siempre las dos columnas */}
-            {f.fecha_venta_estimada && (
-              <table className="mt-3 w-full text-[11px]">
+            <table className="mt-3 w-full text-[11px]">
                 <thead>
                   <tr className="border-b text-gray-500">
-                    <th className="py-0.5 text-left font-medium"></th>
+                    <th className="py-0.5 text-left font-medium">
+                      {fv ? "a la fecha de venta" : "a hoy (sin fecha de venta)"}
+                    </th>
                     <th className="py-0.5 text-right font-medium">por cabeza</th>
                     <th className="py-0.5 text-right font-medium">por lote ({n0(cab)})</th>
                   </tr>
@@ -721,7 +725,6 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                   ))}
                 </tbody>
               </table>
-            )}
           </div>
 
           {dias > 0 && parseNum(String(f.ganancia_diaria_kg ?? "0")) > 0 && (
