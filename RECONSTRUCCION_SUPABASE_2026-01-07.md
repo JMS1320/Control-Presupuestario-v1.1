@@ -11381,3 +11381,9 @@ ALTER TABLE productivo.stock_lotes
   ADD COLUMN IF NOT EXISTS pct_cz        numeric(6,4) NOT NULL DEFAULT 0.04,
   ADD COLUMN IF NOT EXISTS alicuota_iva  numeric(6,4) NOT NULL DEFAULT 0.105,
   ADD COLUMN IF NOT EXISTS alicuota_iibb numeric(6,4) NOT NULL DEFAULT 0.01;
+
+-- Aplicado 2026-07-30: plazo de cobro en VARIAS CUOTAS.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS plazo_cobro text NOT NULL DEFAULT '0';
+-- "0"=contado, "30", "30/60", "30/60/90". El monto se reparte en partes iguales.
+-- dias_cobro queda DEPRECADO (un solo entero no admitia cuotas).

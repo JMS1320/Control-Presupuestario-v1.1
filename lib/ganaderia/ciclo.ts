@@ -314,8 +314,10 @@ export interface LoteStock {
   fecha_venta_estimada: string | null
   /** Precio ARS/kg manual. NULL = sale de `precios_hacienda`. */
   precio_kg_override: number | null
-  /** Días corridos entre la venta y el cobro. 0 = contado. */
+  /** @deprecated usar `plazo_cobro`. */
   dias_cobro: number
+  /** Días de cobro separados por "/" cuando hay cuotas: "0", "30", "30/60/90". */
+  plazo_cobro: string
   /** Merma de kg al pesar en destino. El precio va sobre el kg NETO. */
   pct_desbaste: number
   /** Comercialización (comisión del consignatario) sobre el monto de la venta. */
@@ -504,6 +506,25 @@ export function categoriaSegunFecha(
 
 // ── Valuación del lote ────────────────────────────────────────────────────────
 
+/** Una cuota del cobro: cuántos días y qué parte del monto. */
+export interface CuotaCobro {
+  dias: number
+  mes: string      // 'YYYY-MM'
+  monto: number
+}
+
+/**
+ * Parsea "30/60/90" → [30, 60, 90]. Vacío o inválido → [0] (contado).
+ * El monto se reparte en partes iguales entre las cuotas.
+ */
+export function parsearPlazo(plazo: string | null | undefined): number[] {
+  const partes = String(plazo ?? '0')
+    .split(/[\/,;\s]+/)
+    .map(x => parseInt(x.trim(), 10))
+    .filter(n => Number.isFinite(n) && n >= 0)
+  return partes.length ? partes : [0]
+}
+
 export interface ValuacionLote {
   cabezas: number
   /** Peso vivo por cabeza a la fecha de venta (bruto, antes del desbaste). */
@@ -526,8 +547,10 @@ export interface ValuacionLote {
   /** IIBB sobre la venta neta, se paga el mes SIGUIENTE al cobro. */
   iibb: number
   mes_iibb: string | null
-  /** Mes de cobro 'YYYY-MM'. */
+  /** Mes de la PRIMERA cuota 'YYYY-MM'. */
   mes_cobro: string | null
+  /** Todas las cuotas del cobro, con su mes y su parte del monto. */
+  cuotas: CuotaCobro[]
   /** El precio se arrastró de otro mes o no hay precio cargado. */
   estimado: boolean
   /** Hay fecha de venta → es ingreso presupuestado. Si no, es sólo stock. */
@@ -550,7 +573,7 @@ export function valuarLote(
     cabezas, peso_unitario: peso,
     kg_brutos: 0, kg_desbaste: 0, kg_netos: 0, kg_totales: 0,
     precio_kg: 0, venta_neta: 0, iva: 0, total_factura: 0, cz: 0, monto: 0,
-    iibb: 0, mes_iibb: null, mes_cobro: null, estimado: true, proyectado: false,
+    iibb: 0, mes_iibb: null, mes_cobro: null, cuotas: [], estimado: true, proyectado: false,
   })
 
   if (!fv) return vacio(Number(lote.peso_base_kg))
@@ -572,12 +595,25 @@ export function valuarLote(
   const totalFactura = ventaNeta + iva
   const cz = ventaNeta * Number(lote.pct_cz ?? 0)   // comisión del consignatario
 
-  const cobro = new Date(fv + 'T00:00:00')
-  cobro.setDate(cobro.getDate() + Number(lote.dias_cobro || 0))
-  const mesCobro = `${cobro.getFullYear()}-${String(cobro.getMonth() + 1).padStart(2, '0')}`
+  const monto = totalFactura - cz   // lo que entra al banco
 
-  // El IIBB se paga el mes siguiente al cobro
-  const sig = new Date(cobro.getFullYear(), cobro.getMonth() + 1, 1)
+  // El cobro puede venir en varias cuotas: se reparte en partes iguales.
+  const dias = parsearPlazo(lote.plazo_cobro ?? String(lote.dias_cobro ?? 0))
+  const cuotas: CuotaCobro[] = dias.map(d => {
+    const f = new Date(fv + 'T00:00:00')
+    f.setDate(f.getDate() + d)
+    return {
+      dias: d,
+      mes: `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`,
+      monto: monto / dias.length,
+    }
+  })
+  const mesCobro = cuotas[0]?.mes ?? null
+
+  // El IIBB se paga el mes siguiente a la PRIMERA cuota
+  const primera = new Date(fv + 'T00:00:00')
+  primera.setDate(primera.getDate() + (dias[0] ?? 0))
+  const sig = new Date(primera.getFullYear(), primera.getMonth() + 1, 1)
 
   return {
     cabezas,
@@ -591,10 +627,11 @@ export function valuarLote(
     iva,
     total_factura: totalFactura,
     cz,
-    monto: totalFactura - cz,      // lo que entra al banco
+    monto,
     iibb: ventaNeta * Number(lote.alicuota_iibb ?? 0),
     mes_iibb: `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, '0')}`,
     mes_cobro: mesCobro,
+    cuotas,
     estimado: p.arrastrado || p.precio === 0,
     proyectado: true,
   }

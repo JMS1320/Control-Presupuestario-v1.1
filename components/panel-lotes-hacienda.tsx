@@ -40,7 +40,10 @@ interface AjusteFila {
   peso: string
   ganancia: string
   fecha_venta: string
-  dias_cobro: string
+  plazo: string
+  precio: string
+  desbaste: string
+  cz: string
 }
 
 export function PanelLotesHacienda({ linea, onCambio }: {
@@ -128,7 +131,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       fecha_venta_estimada: f.fecha_venta_estimada || null,
       precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
         ? null : parseNum(String(f.precio_kg_override)),
-      dias_cobro: Math.round(parseNum(String(f.dias_cobro ?? "0"))),
+      plazo_cobro: String(f.plazo_cobro ?? "0").trim() || "0",
       pct_desbaste: parseNum(String(f.pct_desbaste ?? "5")) / 100,
       pct_cz: parseNum(String(f.pct_cz ?? "4")) / 100,
       alicuota_iva: parseNum(String(f.alicuota_iva ?? "10,5")) / 100,
@@ -204,15 +207,26 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           peso_base_kg: parseNum(ajustes.peso),
           ganancia_diaria_kg: parseNum(ajustes.ganancia),
           fecha_venta_estimada: ajustes.fecha_venta || null,
-          dias_cobro: Math.round(parseNum(ajustes.dias_cobro)),
+          plazo_cobro: ajustes.plazo || "0",
+          precio_kg_override: ajustes.precio.trim() === "" ? null : parseNum(ajustes.precio),
+          pct_desbaste: parseNum(ajustes.desbaste) / 100,
+          pct_cz: parseNum(ajustes.cz) / 100,
           updated_at: new Date().toISOString(),
         }
 
+        // La categoria depende de CUANDO se vende: al pie en el destete, recria despues.
+        const categoria = fila.origen === "destete"
+          ? categoriaSegunFecha(
+              /ternera|hembra/i.test(fila.categoria) ? "hembra" : "macho",
+              fila.fecha_disponible, ajustes.fecha_venta || fila.fecha_disponible)
+          : fila.categoria
+
         const { error } = existente
-          ? await supabase.schema("productivo").from("stock_lotes").update(payload).eq("id", existente.id)
+          ? await supabase.schema("productivo").from("stock_lotes")
+              .update({ ...payload, categoria }).eq("id", existente.id)
           : await supabase.schema("productivo").from("stock_lotes").insert({
               empresa: "MSA", ciclo_id: fila.ciclo_id,
-              categoria: fila.categoria, origen: fila.origen,
+              categoria, origen: fila.origen,
               notas: `Generado desde el período ${fila.campania}`,
               ...payload,
             })
@@ -229,7 +243,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
     categoria: "Ternero Recria",
     cantidad: "", peso_base_kg: "197,34", ganancia_diaria_kg: "0,5",
     fecha_disponible: "2026-02-23",
-    fecha_venta_estimada: "", precio_kg_override: "", dias_cobro: "0",
+    fecha_venta_estimada: "", precio_kg_override: "", plazo_cobro: "0",
     pct_desbaste: "5", pct_cz: "4", alicuota_iva: "10,5", alicuota_iibb: "1",
     notas: "Stock inicial — retenido para recría",
   })
@@ -403,8 +417,11 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       </td>
                       <td className="px-3 py-2 text-gray-600">
                         {val.mes_cobro ?? "—"}
-                        {Number(l.dias_cobro) > 0 && (
-                          <span className="ml-1 text-[10px] text-gray-400">+{l.dias_cobro}d</span>
+                        {val.cuotas.length > 1 && (
+                          <span className="ml-1 text-[10px] text-blue-600"
+                            title={val.cuotas.map(c => `${c.mes}: ${fmtPesos(c.monto)}`).join(" · ")}>
+                            {val.cuotas.length} cuotas
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -416,7 +433,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                               peso_base_kg: String(l.peso_base_kg),
                               ganancia_diaria_kg: String(l.ganancia_diaria_kg),
                               precio_kg_override: l.precio_kg_override ?? "",
-                              dias_cobro: String(l.dias_cobro ?? 0),
+                              plazo_cobro: String(l.plazo_cobro ?? "0"),
                               pct_desbaste: fmtAR(Number(l.pct_desbaste ?? 0.05) * 100),
                               pct_cz: fmtAR(Number(l.pct_cz ?? 0.04) * 100),
                               alicuota_iva: fmtAR(Number(l.alicuota_iva ?? 0.105) * 100),
@@ -531,7 +548,7 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                   onChange={e => setF({ ...f, fecha_venta_estimada: e.target.value })} />
               </div>
               {campo("precio_kg_override", "Precio $/kg", "vacío = usa la banda de peso")}
-              {campo("dias_cobro", "Días de cobro", "0 = contado")}
+              {campo("plazo_cobro", "Plazo de cobro", "0 · 30 · 30/60 · 30/60/90")}
             </div>
 
             <div className="mt-3 grid grid-cols-4 gap-3">
@@ -620,6 +637,8 @@ interface GrupoPesada {
   cabezas: number
   peso_prom: number
   kg_total: number
+  /** Fecha de la pesada de la que salió el peso (en modo "última" varía por grupo). */
+  fecha_pesada: string | null
   categoria: string
   esRetencion: boolean
 }
@@ -634,6 +653,12 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
   const [cargando, setCargando] = useState(false)
   const [fechas, setFechas] = useState<{ fecha: string; n: number }[]>([])
   const [fecha, setFecha] = useState("")
+  /**
+   * "ultima" = el peso MÁS RECIENTE de cada animal, aunque sean de pesadas distintas.
+   * Es lo que corresponde para la recría de hoy: los machos se pesaron el 6/7 y los
+   * toritos el 4/5, y una sola fecha deja a un grupo afuera.
+   */
+  const [modo, setModo] = useState<"ultima" | "fecha">("ultima")
   const [grupos, setGrupos] = useState<GrupoPesada[]>([])
   const [sel, setSel] = useState<Record<string, boolean>>({})
   /** Cantidad y peso por grupo: se puede traer sólo una parte, y el peso se puede pisar. */
@@ -668,22 +693,34 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     ;(async () => {
       setCargando(true)
       try {
-        const { data, error } = await supabase.schema("productivo")
+        const q = supabase.schema("productivo")
           .from("pesadas_terneros")
-          .select("peso_kg, ternero:terneros!inner(sexo, es_torito)")
-          .eq("fecha", fecha)
+          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)")
+        const { data, error } = modo === "fecha" ? await q.eq("fecha", fecha) : await q
         if (error) { console.error(error); return }
 
-        const acc = new Map<string, { sexo: string; marcado: boolean; n: number; kg: number }>()
-        for (const r of (data || []) as any[]) {
+        // Modo "ultima": una sola pesada por animal, la más reciente
+        let filas = (data || []) as any[]
+        if (modo === "ultima") {
+          const ultima = new Map<string, any>()
+          for (const r of filas) {
+            const prev = ultima.get(r.ternero_id)
+            if (!prev || String(r.fecha) > String(prev.fecha)) ultima.set(r.ternero_id, r)
+          }
+          filas = Array.from(ultima.values())
+        }
+
+        const acc = new Map<string, { sexo: string; marcado: boolean; n: number; kg: number; fmax: string }>()
+        for (const r of filas) {
           const t = r.ternero
           if (!t) continue
           const sexo = String(t.sexo ?? "")
           const marcado = !!t.es_torito
           const k = `${sexo}|${marcado}`
-          const cur = acc.get(k) ?? { sexo, marcado, n: 0, kg: 0 }
+          const cur = acc.get(k) ?? { sexo, marcado, n: 0, kg: 0, fmax: "" }
           cur.n += 1
           cur.kg += Number(r.peso_kg) || 0
+          if (String(r.fecha) > cur.fmax) cur.fmax = String(r.fecha)
           acc.set(k, cur)
         }
 
@@ -695,6 +732,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           cabezas: g.n,
           peso_prom: g.n ? g.kg / g.n : 0,
           kg_total: g.kg,
+          fecha_pesada: g.fmax || null,
           categoria: esMacho(g.sexo)
             ? (g.marcado ? "Torito" : "Ternero Recria")
             : "Ternera Recria",
@@ -714,7 +752,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         setEdits(ini)
       } finally { setCargando(false) }
     })()
-  }, [abierto, fecha])
+  }, [abierto, fecha, modo])
 
   if (!abierto) return null
   const elegidos = grupos.filter(g => sel[g.clave])
@@ -776,8 +814,23 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         <DialogHeader><DialogTitle>Cargar stock inicial desde una pesada</DialogTitle></DialogHeader>
 
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
+              <label className="text-xs text-gray-500">Origen del peso</label>
+              <Select value={modo} onValueChange={(v: any) => setModo(v)}>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ultima">Última pesada de cada animal</SelectItem>
+                  <SelectItem value="fecha">Una pesada puntual</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-[10px] text-gray-400">
+                {modo === "ultima"
+                  ? "toma el peso más reciente de cada animal, aunque sean fechas distintas"
+                  : "todos de la misma fecha"}
+              </p>
+            </div>
+            <div className={modo === "ultima" ? "opacity-40 pointer-events-none" : ""}>
               <label className="text-xs text-gray-500">Pesada</label>
               <Select value={fecha} onValueChange={setFecha}>
                 <SelectTrigger className="h-8"><SelectValue placeholder="Elegir..." /></SelectTrigger>
@@ -822,6 +875,9 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                         <strong>{g.categoria}</strong>
                         <span className="text-xs text-gray-400">
                           {g.sexo}{g.marcado ? " · marcado" : ""}
+                          {g.fecha_pesada && (
+                            <> · pesada {new Date(g.fecha_pesada + "T00:00:00").toLocaleDateString("es-AR")}</>
+                          )}
                         </span>
                         {g.esRetencion && (
                           <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
@@ -928,12 +984,17 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
     for (const f of filas) {
       // Los que ya tienen ventas no se tocan: ahí manda lo que se decidió
       s[f.clave] = !f.tieneVentas
+      // La fecha de venta nunca puede quedar en el pasado: si el destete ya paso, hoy.
+      const hoyISO = new Date().toISOString().slice(0, 10)
       a[f.clave] = {
         cantidad: String(f.cantidad.toFixed(1)),
         peso: String(f.peso),
         ganancia: "0",
-        fecha_venta: f.fecha_disponible,
-        dias_cobro: "0",
+        fecha_venta: f.fecha_disponible > hoyISO ? f.fecha_disponible : hoyISO,
+        plazo: "0",
+        precio: "",
+        desbaste: "5",
+        cz: "4",
       }
     }
     setSel(s); setAjustes(a); setAbierta({})
@@ -987,6 +1048,12 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
                           <span className="text-gray-600">
                             {n1(f.cantidad)} cab · {n1(f.peso)} kg
                           </span>
+                          {a.fecha_venta && (
+                            <span className="text-emerald-700">
+                              vende {new Date(a.fecha_venta + "T00:00:00").toLocaleDateString("es-AR")}
+                              {a.plazo !== "0" && <span className="text-gray-400"> · {a.plazo}d</span>}
+                            </span>
+                          )}
                           {f.yaExiste && !f.tieneVentas && (
                             <Badge variant="outline" className="text-[10px]">actualiza</Badge>
                           )}
@@ -1021,9 +1088,24 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
                             onChange={e => setAj(f.clave, "fecha_venta", e.target.value)} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-gray-500">Días cobro</label>
-                          <Input className="h-7 text-right text-xs" value={a.dias_cobro}
-                            onChange={e => setAj(f.clave, "dias_cobro", e.target.value)} />
+                          <label className="text-[10px] text-gray-500">Plazo cobro</label>
+                          <Input className="h-7 text-right text-xs" placeholder="30/60/90"
+                            value={a.plazo} onChange={e => setAj(f.clave, "plazo", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">Precio $/kg</label>
+                          <Input className="h-7 text-right text-xs" placeholder="de tabla"
+                            value={a.precio} onChange={e => setAj(f.clave, "precio", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">% Desbaste</label>
+                          <Input className="h-7 text-right text-xs" value={a.desbaste}
+                            onChange={e => setAj(f.clave, "desbaste", e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500">% CZ</label>
+                          <Input className="h-7 text-right text-xs" value={a.cz}
+                            onChange={e => setAj(f.clave, "cz", e.target.value)} />
                         </div>
                       </div>
                     )}

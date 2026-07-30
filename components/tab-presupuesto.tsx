@@ -473,9 +473,12 @@ export function TabPresupuesto() {
     for (const l of lotes as LoteStock[]) {
       const v = valuarLoteConPrecios(l, ventasDe(l.id) as VentaStock[], listaPrecios)
 
-      if (v.proyectado && v.mes_cobro) {
-        presupuestado[v.mes_cobro] = (presupuestado[v.mes_cobro] || 0) + v.monto
-        if (v.estimado) estimado[v.mes_cobro] = true
+      if (v.proyectado && v.cuotas.length > 0) {
+        // El cobro puede venir en varias cuotas: cada una cae en su mes
+        for (const q of v.cuotas) {
+          presupuestado[q.mes] = (presupuestado[q.mes] || 0) + q.monto
+          if (v.estimado) estimado[q.mes] = true
+        }
         // El IIBB de la venta se paga el mes SIGUIENTE al cobro
         if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
       } else {
