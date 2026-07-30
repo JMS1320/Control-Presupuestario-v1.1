@@ -11343,3 +11343,9 @@ ALTER TABLE productivo.stock_lotes
   ADD COLUMN IF NOT EXISTS cantidad_calculada numeric(10,2);
 -- Si cantidad != cantidad_calculada, el usuario lo edito a mano (p.ej. descontando la
 -- mortandad de las vacas de refugo) y el regenerado NO lo pisa.
+
+-- Aplicado 2026-07-29: reposicion en CABEZAS cuando el dato se sabe.
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS real_retenidas numeric(10,2);
+-- Pisa a pct_reposicion. Es un numero firme y NO escala si despues cambia el rodeo --
+-- por eso no alcanzaba con guardar solo el %.

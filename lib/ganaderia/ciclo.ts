@@ -80,6 +80,8 @@ export interface CicloStock {
   real_machos: number | null
   real_hembras: number | null
   real_descarte: number | null
+  /** Reposición en CABEZAS cuando el dato se sabe. Pisa a `pct_reposicion`. */
+  real_retenidas: number | null
   notas: string | null
 }
 
@@ -158,7 +160,11 @@ export function calcularCiclo(
   // terneras destetadas. El 20% "para mantener" es reponer una quinta parte del rodeo,
   // que es lo que compensa el descarte; sobre terneras daría ~16 y el rodeo se caería.
   // Es decisión de estrategia y cambia año a año: más de 20% hace crecer el rodeo.
-  const retenidasTeorica = rodeo * Number(ciclo.pct_reposicion)
+  // Si se sabe el número exacto (están marcadas en la pesada), ese gana: es un dato
+  // firme y no debe escalar si después cambia el rodeo.
+  const retenidasTeorica = ciclo.real_retenidas != null
+    ? Number(ciclo.real_retenidas)
+    : rodeo * Number(ciclo.pct_reposicion)
   // Guardarraíl: no se puede retener más de lo que se destetó.
   const retenidas = Math.min(retenidasTeorica, terneras)
   const retencionExcede = retenidasTeorica > terneras + 0.01
@@ -176,7 +182,8 @@ export function calcularCiclo(
     vacas_cierre: Math.max(0, vacas - descarte + vaquillonas),
     vaquillonas_cierre: retenidas,
     tiene_reales: ciclo.real_destetados != null || ciclo.real_machos != null
-      || ciclo.real_hembras != null || ciclo.real_descarte != null,
+      || ciclo.real_hembras != null || ciclo.real_descarte != null
+      || ciclo.real_retenidas != null,
     apertura_manual: aperturaManual,
   }
 }

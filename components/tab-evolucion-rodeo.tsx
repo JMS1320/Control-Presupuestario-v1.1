@@ -86,6 +86,8 @@ export function TabEvolucionRodeo() {
       real_machos: String(f.real_machos ?? "").trim() === "" ? null : parseNum(String(f.real_machos)),
       real_hembras: String(f.real_hembras ?? "").trim() === "" ? null : parseNum(String(f.real_hembras)),
       real_descarte: String(f.real_descarte ?? "").trim() === "" ? null : parseNum(String(f.real_descarte)),
+      // Cabezas de reposición cuando el dato se sabe. Pisa a pct_reposicion.
+      real_retenidas: String(f.real_retenidas ?? "").trim() === "" ? null : parseNum(String(f.real_retenidas)),
       notas: f.notas || null,
       updated_at: new Date().toISOString(),
     }
@@ -190,6 +192,7 @@ export function TabEvolucionRodeo() {
     real_machos: c.real_machos ?? "",
     real_hembras: c.real_hembras ?? "",
     real_descarte: c.real_descarte ?? "",
+    real_retenidas: c.real_retenidas ?? "",
   })
 
   // Filas de la tabla: concepto + valor por período
@@ -346,17 +349,62 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
   useEffect(() => { if (datos) setF({ ...datos }) }, [datos])
   if (!datos) return null
 
-  const campo = (k: string, label: string, ayuda?: string, tipo = "text") => (
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }))
+
+  // ── Vista previa en vivo: el mismo motor que la tabla ──────────────────────
+  // Ver el resultado mientras se editan los parámetros evita tener que guardar,
+  // mirar la tabla, volver a abrir y corregir.
+  const rodeo = parseNum(String(f.vacas_apertura ?? "0")) + parseNum(String(f.vaquillonas_apertura ?? "0"))
+  const pDestete = parsePct(String(f.pct_destete ?? "0"))
+  const pMachos = parsePct(String(f.pct_machos ?? "0"))
+  const pDescarte = parsePct(String(f.pct_descarte_falladas ?? "0"))
+  const pRepo = parsePct(String(f.pct_reposicion ?? "0"))
+
+  const destetados = String(f.real_destetados ?? "").trim() !== ""
+    ? parseNum(String(f.real_destetados)) : rodeo * pDestete
+  const terneros = String(f.real_machos ?? "").trim() !== ""
+    ? parseNum(String(f.real_machos)) : destetados * pMachos
+  const terneras = String(f.real_hembras ?? "").trim() !== ""
+    ? parseNum(String(f.real_hembras)) : destetados - terneros
+  const falladas = Math.max(0, rodeo - destetados)
+  const descarte = String(f.real_descarte ?? "").trim() !== ""
+    ? parseNum(String(f.real_descarte)) : falladas * pDescarte
+
+  const repoEsReal = String(f.real_retenidas ?? "").trim() !== ""
+  const retenidasBruto = repoEsReal ? parseNum(String(f.real_retenidas)) : rodeo * pRepo
+  const retenidas = Math.min(retenidasBruto, terneras)
+  const excede = retenidasBruto > terneras + 0.01
+
+  /**
+   * % y cabezas son dos formas de decir lo mismo, así que se mantienen sincronizados.
+   * Tocar el % recalcula las cabezas y NO deja override. Tocar las cabezas fija el
+   * número como dato firme (`real_retenidas`), porque cuando se sabe la cantidad no
+   * debe escalar si después cambia el rodeo.
+   */
+  const editarPctRepo = (v: string) => {
+    setF((p: any) => ({ ...p, pct_reposicion: v, real_retenidas: "" }))
+  }
+  const editarCabezasRepo = (v: string) => {
+    const cab = parseNum(v)
+    const pctEquiv = rodeo > 0 ? (cab / rodeo) * 100 : 0
+    setF((p: any) => ({
+      ...p,
+      real_retenidas: v,
+      pct_reposicion: v.trim() === "" ? p.pct_reposicion
+        : pctEquiv.toLocaleString("es-AR", { maximumFractionDigits: 2 }),
+    }))
+  }
+
+  const campo = (k: string, label: string, ayuda?: string) => (
     <div>
       <label className="text-xs text-gray-500">{label}</label>
-      <Input type={tipo} className="h-8 text-right" value={f[k] ?? ""}
-        onChange={e => setF({ ...f, [k]: e.target.value })} />
+      <Input className="h-8 text-right" value={f[k] ?? ""} onChange={e => set(k, e.target.value)} />
       {ayuda && <p className="mt-1 text-[10px] text-gray-400">{ayuda}</p>}
     </div>
   )
 
   /** Porcentaje: se escribe en %, se guarda como fracción, con eco en vivo. */
-  const campoPct = (k: string, label: string, ayuda?: string) => {
+  const campoPct = (k: string, label: string, ayuda?: string, onChange?: (v: string) => void) => {
     const crudo = String(f[k] ?? "")
     const frac = parsePct(crudo)
     const mal = crudo.trim() !== "" && (frac < 0 || frac > 1)
@@ -366,102 +414,185 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
         <label className="text-xs text-gray-500">{label}</label>
         <div className="relative">
           <Input className={`h-8 pr-6 text-right ${mal || sospechoso ? "border-red-400 bg-red-50" : ""}`}
-            value={f[k] ?? ""} onChange={e => setF({ ...f, [k]: e.target.value })} />
+            value={f[k] ?? ""}
+            onChange={e => (onChange ?? ((v: string) => set(k, v)))(e.target.value)} />
           <span className="pointer-events-none absolute right-2 top-1.5 text-xs text-gray-400">%</span>
         </div>
         <p className={`mt-1 text-[10px] ${mal || sospechoso ? "text-red-600" : "text-gray-400"}`}>
           {mal ? `${crudo} % no es válido`
             : sospechoso ? `¿Seguro? Se guardaría ${frac.toLocaleString("es-AR", { maximumFractionDigits: 6 })}`
-            : `${ayuda ? ayuda + " · " : ""}se guarda ${frac.toLocaleString("es-AR", { maximumFractionDigits: 4 })}`}
+            : ayuda ?? ""}
         </p>
       </div>
     )
   }
 
+  const Seccion = ({ titulo, nota, children }: { titulo: string; nota?: string; children: any }) => (
+    <div className="rounded-lg border bg-white">
+      <div className="border-b bg-gray-50 px-3 py-1.5">
+        <p className="text-xs font-semibold text-gray-700">{titulo}</p>
+        {nota && <p className="text-[10px] text-gray-400">{nota}</p>}
+      </div>
+      <div className="p-3">{children}</div>
+    </div>
+  )
+
   return (
     <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{datos.id ? `Editar período ${datos.campania}` : "Nuevo período"}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-4">
+          {/* ── Columna izquierda: los datos que se cargan ── */}
+          <div className="col-span-2 space-y-3">
+
+            <Seccion titulo="1 · Identificación">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500">Campaña</label>
+                  <Input className="h-8" placeholder="27/28" value={f.campania || ""}
+                    onChange={e => set("campania", e.target.value)} />
+                </div>
+                {campo("orden", "Orden", "posición en la línea de tiempo")}
+              </div>
+              <div className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-[11px]">
+                {(() => {
+                  const fc = fechasCampania(String(f.campania ?? ""))
+                  if (!fc) return <span className="text-gray-400">Escribí la campaña como AA/BB (ej. 27/28)</span>
+                  const mes = (s: string) =>
+                    new Date(s + "T00:00:00").toLocaleDateString("es-AR", { month: "short", year: "numeric" })
+                  return (
+                    <span className="text-gray-600">
+                      Servicio <strong>{mes(fc.servicio)}</strong> · parición <strong>{mes(fc.paricion)}</strong>
+                      {" "}· destete <strong>{mes(fc.destete)}</strong>
+                    </span>
+                  )
+                })()}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="2 · Rodeo de apertura" nota="vacío = hereda del cierre del período anterior">
+              <div className="grid grid-cols-3 gap-3">
+                {campo("vacas_apertura", "Vacas")}
+                {campo("vaquillonas_apertura", "Vaquillonas de rep.")}
+                <div className="flex flex-col justify-center rounded bg-emerald-50 px-3 py-2">
+                  <span className="text-[10px] text-emerald-700">Base entorada</span>
+                  <span className="text-lg font-semibold text-emerald-800">{n1(rodeo)}</span>
+                </div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="3 · Parámetros de proyección">
+              <div className="grid grid-cols-3 gap-3">
+                {campoPct("pct_destete", "% Destete", "sobre la base entorada")}
+                {campoPct("pct_machos", "% Machos", "del destete")}
+                {campoPct("pct_descarte_falladas", "% Descarte", "80 = falla de la vaca")}
+              </div>
+
+              {/* Reposición: % y cabezas, sincronizados */}
+              <div className="mt-3 rounded border border-blue-200 bg-blue-50/50 p-2.5">
+                <p className="mb-2 text-[11px] font-medium text-blue-900">
+                  Reposición — poné el % o las cabezas, se completan solas
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  {campoPct("pct_reposicion", "% Reposición", "20 mantiene · más, crece", editarPctRepo)}
+                  <div>
+                    <label className="text-xs text-gray-500">Cabezas</label>
+                    <Input className="h-8 text-right" value={f.real_retenidas ?? ""}
+                      onChange={e => editarCabezasRepo(e.target.value)} />
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      {repoEsReal ? "dato firme, no escala" : "vacío = se usa el %"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <span className="text-[10px] text-gray-500">Se retienen</span>
+                    <span className="text-lg font-semibold text-blue-800">
+                      {n1(retenidas)}
+                      {repoEsReal && <span className="ml-1 text-[10px] font-normal text-blue-600">real</span>}
+                    </span>
+                    {repoEsReal && (
+                      <button type="button" className="mt-0.5 text-left text-[10px] text-blue-600 underline"
+                        onClick={() => set("real_retenidas", "")}>
+                        volver al %
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {excede && (
+                  <p className="mt-2 text-[11px] text-red-600">
+                    ⚠ No se pueden retener {n1(retenidasBruto)}: sólo se destetan {n1(terneras)} terneras.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {campo("peso_destete_kg", "Peso al destete (kg)")}
+                {campo("peso_descarte_kg", "Peso vaca refugo (kg)")}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="4 · Datos reales del destete"
+              nota="cuando llega el dato real pisa el cálculo y recalcula todo lo posterior · vacío = sigue proyectado">
+              <div className="grid grid-cols-4 gap-3">
+                {campo("real_destetados", "Destetados")}
+                {campo("real_machos", "Machos")}
+                {campo("real_hembras", "Hembras")}
+                {campo("real_descarte", "Descarte")}
+              </div>
+            </Seccion>
+
             <div>
-              <label className="text-xs text-gray-500">Campaña</label>
-              <Input className="h-8" placeholder="27/28" value={f.campania || ""}
-                onChange={e => setF({ ...f, campania: e.target.value })} />
-            </div>
-            {campo("orden", "Orden", "posición en la línea de tiempo")}
-          </div>
-
-          {/* Las fechas NO se piden: la campaña ya las determina. Se muestran para que
-              se vea qué asume la app y se detecte una campaña mal escrita. */}
-          <div className="rounded bg-gray-50 px-3 py-2 text-xs">
-            {(() => {
-              const fc = fechasCampania(String(f.campania ?? ""))
-              if (!fc) return (
-                <span className="text-gray-400">
-                  Escribí la campaña como <strong>AA/BB</strong> (ej. 27/28) y acá vas a ver
-                  el servicio, la parición y el destete que le corresponden.
-                </span>
-              )
-              const mes = (s: string) =>
-                new Date(s + "T00:00:00").toLocaleDateString("es-AR", { month: "long", year: "numeric" })
-              return (
-                <span className="text-gray-600">
-                  Servicio <strong>{mes(fc.servicio)}</strong> · parición{" "}
-                  <strong>{mes(fc.paricion)}</strong> · destete <strong>{mes(fc.destete)}</strong>
-                  <span className="ml-2 text-gray-400">(el servicio cae en la campaña anterior)</span>
-                </span>
-              )
-            })()}
-          </div>
-
-          <div>
-            <p className="mb-2 text-xs font-semibold text-gray-600">Apertura del rodeo</p>
-            <div className="grid grid-cols-2 gap-3">
-              {campo("vacas_apertura", "Vacas", "vacío = hereda del período anterior")}
-              {campo("vaquillonas_apertura", "Vaquillonas de reposición", "vacío = hereda")}
+              <label className="text-xs text-gray-500">Notas</label>
+              <Input className="h-8" value={f.notas || ""} onChange={e => set("notas", e.target.value)} />
             </div>
           </div>
 
-          <div>
-            <p className="mb-2 text-xs font-semibold text-gray-600">Parámetros del período</p>
-            <div className="grid grid-cols-3 gap-3">
-              {campoPct("pct_destete", "% Destete", "sobre el rodeo")}
-              {campoPct("pct_machos", "% Machos", "del destete")}
-              {campoPct("pct_descarte_falladas", "% Descarte de falladas", "80 = falla de la vaca")}
-              {campoPct("pct_reposicion", "% Reposición", "sobre la base entorada · 20 mantiene")}
-              {campo("peso_destete_kg", "Peso al destete (kg)")}
-              {campo("peso_descarte_kg", "Peso vaca refugo (kg)", "peso de venta del descarte")}
+          {/* ── Columna derecha: qué va a dar ── */}
+          <div className="space-y-3">
+            <div className="sticky top-0 rounded-lg border bg-gray-50 p-3">
+              <p className="mb-2 text-xs font-semibold text-gray-700">Vista previa</p>
+              <table className="w-full text-xs">
+                <tbody>
+                  {[
+                    ["Base entorada", n1(rodeo), "font-semibold"],
+                    ["Destetados", n1(destetados), ""],
+                    ["→ Terneros", n1(terneros), "text-gray-500"],
+                    ["→ Terneras", n1(terneras), "text-gray-500"],
+                    ["Falladas", n1(falladas), "text-gray-500"],
+                    ["Vaca descarte → venta", n1(descarte), "text-amber-700 font-medium"],
+                    ["Terneras retenidas", n1(retenidas), "text-blue-700"],
+                    ["Terneros a venta", n1(terneros), "text-emerald-700 font-medium"],
+                    ["Terneras a venta", n1(Math.max(0, terneras - retenidas)), "text-emerald-700 font-medium"],
+                  ].map(([l, v, c]) => (
+                    <tr key={l as string} className="border-b border-gray-200 last:border-0">
+                      <td className={`py-1 pr-2 ${c}`}>{l}</td>
+                      <td className={`py-1 text-right ${c}`}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-2 rounded bg-white p-2">
+                <p className="mb-1 text-[10px] font-semibold text-gray-600">Cierre → abre el siguiente</p>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">Vacas</span>
+                  <strong>{n1(Math.max(0, parseNum(String(f.vacas_apertura ?? "0")) - descarte
+                    + parseNum(String(f.vaquillonas_apertura ?? "0"))))}</strong>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-600">Vaquillonas</span>
+                  <strong>{n1(retenidas)}</strong>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div>
-            <p className="mb-1 text-xs font-semibold text-gray-600">Datos reales</p>
-            <p className="mb-2 text-[10px] text-gray-400">
-              Cuando llega el dato real, cargalo acá: pisa el cálculo y recalcula todo lo
-              posterior. Vacío = sigue proyectado.
-            </p>
-            <div className="grid grid-cols-4 gap-3">
-              {campo("real_destetados", "Destetados")}
-              {campo("real_machos", "Machos")}
-              {campo("real_hembras", "Hembras")}
-              {campo("real_descarte", "Descarte")}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs text-gray-500">Notas</label>
-            <Input className="h-8" value={f.notas || ""}
-              onChange={e => setF({ ...f, notas: e.target.value })} />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
-            <Button onClick={() => onGuardar(f)}>Guardar</Button>
-          </div>
+        <div className="flex justify-end gap-2 border-t pt-3">
+          <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+          <Button onClick={() => onGuardar(f)}>Guardar</Button>
         </div>
       </DialogContent>
     </Dialog>
