@@ -143,7 +143,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           { categoria: "Ternero Recria",     origen: "destete",  cantidad: c.terneros_venta, peso },
           { categoria: "Ternera Recria",     origen: "destete",  cantidad: c.terneras_venta, peso },
           // La vaca de descarte se vende con su propio peso, no el del destete
-          { categoria: "Vaca CUT/Descarte",  origen: "descarte", cantidad: c.descarte,       peso: 400 },
+          { categoria: "Vaca CUT/Descarte",  origen: "descarte", cantidad: c.descarte,
+            peso: Number(c.ciclo.peso_descarte_kg) || 450 },
         ]
 
         for (const a of aCrear) {
@@ -154,14 +155,24 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           if (existente) {
             // No pisar un lote que ya tiene ventas: ahí manda lo que se decidió
             if (ventasDe(existente.id).length > 0) continue
+            // Tampoco pisar lo que el usuario ajustó a mano (p.ej. descontando la
+            // mortandad de las vacas de refugo). Se actualiza sólo `cantidad_calculada`
+            // para que la fila pueda avisar que el cálculo cambió.
+            const editadoAMano = existente.cantidad_calculada != null
+              && Math.abs(Number(existente.cantidad) - Number(existente.cantidad_calculada)) > 0.01
             await supabase.schema("productivo").from("stock_lotes")
-              .update({ cantidad: a.cantidad, fecha_disponible: fecha, updated_at: new Date().toISOString() })
+              .update({
+                ...(editadoAMano ? {} : { cantidad: a.cantidad }),
+                cantidad_calculada: a.cantidad,
+                fecha_disponible: fecha,
+                updated_at: new Date().toISOString(),
+              })
               .eq("id", existente.id)
           } else {
             await supabase.schema("productivo").from("stock_lotes").insert({
               empresa: "MSA", ciclo_id: c.ciclo.id,
               categoria: a.categoria, origen: a.origen,
-              cantidad: a.cantidad, fecha_disponible: fecha,
+              cantidad: a.cantidad, cantidad_calculada: a.cantidad, fecha_disponible: fecha,
               peso_base_kg: a.peso, ganancia_diaria_kg: 0,
               notas: `Generado desde el período ${c.ciclo.campania}`,
             })
@@ -283,6 +294,13 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       </td>
                       <td className="px-3 py-2 text-right">
                         {n1(l.cantidad)}
+                        {l.cantidad_calculada != null
+                          && Math.abs(Number(l.cantidad) - Number(l.cantidad_calculada)) > 0.01 && (
+                          <span className="ml-1 text-[10px] text-blue-600"
+                            title={`Ajustado a mano. El cálculo da ${n1(Number(l.cantidad_calculada))}`}>
+                            ✎
+                          </span>
+                        )}
                         {des && Math.abs(des.cabezas - Number(l.cantidad)) > 0.01 && (
                           <span className="ml-1 text-[10px] text-amber-600"
                             title="La pesada hoy dice otra cantidad">

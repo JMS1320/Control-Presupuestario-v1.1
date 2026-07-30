@@ -73,6 +73,8 @@ export interface CicloStock {
   pct_descarte_falladas: number
   pct_reposicion: number
   peso_destete_kg: number
+  /** Peso de venta de la vaca de descarte (refugo). */
+  peso_descarte_kg: number
   /** Datos reales: si están, pisan el cálculo. */
   real_destetados: number | null
   real_machos: number | null
@@ -209,6 +211,8 @@ export interface LoteStock {
   peso_base_kg: number
   /** Si no se vende al destete y se recría, engorda esto por día. */
   ganancia_diaria_kg: number
+  /** Lo que dio el cálculo la última vez. Si difiere de `cantidad`, se editó a mano. */
+  cantidad_calculada: number | null
   notas: string | null
 }
 

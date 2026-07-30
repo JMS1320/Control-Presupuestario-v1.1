@@ -11334,3 +11334,12 @@ ALTER TABLE productivo.stock_ciclos ALTER COLUMN pct_descarte_falladas SET DEFAU
 -- terneras destetadas. 220 x 20% = 44, que coincide con las 45 que el usuario marco.
 -- pct_descarte_falladas default 0.80: del 15% que no desteta, la mayor parte es falla de
 -- la vaca (se vende); el resto es falla del ternero y la vaca puede quedarse.
+
+-- Aplicado 2026-07-29: peso de la vaca refugo + proteccion de la edicion manual.
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS peso_descarte_kg numeric(8,2) NOT NULL DEFAULT 450;
+-- Antes estaba hardcodeado en 400 y era un valor inventado. 450 lo dio el usuario.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS cantidad_calculada numeric(10,2);
+-- Si cantidad != cantidad_calculada, el usuario lo edito a mano (p.ej. descontando la
+-- mortandad de las vacas de refugo) y el regenerado NO lo pisa.

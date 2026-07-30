@@ -81,6 +81,7 @@ export function TabEvolucionRodeo() {
       pct_descarte_falladas: parsePct(String(f.pct_descarte_falladas)),
       pct_reposicion: parsePct(String(f.pct_reposicion)),
       peso_destete_kg: parseNum(String(f.peso_destete_kg)),
+      peso_descarte_kg: parseNum(String(f.peso_descarte_kg)),
       real_destetados: String(f.real_destetados ?? "").trim() === "" ? null : parseNum(String(f.real_destetados)),
       real_machos: String(f.real_machos ?? "").trim() === "" ? null : parseNum(String(f.real_machos)),
       real_hembras: String(f.real_hembras ?? "").trim() === "" ? null : parseNum(String(f.real_hembras)),
@@ -171,6 +172,7 @@ export function TabEvolucionRodeo() {
       pct_descarte_falladas: ultimo ? fmtPctTxt(ultimo.ciclo.pct_descarte_falladas) : "80",
       pct_reposicion: ultimo ? fmtPctTxt(ultimo.ciclo.pct_reposicion) : "20",
       peso_destete_kg: ultimo ? String(ultimo.ciclo.peso_destete_kg) : "200",
+      peso_descarte_kg: ultimo ? String(ultimo.ciclo.peso_descarte_kg) : "450",
     })
   }
 
@@ -183,6 +185,7 @@ export function TabEvolucionRodeo() {
     pct_descarte_falladas: fmtPctTxt(c.pct_descarte_falladas),
     pct_reposicion: fmtPctTxt(c.pct_reposicion),
     peso_destete_kg: String(c.peso_destete_kg),
+    peso_descarte_kg: String(c.peso_descarte_kg ?? 450),
     real_destetados: c.real_destetados ?? "",
     real_machos: c.real_machos ?? "",
     real_hembras: c.real_hembras ?? "",
@@ -431,6 +434,7 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
               {campoPct("pct_descarte_falladas", "% Descarte de falladas", "80 = falla de la vaca")}
               {campoPct("pct_reposicion", "% Reposición", "sobre la base entorada · 20 mantiene")}
               {campo("peso_destete_kg", "Peso al destete (kg)")}
+              {campo("peso_descarte_kg", "Peso vaca refugo (kg)", "peso de venta del descarte")}
             </div>
           </div>
 
