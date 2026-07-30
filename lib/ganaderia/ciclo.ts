@@ -7,15 +7,19 @@
 
 // ── Fechas del ciclo — DERIVADAS de la campaña ────────────────────────────────
 //
-// La campaña tiene siempre un servicio, una parición y un destete, a offsets fijos.
-// Por eso NO se piden como input: pedirlas es ruido y además invita a que el dato
-// tipeado se contradiga con el nombre de la campaña.
+// ⚠️ EL PERÍODO VA DE SERVICIO A SERVICIO (12 meses), no de un servicio a su propio
+// destete (17 meses). Es la definición que hace que **el cierre de un período sea la
+// apertura del siguiente**, sin desfasajes.
 //
-//   campaña 27/28  →  servicio  oct-2026   ← ojo: cae en la campaña ANTERIOR
-//                     parición  jul-2027
-//                     destete   mar-2028
+//   campaña 26/27 = 1/10/2025 → 1/10/2026
+//     · servicio            1/10/2025   ← abre el período
+//     · destete EN el período  3/2026    ← ¡del servicio ANTERIOR!
+//     · parición            7/2026
+//     · su propio destete      3/2027    ← cae en la campaña SIGUIENTE
 //
-// (una vaca servida en 10/26 pare en 7/27 y se desteta en 3/28)
+// El único corrimiento del modelo está acá: el destete que ocurre durante un período
+// es el producto del servicio del período anterior (16 meses antes). El stock, en
+// cambio, encadena limpio: rodeo(N+1) = rodeo(N) − refugo(N) + retenidas(N).
 
 /** Meses del ciclo. Si alguna vez se corren, se cambian acá y no en 20 lugares. */
 export const MES_SERVICIO = 10
@@ -23,9 +27,12 @@ export const MES_PARICION = 7
 export const MES_DESTETE  = 3
 
 export interface FechasCiclo {
-  servicio: string   // 'YYYY-MM-DD'
-  paricion: string
+  servicio: string   // 'YYYY-MM-DD' — abre el período
+  /** Destete que OCURRE durante el período. Es del servicio anterior. */
   destete: string
+  paricion: string
+  /** Destete del propio servicio de este período. Cae en la campaña siguiente. */
+  destete_propio: string
 }
 
 /**
@@ -40,9 +47,10 @@ export function fechasCampania(campania: string): FechasCiclo | null {
   const anioB = 2000 + Number(m[2])   // 28 → 2028
   const d = (a: number, mes: number) => `${a}-${String(mes).padStart(2, '0')}-01`
   return {
-    servicio: d(anioA - 1, MES_SERVICIO),
-    paricion: d(anioA, MES_PARICION),
-    destete:  d(anioB, MES_DESTETE),
+    servicio:       d(anioA - 1, MES_SERVICIO),   // 1/10/2025 para 26/27
+    destete:        d(anioA, MES_DESTETE),        // 3/2026 — el que ocurre EN el período
+    paricion:       d(anioA, MES_PARICION),       // 7/2026
+    destete_propio: d(anioB, MES_DESTETE),        // 3/2027 — cae en la campaña siguiente
   }
 }
 
@@ -51,7 +59,8 @@ export function etiquetaFechas(campania: string): string {
   const f = fechasCampania(campania)
   if (!f) return 'campaña sin formato AA/BB'
   const mm = (s: string) => `${Number(s.slice(5, 7))}/${s.slice(2, 4)}`
-  return `serv ${mm(f.servicio)} · pare ${mm(f.paricion)} · dest ${mm(f.destete)}`
+  const anioFin = Number(f.servicio.slice(0, 4)) + 1
+  return `serv ${mm(f.servicio)} → ${MES_SERVICIO}/${String(anioFin).slice(-2)} · destete ${mm(f.destete)}`
 }
 
 export interface CicloStock {
@@ -134,6 +143,11 @@ export interface CicloCalculado {
 export function calcularCiclo(
   ciclo: CicloStock,
   apertura?: { vacas: number; vaquillonas: number },
+  /**
+   * Rodeo del período ANTERIOR. Es la base del destete: los terneros que se destetan
+   * durante este período son el producto del servicio anterior, no del propio.
+   */
+  rodeoPrev?: number,
 ): CicloCalculado {
   const aperturaManual = ciclo.vacas_apertura != null || ciclo.vaquillonas_apertura != null
 
@@ -141,10 +155,12 @@ export function calcularCiclo(
   const vaquillonas = Number(ciclo.vaquillonas_apertura ?? apertura?.vaquillonas ?? 0)
   const rodeo = vacas + vaquillonas
 
-  // Destete: el real pisa al proyectado
+  // Destete que OCURRE durante este período. Sale del servicio ANTERIOR, así que se
+  // proyecta sobre el rodeo del período anterior. El real pisa al proyectado.
+  const base = rodeoPrev ?? 0
   const destetados = ciclo.real_destetados != null
     ? Number(ciclo.real_destetados)
-    : rodeo * Number(ciclo.pct_destete)
+    : base * Number(ciclo.pct_destete)
 
   const terneros = ciclo.real_machos != null
     ? Number(ciclo.real_machos)
@@ -153,9 +169,10 @@ export function calcularCiclo(
     ? Number(ciclo.real_hembras)
     : destetados - terneros
 
-  // Falladas = lo que no destetó. Se calcula contra el rodeo, no contra las vacas solas:
-  // las vaquillonas que fallan también entran al descarte.
-  const falladas = Math.max(0, rodeo - destetados)
+  // Falladas = del rodeo que se sirvió (el ANTERIOR) cuántos no destetaron. Ojo: la
+  // base es rodeoPrev, pero el refugo se descuenta del rodeo VIGENTE — son las mismas
+  // vacas, un año después.
+  const falladas = Math.max(0, base - destetados)
   const descarte = ciclo.real_descarte != null
     ? Number(ciclo.real_descarte)
     : falladas * Number(ciclo.pct_descarte_falladas)
@@ -209,47 +226,42 @@ export function ordenarPorCampania(a: CicloStock, b: CicloStock): number {
 
 /**
  * Encadena la línea de tiempo. La apertura cargada a mano SIEMPRE gana; si está vacía,
- * se hereda.
+ * se hereda del cierre del período anterior.
  *
- * ⚠️ EL DESFASAJE ES DE DOS PERÍODOS, no de uno. Una campaña dura 17 meses (servicio →
- * su propio destete) mientras que los servicios son anuales, así que el destete de una
- * campaña cae *entre* los dos servicios siguientes:
+ * EL STOCK ENCADENA LIMPIO, sin desfasajes — el cierre de un período ES la apertura del
+ * siguiente:
  *
- *   26/27:  servicio oct-25 ─────────────────── destete mar-27
- *   27/28:            servicio oct-26  ← el destete del 26/27 todavía no ocurrió
- *   28/29:                      servicio oct-27  ← recién acá entran sus terneras
+ *   vacas(N+1)       = vacas(N) + vaquillonas(N) − refugo(N)   ← las vaquillonas parieron
+ *   vaquillonas(N+1) = retenidas(N)
+ *   rodeo(N+1)       = rodeo(N) − refugo(N) + retenidas(N)
  *
- * Entonces todo lo que se decide en el destete de M —a cuáles vacas se descarta y qué
- * terneras se retienen— impacta el rodeo de **M+2**:
+ * Verificado con datos reales:
+ *   1/10/24:  214 (160+54)  − 22 refugo + 28 vaquillonas = 220  ✓
+ *   1/10/25:  220 (192+28)  − 16 refugo + 60 vaquillonas = 264  ✓
  *
- *   vaquillonas(i) = retenidas(i−2)
- *   vacas(i)       = vacas(i−1) + vaquillonas(i−1) − descarte(i−2)
- *
- * Se verifica con los datos reales: las 28 vaquillonas del servicio de oct-2025 (26/27)
- * fueron destetadas en feb-2025, o sea el destete de la campaña 24/25 — dos antes.
+ * El único corrimiento del modelo está en el DESTETE, no en el stock: los terneros que
+ * se destetan durante el período N son el producto del servicio del período N−1. Por eso
+ * `calcularCiclo` recibe `rodeoPrev` como base del destete y de las falladas.
  */
 export function calcularLineaTiempo(ciclos: CicloStock[]): CicloCalculado[] {
   const ordenados = [...ciclos].sort(ordenarPorCampania)
   const out: CicloCalculado[] = []
 
   for (let i = 0; i < ordenados.length; i++) {
-    const prev1 = out[i - 1]   // período anterior: aporta las vacas y sus vaquillonas
-    const prev2 = out[i - 2]   // dos atrás: ahí se decidió el descarte y la retención
+    const prev = out[i - 1]
 
-    const apertura = prev1
+    const apertura = prev
       ? {
-          vacas: Math.max(0, prev1.vacas + prev1.vaquillonas - (prev2?.descarte ?? 0)),
-          vaquillonas: prev2?.retenidas ?? 0,
+          vacas: Math.max(0, prev.vacas + prev.vaquillonas - prev.descarte),
+          vaquillonas: prev.retenidas,
         }
       : undefined
 
-    const calc = calcularCiclo(ordenados[i]!, apertura)
+    const calc = calcularCiclo(ordenados[i]!, apertura, prev?.rodeo)
 
-    // El cierre se expone para mostrarlo, pero el que manda es el cálculo de arriba.
-    const sig1 = calc
-    const sig2 = out[i - 1]
-    calc.vacas_cierre = Math.max(0, sig1.vacas + sig1.vaquillonas - (sig2?.descarte ?? 0))
-    calc.vaquillonas_cierre = sig2?.retenidas ?? 0
+    // El cierre es literalmente la apertura del siguiente.
+    calc.vacas_cierre = Math.max(0, calc.vacas + calc.vaquillonas - calc.descarte)
+    calc.vaquillonas_cierre = calc.retenidas
 
     out.push(calc)
   }
@@ -348,7 +360,17 @@ export function campaniaDeServicio(anioServicio: number): string {
   return `${String(a).padStart(2, '0')}/${String(b).padStart(2, '0')}`
 }
 
-/** Agrupa `ciclos_cria` por año de servicio y arma la propuesta por campaña. */
+/**
+ * Arma la propuesta por campaña desde `ciclos_cria`.
+ *
+ * ⚠️ Cada registro de `ciclos_cria` se REPARTE ENTRE DOS PERÍODOS, porque el servicio y
+ * su destete ocurren en períodos distintos:
+ *
+ *   anio_servicio 2024 → servicio (214 cab) va al período que abre 1/10/2024  = camp. 25/26
+ *                      → destete  (189 cab, feb-2026) ocurre durante          = camp. 26/27
+ *
+ * Meter las dos cosas en la misma fila era lo que rompía el encadenamiento.
+ */
 export function proponerDesdeCiclosCria(filas: FilaCicloCria[]): PropuestaCiclo[] {
   const porAnio = new Map<number, FilaCicloCria[]>()
   for (const f of filas) {
@@ -359,34 +381,47 @@ export function proponerDesdeCiclosCria(filas: FilaCicloCria[]): PropuestaCiclo[
   const num = (v: number | null | undefined) => Number(v) || 0
   const esVaquillona = (rodeo: string | null) => /vaquillona/i.test(rodeo ?? '')
 
-  return Array.from(porAnio.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([anio, fs]) => {
-      const vacas = fs.filter(f => !esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
-      const vaquillonas = fs.filter(f => esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
-      const aServicio = vacas + vaquillonas
-      const prenadas = fs.reduce((s, f) => s + num(f.cabezas_prenadas), 0)
+  // campaña → propuesta en construcción
+  const acc = new Map<string, PropuestaCiclo>()
+  const vacia = (campania: string, anio: number): PropuestaCiclo => ({
+    campania, anio_servicio: anio,
+    vacas: 0, vaquillonas: 0, a_servicio: 0, prenadas: 0,
+    destetados: null, machos: null, hembras: null, kg_promedio: null,
+    pct_destete_real: null, pct_machos_real: null,
+    cerrado: false, fecha_servicio: null, fecha_destete: null,
+  })
 
-      const cerrado = fs.some(f => f.terneros_destetados != null)
-      const destetados = cerrado ? fs.reduce((s, f) => s + num(f.terneros_destetados), 0) : null
-      const machos = cerrado ? fs.reduce((s, f) => s + num(f.machos_destetados), 0) : null
-      const hembras = cerrado ? fs.reduce((s, f) => s + num(f.hembras_destetados), 0) : null
+  for (const [anio, fs] of Array.from(porAnio.entries()).sort((a, b) => a[0] - b[0])) {
+    // ── El SERVICIO abre el período que empieza en octubre de ese año
+    const campServicio = campaniaDeServicio(anio)
+    const pS = acc.get(campServicio) ?? vacia(campServicio, anio)
+    pS.vacas = fs.filter(f => !esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
+    pS.vaquillonas = fs.filter(f => esVaquillona(f.rodeo)).reduce((s, f) => s + num(f.cabezas_servicio), 0)
+    pS.a_servicio = pS.vacas + pS.vaquillonas
+    pS.prenadas = fs.reduce((s, f) => s + num(f.cabezas_prenadas), 0)
+    pS.fecha_servicio = fs.map(f => f.fecha_servicio).filter(Boolean)[0] ?? null
+    acc.set(campServicio, pS)
 
-      const kgs = fs.map(f => Number(f.kg_promedio)).filter(k => k > 0)
+    // ── El DESTETE de ese servicio ocurre durante el período SIGUIENTE
+    const cerrado = fs.some(f => f.terneros_destetados != null)
+    if (!cerrado) continue
 
-      return {
-        campania: campaniaDeServicio(anio),
-        anio_servicio: anio,
-        vacas, vaquillonas, a_servicio: aServicio, prenadas,
-        destetados, machos, hembras,
-        kg_promedio: kgs.length ? kgs.reduce((s, k) => s + k, 0) / kgs.length : null,
-        pct_destete_real: cerrado && aServicio > 0 ? destetados! / aServicio : null,
-        pct_machos_real: cerrado && destetados! > 0 ? machos! / destetados! : null,
-        cerrado,
-        fecha_servicio: fs.map(f => f.fecha_servicio).filter(Boolean)[0] ?? null,
-        fecha_destete: fs.map(f => f.fecha_destete).filter(Boolean)[0] ?? null,
-      }
-    })
+    const campDestete = campaniaDeServicio(anio + 1)
+    const pD = acc.get(campDestete) ?? vacia(campDestete, anio + 1)
+    pD.destetados = fs.reduce((s, f) => s + num(f.terneros_destetados), 0)
+    pD.machos = fs.reduce((s, f) => s + num(f.machos_destetados), 0)
+    pD.hembras = fs.reduce((s, f) => s + num(f.hembras_destetados), 0)
+    const kgs = fs.map(f => Number(f.kg_promedio)).filter(k => k > 0)
+    pD.kg_promedio = kgs.length ? kgs.reduce((s, k) => s + k, 0) / kgs.length : null
+    pD.fecha_destete = fs.map(f => f.fecha_destete).filter(Boolean)[0] ?? null
+    pD.cerrado = true
+    // El % de destete se mide contra el rodeo que se SIRVIÓ, o sea el del período anterior
+    pD.pct_destete_real = pS.a_servicio > 0 ? pD.destetados / pS.a_servicio : null
+    pD.pct_machos_real = pD.destetados > 0 ? pD.machos / pD.destetados : null
+    acc.set(campDestete, pD)
+  }
+
+  return Array.from(acc.values()).sort((a, b) => a.campania.localeCompare(b.campania))
 }
 
 /** Días corridos entre dos fechas 'YYYY-MM-DD'. */

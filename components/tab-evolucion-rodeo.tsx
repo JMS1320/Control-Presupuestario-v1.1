@@ -224,8 +224,9 @@ export function TabEvolucionRodeo() {
     })
   }
 
-  const editar = (c: CicloStock) => setModal({
+  const editar = (c: CicloStock, rodeoPrev?: number) => setModal({
     ...c,
+    __rodeoPrev: rodeoPrev ?? 0,
     vacas_apertura: c.vacas_apertura ?? "",
     vaquillonas_apertura: c.vaquillonas_apertura ?? "",
     pct_destete: fmtPctTxt(c.pct_destete),
@@ -253,7 +254,8 @@ export function TabEvolucionRodeo() {
         return `${n1(c.rodeo)}  (${signo}${v.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%)`
       }, clase: "font-semibold bg-gray-50" },
     { label: "% Destete",             get: c => pct(c.ciclo.pct_destete), clase: "text-gray-500", sep: true },
-    { label: "Destetados",            get: c => n1(c.destetados), clase: "font-medium" },
+    // El destete que ocurre en este período es el producto del servicio ANTERIOR.
+    { label: "Destetados (en el período)", get: c => n1(c.destetados), clase: "font-medium" },
     { label: "→ Terneros",            get: c => n1(c.terneros), clase: "text-gray-600" },
     { label: "→ Terneras",            get: c => n1(c.terneras), clase: "text-gray-600" },
     { label: "No destetaron (merma)", get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
@@ -378,11 +380,11 @@ export function TabEvolucionRodeo() {
                 ))}
                 <tr className="border-t-2">
                   <td className="sticky left-0 z-10 bg-white px-4 py-2"></td>
-                  {linea.map(c => (
+                  {linea.map((c, i) => (
                     <td key={c.ciclo.id} className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
-                          onClick={() => editar(c.ciclo)}>Editar</Button>
+                          onClick={() => editar(c.ciclo, linea[i - 1]?.rodeo)}>Editar</Button>
                         <Button variant="ghost" size="sm" className="h-6 px-1"
                           onClick={() => borrar(c.ciclo.id)}>
                           <Trash2 className="h-3 w-3 text-gray-400" />
@@ -459,13 +461,15 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
   const pDescarte = parsePct(String(f.pct_descarte_falladas ?? "0"))
   const pRepo = parsePct(String(f.pct_reposicion ?? "0"))
 
+  // El destete de este período sale del servicio ANTERIOR: la base es su rodeo.
+  const rodeoPrev = Number(f.__rodeoPrev ?? 0)
   const destetados = String(f.real_destetados ?? "").trim() !== ""
-    ? parseNum(String(f.real_destetados)) : rodeo * pDestete
+    ? parseNum(String(f.real_destetados)) : rodeoPrev * pDestete
   const terneros = String(f.real_machos ?? "").trim() !== ""
     ? parseNum(String(f.real_machos)) : destetados * pMachos
   const terneras = String(f.real_hembras ?? "").trim() !== ""
     ? parseNum(String(f.real_hembras)) : destetados - terneros
-  const falladas = Math.max(0, rodeo - destetados)
+  const falladas = Math.max(0, rodeoPrev - destetados)
   const descarte = String(f.real_descarte ?? "").trim() !== ""
     ? parseNum(String(f.real_descarte)) : falladas * pDescarte
 
@@ -592,7 +596,7 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
 
             <Seccion titulo="3 · Parámetros de proyección">
               <div className="grid grid-cols-2 gap-3">
-                {campoPct("pct_destete", "% Destete", "sobre la base entorada")}
+                {campoPct("pct_destete", "% Destete", `sobre el rodeo anterior (${n1(rodeoPrev)})`)}
                 {campoPct("pct_machos", "% Machos", "del destete")}
               </div>
 
@@ -706,6 +710,7 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
                 <tbody>
                   {[
                     ["Base entorada", n1(rodeo), "font-semibold"],
+                    ["Rodeo anterior", n1(rodeoPrev), "text-gray-400"],
                     ["Destetados", n1(destetados), ""],
                     ["→ Terneros", n1(terneros), "text-gray-500"],
                     ["→ Terneras", n1(terneras), "text-gray-500"],

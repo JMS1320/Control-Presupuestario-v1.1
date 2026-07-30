@@ -1201,27 +1201,33 @@ Reserva Reposición 60                        → entra al rodeo
 > de `ciclos_cria` del último ciclo cerrado (2024: 160 + 54). La referencia estaba mal elegida:
 > mira el pasado cuando lo que hace falta es la foto de hoy.
 
-**⚠️ EL DESFASAJE ES DE DOS PERÍODOS** (corregido 2026-07-29). Una campaña dura 17 meses
-(servicio → su propio destete) pero los servicios son anuales, así que el destete de una
-campaña cae **entre** los dos servicios siguientes:
+**⚠️ EL PERÍODO VA DE SERVICIO A SERVICIO** (definición final, 2026-07-30). Un servicio y su
+propio destete abarcan 17 meses y se superponen con el ciclo siguiente; en cambio de servicio a
+servicio son 12 meses limpios, y ahí **el cierre de un período ES la apertura del siguiente**:
 ```
-26/27:  servicio oct-25 ─────────────────── destete mar-27
-27/28:            servicio oct-26  ← el destete del 26/27 todavía no ocurrió
-28/29:                      servicio oct-27  ← recién acá entran sus terneras
+rodeo(N+1) = rodeo(N) − refugo(N) + retenidas(N)
+vacas(N+1) = vacas(N) + vaquillonas(N) − refugo(N)   ← las vaquillonas paren y pasan a vaca
 ```
-Todo lo que se decide en el destete de M —descarte y retención— impacta el rodeo de **M+2**:
+Verificado con datos reales:
 ```
-vaquillonas(i) = retenidas(i−2)
-vacas(i)       = vacas(i−1) + vaquillonas(i−1) − descarte(i−2)
+1/10/24:  214 (160+54) − 22 refugo + 28 vaquillonas = 220  ✓
+1/10/25:  220 (192+28) − 16 refugo + 60 vaquillonas = 264  ✓ (= los 204 + 60 del usuario)
 ```
-Verificado con datos reales: las 28 vaquillonas del servicio oct-2025 fueron destetadas en
-feb-2025 = destete de la campaña 24/25, dos antes. Y las 45/60 marcadas en feb-2026
-(destete 25/26) entran al servicio de oct-2026 = campaña **27/28**.
 
-> Se había dado por cerrado con el argumento de que la base entorada disolvía el problema.
-> **Era falso**: el chequeo de reposición compara las retenidas contra las marcadas *del
-> destete de ese período*, o sea que sí son "las de esa camada" — y sirven dos campañas
-> después.
+**El único corrimiento está en el DESTETE, no en el stock**: los terneros que se destetan
+durante el período N son el producto del servicio del período **N−1** (16 meses antes). Por eso
+el `%destete` y las falladas se miden contra `rodeo(N−1)`, mientras que el refugo se descuenta
+del rodeo **vigente** — son las mismas vacas un año después.
+
+Consecuencia en `proponerDesdeCiclosCria`: **cada registro de `ciclos_cria` se reparte entre DOS
+períodos** (el servicio abre uno, su destete ocurre en el siguiente). Meter las dos cosas en la
+misma fila era lo que rompía el encadenamiento.
+
+> **Historial del error (3 intentos)**: (1) se encadenó todo a N+1 → las vaquillonas entraban a
+> un servicio anterior a su destete; (2) se corrigió todo a N+2 → se rompió que el cierre fuera
+> la apertura del siguiente; (3) definitivo: el stock encadena a N+1 sin lag y sólo el destete
+> mira a N−1. El error de fondo fue definir el período como "un servicio y su destete" en vez de
+> "de servicio a servicio".
 
 **Motor del ciclo (anual: servicio octubre → tacto → destete marzo):**
 ```
