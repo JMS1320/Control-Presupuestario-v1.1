@@ -11387,3 +11387,9 @@ ALTER TABLE productivo.stock_lotes
   ADD COLUMN IF NOT EXISTS plazo_cobro text NOT NULL DEFAULT '0';
 -- "0"=contado, "30", "30/60", "30/60/90". El monto se reparte en partes iguales.
 -- dias_cobro queda DEPRECADO (un solo entero no admitia cuotas).
+
+-- Aplicado 2026-07-30: fecha a la que corresponde el peso del lote.
+ALTER TABLE productivo.stock_lotes ADD COLUMN IF NOT EXISTS fecha_peso date;
+UPDATE productivo.stock_lotes SET fecha_peso = fecha_disponible WHERE fecha_peso IS NULL;
+-- Bug que corrige: el usuario cargaba el peso de HOY y la app lo tomaba como del destete,
+-- sumandole despues la ganancia diaria desde el destete -> engordaba dos veces.

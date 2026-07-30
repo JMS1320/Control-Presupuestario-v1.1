@@ -306,6 +306,8 @@ export interface LoteStock {
   cantidad: number
   fecha_disponible: string
   peso_base_kg: number
+  /** A qué fecha corresponde `peso_base_kg`. NULL = `fecha_disponible`. */
+  fecha_peso: string | null
   /** Si no se vende al destete y se recría, engorda esto por día. */
   ganancia_diaria_kg: number
   /** Lo que dio el cálculo la última vez. Si difiere de `cantidad`, se editó a mano. */
@@ -666,11 +668,18 @@ export function diasEntre(desde: string, hasta: string): number {
 }
 
 /**
- * Peso estimado a una fecha. Si se vende al destete es el peso base; si se retuvo para
- * recriar, suma la ganancia diaria por los días transcurridos.
+ * Peso estimado a una fecha: el peso base más la ganancia diaria por los días
+ * transcurridos DESDE LA FECHA DEL PESO, no desde la de disponibilidad.
+ *
+ * ⚠️ La distinción importa: si se carga el peso de HOY y se contara desde el destete, se
+ * le sumaría de nuevo el engorde que ya está incluido en ese peso.
  */
-export function pesoEstimado(lote: Pick<LoteStock, 'fecha_disponible' | 'peso_base_kg' | 'ganancia_diaria_kg'>, fechaVenta: string): number {
-  const dias = diasEntre(lote.fecha_disponible, fechaVenta)
+export function pesoEstimado(
+  lote: Pick<LoteStock, 'fecha_disponible' | 'fecha_peso' | 'peso_base_kg' | 'ganancia_diaria_kg'>,
+  fechaVenta: string,
+): number {
+  const desde = lote.fecha_peso ?? lote.fecha_disponible
+  const dias = diasEntre(desde, fechaVenta)
   return Number(lote.peso_base_kg) + dias * Number(lote.ganancia_diaria_kg)
 }
 

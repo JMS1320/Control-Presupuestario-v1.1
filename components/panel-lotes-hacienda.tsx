@@ -129,6 +129,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       cantidad: parseNum(String(f.cantidad)),
       fecha_disponible: f.fecha_disponible,
       peso_base_kg: parseNum(String(f.peso_base_kg)),
+      fecha_peso: f.fecha_peso || f.fecha_disponible || null,
       ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
       fecha_venta_estimada: f.fecha_venta_estimada || null,
       precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
@@ -515,8 +516,10 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
     </div>
   )
 
-  const dias = f.fecha_disponible
-    ? Math.max(0, Math.round((Date.now() - new Date(f.fecha_disponible + "T00:00:00").getTime()) / 86400000))
+  // La ganancia se cuenta desde la fecha DEL PESO, no desde la de disponibilidad
+  const baseFecha = f.fecha_peso || f.fecha_disponible
+  const dias = baseFecha
+    ? Math.max(0, Math.round((Date.now() - new Date(baseFecha + "T00:00:00").getTime()) / 86400000))
     : 0
   const pesoHoy = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
 
@@ -545,7 +548,15 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                 onChange={e => setF({ ...f, fecha_disponible: e.target.value })} />
               <p className="mt-1 text-[10px] text-gray-400">fecha del destete</p>
             </div>
-            {campo("peso_base_kg", "Peso a esa fecha (kg)")}
+            {campo("peso_base_kg", "Peso (kg)")}
+            <div>
+              <label className="text-xs text-gray-500">…a qué fecha</label>
+              <Input type="date" className="h-8" value={f.fecha_peso || f.fecha_disponible || ""}
+                onChange={e => setF({ ...f, fecha_peso: e.target.value })} />
+              <p className="mt-1 text-[10px] text-gray-400">
+                la ganancia se cuenta desde acá
+              </p>
+            </div>
             {campo("ganancia_diaria_kg", "Ganancia diaria (kg/día)", "0 = se vende sin engordar")}
           </div>
 
@@ -594,9 +605,10 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
             {/* Desglose en vivo: se ve la cadena completa antes de guardar */}
             {f.fecha_venta_estimada && (() => {
               const cab = parseNum(String(f.cantidad ?? "0"))
+              const desde = f.fecha_peso || f.fecha_disponible || f.fecha_venta_estimada
               const dias = Math.max(0, Math.round(
                 (new Date(f.fecha_venta_estimada + "T00:00:00").getTime()
-                 - new Date((f.fecha_disponible || f.fecha_venta_estimada) + "T00:00:00").getTime()) / 86400000))
+                 - new Date(desde + "T00:00:00").getTime()) / 86400000))
               const peso = parseNum(String(f.peso_base_kg ?? "0")) + dias * parseNum(String(f.ganancia_diaria_kg ?? "0"))
               const kgB = cab * peso
               const kgD = kgB * parseNum(String(f.pct_desbaste ?? "0")) / 100
@@ -670,10 +682,15 @@ interface GrupoPesada {
   cabezas: number
   peso_prom: number
   kg_total: number
+  /** Pesos individuales ORDENADOS DESC. Permiten sacar el promedio de cualquier subconjunto:
+   *  si se venden los 55 más pesados, los 40 que quedan tienen otro promedio. */
+  pesos: number[]
   /** Fecha de la pesada de la que salió el peso (en modo "última" varía por grupo). */
   fecha_pesada: string | null
   categoria: string
   esRetencion: boolean
+  /** Cabezas de este grupo que ya se cargaron como lote. */
+  yaCargadas: number
 }
 
 function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
@@ -695,7 +712,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
   const [grupos, setGrupos] = useState<GrupoPesada[]>([])
   const [sel, setSel] = useState<Record<string, boolean>>({})
   /** Cantidad y peso por grupo: se puede traer sólo una parte, y el peso se puede pisar. */
-  const [edits, setEdits] = useState<Record<string, { cant: string; peso: string }>>({})
+  const [edits, setEdits] = useState<Record<string, { cant: string; peso: string; cual: "pesados" | "livianos" | "todos" }>>({})
   const [ganancia, setGanancia] = useState("0,5")
   const [guardando, setGuardando] = useState(false)
 
@@ -743,16 +760,17 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           filas = Array.from(ultima.values())
         }
 
-        const acc = new Map<string, { sexo: string; marcado: boolean; n: number; kg: number; fmax: string }>()
+        const acc = new Map<string, { sexo: string; marcado: boolean; n: number; kg: number; fmax: string; pesos: number[] }>()
         for (const r of filas) {
           const t = r.ternero
           if (!t) continue
           const sexo = String(t.sexo ?? "")
           const marcado = !!t.es_torito
           const k = `${sexo}|${marcado}`
-          const cur = acc.get(k) ?? { sexo, marcado, n: 0, kg: 0, fmax: "" }
+          const cur = acc.get(k) ?? { sexo, marcado, n: 0, kg: 0, fmax: "", pesos: [] as number[] }
           cur.n += 1
           cur.kg += Number(r.peso_kg) || 0
+          cur.pesos.push(Number(r.peso_kg) || 0)
           if (String(r.fecha) > cur.fmax) cur.fmax = String(r.fecha)
           acc.set(k, cur)
         }
@@ -765,7 +783,13 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           cabezas: g.n,
           peso_prom: g.n ? g.kg / g.n : 0,
           kg_total: g.kg,
+          pesos: [...g.pesos].sort((a, b) => b - a),   // desc: los más pesados primero
           fecha_pesada: g.fmax || null,
+          // Lo que ya se cargó de este grupo, para no volver a ofrecerlo
+          yaCargadas: lotes
+            .filter(l => l.origen === "stock_inicial" && l.categoria === (esMacho(g.sexo)
+              ? (g.marcado ? "Torito" : "Ternero Recria") : "Ternera Recria"))
+            .reduce((n, l) => n + Number(l.cantidad || 0), 0),
           categoria: esMacho(g.sexo)
             ? (g.marcado ? "Torito" : "Ternero Recria")
             : "Ternera Recria",
@@ -776,10 +800,11 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         setGrupos(out)
         // Por defecto se traen los vendibles; la retencion queda destildada
         const init: Record<string, boolean> = {}
-        const ini: Record<string, { cant: string; peso: string }> = {}
+        const ini: Record<string, { cant: string; peso: string; cual: "pesados" | "livianos" | "todos" }> = {}
         out.forEach(g => {
-          init[g.clave] = !g.esRetencion
-          ini[g.clave] = { cant: String(g.cabezas), peso: "" }
+          const quedan = Math.max(0, g.cabezas - g.yaCargadas)
+          init[g.clave] = !g.esRetencion && quedan > 0
+          ini[g.clave] = { cant: String(quedan), peso: "", cual: "pesados" }
         })
         setSel(init)
         setEdits(ini)
@@ -789,6 +814,25 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
 
   if (!abierto) return null
   const elegidos = grupos.filter(g => sel[g.clave])
+  /**
+   * Promedio del subconjunto que se lleva y del que queda. Si se venden los 55 más
+   * pesados, los 40 restantes tienen OTRO promedio: hay que calcularlo con los pesos
+   * individuales, no con el promedio general.
+   */
+  const promedios = (g: GrupoPesada, cant: number, cual: "pesados" | "livianos" | "todos") => {
+    const n = Math.max(0, Math.min(Math.round(cant), g.pesos.length))
+    if (!g.pesos.length) return { tomados: g.peso_prom, resto: g.peso_prom, quedan: 0 }
+    const orden = cual === "livianos" ? [...g.pesos].reverse() : g.pesos
+    const sel = cual === "todos" ? orden.slice(0, n) : orden.slice(0, n)
+    const resto = orden.slice(n)
+    const prom = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0
+    return {
+      tomados: cual === "todos" ? g.peso_prom : prom(sel),
+      resto: prom(resto),
+      quedan: resto.length,
+    }
+  }
+
   const diasDesdePesada = fecha
     ? Math.max(0, Math.round((Date.now() - new Date(fecha + "T00:00:00").getTime()) / 86400000))
     : 0
@@ -810,10 +854,15 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         const e = edits[g.clave]
         const cant = e && e.cant.trim() !== "" ? parseNum(e.cant) : g.cabezas
         const pesoManual = e && e.peso.trim() !== "" ? parseNum(e.peso) : null
+        // El promedio de los que se llevan, no el del grupo entero
+        const pr = promedios(g, cant, e?.cual ?? "pesados")
 
         const payload = {
           cantidad: cant,
-          peso_base_kg: pesoManual ?? Math.round(g.peso_prom * 100) / 100,
+          peso_base_kg: pesoManual ?? Math.round(pr.tomados * 100) / 100,
+          // El peso corresponde a la fecha de la pesada, salvo que se haya puesto a mano
+          // (en ese caso es de hoy).
+          fecha_peso: pesoManual ? new Date().toISOString().slice(0, 10) : (g.fecha_pesada ?? fecha),
           ganancia_diaria_kg: parseNum(ganancia),
           notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${cant} de ${g.cabezas} cab`
             + (pesoManual ? `, peso puesto a mano` : `, promedio real`),
@@ -911,12 +960,17 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           {g.fecha_pesada && (
                             <> · pesada {new Date(g.fecha_pesada + "T00:00:00").toLocaleDateString("es-AR")}</>
                           )}
+                          {g.yaCargadas > 0 && (
+                            <span className="ml-1 text-blue-600">
+                              · {n0(g.yaCargadas)} ya cargadas
+                            </span>
+                          )}
                         </span>
                         {g.esRetencion && (
                           <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
                         )}
                       </div>
-                      <div className="mt-1.5 flex items-center gap-2">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <span className="text-[10px] text-gray-500">Traer</span>
                         <Input className="h-7 w-16 text-right text-xs"
                           value={edits[g.clave]?.cant ?? ""}
@@ -928,8 +982,30 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           value={edits[g.clave]?.peso ?? ""}
                           onClick={e => e.preventDefault()}
                           onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "" }), peso: e.target.value } }))} />
-                        <span className="text-[10px] text-gray-400">kg — vacío usa el de la pesada</span>
+                        <span className="text-[10px] text-gray-400">kg — vacío usa el calculado</span>
+                        <select
+                          className="h-7 rounded border px-1 text-[10px]"
+                          value={edits[g.clave]?.cual ?? "pesados"}
+                          onClick={e => e.preventDefault()}
+                          onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "", cual: "pesados" }), cual: e.target.value as any } }))}>
+                          <option value="pesados">los más pesados</option>
+                          <option value="livianos">los más livianos</option>
+                          <option value="todos">indistinto (promedio)</option>
+                        </select>
                       </div>
+                      {(() => {
+                        const e = edits[g.clave]
+                        const cant = e ? parseNum(e.cant) : 0
+                        if (cant <= 0 || cant >= g.pesos.length) return null
+                        const pr = promedios(g, cant, e?.cual ?? "pesados")
+                        return (
+                          <div className="mt-1 rounded bg-blue-50 px-2 py-1 text-[10px] text-blue-900">
+                            Se llevan <strong>{n0(cant)}</strong> a{" "}
+                            <strong>{n1(pr.tomados)} kg</strong> · quedan{" "}
+                            <strong>{n0(pr.quedan)}</strong> a <strong>{n1(pr.resto)} kg</strong>
+                          </div>
+                        )
+                      })()}
                       <div className="text-xs text-gray-600">
                         <strong>{g.cabezas}</strong> cabezas · pesada{" "}
                         <strong>{n1(g.peso_prom)} kg</strong>
