@@ -1201,6 +1201,28 @@ Reserva Reposición 60                        → entra al rodeo
 > de `ciclos_cria` del último ciclo cerrado (2024: 160 + 54). La referencia estaba mal elegida:
 > mira el pasado cuando lo que hace falta es la foto de hoy.
 
+**⚠️ EL DESFASAJE ES DE DOS PERÍODOS** (corregido 2026-07-29). Una campaña dura 17 meses
+(servicio → su propio destete) pero los servicios son anuales, así que el destete de una
+campaña cae **entre** los dos servicios siguientes:
+```
+26/27:  servicio oct-25 ─────────────────── destete mar-27
+27/28:            servicio oct-26  ← el destete del 26/27 todavía no ocurrió
+28/29:                      servicio oct-27  ← recién acá entran sus terneras
+```
+Todo lo que se decide en el destete de M —descarte y retención— impacta el rodeo de **M+2**:
+```
+vaquillonas(i) = retenidas(i−2)
+vacas(i)       = vacas(i−1) + vaquillonas(i−1) − descarte(i−2)
+```
+Verificado con datos reales: las 28 vaquillonas del servicio oct-2025 fueron destetadas en
+feb-2025 = destete de la campaña 24/25, dos antes. Y las 45/60 marcadas en feb-2026
+(destete 25/26) entran al servicio de oct-2026 = campaña **27/28**.
+
+> Se había dado por cerrado con el argumento de que la base entorada disolvía el problema.
+> **Era falso**: el chequeo de reposición compara las retenidas contra las marcadas *del
+> destete de ese período*, o sea que sí son "las de esa camada" — y sirven dos campañas
+> después.
+
 **Motor del ciclo (anual: servicio octubre → tacto → destete marzo):**
 ```
 Rodeo      = Vacas + Vaquillonas de reposición

@@ -106,7 +106,11 @@ export interface CicloCalculado {
   /** Lo que queda para vender. */
   terneros_venta: number
   terneras_venta: number
-  // Cierre → apertura del período siguiente
+  /**
+   * Apertura que este período le pasa al SIGUIENTE. La calcula `calcularLineaTiempo`,
+   * no `calcularCiclo`, porque depende del período anterior: el descarte que resta y
+   * las vaquillonas que entran se decidieron DOS períodos atrás.
+   */
   vacas_cierre: number
   vaquillonas_cierre: number
   /** true si algún número vino de un dato real en vez del cálculo. */
@@ -123,9 +127,9 @@ export interface CicloCalculado {
  *   destete   = rodeo × pct_destete           → pct_machos / resto hembras
  *   falladas  = rodeo × (1 − pct_destete)     ← la merma
  *   descarte  = falladas × pct_descarte       ← sale de vaca Y vaquillona
- *   ─────────── cierre ───────────
- *   vacas(t+1)       = vacas − descarte + vaquillonas   (paren → pasan a vaca)
- *   vaquillonas(t+1) = terneras × pct_reposicion
+ *
+ * ⚠️ El ENCADENAMIENTO no se resuelve acá: lo que se decide en el destete de un período
+ * impacta DOS períodos después (ver `calcularLineaTiempo`). Este cálculo es local.
  */
 export function calcularCiclo(
   ciclo: CicloStock,
@@ -177,10 +181,10 @@ export function calcularCiclo(
     retencion_excede: retencionExcede,
     terneros_venta: terneros,
     terneras_venta: Math.max(0, terneras - retenidas),
-    // Las vaquillonas paren y pasan a vaca; las retenidas de este año son las
-    // vaquillonas del que viene.
-    vacas_cierre: Math.max(0, vacas - descarte + vaquillonas),
-    vaquillonas_cierre: retenidas,
+    // Placeholders: los completa `calcularLineaTiempo`, que es la única que ve los
+    // períodos vecinos y puede aplicar el desfasaje de dos.
+    vacas_cierre: 0,
+    vaquillonas_cierre: 0,
     tiene_reales: ciclo.real_destetados != null || ciclo.real_machos != null
       || ciclo.real_hembras != null || ciclo.real_descarte != null
       || ciclo.real_retenidas != null,
@@ -204,18 +208,50 @@ export function ordenarPorCampania(a: CicloStock, b: CicloStock): number {
 }
 
 /**
- * Encadena toda la línea de tiempo: cada período abre con el cierre del anterior,
- * salvo que tenga apertura cargada a mano (el primero siempre la tiene: es la foto de hoy).
+ * Encadena la línea de tiempo. La apertura cargada a mano SIEMPRE gana; si está vacía,
+ * se hereda.
+ *
+ * ⚠️ EL DESFASAJE ES DE DOS PERÍODOS, no de uno. Una campaña dura 17 meses (servicio →
+ * su propio destete) mientras que los servicios son anuales, así que el destete de una
+ * campaña cae *entre* los dos servicios siguientes:
+ *
+ *   26/27:  servicio oct-25 ─────────────────── destete mar-27
+ *   27/28:            servicio oct-26  ← el destete del 26/27 todavía no ocurrió
+ *   28/29:                      servicio oct-27  ← recién acá entran sus terneras
+ *
+ * Entonces todo lo que se decide en el destete de M —a cuáles vacas se descarta y qué
+ * terneras se retienen— impacta el rodeo de **M+2**:
+ *
+ *   vaquillonas(i) = retenidas(i−2)
+ *   vacas(i)       = vacas(i−1) + vaquillonas(i−1) − descarte(i−2)
+ *
+ * Se verifica con los datos reales: las 28 vaquillonas del servicio de oct-2025 (26/27)
+ * fueron destetadas en feb-2025, o sea el destete de la campaña 24/25 — dos antes.
  */
 export function calcularLineaTiempo(ciclos: CicloStock[]): CicloCalculado[] {
   const ordenados = [...ciclos].sort(ordenarPorCampania)
   const out: CicloCalculado[] = []
-  let apertura: { vacas: number; vaquillonas: number } | undefined
 
-  for (const c of ordenados) {
-    const calc = calcularCiclo(c, apertura)
+  for (let i = 0; i < ordenados.length; i++) {
+    const prev1 = out[i - 1]   // período anterior: aporta las vacas y sus vaquillonas
+    const prev2 = out[i - 2]   // dos atrás: ahí se decidió el descarte y la retención
+
+    const apertura = prev1
+      ? {
+          vacas: Math.max(0, prev1.vacas + prev1.vaquillonas - (prev2?.descarte ?? 0)),
+          vaquillonas: prev2?.retenidas ?? 0,
+        }
+      : undefined
+
+    const calc = calcularCiclo(ordenados[i]!, apertura)
+
+    // El cierre se expone para mostrarlo, pero el que manda es el cálculo de arriba.
+    const sig1 = calc
+    const sig2 = out[i - 1]
+    calc.vacas_cierre = Math.max(0, sig1.vacas + sig1.vaquillonas - (sig2?.descarte ?? 0))
+    calc.vaquillonas_cierre = sig2?.retenidas ?? 0
+
     out.push(calc)
-    apertura = { vacas: calc.vacas_cierre, vaquillonas: calc.vaquillonas_cierre }
   }
   return out
 }
