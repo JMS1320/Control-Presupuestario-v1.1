@@ -18,6 +18,7 @@ import { Loader2, Plus, Trash2, TrendingUp, Info, RotateCcw, Wand2, AlertTriangl
 import { PanelLotesHacienda } from "./panel-lotes-hacienda"
 import {
   calcularLineaTiempo, fechasCampania, etiquetaFechas, proponerDesdeCiclosCria, fechaDestete,
+  ordenDeCampania,
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
 
@@ -97,7 +98,8 @@ export function TabEvolucionRodeo() {
     const payload = {
       empresa: "MSA",
       campania: f.campania,
-      orden: Math.round(parseNum(String(f.orden))),
+      // Derivado de la campaña: la campaña ya dice cuándo va (ver ordenarPorCampania).
+      orden: ordenDeCampania(f.campania),
       // Las fechas proyectadas NO se guardan: se derivan de la campaña. Sólo persisten
       // las REALES, que hoy no se cargan desde acá (vendrán de ciclos_cria).
       fecha_servicio: f.fecha_servicio || null,
@@ -216,10 +218,14 @@ export function TabEvolucionRodeo() {
 
   const nuevo = () => {
     const ultimo = linea[linea.length - 1]
-    const sigOrden = ciclos.length ? Math.max(...ciclos.map(c => c.orden)) + 1 : 1
-    // (el orden real de la tabla sale de la campaña; esto es sólo un valor inicial)
     setModal({
-      campania: "", orden: sigOrden,
+      campania: "",
+      // Lo que va a heredar si deja la apertura vacía. Se pasa para que la vista previa
+      // del modal muestre números reales en vez de ceros.
+      __heredada: ultimo
+        ? { vacas: ultimo.vacas_cierre, vaquillonas: ultimo.vaquillonas_cierre }
+        : null,
+      __rodeoPrev: ultimo?.rodeo ?? 0,
       // El primero arranca con la foto de hoy; los siguientes heredan (apertura vacía)
       vacas_apertura: ciclos.length ? "" : "177",
       vaquillonas_apertura: ciclos.length ? "" : "27",
@@ -232,9 +238,10 @@ export function TabEvolucionRodeo() {
     })
   }
 
-  const editar = (c: CicloStock, rodeoPrev?: number) => setModal({
+  const editar = (c: CicloStock, rodeoPrev?: number, heredada?: { vacas: number; vaquillonas: number }) => setModal({
     ...c,
     __rodeoPrev: rodeoPrev ?? 0,
+    __heredada: heredada ?? null,
     vacas_apertura: c.vacas_apertura ?? "",
     vaquillonas_apertura: c.vaquillonas_apertura ?? "",
     pct_destete: fmtPctTxt(c.pct_destete),
@@ -406,7 +413,8 @@ ${serv}`
                     <td key={c.ciclo.id} className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
-                          onClick={() => editar(c.ciclo, linea[i - 1]?.rodeo)}>Editar</Button>
+                          onClick={() => editar(c.ciclo, linea[i - 1]?.rodeo,
+                            linea[i - 1] ? { vacas: linea[i - 1]!.vacas_cierre, vaquillonas: linea[i - 1]!.vaquillonas_cierre } : undefined)}>Editar</Button>
                         <Button variant="ghost" size="sm" className="h-6 px-1"
                           onClick={() => borrar(c.ciclo.id)}>
                           <Trash2 className="h-3 w-3 text-gray-400" />
@@ -477,7 +485,14 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
   // ── Vista previa en vivo: el mismo motor que la tabla ──────────────────────
   // Ver el resultado mientras se editan los parámetros evita tener que guardar,
   // mirar la tabla, volver a abrir y corregir.
-  const rodeo = parseNum(String(f.vacas_apertura ?? "0")) + parseNum(String(f.vaquillonas_apertura ?? "0"))
+  // Si la apertura está vacía se hereda del cierre del período anterior — la vista
+  // previa tiene que reflejar eso, no mostrar ceros.
+  const her = f.__heredada as { vacas: number; vaquillonas: number } | null
+  const vacasAp = String(f.vacas_apertura ?? "").trim() === ""
+    ? (her?.vacas ?? 0) : parseNum(String(f.vacas_apertura))
+  const vaqAp = String(f.vaquillonas_apertura ?? "").trim() === ""
+    ? (her?.vaquillonas ?? 0) : parseNum(String(f.vaquillonas_apertura))
+  const rodeo = vacasAp + vaqAp
   const pDestete = parsePct(String(f.pct_destete ?? "0"))
   const pMachos = parsePct(String(f.pct_machos ?? "0"))
   const pDescarte = parsePct(String(f.pct_descarte_falladas ?? "0"))
@@ -581,13 +596,13 @@ function ModalCiclo({ datos, onCerrar, onGuardar }: {
           <div className="col-span-2 space-y-3">
 
             <Seccion titulo="1 · Identificación">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-gray-500">Campaña</label>
-                  <Input className="h-8" placeholder="27/28" value={f.campania || ""}
-                    onChange={e => set("campania", e.target.value)} />
-                </div>
-                {campo("orden", "Orden", "posición en la línea de tiempo")}
+              <div>
+                <label className="text-xs text-gray-500">Campaña</label>
+                <Input className="h-8" placeholder="26/27" value={f.campania || ""}
+                  onChange={e => set("campania", e.target.value)} />
+                <p className="mt-1 text-[10px] text-gray-400">
+                  El orden en la línea de tiempo sale de acá; no hace falta cargarlo.
+                </p>
               </div>
               <div className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-[11px]">
                 {(() => {

@@ -223,6 +223,12 @@ export function calcularCiclo(
  * agrega un período viejo (cargar 25/26 después de 26/27 lo mandaba al final).
  * `orden` queda sólo como desempate.
  */
+/** Orden derivado de la campaña: "26/27" → 2026. No se pide como input. */
+export function ordenDeCampania(campania: string): number {
+  const m = /^(\d{2})\s*\/\s*(\d{2})$/.exec(String(campania ?? '').trim())
+  return m ? 2000 + Number(m[1]) : 0
+}
+
 export function ordenarPorCampania(a: CicloStock, b: CicloStock): number {
   const anio = (c: CicloStock) => {
     const m = /^(\d{2})\s*\/\s*(\d{2})$/.exec(String(c.campania ?? '').trim())
