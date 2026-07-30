@@ -553,6 +553,17 @@ Está a medio facturar, y justo es la punta que define la suba.
 Presupuesta lo que viene **por factura**, cuenta por cuenta. Cada una se calcula con el **modo**
 que mejor le va, y el modo se cambia cuando querés.
 
+### De dónde salen los datos: Facturas o Canales
+Arriba hay un selector. Son dos maneras legítimas de mirar lo mismo:
+
+- **Facturas** — lo que llegó con comprobante, con la cuenta imputada. Es lo que conviene hoy.
+- **Canales de pago** — banco, caja y tarjeta conciliados, cada movimiento con su cuenta.
+  Cobertura total (entra el gasto sin factura) y fecha de pago, que es la del flujo de caja.
+
+Al elegir *Canales* la pantalla te dice **qué porcentaje está conciliado**. Si está bajo, esa
+vista muestra menos de lo que se gastó y conviene volver a Facturas. Hoy el banco está en 16 %,
+la caja en 0 % y la tarjeta en 2 %.
+
 ### Los modos
 
 | Modo | Qué hace | Cuándo conviene |
@@ -574,6 +585,12 @@ con sus parámetros, y **los meses reales** que gastó, para comparar. Las notas
 aparecen en rojo. También podés pasar el mouse por cualquier celda y ver la explicación.
 
 El gris de la celda indica la confianza: cuanto más claro, menos datos hay detrás.
+
+### La inflación
+Si hay **IPC cargado** (en Precios y TC), la propagación lo usa mes a mes y **arrastra el último
+valor**: cargás escalones —seis meses a un ritmo, seis a otro— y no tenés que repetir el mismo
+número doce veces. La tasa fija de arriba sólo se usa donde no hay IPC, y cada cuenta puede pisar
+las dos con la suya.
 
 ### El control de arriba
 Compara lo presupuestado contra los **últimos 6 meses cerrados** y avisa de tres cosas:

@@ -76,10 +76,31 @@ const sinIpc = analizarProveedores(facturas, [], { ventanaMeses: 12, hoy: HOY })
 chk("sin IPC no compara", sinIpc.find(a => a.proveedor.startsWith("MEDICUS"))!.semaforo, "sin_ipc")
 chk("pero igual mide la suba", Math.round(sinIpc.find(a => a.proveedor.startsWith("MEDICUS"))!.subaTotal * 100), 23)
 
-// 8. IPC incompleto tampoco: daría a todos por encima
-const ipcCorto = ipc.slice(0, 3)
-chk("IPC incompleto no compara", analizarProveedores(facturas, ipcCorto, { ventanaMeses: 12, hoy: HOY })
-  .find(a => a.proveedor.startsWith("MEDICUS"))!.ipcAcumulado, null)
+// 8. El IPC se carga en ESCALONES y se arrastra: no hace falta repetir el mismo
+//    número doce veces. Con sólo dic cargado, el resto hereda ese 3 %.
+const ipcEscalon: PuntoIpc[] = [{ anio: 2025, mes: 12, variacion: 0.03 }]
+chk("un solo punto se arrastra a todo el tramo",
+  Math.round(analizarProveedores(facturas, ipcEscalon, { ventanaMeses: 12, hoy: HOY })
+    .find(a => a.proveedor.startsWith("MEDICUS"))!.ipcAcumulado! * 1000) / 10, 19.4)
+
+// Dos escalones: 3 % hasta marzo, 1 % de abril en adelante
+const dosEscalones: PuntoIpc[] = [
+  { anio: 2025, mes: 12, variacion: 0.03 },
+  { anio: 2026, mes: 4, variacion: 0.01 },
+]
+const acum2 = analizarProveedores(facturas, dosEscalones, { ventanaMeses: 12, hoy: HOY })
+  .find(a => a.proveedor.startsWith("MEDICUS"))!.ipcAcumulado!
+chk("dos escalones: 3 % x3 + 1 % x3", Math.round(acum2 * 1000) / 10,
+  Math.round((Math.pow(1.03, 3) * Math.pow(1.01, 3) - 1) * 1000) / 10)
+
+// 8b. Si NO hay nada que arrastrar en el tramo, no se inventa la comparación
+const ipcFuturo: PuntoIpc[] = [{ anio: 2027, mes: 1, variacion: 0.03 }]
+chk("IPC posterior al tramo igual resuelve (toma el primero)",
+  analizarProveedores(facturas, ipcFuturo, { ventanaMeses: 12, hoy: HOY })
+    .find(a => a.proveedor.startsWith("MEDICUS"))!.ipcAcumulado != null, true)
+chk("sin ningún punto, null",
+  analizarProveedores(facturas, [], { ventanaMeses: 12, hoy: HOY })
+    .find(a => a.proveedor.startsWith("MEDICUS"))!.ipcAcumulado, null)
 
 // 9. Resumen
 const res = resumenCartera(r)

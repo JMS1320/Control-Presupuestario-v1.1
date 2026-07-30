@@ -89,6 +89,35 @@ export interface CeldaPresupuesto {
 
 const clave = (a: number, m: number) => `${a}-${String(m).padStart(2, '0')}`
 const km = (a: number, m: number) => a * 12 + (m - 1)
+
+/**
+ * Cuánto multiplica la inflación entre dos meses.
+ *
+ * Con serie de IPC compone mes a mes (cada uno con su propia tasa, arrastrada); sin serie
+ * aplica la tasa fija elevada a los meses. Una cuenta puede pisar las dos con la suya.
+ */
+function factorInflacion(ctx: ContextoCalculo, desdeKm: number, hastaKm: number, fija: number | null): number {
+  if (hastaKm <= desdeKm) return 1
+  if (fija != null) return Math.pow(1 + fija, hastaKm - desdeKm)
+  if (ctx.ipc && ctx.ipc.length > 0) {
+    let f = 1
+    for (let k = desdeKm + 1; k <= hastaKm; k++) {
+      const v = resolverSerie(ctx.ipc, Math.floor(k / 12), (k % 12) + 1)
+      if (v.origen !== 'sin_dato') f *= 1 + v.valor / 100
+    }
+    return f
+  }
+  return Math.pow(1 + ctx.inflacionMensual, hastaKm - desdeKm)
+}
+
+/** Texto corto que explica qué inflación se aplicó. */
+function textoInflacion(ctx: ContextoCalculo, fija: number | null, n: number): string {
+  if (n <= 0) return ''
+  if (fija != null) return ` + ${(fija * 100).toFixed(1)} % mensual × ${n}`
+  if (ctx.ipc && ctx.ipc.length > 0) return ` + IPC de ${n} ${n === 1 ? 'mes' : 'meses'}`
+  if (ctx.inflacionMensual > 0) return ` + ${(ctx.inflacionMensual * 100).toFixed(1)} % mensual × ${n}`
+  return ''
+}
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`
 const MESES_TXT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 const etiquetaMes = (a: number, m: number) => `${MESES_TXT[m - 1]}-${String(a).slice(-2)}`
@@ -192,8 +221,14 @@ export function sugerirModo(nro: string, historia: PuntoHistorico[]): Sugerencia
 export interface ContextoCalculo {
   /** Meses a presupuestar, en orden. */
   meses: { anio: number; mes: number }[]
-  /** Fracción mensual por defecto (0.02 = 2 %). */
+  /** Fracción mensual por defecto (0.02 = 2 %). Se usa si no hay serie de IPC. */
   inflacionMensual: number
+  /**
+   * Serie de IPC mensual (variación en %). Si está, MANDA sobre la tasa fija y se arrastra
+   * hacia adelante: el usuario carga escalones — seis meses a un ritmo, seis a otro — y no
+   * tiene que repetir el mismo número doce veces.
+   */
+  ipc?: PuntoSerie[]
   /** Cabezas proyectadas por mes, si se tienen. Si no, se usa `cabezas_proyectadas`. */
   cabezasPorMes?: Record<string, number>
   hoy?: Date
@@ -209,7 +244,8 @@ export function calcularCuenta(
   ctx: ContextoCalculo,
 ): CeldaPresupuesto[] {
   const h = historiaUtil(historia.filter(p => p.nro_cuenta === cfg.nro_cuenta), ctx.hoy)
-  const inflacion = cfg.inflacion_mensual ?? ctx.inflacionMensual
+  // Una cuenta puede tener su propia tasa; si no, manda el IPC y en última instancia la global.
+  const fija = cfg.inflacion_mensual ?? null
   const vacio = (motivo: string): CeldaPresupuesto[] =>
     ctx.meses.map(m => ({ mes: clave(m.anio, m.mes), monto: 0, explicacion: motivo, confianza: 'baja' as const }))
 
@@ -235,12 +271,11 @@ export function calcularCuenta(
       const desde = km(ultimo.anio, ultimo.mes)
       return ctx.meses.map(m => {
         const n = Math.max(0, km(m.anio, m.mes) - desde)
-        const monto = base * Math.pow(1 + inflacion, n)
+        const monto = base * factorInflacion(ctx, desde, km(m.anio, m.mes), fija)
         return {
           mes: clave(m.anio, m.mes), monto,
-          explicacion: inflacion > 0 && n > 0
-            ? `Última factura (${etiquetaMes(ultimo.anio, ultimo.mes)}): ${pesos(base)} + ${(inflacion * 100).toFixed(1)} % mensual × ${n}`
-            : `Última factura (${etiquetaMes(ultimo.anio, ultimo.mes)}): ${pesos(base)}`,
+          explicacion: `Última factura (${etiquetaMes(ultimo.anio, ultimo.mes)}): ${pesos(base)}`
+            + textoInflacion(ctx, fija, n),
           confianza: n <= 6 ? 'alta' as const : 'media' as const,
         }
       })
@@ -259,12 +294,12 @@ export function calcularCuenta(
       const conFactura = enVentana.filter(p => p.monto !== 0).length
       return ctx.meses.map(m => {
         const k = Math.max(0, km(m.anio, m.mes) - ultimoKm)
-        const monto = base * Math.pow(1 + inflacion, k)
+        const monto = base * factorInflacion(ctx, ultimoKm, km(m.anio, m.mes), fija)
         return {
           mes: clave(m.anio, m.mes), monto,
           explicacion: `Promedio de ${n} meses (${pesos(suma)} ÷ ${n} = ${pesos(base)})`
             + (conFactura < n ? ` · ${n - conFactura} sin factura, cuentan como cero` : '')
-            + (inflacion > 0 && k > 0 ? ` + ${(inflacion * 100).toFixed(1)} % mensual × ${k}` : ''),
+            + textoInflacion(ctx, fija, k),
           confianza: conFactura >= Math.ceil(n / 2) ? 'alta' as const : 'media' as const,
         }
       })
@@ -285,10 +320,10 @@ export function calcularCuenta(
             confianza: 'baja' as const,
           }
         }
-        const monto = base * Math.pow(1 + inflacion, 12)
+        const monto = base * factorInflacion(ctx, km(m.anio - 1, m.mes), km(m.anio, m.mes), fija)
         return {
           mes: clave(m.anio, m.mes), monto,
-          explicacion: `${etiquetaMes(m.anio - 1, m.mes)}: ${pesos(base)} + ${(inflacion * 100).toFixed(1)} % mensual × 12`,
+          explicacion: `${etiquetaMes(m.anio - 1, m.mes)}: ${pesos(base)}` + textoInflacion(ctx, fija, 12),
           confianza: 'media' as const,
         }
       })
@@ -309,7 +344,7 @@ export function calcularCuenta(
       return ctx.meses.map(m => {
         const k = clave(m.anio, m.mes)
         const cab = ctx.cabezasPorMes?.[k] ?? (Number(cfg.cabezas_proyectadas) || ref)
-        const inflado = porCabezaMes * Math.pow(1 + inflacion, Math.max(0, km(m.anio, m.mes) - finPeriodo))
+        const inflado = porCabezaMes * factorInflacion(ctx, finPeriodo, km(m.anio, m.mes), fija)
         return {
           mes: k, monto: inflado * cab,
           explicacion: `${pesos(porCabezaMes)}/cabeza/mes (${pesos(total)} ÷ ${meses} meses ÷ ${ref} cab) × ${Math.round(cab)} cabezas`,

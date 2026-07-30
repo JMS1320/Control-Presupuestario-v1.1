@@ -48,6 +48,13 @@ export function PanelPresupuestoCuentas() {
   const [nombres, setNombres] = useState<Record<string, string>>({})
   const [cfgs, setCfgs] = useState<Record<string, ConfigCuenta>>({})
   const [inflacion, setInflacion] = useState(0)
+  /**
+   * De dónde sale la historia. Son dos maneras legítimas de mirar lo mismo y el usuario
+   * presupuestó años con la segunda; ver el dossier en PENDIENTES.
+   */
+  const [fuente, setFuente] = useState<"facturas" | "canales">("facturas")
+  const [ipc, setIpc] = useState<{ anio: number; mes: number; valor: number }[]>([])
+  const [cobertura, setCobertura] = useState<any[]>([])
   const [inflacionTxt, setInflacionTxt] = useState<string | null>(null)
   const [abierta, setAbierta] = useState<string | null>(null)
 
@@ -56,11 +63,19 @@ export function PanelPresupuestoCuentas() {
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [{ data: hist, error: e1 }, { data: conf, error: e2 }, { data: gen }] = await Promise.all([
-        supabase.from("presupuesto_historia_cuentas")
-          .select("nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores"),
+      const vista = fuente === "facturas"
+        ? "presupuesto_historia_cuentas" : "presupuesto_historia_canales"
+      const cols = fuente === "facturas"
+        ? "nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores"
+        : "nro_cuenta, cuenta_contable, anio, mes, monto, movimientos, canales"
+
+      const [{ data: hist, error: e1 }, { data: conf, error: e2 }, { data: gen },
+             { data: ip }, { data: cob }] = await Promise.all([
+        supabase.from(vista).select(cols),
         supabase.from("presupuesto_cuenta_config").select("*").eq("empresa", "MSA"),
         supabase.from("presupuesto_config").select("inflacion_mensual").eq("empresa", "MSA").maybeSingle(),
+        supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
+        supabase.from("presupuesto_cobertura_canales").select("*"),
       ])
       if (e1 || e2) { alert("Error cargando: " + (e1 || e2)!.message); return }
 
@@ -68,9 +83,13 @@ export function PanelPresupuestoCuentas() {
         nro_cuenta: String(r.nro_cuenta),
         anio: Number(r.anio), mes: Number(r.mes),
         monto: Number(r.monto) || 0,
-        facturas: Number(r.facturas) || 0,
-        proveedores: Number(r.proveedores) || 0,
+        facturas: Number(r.facturas ?? r.movimientos) || 0,
+        proveedores: Number(r.proveedores ?? r.canales) || 0,
       }))
+      setIpc(((ip || []) as any[]).map(r => ({
+        anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.valor_ipc) || 0,
+      })))
+      setCobertura((cob || []) as any[])
       setHistoria(puntos)
 
       const nom: Record<string, string> = {}
@@ -96,7 +115,7 @@ export function PanelPresupuestoCuentas() {
       setCfgs(mapa)
       setInflacion(Number(gen?.inflacion_mensual) || 0)
     } finally { setCargando(false) }
-  }, [])
+  }, [fuente])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -121,11 +140,12 @@ export function PanelPresupuestoCuentas() {
   }, [cfgs, historia])
 
   const presupuesto = useMemo(() => {
-    const ctx = { meses, inflacionMensual: inflacion }
+    // Si hay IPC cargado manda la serie (con arrastre); si no, la tasa fija.
+    const ctx = { meses, inflacionMensual: inflacion, ipc: ipc.length > 0 ? ipc : undefined }
     const out: Record<string, CeldaPresupuesto[]> = {}
     for (const nro of cuentas) out[nro] = calcularCuenta(cfgDe(nro), historia, ctx)
     return out
-  }, [cuentas, cfgDe, historia, meses, inflacion])
+  }, [cuentas, cfgDe, historia, meses, inflacion, ipc])
 
   const control = useMemo(() => {
     const efectivas: Record<string, ConfigCuenta> = {}
@@ -197,8 +217,21 @@ export function PanelPresupuestoCuentas() {
               {" "}El mes en curso no se usa para calcular: está a medio facturar.
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">Inflación mensual</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-500">Desde</span>
+              {(["facturas", "canales"] as const).map(f => (
+                <button key={f} type="button" onClick={() => setFuente(f)}
+                  className={`rounded border px-2 py-0.5 text-xs transition-colors ${
+                    fuente === f ? "border-gray-700 bg-gray-700 text-white" : "border-gray-200 hover:bg-gray-50"}`}>
+                  {f === "facturas" ? "Facturas" : "Canales de pago"}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">
+              {ipc.length > 0 ? "IPC cargado · tasa fija" : "Inflación mensual"}
+            </span>
             <Input className="h-7 w-16 text-right text-xs"
               value={inflacionTxt ?? fmtNumeroAR(inflacion * 100, 1)}
               onChange={e => setInflacionTxt(e.target.value)}
@@ -208,11 +241,21 @@ export function PanelPresupuestoCuentas() {
                 setInflacionTxt(null)
               }} />
             <span className="text-xs text-gray-500">%</span>
+            </div>
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {fuente === "canales" && <AvisoCobertura cobertura={cobertura} />}
+        {ipc.length > 0 && (
+          <p className="text-[11px] text-gray-500">
+            La inflación sale del <strong>IPC cargado</strong> ({ipc.length}{" "}
+            {ipc.length === 1 ? "mes" : "meses"}), arrastrando el último valor hacia adelante.
+            La tasa fija de arriba sólo se usa donde no hay IPC.
+          </p>
+        )}
+
         {/* ── Control de cordura ── */}
         <ControlPanel control={control} />
 
@@ -263,6 +306,42 @@ export function PanelPresupuestoCuentas() {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Cuánto de cada canal está conciliado.
+ *
+ * Sin esto la fuente "canales" miente por omisión: muestra sólo los movimientos que tienen
+ * cuenta imputada, así que parece que se gastó mucho menos de lo que se gastó.
+ */
+function AvisoCobertura({ cobertura }: { cobertura: any[] }) {
+  const total = cobertura.reduce((s, c) => s + (Number(c.debitos_total) || 0), 0)
+  const imputado = cobertura.reduce((s, c) => s + (Number(c.debitos_imputados) || 0), 0)
+  const pct = total > 0 ? imputado / total : 0
+  const flojo = pct < 0.8
+  return (
+    <div className={`rounded border p-2.5 text-xs ${
+      flojo ? "border-amber-300 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/50"}`}>
+      <p className={flojo ? "text-amber-900" : "text-emerald-900"}>
+        <strong>Conciliación: {Math.round(pct * 100)} % del gasto tiene cuenta imputada.</strong>{" "}
+        {flojo
+          ? "Con esta cobertura la vista por canales muestra menos de lo que se gastó — falta conciliar. Para presupuestar hoy conviene la fuente por facturas."
+          : "La cobertura alcanza para presupuestar desde acá."}
+      </p>
+      <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-gray-600">
+        {cobertura.map(c => {
+          const t = Number(c.debitos_total) || 0
+          const i = Number(c.debitos_imputados) || 0
+          return (
+            <span key={c.canal}>
+              {c.canal}: <strong>{t > 0 ? Math.round((i / t) * 100) : 0} %</strong>
+              <span className="text-gray-400"> ({c.imputados}/{c.movimientos} mov.)</span>
+            </span>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

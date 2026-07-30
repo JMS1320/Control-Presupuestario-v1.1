@@ -1523,6 +1523,95 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 🔀 FUENTE DEL PRESUPUESTO: FACTURAS ↔ CANALES *(2026-07-30)*
+
+##### Lo que el usuario aclaró — y por qué cambia el análisis
+> *"se puede presupuestar desde canales… durante mucho tiempo yo presupuesté desde canales. La
+> forma era que yo concilio los canales y les adjudico una cuenta contable o contra template,
+> sueldos, etc. Cada egreso o ingreso va a una cuenta específica. Entonces tomando desde canales
+> siempre supe cuánto veníamos gastando en cada cosa mes por mes."*
+
+**Mi objeción principal se cae.** Yo había dicho que desde canales no se puede imputar y que por
+eso no servía para proyectar. Es falso: **la conciliación adjudica la cuenta a cada movimiento**,
+así que el canal conciliado tiene composición igual que la factura, y además cobertura total y la
+fecha de pago (que es la que necesita el flujo de caja).
+
+Con el objetivo bien planteado — que el **saldo** cierre — el método por canales es, en datos
+completos, **al menos tan bueno como el de facturas y probablemente mejor**. Le quedan dos
+defectos reales: el SICORE corre plata entre dos cuentas (el total cierra, la composición no) y
+caja/tarjeta sin detallar son una bolsa hasta conciliarlas.
+
+##### Qué se hizo: la fuente es un interruptor, no una decisión
+En vez de elegir por el usuario, el panel de cuentas contables tiene un selector
+**Facturas / Canales de pago**. Los seis modos funcionan igual con cualquiera de las dos porque
+el motor recibe `PuntoHistorico[]` y no le importa de dónde salió.
+
+Vistas nuevas:
+- **`public.presupuesto_historia_canales`** — banco + caja (general/sigot/ams) + tarjeta,
+  agrupado por `nro_cuenta` y mes. Sólo movimientos con cuenta imputada, y el monto es el débito
+  **neto de créditos** (devoluciones y notas de crédito).
+- **`public.presupuesto_cobertura_canales`** — cuánto de cada canal está conciliado.
+
+##### ⚠️ Hoy la fuente por canales NO alcanza — y por eso se mide
+| Canal | Movimientos imputados | Débitos imputados | Período |
+|---|---|---|---|
+| banco | 106 / 661 (**16 %**) | $69,4 M de $432,6 M | feb → jun 2026 |
+| caja | 0 / 79 (**0 %**) | — | feb → may 2026 |
+| tarjeta | 5 / 320 (**2 %**) | $0,85 M de $38,3 M | oct 2024 → may 2026 |
+
+Con esta cobertura la vista **miente por omisión**: muestra sólo lo conciliado, así que parece que
+se gastó mucho menos. Por eso el panel muestra el porcentaje arriba y dice explícitamente que
+conviene la fuente por facturas mientras esté así. No es un defecto del método del usuario —
+es que en esta BD reconstruida la conciliación todavía no se puso al día.
+
+**Cuando la conciliación suba, la fuente por canales queda lista sin tocar código.**
+
+---
+
+#### 📈 IPC EN ESCALONES — se arrastra *(2026-07-30)*
+
+> *"para IPC y TC es necesaria la herramienta de propagación ya que presupuestaré escalones,
+> capaz pongo 6 meses con lo mismo y luego otros 6 de tal manera."*
+
+Cambio en dos lugares, los dos con `resolverSerie` de `lib/precios/serie.ts`:
+
+1. **`ipcAcumulado()`** (control de proveedores) — antes exigía el IPC mes por mes y devolvía
+   `null` si faltaba alguno. Ahora **arrastra el último cargado**: con un solo punto al inicio
+   alcanza, y dos escalones (3 % hasta marzo, 1 % desde abril) componen bien. Sólo da `null` si
+   no hay ningún punto que arrastrar.
+2. **El presupuesto de cuentas usa la serie de IPC si está cargada**, y la tasa fija sólo donde
+   no hay. `factorInflacion()` compone mes a mes en vez de elevar una tasa única, así que un
+   escalón se refleja en el mes exacto en que cambia. Cada cuenta puede seguir pisando las dos
+   con su propia tasa.
+
+⚠️ **Limitación conocida**: `resolverSerie` ignora los valores `<= 0` porque para un precio un
+cero significa "no cargado". Para el IPC eso implica que **un mes cargado en 0 % se comporta como
+vacío** y hereda el anterior. Si alguna vez hay deflación o un mes plano de verdad, hay que
+distinguirlo — no se tocó `resolverSerie` porque es compartida con precios y TC.
+
+---
+
+#### 🧾 FEDERACIÓN PATRONAL — resuelto por indicación del usuario *(2026-07-30)*
+
+> *"templates que sí tienen factura: es verdad, son pocos. Un ej es Fed Patronal que factura
+> semestral y va por cuotas. Me resultó más fácil poner las cuotas en templates… para este caso
+> particular ahora podríamos usar los templates para el presupuesto ya que es la realidad
+> financiera."*
+
+Hecho: `SEGUROS ESTRUCTURA` (422113) quedó como **`excluida`** en
+`presupuesto_cuenta_config`, con el motivo escrito — *"va por template: Federación Patronal
+factura semestral y las cuotas están cargadas"*. Es el único cruce real entre templates y
+cuentas, y ahora el presupuesto lo toma de un solo lado.
+
+El criterio general que deja: cuando algo **factura** pero **se paga en cuotas**, la cuota es la
+realidad financiera y el template gana. La factura sirve igual para el control de proveedores.
+
+**C-18** — dejar un chequeo automático que cruce CUIT de templates contra CUIT de facturas y
+avise si aparece un cruce nuevo. Hoy se detectó a mano.
+
+
 #### 📈 CONTROL DE SUBAS DE PROVEEDORES vs IPC `B-FEAT-CONTROL-PROVEEDORES` 🟡
 *(2026-07-30, sin testear)*
 

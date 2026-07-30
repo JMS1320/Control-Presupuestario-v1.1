@@ -11589,3 +11589,28 @@ Y la vista `public.presupuesto_historia_cuentas`, que unifica `msa.comprobantes_
 `presupuesto_cuentas_modo_y_vista_historia`. Los tres problemas que resuelve (nombres partidos
 por mayúsculas, `nro_cuenta` faltante en ARCA, solape de dic-2025) están explicados en
 `ARQUITECTURA-BD.md` y en el propio comentario de la vista.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Historia del presupuesto desde canales
+
+Dos vistas para poder presupuestar desde los **canales de pago conciliados**, que es el método
+con el que el usuario presupuestó durante años: cada movimiento de banco / caja / tarjeta lleva
+su `nro_cuenta` imputado en la conciliación.
+
+- `public.presupuesto_historia_canales` — banco + caja (general/sigot/ams) + tarjeta agrupado
+  por `nro_cuenta` y mes; monto = débitos **netos de créditos**; sólo movimientos imputados.
+- `public.presupuesto_cobertura_canales` — cuánto de cada canal está conciliado. Sin esto la
+  vista anterior miente por omisión: muestra sólo lo imputado y parece que se gastó menos.
+
+DDL completo en la migración `presupuesto_historia_canales`.
+
+Y el dato de configuración que fija el criterio de Federación Patronal:
+
+```sql
+INSERT INTO public.presupuesto_cuenta_config (empresa, nro_cuenta, modo, motivo_exclusion, notas)
+VALUES ('MSA', '422113', 'excluida',
+        'Va por template: Federación Patronal factura semestral y las cuotas están cargadas',
+        'Único caso donde template y factura se pisan (verificado 2026-07-30).')
+ON CONFLICT (empresa, nro_cuenta) DO UPDATE SET ...;
+```

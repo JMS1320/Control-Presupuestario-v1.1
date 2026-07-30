@@ -22,6 +22,8 @@
 // Los que parecen volumen igual se muestran, pero marcados: el número está, la conclusión
 // no se saca sola.
 
+import { resolverSerie } from '../precios/serie'
+
 export interface FacturaMes {
   cuit: string
   proveedor: string
@@ -83,23 +85,37 @@ export interface AnalisisProveedor {
 const km = (a: number, m: number) => a * 12 + (m - 1)
 const clave = (a: number, m: number) => `${a}-${String(m).padStart(2, '0')}`
 
-/** IPC acumulado entre dos meses, componiendo las variaciones mensuales. */
+/**
+ * IPC acumulado entre dos meses, componiendo las variaciones mensuales.
+ *
+ * El IPC **se arrastra hacia adelante**, igual que los precios y el TC del presupuesto
+ * (`lib/precios/serie.ts`). El usuario lo carga en escalones — *"capaz pongo 6 meses con lo
+ * mismo y luego otros 6 de tal manera"* — así que un mes sin valor propio hereda el último
+ * cargado. Exigir el dato mes por mes obligaría a repetir el mismo número doce veces.
+ *
+ * Devuelve `null` sólo si algún mes del tramo queda **sin nada que arrastrar**: un acumulado
+ * al que le faltan meses queda corto y haría ver a todos los proveedores por encima del IPC.
+ */
 export function ipcAcumulado(ipc: PuntoIpc[], desdeKm: number, hastaKm: number): number | null {
   if (hastaKm <= desdeKm) return 0
+  const puntos = ipc.map(p => ({ anio: p.anio, mes: p.mes, valor: p.variacion }))
   let acum = 1
-  let encontrados = 0
-  for (const p of ipc) {
-    const k = km(p.anio, p.mes)
-    // El IPC del mes de arranque ya está en el precio de arranque: se cuenta desde el siguiente.
-    if (k > desdeKm && k <= hastaKm) {
-      acum *= 1 + p.variacion
-      encontrados++
-    }
+  // El IPC del mes de arranque ya está dentro del precio de arranque: se cuenta desde el siguiente.
+  for (let k = desdeKm + 1; k <= hastaKm; k++) {
+    const anio = Math.floor(k / 12)
+    const mes = (k % 12) + 1
+    const v = resolverSerie(puntos, anio, mes)
+    if (v.origen === 'sin_dato') return null
+    acum *= 1 + v.valor
   }
-  const esperados = hastaKm - desdeKm
-  // Con la serie incompleta el acumulado queda corto y haría ver a todos por encima del IPC.
-  if (encontrados < esperados) return null
   return acum - 1
+}
+
+/** Variación del mes, arrastrando el último valor cargado. */
+export function ipcDelMes(ipc: PuntoIpc[], anio: number, mes: number): number | null {
+  if (ipc.length === 0) return null
+  const v = resolverSerie(ipc.map(p => ({ anio: p.anio, mes: p.mes, valor: p.variacion })), anio, mes)
+  return v.origen === 'sin_dato' ? null : v.valor
 }
 
 export interface OpcionesAnalisis {
@@ -159,14 +175,12 @@ export function analizarProveedores(
     const regularidad = meses.length / mesesPeriodo
     if (regularidad < minReg) continue
 
-    const ipcPorMes = new Map(ipc.map(p => [clave(p.anio, p.mes), p.variacion]))
-
     let bajas = 0
     const serie: MesProveedor[] = meses.map((f, i) => {
       const previo = i > 0 ? meses[i - 1]!.monto : null
       const variacion = previo && previo !== 0 ? f.monto / previo - 1 : null
       if (variacion != null && variacion < -0.01) bajas++
-      const ipcMes = ipcPorMes.get(clave(f.anio, f.mes)) ?? null
+      const ipcMes = ipcDelMes(ipc, f.anio, f.mes)
       return {
         mes: clave(f.anio, f.mes),
         monto: f.monto,
