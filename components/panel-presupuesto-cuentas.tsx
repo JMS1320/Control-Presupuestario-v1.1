@@ -19,7 +19,7 @@ import {
 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion,
+  calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion, netearExcluidos,
   ETIQUETA_MODO,
   type ModoPresupuesto, type ConfigCuenta, type PuntoHistorico, type CeldaPresupuesto,
 } from "@/lib/presupuesto/modos"
@@ -55,6 +55,8 @@ export function PanelPresupuestoCuentas() {
   const [fuente, setFuente] = useState<"facturas" | "canales">("facturas")
   const [ipc, setIpc] = useState<{ anio: number; mes: number; valor: number }[]>([])
   const [cobertura, setCobertura] = useState<any[]>([])
+  /** Historia abierta por proveedor: para descontar CUITs y ver de qué se compone la cuenta. */
+  const [porProveedor, setPorProveedor] = useState<FilaProveedorCuenta[]>([])
   const [inflacionTxt, setInflacionTxt] = useState<string | null>(null)
   const [abierta, setAbierta] = useState<string | null>(null)
 
@@ -77,6 +79,16 @@ export function PanelPresupuestoCuentas() {
         supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
         supabase.from("presupuesto_cobertura_canales").select("*"),
       ])
+      // Sólo la fuente por facturas tiene CUIT; los canales no lo traen.
+      const { data: pp } = fuente === "facturas"
+        ? await supabase.from("presupuesto_historia_cuenta_proveedor")
+            .select("nro_cuenta, cuit, proveedor, anio, mes, monto, facturas")
+        : { data: [] as any[] }
+      setPorProveedor(((pp || []) as any[]).map(r => ({
+        nro_cuenta: String(r.nro_cuenta), cuit: String(r.cuit ?? ""),
+        proveedor: String(r.proveedor ?? ""), anio: Number(r.anio), mes: Number(r.mes),
+        monto: Number(r.monto) || 0, facturas: Number(r.facturas) || 0,
+      })))
       if (e1 || e2) { alert("Error cargando: " + (e1 || e2)!.message); return }
 
       const puntos = ((hist || []) as any[]).map(r => ({
@@ -108,6 +120,7 @@ export function PanelPresupuestoCuentas() {
           cabezas_referencia: c.cabezas_referencia == null ? null : Number(c.cabezas_referencia),
           cabezas_proyectadas: c.cabezas_proyectadas == null ? null : Number(c.cabezas_proyectadas),
           inflacion_mensual: c.inflacion_mensual == null ? null : Number(c.inflacion_mensual),
+          cuits_excluidos: (c.cuits_excluidos as string[] | null) ?? [],
           motivo_exclusion: c.motivo_exclusion,
           notas: c.notas,
         }
@@ -139,19 +152,34 @@ export function PanelPresupuestoCuentas() {
     }
   }, [cfgs, historia])
 
+  /**
+   * Historia neta de los proveedores excluidos.
+   *
+   * Se resta el gasto del CUIT que ya entra por template en vez de anular la cuenta: así
+   * un proveedor nuevo en esa misma cuenta se presupuesta solo.
+   */
+  const historiaNeta = useMemo(() => {
+    const excluidos: Record<string, string[]> = {}
+    for (const nro of cuentas) {
+      const l = cfgDe(nro).cuits_excluidos ?? []
+      if (l.length > 0) excluidos[nro] = l
+    }
+    return netearExcluidos(historia, porProveedor, excluidos)
+  }, [historia, porProveedor, cuentas, cfgDe])
+
   const presupuesto = useMemo(() => {
     // Si hay IPC cargado manda la serie (con arrastre); si no, la tasa fija.
     const ctx = { meses, inflacionMensual: inflacion, ipc: ipc.length > 0 ? ipc : undefined }
     const out: Record<string, CeldaPresupuesto[]> = {}
-    for (const nro of cuentas) out[nro] = calcularCuenta(cfgDe(nro), historia, ctx)
+    for (const nro of cuentas) out[nro] = calcularCuenta(cfgDe(nro), historiaNeta, ctx)
     return out
-  }, [cuentas, cfgDe, historia, meses, inflacion, ipc])
+  }, [cuentas, cfgDe, historiaNeta, meses, inflacion, ipc])
 
   const control = useMemo(() => {
     const efectivas: Record<string, ConfigCuenta> = {}
     for (const nro of cuentas) efectivas[nro] = cfgDe(nro)
-    return controlarPresupuesto(historia, presupuesto, efectivas, nombres)
-  }, [historia, presupuesto, cuentas, cfgDe, nombres])
+    return controlarPresupuesto(historiaNeta, presupuesto, efectivas, nombres)
+  }, [historiaNeta, presupuesto, cuentas, cfgDe, nombres])
 
   const totalPorMes = useMemo(() => {
     const t: Record<string, number> = {}
@@ -174,6 +202,7 @@ export function PanelPresupuestoCuentas() {
       cabezas_referencia: v.cabezas_referencia ?? null,
       cabezas_proyectadas: v.cabezas_proyectadas ?? null,
       inflacion_mensual: v.inflacion_mensual ?? null,
+      cuits_excluidos: v.cuits_excluidos ?? [],
       motivo_exclusion: v.motivo_exclusion ?? null,
       notas: v.notas ?? null,
       updated_at: new Date().toISOString(),
@@ -294,7 +323,8 @@ export function PanelPresupuestoCuentas() {
                     meses={meses}
                     abierto={abierto}
                     excluida={excluida}
-                    historia={historia.filter(p => p.nro_cuenta === nro)}
+                    historia={historiaNeta.filter(p => p.nro_cuenta === nro)}
+                    proveedores={porProveedor.filter(p => p.nro_cuenta === nro)}
                     onToggle={() => setAbierta(abierto ? null : nro)}
                     onGuardar={c => guardar(nro, c)}
                     onSugerido={() => volverASugerido(nro)}
@@ -394,7 +424,7 @@ function ControlPanel({ control }: { control: ReturnType<typeof controlarPresupu
 // ── Fila ──────────────────────────────────────────────────────────────────────
 
 function FilaCuenta({
-  nro, nombre, cfg, celdas, meses, abierto, excluida, historia, onToggle, onGuardar, onSugerido,
+  nro, nombre, cfg, celdas, meses, abierto, excluida, historia, proveedores, onToggle, onGuardar, onSugerido,
 }: {
   nro: string
   nombre: string
@@ -404,6 +434,7 @@ function FilaCuenta({
   abierto: boolean
   excluida: boolean
   historia: PuntoHistorico[]
+  proveedores: FilaProveedorCuenta[]
   onToggle: () => void
   onGuardar: (c: Partial<ConfigCuenta>) => void
   onSugerido: () => void
@@ -515,6 +546,16 @@ function FilaCuenta({
                 )}
               </div>
 
+              {/* De qué se compone la cuenta. Es lo que decide qué modo le sirve, y donde se
+                  saca de la cuenta a un proveedor que ya entra por template. */}
+              {proveedores.length > 0 && (
+                <ComposicionCuenta
+                  proveedores={proveedores}
+                  excluidos={cfg.cuits_excluidos ?? []}
+                  onExcluir={cuits => onGuardar({ cuits_excluidos: cuits })}
+                />
+              )}
+
               {/* La historia real, para poder comparar contra el presupuesto */}
               <div>
                 <p className="mb-1 text-[10px] font-medium text-gray-600">
@@ -541,5 +582,95 @@ function FilaCuenta({
         </tr>
       )}
     </>
+  )
+}
+
+// ── Composición de la cuenta ──────────────────────────────────────────────────
+
+export interface FilaProveedorCuenta {
+  nro_cuenta: string
+  cuit: string
+  proveedor: string
+  anio: number
+  mes: number
+  monto: number
+  facturas: number
+}
+
+/**
+ * Quién compone la cuenta, y quién queda afuera del presupuesto.
+ *
+ * Sacar a un proveedor NO es lo mismo que anular la cuenta: cuando algo ya entra por template
+ * (Federación Patronal factura semestral y se paga en cuotas) hay que descontar ese proveedor
+ * y dejar viva la cuenta, para que un proveedor nuevo se presupueste solo en vez de
+ * desaparecer sin que nadie se entere.
+ */
+function ComposicionCuenta({ proveedores, excluidos, onExcluir }: {
+  proveedores: FilaProveedorCuenta[]
+  excluidos: string[]
+  onExcluir: (cuits: string[]) => void
+}) {
+  const porCuit = new Map<string, { proveedor: string; total: number; meses: Set<string>; fc: number }>()
+  for (const p of proveedores) {
+    const a = porCuit.get(p.cuit) ?? { proveedor: p.proveedor, total: 0, meses: new Set<string>(), fc: 0 }
+    a.total += p.monto
+    a.meses.add(`${p.anio}-${p.mes}`)
+    a.fc += p.facturas
+    porCuit.set(p.cuit, a)
+  }
+  const lista = [...porCuit.entries()].sort((a, b) => b[1].total - a[1].total)
+  const set = new Set(excluidos)
+  // Un CUIT excluido que ya no aparece: la exclusión quedó colgada
+  const huerfanos = excluidos.filter(c => !porCuit.has(c))
+
+  const toggle = (cuit: string) => {
+    const n = new Set(set)
+    if (n.has(cuit)) n.delete(cuit); else n.add(cuit)
+    onExcluir([...n])
+  }
+
+  return (
+    <div>
+      <p className="mb-1 text-[10px] font-medium text-gray-600">
+        Se compone de {lista.length} {lista.length === 1 ? "proveedor" : "proveedores"}
+        {set.size > 0 && <span className="text-amber-700"> · {set.size} fuera del presupuesto</span>}
+      </p>
+      <table className="w-full text-[11px]">
+        <tbody>
+          {lista.map(([cuit, v]) => {
+            const fuera = set.has(cuit)
+            return (
+              <tr key={cuit} className={`border-b border-gray-100 last:border-0 ${fuera ? "opacity-50" : ""}`}>
+                <td className="py-0.5">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input type="checkbox" checked={!fuera} onChange={() => toggle(cuit)}
+                      className="h-3 w-3" title="Destildar = no se presupuesta acá (ya entra por otro lado)" />
+                    <span className={fuera ? "line-through" : "text-gray-700"}>{v.proveedor}</span>
+                    {fuera && <span className="text-[9px] text-amber-700">va por otro lado</span>}
+                  </label>
+                </td>
+                <td className="py-0.5 text-right text-gray-500">
+                  {v.meses.size} {v.meses.size === 1 ? "mes" : "meses"} · {v.fc} fc
+                </td>
+                <td className="py-0.5 text-right text-gray-700">
+                  ${Math.round(v.total).toLocaleString("es-AR")}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {huerfanos.length > 0 && (
+        <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-800">
+          {huerfanos.length} CUIT excluido sin facturas en el período: la exclusión puede haber
+          quedado colgada.
+        </p>
+      )}
+      {set.size > 0 && lista.length > set.size && (
+        <p className="mt-1 text-[10px] text-gray-500">
+          La cuenta sigue presupuestándose con los {lista.length - set.size} proveedores restantes.
+        </p>
+      )}
+    </div>
   )
 }

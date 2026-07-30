@@ -11614,3 +11614,29 @@ VALUES ('MSA', '422113', 'excluida',
         'Único caso donde template y factura se pisan (verificado 2026-07-30).')
 ON CONFLICT (empresa, nro_cuenta) DO UPDATE SET ...;
 ```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Exclusión por proveedor en el presupuesto
+
+```sql
+ALTER TABLE public.presupuesto_cuenta_config
+  ADD COLUMN IF NOT EXISTS cuits_excluidos text[] NOT NULL DEFAULT '{}';
+```
+
+Excluir la cuenta entera dejaba una trampa: un proveedor nuevo en esa cuenta desaparecería del
+presupuesto sin aviso. Con `cuits_excluidos` se descuenta sólo el proveedor que ya entra por
+otro lado y la cuenta sigue viva.
+
+Vista `public.presupuesto_historia_cuenta_proveedor` (cuenta × CUIT × mes) — hace falta para
+poder descontar un CUIT puntual y para ver de qué se compone cada cuenta. DDL completo en la
+migración `presupuesto_excluir_por_proveedor`.
+
+Dato de configuración (Federación Patronal va por template):
+
+```sql
+UPDATE public.presupuesto_cuenta_config
+   SET modo = 'promedio_n', meses_promedio = 3,
+       cuits_excluidos = ARRAY['33707366589'], motivo_exclusion = NULL
+ WHERE empresa = 'MSA' AND nro_cuenta = '422113';
+```

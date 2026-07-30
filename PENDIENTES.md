@@ -1608,6 +1608,35 @@ cuentas, y ahora el presupuesto lo toma de un solo lado.
 El criterio general que deja: cuando algo **factura** pero **se paga en cuotas**, la cuota es la
 realidad financiera y el template gana. La factura sirve igual para el control de proveedores.
 
+
+##### 🔧 Corregido: la exclusión es por PROVEEDOR, no por cuenta *(2026-07-30)*
+> *"ok pero ¿hay más seguros estructura? porque podría haber alguno otro y habría que verlo.
+> Federación Patronal específicamente va por template."*
+
+Tenía razón. Yo había excluido la **cuenta** `422113` entera. Verificado: hoy es **100 %
+Federación Patronal** (mismo CUIT `33707366589` con tres grafías del nombre), así que no se
+perdía nada — **pero quedaba una trampa**: el día que entre otra aseguradora a esa cuenta, su
+gasto desaparecería del presupuesto sin que nadie se entere. Un cero silencioso es peor que un
+número mal.
+
+**Ahora se excluye el CUIT.** `presupuesto_cuenta_config.cuits_excluidos text[]` +
+`netearExcluidos()` en la lib: se descuenta el gasto de ese proveedor y la cuenta **sigue viva**
+con el modo que tenga. `422113` pasó de `excluida` a `promedio_n` con
+`cuits_excluidos = {33707366589}` — mismo resultado hoy ($0 para presupuestar), pero un
+proveedor nuevo se presupuesta solo.
+
+**Y se ve de qué se compone cada cuenta.** Al abrirla aparecen sus proveedores con total, meses
+y facturas, cada uno con un tilde para sacarlo del presupuesto. Es información que sirve más allá
+de este caso: es justo lo que decide qué modo le conviene a la cuenta (un proveedor con factura
+mensual → propagar la última; veinte proveedores → promedio). Avisa además si queda un **CUIT
+excluido sin facturas**, que es una exclusión colgada.
+
+Verificado en `scripts/verificar-presupuesto-cuentas.ts`: con dos aseguradoras, excluir el CUIT
+deja la cuenta presupuestando a la otra; excluir la cuenta la borraría.
+
+Otras cuentas de seguros: `4217 SEGUROS CULTIVO` (Sancor) ya sale excluida por ser `421*`
+= agricultura, que va por Actividades y costos. No hay otra cuenta de seguros con facturas.
+
 **C-18** — dejar un chequeo automático que cruce CUIT de templates contra CUIT de facturas y
 avise si aparece un cruce nuevo. Hoy se detectó a mano.
 

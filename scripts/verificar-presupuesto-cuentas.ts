@@ -1,6 +1,6 @@
 import {
-  calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion,
-  type PuntoHistorico, type ConfigCuenta, type CeldaPresupuesto,
+  calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion, netearExcluidos,
+  type PuntoHistorico, type ConfigCuenta, type CeldaPresupuesto, type PuntoProveedor,
 } from "../lib/presupuesto/modos"
 
 let fallos = 0
@@ -105,6 +105,48 @@ const ctrl = controlarPresupuesto(historia, presu, cfgs,
 for (const a of ctrl.alertas) console.log(`     [${a.nivel}] ${a.titulo} — ${a.detalle}`)
 chk("detecta la cuenta olvidada", ctrl.alertas.some(a => a.titulo.includes("INSUMOS VETERINARIOS")), true)
 chk("y avisa que el total quedó bajo", ctrl.alertas.some(a => a.titulo.includes("por debajo")), true)
+
+
+// ── Excluir un PROVEEDOR, no la cuenta entera ────────────────────────────────
+// Caso Federacion Patronal: se presupuesta por template, pero la cuenta tiene que
+// seguir viva para que otra aseguradora no desaparezca en silencio.
+console.log("\n--- excluir por proveedor, no por cuenta ---")
+const FEPA = "33707366589", OTRA = "30500049460"
+const histSeguros: PuntoHistorico[] = [
+  p("422113", 2026, 3, 1000000, 2, 1),
+  p("422113", 2026, 4, 1200000, 2, 2),
+  p("422113", 2026, 5, 1200000, 2, 2),
+  p("422113", 2026, 6, 1300000, 2, 2),
+]
+const detalle: PuntoProveedor[] = [
+  { nro_cuenta: "422113", cuit: FEPA, anio: 2026, mes: 3, monto: 1000000 },
+  { nro_cuenta: "422113", cuit: FEPA, anio: 2026, mes: 4, monto: 1000000 },
+  { nro_cuenta: "422113", cuit: OTRA, anio: 2026, mes: 4, monto: 200000 },
+  { nro_cuenta: "422113", cuit: FEPA, anio: 2026, mes: 5, monto: 1000000 },
+  { nro_cuenta: "422113", cuit: OTRA, anio: 2026, mes: 5, monto: 200000 },
+  { nro_cuenta: "422113", cuit: FEPA, anio: 2026, mes: 6, monto: 1000000 },
+  { nro_cuenta: "422113", cuit: OTRA, anio: 2026, mes: 6, monto: 300000 },
+]
+const neta = netearExcluidos(histSeguros, detalle, { "422113": [FEPA] })
+console.log("     mes      total     neto de Fed Patronal")
+for (let i = 0; i < neta.length; i++) {
+  console.log(`     2026-0${histSeguros[i]!.mes}  ${histSeguros[i]!.monto.toLocaleString("es-AR").padStart(9)}  ${neta[i]!.monto.toLocaleString("es-AR").padStart(9)}`)
+}
+chk("marzo: solo Fed Patronal -> queda 0", neta[0]!.monto, 0)
+chk("abril: queda la otra aseguradora", neta[1]!.monto, 200000)
+chk("junio: queda la otra aseguradora", neta[3]!.monto, 300000)
+
+// Lo que importa: la cuenta NO queda anulada, se presupuesta el resto
+const cProv = calcularCuenta(
+  { nro_cuenta: "422113", modo: "promedio_n", meses_promedio: 3, cuits_excluidos: [FEPA] },
+  neta, ctx)
+console.log(`     ${cProv[0]!.explicacion}`)
+chk("la cuenta sigue presupuestando al otro proveedor", cProv[0]!.monto > 0, true)
+
+// Y con la cuenta excluida entera, ese proveedor desapareceria
+const cAnulada = calcularCuenta({ nro_cuenta: "422113", modo: "excluida" }, neta, ctx)
+chk("excluir la cuenta entera lo borraria", cAnulada[0]!.monto, 0)
+console.log("     por eso se excluye el CUIT y no la cuenta")
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)

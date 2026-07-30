@@ -65,6 +65,12 @@ export interface ConfigCuenta {
   cabezas_proyectadas?: number | null
   /** Fracción mensual. Si es null usa la global. */
   inflacion_mensual?: number | null
+  /**
+   * CUITs cuyo gasto NO se presupuesta en esta cuenta porque ya entra por otro lado
+   * (un template, típicamente). El resto de la cuenta se presupuesta normal — excluir la
+   * cuenta entera dejaría en cero a un proveedor nuevo sin que nadie se entere.
+   */
+  cuits_excluidos?: string[] | null
   motivo_exclusion?: string | null
   notas?: string | null
 }
@@ -214,6 +220,46 @@ export function sugerirModo(nro: string, historia: PuntoHistorico[]): Sugerencia
     modo: 'promedio_n',
     motivo: `${provs} proveedores y variación ${Math.round(cv * 100)} %: conviene promediar`,
   }
+}
+
+/** Un mes de una cuenta abierto por proveedor. */
+export interface PuntoProveedor {
+  nro_cuenta: string
+  cuit: string
+  anio: number
+  mes: number
+  monto: number
+}
+
+/**
+ * Descuenta de la historia el gasto de los proveedores excluidos.
+ *
+ * Sacar un proveedor NO es lo mismo que anular la cuenta. Federación Patronal se presupuesta
+ * por template (factura semestral, se paga en cuotas), pero SEGUROS ESTRUCTURA tiene que
+ * seguir viva: si mañana entra otra aseguradora, se presupuesta sola en vez de desaparecer
+ * sin que nadie se entere. Ésa es toda la diferencia entre excluir el CUIT y excluir la cuenta.
+ */
+export function netearExcluidos(
+  historia: PuntoHistorico[],
+  porProveedor: PuntoProveedor[],
+  excluidosPorCuenta: Record<string, string[]>,
+): PuntoHistorico[] {
+  const sets: Record<string, Set<string>> = {}
+  for (const [nro, cuits] of Object.entries(excluidosPorCuenta)) {
+    if (cuits.length > 0) sets[nro] = new Set(cuits)
+  }
+  if (Object.keys(sets).length === 0) return historia
+
+  const restar: Record<string, number> = {}
+  for (const f of porProveedor) {
+    if (!sets[f.nro_cuenta]?.has(f.cuit)) continue
+    const k = `${f.nro_cuenta}|${f.anio}-${f.mes}`
+    restar[k] = (restar[k] || 0) + f.monto
+  }
+  return historia.map(p => {
+    const r = restar[`${p.nro_cuenta}|${p.anio}-${p.mes}`]
+    return r ? { ...p, monto: p.monto - r } : p
+  })
 }
 
 // ── Cálculo ───────────────────────────────────────────────────────────────────

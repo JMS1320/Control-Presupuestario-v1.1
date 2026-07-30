@@ -592,6 +592,18 @@ valor**: cargás escalones —seis meses a un ritmo, seis a otro— y no tenés 
 número doce veces. La tasa fija de arriba sólo se usa donde no hay IPC, y cada cuenta puede pisar
 las dos con la suya.
 
+### De qué se compone una cuenta
+Al abrir una cuenta ves **sus proveedores**: cuánto facturó cada uno, en cuántos meses y con
+cuántas facturas. Eso es lo que decide qué modo le conviene — un proveedor con factura mensual
+pide *propagar la última*, veinte proveedores piden *promedio*.
+
+Cada proveedor tiene un tilde. **Destildarlo lo saca del presupuesto de esa cuenta**, sin anular
+la cuenta. Sirve cuando algo ya entra por otro lado: Federación Patronal factura semestral pero
+se paga en cuotas cargadas como template, así que se destilda acá y se presupuesta allá.
+
+Es importante que sea por proveedor y no por cuenta: si mañana entra otra aseguradora a *Seguros
+estructura*, se presupuesta sola. Anulando la cuenta entera habría desaparecido sin aviso.
+
 ### El control de arriba
 Compara lo presupuestado contra los **últimos 6 meses cerrados** y avisa de tres cosas:
 el total se despegó de la realidad · una cuenta que siempre gastó quedó en cero · una cuenta se
