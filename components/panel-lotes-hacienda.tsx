@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Plus, Trash2, PackageOpen, Wand2 } from "lucide-react"
+import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale } from "lucide-react"
 import {
   pesoEstimado, cantidadDisponible, fechaDestete,
   type LoteStock, type VentaStock, type CicloCalculado,
@@ -41,6 +41,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const [lotes, setLotes] = useState<LoteStock[]>([])
   const [ventas, setVentas] = useState<VentaStock[]>([])
   const [modal, setModal] = useState<any>(null)
+  const [modalPesada, setModalPesada] = useState(false)
   const [generando, setGenerando] = useState(false)
 
   const cargar = useCallback(async () => {
@@ -168,8 +169,11 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                 Generar desde los períodos
               </Button>
             )}
+            <Button size="sm" variant="outline" onClick={() => setModalPesada(true)}>
+              <Scale className="mr-1 h-3.5 w-3.5" /> Desde pesada
+            </Button>
             <Button size="sm" variant="outline" onClick={cargarStockInicial}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Stock inicial
+              <Plus className="mr-1 h-3.5 w-3.5" /> Manual
             </Button>
           </div>
         </CardTitle>
@@ -186,8 +190,9 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           </div>
         ) : lotes.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-gray-400">
-            Todavía no hay lotes. Cargá el <strong>stock inicial</strong> (la recría retenida) y
-            usá <strong>Generar desde los períodos</strong> para el resto.
+            Todavía no hay lotes. Usá <strong>Desde pesada</strong> para traer la recría de la
+            pesada de destete con sus pesos reales por sexo, y{" "}
+            <strong>Generar desde los períodos</strong> para lo que viene.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -264,6 +269,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       </CardContent>
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar} />
+      <ModalDesdePesada abierto={modalPesada} onCerrar={() => setModalPesada(false)}
+        onListo={async () => { await cargar(); onCambio?.() }} />
     </Card>
   )
 }
@@ -336,6 +343,219 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
             <Button onClick={() => onGuardar(f)}>Guardar</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Modal: cargar el stock inicial DESDE UNA PESADA REAL ──────────────────────
+// La pesada de destete ya tiene el peso por animal. Agrupando por sexo y por el flag
+// `es_torito` salen los pesos promedio REALES de cada grupo, en vez de usar el promedio
+// de toda la tropa (que mezcla machos, hembras y toritos).
+//
+// ⚠️ `terneros.es_torito` está sobrecargado: en los machos marca los TORITOS y en las
+// hembras marca las RETENIDAS para reposición (así lo usa el análisis de engorde).
+
+interface GrupoPesada {
+  clave: string
+  sexo: string
+  marcado: boolean
+  cabezas: number
+  peso_prom: number
+  kg_total: number
+  categoria: string
+  esRetencion: boolean
+}
+
+function ModalDesdePesada({ abierto, onCerrar, onListo }: {
+  abierto: boolean; onCerrar: () => void; onListo: () => Promise<void>
+}) {
+  const [cargando, setCargando] = useState(false)
+  const [fechas, setFechas] = useState<{ fecha: string; n: number }[]>([])
+  const [fecha, setFecha] = useState("")
+  const [grupos, setGrupos] = useState<GrupoPesada[]>([])
+  const [sel, setSel] = useState<Record<string, boolean>>({})
+  const [ganancia, setGanancia] = useState("0,5")
+  const [guardando, setGuardando] = useState(false)
+
+  // Fechas de pesada disponibles
+  useEffect(() => {
+    if (!abierto) return
+    ;(async () => {
+      setCargando(true)
+      try {
+        const { data } = await supabase.schema("productivo")
+          .from("pesadas_terneros").select("fecha")
+        const conteo = new Map<string, number>()
+        for (const r of (data || []) as any[]) {
+          conteo.set(r.fecha, (conteo.get(r.fecha) ?? 0) + 1)
+        }
+        const lista = Array.from(conteo.entries())
+          .map(([f, n]) => ({ fecha: f, n }))
+          .sort((a, b) => b.fecha.localeCompare(a.fecha))
+        setFechas(lista)
+        if (lista.length) setFecha(prev => prev || lista[0].fecha)
+      } finally { setCargando(false) }
+    })()
+  }, [abierto])
+
+  // Agrupar la pesada elegida por sexo x marcado
+  useEffect(() => {
+    if (!abierto || !fecha) return
+    ;(async () => {
+      setCargando(true)
+      try {
+        const { data, error } = await supabase.schema("productivo")
+          .from("pesadas_terneros")
+          .select("peso_kg, ternero:terneros!inner(sexo, es_torito)")
+          .eq("fecha", fecha)
+        if (error) { console.error(error); return }
+
+        const acc = new Map<string, { sexo: string; marcado: boolean; n: number; kg: number }>()
+        for (const r of (data || []) as any[]) {
+          const t = r.ternero
+          if (!t) continue
+          const sexo = String(t.sexo ?? "")
+          const marcado = !!t.es_torito
+          const k = `${sexo}|${marcado}`
+          const cur = acc.get(k) ?? { sexo, marcado, n: 0, kg: 0 }
+          cur.n += 1
+          cur.kg += Number(r.peso_kg) || 0
+          acc.set(k, cur)
+        }
+
+        const esMacho = (s: string) => /macho/i.test(s)
+        const out: GrupoPesada[] = Array.from(acc.entries()).map(([clave, g]) => ({
+          clave,
+          sexo: g.sexo,
+          marcado: g.marcado,
+          cabezas: g.n,
+          peso_prom: g.n ? g.kg / g.n : 0,
+          kg_total: g.kg,
+          categoria: esMacho(g.sexo)
+            ? (g.marcado ? "Torito" : "Ternero Recria")
+            : "Ternera Recria",
+          // Hembra marcada = retenida para reposicion: NO se vende
+          esRetencion: !esMacho(g.sexo) && g.marcado,
+        })).sort((a, b) => a.sexo.localeCompare(b.sexo) || Number(a.marcado) - Number(b.marcado))
+
+        setGrupos(out)
+        // Por defecto se traen los vendibles; la retencion queda destildada
+        const init: Record<string, boolean> = {}
+        out.forEach(g => { init[g.clave] = !g.esRetencion })
+        setSel(init)
+      } finally { setCargando(false) }
+    })()
+  }, [abierto, fecha])
+
+  if (!abierto) return null
+  const elegidos = grupos.filter(g => sel[g.clave])
+
+  const aplicar = async () => {
+    setGuardando(true)
+    try {
+      for (const g of elegidos) {
+        const { error } = await supabase.schema("productivo").from("stock_lotes").insert({
+          empresa: "MSA", ciclo_id: null,
+          categoria: g.categoria, origen: "stock_inicial",
+          cantidad: g.cabezas,
+          fecha_disponible: fecha,
+          peso_base_kg: Math.round(g.peso_prom * 100) / 100,
+          ganancia_diaria_kg: parseNum(ganancia),
+          notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${g.cabezas} cab, promedio real`,
+        })
+        if (error) { alert("Error: " + error.message); return }
+      }
+      onCerrar()
+      await onListo()
+    } finally { setGuardando(false) }
+  }
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>Cargar stock inicial desde una pesada</DialogTitle></DialogHeader>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500">Pesada</label>
+              <Select value={fecha} onValueChange={setFecha}>
+                <SelectTrigger className="h-8"><SelectValue placeholder="Elegir..." /></SelectTrigger>
+                <SelectContent>
+                  {fechas.map(f => (
+                    <SelectItem key={f.fecha} value={f.fecha}>
+                      {new Date(f.fecha + "T00:00:00").toLocaleDateString("es-AR")} — {f.n} pesadas
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Ganancia diaria (kg/día)</label>
+              <Input className="h-8 text-right" value={ganancia}
+                onChange={e => setGanancia(e.target.value)} />
+              <p className="mt-1 text-[10px] text-gray-400">se aplica a todos los lotes que traigas</p>
+            </div>
+          </div>
+
+          {cargando ? (
+            <div className="flex items-center justify-center py-8 text-gray-400">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Leyendo la pesada...
+            </div>
+          ) : grupos.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">
+              Esa pesada no tiene animales con sexo cargado.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500">
+                Pesos promedio <strong>reales de cada grupo</strong>, no el de la tropa entera.
+              </p>
+              <div className="space-y-2">
+                {grupos.map(g => (
+                  <label key={g.clave}
+                    className="flex cursor-pointer items-center gap-3 rounded border p-2.5 hover:bg-gray-50">
+                    <input type="checkbox" checked={sel[g.clave] ?? false}
+                      onChange={e => setSel(s => ({ ...s, [g.clave]: e.target.checked }))} />
+                    <div className="flex-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <strong>{g.categoria}</strong>
+                        <span className="text-xs text-gray-400">
+                          {g.sexo}{g.marcado ? " · marcado" : ""}
+                        </span>
+                        {g.esRetencion && (
+                          <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <strong>{g.cabezas}</strong> cabezas · promedio{" "}
+                        <strong>{n1(g.peso_prom)} kg</strong> · {n0(g.kg_total)} kg totales
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                El flag <code>es_torito</code> está sobrecargado: en los <strong>machos</strong>{" "}
+                marca los toritos, y en las <strong>hembras</strong> marca las retenidas para
+                reposición. Por eso las hembras marcadas vienen destildadas.
+              </p>
+            </>
+          )}
+
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-gray-400">
+              {elegidos.length} grupo(s) · {n0(elegidos.reduce((s, g) => s + g.cabezas, 0))} cabezas
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+              <Button disabled={guardando || elegidos.length === 0} onClick={aplicar}>
+                {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Cargar lotes"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
