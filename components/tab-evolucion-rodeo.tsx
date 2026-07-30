@@ -278,7 +278,13 @@ serv. ${serv}`
       }, clase: "font-semibold bg-gray-50" },
     { label: "% Destete",             get: c => pct(c.ciclo.pct_destete), clase: "text-gray-500", sep: true },
     // El destete que ocurre en este período es el producto del servicio ANTERIOR.
-    { label: "Destetados (en el período)", get: c => n1(c.destetados), clase: "font-medium" },
+    // Se muestra la fecha igual que en RODEO: la real si ya ocurrió, si no la derivada.
+    { label: "Destetados (en el período)", get: c => {
+        const fd = fechaDestete(c.ciclo)
+        const esReal = c.ciclo.fecha_destete != null
+        return `${n1(c.destetados)}
+dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
+      }, clase: "font-medium" },
     { label: "→ Terneros",            get: c => n1(c.terneros), clase: "text-gray-600" },
     { label: "→ Terneras",            get: c => n1(c.terneras), clase: "text-gray-600" },
     { label: "No destetaron (merma)", get: c => n1(c.falladas), clase: "text-gray-500", sep: true },
@@ -432,6 +438,7 @@ ${serv}`
       {linea.length > 0 && (
         <p className="flex items-center gap-2 text-xs text-gray-400">
           <TrendingUp className="h-3.5 w-3.5" />
+          <span className="text-gray-500">✓ = fecha real de destete · sin tilde = derivada de la campaña.</span>{" "}
           De <strong>refugo</strong>, <strong>terneros</strong> y <strong>terneras a venta</strong>{" "}
           salen las cabezas vendibles. Ojo: del refugo hay que descontar a mano la mortandad,
           que no se vende.
