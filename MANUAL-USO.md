@@ -467,3 +467,68 @@ proyección puede ser deliberadamente más conservadora.
 **Viven en la proyección, no en el código**: IVA 10,5% e IIBB 1% son editables por fila.
 Es a propósito — arrendamiento es exento con IIBB 5%, y meterlas como constantes globales fue
 un error que esta solapa destapó.
+
+---
+
+## 🐮 Módulo: Evolución del rodeo (Productivo → Evolución Rodeo) 🟡 (nuevo, sin testear)
+
+> El presupuesto de ganadería necesita saber **cuántas cabezas va a haber**. Esta pantalla
+> proyecta el rodeo de cría año a año, y de ahí salen las ventas.
+> Modelo: solapa "ciclo ganadero" del Excel. Detalle → `PENDIENTES.md` § CICLO GANADERO.
+
+### El calendario — leerlo bien es la mitad del asunto
+
+La campaña es la **comercial julio–junio**, igual que en el resto de la app. Con ese calendario
+cada campaña contiene **un servicio y un destete**:
+
+```
+campaña 25/26 (jul-25 → jun-26):  servicio oct-2025  ·  destete mar-2026
+campaña 26/27 (jul-26 → jun-27):  servicio oct-2026  ·  destete mar-2027
+```
+
+⚠️ **El destete que ocurre en una campaña es el producto del servicio de la campaña anterior**
+(pasan 16 meses entre uno y otro). Por eso el `% Destete` se mide contra el rodeo del período
+previo. Es el único corrimiento del modelo; el stock encadena limpio.
+
+### Las fórmulas
+```
+rodeo            = vacas + vaquillonas de reposición        ← la "base entorada"
+destete          = rodeo del período ANTERIOR × %destete    → se parte por %machos
+no destetaron    = rodeo anterior − destetados              ← la merma
+refugo+mortandad = falladas × %descarte  (default 80)       → parte va a venta, parte muere
+retenidas        = rodeo × %reposición   (default 20)       ← sobre la BASE ENTORADA
+─────────────────────────────────────────────────────────
+vacas(N+1)       = vacas + vaquillonas − refugo             ← las vaquillonas paren y pasan a vaca
+vaquillonas(N+1) = retenidas
+```
+**El cierre de un período es la apertura del siguiente.** Si no coinciden, falta un dato.
+
+### Cómo arrancar (una sola vez)
+1. **Proponer desde Productivo** — trae los ciclos reales de `ciclos_cria`. Cada registro se
+   reparte entre **dos campañas**: el servicio abre una, y su destete ocurre en la siguiente.
+2. El **primer período va a quedar cojo**: su destete viene de un ciclo anterior al más viejo
+   cargado. Cargale el refugo y la reposición a mano (salen por diferencia contra el rodeo
+   siguiente).
+3. **Agregar período** para los futuros: escribí sólo la campaña y **dejá la apertura vacía**.
+   Hereda del cierre anterior — los campos te muestran cuánto va a heredar.
+
+### Cómo se opera después
+- **Todo es editable.** Lo que cargues como **real** pisa el cálculo y recalcula hacia adelante.
+- **% o cabezas, lo que te salga**: en refugo y en reposición podés escribir cualquiera de los
+  dos y el otro se completa. La diferencia importa: el **%** escala si cambia el rodeo, las
+  **cabezas** son un número firme. Un link *"volver al %"* suelta el número fijo.
+- Los porcentajes se muestran **sobre el rodeo**, que es el dato que se lee
+  (`refugo 12% · reposición 20% → el rodeo crece`). El % sobre las falladas es sólo la mecánica.
+- Las fechas salen de la campaña: `serv. oct 2025`, `dest. feb 2026 ✓` (el tilde = fecha real).
+
+### Los avisos
+| Aviso | Qué significa |
+|---|---|
+| **hoy marcadas 45** | la reposición presupuestada no coincide con las hembras marcadas en Productivo |
+| **⚠** en retenidas | se quieren retener más terneras de las que se destetaron |
+| **↺** en el encabezado | la apertura está cargada a mano y **corta la cadena** (no hereda) |
+
+### ⚠️ Para presupuestar N campañas de ventas hacen falta N+1 períodos
+El destete de un período viene del servicio del anterior, así que **el servicio del último
+período nunca desteta** y sus ventas no aparecen. Si querés 2 campañas presupuestadas, cargá
+3 o 4 períodos.

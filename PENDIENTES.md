@@ -1311,6 +1311,28 @@ filtraba por sexo: doble conteo.
 Aparte del bug: el nombre engaña. Convendría partirlo en dos flags (`es_torito` /
 `es_reposicion`) o renombrarlo a algo neutro tipo `marcado_retencion`.
 
+#### ✅ ESTADO VERIFICADO — 4 campañas cargadas (2026-07-30)
+```
+                24/25    25/26    26/27    27/28
+RODEO             214      220      260      300
+Destetados          0      189      187      221
+Refugo+mort        22       20       27       32
+Retenidas          28       60       67       32
+TOTAL A SERVICIO  220      260      300      300
+```
+**La cadena cierra**: cierre(N) = apertura(N+1) en los tres saltos. ✓
+
+⚠️ **Dos cosas a mirar** en los datos cargados:
+- El **25/26 cierra en 260**, no en los **264** reales. Falta cargarle `real_descarte = 16`
+  (hoy calcula 20 con el 80%). El refugo realizado fue 64% de las falladas, no 80% → **G-2**.
+- El **24/25 quedó con `pct_descarte_falladas = 0`**: al escribir 22 cabezas, la sincronización
+  calculó `22 / falladas` y las falladas eran 0. No molesta porque `real_descarte = 22` manda,
+  pero si algún día se limpia el override el refugo se va a cero en silencio. → ver G-6.
+
+**G-6 · La sincronización %↔cabezas divide por cero** 🟡 *(nuevo)*
+En el refugo, `pct = cabezas / falladas`. Si `falladas = 0` el % queda en 0 y se guarda así.
+Debería no tocar el % cuando la base es 0, o avisar.
+
 #### 🔍 REVISIÓN DEL MODELO — 5 puntos abiertos (2026-07-30)
 
 Salieron de analizar la primera carga real. **No son del arranque**: salvo el 1, todos vuelven
