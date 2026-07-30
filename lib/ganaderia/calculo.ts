@@ -38,14 +38,57 @@ export const BANDAS_HACIENDA: BandaPrecio[] = [
   { nombre: 'Ternero 240/270',       peso_desde: 240, peso_hasta: 270 },
   { nombre: 'Novillito 270/300',     peso_desde: 270, peso_hasta: 300 },
   { nombre: 'Novillito 300/320',     peso_desde: 300, peso_hasta: 320 },
-  { nombre: 'Novillo gordo 320/350', peso_desde: 320, peso_hasta: 350 },
-  { nombre: 'Novillo gordo 350/390', peso_desde: 350, peso_hasta: 390 },
+  // Invernada: no es lo mismo que gordo, tiene su propio desbaste y CZ
+  { nombre: 'Invernada 320/380',     peso_desde: 320, peso_hasta: 380 },
+  { nombre: 'Novillo gordo 380/450', peso_desde: 380, peso_hasta: 450 },
   // Sin banda: se eligen por categoría
   { nombre: 'Ternera',           peso_desde: null, peso_hasta: null },
   { nombre: 'Vaquillona',        peso_desde: null, peso_hasta: null },
   { nombre: 'Vaca CUT/Descarte', peso_desde: null, peso_hasta: null },
   { nombre: 'Toro',              peso_desde: null, peso_hasta: null },
 ]
+
+// ── Desbaste y comercialización por peso ──────────────────────────────────────
+//
+// Tabla simple por ahora (dato del usuario, 2026-07-30). El animal más pesado sufre
+// más merma al pesarlo en destino y paga más comisión.
+
+export function pctDesbaste(categoria: string, peso: number): number {
+  if (/gordo/i.test(categoria)) return 0.08     // gordo, cualquier categoría
+  if (peso <= 280) return 0.03
+  if (peso <= 330) return 0.04
+  if (peso <= 380) return 0.05                  // invernada
+  return 0.08
+}
+
+export function pctCz(categoria: string, peso: number): number {
+  return (/gordo/i.test(categoria) || peso > 380) ? 0.06 : 0.03
+}
+
+// ── Precio neto ↔ bruto ───────────────────────────────────────────────────────
+//
+// La CZ se descuenta del monto, así que el precio que se "cobra de verdad" por kilo es
+// menor al de lista. Poder cargar el NETO y que el bruto salga solo evita hacer la
+// cuenta a mano cada vez.
+
+/** Neto (ya descontada la CZ) → bruto de lista. */
+export function brutoDesdeNeto(neto: number, pctCz: number): number {
+  const f = 1 - Number(pctCz || 0)
+  return f > 0 ? Number(neto) / f : Number(neto)
+}
+
+/** Bruto de lista → neto que queda tras la CZ. */
+export function netoDesdeBruto(bruto: number, pctCz: number): number {
+  return Number(bruto) * (1 - Number(pctCz || 0))
+}
+
+/**
+ * Precio de la hembra como % del macho. El usuario carga sólo el macho y una relación
+ * (ej. 80% = la hembra vale 20% menos) en vez de dos series completas.
+ */
+export function precioHembraDesdeMacho(precioMacho: number, pctRelacion: number): number {
+  return Number(precioMacho) * Number(pctRelacion || 0)
+}
 
 /**
  * Banda que corresponde a un peso. Fuera de rango se toma la más cercana: por debajo

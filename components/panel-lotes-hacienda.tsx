@@ -20,7 +20,9 @@ import {
   categoriaSegunFecha, valuarLoteConPrecios, CATEGORIAS_VENTA,
   type LoteStock, type VentaStock, type CicloCalculado,
 } from "@/lib/ganaderia/ciclo"
-import { type PrecioHacienda } from "@/lib/ganaderia/calculo"
+import {
+  type PrecioHacienda, pctDesbaste, pctCz, brutoDesdeNeto, netoDesdeBruto,
+} from "@/lib/ganaderia/calculo"
 
 const parseNum = (v: string) => {
   const n = parseFloat(String(v).trim().replace(",", "."))
@@ -400,7 +402,18 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       <td className="px-3 py-2 text-right">
                         {val.proyectado
                           ? (val.precio_kg > 0
-                              ? fmtAR(val.precio_kg) + (l.precio_kg_override != null ? " m" : "")
+                              ? <span title={l.precio_kg_override != null
+                                  ? "precio puesto a mano en el lote"
+                                  : val.estimado
+                                    ? `propagado — no hay precio cargado en ese mes para ${val.banda}`
+                                    : `cargado para ${val.banda} en ese mes`}>
+                                  {fmtAR(val.precio_kg)}
+                                  {l.precio_kg_override != null
+                                    ? <span className="ml-1 text-[10px] text-blue-600">manual</span>
+                                    : val.estimado
+                                      ? <span className="ml-1 text-[10px] text-gray-400">↓ propag.</span>
+                                      : <span className="ml-1 text-[10px] text-emerald-600">✓</span>}
+                                </span>
                               : <span className="text-red-500">sin precio</span>)
                           : "—"}
                       </td>
@@ -547,7 +560,27 @@ function ModalLote({ datos, onCerrar, onGuardar }: {
                 <Input type="date" className="h-8" value={f.fecha_venta_estimada || ""}
                   onChange={e => setF({ ...f, fecha_venta_estimada: e.target.value })} />
               </div>
-              {campo("precio_kg_override", "Precio $/kg", "vacío = usa la banda de peso")}
+              <div>
+                <label className="text-xs text-gray-500">Precio $/kg bruto</label>
+                <Input className="h-8 text-right" value={f.precio_kg_override ?? ""}
+                  onChange={e => setF({ ...f, precio_kg_override: e.target.value })} />
+                <p className="mt-1 text-[10px] text-gray-400">vacío = usa la banda de peso</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">…o precio NETO de CZ</label>
+                <Input className="h-8 text-right"
+                  placeholder={f.precio_kg_override
+                    ? fmtAR(netoDesdeBruto(parseNum(String(f.precio_kg_override)), parseNum(String(f.pct_cz ?? "0")) / 100))
+                    : ""}
+                  value={f.__precio_neto ?? ""}
+                  onChange={e => {
+                    const neto = e.target.value
+                    const bruto = neto.trim() === "" ? "" : fmtAR(
+                      brutoDesdeNeto(parseNum(neto), parseNum(String(f.pct_cz ?? "0")) / 100))
+                    setF({ ...f, __precio_neto: neto, precio_kg_override: bruto })
+                  }} />
+                <p className="mt-1 text-[10px] text-gray-400">se calcula el bruto en reversa</p>
+              </div>
               {campo("plazo_cobro", "Plazo de cobro", "0 · 30 · 30/60 · 30/60/90")}
             </div>
 
@@ -993,8 +1026,9 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
         fecha_venta: f.fecha_disponible > hoyISO ? f.fecha_disponible : hoyISO,
         plazo: "0",
         precio: "",
-        desbaste: "5",
-        cz: "4",
+        // Salen de la tabla por peso; igual quedan editables
+        desbaste: String(pctDesbaste(f.categoria, f.peso) * 100).replace(".", ","),
+        cz: String(pctCz(f.categoria, f.peso) * 100).replace(".", ","),
       }
     }
     setSel(s); setAjustes(a); setAbierta({})
@@ -1101,11 +1135,13 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
                           <label className="text-[10px] text-gray-500">% Desbaste</label>
                           <Input className="h-7 text-right text-xs" value={a.desbaste}
                             onChange={e => setAj(f.clave, "desbaste", e.target.value)} />
+                          <p className="text-[9px] text-gray-400">tabla: {pctDesbaste(f.categoria, f.peso) * 100}%</p>
                         </div>
                         <div>
                           <label className="text-[10px] text-gray-500">% CZ</label>
                           <Input className="h-7 text-right text-xs" value={a.cz}
                             onChange={e => setAj(f.clave, "cz", e.target.value)} />
+                          <p className="text-[9px] text-gray-400">tabla: {pctCz(f.categoria, f.peso) * 100}%</p>
                         </div>
                       </div>
                     )}

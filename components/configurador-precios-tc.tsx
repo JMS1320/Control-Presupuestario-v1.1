@@ -60,6 +60,13 @@ export function ConfiguradorPreciosTC() {
   const [anioDesde, setAnioDesde] = useState(new Date().getFullYear())
   // 12 bandas de hacienda no entran junto a las macro: se alternan
   const [vista, setVista] = useState<"macro" | "hacienda">("macro")
+  /**
+   * Relación hembra/macho: en vez de cargar dos series completas se carga la del macho y
+   * un %. 80 = la hembra vale 20% menos. Rellena la columna Ternera desde la banda de
+   * ternero que corresponda a cada mes.
+   */
+  const [relHembra, setRelHembra] = useState("80")
+  const [bandaBase, setBandaBase] = useState("Ternero 200/220")
   const [filas, setFilas] = useState<Record<string, Fila>>({})
 
   const meses = mesesDesde(anioDesde, 36) // 3 años de horizonte
@@ -178,6 +185,28 @@ export function ConfiguradorPreciosTC() {
     } finally { setGuardando(null) }
   }
 
+  /** Rellena la columna Ternera aplicando el % sobre la banda de ternero elegida. */
+  const aplicarRelacionHembra = async () => {
+    const rel = parseAR(relHembra) / 100
+    if (rel <= 0) return
+    const aGuardar = Object.values(filas).filter(f => (f.hacienda?.[bandaBase] ?? "").trim() !== "")
+    if (!aGuardar.length) {
+      alert(`No hay precios cargados en "${bandaBase}" para propagar a Ternera.`)
+      return
+    }
+    for (const f of aGuardar) {
+      const macho = parseAR(f.hacienda[bandaBase]!)
+      await supabase.from("precios_hacienda").upsert({
+        categoria: "Ternera", anio: f.anio, mes: f.mes,
+        precio_pesos_kg: Math.round(macho * rel * 100) / 100,
+        peso_desde: null, peso_hasta: null,
+        fuente: `rel ${relHembra}% de ${bandaBase}`,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "categoria,anio,mes" })
+    }
+    await cargar()
+  }
+
   const guardarTC = async (clave: string) => {
     const f = filas[clave]
     if (!f) return
@@ -227,19 +256,30 @@ export function ConfiguradorPreciosTC() {
     f: Fila, valor: string, serie: PuntoSerie[],
     onChange: (v: string) => void, onBlur: () => void, tinte?: string,
   ) => {
-    const heredado = String(valor ?? "").trim() === "" ? resolverSerie(serie, f.anio, f.mes) : null
+    const vacio = String(valor ?? "").trim() === ""
+    const heredado = vacio ? resolverSerie(serie, f.anio, f.mes) : null
     const hayHeredado = heredado && heredado.origen !== "sin_dato"
     return (
       <td className="px-1.5 py-1">
-        <Input
-          type="text"
-          className={`h-8 text-right ${tinte ?? ""}`}
-          placeholder={hayHeredado ? fmtAR(heredado!.valor) : "0,00"}
-          title={hayHeredado ? explicarOrigen(heredado!) : undefined}
-          value={valor}
-          onChange={e => onChange(e.target.value)}
-          onBlur={onBlur}
-        />
+        <div className="relative">
+          <Input
+            type="text"
+            // Propagado = fondo gris y borde punteado; puesto = fondo normal. Siempre
+            // se distingue de un vistazo cuál es dato cargado y cuál viene arrastrado.
+            className={`h-8 text-right ${
+              hayHeredado ? "border-dashed bg-gray-100 text-gray-500" : tinte ?? ""
+            }`}
+            placeholder={hayHeredado ? fmtAR(heredado!.valor) : "0,00"}
+            title={hayHeredado ? explicarOrigen(heredado!) : "cargado en este mes"}
+            value={valor}
+            onChange={e => onChange(e.target.value)}
+            onBlur={onBlur}
+          />
+          {hayHeredado && (
+            <span className="pointer-events-none absolute left-1.5 top-1.5 text-[10px] text-gray-400"
+              title={explicarOrigen(heredado!)}>↓</span>
+          )}
+        </div>
       </td>
     )
   }
@@ -302,6 +342,36 @@ export function ConfiguradorPreciosTC() {
               onClick={() => setVista("hacienda")}>Hacienda $/kg</Button>
           </div>
         </div>
+
+        {vista === "hacienda" && (
+          <div className="flex flex-wrap items-end gap-2 rounded border border-pink-200 bg-pink-50/50 p-2.5">
+            <p className="w-full text-[11px] font-medium text-pink-900">
+              Precio de la hembra desde el macho — en vez de cargar dos series
+            </p>
+            <div>
+              <label className="text-[10px] text-gray-500">Banda de referencia</label>
+              <Select value={bandaBase} onValueChange={setBandaBase}>
+                <SelectTrigger className="h-8 w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORIAS_HACIENDA.filter(c => /ternero|novillito|invernada|gordo/i.test(c))
+                    .map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-500">% del macho</label>
+              <Input className="h-8 w-20 text-right" value={relHembra}
+                onChange={e => setRelHembra(e.target.value)} />
+            </div>
+            <Button size="sm" variant="outline" onClick={aplicarRelacionHembra}>
+              Rellenar Ternera
+            </Button>
+            <p className="text-[10px] text-gray-500">
+              80 = la hembra vale 20% menos. Pisa la columna Ternera en los meses donde la
+              banda elegida tenga precio.
+            </p>
+          </div>
+        )}
 
         {cargando ? (
           <div className="flex items-center justify-center py-12 text-gray-400">
@@ -380,8 +450,9 @@ export function ConfiguradorPreciosTC() {
 
         <p className="text-xs text-gray-400 flex items-center gap-1">
           <TrendingUp className="h-3 w-3" />
-          Se guarda al salir del campo · vaciar borra el dato · el valor en gris es el que se
-          hereda del último mes cargado. El presupuesto usa el TC real si existe; si no, el
+          Se guarda al salir del campo · vaciar borra el dato · las celdas con <strong>↓ y fondo
+          gris</strong> son <strong>propagadas</strong> (el valor viene del último mes cargado);
+          las de fondo blanco están <strong>puestas</strong> en ese mes. El presupuesto usa el TC real si existe; si no, el
           presupuestado.
         </p>
       </CardContent>
