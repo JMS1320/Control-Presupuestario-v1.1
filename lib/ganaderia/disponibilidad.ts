@@ -45,8 +45,21 @@ import { categoriaDeTernero, esVendible } from '../productivo/caravanas'
  */
 export type ClaveTropa = string
 
+/**
+ * De qué grupo del rodeo sale la categoría.
+ *
+ * No alcanza con macho/hembra: la **vaca de refugo** y la **ternera** son las dos hembras pero
+ * salen de tropas distintas — la vaca del rodeo de cría que se descarta, la ternera del destete.
+ * Si compartieran clave, un lote de terneras netearía contra las vacas disponibles y viceversa.
+ */
+export function tropaDeCategoria(categoria: string): 'macho' | 'hembra' | 'descarte' {
+  if (/vaca|toro/i.test(categoria)) return 'descarte'
+  return /ternera|vaquillona/i.test(categoria) ? 'hembra' : 'macho'
+}
+
+/** @deprecated Usar `tropaDeCategoria`, que además distingue el refugo. */
 export function sexoDeCategoria(categoria: string): 'macho' | 'hembra' {
-  return /ternera|vaquillona|vaca/i.test(categoria) ? 'hembra' : 'macho'
+  return tropaDeCategoria(categoria) === 'macho' ? 'macho' : 'hembra'
 }
 
 /** Cabezas que existen, de dónde salen y desde cuándo están para vender. */
@@ -82,8 +95,8 @@ export interface DisponibleCategoria {
  * Tropa de un lote: si vino de un destete es la de ese ciclo, si no es el stock de hoy.
  */
 export function claveDeLote(lote: Pick<LoteStock, 'ciclo_id' | 'categoria'>): ClaveTropa {
-  const sexo = sexoDeCategoria(lote.categoria)
-  return lote.ciclo_id ? `ciclo:${lote.ciclo_id}|${sexo}` : `pesada|${sexo}`
+  const tropa = tropaDeCategoria(lote.categoria)
+  return lote.ciclo_id ? `ciclo:${lote.ciclo_id}|${tropa}` : `pesada|${tropa}`
 }
 
 /**
@@ -184,7 +197,7 @@ export function existenciasDePesada(
     acc[categoria] = a
   }
   return Object.entries(acc).map(([categoria, v]) => ({
-    clave: `pesada|${sexoDeCategoria(categoria)}`,
+    clave: `pesada|${tropaDeCategoria(categoria)}`,
     categoria, mes, cabezas: v.cabezas, kg: v.kg, origen: 'pesada' as const, detalle,
   }))
 }
@@ -208,6 +221,9 @@ export function existenciasDeCiclos(
     terneras_venta: number
     peso_macho: number
     peso_hembra: number
+    /** Vacas que salen del rodeo (refugo). Se venden, así que son existencia. */
+    descarte?: number
+    peso_descarte?: number
   }[],
   desdeMes: string,
 ): ExistenciaHacienda[] {
@@ -231,6 +247,17 @@ export function existenciasDeCiclos(
         clave: `ciclo:${c.id}|hembra`,
         categoria: 'Ternera al Pie', mes, cabezas: c.terneras_venta,
         kg: c.terneras_venta * c.peso_hembra, origen: 'destete', detalle,
+      })
+    }
+    // Vacas de refugo: salen del rodeo y se venden, así que son existencia disponible igual
+    // que el destete. Van con clave propia porque no netean contra las terneras.
+    const descarte = Number(c.descarte ?? 0)
+    const pesoDesc = Number(c.peso_descarte ?? 0)
+    if (descarte > 0.01 && pesoDesc > 0) {
+      salida.push({
+        clave: `ciclo:${c.id}|descarte`,
+        categoria: 'Vaca CUT/Descarte', mes, cabezas: descarte,
+        kg: descarte * pesoDesc, origen: 'destete', detalle: `refugo ${c.campania}`,
       })
     }
   }

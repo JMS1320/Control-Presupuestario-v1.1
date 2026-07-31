@@ -28,6 +28,7 @@ import {
   type PresupuestoGanaderia,
   type PrecioHacienda,
 } from "@/lib/ganaderia/calculo"
+import { ModalPresupuestarVenta, type DatosPresupuestar } from "@/components/modal-presupuestar-venta"
 import {
   valuarLoteConPrecios, calcularLineaTiempo, fechaDestete, pesoDestete,
   type LoteStock, type VentaStock, type CicloStock,
@@ -261,6 +262,9 @@ export function TabPresupuesto() {
   const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number> }[]>([])
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
   const [avisoGen, setAvisoGen] = useState<{ templates: number; meses: string[]; monto: number; nombres: string[] } | null>(null)
+  /** Celda de hacienda disponible sobre la que se está presupuestando una venta. */
+  const [presupuestando, setPresupuestando] = useState<DatosPresupuestar | null>(null)
+  const [preciosHac, setPreciosHac] = useState<PrecioHacienda[]>([])
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
@@ -778,6 +782,7 @@ export function TabPresupuesto() {
     const listaVentas = ((vs || []) as VentaStock[])
     const ventasDe = (id: string) => listaVentas.filter(v => v.lote_id === id)
     const listaPrecios = (precios || []) as PrecioHacienda[]
+    setPreciosHac(listaPrecios)
     const listaTramos = (tra || []) as TramoLote[]
     const listaActs = (acts || []) as Actividad[]
     const curvaDe = (l: LoteStock) =>
@@ -835,6 +840,8 @@ export function TabPresupuesto() {
         terneras_venta: c.terneras_venta,
         peso_macho: pesoDestete(c.ciclo, "macho"),
         peso_hembra: pesoDestete(c.ciclo, "hembra"),
+        descarte: c.descarte,
+        peso_descarte: Number(c.ciclo.peso_descarte_kg ?? 0),
       })),
       mesBase,
     )
@@ -1294,14 +1301,21 @@ export function TabPresupuesto() {
                                 </>
                               ) : disp ? (
                                 /* Sin venta no hay plata: se informan cabezas y peso promedio,
-                                   igual que las toneladas de soja disponibles a fijar. */
-                                <span className="text-amber-700"
-                                  title={`${Math.round(disp.existentes)} cab. existentes − ${Math.round(disp.comprometidas)} con venta presupuestada${disp.detalle ? ` · ${disp.detalle}` : ""}`}>
+                                   igual que las toneladas de soja disponibles a fijar.
+                                   Se puede presupuestar la venta acá mismo, sin salir. */
+                                <button type="button"
+                                  className="text-amber-700 underline decoration-dotted hover:text-amber-900"
+                                  title={`${Math.round(disp.existentes)} cab. existentes − ${Math.round(disp.comprometidas)} con venta presupuestada${disp.detalle ? ` · ${disp.detalle}` : ""}
+Clic para presupuestar la venta`}
+                                  onClick={() => setPresupuestando({
+                                    clave: disp.clave, categoria: disp.categoria, mes: disp.mes,
+                                    cabezas: disp.cabezas, pesoProm: disp.peso_prom,
+                                  })}>
                                   <strong>{Math.round(disp.cabezas).toLocaleString("es-AR")}</strong> cab
                                   <span className="block text-[10px] text-amber-600">
                                     {disp.peso_prom.toLocaleString("es-AR", { maximumFractionDigits: 0 })} kg prom
                                   </span>
-                                </span>
+                                </button>
                               ) : (
                                 <span className="text-gray-300">—</span>
                               )}
@@ -1766,10 +1780,20 @@ export function TabPresupuesto() {
             <span className="italic text-gray-400">En cursiva</span>: mes sin cuota cargada, el
             presupuesto lo proyectó (respetando en qué meses paga cada template).
             {" "}<span className="text-amber-500">◦</span> además es un template que se suele
-            cargar a mano. Pasá el mouse por cualquier celda para ver de dónde salió.
+            cargar a mano. Las <span className="text-amber-700 underline decoration-dotted">cabezas
+            disponibles</span> se pueden presupuestar con un clic. Pasá el mouse por cualquier
+            celda para ver de dónde salió.
           </div>
         </CardContent>
       </Card>
+
+      {/* Presupuestar una venta de hacienda desde la celda de disponible */}
+      <ModalPresupuestarVenta
+        datos={presupuestando}
+        precios={preciosHac}
+        onCerrar={() => setPresupuestando(null)}
+        onGuardado={cargarHacienda}
+      />
 
       {/* Modal: mover cuota / ponerle precio */}
       <ModalCuotas

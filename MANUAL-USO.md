@@ -688,6 +688,19 @@ Los meses **anteriores** al mes del saldo muestran `—`: no se puede acumular h
 saldo que corresponde a otro momento. Si ves guiones al principio de la grilla, el saldo quedó
 viejo y hay que recargarlo.
 
+### Presupuestar una venta de hacienda sin salir
+Las celdas ámbar de **cabezas disponibles** (subrayadas de punteado) se clickean: se abre un
+formulario chico con cuántas, cuándo, a cuánto y el plazo, y al guardar **la celda se convierte
+en plata**. El desbaste, la comisión y el precio salen de la tabla según el peso, y se ve el
+desglose hasta lo que ingresa.
+
+Es a propósito el formulario mínimo. Para retener los animales y que engorden —o para ajustar
+desbaste, ganancia diaria o tramos de actividad— vas a Productivo → Evolución Rodeo y editás el
+mismo lote.
+
+Las **vacas de refugo** aparecen acá igual que el destete: son cabezas que salen del rodeo y se
+venden.
+
 ### IIBB
 Un solo renglón **IIBB total**, que se abre en sus orígenes: venta de hacienda, arrendamiento
 (5 % de la venta) y ganadería. Todos caen el **mes siguiente al cobro**.

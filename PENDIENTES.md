@@ -1538,6 +1538,57 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 🐄 PRESUPUESTAR LA VENTA DESDE EL PRESUPUESTO + VACAS DE REFUGO *(2026-07-31, sin testear)*
+
+##### Vacas de refugo — era un pendiente, ahora se ven
+> *"además de esto no se están mostrando los kg disponibles de las ventas no presupuestadas de
+> vacas refugo, ¿verdad? ¿Es un pendiente?"*
+
+**Sí, lo era.** `existenciasDeCiclos()` sólo emitía `terneros_venta` y `terneras_venta`; el
+**descarte** se calculaba en `calcularCiclo()` pero nunca llegaba al presupuesto. Con
+`peso_descarte_kg = 450` cargado en todas las campañas y 22–32 cabezas por ciclo, son
+**~10.000 a 14.000 kg por campaña** que no se veían.
+
+Ahora aparecen como `Vaca CUT/Descarte` en el mes del destete, igual que el resto.
+
+**Y hubo que darles clave de tropa propia.** La vaca de refugo y la ternera son las dos hembras,
+pero salen de tropas distintas: la vaca del rodeo de cría que se descarta, la ternera del destete.
+Con la clave vieja (`ciclo:<id>|hembra`) un lote de terneras habría neteado contra las vacas
+disponibles. `tropaDeCategoria()` devuelve ahora `macho` · `hembra` · `descarte`, y el
+verificador comprueba que vender las terneras no toque el refugo.
+
+##### Presupuestar la venta sin salir del presupuesto
+> *"¿podríamos tener la posibilidad de represupuestar ventas desde el presupuesto y que
+> actualice las ventas presupuestadas y se reubique en el presupuesto? Así no salgo de él para
+> ir haciendo ese trabajo."*
+
+Las celdas ámbar de **cabezas disponibles** pasan a ser clickeables: se abre un formulario chico
+(cuántas · cuándo · precio · plazo), se guarda el lote y la celda **se convierte en plata** al
+recargar. Sin salir de la pantalla.
+
+`components/modal-presupuestar-venta.tsx`. Es deliberadamente **chico y no el editor completo de
+lotes**: acá se decide lo mínimo con los defaults de la tabla —desbaste y comisión por peso,
+precio de la banda del mes, todas las cabezas disponibles, venta a fin del mes en que se
+disponibilizan— y muestra el desglose hasta el "INGRESA". El ajuste fino (ganancia diaria,
+tramos de actividad, desbaste fuera de tabla) sigue en Productivo → Evolución Rodeo, sobre el
+mismo lote.
+
+**El detalle que hace que el neteo siga funcionando**: la celda trae su `clave` de tropa, y de
+ahí sale el `ciclo_id` que se guarda en el lote. Sin eso la venta no descontaría de la existencia
+correcta y las cabezas quedarían disponibles y vendidas a la vez.
+
+`ganancia_diaria_kg` arranca en **0** a propósito: para una venta cargada al toque, suponer que
+el animal engorda sería inventar kilos. Si se la va a retener, se le asigna actividad en
+Productivo y la curva se arma sola.
+
+##### Pendiente que deja
+**C-23** — lo mismo para el otro lado: editar o borrar una venta ya presupuestada desde el
+presupuesto (hoy la celda con plata no es clickeable, hay que ir a Productivo). Y el equivalente
+para arrendamientos, que ya tiene su modal de cuotas pero no permite crear.
+
+
 #### 🧾 IIBB MENSUAL — doble conteo confirmado *(2026-07-31)*
 
 > *"IIBB mensual MSA deberíamos no proyectarlo, ¿verdad? Ya que se calcula según ventas y el

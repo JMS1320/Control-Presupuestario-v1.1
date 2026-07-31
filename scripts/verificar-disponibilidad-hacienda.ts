@@ -58,5 +58,31 @@ chk("destete 27/28 hembras", buscar("Ternera al Pie", "2028-03")!.cabezas, 78.5)
 const soloStock = disponiblePorDiferencia(pesada, [lotes[1]] as any, [])
 chk("lote del destete no toca el stock de hoy", soloStock.find(x => x.categoria === "Ternero Recria")!.cabezas, 98)
 
+
+// ══ Vacas de refugo: son existencia disponible, no se veian ═════════════════
+console.log("\n--- vacas de refugo ---")
+const conDescarte = existenciasDeCiclos([
+  { id: CICLO_2627, campania: "26/27", fecha_destete: "2027-03-01",
+    terneros_venta: 93.5, terneras_venta: 26.5, peso_macho: 197.34, peso_hembra: 197.34,
+    descarte: 32, peso_descarte: 450 },
+], "2026-07")
+const refugo = conDescarte.find(e => e.categoria === "Vaca CUT/Descarte")!
+console.log(`     ${refugo.cabezas} cab x ${refugo.kg / refugo.cabezas} kg = ${refugo.kg.toLocaleString("es-AR")} kg`)
+chk("el refugo aparece como existencia", refugo.cabezas, 32)
+chk("con su peso propio", refugo.kg, 14400)
+
+// Y NO comparte clave con las terneras: un lote de terneras no puede netear contra las vacas
+const clavesDistintas = new Set(conDescarte.map(e => e.clave)).size
+chk("cada tropa con su clave", clavesDistintas, 3)
+const loteTerneras: any[] = [
+  { id: "LT", categoria: "Ternera al Pie", ciclo_id: CICLO_2627, cantidad: 26.5,
+    peso_base_kg: 197.34, fecha_venta_estimada: "2027-03-01" },
+]
+const d2 = disponiblePorDiferencia(conDescarte, loteTerneras as any, [])
+chk("vender las terneras no toca el refugo",
+  d2.find(x => x.categoria === "Vaca CUT/Descarte")!.cabezas, 32)
+chk("y las terneras si quedan en cero (no aparecen)",
+  d2.filter(x => x.categoria === "Ternera al Pie").length, 0)
+
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)
