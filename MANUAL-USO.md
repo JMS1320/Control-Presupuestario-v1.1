@@ -651,10 +651,17 @@ templates": ahí ves cuántas cuotas declara, cuántas tiene cargadas, cuánto p
 plata, ordenado de mayor a menor. El ✨ vuelve al automático.
 
 ### Lo que no es gasto no se presupuesta
-Tres agrupadoras quedan siempre en cero porque **la plata se mueve pero no se va**:
-*Inversiones* (el FCI es una colocación que se rescata cuando querés), *Movimientos Internos
-empresa* (caja e interbancarias) y *Créditos Bancarios* (financiación — y "Créditos Tomados" es
-un ingreso). Si igual querés presupuestar alguno, ponele el método a mano.
+Queda en cero todo lo que el **plan de cuentas** marca como `financiero`: el FCI (es una
+colocación que rescatás cuando querés), la caja y las interbancarias (plata que cambia de
+bolsillo) y el **pago de la tarjeta** (los gastos ya entran por su cuenta contable, sumar el
+resumen los contaría dos veces).
+
+Los **retiros de socios sí se presupuestan**: esa plata sale de verdad.
+
+El criterio sale de la columna *Tipo* del panel, no de cómo se llame la agrupadora. Si un
+template dice **"sin clasificar"** es que su categoría no existe en el plan de cuentas: se asume
+gasto, y conviene darla de alta. Si igual querés presupuestar algo financiero, ponele el método
+a mano.
 
 ### Los gastos bancarios
 Las comisiones e impuestos bancarios nunca se cargan por adelantado, se llenan durante el mes.

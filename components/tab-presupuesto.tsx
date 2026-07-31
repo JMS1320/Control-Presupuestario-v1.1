@@ -50,7 +50,7 @@ import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
   type TemplateInfo, type CuotaMes, type CeldaTemplate, type ConfigTemplate,
-  type MetodoResuelto,
+  type MetodoResuelto, type TipoCuenta,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
 
@@ -464,6 +464,15 @@ export function TabPresupuesto() {
       })
     }
 
+    // Naturaleza contable de cada categoría: decide si el template es un GASTO o un
+    // movimiento financiero (colocaciones, transferencias entre cuentas propias, tarjeta).
+    const { data: ctas } = await supabase
+      .from("cuentas_contables").select("categ, tipo").not("categ", "is", null)
+    const tipoPorCateg: Record<string, TipoCuenta> = {}
+    for (const c of ((ctas || []) as any[])) {
+      if (c.tipo) tipoPorCateg[String(c.categ).trim().toUpperCase()] = c.tipo as TipoCuenta
+    }
+
     // Métodos elegidos a mano. Sin fila, el método se hereda de `cuotas`.
     const { data: cfgs } = await supabase
       .from("presupuesto_template_config").select("template_id, metodo, monto_manual")
@@ -487,6 +496,7 @@ export function TabPresupuesto() {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
         agrupador: t.cuenta_agrupadora ?? null,
+        tipo_contable: tipoPorCateg[String(t.categ ?? "").trim().toUpperCase()] ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,
         periodicidad: t.periodicidad ?? null,

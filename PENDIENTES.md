@@ -1534,6 +1534,79 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### ✅ C-20 — "No es gasto" sale del PLAN DE CUENTAS, no del nombre *(2026-07-31, sin testear)*
+
+La versión anterior tenía una lista de agrupadoras (`Inversiones`, `Movimientos Internos empresa`,
+`Créditos Bancarios`). Funcionaba pero **dependía de cómo se llamaran**: un renombre y el gasto
+fantasma volvía sin aviso.
+
+**El dato ya estaba**: `public.cuentas_contables.tipo`, un enum `tipo_cuenta` con
+`ingreso · egreso · financiero · distribucion · NO`. Se llega desde el template por su `categ`.
+
+| `tipo` | Qué hace el presupuesto | Templates MSA |
+|---|---|---:|
+| **`financiero`** | **No proyecta** — la plata cambia de lugar pero no sale | 7 |
+| `egreso` | Proyecta normal | 16 |
+| `distribucion` | **Proyecta** — los retiros de socios sí salen de la caja | — |
+| `ingreso` · `NO` | No proyecta, avisa | — |
+| sin match | Proyecta (default seguro) | 40 |
+
+Separa fino justo donde importa: las **comisiones bancarias son `egreso`** (gasto de verdad)
+aunque vivan en "Gastos Bancarios", mientras el FCI (`Fondos Comunes de Inversión` →
+`MOVIMIENTOS FINANCIEROS`), la caja y las interbancarias (`MOVIMIENTOS ENTRE CANALES`) son
+`financiero`.
+
+##### Tarjetas también quedó afuera — confirmado por el usuario
+*Tarjeta Visa Business MSA* sale `financiero` y hasta ahora se presupuestaba (declara 12 cuotas).
+Ya no. El motivo es el doble conteo: **el pago del resumen duplica los gastos que ya entran por
+su cuenta contable**. Es lo mismo que el usuario había señalado sobre los canales de pago.
+
+##### Lo que NO cubre — y se muestra
+**40 de 63 templates no matchean** con el plan de cuentas: sus `categ` ("Impuesto inmobiliario",
+"Impuesto Red Vial", los automotores, los retiros) no existen en `cuentas_contables`. Se asumen
+gasto, que hoy es correcto para todos.
+
+Pero el mecanismo depende de ese match, así que el panel muestra una columna **Tipo** y avisa
+cuántos están *sin clasificar*. Si algún día entra un template financiero con una categoría que
+tampoco existe, se va a presupuestar — y el aviso es lo que lo hace visible.
+
+De paso queda expuesta una deuda de datos real: **40 categorías de template que no están en el
+plan de cuentas**.
+
+**Verificador**: 36 checks. Los nuevos comprueban que renombrar la agrupadora no cambie nada y
+que, al revés, una agrupadora llamada "Inversiones" pero con `tipo = egreso` sí se presupueste.
+
+---
+
+#### 💰 RETIROS DE SOCIOS — 5 de 6 quedan fuera del presupuesto MSA *(hallazgo 2026-07-31)*
+
+> *"retiros semestrales mamá, Manuel, etc. (son 6 personas en total) ¿están dentro?"*
+
+Los 6 templates existen, pero **sólo el de MA entra al presupuesto de MSA**. Los otros cinco
+tienen `responsable = 'PAM'` y el presupuesto filtra por `responsable ILIKE '%MSA%'`.
+
+| Template | Responsable | Cuotas | Total cargado | ¿Entra? |
+|---|---|---:|---:|---|
+| Retiro MA mensual | MSA/PAM | 12 | $45.945.000 | ✅ sí |
+| Retiro PAM | MSA | abierto | $6.055.000 | ✅ sí |
+| Retiro Andrés semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro José semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Manuel semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Mechi semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Soledad semestral | PAM | 2 | $6.000.000 | ❌ no |
+| ~~Retiro MA semestral~~ | MSA/PAM | 2 | $0 | inactivo |
+
+**Son $30 M cargados que no aparecen en el presupuesto de MSA.** Puede estar bien (si los paga
+PAM) o puede ser un hueco (si salen de la caja de MSA y sólo se imputan a PAM). **Decisión del
+usuario** — no se tocó nada.
+
+Si hay que incluirlos, la vía correcta **no** es cambiar el filtro por responsable —eso metería
+todo PAM— sino marcar esos cinco como MSA/PAM, igual que ya está el de MA.
+
+**C-21**: definir si los retiros semestrales de socios salen de la caja de MSA.
+
 #### 💸 LO QUE NO ES GASTO NO SE PRESUPUESTA *(2026-07-31, sin testear)*
 
 > *"FCI no se debería presupuestar ya que es dinero que si egresa es porque se coloca a tasa y
@@ -1558,9 +1631,8 @@ Tres agrupadoras enteras que **no son gasto** — la plata se mueve pero no se v
 `metodoHeredado()` los corta **antes que nada**: da igual cuántas cuotas declaren. Se puede pisar
 eligiendo un método a mano, que es la salida que pidió el usuario.
 
-⚠️ **Es por nombre de agrupadora**, que es dato que el usuario controla. Si se renombra alguna,
-el filtro deja de aplicar y el gasto fantasma vuelve. Lo correcto a futuro sería una marca en el
-template (`es_gasto`) o en la agrupadora — **C-20**.
+⚠️ ~~Es por nombre de agrupadora~~ → **C-20 RESUELTO el 2026-07-31**: el criterio pasó a ser
+`cuentas_contables.tipo` (ver la sección de arriba). Ya no depende de cómo se llame nada.
 
 ##### La otra pregunta: los gastos bancarios
 > *"hay templates que se llenan automáticamente con gastos bancarios, por ejemplo comisiones.

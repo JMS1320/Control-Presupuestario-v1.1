@@ -1,5 +1,5 @@
 import {
-  proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO, esMovimientoInterno,
+  proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO, noEsGasto,
   type TemplateInfo, type CuotaMes,
 } from "../lib/presupuesto/templates"
 
@@ -21,8 +21,8 @@ const meses = Array.from({ length: 18 }, (_, i) => {
 })
 const q = (mes: string, monto: number): CuotaMes => ({ egreso_id: "T", mes, monto })
 const tpl = (o: Partial<TemplateInfo>): TemplateInfo => ({
-  id: "T", nombre: "X", agrupador: null, cuotas: null, tipo_recurrencia: null,
-  periodicidad: null, aplica_generacion: null, ...o,
+  id: "T", nombre: "X", agrupador: null, tipo_contable: null, cuotas: null,
+  tipo_recurrencia: null, periodicidad: null, aplica_generacion: null, ...o,
 })
 
 // ══ EL BUG QUE MOTIVÓ ESTO ══════════════════════════════════════════════════
@@ -115,7 +115,7 @@ chk("el aviso junta sólo los de carga manual", aviso.nombres.sort(), ["Cargas S
 // ══ Movimientos internos: NO son gasto ══════════════════════════════════════
 console.log("\n--- lo que no es gasto no se presupuesta ---")
 const fci = tpl({ nombre: "FIMA Premium Galicia Pesos", agrupador: "Inversiones",
-  cuotas: null, tipo_recurrencia: "abierto" })
+  tipo_contable: "financiero", cuotas: null, tipo_recurrencia: "abierto" })
 const rF = proyectarTemplate(fci, [
   q("2026-02", 7500000), q("2026-03", 8000000), q("2026-04", 7000000),
   q("2026-05", 7600000), q("2026-06", 7500000),
@@ -126,12 +126,12 @@ chk("y no aporta un peso", rF.celdas.reduce((s, c) => s + c.monto, 0), 0)
 console.log(`     antes: promedio ~$7,5 M x 18 meses = ~$135 M de egreso inventado`)
 
 chk("Caja (movimiento interno) tampoco, aunque declare 12 cuotas",
-  metodoHeredado(tpl({ agrupador: "Movimientos Internos empresa", cuotas: 12 }), true).metodo, "no_proyectar")
+  metodoHeredado(tpl({ tipo_contable: "financiero", cuotas: 12 }), true).metodo, "no_proyectar")
 chk("Interbancarias tampoco",
-  metodoHeredado(tpl({ agrupador: "Movimientos Internos empresa", cuotas: 2 }), true).metodo, "no_proyectar")
+  metodoHeredado(tpl({ tipo_contable: "financiero", cuotas: 2 }), true).metodo, "no_proyectar")
 chk("Creditos Bancarios tampoco",
-  metodoHeredado(tpl({ agrupador: "Créditos Bancarios", cuotas: null }), true).metodo, "no_proyectar")
-chk("pero un gasto de verdad si", metodoHeredado(tpl({ agrupador: "Seguros", cuotas: 12 }), true).metodo, "mensual")
+  metodoHeredado(tpl({ tipo_contable: "financiero", cuotas: null }), true).metodo, "no_proyectar")
+chk("pero un gasto de verdad si", metodoHeredado(tpl({ tipo_contable: "egreso", cuotas: 12 }), true).metodo, "mensual")
 
 // El usuario lo puede pisar: "o en tal caso hacerlo yo a mano"
 const rFman = proyectarTemplate(fci, [q("2026-02", 7500000)], meses,
@@ -140,13 +140,35 @@ chk("el usuario lo puede presupuestar a mano si quiere", rFman.celdas[0]!.monto,
 
 // ══ Gastos bancarios: se llenan durante, se presupuestan por historico ══════
 console.log("\n--- comisiones bancarias (se llenan durante, nunca antes) ---")
-const comBanco = tpl({ nombre: "Comision Cuenta Bancaria", agrupador: "Gastos Bancarios", cuotas: 0 })
+const comBanco = tpl({ nombre: "Comision Cuenta Bancaria", tipo_contable: "egreso", cuotas: 0 })
 const rB = proyectarTemplate(comBanco, [
   q("2026-02", 30000), q("2026-03", 32000), q("2026-04", 31000), q("2026-05", 35000),
 ], meses, { ipc })
 console.log(`     ${rB.metodo.motivo} -> ${ETIQUETA_METODO[rB.metodo.metodo]}`)
 chk("se presupuestan por promedio historico", rB.metodo.metodo, "promedio")
 chk("y en todos los meses", rB.celdas.filter(c => c.monto > 0).length, 18)
+
+
+// ══ C-20: el criterio es el TIPO CONTABLE, no el nombre de la agrupadora ════
+console.log("\n--- naturaleza contable ---")
+chk("financiero no se presupuesta", noEsGasto("financiero") != null, true)
+chk("ingreso tampoco", noEsGasto("ingreso") != null, true)
+chk("egreso si", noEsGasto("egreso"), null)
+chk("distribucion SI (los retiros salen de la caja)", noEsGasto("distribucion"), null)
+chk("sin clasificar se asume gasto", noEsGasto(null), null)
+
+// Tarjeta: el usuario confirmo que no se presupueste (el resumen duplica los gastos
+// que ya entran por su cuenta contable).
+const tarjeta = tpl({ nombre: "Tarjeta Visa Business MSA", tipo_contable: "financiero", cuotas: 12 })
+chk("tarjeta no se proyecta", metodoHeredado(tarjeta, true).metodo, "no_proyectar")
+
+// Y el criterio ya NO depende de como se llame la agrupadora
+chk("una agrupadora renombrada no cambia nada",
+  metodoHeredado(tpl({ agrupador: "Inversiones RENOMBRADA", tipo_contable: "financiero", cuotas: 12 }), true).metodo,
+  "no_proyectar")
+chk("ni al reves: agrupadora 'Inversiones' con tipo egreso SI se presupuesta",
+  metodoHeredado(tpl({ agrupador: "Inversiones", tipo_contable: "egreso", cuotas: 12 }), true).metodo,
+  "mensual")
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)

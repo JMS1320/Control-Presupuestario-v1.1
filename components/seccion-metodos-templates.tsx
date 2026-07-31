@@ -20,7 +20,7 @@ import type { PuntoSerie } from "@/lib/precios/serie"
 import {
   proyectarTemplate, ETIQUETA_METODO,
   type MetodoTemplate, type TemplateInfo, type CuotaMes, type ConfigTemplate,
-  type MetodoResuelto, type CeldaTemplate,
+  type MetodoResuelto, type CeldaTemplate, type TipoCuenta,
 } from "@/lib/presupuesto/templates"
 
 const METODOS = Object.keys(ETIQUETA_METODO) as MetodoTemplate[]
@@ -46,6 +46,8 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
   const [templates, setTemplates] = useState<any[]>([])
   const [historia, setHistoria] = useState<Record<string, CuotaMes[]>>({})
   const [cfgs, setCfgs] = useState<Record<string, ConfigTemplate>>({})
+  /** Naturaleza contable por categoría — decide si el template es gasto o movimiento. */
+  const [tipoPorCateg, setTipoPorCateg] = useState<Record<string, TipoCuenta>>({})
   const [soloProyectados, setSoloProyectados] = useState(true)
 
   const cargar = useCallback(async () => {
@@ -53,7 +55,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
     try {
       const { data: tpl, error } = await supabase
         .from("egresos_sin_factura")
-        .select("id, nombre_referencia, cuenta_agrupadora, cuotas, tipo_recurrencia, periodicidad, aplica_generacion")
+        .select("id, nombre_referencia, cuenta_agrupadora, categ, cuotas, tipo_recurrencia, periodicidad, aplica_generacion")
         .eq("activo", true)
         .or("responsable.ilike.%MSA%,responsable.eq.ambas")
         .not("cuenta_agrupadora", "is", null)
@@ -70,6 +72,13 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
         supabase.from("presupuesto_template_config")
           .select("template_id, metodo, monto_manual").eq("empresa", "MSA"),
       ])
+      const { data: ctas } = await supabase
+        .from("cuentas_contables").select("categ, tipo").not("categ", "is", null)
+      const tp: Record<string, TipoCuenta> = {}
+      for (const x of ((ctas || []) as any[])) {
+        if (x.tipo) tp[String(x.categ).trim().toUpperCase()] = x.tipo as TipoCuenta
+      }
+      setTipoPorCateg(tp)
 
       const h: Record<string, CuotaMes[]> = {}
       for (const c of ((cuotas || []) as any[])) {
@@ -98,6 +107,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
         agrupador: t.cuenta_agrupadora ?? null,
+        tipo_contable: tipoPorCateg[String(t.categ ?? "").trim().toUpperCase()] ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,
         periodicidad: t.periodicidad ?? null,
@@ -115,11 +125,12 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
         cfg: cfgs[t.id],
       }
     }).sort((a, b) => b.montoProyectado - a.montoProyectado)
-  }, [templates, historia, cfgs, meses, ipc])
+  }, [templates, historia, cfgs, meses, ipc, tipoPorCateg])
 
   const visibles = soloProyectados ? filas.filter(f => f.mesesProyectados > 0) : filas
   const totalProyectado = filas.reduce((s, f) => s + f.montoProyectado, 0)
   const conAviso = filas.filter(f => f.avisoCuotas).length
+  const sinClasificar = filas.filter(f => !f.info.tipo_contable).length
 
   const guardar = async (id: string, cambios: Partial<ConfigTemplate>) => {
     const base = cfgs[id] ?? { metodo: filas.find(f => f.info.id === id)!.metodo.metodo }
@@ -163,6 +174,15 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
         </label>
       </div>
 
+      {sinClasificar > 0 && (
+        <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+          <strong>{sinClasificar}</strong> {sinClasificar === 1 ? "template tiene" : "templates tienen"} una
+          categoría que no existe en el plan de cuentas, así que se asumen <strong>gasto</strong>.
+          Es el default seguro, pero si alguno fuera un movimiento financiero se presupuestaría
+          de más — conviene darle de alta la categoría en Cuentas contables.
+        </p>
+      )}
+
       {conAviso > 0 && (
         <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
           <AlertTriangle className="mr-1 inline h-3 w-3" />
@@ -177,6 +197,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
           <thead>
             <tr className="border-b bg-gray-50 text-[10px] text-gray-500">
               <th className="px-2 py-1.5 text-left font-medium">Template</th>
+              <th className="px-2 py-1.5 text-left font-medium" title="Naturaleza contable, desde cuentas_contables">Tipo</th>
               <th className="px-2 py-1.5 text-right font-medium" title="Cuotas al año que declara el template">Declara</th>
               <th className="px-2 py-1.5 text-right font-medium">Con cuota</th>
               <th className="px-2 py-1.5 text-left font-medium">Método</th>
@@ -196,6 +217,13 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
                       se carga a mano
                     </Badge>
                   )}
+                </td>
+                <td className="px-2 py-1.5">
+                  {f.info.tipo_contable
+                    ? <span className={f.info.tipo_contable === "egreso" ? "text-gray-500"
+                        : f.info.tipo_contable === "distribucion" ? "text-gray-500"
+                        : "text-violet-700"}>{f.info.tipo_contable}</span>
+                    : <span className="text-amber-600" title="Su categoría no existe en el plan de cuentas: se asume gasto">sin clasificar</span>}
                 </td>
                 <td className="px-2 py-1.5 text-right text-gray-500">
                   {f.info.tipo_recurrencia === "abierto"
@@ -243,7 +271,10 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
       </div>
 
       <p className="text-[10px] text-gray-500">
-        <strong>Declara</strong> son las cuotas al año que tiene cargado el template
+        <strong>Tipo</strong> sale del plan de cuentas: lo <span className="text-violet-700">financiero</span>{" "}
+        (colocaciones, transferencias entre cuentas propias, pago de tarjeta) no se presupuesta
+        porque la plata no sale de la empresa; <code>egreso</code> y <code>distribucion</code> sí.
+        {" "}<strong>Declara</strong> son las cuotas al año que tiene cargado el template
         (<code>cuotas</code>), y de ahí sale el método automático: 12 → todos los meses ·
         1 a 11 → esas cuotas, en los meses que muestra la historia · 0 o abierto → promedio.
         Cambiarlo acá pisa lo heredado; el <Wand2 className="inline h-3 w-3" /> lo devuelve.

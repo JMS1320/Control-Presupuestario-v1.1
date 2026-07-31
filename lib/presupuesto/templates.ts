@@ -52,23 +52,35 @@ export const ETIQUETA_METODO: Record<MetodoTemplate, string> = {
 }
 
 /**
- * Agrupadoras que NO son gasto: la plata se mueve pero no se va.
- *
- * Presupuestarlas infla el egreso con dinero que sigue siendo de la empresa. El caso grande es
- * el FCI: son $7,5 M de promedio proyectados todos los meses, cuando en realidad es una
- * colocación que vuelve con su rendimiento y se rescata cuando se quiere.
- *
- * Devuelve el motivo, o null si es un gasto de verdad. Se puede pisar eligiendo un método a
- * mano — el usuario dijo *"o en tal caso hacerlo yo a mano"*.
+ * Naturaleza contable de la cuenta, del enum `tipo_cuenta` de `public.cuentas_contables`.
  */
-export function esMovimientoInterno(agrupador: string | null | undefined): string | null {
-  switch ((agrupador ?? '').trim()) {
-    case 'Inversiones':
-      return 'Colocación: el dinero vuelve con su rendimiento y se rescata cuando se quiere, no es un gasto'
-    case 'Movimientos Internos empresa':
-      return 'Movimiento interno: la plata cambia de bolsillo, no sale de la empresa'
-    case 'Créditos Bancarios':
-      return 'Financiación: no es gasto operativo (y "Créditos Tomados" es un ingreso, no un egreso)'
+export type TipoCuenta = 'ingreso' | 'egreso' | 'financiero' | 'distribucion' | 'NO'
+
+/**
+ * ¿Este template representa un gasto que hay que presupuestar? Devuelve el motivo si NO.
+ *
+ * ── Por qué se mira el tipo contable y no el nombre de la agrupadora ────────
+ * La primera versión tenía una lista de agrupadoras ("Inversiones", "Movimientos Internos
+ * empresa", "Créditos Bancarios"). Funcionaba, pero **dependía de cómo se llamaran**: un
+ * renombre y el gasto fantasma volvía sin que nadie se enterara.
+ *
+ * `cuentas_contables.tipo` ya declara esto y es el criterio contable, no una convención de
+ * nombres. Se llega desde el template por su `categ`. Además separa fino donde importa: las
+ * comisiones bancarias son `egreso` (gasto de verdad) aunque estén en "Gastos Bancarios",
+ * mientras que el FCI, la caja, las interbancarias y la tarjeta son `financiero`.
+ *
+ * `distribucion` (retiros de socios) SÍ se presupuesta: es plata que sale de la caja.
+ * Sin clasificar → se trata como gasto, que es el default seguro.
+ */
+export function noEsGasto(tipo: TipoCuenta | null | undefined): string | null {
+  switch (tipo) {
+    case 'financiero':
+      return 'Movimiento financiero: la plata cambia de lugar pero no sale de la empresa '
+        + '(colocaciones, transferencias entre cuentas propias, pago de tarjeta)'
+    case 'ingreso':
+      return 'Es una cuenta de ingreso: no corresponde presupuestarla como egreso'
+    case 'NO':
+      return 'Cuenta marcada para no computar'
     default:
       return null
   }
@@ -77,8 +89,13 @@ export function esMovimientoInterno(agrupador: string | null | undefined): strin
 export interface TemplateInfo {
   id: string
   nombre: string
-  /** Para saber si es un movimiento interno y no un gasto. */
+  /** Para poder mostrarlo; ya no decide nada. */
   agrupador?: string | null
+  /**
+   * Naturaleza contable, desde `cuentas_contables.tipo` vía `categ`. `null` = la categoría del
+   * template no existe en el plan de cuentas, así que se asume gasto.
+   */
+  tipo_contable?: TipoCuenta | null
   /** Cuotas al año declaradas en el template. 0 = sin número fijo. */
   cuotas: number | null
   tipo_recurrencia: string | null
@@ -150,8 +167,8 @@ export interface MetodoResuelto {
  */
 export function metodoHeredado(info: TemplateInfo, tieneHistoria: boolean): MetodoResuelto {
   // Antes que nada: si no es un gasto, no se presupuesta. Da igual cuántas cuotas declare.
-  const interno = esMovimientoInterno(info.agrupador)
-  if (interno) return { metodo: 'no_proyectar', manual: false, motivo: interno }
+  const noGasto = noEsGasto(info.tipo_contable)
+  if (noGasto) return { metodo: 'no_proyectar', manual: false, motivo: noGasto }
 
   if (!tieneHistoria) {
     return { metodo: 'no_proyectar', manual: false, motivo: 'Sin cuotas cargadas: no hay de dónde proyectar' }
