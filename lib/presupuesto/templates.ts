@@ -86,14 +86,46 @@ export function noEsGasto(tipo: TipoCuenta | null | undefined): string | null {
   }
 }
 
+/** De dónde salió el tipo que se terminó usando. Para poder explicarlo en pantalla. */
+export type OrigenTipo = 'template' | 'plan' | 'signo'
+
+/**
+ * El tipo de un template, y de dónde salió.
+ *
+ * ── Por qué el template manda sobre el plan de cuentas ──────────────────────
+ * `egresos_sin_factura.tipo` se cargó explícitamente en los 176 templates (2026-07-31). El plan
+ * de cuentas sigue existiendo y sigue haciendo falta, pero clasifica **facturas** (que apuntan
+ * por `cuenta_contable`); el template clasifica **templates**. Cada uno con su población: no
+ * son dos fuentes para el mismo dato.
+ *
+ * Antes de esa columna se llegaba al tipo desde el template por su `categ`, y **70 de 123
+ * templates activos tienen una categoría que no está en el plan** — caían al signo del monto.
+ * Para los gastos eso acertaba de casualidad, pero mandaba los retiros de socios a egresos
+ * operativos: `Retiro MA mensual` metía $45,9 M donde no van.
+ *
+ * Los dos fallbacks quedan para lo que se cree de acá en adelante, hasta que alguien le ponga
+ * el tipo. Si se usó el signo, `origen` lo dice y la pantalla lo puede marcar.
+ */
+export function resolverTipo(
+  tipoTemplate: TipoCuenta | null | undefined,
+  tipoCuenta: TipoCuenta | null | undefined,
+  monto?: number,
+): { tipo: TipoCuenta; origen: OrigenTipo } {
+  if (tipoTemplate) return { tipo: tipoTemplate, origen: 'template' }
+  if (tipoCuenta) return { tipo: tipoCuenta, origen: 'plan' }
+  return { tipo: (monto ?? -1) >= 0 ? 'ingreso' : 'egreso', origen: 'signo' }
+}
+
 export interface TemplateInfo {
   id: string
   nombre: string
   /** Para poder mostrarlo; ya no decide nada. */
   agrupador?: string | null
+  /** Naturaleza declarada en el propio template. Es la que manda — ver `resolverTipo`. */
+  tipo?: TipoCuenta | null
   /**
    * Naturaleza contable, desde `cuentas_contables.tipo` vía `categ`. `null` = la categoría del
-   * template no existe en el plan de cuentas, así que se asume gasto.
+   * template no existe en el plan de cuentas. Sólo se usa si el template no trae `tipo`.
    */
   tipo_contable?: TipoCuenta | null
   /** Cuotas al año declaradas en el template. 0 = sin número fijo. */
@@ -101,6 +133,18 @@ export interface TemplateInfo {
   tipo_recurrencia: string | null
   periodicidad: string | null
   aplica_generacion: boolean | null
+}
+
+/** El tipo que rige para este template, ya resuelto. `null` sólo si no hay ninguno de los dos. */
+export function tipoEfectivo(info: TemplateInfo): TipoCuenta | null {
+  return info.tipo ?? info.tipo_contable ?? null
+}
+
+/** De dónde salió el tipo de este template — para poder explicarlo en la pantalla de métodos. */
+export function origenTipo(info: TemplateInfo): OrigenTipo | null {
+  if (info.tipo) return 'template'
+  if (info.tipo_contable) return 'plan'
+  return null
 }
 
 export interface ConfigTemplate {
@@ -167,7 +211,8 @@ export interface MetodoResuelto {
  */
 export function metodoHeredado(info: TemplateInfo, tieneHistoria: boolean): MetodoResuelto {
   // Antes que nada: si no es un gasto, no se presupuesta. Da igual cuántas cuotas declare.
-  const noGasto = noEsGasto(info.tipo_contable)
+  // El tipo lo declara el template; el plan de cuentas es fallback (ver `resolverTipo`).
+  const noGasto = noEsGasto(tipoEfectivo(info))
   if (noGasto) return { metodo: 'no_proyectar', manual: false, motivo: noGasto }
 
   if (!tieneHistoria) {

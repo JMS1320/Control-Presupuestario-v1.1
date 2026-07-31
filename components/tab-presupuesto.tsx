@@ -423,7 +423,7 @@ export function TabPresupuesto() {
     // Traer templates activos MSA (responsable contiene MSA)
     const { data: templates } = await supabase
       .from("egresos_sin_factura")
-      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion, cuotas, tipo_recurrencia")
+      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion, cuotas, tipo_recurrencia, tipo")
       .eq("activo", true)
       .or("responsable.ilike.%MSA%,responsable.eq.ambas")
       .not("cuenta_agrupadora", "is", null)
@@ -500,6 +500,7 @@ export function TabPresupuesto() {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
         agrupador: t.cuenta_agrupadora ?? null,
+        tipo: t.tipo ?? null,
         tipo_contable: tipoPorCateg[String(t.categ ?? "").trim().toUpperCase()] ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,

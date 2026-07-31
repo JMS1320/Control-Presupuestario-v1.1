@@ -985,3 +985,47 @@ Más `fmtNumeroAR()` (inverso) y `parsePorcentajeAR()` (% → fracción).
 **NO repetir**: escribir el parser inline en cada componente. Si un campo se **formatea** al
 mostrarlo, su parser tiene que poder **leer ese mismo formato**.
 **Tags**: `#parseAR` `#round-trip` `#toLocaleString` `#un-solo-lugar`
+
+---
+
+## Dos tablas con la misma columna no siempre son duplicación `#modelado #2026-07-31`
+
+Se resistió durante toda una conversación la idea de poner `tipo` en `egresos_sin_factura`
+porque `cuentas_contables.tipo` ya existía: "dos fuentes de verdad, van a divergir". El
+argumento estaba mal, y el usuario lo cortó con *"ya nos olvidamos de cómo trabaja los
+templates dentro de cuentas"*.
+
+**La pregunta correcta no es "¿el dato ya existe en otra tabla?" sino "¿clasifica a la misma
+población?"**. Acá no: `cuentas_contables.tipo` clasifica **facturas** (que llegan por
+`cuenta_contable`), `egresos_sin_factura.tipo` clasifica **templates** (que no tienen factura —
+por eso son templates). Cada tabla clasifica sus propias filas. No hay nada que pueda divergir
+porque nunca describen la misma cosa.
+
+Lo que sí era duplicación real: llegar al tipo de un template **cruzando por el nombre de la
+categoría**. Eso fallaba en **70 de 123 templates activos** cuya `categ` no está en el plan, y
+el fallback por signo mandaba los retiros de socios a egresos operativos ($43,65 M).
+
+**Señal de alarma para la próxima**: si para saber un atributo de X hay que hacer un join por
+texto a una tabla de Y, probablemente el atributo sea de X. La normalización que obliga a
+adivinar es peor que la columna repetida.
+
+**Corolario**: al agregar la columna, la precedencia va en **una** función
+(`resolverTipo()`), no repetida en cada consumidor. Los fallbacks se dejan para lo que se cree
+de acá en adelante, y el que se usó se **reporta** (`origen: 'template' | 'plan' | 'signo'`)
+para poder marcar en pantalla cuándo el sistema adivinó.
+
+**Tags**: `#duplicacion-aparente` `#poblaciones-distintas` `#join-por-texto` `#cascada`
+
+---
+
+## Un filtro `activo = true` puede romper datos históricos `#bugs #2026-07-31`
+
+`useFinancialData` cargaba los templates con `.eq("activo", true)` para armar el resumen del
+dashboard. Parece razonable — pero el resumen mira **movimientos pasados**, y un movimiento de
+hace ocho meses cuyo template se dio de baja **perdía su clasificación** y caía al fallback.
+
+**La regla**: filtrar por `activo` sirve para **elegir** (un desplegable, un alta). Para
+**interpretar el pasado** hay que traer todo: lo que ya pasó, pasó, aunque el maestro se haya
+dado de baja después.
+
+**Tags**: `#activo` `#historico` `#filtro-de-mas`

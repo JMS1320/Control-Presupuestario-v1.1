@@ -11670,3 +11670,49 @@ GRANT ALL ON public.presupuesto_template_config TO anon, authenticated, service_
 Motivo: la primera versión inferia la periodicidad de la historia de cuotas y con un solo mes
 cargado daba "mensual". Impuesto a las Ganancias (1 cuota/año, $5 M) se proyectaba 12 veces
 — ~$55 M de egreso fantasma en una fila. **El dato declarado tiene que ganarle a lo inferido.**
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-31 · `tipo` en los templates
+
+**NO está en el backup.** Al reconstruir hay que correr el ALTER **y volver a cargar los valores**
+(el UPDATE de abajo los reconstruye enteros a partir de la agrupadora y la categ).
+
+```sql
+-- 1) La columna. El enum tipo_cuenta ya existe (lo usa cuentas_contables).
+ALTER TABLE public.egresos_sin_factura
+  ADD COLUMN IF NOT EXISTS tipo public.tipo_cuenta;
+
+COMMENT ON COLUMN public.egresos_sin_factura.tipo IS
+  'Naturaleza del template para el Presupuesto y el Dashboard: ingreso | egreso | financiero | distribucion | NO. '
+  'Es la fuente de verdad del template (no hereda de cuentas_contables, que clasifica facturas). '
+  'financiero = la plata no sale de la empresa (FCI, caja, interbancarias, tarjetas, creditos) -> no se presupuesta. '
+  'distribucion = retiros de socios -> no es gasto operativo. '
+  'Si queda NULL, el codigo cae a cuentas_contables.tipo y luego al signo del monto.';
+
+-- 2) Los valores de los 176 templates (activos e inactivos).
+UPDATE public.egresos_sin_factura SET tipo =
+  CASE
+    WHEN cuenta_agrupadora = 'Retiros / Distribucion Socios' THEN 'distribucion'
+    WHEN upper(trim(categ)) IN ('CAJA','CRED P','CRED T','FCI','TARJETAS MSA','TARJETAS PAM','TRANSFERENCIAS INTERBANCARIAS') THEN 'financiero'
+    WHEN trim(nombre_referencia) ILIKE 'Otros Ingresos%' THEN 'ingreso'
+    ELSE 'egreso'
+  END::public.tipo_cuenta;
+
+-- 3) Control: debe dar 150 egreso / 14 distribucion / 11 financiero / 1 ingreso, y 0 sin tipo.
+SELECT tipo::text, count(*) FROM public.egresos_sin_factura GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**Por qué existe** — el tipo se sacaba de `cuentas_contables` cruzando por `categ`, y **70 de los
+123 templates activos tienen una categoría que no está en el plan de cuentas**. Esos caían al
+**signo del monto**: todo débito era "egreso". Para los gastos acertaba de casualidad, pero
+mandaba los **retiros de socios a egresos operativos** — $43,65 M en 15 movimientos.
+
+**No es un dato duplicado**: `cuentas_contables.tipo` clasifica **facturas** (que apuntan por
+`cuenta_contable`), `egresos_sin_factura.tipo` clasifica **templates**. Se siguen necesitando las
+dos. La precedencia vive en `resolverTipo()` (`lib/presupuesto/templates.ts`) y en ningún otro
+lado.
+
+**Se cargaron también los inactivos** (50), para que reactivar uno no reabra el hueco.
+
+Ver `PENDIENTES.md` § **C-27**.

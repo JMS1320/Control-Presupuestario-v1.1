@@ -131,21 +131,35 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 
 #### 🧭 Las capas que ordenan un egreso — cuál es cuál
 
-Hay seis campos que "ordenan" y es fácil confundirlos. De la macro al detalle:
+Hay siete campos que "ordenan" y es fácil confundirlos. De la macro al detalle:
 
 | Capa | Dónde vive | Qué es | Se usa para |
 |---|---|---|---|
-| **1 · `tipo`** | `cuentas_contables` | La **macro**: `ingreso` · `egreso` · `financiero` · `distribucion` · `NO` | Decide **si se presupuesta** (lo `financiero` no) |
+| **1a · `tipo`** | **`egresos_sin_factura`** | La macro **del template**: `ingreso` · `egreso` · `financiero` · `distribucion` · `NO`. Cargada en los **176** (2026-07-31) | Decide **si se presupuesta** y en qué sección del dashboard suma |
+| **1b · `tipo`** | `cuentas_contables` | La misma macro, pero **de la cuenta** | Clasifica las **facturas**. Para templates es sólo **fallback** si 1a está NULL |
 | **2 · `nombre_totalizadora`** | `cuentas_contables` | La **jerarquía contable**: EGRESOS → EGRESOS POR GANADERIA → … | Ordena el **dashboard**. El presupuesto todavía no la usa (C-22) |
-| **3 · `categ`** | en las **dos** tablas | El **puente**: `egresos_sin_factura.categ` ↔ `cuentas_contables.categ` | Es como un template llega a su tipo y su totalizadora |
+| **3 · `categ`** | en las **dos** tablas | El **puente**: `egresos_sin_factura.categ` ↔ `cuentas_contables.categ` | Llegar de un template a su totalizadora. **Ya no al tipo** — eso lo trae 1a |
 | **4 · `cuenta_agrupadora`** | `egresos_sin_factura` | Agrupación **propia de los templates** (Impuestos Rurales, Gastos Bancarios…) | Es la que agrupa hoy el presupuesto |
-| **5 · `codigo_contable`** | `egresos_sin_factura` | Casi siempre `"No lleva"` | No se usa para nada |
+| **5 · `codigo_contable`** | `egresos_sin_factura` | Casi siempre `"No lleva"`, que **es un valor con significado** | El motor de conciliación lo estampa desde la regla |
 | **6 · `grupo_cuenta`** | `cuentas_contables` | Vacía en toda la tabla | No se usa |
+
+⚠️ **1a y 1b no son el mismo dato duplicado**: el plan clasifica **facturas** (que apuntan por
+`cuenta_contable`), el template clasifica **templates**. Cada uno con su población.
+
+La cascada, en `resolverTipo()` (`lib/presupuesto/templates.ts`) — **un solo lugar**:
+
+```
+egresos_sin_factura.tipo   →  cuentas_contables.tipo (por categ)  →  signo del monto
+```
 
 **El punto de confusión frecuente**: cuando se dice que un template *"no tiene categoría"*, en
 realidad **sí la tiene** (capa 3) — lo que falta es que esa categoría **exista en
-`cuentas_contables`**, y por eso se queda sin las capas 1 y 2. Hoy pasa con 23 categorías que
-usan 132 templates: los impuestos rurales, automotores, ARCA, IIBB y los retiros de socios.
+`cuentas_contables`**, y por eso se queda sin la capa 2. Pasa con 23 categorías que usan 132
+templates: impuestos rurales, automotores, ARCA, IIBB y los retiros de socios.
+
+*Hasta 2026-07-31 eso también los dejaba sin la capa 1, y entonces caían al **signo del monto**:
+un débito era "egreso". Por eso los retiros de socios sumaban $43,65 M a egresos operativos en
+vez de a distribuciones. La capa 1a existe justamente para cortar esa dependencia.*
 
 ##### Qué se vincula por ID y qué por texto (medido 2026-07-31)
 

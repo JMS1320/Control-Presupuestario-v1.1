@@ -21,6 +21,7 @@ import {
   proyectarTemplate, ETIQUETA_METODO,
   type MetodoTemplate, type TemplateInfo, type CuotaMes, type ConfigTemplate,
   type MetodoResuelto, type CeldaTemplate, type TipoCuenta,
+  tipoEfectivo, origenTipo,
 } from "@/lib/presupuesto/templates"
 
 const METODOS = Object.keys(ETIQUETA_METODO) as MetodoTemplate[]
@@ -55,7 +56,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
     try {
       const { data: tpl, error } = await supabase
         .from("egresos_sin_factura")
-        .select("id, nombre_referencia, cuenta_agrupadora, categ, cuotas, tipo_recurrencia, periodicidad, aplica_generacion")
+        .select("id, nombre_referencia, cuenta_agrupadora, categ, cuotas, tipo_recurrencia, periodicidad, aplica_generacion, tipo")
         .eq("activo", true)
         .or("responsable.ilike.%MSA%,responsable.eq.ambas")
         .not("cuenta_agrupadora", "is", null)
@@ -107,6 +108,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
         agrupador: t.cuenta_agrupadora ?? null,
+        tipo: t.tipo ?? null,
         tipo_contable: tipoPorCateg[String(t.categ ?? "").trim().toUpperCase()] ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,
@@ -130,7 +132,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
   const visibles = soloProyectados ? filas.filter(f => f.mesesProyectados > 0) : filas
   const totalProyectado = filas.reduce((s, f) => s + f.montoProyectado, 0)
   const conAviso = filas.filter(f => f.avisoCuotas).length
-  const sinClasificar = filas.filter(f => !f.info.tipo_contable).length
+  const sinClasificar = filas.filter(f => !tipoEfectivo(f.info)).length
 
   const guardar = async (id: string, cambios: Partial<ConfigTemplate>) => {
     const base = cfgs[id] ?? { metodo: filas.find(f => f.info.id === id)!.metodo.metodo }
@@ -219,11 +221,21 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
                   )}
                 </td>
                 <td className="px-2 py-1.5">
-                  {f.info.tipo_contable
-                    ? <span className={f.info.tipo_contable === "egreso" ? "text-gray-500"
-                        : f.info.tipo_contable === "distribucion" ? "text-gray-500"
-                        : "text-violet-700"}>{f.info.tipo_contable}</span>
-                    : <span className="text-amber-600" title="Su categoría no existe en el plan de cuentas: se asume gasto">sin clasificar</span>}
+                  {(() => {
+                    const te = tipoEfectivo(f.info)
+                    if (!te) return <span className="text-amber-600" title="El template no declara tipo y su categoría no está en el plan de cuentas: se asume gasto">sin clasificar</span>
+                    const desdePlan = origenTipo(f.info) === "plan"
+                    return (
+                      <span
+                        className={te === "egreso" || te === "distribucion" ? "text-gray-500" : "text-violet-700"}
+                        title={desdePlan
+                          ? "El template no declara tipo: se tomó el del plan de cuentas por su categoría"
+                          : "Declarado en el template"}
+                      >
+                        {te}{desdePlan && <span className="text-gray-400"> (plan)</span>}
+                      </span>
+                    )
+                  })()}
                 </td>
                 <td className="px-2 py-1.5 text-right text-gray-500">
                   {f.info.tipo_recurrencia === "abierto"

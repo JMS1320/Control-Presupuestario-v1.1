@@ -1,5 +1,6 @@
 import {
   proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO, noEsGasto,
+  tipoEfectivo, origenTipo, resolverTipo,
   type TemplateInfo, type CuotaMes,
 } from "../lib/presupuesto/templates"
 
@@ -169,6 +170,39 @@ chk("una agrupadora renombrada no cambia nada",
 chk("ni al reves: agrupadora 'Inversiones' con tipo egreso SI se presupuesta",
   metodoHeredado(tpl({ agrupador: "Inversiones", tipo_contable: "egreso", cuotas: 12 }), true).metodo,
   "mensual")
+
+
+// ══ El tipo lo declara el TEMPLATE; el plan es fallback (2026-07-31) ════════
+// Los 176 templates tienen `tipo` cargado. Antes se llegaba por `categ` al plan de cuentas,
+// y 70 de 123 activos tienen una categoria que no esta en el plan -> caian al signo del monto.
+console.log("\n--- de donde sale el tipo ---")
+
+chk("el tipo del template gana sobre el del plan",
+  tipoEfectivo(tpl({ tipo: "distribucion", tipo_contable: "egreso" })), "distribucion")
+chk("y el origen queda dicho",
+  origenTipo(tpl({ tipo: "distribucion", tipo_contable: "egreso" })), "template")
+chk("si el template no declara, hereda del plan",
+  tipoEfectivo(tpl({ tipo: null, tipo_contable: "financiero" })), "financiero")
+chk("y se marca que vino del plan",
+  origenTipo(tpl({ tipo: null, tipo_contable: "financiero" })), "plan")
+chk("sin ninguno de los dos, sin clasificar",
+  tipoEfectivo(tpl({ tipo: null, tipo_contable: null })), null)
+
+// El caso que motivo la columna: Retiro MA mensual, $45,9 M.
+// Su categ no esta en el plan -> el dashboard lo mandaba a egresos operativos por el signo.
+const retiroMA = tpl({ nombre: "Retiro MA mensual", agrupador: "Retiros / Distribucion Socios",
+  tipo: "distribucion", tipo_contable: null, cuotas: 12 })
+chk("Retiro MA mensual ya no depende del plan", tipoEfectivo(retiroMA), "distribucion")
+chk("y SI se presupuesta (sale de la caja)", metodoHeredado(retiroMA, true).metodo, "mensual")
+
+// resolverTipo: la cascada completa, con el signo como ultimo recurso
+chk("resolverTipo - manda el template", resolverTipo("distribucion", "egreso", -100).tipo, "distribucion")
+chk("resolverTipo - despues el plan", resolverTipo(null, "financiero", -100).tipo, "financiero")
+chk("resolverTipo - un debito sin nada es egreso", resolverTipo(null, null, -100).tipo, "egreso")
+chk("resolverTipo - un credito sin nada es ingreso", resolverTipo(null, null, 100).tipo, "ingreso")
+chk("resolverTipo - y avisa que adivino", resolverTipo(null, null, -100).origen, "signo")
+// Sin monto (caso template): el default seguro es gasto, nunca ingreso.
+chk("resolverTipo - sin monto, el default es egreso", resolverTipo(null, null).tipo, "egreso")
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)

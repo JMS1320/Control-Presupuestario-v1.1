@@ -139,7 +139,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
 | B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
 | C-17 / C-19 | 🔴 | Alta | **Cerrar el presupuesto como una sola cosa.** (a) **C-19**: bajar el bloque de cuentas contables a la grilla y sumarlo al TOTAL EGRESOS (hoy está en un panel aparte a propósito, ver cierre de sesión); (b) **C-7**: ídem costos de producción, que ya se calculan por tramo pero no bajan; (c) **C-17**: proyectar los templates donde no hay cuota cargada — las cuotas se cortan en dic-2026. La distinción de qué template quiere el usuario cargado a mano ya existe en `egresos_sin_factura.aplica_generacion` (true = Cargas Sociales, SICORE, UATRE… = avisar 'falta generar la campaña'; false/null = proyectar en silencio). 2026-07-30. |
-| C-26 | 🔴 | Alta | **El wizard perpetúa las categorías huérfanas** — `wizard-templates-egresos` carga el desplegable de categorías desde `egresos_sin_factura` (los templates), no desde `cuentas_contables`, así que ofrece las 23 huérfanas como opción válida y cada template nuevo nace sin `tipo`. Lazo cerrado: por eso son 23 y no 3. Mismo problema en `modal-crear-template-faltante` (toma la categ del movimiento) y `generador-renovacion-campana` (clona la del original). Conviene una pieza compartida, como `SelectorCuentaContable`. Hacer DESPUÉS de la Fase 0/1 de C-24. 2026-07-31. |
+| C-27 | ✅ | — | **`tipo` en el template** (2026-07-31, **sin testear**) — columna `egresos_sin_factura.tipo` cargada en los **176** templates (150 egreso · 14 distribucion · 11 financiero · 1 ingreso). Cascada `template.tipo ?? cuenta.tipo ?? signo` en `resolverTipo()` (`lib/presupuesto/templates.ts`), usada por el dashboard y el presupuesto. **Cierra la Fase 0 de C-24 por otro camino**: el template ya no depende de que su categoría esté en el plan (70 de 123 activos no lo estaban). **Efecto medido: $43,65 M en 15 movimientos pasan de egresos operativos a distribuciones.** El wizard ahora pide el Tipo. Dossier § C-27. |
+| C-26 | 🔴 | Alta | **Las otras dos puertas de alta crean templates incompletos** — el **wizard ya está arreglado** (C-27: pide Tipo y lo sugiere desde el plan), pero `modal-crear-template-faltante` (toma la categ del movimiento bancario) y `generador-renovacion-campana` (clona la del original) siguen creando sin `tipo` y ofreciendo las 23 categorías huérfanas. Hoy no rompen porque la cascada los salva, pero el hueco vuelve de a poco. Falta además que las tres lean las categorías **del plan** y no de los templates. Conviene una pieza compartida, como `SelectorCuentaContable`. 2026-07-31. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1664,9 +1665,11 @@ a nada. → **C-25**.
 ##### 9 · PASO A PASO
 **El orden importa: hacer el paso 8 antes del 5-7 es exactamente lo que rompe.**
 
-**Fase 0 — desbloquea el presupuesto, sin riesgo**
-1. Completar la columna **TIPO** de las 23 categorías (hoja 1 del Excel de propuesta).
-   Sólo eso arregla el **100 % de lo que afecta a los montos**.
+**Fase 0 — desbloquea el presupuesto, sin riesgo** — ✅ **HECHA 2026-07-31, por otro camino**
+1. ~~Completar la columna TIPO de las 23 categorías~~ → se resolvió **en el template**, no en el
+   plan. Ver § **C-27** acá abajo. El resultado es el mismo (los montos ya dan bien) y además
+   no depende de que la categoría exista en el plan.
+   *Sigue conviniendo completar el plan (Fase 1), pero ya no bloquea nada.*
 
 **Fase 1 — ordenar el plan de cuentas**
 2. Dar de alta las cuentas propuestas con su `nro_cuenta`.
@@ -1757,6 +1760,75 @@ faltan 23 categorías bloquearía el trabajo diario en vez de ayudar.
 - Los dos escriben una copia `_v2` si el archivo está abierto en Excel.
 
 **C-25** — 5 movimientos conciliados sin ID (4 anticipos por $2,79 M + 1 sueldo).
+
+
+---
+
+#### ✅ C-27 · `tipo` EN EL TEMPLATE — la Fase 0, resuelta al revés *(2026-07-31, HECHO, sin testear)*
+
+> *"tenemos ingreso egreso financiero y distribucion. sería bueno adjudicarle a cada template su
+> tipo verdad? hacer la columna tipo en templates y llenar a cada uno con su tipo… ya nos
+> olvidamos de cómo trabaja los templates dentro de cuentas."*
+
+El usuario propuso lo contrario a lo planeado: en vez de completar el **plan de cuentas** para
+que los templates hereden su tipo, **darle el tipo al template**. Tiene razón, y por un motivo
+que en el análisis original no se vio:
+
+**El `tipo` del plan y el `tipo` del template no son el mismo dato.** El plan clasifica
+**facturas** (que apuntan por `cuenta_contable`); el template clasifica **templates**. Cada uno
+clasifica su propia población. La objeción de "dos fuentes de verdad" que se había puesto en
+contra de esta idea **no aplica** — y el plan se sigue necesitando igual para las facturas.
+
+Ventaja concreta sobre la Fase 0 original: **ningún template queda dependiendo de que su
+categoría exista en el plan.** Eran 70 de 123 activos los que no existían.
+
+##### La cascada
+```
+egresos_sin_factura.tipo     ← manda. Cargado en los 176.
+   ↓ sólo si está NULL
+cuentas_contables.tipo       ← por `categ`. Fallback para lo que se cree de acá en adelante.
+   ↓ sólo si tampoco está
+signo del monto              ← último recurso. `resolverTipo` avisa que adivinó.
+```
+
+##### Lo que se cargó (los 176, no sólo los activos)
+| tipo | total | activos | cuáles |
+|---|---:|---:|---|
+| `egreso` | 150 | 102 | impuestos, ARCA, SICORE, comisiones, expensas, seguros… |
+| `distribucion` | **14** | 13 | los retiros de socios (6 MSA + 6 PAM + Retiro MA mensual + Retiro PAM) |
+| `financiero` | **11** | 10 | FCI ×2, Caja, Interbancarias ×2, Créditos Pagados ×2, Créditos Tomados, Tarjetas ×3 |
+| `ingreso` | **1** | 1 | Otros Ingresos |
+
+Se cargaron **también los inactivos**, para que al reactivar uno no vuelva el hueco.
+
+##### El bug que cierra
+`Retiro MA mensual` y compañía: su `categ` no está en el plan → el dashboard caía al **signo del
+monto** → un débito es "egreso" → los retiros de socios sumaban a **egresos operativos**.
+
+**Medido después del cambio: 15 movimientos, $43,65 M** que pasan de egresos a distribuciones.
+Y nada más se movió — se verificó que ese es el **único** grupo que cambia de sección.
+
+##### Qué se tocó
+| | |
+|---|---|
+| BD | `egresos_sin_factura.tipo` (enum `tipo_cuenta`, nullable, con `comment`) — **no está en el backup** |
+| `lib/presupuesto/templates.ts` | `resolverTipo()` · `tipoEfectivo()` · `origenTipo()`. La cascada vive **acá y sólo acá** |
+| `hooks/useFinancialData.ts` | usa `resolverTipo`. **Además** se le sacó el `.eq("activo", true)` al cargar templates: un movimiento de un template dado de baja perdía su clasificación |
+| `components/tab-presupuesto.tsx` · `seccion-metodos-templates.tsx` | traen `tipo` y lo pasan al `TemplateInfo`. La columna de la pantalla de métodos ahora dice `(plan)` cuando el tipo no lo declaró el template |
+| `components/wizard-templates-egresos.tsx` | **selector de Tipo obligatorio**, sugerido desde el plan al elegir la categoría. Se guarda en el insert y sale en el resumen del último paso |
+| `scripts/verificar-templates.ts` | 13 casos nuevos (precedencia, origen, el caso Retiro MA, la cascada completa). Pasa |
+
+##### ⚠️ Lo que NO cubre — las otras dos puertas de alta
+El wizard ya pide el tipo, pero **`modal-crear-template-faltante` y `generador-renovacion-campana`
+siguen creando templates sin `tipo`**. Ahí la cascada los salva (caen al plan o al signo), así que
+no rompen — pero el hueco vuelve de a poco. → sigue siendo **C-26**, que ahora tiene un ítem más:
+además de leer las categorías del plan, esas dos puertas tienen que **setear `tipo`**.
+
+##### Qué queda de C-24 después de esto
+La Fase 0 está cerrada. **Las fases 1 a 4 siguen abiertas y siguen valiendo** — pero ya no
+bloquean el presupuesto, pasaron a ser prolijidad:
+- **Fase 1** (completar el plan) — hoy sólo afecta a las **facturas**, no a los templates.
+- **Fases 2-3** (texto → número, renombrar) — sin cambios.
 
 #### 📗 Set completo de retiros semestrales + reporte del plan de cuentas *(2026-07-31)*
 

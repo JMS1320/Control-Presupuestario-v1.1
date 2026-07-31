@@ -305,6 +305,34 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 
 **Los campos que lo alimentan** (`egresos_sin_factura`): **`periodicidad`** (anual/bianual) y **`aplica_generacion`** — se cargan en el **wizard** al crear el template (paso 1). Los **abiertos** (comisiones, Caja…) **no se renuevan**: persisten entre años solos (el selector de Pago Manual los busca por `tipo_template`+`activo`, no por `año`).
 
+##### 🏷️ El campo **Tipo** — al crear un template *(nuevo 2026-07-31, sin testear)*
+
+En el **paso 1 del wizard**, al lado de Categoría y Cuenta Agrupadora, hay un campo **Tipo**
+obligatorio. Es lo que decide **si el Presupuesto lo proyecta** y **en qué sección del Dashboard
+suma**:
+
+| Elegir | Cuándo | Qué pasa |
+|---|---|---|
+| **Egreso** | gasto de verdad (el 85 % de los casos) | se presupuesta como gasto |
+| **Distribución** | retiros de socios | **se presupuesta** (la plata sale de la caja) pero **no** cuenta como gasto operativo |
+| **Financiero** | colocaciones (FCI), transferencias entre cuentas propias, pago de tarjeta, créditos | **NO se presupuesta**: la plata cambia de lugar pero no sale de la empresa |
+| **Ingreso** | entra plata | no se proyecta como egreso |
+| **No computar** | | se ignora |
+
+Al elegir una categoría que ya está en el plan de cuentas, **el tipo se sugiere solo** y abajo
+avisa de dónde salió. Se puede cambiar siempre: **manda lo que quede en el template**.
+
+⚠️ **La regla práctica**: si dudás entre *Egreso* y *Financiero*, preguntate **si esa plata deja
+de ser de la empresa**. Si sigue siendo tuya (un plazo fijo, pasarla de Galicia a Santander), es
+**Financiero**. Presupuestar una colocación como gasto infla el egreso con plata que no se fue —
+el FCI llegó a meter ~$135 M fantasma.
+
+⚠️ Las otras dos formas de crear un template (**"crear template faltante"** desde un movimiento
+del extracto, y el **generador de Renovar Campaña**) todavía **no piden el Tipo** — lo dejan
+vacío y el sistema lo deduce. Si creás uno por ahí y no es un gasto común, conviene revisarlo
+después en el panel de **métodos de templates** del Presupuesto, que muestra el tipo de cada uno
+(pendiente **C-26**).
+
 **⚠️ Estado: v1 SIN TESTEAR end-to-end.** Falta probar en bianual (crear 26/27 real + revisar cuotas/fechas/descripciones/detalle/vencimiento). Pendiente contable: si Acciones necesita la cuota 25/26 intermedia (cae en 2028 saltando 2027).
 
 ---
