@@ -1540,6 +1540,54 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+
+---
+
+#### 📗 Set completo de retiros semestrales + reporte del plan de cuentas *(2026-07-31)*
+
+##### Los 12 templates ya están
+6 personas × 2 empresas, **sin cuotas** (los montos los carga el usuario cuando los defina):
+
+| | Templates |
+|---|---|
+| **MSA** | Andrés · José · Manuel · Mechi · Soledad · **MA** (este último inactivo) |
+| **PAM** | Andrés · José · Manuel · Mechi · Soledad · **MA** (nuevo) |
+
+El *Retiro MA semestral* que existía (`MSA/PAM`, inactivo) se **reasignó a MSA** y se renombró
+`Retiro MA semestral MSA`: no tenía cuotas ejecutadas —las dos estaban en $0— así que se pudo
+reusar sin perder nada. Queda **inactivo**; el usuario lo activa desde la grilla con el toggle
+nuevo. Se creó aparte el de PAM.
+
+⚠️ Los 5 PAM originales **conservan sus cuotas**: cada uno tiene $6.000.000 con fecha 25/07/2026
+en estado `pendiente` (vencida). Son $30 M que no aparecen en el presupuesto de MSA por ser PAM
+— ver C-21.
+
+##### El reporte para completar el plan de cuentas
+`npx tsx scripts/reporte-categorias-templates.ts` → genera
+`Plan_de_cuentas_a_completar_<fecha>.xlsx` en la raíz, con tres solapas:
+
+1. **A completar** — las **23 categorías** que usan templates y no existen en
+   `cuentas_contables`, ordenadas por cuántos templates dependen de cada una. Trae columnas
+   vacías `→ TIPO`, `→ Nombre totalizadora`, `→ Nro cuenta`, `→ Nombre de la cuenta`.
+2. **Todos los templates** — los 173, con su categoría, si matchea, y el tipo y totalizadora que
+   heredan. Sirve para ver la foto completa.
+3. **Valores válidos** — los `tipo` y las totalizadoras que ya existen, con qué decide cada uno,
+   para completar sin adivinar.
+
+**132 templates dependen de esas 23 categorías** (73 de MSA). Las más pesadas son
+*Impuesto inmobiliario* (42) y *Impuesto Red Vial* (40): el plan de cuentas **no tiene rama de
+impuestos**, porque siempre se pagaron por template y nunca tuvieron factura.
+
+##### Con el `tipo` solo ya se arregla lo que importa
+De las dos capas que faltan, **`tipo` es la que produce números mal** — decide si el template se
+presupuesta, y equivocarse ahí es lo que metía $135 M de FCI y $87 M de Ganancias. La
+**totalizadora sólo ordena** el reporte (C-22): mientras falte, el número está bien y lo único
+que pasa es que el presupuesto agrupa por `cuenta_agrupadora` en vez de por la jerarquía
+contable.
+
+Así que si el usuario completa **sólo la columna TIPO**, queda resuelto el 100 % de lo que afecta
+a los montos.
+
 #### 🐄 PRESUPUESTAR LA VENTA DESDE EL PRESUPUESTO + VACAS DE REFUGO *(2026-07-31, sin testear)*
 
 ##### Vacas de refugo — era un pendiente, ahora se ven
