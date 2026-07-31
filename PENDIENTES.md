@@ -1536,6 +1536,108 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 🧾 IIBB MENSUAL — doble conteo confirmado *(2026-07-31)*
+
+> *"IIBB mensual MSA deberíamos no proyectarlo, ¿verdad? Ya que se calcula según ventas y el
+> proyectado hace como un promedio que duplica el egreso."*
+
+**Sí, es doble conteo.** El presupuesto ya tiene la fila derivada **IIBB total** (5 % de la venta
+de arrendamiento + hacienda + ganadería, el mes siguiente al cobro) **y además** el template
+*IIBB Mensual MSA*, que proyecta el promedio de sus 12 cuotas ($296.185/mes, $3,55 M cargados
+ago-25 → jul-26). Son el mismo impuesto contado dos veces.
+
+**El arreglo es `no_proyectar`, no borrar el template**, y el matiz importa: las **12 cuotas
+cargadas siguen mandando** (son lo que efectivamente se declaró), sólo se deja de proyectar hacia
+adelante donde no hay cuota. Ahí toma el relevo la fila derivada, que sí sigue a las ventas.
+
+Lo hace el usuario desde el panel: *Cuentas contables → Cómo se completan los templates →
+IIBB Mensual MSA → método "No proyectar"*. Su elección queda marcada como manual y sobrevive a
+cualquier cambio de heurística.
+
+**Regla general que deja**: cuando el presupuesto **calcula algo solo** (IIBB de ventas, costos
+de producción, SICORE si algún día se deriva), el template del mismo concepto tiene que ir a
+`no_proyectar`. Sus cuotas cargadas siguen valiendo; lo que sobra es la proyección.
+
+---
+
+#### 🏛️ C-22 · USAR LA ESTRUCTURA DEL DASHBOARD EN EL PRESUPUESTO *(2026-07-31, pendiente)*
+
+> *"los agrupadores macro que encontraste, fijate que se usaron para ordenar el dashboard que
+> registra y reporta el pasado. Esa misma estructura de organización deberíamos usarla para el
+> presupuesto."*
+
+Tiene todo el sentido: el pasado y el futuro deberían leerse con la misma grilla. Hoy no coinciden
+— el presupuesto agrupa los templates por `cuenta_agrupadora` (una convención propia) y las
+cuentas contables por su nombre, mientras el dashboard usa la jerarquía contable.
+
+##### La estructura que ya existe
+`cuentas_contables.tipo` (macro) + `nombre_totalizadora` (jerarquía):
+
+```
+tipo = ingreso     RESULTADOS → INGRESOS → VENTA DE CEREALES · VENTA DE HACIENDA ·
+                                            ARRENDAMIENTOS Venta · VENTA BIENES DE USO
+                   CREDITOS FISCALES
+tipo = egreso      RESULTADOS → EGRESOS → EGRESOS POR ADMINISTRACION Y ESTRUCTURA (25 cuentas)
+                                        · EGRESOS POR AGRICULTURA → INSUMOS (11) · LABORES (11)
+                                        · EGRESOS POR GANADERIA (16) → GASTOS DE ALIMENTACION (6)
+                                        · EGRESOS POR MAQUINARIAS Y HERR (3)
+                                        · COMERCIALIZACION (6) · SEGUROS CULTIVO
+                   GASTOS BANCARIOS (7) · IMPUESTOS BANCARIOS (7)
+tipo = financiero  MOVIMIENTOS ENTRE CANALES (4) · MOVIMIENTOS FINANCIEROS (4)
+```
+
+##### Dos obstáculos concretos, los dos de datos
+**1 · Faltan 14 categorías en el plan de cuentas** — y son las que usan 40 templates:
+
+| Categoría del template | Templates | Qué son |
+|---|---:|---|
+| Impuesto inmobiliario | 12 | los inmobiliarios rurales + Lote Puerto |
+| Impuesto Red Vial | 11 | ídem |
+| Impuesto Automotores | 4 | patentes |
+| Impuestos ARCA | 3 | Ganancias, Anticipo, Acciones y Participaciones |
+| Impuestos Laborales ARCA | 2 | Cargas Sociales, UATRE |
+| Retenciones ARCA | 2 | SICORE 1ra y 2da |
+| Impuesto IIBB · Complementario · CZ Ganadera · Reintegro JMS · Distribucion Mama · Retiro PAM | 6 | sueltas |
+
+El plan de cuentas **no tiene una rama de impuestos**: tiene sentido, porque los impuestos se
+pagan por template y nunca tuvieron factura. Pero mientras no existan, esos 40 templates no
+tienen totalizadora y no se pueden ordenar con la estructura del dashboard.
+
+**2 · Las totalizadoras tienen inconsistencias de mayúsculas**: conviven `EGRESOS` con `Egresos`
+y `EGRESOS POR GANADERIA` con `Egresos Por Ganaderia`. Agrupar por el nombre partiría la
+jerarquía en dos, exactamente como pasó con los nombres de cuenta entre ARCA y el histórico.
+Hay que normalizar o agrupar por `cta_totalizadora` (el código) en vez del nombre.
+
+##### Plan
+1. Dar de alta las 14 categorías faltantes en `cuentas_contables`, con su `tipo` y su
+   totalizadora. **Es del usuario**: define el plan de cuentas.
+2. Normalizar las totalizadoras duplicadas por mayúsculas (o agrupar por código).
+3. Recién ahí, reordenar el presupuesto por `tipo` → `nombre_totalizadora` → cuenta/template.
+
+Hacer el paso 3 antes de los otros dos dejaría 40 templates en un cajón "sin clasificar", que es
+peor que la organización actual.
+
+**Efecto colateral bueno**: alta esas 14 categorías y **C-20 se completa solo** — hoy esos mismos
+40 templates se asumen gasto por no tener `tipo`.
+
+---
+
+#### 📋 REGLA — todo template nuevo necesita su macro categoría *(usuario, 2026-07-31)*
+
+> *"ojo al crear template que debemos adjudicarle siempre la macro categoría: ingreso, egreso,
+> financiero, etc."*
+
+La `categ` de un template tiene que existir en `public.cuentas_contables` con su `tipo` cargado.
+De ese `tipo` dependen dos cosas del presupuesto:
+- si el template **se presupuesta** (`financiero` no, ver C-20);
+- **dónde aparece** cuando se ordene por la estructura del dashboard (C-22).
+
+Un template sin categoría en el plan de cuentas se asume gasto y queda sin ubicación. El panel
+de métodos lo muestra como *"sin clasificar"*.
+
+
 #### ✅ C-20 — "No es gasto" sale del PLAN DE CUENTAS, no del nombre *(2026-07-31, sin testear)*
 
 La versión anterior tenía una lista de agrupadoras (`Inversiones`, `Movimientos Internos empresa`,

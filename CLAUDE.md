@@ -59,6 +59,19 @@ altas manuales.
   pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
   cobros y conciliación aguas abajo.
 
+### 🏷️ Templates — siempre con su macro categoría (REGLA)
+Al crear un template, su `categ` **tiene que existir en `public.cuentas_contables`** con el
+`tipo` cargado (`ingreso` / `egreso` / `financiero` / `distribucion` / `NO`).
+
+De ese `tipo` dependen dos cosas del Presupuesto:
+- **si se presupuesta**: lo `financiero` (colocaciones, transferencias entre cuentas propias,
+  pago de tarjeta) no se proyecta, porque la plata no sale de la empresa;
+- **dónde aparece** cuando la grilla se ordena por la estructura del dashboard.
+
+Un template cuya categoría no está en el plan de cuentas se asume gasto y queda sin ubicación;
+el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
+fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
+
 ### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
 - **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
 - Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).
