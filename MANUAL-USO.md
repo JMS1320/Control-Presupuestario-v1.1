@@ -622,6 +622,22 @@ Veterinaria **sí** entra, porque no hay módulo de insumos para cría.
 
 ---
 
+## 🏷️ Al crear un template: la categoría
+
+La `categ` del template es lo que lo conecta con el plan de cuentas, y de ahí salen dos cosas:
+**si se presupuesta** (lo `financiero` no) y **dónde aparece** en el reporte.
+
+Por eso, al crear un template, usá una categoría **que ya exista en Cuentas contables**. Si
+inventás una nueva, el template queda "sin clasificar": se asume gasto y no tiene ubicación.
+El panel *Cuentas contables → Cómo se completan los templates* te marca cuáles están así.
+
+⚠️ **No renombres una categoría existente por tu cuenta.** El nombre está copiado en el extracto
+bancario, en las reglas de conciliación y en el plan de cuentas: renombrar en un solo lado
+desconecta las otras tres. Si hace falta cambiar un nombre, avisame y se hace de una vez en
+todos lados.
+
+---
+
 ## 🧾 Templates → activar y desactivar
 
 En la grilla de templates, con el **Modo Edición** prendido, la columna **Activo** se cambia con

@@ -898,6 +898,44 @@ por índice. Vale para cualquier reparto en el que algunos períodos pueden qued
 
 ---
 
+## Antes de decir "esa columna está muerta", buscarla en el código `#deuda #datos #2026-07-31`
+
+Se dio por muerta `egresos_sin_factura.codigo_contable` porque 154 de 173 filas decían
+`"No lleva"` o `null`. Estaba **en uso**: el motor de conciliación la lee de las reglas y la
+estampa en el movimiento, y `"No lleva"` es un **valor con significado** — hay una función
+`esValorContableValido()` que busca exactamente esa cadena para saber que ese movimiento no
+lleva código contable.
+
+**La regla**: una columna con muchos valores repetidos o "vacíos aparentes" no está muerta hasta
+que se la busca en el código. Un `"No lleva"` puede ser una decisión registrada, no un hueco.
+Muerta es la que no aparece en ningún `.ts`/`.tsx` **y** está NULL en el 100 % de las filas
+(en este proyecto, sólo `cuentas_contables.grupo_cuenta`).
+
+**Tags**: `#columna-muerta` `#valor-centinela` `#antes-de-borrar`
+
+---
+
+## Etiqueta denormalizada: mirar quién la usa como IDENTIDAD `#modelado #ids #2026-07-31`
+
+Antes de renombrar una etiqueta que está copiada en muchas tablas, la pregunta no es *"¿en
+cuántas filas está?"* sino **"¿en cuáles es la identidad y no una copia para mostrar?"**.
+
+Caso concreto: `categ` estaba en 776 filas y parecía intocable. Pero el extracto bancario ya
+vincula por **UUID** (612 de 661 filas tienen `template_id`, `comprobante_arca_id`, etc.) — ahí
+`categ` es sólo una copia para no hacer joins. El **único** lugar donde el texto es la identidad
+real son las **77 reglas de conciliación**.
+
+El riesgo pasó de "776 filas" a "77 reglas", que es otra conversación. Y las reglas son
+justamente las peores, porque **clasifican hacia adelante**: si escriben un nombre que ya no
+existe, cada registro nuevo nace huérfano y nadie se entera.
+
+**Corolario**: el orden de una migración así es siempre el mismo — **primero** que todo apunte
+por número, **después** renombrar. Al revés se rompe.
+
+**Tags**: `#renombrar` `#denormalizado` `#identidad-vs-copia` `#orden-de-migracion`
+
+---
+
 ## Netear stock: cruzar por NOMBRE de categoría duplica `#ganaderia #modelado #2026-07-30`
 
 Al desglosar la venta de hacienda por categoría, el disponible salía duplicado.

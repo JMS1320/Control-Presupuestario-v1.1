@@ -1543,6 +1543,157 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 🔑 C-24 · PLAN DE CUENTAS: DEL TEXTO AL NÚMERO *(análisis completo 2026-07-31 — 0 código)*
+
+Análisis a fondo de cómo se clasifica un egreso, disparado por una observación del usuario:
+*"el nombre de la cuenta contable de los templates son prácticamente el nombre de los
+templates… creo que hubiera sido más fácil usar la columna template en vez de crear una nueva
+para ponerle el mismo nombre"*. Tenía razón, y tirando de ese hilo salió todo lo demás.
+
+##### 1 · La redundancia es real y está medida
+Dentro de **`cuentas_contables`**, las columnas `categ` y `cuenta_contable` son **idénticas en
+135 de 143 filas**. Las 8 que difieren son abreviaturas o nombres formales:
+
+| `categ` | `cuenta_contable` | qué agrega |
+|---|---|---|
+| `FCI` | Fondos Comunes de Inversión | sigla → nombre |
+| `CRED P` / `CRED T` | Créditos Pagados / Tomados | código interno → nombre |
+| `Com. Uso Atm` | Comisión Uso ATM | abreviatura y tildes |
+| `Debitos / Creditos` | Débitos / Créditos **Ley 25413** | referencia legal |
+| `CAJA` | Movimientos a/desde Caja | precisa que es el movimiento, no el saldo |
+| `Tarjetas MSA` | Pago Tarjeta MSA | ídem |
+
+**Por qué existen las dos**: cada consumidor apunta a una distinta. Las **facturas** referencian
+`cuenta_contable` (`msa.comprobantes_arca`, 42 cuentas distintas); los **templates** referencian
+`categ`. Se duplicó el nombre para que cada lado tuviera "su" columna. Es historia, no diseño.
+
+##### 2 · Por qué `categ` no puede SER la cuenta (pero sí es el puntero)
+Granularidad: **45 categorías** contra **17 agrupadoras** y 143 cuentas. Como *nivel* es el
+correcto — la propuesta usa esa misma granularidad. Como *identidad* no sirve:
+
+1. **Las facturas no tienen `categ`.** Si los templates la usaran como cuenta, habría **dos
+   planes paralelos** y no se podrían sumar templates + facturas en el mismo reporte.
+2. **Es texto libre y editable** desde la grilla (está en `camposEditables`).
+3. **Es plana**: sin padre no hay totalizadora ni reporte por rama.
+4. **No dice la naturaleza** (gasto / ingreso / financiero). Eso es `tipo`.
+
+Y el dato que lo cierra: **`Impuesto inmobiliario` y `Impuesto Red Vial` cuelgan de DOS
+agrupadoras cada una** (Rurales y Urbanos). Si `categ` fuera la cuenta y la agrupadora su padre,
+esa cuenta tendría dos padres — imposible en un plan de cuentas. Lo rural/urbano es operativo,
+no contable.
+
+*(Esto obliga a corregir la propuesta: `424101 IMPUESTO INMOBILIARIO` no puede colgar de
+"IMPUESTOS Y TASAS **RURALES**", porque uno de sus 42 templates es urbano. El padre debe
+llamarse **IMPUESTOS INMOBILIARIOS Y TASAS**.)*
+
+##### 3 · ¿La agrupadora como cuenta? No — es la totalizadora
+17 agrupadoras para 173 templates: demasiado gruesa (*Impuestos Rurales* mezcla inmobiliario con
+red vial). Y es una taxonomía **operativa** que legítimamente difiere de la contable —
+*Seguros* → *ADMINISTRACION Y ESTRUCTURA*. Su lugar es **totalizadora**: coincide con ella en 28
+de 41 casos.
+
+##### 4 · 🔄 CORRECCIÓN — el extracto SÍ linkea por ID
+Primero se dijo que renombrar categorías rompería 776 filas. **Es falso.** De las 661 del
+extracto MSA, **612 (93 %) tienen un ID**:
+
+| | filas |
+|---|---:|
+| `template_cuota_id` + `template_id` | **469** |
+| `comprobante_arca_id` | 108 |
+| `sueldo_pago_id` | 36 |
+| `anticipo_id` | 7 |
+
+El `categ` del extracto es una **copia denormalizada** para mostrar sin joins. El vínculo real
+es el UUID.
+
+**Pero ojo con la conclusión inversa**: lo que tiene ID es el **template**, no la categ. Las
+únicas FK del sistema son `cuotas → egresos_sin_factura.id`, `egresos_sin_factura.template_origen_id`
+y `presupuesto_template_config.template_id`. **Nadie referencia `cuentas_contables.id`.** La
+clasificación contable sigue siendo texto:
+
+```
+extracto  → template          UUID ✓
+template  → cuenta contable   TEXTO (categ ↔ categ)
+extracto  → cuenta contable   TEXTO, o nro_cuenta en sólo 106 de 661
+```
+
+##### 5 · Dónde el texto SÍ es identidad: las 77 reglas
+`reglas_conciliacion` identifica el destino **sólo por `categ`** (22 categorías distintas).
+Se revisó `llena_template` esperando un puntero y es un **booleano** ("esta regla llena un
+template"), no dice cuál.
+
+Es el único lugar que importa de verdad, porque **clasifica hacia adelante**: si una regla
+escribe un nombre que ya no existe, cada movimiento nuevo nace huérfano y no se nota.
+
+Y ahí hay una oportunidad: **`reglas_conciliacion.codigo_contable` existe y está vacía en las
+77**. Es exactamente donde va el número.
+
+##### 6 · 🔄 CORRECCIÓN — `codigo_contable` NO está muerta
+Se la había llamado columna muerta. **Falso**: el motor de conciliación
+(`hooks/useMotorConciliacion.ts`) la lee de las reglas y la estampa en el movimiento. Y
+**`"No lleva"` es un valor con significado**, no basura — hay una función
+`esValorContableValido()` que detecta esa cadena para saber que ese movimiento no lleva código.
+
+La única realmente sin uso es **`cuentas_contables.grupo_cuenta`**: NULL en las 143 filas, no
+aparece en ningún `.ts`/`.tsx`, vino de la columna homónima del CSV de importación. Ya estaba
+anotada en `RECONSTRUCCION_SUPABASE`. **No se borra**: una columna NULL no molesta.
+
+##### 7 · 🔄 CORRECCIÓN — "que no se abrevie" era mala idea
+Se había sugerido que el nombre de la cuenta fuera igual a la categoría, expandiendo las
+abreviaturas. **Eso es justamente lo que rompe**: `FCI` está grabado **51 veces** en el extracto.
+`categ` ya no es un nombre, es **un dato en producción** — las abreviaturas no son un descuido,
+son la etiqueta corta con la que se viene operando.
+
+La división que ya existe de hecho está bien: `categ` = **etiqueta operativa** (corta, la que se
+tipea y se graba), `cuenta_contable` = **nombre de presentación** (el de los reportes).
+
+##### 8 · Las 49 filas del extracto sin ningún ID
+| | filas | qué son |
+|---|---:|---|
+| `pendiente` · `INVALIDA:` | **39** | **sin conciliar**, $23,8 M. `"INVALIDA:"` lo escribe el motor cuando no encuentra regla. Trabajo pendiente, no falla |
+| `conciliado` · ANTICIPO COBRO | 5 | cobros, $0 de débito |
+| `conciliado` · ANTICIPO | **4** | **$2,79 M conciliados sin `anticipo_id`** |
+| `conciliado` · Sueldos | **1** | conciliado sin `sueldo_pago_id` |
+
+Los **5 conciliados sin ID** son un hueco de trazabilidad: dados por conciliados pero sin apuntar
+a nada. → **C-25**.
+
+##### 9 · PASO A PASO
+**El orden importa: hacer el paso 8 antes del 5-7 es exactamente lo que rompe.**
+
+**Fase 0 — desbloquea el presupuesto, sin riesgo**
+1. Completar la columna **TIPO** de las 23 categorías (hoja 1 del Excel de propuesta).
+   Sólo eso arregla el **100 % de lo que afecta a los montos**.
+
+**Fase 1 — ordenar el plan de cuentas**
+2. Dar de alta las cuentas propuestas con su `nro_cuenta`.
+3. Completar `nro_cuenta` y `cta_totalizadora` en las 22 que no lo tienen.
+4. Unificar las 2 totalizadoras duplicadas por mayúsculas (29 filas).
+
+**Fase 2 — pasar del texto al número** ← *acá se corta la fragilidad*
+5. Guardar el `nro_cuenta` en el template.
+6. Guardar el `nro_cuenta` en las 77 reglas (la columna ya existe, vacía).
+7. Que el motor y el presupuesto crucen por número.
+
+**Fase 3 — recién ahora, lo cosmético**
+8. Renombrar categorías. Sin riesgo, porque ya nada cruza por texto. Hasta entonces, cualquier
+   renombre es un **UPDATE coordinado de 4 lugares**: `cuentas_contables`,
+   `egresos_sin_factura`, `reglas_conciliacion` y las copias del extracto.
+
+**Fase 4 — el presupuesto**
+9. Reordenar la grilla por `tipo` → totalizadora (C-22).
+
+##### 10 · Herramientas
+- `npx tsx scripts/reporte-categorias-templates.ts` → estado actual (5 solapas)
+- `npx tsx scripts/propuesta-plan-de-cuentas.ts` → **la propuesta** (5 solapas): 32 cuentas
+  (26 crear · 4 completar · 2 reusar), los códigos que faltan, a qué cuenta iría cada template,
+  el plan actual y qué emprolijar. Con eso **los 173 templates quedan con cuenta**.
+- Los dos escriben una copia `_v2` si el archivo está abierto en Excel.
+
+**C-25** — 5 movimientos conciliados sin ID (4 anticipos por $2,79 M + 1 sueldo).
+
 #### 📗 Set completo de retiros semestrales + reporte del plan de cuentas *(2026-07-31)*
 
 ##### Los 12 templates ya están

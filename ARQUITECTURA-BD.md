@@ -144,8 +144,32 @@ Hay seis campos que "ordenan" y es fácil confundirlos. De la macro al detalle:
 
 **El punto de confusión frecuente**: cuando se dice que un template *"no tiene categoría"*, en
 realidad **sí la tiene** (capa 3) — lo que falta es que esa categoría **exista en
-`cuentas_contables`**, y por eso se queda sin las capas 1 y 2. Hoy pasa con 14 categorías que
-usan 40 templates: los impuestos rurales, automotores, ARCA, IIBB y los retiros de socios.
+`cuentas_contables`**, y por eso se queda sin las capas 1 y 2. Hoy pasa con 23 categorías que
+usan 132 templates: los impuestos rurales, automotores, ARCA, IIBB y los retiros de socios.
+
+##### Qué se vincula por ID y qué por texto (medido 2026-07-31)
+
+| Vínculo | Cómo | Cobertura |
+|---|---|---|
+| extracto → **template** | **UUID** (`template_id`, `template_cuota_id`) | 469 de 661 |
+| extracto → factura / sueldo / anticipo | **UUID** | 151 más — **612 de 661 (93 %)** tienen algún ID |
+| template → **cuenta contable** | **TEXTO** (`categ` ↔ `categ`) | siempre |
+| extracto → **cuenta contable** | **TEXTO**, o `nro_cuenta` | sólo 106 de 661 con número |
+| **regla de conciliación** → destino | **TEXTO** (`categ`) | las 77 |
+
+Las únicas FK del sistema apuntan a `egresos_sin_factura.id`. **Nadie referencia
+`cuentas_contables.id`**: la clasificación contable es texto de punta a punta.
+
+⚠️ **Renombrar una categoría es un UPDATE coordinado de cuatro lugares** — `cuentas_contables`,
+`egresos_sin_factura`, `reglas_conciliacion` y las copias denormalizadas del extracto. Lo más
+delicado son las **77 reglas**, porque clasifican hacia adelante: si escriben un nombre que ya
+no existe, cada movimiento nuevo nace huérfano y no se nota. Plan para salir de esto en
+`PENDIENTES.md` § C-24.
+
+`categ` y `cuenta_contable` son **idénticas en 135 de 143 filas** del plan. Las 8 que difieren
+son abreviaturas (`FCI` → Fondos Comunes de Inversión). No es un error: `categ` es la etiqueta
+**operativa** (la que se tipea y queda grabada en 776 filas) y `cuenta_contable` la de
+**presentación**.
 
 **Presupuesto de cuentas contables** (2026-07-30) — **No están en el backup.**
 
