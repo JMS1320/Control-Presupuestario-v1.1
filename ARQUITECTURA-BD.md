@@ -129,6 +129,24 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
 | `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
 
+#### 🧭 Las capas que ordenan un egreso — cuál es cuál
+
+Hay seis campos que "ordenan" y es fácil confundirlos. De la macro al detalle:
+
+| Capa | Dónde vive | Qué es | Se usa para |
+|---|---|---|---|
+| **1 · `tipo`** | `cuentas_contables` | La **macro**: `ingreso` · `egreso` · `financiero` · `distribucion` · `NO` | Decide **si se presupuesta** (lo `financiero` no) |
+| **2 · `nombre_totalizadora`** | `cuentas_contables` | La **jerarquía contable**: EGRESOS → EGRESOS POR GANADERIA → … | Ordena el **dashboard**. El presupuesto todavía no la usa (C-22) |
+| **3 · `categ`** | en las **dos** tablas | El **puente**: `egresos_sin_factura.categ` ↔ `cuentas_contables.categ` | Es como un template llega a su tipo y su totalizadora |
+| **4 · `cuenta_agrupadora`** | `egresos_sin_factura` | Agrupación **propia de los templates** (Impuestos Rurales, Gastos Bancarios…) | Es la que agrupa hoy el presupuesto |
+| **5 · `codigo_contable`** | `egresos_sin_factura` | Casi siempre `"No lleva"` | No se usa para nada |
+| **6 · `grupo_cuenta`** | `cuentas_contables` | Vacía en toda la tabla | No se usa |
+
+**El punto de confusión frecuente**: cuando se dice que un template *"no tiene categoría"*, en
+realidad **sí la tiene** (capa 3) — lo que falta es que esa categoría **exista en
+`cuentas_contables`**, y por eso se queda sin las capas 1 y 2. Hoy pasa con 14 categorías que
+usan 40 templates: los impuestos rurales, automotores, ARCA, IIBB y los retiros de socios.
+
 **Presupuesto de cuentas contables** (2026-07-30) — **No están en el backup.**
 
 | Objeto | Propósito |
