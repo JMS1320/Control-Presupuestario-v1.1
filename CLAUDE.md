@@ -72,6 +72,11 @@ Un template cuya categoría no está en el plan de cuentas se asume gasto y qued
 el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
 fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
 
+⚠️ **Hoy las pantallas de alta NO lo validan** y por eso hay 23 categorías fuera del plan: el
+wizard ofrece las categorías de los templates existentes, no las del plan (ver `PENDIENTES.md`
+§ C-26). Al crear o clonar un template, chequear a mano que su `categ` exista en
+`cuentas_contables`.
+
 ### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
 - **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
 - Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).

@@ -139,6 +139,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
 | B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
 | C-17 / C-19 | 🔴 | Alta | **Cerrar el presupuesto como una sola cosa.** (a) **C-19**: bajar el bloque de cuentas contables a la grilla y sumarlo al TOTAL EGRESOS (hoy está en un panel aparte a propósito, ver cierre de sesión); (b) **C-7**: ídem costos de producción, que ya se calculan por tramo pero no bajan; (c) **C-17**: proyectar los templates donde no hay cuota cargada — las cuotas se cortan en dic-2026. La distinción de qué template quiere el usuario cargado a mano ya existe en `egresos_sin_factura.aplica_generacion` (true = Cargas Sociales, SICORE, UATRE… = avisar 'falta generar la campaña'; false/null = proyectar en silencio). 2026-07-30. |
+| C-26 | 🔴 | Alta | **El wizard perpetúa las categorías huérfanas** — `wizard-templates-egresos` carga el desplegable de categorías desde `egresos_sin_factura` (los templates), no desde `cuentas_contables`, así que ofrece las 23 huérfanas como opción válida y cada template nuevo nace sin `tipo`. Lazo cerrado: por eso son 23 y no 3. Mismo problema en `modal-crear-template-faltante` (toma la categ del movimiento) y `generador-renovacion-campana` (clona la del original). Conviene una pieza compartida, como `SelectorCuentaContable`. Hacer DESPUÉS de la Fase 0/1 de C-24. 2026-07-31. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -1677,6 +1678,11 @@ a nada. → **C-25**.
 6. Guardar el `nro_cuenta` en las 77 reglas (la columna ya existe, vacía).
 7. Que el motor y el presupuesto crucen por número.
 
+**Fase 2b — cerrar la puerta (C-26)**
+7b. Que el wizard y las otras dos puertas de alta lean las categorías **del plan de cuentas** y
+    no de los templates. Si no, el problema se reproduce solo: hoy el wizard ofrece las 23
+    huérfanas como opción válida.
+
 **Fase 3 — recién ahora, lo cosmético**
 8. Renombrar categorías. Sin riesgo, porque ya nada cruza por texto. Hasta entonces, cualquier
    renombre es un **UPDATE coordinado de 4 lugares**: `cuentas_contables`,
@@ -1684,6 +1690,64 @@ a nada. → **C-25**.
 
 **Fase 4 — el presupuesto**
 9. Reordenar la grilla por `tipo` → totalizadora (C-22).
+
+
+##### 🔁 C-26 · El wizard perpetúa el problema — lo hallado al preguntar por él
+
+> *"¿anotaste como pendiente que debemos actualizar el wizard para que las futuras creaciones de
+> templates se creen con su estructura completa?"*
+
+**No estaba anotado.** Y revisándolo, el wizard no sólo no valida: **es la causa de que el
+problema se reproduzca solo.**
+
+`components/wizard-templates-egresos.tsx` (l. 116-124) carga el desplegable de categorías
+**desde `egresos_sin_factura`**, o sea desde los templates que ya existen:
+
+```ts
+const { data } = await supabase
+  .from('egresos_sin_factura')       // ← los templates, NO el plan de cuentas
+  .select('categ, cuenta_agrupadora')
+const categsUnicas = [...new Set(data.map(d => d.categ)...)]
+```
+
+Consecuencia: **las 23 categorías huérfanas se siguen ofreciendo como opción válida**. Cada
+template nuevo que elija "Impuesto inmobiliario" nace sin `tipo` y sin totalizadora, y refuerza
+la categoría en la lista para el siguiente. Es un lazo cerrado: el wizard lee de los templates
+y escribe en los templates; el plan de cuentas nunca participa.
+
+Por eso hay 23 categorías fuera del plan y no dos o tres. **No se van a terminar solas.**
+
+##### Qué habría que cambiar
+1. **Cargar las categorías desde `cuentas_contables`**, no desde los templates. Mostrando al
+   lado el `tipo` (`egreso` · `financiero` · `distribucion`), que es lo que decide si se
+   presupuesta — así se elige viendo la consecuencia.
+2. **Marcar las que no están en el plan.** Si se elige una huérfana (para no romper lo que hay),
+   avisar que el template va a quedar sin clasificar.
+3. **Permitir crear la cuenta desde ahí**: si de verdad hace falta una categoría nueva, que el
+   wizard ofrezca darla de alta en el plan con su `tipo` y su totalizadora, en vez de dejar el
+   hueco. Es el momento exacto en que el usuario sabe qué es lo que está creando.
+4. **Cuando esté la Fase 2 de C-24**, guardar el `nro_cuenta` y dejar de guardar sólo el texto.
+
+##### Ojo: hay más de una puerta de entrada
+`egresos_sin_factura` se escribe desde **ocho** componentes:
+`wizard-templates-egresos` · `modal-crear-template-faltante` · `generador-renovacion-campana` ·
+`vista-templates-egresos` · `vista-templates-agrupada` · `vista-cash-flow` ·
+`vista-extracto-bancario` · `configurador-reglas` / `configurador-reglas-contable`.
+
+Dos que importan tanto como el wizard:
+- **`modal-crear-template-faltante`** — crea el template tomando la `categ` **del movimiento
+  bancario** y usándola también de `nombre_referencia`. Si esa categ no está en el plan, nace
+  huérfano igual.
+- **`generador-renovacion-campana`** — clona templates para la campaña nueva, así que **hereda
+  la categoría del original**: si el viejo estaba huérfano, el nuevo también.
+
+Poner la validación sólo en el wizard tapa una de tres. Lo que conviene es **una pieza compartida**
+—un selector de categoría que lea del plan— y usarla en los tres, igual que se hizo con
+`SelectorCuentaContable` y `ProveedorCombobox`.
+
+**Prioridad**: hacerlo **después** de la Fase 0/1 de C-24. Validar contra un plan al que le
+faltan 23 categorías bloquearía el trabajo diario en vez de ayudar.
+
 
 ##### 10 · Herramientas
 - `npx tsx scripts/reporte-categorias-templates.ts` → estado actual (5 solapas)
