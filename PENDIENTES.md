@@ -1569,10 +1569,20 @@ en estado `pendiente` (vencida). Son $30 M que no aparecen en el presupuesto de 
 1. **A completar** — las **23 categorías** que usan templates y no existen en
    `cuentas_contables`, ordenadas por cuántos templates dependen de cada una. Trae columnas
    vacías `→ TIPO`, `→ Nombre totalizadora`, `→ Nro cuenta`, `→ Nombre de la cuenta`.
-2. **Todos los templates** — los 173, con su categoría, si matchea, y el tipo y totalizadora que
-   heredan. Sirve para ver la foto completa.
+2. **Todos los templates** — los 173, con su categoría, si matchea, y el tipo, **nombre de
+   cuenta**, totalizadora y nro que heredan. La foto completa.
 3. **Valores válidos** — los `tipo` y las totalizadoras que ya existen, con qué decide cada uno,
    para completar sin adivinar.
+4. **Plan de cuentas actual** — las 143 cuentas con nro, nombre, categoría, tipo, totalizadora,
+   imputable, activa y cuántos templates usan cada una. Para revisar la consistencia de lo que
+   ya está (108 `egreso` · 26 `ingreso` · 8 `financiero` · 1 `NO`; sólo 22 las usa un template).
+5. **Revisar consistencia** — lo que conviene arreglar del plan actual. Hoy son **dos**, las dos
+   totalizadoras escritas de dos formas: `EGRESOS`/`Egresos` (8 cuentas) y
+   `EGRESOS POR GANADERIA`/`Egresos Por Ganaderia` (21). Agrupar por el nombre partiría la
+   jerarquía en dos ramas — el mismo problema que tuvimos entre ARCA y el histórico.
+   **Ninguna cuenta quedó sin `tipo`**: el plan está más limpio de lo esperado.
+
+Si el archivo está abierto en Excel, el script escribe una copia `_v2` en vez de fallar.
 
 **132 templates dependen de esas 23 categorías** (73 de MSA). Las más pesadas son
 *Impuesto inmobiliario* (42) y *Impuesto Red Vial* (40): el plan de cuentas **no tiene rama de

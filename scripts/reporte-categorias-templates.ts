@@ -32,7 +32,8 @@ async function main() {
     supabase.from("egresos_sin_factura")
       .select("nombre_referencia, categ, cuenta_agrupadora, responsable, cuotas, tipo_recurrencia, activo, codigo_contable")
       .not("cuenta_agrupadora", "is", null),
-    supabase.from("cuentas_contables").select("categ, cuenta_contable, nro_cuenta, tipo, nombre_totalizadora"),
+    supabase.from("cuentas_contables")
+      .select("categ, cuenta_contable, nro_cuenta, tipo, nombre_totalizadora, cta_totalizadora, imputable, activo"),
   ])
   if (e1 || e2) { console.error(e1 || e2); process.exit(1) }
 
@@ -80,6 +81,7 @@ async function main() {
         "Categoría": t.categ ?? "",
         "¿Está en el plan de cuentas?": c ? "Sí" : "NO",
         "Tipo": c?.tipo ?? "",
+        "Cuenta contable": c?.cuenta_contable ?? "",
         "Totalizadora": c?.nombre_totalizadora ?? "",
         "Nro cuenta": c?.nro_cuenta ?? "",
         "Cuotas al año": t.cuotas ?? "",
@@ -105,6 +107,69 @@ async function main() {
       "Qué decide": "Cómo se llama la cuenta en los reportes." },
   ]
 
+  // ── Hoja 4: el plan de cuentas tal cual está, para revisar consistencia
+  const usadaPorTemplates = new Map<string, number>()
+  for (const t of templates) {
+    const k = String(t.categ ?? "").trim().toUpperCase()
+    if (k) usadaPorTemplates.set(k, (usadaPorTemplates.get(k) ?? 0) + 1)
+  }
+  const hojaPlan = ((ctas || []) as any[])
+    .map(c => ({
+      "Nro cuenta": c.nro_cuenta ?? "",
+      "Cuenta contable": c.cuenta_contable ?? "",
+      "Categoría": c.categ ?? "",
+      "Tipo": c.tipo ?? "",
+      "Totalizadora": c.nombre_totalizadora ?? "",
+      "Cta totalizadora": c.cta_totalizadora ?? "",
+      "Imputable": c.imputable === true ? "Sí" : c.imputable === false ? "No" : "",
+      "Activa": c.activo === true ? "Sí" : c.activo === false ? "No" : "",
+      "Templates que la usan": usadaPorTemplates.get(String(c.categ ?? "").trim().toUpperCase()) ?? 0,
+    }))
+    .sort((a, b) =>
+      String(a["Tipo"]).localeCompare(String(b["Tipo"]))
+      || String(a["Totalizadora"]).localeCompare(String(b["Totalizadora"]))
+      || String(a["Nro cuenta"]).localeCompare(String(b["Nro cuenta"])))
+
+  // ── Hoja 5: lo que conviene revisar del plan actual
+  const revisar: any[] = []
+
+  // Totalizadoras que difieren sólo por mayúsculas: agrupar por nombre partiría la jerarquía
+  // en dos, el mismo problema que tuvimos con los nombres de cuenta entre ARCA y el histórico.
+  const porTotalizadora = new Map<string, Set<string>>()
+  for (const c of (ctas || []) as any[]) {
+    const t = c.nombre_totalizadora
+    if (!t) continue
+    const k = String(t).trim().toUpperCase()
+    if (!porTotalizadora.has(k)) porTotalizadora.set(k, new Set())
+    porTotalizadora.get(k)!.add(t)
+  }
+  for (const [k, variantes] of porTotalizadora) {
+    if (variantes.size > 1) {
+      const filas = ((ctas || []) as any[]).filter(c =>
+        String(c.nombre_totalizadora ?? "").trim().toUpperCase() === k).length
+      revisar.push({
+        "Qué revisar": "Totalizadora escrita de dos formas",
+        "Detalle": [...variantes].join("  |  "),
+        "Cuentas afectadas": filas,
+        "Por qué importa": "Agrupar por el nombre partiría la jerarquía en dos ramas distintas. Unificar a una sola escritura.",
+      })
+    }
+  }
+  for (const c of (ctas || []) as any[]) {
+    if (!c.tipo) {
+      revisar.push({
+        "Qué revisar": "Cuenta sin TIPO",
+        "Detalle": `${c.nro_cuenta ?? "-"} · ${c.cuenta_contable ?? "-"}`,
+        "Cuentas afectadas": 1,
+        "Por qué importa": "Sin tipo no se sabe si lo que cuelga de ella se presupuesta.",
+      })
+    }
+  }
+  if (revisar.length === 0) {
+    revisar.push({ "Qué revisar": "Nada", "Detalle": "El plan de cuentas está consistente",
+      "Cuentas afectadas": 0, "Por qué importa": "" })
+  }
+
   const wb = XLSX.utils.book_new()
   const w = (filas: any[], nombre: string, anchos: number[]) => {
     const ws = XLSX.utils.json_to_sheet(filas)
@@ -112,11 +177,22 @@ async function main() {
     XLSX.utils.book_append_sheet(wb, ws, nombre)
   }
   w(hojaFaltan, "1 - A completar", [32, 10, 30, 60, 14, 32, 12, 32])
-  w(hojaTodos, "2 - Todos los templates", [34, 8, 12, 30, 30, 14, 12, 32, 12, 12, 14])
+  w(hojaTodos, "2 - Todos los templates", [34, 8, 12, 30, 30, 14, 12, 32, 32, 12, 12, 14])
   w(hojaAyuda, "3 - Valores válidos", [26, 70, 90])
+  w(hojaPlan, "4 - Plan de cuentas actual", [12, 38, 34, 13, 34, 16, 10, 8, 10])
+  w(revisar, "5 - Revisar consistencia", [34, 46, 10, 90])
 
-  const archivo = `Plan_de_cuentas_a_completar_${new Date().toISOString().slice(0, 10)}.xlsx`
-  XLSX.writeFile(wb, archivo)
+  // Si el archivo está abierto en Excel, Windows lo bloquea (EBUSY). En vez de fallar se
+  // escribe una copia numerada: es más útil que perder el reporte recién generado.
+  const base = `Plan_de_cuentas_a_completar_${new Date().toISOString().slice(0, 10)}`
+  let archivo = `${base}.xlsx`
+  for (let i = 2; i < 20; i++) {
+    try { XLSX.writeFile(wb, archivo); break } catch (e: any) {
+      if (e?.code !== "EBUSY" && e?.code !== "EPERM") throw e
+      console.log(`   (${archivo} está abierto, escribo otra copia)`)
+      archivo = `${base}_v${i}.xlsx`
+    }
+  }
 
   console.log(`\n✅ ${archivo}`)
   console.log(`   ${templates.length} templates · ${hojaFaltan.length} categorías sin clasificar `
