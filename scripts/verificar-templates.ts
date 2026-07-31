@@ -1,5 +1,5 @@
 import {
-  proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO,
+  proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO, esMovimientoInterno,
   type TemplateInfo, type CuotaMes,
 } from "../lib/presupuesto/templates"
 
@@ -21,8 +21,8 @@ const meses = Array.from({ length: 18 }, (_, i) => {
 })
 const q = (mes: string, monto: number): CuotaMes => ({ egreso_id: "T", mes, monto })
 const tpl = (o: Partial<TemplateInfo>): TemplateInfo => ({
-  id: "T", nombre: "X", cuotas: null, tipo_recurrencia: null, periodicidad: null,
-  aplica_generacion: null, ...o,
+  id: "T", nombre: "X", agrupador: null, cuotas: null, tipo_recurrencia: null,
+  periodicidad: null, aplica_generacion: null, ...o,
 })
 
 // ══ EL BUG QUE MOTIVÓ ESTO ══════════════════════════════════════════════════
@@ -110,6 +110,43 @@ const aviso = avisoFaltaGenerar({
   i: { info: inmob, celdas: rI.celdas },
 })
 chk("el aviso junta sólo los de carga manual", aviso.nombres.sort(), ["Cargas Sociales", "Imp .Ganancias MSA"])
+
+
+// ══ Movimientos internos: NO son gasto ══════════════════════════════════════
+console.log("\n--- lo que no es gasto no se presupuesta ---")
+const fci = tpl({ nombre: "FIMA Premium Galicia Pesos", agrupador: "Inversiones",
+  cuotas: null, tipo_recurrencia: "abierto" })
+const rF = proyectarTemplate(fci, [
+  q("2026-02", 7500000), q("2026-03", 8000000), q("2026-04", 7000000),
+  q("2026-05", 7600000), q("2026-06", 7500000),
+], meses, { ipc })
+console.log(`     FCI: ${rF.metodo.motivo}`)
+chk("FCI no se proyecta", rF.metodo.metodo, "no_proyectar")
+chk("y no aporta un peso", rF.celdas.reduce((s, c) => s + c.monto, 0), 0)
+console.log(`     antes: promedio ~$7,5 M x 18 meses = ~$135 M de egreso inventado`)
+
+chk("Caja (movimiento interno) tampoco, aunque declare 12 cuotas",
+  metodoHeredado(tpl({ agrupador: "Movimientos Internos empresa", cuotas: 12 }), true).metodo, "no_proyectar")
+chk("Interbancarias tampoco",
+  metodoHeredado(tpl({ agrupador: "Movimientos Internos empresa", cuotas: 2 }), true).metodo, "no_proyectar")
+chk("Creditos Bancarios tampoco",
+  metodoHeredado(tpl({ agrupador: "Créditos Bancarios", cuotas: null }), true).metodo, "no_proyectar")
+chk("pero un gasto de verdad si", metodoHeredado(tpl({ agrupador: "Seguros", cuotas: 12 }), true).metodo, "mensual")
+
+// El usuario lo puede pisar: "o en tal caso hacerlo yo a mano"
+const rFman = proyectarTemplate(fci, [q("2026-02", 7500000)], meses,
+  { ipc, config: { metodo: "manual", monto_manual: 1000000 } })
+chk("el usuario lo puede presupuestar a mano si quiere", rFman.celdas[0]!.monto, 1000000)
+
+// ══ Gastos bancarios: se llenan durante, se presupuestan por historico ══════
+console.log("\n--- comisiones bancarias (se llenan durante, nunca antes) ---")
+const comBanco = tpl({ nombre: "Comision Cuenta Bancaria", agrupador: "Gastos Bancarios", cuotas: 0 })
+const rB = proyectarTemplate(comBanco, [
+  q("2026-02", 30000), q("2026-03", 32000), q("2026-04", 31000), q("2026-05", 35000),
+], meses, { ipc })
+console.log(`     ${rB.metodo.motivo} -> ${ETIQUETA_METODO[rB.metodo.metodo]}`)
+chk("se presupuestan por promedio historico", rB.metodo.metodo, "promedio")
+chk("y en todos los meses", rB.celdas.filter(c => c.monto > 0).length, 18)
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)

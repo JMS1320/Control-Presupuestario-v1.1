@@ -1532,6 +1532,62 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 💸 LO QUE NO ES GASTO NO SE PRESUPUESTA *(2026-07-31, sin testear)*
+
+> *"FCI no se debería presupuestar ya que es dinero que si egresa es porque se coloca a tasa y
+> está disponible de cobrarse con su rendimiento de inmediato. Presupuestar colocaciones no
+> tiene sentido: es preferible que no se presupueste nada, o en tal caso hacerlo yo a mano."*
+
+El usuario tenía razón y el error era el más grande que quedaba. **FIMA Premium (FCI)**
+promediaba **$7,5 M** y se proyectaba **todos los meses** (heredaba `promedio` por ser
+`tipo_recurrencia = 'abierto'`): **~$135 M de egreso inventado** en 18 meses. Más que el bug de
+Ganancias del día anterior.
+
+##### No es sólo el FCI: es una familia
+Tres agrupadoras enteras que **no son gasto** — la plata se mueve pero no se va:
+
+| Agrupadora | Templates | Qué pasaba |
+|---|---|---|
+| **Inversiones** | FIMA Premium (FCI) | $7,5 M/mes proyectados |
+| **Movimientos Internos empresa** | Caja, Interbancaria BAPRO, Interbancaria Santander | Caja $750 k × 12/año; las interbancarias 2/año |
+| **Créditos Bancarios** | Créditos Pagados, Créditos Tomados | financiación — y **"Créditos Tomados" es un INGRESO** apareciendo en egresos |
+
+`esMovimientoInterno()` en `lib/presupuesto/templates.ts` los devuelve con su motivo, y
+`metodoHeredado()` los corta **antes que nada**: da igual cuántas cuotas declaren. Se puede pisar
+eligiendo un método a mano, que es la salida que pidió el usuario.
+
+⚠️ **Es por nombre de agrupadora**, que es dato que el usuario controla. Si se renombra alguna,
+el filtro deja de aplicar y el gasto fantasma vuelve. Lo correcto a futuro sería una marca en el
+template (`es_gasto`) o en la agrupadora — **C-20**.
+
+##### La otra pregunta: los gastos bancarios
+> *"hay templates que se llenan automáticamente con gastos bancarios, por ejemplo comisiones.
+> Esos sí se pueden presupuestar en función de gastos históricos. Nunca se llenan antes, siempre
+> durante. No sé si alguno de los 10 que me decías es uno de esos o son otros casos."*
+
+**Son otros casos, y los bancarios ya estaban bien.**
+
+Hay un campo que los marca: **`solo_conciliacion = true`**, y son exactamente los 14 de gastos e
+impuestos bancarios (Com. Uso ATM, Comisión Cuenta Bancaria, Cheques, Transferencias, Extracción,
+Certificaciones, Caja de Seguridad, Débitos/Créditos, IIBB Bancario, Impuesto País, IVA Bancario,
+Percepción IVA, Percepción RG 5463, Sellos). Todos tienen `cuotas = 0` → heredan **promedio
+mensual**, que es justo lo que el usuario describe.
+
+Los **10 que declaran más cuotas de las que tienen** son otro grupo: todos `cuotas = 12`
+(mensuales con campaña a medio cargar) — Cargas Sociales 12 vs 6, UATRE 12 vs 3, SICORE 1ra 12
+vs 4 y 2da 12 vs 6, IIBB Mensual 12 vs 1, Seguro Flota y Accidentes 12 vs 5, Tarjeta Visa 12 vs
+6, Retiro MA 12 vs 6, y **Caja** 12 vs 5. Ningún bancario entre ellos.
+
+*(Caja sale de esa lista con este cambio: pasa a no proyectarse por ser movimiento interno.)*
+
+##### Verificado
+`scripts/verificar-templates.ts` — 28 checks. Nuevos: que el FCI no aporte un peso, que Caja no
+proyecte aunque declare 12 cuotas, que un gasto real sí siga proyectando, que el usuario pueda
+ponerlo a mano igual, y que las comisiones bancarias sigan yendo por promedio.
+
+
 #### 🔧 TEMPLATES: JERARQUÍA DE MÉTODO, HEREDADA DE `cuotas` *(2026-07-31, sin testear)*
 
 ##### El bug que lo motivó — lo detectó el usuario sin ver los datos

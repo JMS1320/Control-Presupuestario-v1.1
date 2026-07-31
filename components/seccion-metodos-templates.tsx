@@ -97,6 +97,7 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
     return templates.map(t => {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
+        agrupador: t.cuenta_agrupadora ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,
         periodicidad: t.periodicidad ?? null,

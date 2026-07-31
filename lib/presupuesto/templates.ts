@@ -51,9 +51,34 @@ export const ETIQUETA_METODO: Record<MetodoTemplate, string> = {
   no_proyectar: 'No proyectar',
 }
 
+/**
+ * Agrupadoras que NO son gasto: la plata se mueve pero no se va.
+ *
+ * Presupuestarlas infla el egreso con dinero que sigue siendo de la empresa. El caso grande es
+ * el FCI: son $7,5 M de promedio proyectados todos los meses, cuando en realidad es una
+ * colocación que vuelve con su rendimiento y se rescata cuando se quiere.
+ *
+ * Devuelve el motivo, o null si es un gasto de verdad. Se puede pisar eligiendo un método a
+ * mano — el usuario dijo *"o en tal caso hacerlo yo a mano"*.
+ */
+export function esMovimientoInterno(agrupador: string | null | undefined): string | null {
+  switch ((agrupador ?? '').trim()) {
+    case 'Inversiones':
+      return 'Colocación: el dinero vuelve con su rendimiento y se rescata cuando se quiere, no es un gasto'
+    case 'Movimientos Internos empresa':
+      return 'Movimiento interno: la plata cambia de bolsillo, no sale de la empresa'
+    case 'Créditos Bancarios':
+      return 'Financiación: no es gasto operativo (y "Créditos Tomados" es un ingreso, no un egreso)'
+    default:
+      return null
+  }
+}
+
 export interface TemplateInfo {
   id: string
   nombre: string
+  /** Para saber si es un movimiento interno y no un gasto. */
+  agrupador?: string | null
   /** Cuotas al año declaradas en el template. 0 = sin número fijo. */
   cuotas: number | null
   tipo_recurrencia: string | null
@@ -124,6 +149,10 @@ export interface MetodoResuelto {
  *   0 / null  → no tiene número fijo (comisiones bancarias, gastos abiertos) → promedio
  */
 export function metodoHeredado(info: TemplateInfo, tieneHistoria: boolean): MetodoResuelto {
+  // Antes que nada: si no es un gasto, no se presupuesta. Da igual cuántas cuotas declare.
+  const interno = esMovimientoInterno(info.agrupador)
+  if (interno) return { metodo: 'no_proyectar', manual: false, motivo: interno }
+
   if (!tieneHistoria) {
     return { metodo: 'no_proyectar', manual: false, motivo: 'Sin cuotas cargadas: no hay de dónde proyectar' }
   }

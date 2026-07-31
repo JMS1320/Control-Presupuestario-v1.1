@@ -650,6 +650,17 @@ elegiste vos. **Se cambia** en el panel *Cuentas contables*, sección "Cómo se 
 templates": ahí ves cuántas cuotas declara, cuántas tiene cargadas, cuánto proyecta y por cuánta
 plata, ordenado de mayor a menor. El ✨ vuelve al automático.
 
+### Lo que no es gasto no se presupuesta
+Tres agrupadoras quedan siempre en cero porque **la plata se mueve pero no se va**:
+*Inversiones* (el FCI es una colocación que se rescata cuando querés), *Movimientos Internos
+empresa* (caja e interbancarias) y *Créditos Bancarios* (financiación — y "Créditos Tomados" es
+un ingreso). Si igual querés presupuestar alguno, ponele el método a mano.
+
+### Los gastos bancarios
+Las comisiones e impuestos bancarios nunca se cargan por adelantado, se llenan durante el mes.
+Por eso van por **promedio de lo histórico**, que es lo correcto para ellos. No hace falta tocar
+nada.
+
 Si un template **declara más cuotas de las que tiene cargadas** (Cargas Sociales declara 12 y
 hay 6), aparece un ⚠: el presupuesto proyecta las conocidas, así que puede estar corto.
 
