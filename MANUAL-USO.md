@@ -622,6 +622,19 @@ Veterinaria **sí** entra, porque no hay módulo de insumos para cría.
 
 ---
 
+## 🧾 Templates → activar y desactivar
+
+En la grilla de templates, con el **Modo Edición** prendido, la columna **Activo** se cambia con
+un clic. Pregunta antes, porque **afecta al template entero**, no a una cuota.
+
+Desactivar **no borra nada**: el template deja de aparecer en el Presupuesto y en el Cash Flow,
+y sus cuotas quedan tal cual. Si lo reactivás, vuelve con todo lo que tenía.
+
+Sirve para el caso típico: un template que se reemplazó por otro (el retiro semestral que pasó a
+mensual) y conviene guardar sin que ensucie las proyecciones.
+
+---
+
 ## 📊 Presupuesto → leer la grilla
 
 ### Qué bloques suman

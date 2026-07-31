@@ -532,6 +532,35 @@ export function VistaTemplatesEgresos() {
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
+  /**
+   * Activa o desactiva el template padre. No pasa por la edición inline porque `activo` vive en
+   * `egresos_sin_factura` y aquélla escribe en las cuotas.
+   *
+   * Un template desactivado deja de aparecer en el Presupuesto y en el Cash Flow, pero **no se
+   * borra nada**: sus cuotas quedan y vuelven si se lo reactiva.
+   */
+  const alternarActivo = async (cuota: any) => {
+    const egresoId = cuota?.egreso?.id
+    if (!egresoId) { alert('Esta cuota no tiene template asociado.'); return }
+    const activoAhora = cuota.egreso.activo === true
+    const nombre = cuota.egreso.nombre_referencia || 'el template'
+    if (!confirm(
+      `¿${activoAhora ? 'Desactivar' : 'Activar'} "${nombre}"?
+
+` +
+      `Afecta a TODAS sus cuotas.${activoAhora
+        ? ' Deja de aparecer en Presupuesto y Cash Flow; no se borra nada.'
+        : ' Vuelve a aparecer con las cuotas que tenga cargadas.'}`
+    )) return
+
+    const { error } = await supabase
+      .from('egresos_sin_factura')
+      .update({ activo: !activoAhora, updated_at: new Date().toISOString() })
+      .eq('id', egresoId)
+    if (error) { alert('Error: ' + error.message); return }
+    await cargarCuotas()
+  }
+
   // Funciones para edición inline
   const iniciarEdicion = (cuotaId: string, columna: string, valor: any, event: React.MouseEvent) => {
     console.log('🔍 Templates iniciarEdicion called:', columna, 'ctrlKey:', event.ctrlKey, 'modoEdicion:', modoEdicion)
@@ -1204,10 +1233,27 @@ export function VistaTemplatesEgresos() {
           )
         
         case 'activo':
+          // Activar/desactivar vive en el TEMPLATE PADRE, no en la cuota, así que no puede ir
+          // por la edición inline (que escribe en `cuotas_egresos_sin_factura`). Va por su
+          // propio camino y afecta a todas las cuotas del template a la vez — por eso pregunta.
+          if (!modoEdicion) {
+            return (
+              <Badge variant={valor ? 'default' : 'secondary'}>{valor ? 'Sí' : 'No'}</Badge>
+            )
+          }
           return (
-            <Badge variant={valor ? 'default' : 'secondary'}>
-              {valor ? 'Sí' : 'No'}
-            </Badge>
+            <button
+              type="button"
+              title={`Clic para ${valor ? 'desactivar' : 'activar'} el template completo`}
+              onClick={() => alternarActivo(cuota)}
+              className="cursor-pointer"
+            >
+              <Badge variant={valor ? 'default' : 'secondary'}
+                className="hover:ring-2 hover:ring-blue-300">
+                {valor ? 'Sí' : 'No'}
+                <Edit3 className="ml-1 h-3 w-3 opacity-50" />
+              </Badge>
+            </button>
           )
         
         case 'configuracion_reglas':
@@ -1470,7 +1516,7 @@ export function VistaTemplatesEgresos() {
           <Info className="h-4 w-4" />
           <AlertDescription>
             <strong>Modo Edición Activo:</strong> Mantén presionado Ctrl + Click en cualquier celda editable para modificar valores. 
-            Campos editables: fecha estimada, fecha vencimiento, monto, descripción, estado, CATEG, centro costo, responsable, nombre quien cobra, CUIT.
+            Campos editables: fecha estimada, fecha vencimiento, monto, descripción, estado, CATEG, centro costo, responsable, nombre quien cobra, CUIT. La columna <strong>Activo</strong> se cambia con un clic simple y afecta al template entero.
           </AlertDescription>
         </Alert>
       )}
