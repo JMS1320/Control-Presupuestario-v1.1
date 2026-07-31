@@ -641,6 +641,18 @@ se confunda con un dato firme.
 La proyección respeta **en qué meses paga cada template**: un inmobiliario que paga cinco cuotas
 al año sigue pagando cinco, no doce.
 
+**De dónde sale eso**: del campo `cuotas` que ya tiene cargado el template (cuántos pagos al año).
+12 → todos los meses · 1 a 11 → esas cuotas, en los meses que muestra la historia · 0 o "abierto"
+→ promedio mensual, porque no tiene calendario fijo.
+
+Al lado del nombre de cada template ves el método usado, en gris si se heredó y en azul si lo
+elegiste vos. **Se cambia** en el panel *Cuentas contables*, sección "Cómo se completan los
+templates": ahí ves cuántas cuotas declara, cuántas tiene cargadas, cuánto proyecta y por cuánta
+plata, ordenado de mayor a menor. El ✨ vuelve al automático.
+
+Si un template **declara más cuotas de las que tiene cargadas** (Cargas Sociales declara 12 y
+hay 6), aparece un ⚠: el presupuesto proyecta las conocidas, así que puede estar corto.
+
 Si el template es de los que **cargás a mano** porque te recuerda un compromiso de pago (Cargas
 Sociales, SICORE, UATRE, Ganancias…), además aparece un **aviso ámbar arriba** diciendo cuántos
 faltan generar, en cuántos meses y cuánta plata. La celda lleva un `◦`. El resto se proyecta en

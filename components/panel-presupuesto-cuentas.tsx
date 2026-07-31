@@ -18,6 +18,7 @@ import {
   Loader2, ChevronDown, ChevronRight, AlertTriangle, ShieldCheck, Wand2,
 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
+import { SeccionMetodosTemplates } from "@/components/seccion-metodos-templates"
 import {
   calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion, netearExcluidos,
   ETIQUETA_MODO,
@@ -333,6 +334,15 @@ export function PanelPresupuestoCuentas() {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Los templates son la otra mitad de "cómo se llena el presupuesto". Van acá y no en
+            otro botón porque son la misma pregunta. */}
+        <div className="border-t pt-3">
+          <SeccionMetodosTemplates
+            meses={meses.map(m => ({ anio: m.anio, mes: m.mes }))}
+            ipc={ipc}
+          />
         </div>
       </CardContent>
     </Card>

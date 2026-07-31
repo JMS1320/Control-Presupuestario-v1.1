@@ -11640,3 +11640,33 @@ UPDATE public.presupuesto_cuenta_config
        cuits_excluidos = ARRAY['33707366589'], motivo_exclusion = NULL
  WHERE empresa = 'MSA' AND nro_cuenta = '422113';
 ```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-31 · Método de proyección por template
+
+Con qué método el presupuesto completa los meses donde un template NO tiene cuota cargada.
+Sin fila acá el método se **hereda de `egresos_sin_factura.cuotas`** (número de cuotas al año,
+cargado en 64 de 66 templates); esta tabla es sólo para las excepciones.
+
+```sql
+CREATE TABLE public.presupuesto_template_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  template_id uuid NOT NULL REFERENCES public.egresos_sin_factura(id) ON DELETE CASCADE,
+  -- declaradas | mensual | patron | promedio | manual | no_proyectar
+  metodo text NOT NULL,
+  monto_manual numeric(16,2),
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (empresa, template_id)
+);
+ALTER TABLE public.presupuesto_template_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_template_config_all ON public.presupuesto_template_config
+  FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_template_config TO anon, authenticated, service_role;
+```
+
+Motivo: la primera versión inferia la periodicidad de la historia de cuotas y con un solo mes
+cargado daba "mensual". Impuesto a las Ganancias (1 cuota/año, $5 M) se proyectaba 12 veces
+— ~$55 M de egreso fantasma en una fila. **El dato declarado tiene que ganarle a lo inferido.**

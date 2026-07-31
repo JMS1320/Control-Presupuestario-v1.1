@@ -1530,6 +1530,70 @@ mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab
 
 ---
 
+---
+
+#### 🔧 TEMPLATES: JERARQUÍA DE MÉTODO, HEREDADA DE `cuotas` *(2026-07-31, sin testear)*
+
+##### El bug que lo motivó — lo detectó el usuario sin ver los datos
+> *"un template que era anual, si se puso mensual está aumentando 11 veces más el egreso.
+> ¿No sé si ya teníamos data en los templates como para corregir de origen?"*
+
+Tenía razón en las dos cosas. La primera versión **inferia la periodicidad de la historia de
+cuotas**: si los meses con cuota eran ≥ 80 % del tramo, "mensual". Con **un solo mes** cargado
+eso da densidad 1,00 → mensual → doce pagos al año.
+
+| Template | Declara | Historia | Inferido | Monto | Fantasma/año |
+|---|---:|---:|---|---:|---:|
+| **Imp. Ganancias MSA** | 1 cuota | 1 mes | MENSUAL | $5.000.123 | **$55 M** |
+| **Acciones y Participaciones** | 1 cuota | 1 mes | MENSUAL | $2.500.123 | **$27,5 M** |
+| Imp. Automotores Voyage | 1 cuota | 1 mes | MENSUAL | $439.827 | $4,8 M |
+| Inmobiliario Lote Puerto | 1 cuota | 1 mes | MENSUAL | $19.094 | $0,2 M |
+
+**~$87 M anuales de egreso inventado en cuatro filas**, sobre un gasto real de ~$23 M/mes.
+
+**Y el dato ya estaba**: `egresos_sin_factura.cuotas` es el número de cuotas al año y está
+cargado en 64 de 66 templates. Inferí de la historia algo que el template ya declaraba. Error de
+diseño: **inferir es para cuando no hay dato**, nunca para pisarlo.
+
+##### La jerarquía, de más firme a más blando
+1. **Cuota cargada** → manda siempre. Dato firme.
+2. **Método elegido a mano** → `public.presupuesto_template_config` (no está en el backup).
+3. **`cuotas` declarado** → cuántos pagos al año lo dice el template; en qué meses, la historia.
+4. **Patrón por densidad** → sólo si no hay nada declarado. Último recurso, ya no primera opción.
+
+##### Qué se hereda de `cuotas`
+| `cuotas` | Método | Cuántos templates |
+|---:|---|---:|
+| 12 | **Todos los meses** | 10 |
+| 1 – 11 | **Esas cuotas**, en los meses que muestra la historia | 29 |
+| 0 · `null` · `tipo_recurrencia = 'abierto'` | **Promedio mensual** (sin periodicidad fija) | 22 |
+| sin historia | **No proyectar** | 10 |
+
+`tipo_recurrencia = 'abierto'` gana sobre `cuotas`: Otros Gastos y Pasajes no tienen calendario
+aunque declaren un número.
+
+**El promedio divide por el SPAN, no por los meses con cuota** — misma regla que las cuentas
+contables. Comisión Transferencias: $140.000 en 5 meses de tramo da $28.000/mes, no $35.000.
+
+##### Dos avisos que el usuario necesita ver
+- **Declara más cuotas de las que hay** (10 templates: Cargas Sociales 12 vs 6, UATRE 12 vs 3,
+  Anticipo Ganancias 10 vs 0…). Se proyectan las conocidas, así que **el presupuesto puede estar
+  corto**. Va un ⚠ por fila y un resumen arriba de la tabla.
+- **Falta generar la campaña** (`aplica_generacion = true`): sigue igual, banda ámbar arriba.
+
+##### Dónde se edita
+Dentro del panel **"Cuentas contables"**, sección *"Cómo se completan los templates"* — van
+juntos porque son la misma pregunta que hizo el usuario. Muestra por template: cuántas cuotas
+declara, cuántos meses tienen cuota cargada, el método (con `auto` y el motivo), cuántos meses
+proyecta y por cuánta plata, **ordenado por monto** para que lo caro aparezca primero.
+El ✨ devuelve al automático.
+
+En la grilla del presupuesto cada template muestra su método al lado del nombre: gris si es
+heredado, azul si se eligió a mano.
+
+**Verificador**: `scripts/verificar-templates.ts` — 20 checks, incluidos el caso Ganancias
+($60 M → $5 M), que la cuota cargada pise al método manual, y que el promedio divida por el span.
+
 #### ✅ C-19 · C-7 · C-17 — EL PRESUPUESTO QUEDÓ COMO UNA SOLA COSA *(2026-07-30, sin testear)*
 
 Los tres bloques que estaban afuera ahora bajan a la grilla, suman al **TOTAL EGRESOS** y por lo
@@ -1561,10 +1625,10 @@ anual en un gasto mensual — *Inmobiliario Cuota Rojas* paga en cinco meses y d
 La proyección respeta **en qué meses paga cada template**, sacado de su historia (se piden las
 cuotas desde 18 meses antes justamente para tener con qué).
 
-**Y hubo que distinguir mensual de puntual por DENSIDAD, no por el patrón de meses.** El
-verificador lo encontró: *Cargas Sociales* con seis meses cargados (ene-jun) parecía no pagar de
-julio en adelante. La densidad — meses con cuota sobre meses del tramo — lo resuelve: ≥ 80 % es
-mensual y se proyecta todo el año; menos es de meses puntuales y se respeta el patrón.
+**⚠️ La densidad como criterio principal fue un error y se corrigió al día siguiente** — ver la
+sección "TEMPLATES: JERARQUÍA DE MÉTODO" arriba. Con un solo mes de historia daba "mensual" y
+multiplicaba por 12 los impuestos anuales (~$87 M de egreso fantasma). Ahora el método se hereda
+de `cuotas`, que el template ya declara, y la densidad quedó como último recurso.
 
 ##### El aviso, que era la mitad del pedido
 > *"por ej cargas sociales a mí me sirve crear la campaña con datos estimados porque me recuerda

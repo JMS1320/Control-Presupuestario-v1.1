@@ -48,7 +48,9 @@ import {
 } from "@/lib/presupuesto/modos"
 import {
   proyectarTemplate, avisoFaltaGenerar,
-  type TemplateInfo, type CuotaMes, type CeldaTemplate,
+  ETIQUETA_METODO,
+  type TemplateInfo, type CuotaMes, type CeldaTemplate, type ConfigTemplate,
+  type MetodoResuelto,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
 
@@ -85,6 +87,10 @@ interface FilaTemplate {
   celdas: Record<string, CeldaTemplate>
   /** Es de los que el usuario carga a mano (aplica_generacion). */
   cargaManual: boolean
+  /** Con qué método se completaron los meses sin cuota, y si lo eligió el usuario. */
+  metodo: MetodoResuelto
+  /** Declara más cuotas de las que hay en la historia. */
+  avisoCuotas: string | null
 }
 
 interface FilaSueldo {
@@ -142,6 +148,24 @@ interface CuotaDetalle {
   fechaOriginal: string | null
   posOrigAnio: number | null
   posOrigMes: number | null
+}
+
+/**
+ * Con qué método se completaron los meses sin cuota. Sólo aparece si hubo que proyectar
+ * algo: si el template tiene todas sus cuotas cargadas, no hay método que mostrar.
+ */
+function EtiquetaMetodo({ t }: { t: FilaTemplate }) {
+  const hayProyeccion = Object.values(t.celdas).some(c => c.origen === "proyectado")
+  if (!hayProyeccion || !t.metodo) return null
+  return (
+    <span className={`ml-2 text-[10px] ${t.metodo.manual ? "text-blue-600" : "text-gray-400"}`}
+      title={`${ETIQUETA_METODO[t.metodo.metodo]} — ${t.metodo.motivo}`
+        + (t.avisoCuotas ? `\n\n⚠ ${t.avisoCuotas}` : "")}>
+      {ETIQUETA_METODO[t.metodo.metodo]}
+      {!t.metodo.manual && " (auto)"}
+      {t.avisoCuotas && <span className="ml-0.5 text-amber-500">⚠</span>}
+    </span>
+  )
 }
 
 /**
@@ -395,7 +419,7 @@ export function TabPresupuesto() {
     // Traer templates activos MSA (responsable contiene MSA)
     const { data: templates } = await supabase
       .from("egresos_sin_factura")
-      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion")
+      .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion, cuotas, tipo_recurrencia")
       .eq("activo", true)
       .or("responsable.ilike.%MSA%,responsable.eq.ambas")
       .not("cuenta_agrupadora", "is", null)
@@ -440,22 +464,41 @@ export function TabPresupuesto() {
       })
     }
 
+    // Métodos elegidos a mano. Sin fila, el método se hereda de `cuotas`.
+    const { data: cfgs } = await supabase
+      .from("presupuesto_template_config").select("template_id, metodo, monto_manual")
+      .eq("empresa", "MSA")
+    const cfgPorTemplate: Record<string, ConfigTemplate> = {}
+    for (const c of ((cfgs || []) as any[])) {
+      cfgPorTemplate[String(c.template_id)] = {
+        metodo: c.metodo,
+        monto_manual: c.monto_manual == null ? null : Number(c.monto_manual),
+      }
+    }
+
     const mesesCtx = meses.map(m => ({ anio: m.anio, mes: m.mes }))
     const proyeccion: Record<string, { info: TemplateInfo; celdas: CeldaTemplate[] }> = {}
     const mapaMontos: Record<string, Record<string, number>> = {}
     const mapaCeldas: Record<string, Record<string, CeldaTemplate>> = {}
+    const metodos: Record<string, MetodoResuelto> = {}
+    const avisos: Record<string, string | null> = {}
 
     for (const t of templates) {
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
+        cuotas: t.cuotas ?? null,
+        tipo_recurrencia: t.tipo_recurrencia ?? null,
         periodicidad: t.periodicidad ?? null,
         aplica_generacion: t.aplica_generacion ?? null,
       }
-      const celdas = proyectarTemplate(info, historiaCuotas[t.id] || [], mesesCtx, { ipc })
-      proyeccion[t.id] = { info, celdas }
+      const r = proyectarTemplate(info, historiaCuotas[t.id] || [], mesesCtx,
+        { ipc, config: cfgPorTemplate[t.id] })
+      proyeccion[t.id] = { info, celdas: r.celdas }
+      metodos[t.id] = r.metodo
+      avisos[t.id] = r.avisoCuotas
       mapaMontos[t.id] = {}
       mapaCeldas[t.id] = {}
-      for (const c of celdas) {
+      for (const c of r.celdas) {
         mapaMontos[t.id]![c.mes] = c.monto
         mapaCeldas[t.id]![c.mes] = c
       }
@@ -477,6 +520,8 @@ export function TabPresupuesto() {
         montos: mapaMontos[t.id] || {},
         celdas: mapaCeldas[t.id] || {},
         cargaManual: t.aplica_generacion === true,
+        metodo: metodos[t.id]!,
+        avisoCuotas: avisos[t.id] ?? null,
       })
     }
 
@@ -1371,6 +1416,7 @@ export function TabPresupuesto() {
                                 <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
                                   <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-14 text-gray-600 text-xs">
                                     {t.nombre}
+                                    <EtiquetaMetodo t={t} />
                                   </td>
                                   {meses.map(m => {
                                     const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -1386,6 +1432,7 @@ export function TabPresupuesto() {
                             <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-gray-600 text-xs">
                               {t.nombre}
                               <span className="ml-2 text-gray-400">{t.categ}</span>
+                              <EtiquetaMetodo t={t} />
                             </td>
                             {meses.map(m => {
                               const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`

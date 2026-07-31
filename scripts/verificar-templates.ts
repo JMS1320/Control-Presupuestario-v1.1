@@ -1,4 +1,7 @@
-import { proyectarTemplate, avisoFaltaGenerar, type TemplateInfo, type CuotaMes, type CeldaTemplate } from "../lib/presupuesto/templates"
+import {
+  proyectarTemplate, avisoFaltaGenerar, metodoHeredado, ETIQUETA_METODO,
+  type TemplateInfo, type CuotaMes,
+} from "../lib/presupuesto/templates"
 
 let fallos = 0
 const chk = (t: string, real: unknown, esp: unknown) => {
@@ -7,7 +10,6 @@ const chk = (t: string, real: unknown, esp: unknown) => {
   console.log(`${ok ? "OK  " : "FALLA"} ${t}: ${JSON.stringify(real)} (esperado ${JSON.stringify(esp)})`)
 }
 
-// IPC como lo cargó el usuario: escalones
 const ipc = [
   { anio: 2026, mes: 7, valor: 2.0 },
   { anio: 2026, mes: 12, valor: 1.5 },
@@ -18,55 +20,96 @@ const meses = Array.from({ length: 18 }, (_, i) => {
   return { anio: d.getFullYear(), mes: d.getMonth() + 1 }
 })
 const q = (mes: string, monto: number): CuotaMes => ({ egreso_id: "T", mes, monto })
-
-// ── 1. ANUAL en cuotas: Inmobiliario paga feb, abr, jun, ago, oct
-const inmob: TemplateInfo = { id: "T", nombre: "Inmobiliario Cuota Rojas", periodicidad: "anual", aplica_generacion: null }
-const histInmob = [
-  q("2026-02", 100000), q("2026-04", 100000), q("2026-06", 100000),
-  q("2026-08", 110000), q("2026-10", 110000),
-]
-const cInmob = proyectarTemplate(inmob, histInmob, meses, { ipc })
-const conMonto = cInmob.filter(c => c.monto > 0)
-console.log("\n--- impuesto anual en cuotas (feb/abr/jun/ago/oct) ---")
-for (const c of cInmob.filter(c => c.monto > 0 || c.origen === "cuota")) {
-  console.log(`  ${c.mes}  ${Math.round(c.monto).toLocaleString("es-AR").padStart(9)}  ${c.origen}`)
-}
-chk("no inventa pagos en meses que no paga", cInmob.filter(c => c.mes.endsWith("-03") && c.monto > 0).length, 0)
-chk("sep-26 tampoco", cInmob.find(c => c.mes === "2026-09")!.monto, 0)
-chk("ago y oct 26 son cuota cargada",
-  [cInmob.find(c => c.mes === "2026-08")!.origen, cInmob.find(c => c.mes === "2026-10")!.origen], ["cuota", "cuota"])
-chk("2027 se proyecta sólo en sus 5 meses",
-  cInmob.filter(c => c.mes.startsWith("2027") && c.monto > 0).length, 5)
-chk("feb-27 sale del feb-26 + IPC",
-  Math.round(cInmob.find(c => c.mes === "2027-02")!.monto) > 100000, true)
-console.log(`     feb-27 = ${Math.round(cInmob.find(c => c.mes === "2027-02")!.monto).toLocaleString("es-AR")} (feb-26 fue 100.000)`)
-
-// ── 2. MENSUAL: sí se proyecta todos los meses
-const cargas: TemplateInfo = { id: "T", nombre: "Cargas Sociales", periodicidad: "bianual", aplica_generacion: true }
-const histCargas = Array.from({ length: 6 }, (_, i) => q(`2026-0${i + 1}`, 500000 + i * 20000))
-const cCargas = proyectarTemplate(cargas, histCargas, meses, { ipc })
-console.log("\n--- mensual (Cargas Sociales, aplica_generacion = true) ---")
-chk("se proyecta todos los meses", cCargas.filter(c => c.monto > 0).length, 18)
-chk("y marca que falta generar la campaña", cCargas[0]!.faltaGenerar, true)
-console.log(`     jul-26 = ${Math.round(cCargas[0]!.monto).toLocaleString("es-AR")} · ${cCargas[0]!.explicacion}`)
-
-// ── 3. La cuota cargada MANDA sobre la proyección
-const conCuota = proyectarTemplate(cargas, [...histCargas, q("2026-09", 999999)], meses, { ipc })
-chk("donde hay cuota, manda la cuota", conCuota.find(c => c.mes === "2026-09")!.monto, 999999)
-chk("y no se marca como pendiente", conCuota.find(c => c.mes === "2026-09")!.faltaGenerar, false)
-
-// ── 4. Sin historia no inventa nada
-const nuevo = proyectarTemplate({ id: "T", nombre: "Nuevo", periodicidad: null, aplica_generacion: null }, [], meses, { ipc })
-chk("sin cuotas no proyecta", nuevo.filter(c => c.monto !== 0).length, 0)
-
-// ── 5. El aviso junta sólo los de carga manual
-const aviso = avisoFaltaGenerar({
-  cargas: { info: cargas, celdas: cCargas },
-  inmob: { info: inmob, celdas: cInmob },
+const tpl = (o: Partial<TemplateInfo>): TemplateInfo => ({
+  id: "T", nombre: "X", cuotas: null, tipo_recurrencia: null, periodicidad: null,
+  aplica_generacion: null, ...o,
 })
-chk("el aviso cuenta sólo Cargas Sociales", aviso.templates, 1)
-chk("y lo nombra", aviso.nombres, ["Cargas Sociales"])
-console.log(`     aviso: ${aviso.templates} template, ${aviso.meses.length} meses, $${Math.round(aviso.monto).toLocaleString("es-AR")}`)
+
+// ══ EL BUG QUE MOTIVÓ ESTO ══════════════════════════════════════════════════
+// Imp. Ganancias: 1 cuota al año declarada, 1 mes de historia, $5.000.123.
+// La densidad daba 1,00 → "mensual" → 12 pagos al año.
+console.log("\n--- el bug: 1 cuota/año con 1 mes de historia ---")
+const ganancias = tpl({ nombre: "Imp .Ganancias MSA", cuotas: 1, aplica_generacion: true })
+const rG = proyectarTemplate(ganancias, [q("2026-05", 5000123)], meses, { ipc })
+const pagosG = rG.celdas.filter(c => c.monto > 0)
+console.log(`     método: ${ETIQUETA_METODO[rG.metodo.metodo]} — ${rG.metodo.motivo}`)
+for (const c of pagosG) console.log(`     ${c.mes}  ${Math.round(c.monto).toLocaleString("es-AR")}`)
+chk("hereda 'declaradas' de cuotas=1", rG.metodo.metodo, "declaradas")
+chk("proyecta 1 pago, no 12", pagosG.length, 1)   // jul-26 a dic-27 contiene un solo mayo
+chk("y cae en mayo", pagosG.every(c => c.mes.endsWith("-05")), true)
+const viejo = 5000123 * 12
+console.log(`     antes: 12 pagos/año = $${viejo.toLocaleString("es-AR")} · ahora: 1 = $5.000.123`)
+
+// ══ cuotas = 12 → mensual, aunque la historia tenga pocos meses ═════════════
+console.log("\n--- cuotas=12 con historia parcial (Cargas Sociales) ---")
+const cargas = tpl({ nombre: "Cargas Sociales", cuotas: 12, aplica_generacion: true })
+const histC = Array.from({ length: 6 }, (_, i) => q(`2026-0${i + 1}`, 500000 + i * 20000))
+const rC = proyectarTemplate(cargas, histC, meses, { ipc })
+console.log(`     método: ${ETIQUETA_METODO[rC.metodo.metodo]} — ${rC.metodo.motivo}`)
+chk("hereda 'mensual'", rC.metodo.metodo, "mensual")
+chk("proyecta los 18 meses", rC.celdas.filter(c => c.monto > 0).length, 18)
+chk("marca falta generar", rC.celdas[0]!.faltaGenerar, true)
+
+// ══ cuotas = 4 → inmobiliario, respeta sus meses ════════════════════════════
+console.log("\n--- cuotas=4 (Inmobiliario) ---")
+const inmob = tpl({ nombre: "Inmobiliario Cuota Rojas", cuotas: 4 })
+const rI = proyectarTemplate(inmob, [
+  q("2026-02", 100000), q("2026-04", 100000), q("2026-06", 100000), q("2026-08", 110000),
+], meses, { ipc })
+chk("hereda 'declaradas'", rI.metodo.metodo, "declaradas")
+chk("2027 proyecta 4 pagos", rI.celdas.filter(c => c.mes.startsWith("2027") && c.monto > 0).length, 4)
+chk("nunca en marzo", rI.celdas.filter(c => c.mes.endsWith("-03") && c.monto > 0).length, 0)
+
+// ══ cuotas = 0 → sin periodicidad fija → promedio ═══════════════════════════
+console.log("\n--- cuotas=0 (comisiones bancarias) ---")
+const comi = tpl({ nombre: "Comision Transferencias", cuotas: 0 })
+const rCo = proyectarTemplate(comi, [
+  q("2026-02", 30000), q("2026-03", 45000), q("2026-05", 25000), q("2026-06", 40000),
+], meses, { ipc })
+console.log(`     método: ${ETIQUETA_METODO[rCo.metodo.metodo]} — ${rCo.metodo.motivo}`)
+chk("hereda 'promedio'", rCo.metodo.metodo, "promedio")
+chk("reparte en todos los meses", rCo.celdas.filter(c => c.monto > 0).length, 18)
+// 140.000 en 5 meses de span (feb..jun) = 28.000/mes
+chk("promedio sobre el SPAN, no sobre los meses con cuota",
+  Math.round(rCo.celdas[0]!.monto / 1.02), 28000)
+console.log(`     $140.000 en 5 meses de tramo = $28.000/mes (no $35.000, que sería dividir por 4)`)
+
+// ══ tipo_recurrencia = abierto → promedio ═══════════════════════════════════
+const abierto = tpl({ nombre: "Otros Gastos", cuotas: 3, tipo_recurrencia: "abierto" })
+chk("'abierto' gana sobre cuotas", metodoHeredado(abierto, true).metodo, "promedio")
+
+// ══ Sin historia → no proyectar ═════════════════════════════════════════════
+chk("sin historia no inventa", metodoHeredado(tpl({ cuotas: 4 }), false).metodo, "no_proyectar")
+
+// ══ JERARQUÍA: la elección del usuario gana sobre lo heredado ═══════════════
+console.log("\n--- jerarquía ---")
+const rMan = proyectarTemplate(ganancias, [q("2026-05", 5000123)], meses,
+  { ipc, config: { metodo: "mensual" } })
+chk("el método a mano pisa lo heredado", rMan.metodo.metodo, "mensual")
+chk("y queda marcado como manual", rMan.metodo.manual, true)
+console.log(`     ${rMan.metodo.motivo}`)
+
+// La cuota cargada pisa TODO, incluso el método manual
+const rCuota = proyectarTemplate(ganancias, [q("2026-05", 5000123), q("2026-09", 777)], meses,
+  { ipc, config: { metodo: "manual", monto_manual: 999 } })
+chk("la cuota cargada manda sobre el método manual",
+  rCuota.celdas.find(c => c.mes === "2026-09")!.monto, 777)
+chk("y donde no hay cuota, el monto a mano",
+  rCuota.celdas.find(c => c.mes === "2026-10")!.monto, 999)
+
+// ══ Aviso cuando declara más cuotas de las que hay ══════════════════════════
+console.log("\n--- avisos ---")
+const anticipo = tpl({ nombre: "Anticipo Ganancias MSA", cuotas: 10, aplica_generacion: true })
+const rA = proyectarTemplate(anticipo, [q("2026-03", 1000000), q("2026-06", 1000000)], meses, { ipc })
+chk("avisa que faltan cuotas", rA.avisoCuotas != null, true)
+console.log(`     ${rA.avisoCuotas}`)
+
+const aviso = avisoFaltaGenerar({
+  g: { info: ganancias, celdas: rG.celdas },
+  c: { info: cargas, celdas: rC.celdas },
+  i: { info: inmob, celdas: rI.celdas },
+})
+chk("el aviso junta sólo los de carga manual", aviso.nombres.sort(), ["Cargas Sociales", "Imp .Ganancias MSA"])
 
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLAS`)
 process.exit(fallos ? 1 : 0)
