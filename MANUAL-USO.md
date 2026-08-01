@@ -714,6 +714,25 @@ Actividades, y Federación Patronal se descuenta de su cuenta porque va por temp
 
 Cada bloque se abre con el ▶ y se puede ver su detalle.
 
+### Pagar anual o en cuotas: el interruptor es **activo**
+
+Varios impuestos tienen **dos templates**: uno "Anual" y uno "Cuota" (inmobiliario, red vial,
+automotores, ABL). No son un duplicado — son las dos formas de pagar lo mismo, y **el que manda
+es el que está activo**.
+
+**Prendé uno y apagá el otro.** El presupuesto sólo lee los activos, así que nunca cuenta las dos
+versiones. Ejemplo real de Lote Puerto, donde cada impuesto va distinto:
+
+| | Anual | Cuota |
+|---|---|---|
+| Inmobiliario Lote Puerto | ✅ activo | ❌ inactivo |
+| Red Vial Lote Puerto | ❌ inactivo | ✅ activo |
+
+Las cuotas viejas del template apagado **quedan guardadas** (son historia), simplemente no
+suman. Si el año que viene cambiás de forma de pago, das vuelta el interruptor y listo.
+
+⚠️ Lo único que hay que cuidar: **que no queden los dos prendidos**. Ahí sí duplicaría.
+
 ### Templates: cuota cargada vs proyectada
 Donde hay **cuota cargada** el presupuesto la usa tal cual. Donde no la hay, **proyecta** desde
 el mismo mes del año pasado (o la última cuota) más IPC, y lo muestra **en cursiva** para que no

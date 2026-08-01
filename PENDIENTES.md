@@ -1961,6 +1961,39 @@ de producción, SICORE si algún día se deriva), el template del mismo concepto
 
 ---
 
+#### ✅ Verificado: el presupuesto NO duplica Anual vs Cuota *(2026-07-31, sin cambios de código)*
+
+> *"es muy posible que yo haya puesto cuotas de templates que no generaron egresos reales.
+> ejemplo inmobiliario anual que lo llené pero elegí pagar en cuotas… si toma todo, tomaría
+> duplicado."*
+
+Duda razonable, **verificada y descartada**. Queda anotado para no volver a levantarla.
+
+**El flag `activo` ya es el interruptor**, y está bien mantenido. De los 42 pares Anual/Cuota,
+41 tienen el Anual apagado y 1 prendido — justo el que se paga anual. `Lote Puerto` lo muestra
+cruzado, que es la mejor prueba de que es deliberado:
+
+| | Anual | Cuota |
+|---|---|---|
+| Inmobiliario Lote Puerto | ✅ activo | ❌ inactivo |
+| Red Vial Lote Puerto | ❌ inactivo | ✅ activo |
+
+`tab-presupuesto` carga con `.eq("activo", true)` → los **41 Anual apagados ($57,7 M en cuotas
+viejas) no entran**. Sin doble conteo.
+
+##### Y el otro miedo: cuotas cargadas que nunca pasaron
+También chico. Cuotas ya vencidas que siguen en `pendiente`: **14**, pero 9 son del **mes en
+curso** (normal, todavía abierto). Viejas de verdad hay dos: `ABL Libertad Cuota` 2026-03
+($270.123) y `Caja` 2026-06 ($900.000, y `Caja` es `financiero` → no se proyecta igual).
+**Queda una sola para mirar**: la ABL de marzo.
+
+##### ⛔ Lo que NO hay que hacer: exigir "conciliado"
+Se evaluó filtrar la proyección por estado conciliado. **Sería un error**: hay **128 cuotas
+pendientes por vencer** (la campaña cargada) que son el dato **más firme** que existe — un
+compromiso futuro no puede estar conciliado. El criterio correcto no es *"conciliado"* sino
+*"ya pasó su fecha y sigue pendiente"*, y eso es **una** cuota. No se tocó nada.
+*(El usuario lo cerró: "fue un error conceptual mío".)*
+
 #### 🏛️ C-22 · USAR LA ESTRUCTURA DEL DASHBOARD EN EL PRESUPUESTO
 *(2026-07-31 — **PASO 1 HECHO** (secciones por `tipo`), falta el paso 2 (totalizadoras). Sin testear.)*
 
@@ -2011,9 +2044,47 @@ leerlo, no para excluirlo. Cuando hay distribuciones, el total lo aclara.
 **En MSA la sección DISTRIBUCIONES muestra** `Retiro MA mensual` (~$8 M a futuro) y `Retiro PAM`
 (~$350 k). Los 5 semestrales MSA todavía no tienen cuotas, así que no proyectan.
 
-##### ⏳ PASO 2 — bajar a totalizadora *(pendiente)*
-Dentro de cada sección, ordenar por `nombre_totalizadora` en vez de alfabético. Eso es lo que
-sigue abajo y depende de la Fase 1 de C-24 (faltan `nro_cuenta`/`cta_totalizadora` en 22 cuentas).
+##### ⏳ PASO 2 — bajar a totalizadora *(pendiente — y NO es lo que parecía)*
+
+Dentro de cada sección, ordenar por `nombre_totalizadora` en vez de alfabético.
+
+> *"si te lleno la totalizadora en el excel ya arreglaríamos eso verdad?"*
+
+**No alcanza, y por un motivo que hay que tener claro antes de perder tiempo llenando.** Medido
+sobre los 68 templates activos MSA con agrupadora:
+
+| | templates | qué les falta |
+|---|---:|---|
+| Llegan OK a su totalizadora | 23 | nada (bancarios, impuestos bancarios, seguros, financieros) |
+| En el plan **pero sin** totalizadora | **0** | — |
+| Su `categ` **no existe** en el plan | **45** | **la cuenta entera** |
+
+**El casillero "sin totalizadora" está vacío**: toda categoría que ya está en el plan ya la tiene
+cargada. El hueco no son totalizadoras en blanco — son **17 categorías que no existen como
+cuenta**, y para esas no hay fila donde escribir nada:
+
+`Impuesto inmobiliario` · `Impuesto Red Vial` · `Impuesto Automotores` · `Impuesto IIBB` ·
+`Impuestos ARCA` · `Impuestos Laborales ARCA` · `Retenciones ARCA` · `CZ Ganadera` ·
+`Gastos Reintegro JMS` · + las 8 de retiros (`Distribucion Mama/Andres/Jose/Manuel/Mechi/Soledad`,
+`Retiro PAM`)
+
+⚠️ **Las 8 de retiros son un caso aparte**: ya están resueltas para el presupuesto (el template
+tiene `tipo = distribucion`) y **no cuelgan de una totalizadora de EGRESOS** — no son gasto. Si
+se les pone una, tiene que ser propia (tipo *DISTRIBUCION A SOCIOS*), no bajo Administración y
+Estructura.
+
+##### Por qué conviene NO hacerlo todavía — decisión del usuario
+> *"de cualquier manera es un tema de ordenamiento. ahora podemos dejarlo así también verdad?"*
+
+Sí, y hay un argumento activo para esperar: ordenar por totalizadora hoy **ordenaría 23 de 68
+templates** y mandaría los otros 45 a un cajón "sin clasificar". **Se leería peor que el
+alfabético actual.** Conviene hacerlo cuando estén las 17 categorías, no antes.
+
+Insumo listo: `Propuesta_plan_de_cuentas_2026-07-31.xlsx` (o regenerarlo con
+`npx tsx scripts/propuesta-plan-de-cuentas.ts`). Lo que hace falta del usuario por cada
+categoría: **número de cuenta** y **de qué totalizadora cuelga**. Decisión abierta suya: si
+quiere una cuenta por template o pocas cuentas con varios templates cada una (hoy
+`Impuesto inmobiliario` ya junta 42).
 
 Tiene todo el sentido: el pasado y el futuro deberían leerse con la misma grilla. Hoy no coinciden
 — el presupuesto agrupa los templates por `cuenta_agrupadora` (una convención propia) y las

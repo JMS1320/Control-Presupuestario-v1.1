@@ -2772,3 +2772,83 @@ Ver sección anterior para detalles completos.
 **Tipo**: Diseño arquitectura + implementación wizard
 **Resultado**: Wizard reestructurado ✅, Arquitectura FCI diseñada ✅, Implementación FCI pendiente ⏳
 
+
+---
+
+## 🚀 **AVANCES SESIÓN 2026-07-31 — `tipo` EN LOS TEMPLATES + SECCIONES EN EL PRESUPUESTO**
+
+Sesión corta y de fondo: se cerró el último agujero que hacía que los montos del presupuesto y
+del dashboard dieran mal, y se ordenó la grilla. **2 commits en `desarrollo`, los dos sin testear.**
+
+### ✅ C-27 — `tipo` en el template (`e0a7e19`)
+
+**Lo que estaba mal.** El tipo de un template se sacaba de `cuentas_contables` cruzando **por el
+nombre de la categoría**, y **70 de los 123 templates activos tienen una `categ` que no está en el
+plan**. Esos caían al **signo del monto**: todo débito era "egreso". Para los gastos acertaba de
+casualidad, pero mandaba los **retiros de socios a egresos operativos**.
+
+**Medido: 15 movimientos, $43,65 M** pasan de egresos a distribuciones. Se verificó que es el
+único grupo que cambia de sección.
+
+**El punto conceptual que costó ver.** Me resistí varias veces a agregar la columna con el
+argumento *"el plan ya tiene `tipo`, duplicarlo va a divergir"*. **Estaba mal**, y el usuario lo
+cortó: *"ya nos olvidamos de cómo trabaja los templates dentro de cuentas"*. No son el mismo
+dato — `cuentas_contables.tipo` clasifica **facturas**, `egresos_sin_factura.tipo` clasifica
+**templates**. Poblaciones distintas: no hay nada que pueda divergir, y el plan se sigue
+necesitando igual.
+
+**Qué se hizo**
+- `egresos_sin_factura.tipo` (enum `tipo_cuenta`) cargada en los **176** templates, activos e
+  inactivos: 150 egreso · 14 distribucion · 11 financiero · 1 ingreso. **No está en el backup**
+  (ALTER + UPDATE reconstructivo en `RECONSTRUCCION_SUPABASE` § 2026-07-31).
+- `resolverTipo()` / `tipoEfectivo()` / `origenTipo()` en `lib/presupuesto/templates.ts`. La
+  cascada `template → plan → signo` vive **ahí y en ningún otro lado**, y reporta cuál usó.
+- `useFinancialData` usa la cascada. **Además** se le sacó el `.eq("activo", true)` al cargar
+  templates: el resumen mira movimientos pasados y uno de un template dado de baja perdía su
+  clasificación.
+- **Wizard**: campo **Tipo** obligatorio, sugerido desde el plan al elegir la categoría.
+- `verificar-templates.ts`: 13 casos nuevos. Pasa.
+
+Cierra la **Fase 0 de C-24** por otro camino — y mejor, porque ya no depende de que la categoría
+exista en el plan.
+
+### ✅ C-22 paso 1 — secciones por tipo en el presupuesto (`7786b76`)
+
+La grilla listaba las agrupadoras **alfabéticas, todas mezcladas**, y cerraba en un único
+`TOTAL EGRESOS MSA` con los retiros escondidos adentro. Ahora se parte igual que
+`tabla-resumen-financiero.tsx`: **EGRESOS** y **DISTRIBUCIONES**, cada una con subtotal, mismos
+títulos y colores.
+
+**Ningún número cambió.** Los retiros siguen sumando en el TOTAL **a propósito** (el presupuesto
+es de caja y esa plata sale); la separación es para poder leerlo.
+
+- Las agrupadoras se arman por **`tipo` + nombre**: una que mezcle gasto con retiro aparece en
+  las dos secciones con su parte. `Agrupador` ganó `clave = tipo||nombre`.
+- El render se extrajo a `renderAgrupador()` (se llama una vez por sección).
+- **Guardarraíl**: un tipo sin sección **cae en EGRESOS**, nunca se omite — si se omitiera
+  seguiría sumando en el TOTAL sin aparecer en ninguna fila y el subtotal dejaría de cerrar en
+  silencio.
+
+### 🔍 Tres dudas del usuario, verificadas y cerradas (0 código)
+
+1. **¿El presupuesto duplica Anual vs Cuota?** **No.** El flag `activo` es el interruptor y está
+   bien mantenido: 41 Anual apagados, 1 prendido. `Lote Puerto` lo muestra cruzado (Inmobiliario
+   anual / Red Vial en cuotas). Los $57,7 M de cuotas viejas no entran.
+2. **¿Hay cuotas cargadas que nunca pasaron?** Casi ninguna: 14 vencidas en `pendiente`, 9 del
+   mes en curso. **Queda una**: `ABL Libertad Cuota` 2026-03 ($270 k).
+3. **¿Habría que exigir "conciliado" para presupuestar?** **No** — borraría las **128 cuotas
+   futuras**, que son el dato más firme. El usuario lo cerró: *"fue un error conceptual mío"*.
+
+### ⏳ C-22 paso 2 — decidido POSPONER
+
+Ordenar por totalizadora dentro de cada sección. **No es "llenar la totalizadora en el Excel"**:
+el casillero vacío no existe (0 templates en el plan sin totalizadora). Faltan **17 categorías
+que no son cuenta**, que afectan a 45 de 68 templates. Ordenar hoy acomodaría 23 y mandaría 45 a
+un cajón "sin clasificar" — **se leería peor que el alfabético actual**.
+
+---
+
+**Fecha sesión**: 2026-07-31
+**Tipo**: Fix de fondo (clasificación) + ordenamiento de la grilla
+**Resultado**: C-27 ✅ · C-22 paso 1 ✅ · 3 dudas verificadas ✅ · **todo SIN TESTEAR** ⏳
+**Operativo**: MCP quedó en `write` (devolver a read-only, A-OP-01) · merge a `main` pendiente
