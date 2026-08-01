@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,6 +52,7 @@ import {
   ETIQUETA_METODO,
   type TemplateInfo, type CuotaMes, type CeldaTemplate, type ConfigTemplate,
   type MetodoResuelto, type TipoCuenta,
+  tipoEfectivo,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
 
@@ -82,6 +83,8 @@ interface FilaTemplate {
   id: string
   nombre: string                       // nombre_referencia
   agrupador: string                    // cuenta_agrupadora
+  /** Naturaleza ya resuelta (template → plan → default). Decide en qué sección cae. */
+  tipo: TipoCuenta
   categ: string
   montos: Record<string, number>       // clave: "YYYY-MM"
   /** De dónde salió cada mes: cuota cargada o proyección. */
@@ -102,9 +105,27 @@ interface FilaSueldo {
 
 interface Agrupador {
   nombre: string
+  /** Sección en la que cae. Una misma agrupadora puede aparecer en dos si mezcla tipos. */
+  tipo: TipoCuenta
+  /** `tipo||nombre` — identifica la fila, porque el nombre solo puede repetirse entre secciones. */
+  clave: string
   expandido: boolean
   templates: FilaTemplate[]
 }
+
+/**
+ * Las secciones de la grilla, en el mismo orden y con los mismos colores que el dashboard
+ * (`tabla-resumen-financiero.tsx`). Que las dos pantallas se lean igual no es cosmético: el
+ * presupuesto se compara contra el dashboard mes a mes.
+ *
+ * `financiero` e `ingreso` no aparecen: no se proyectan como salida (`noEsGasto`), así que sus
+ * agrupadoras quedan en cero y se filtran solas. Están igual por si eso cambia.
+ */
+const SECCIONES_EGRESO: Array<{ tipo: TipoCuenta; titulo: string; fondo: string; texto: string; subtotal: string }> = [
+  { tipo: "egreso",       titulo: "EGRESOS",       fondo: "bg-red-50",    texto: "text-red-800",    subtotal: "bg-red-100" },
+  { tipo: "distribucion", titulo: "DISTRIBUCIONES", fondo: "bg-purple-50", texto: "text-purple-800", subtotal: "bg-purple-100" },
+  { tipo: "financiero",   titulo: "FINANCIEROS",   fondo: "bg-yellow-50", texto: "text-yellow-800", subtotal: "bg-yellow-100" },
+]
 
 /**
  * INGRESOS — arrendamientos agrícolas. Tres filas por campo (centro de costo):
@@ -523,15 +544,24 @@ export function TabPresupuesto() {
     const aviso = avisoFaltaGenerar(proyeccion)
     setAvisoGen(aviso.templates > 0 ? aviso : null)
 
-    // Construir filas por agrupador
-    const mapaAgrupadores: Record<string, FilaTemplate[]> = {}
+    // Construir filas por TIPO + agrupador. Se parte por tipo igual que el dashboard: una
+    // agrupadora que mezclara gasto con retiro aparece en las dos secciones con su parte, en
+    // vez de que una de las dos se coma a la otra.
+    const mapaAgrupadores: Record<string, { nombre: string; tipo: TipoCuenta; filas: FilaTemplate[] }> = {}
     for (const t of templates) {
       const agrupador = t.cuenta_agrupadora || "Sin agrupador"
-      if (!mapaAgrupadores[agrupador]) mapaAgrupadores[agrupador] = []
-      mapaAgrupadores[agrupador].push({
+      const info = proyeccion[t.id]?.info
+      const resuelto = (info && tipoEfectivo(info)) || "egreso"
+      // Si el tipo no tiene sección, cae en EGRESOS. Nunca dejarlo afuera: seguiría sumando
+      // en el TOTAL sin aparecer en ninguna fila, y el subtotal dejaría de cerrar en silencio.
+      const tipo: TipoCuenta = SECCIONES_EGRESO.some(s => s.tipo === resuelto) ? resuelto : "egreso"
+      const clave = `${tipo}||${agrupador}`
+      if (!mapaAgrupadores[clave]) mapaAgrupadores[clave] = { nombre: agrupador, tipo, filas: [] }
+      mapaAgrupadores[clave].filas.push({
         id: t.id,
         nombre: t.nombre_referencia,
         agrupador,
+        tipo,
         categ: t.categ,
         montos: mapaMontos[t.id] || {},
         celdas: mapaCeldas[t.id] || {},
@@ -543,15 +573,15 @@ export function TabPresupuesto() {
 
     // Filtrar agrupadores que tienen al menos algún monto en el período
     const listaAgrupadores: Agrupador[] = Object.entries(mapaAgrupadores)
-      .filter(([, filas]) => filas.some(f => Object.values(f.montos).some(m => m > 0)))
-      .map(([nombre, filas]) => ({ nombre, expandido: false, templates: filas }))
+      .filter(([, g]) => g.filas.some(f => Object.values(f.montos).some(m => m > 0)))
+      .map(([clave, g]) => ({ nombre: g.nombre, tipo: g.tipo, clave, expandido: false, templates: g.filas }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre))
 
     setAgrupadores(listaAgrupadores)
 
     // Inicializar todos colapsados
     const initExpand: Record<string, boolean> = {}
-    listaAgrupadores.forEach(a => { initExpand[a.nombre] = false })
+    listaAgrupadores.forEach(a => { initExpand[a.clave] = false })
     setExpandidos(initExpand)
   }
 
@@ -907,7 +937,7 @@ export function TabPresupuesto() {
 
   const toggleTodos = (expandir: boolean) => {
     const nuevo: Record<string, boolean> = {}
-    agrupadores.forEach(a => { nuevo[a.nombre] = expandir })
+    agrupadores.forEach(a => { nuevo[a.clave] = expandir })
     nuevo["__sueldos__"] = expandir
     setExpandidos(nuevo)
   }
@@ -944,6 +974,52 @@ export function TabPresupuesto() {
     }
     return totales
   }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, meses])
+
+  /**
+   * Subtotal por sección (tipo), como en el dashboard.
+   *
+   * Los bloques que NO son templates —sueldos, cuentas contables, costos de producción,
+   * IIBB— son todos gasto operativo, así que se suman a `egreso`. Si algún día alguno deja
+   * de serlo, hay que sacarlo de acá y no sólo de la grilla.
+   */
+  const subtotalPorSeccion = useMemo(() => {
+    const out: Record<string, Record<string, number>> = {}
+    for (const s of SECCIONES_EGRESO) out[s.tipo] = {}
+
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      for (const s of SECCIONES_EGRESO) {
+        let suma = 0
+        for (const ag of agrupadores) {
+          if (ag.tipo !== s.tipo) continue
+          for (const f of ag.templates) suma += f.montos[clave] || 0
+        }
+        out[s.tipo]![clave] = suma
+      }
+
+      // Todo lo que no viene de un template va a EGRESOS.
+      let extra = 0
+      for (const s of sueldoFilas) extra += s.montos[clave] || 0
+      extra += ganaderia.reduce((acc, g) => acc + (g.iibb[clave] || 0), 0)
+      extra += hacienda.iibb[clave] || 0
+      const ant = new Date(m.anio, m.mes - 2, 1)
+      const claveAnt = `${ant.getFullYear()}-${String(ant.getMonth() + 1).padStart(2,"0")}`
+      const ventaAnt = campos.reduce(
+        (a, c) => a + (c.fijado[claveAnt] || 0) + (c.presupuestado[claveAnt] || 0) + (c.disponible[claveAnt] || 0), 0)
+      extra += ventaAnt * ALICUOTA_IIBB_ARRENDAMIENTO
+      for (const c of cuentas) extra += c.celdas.find(x => x.mes === clave)?.monto || 0
+      for (const c of costoProd) extra += c.montos[clave] || 0
+      out["egreso"]![clave] = (out["egreso"]![clave] || 0) + extra
+    }
+    return out
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, meses])
+
+  /** Secciones que tienen algo que mostrar, en el orden del dashboard. */
+  const seccionesVisibles = useMemo(
+    () => SECCIONES_EGRESO.filter(s =>
+      agrupadores.some(a => a.tipo === s.tipo) ||
+      Object.values(subtotalPorSeccion[s.tipo] || {}).some(v => v > 0)),
+    [agrupadores, subtotalPorSeccion])
 
   const totalCuentasPorMes = useMemo(() => {
     const t: Record<string, number> = {}
@@ -1061,6 +1137,125 @@ export function TabPresupuesto() {
   }
 
   const mesActualClave = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`
+
+  /**
+   * Una agrupadora con sus templates. Extraido a funcion porque ahora se llama una vez
+   * por seccion (EGRESOS / DISTRIBUCIONES), en vez de un unico map sobre todo.
+   */
+  const renderAgrupador = (ag: Agrupador) => {
+    const expandido = expandidos[ag.clave] ?? false
+
+    // Total del agrupador por mes
+    const totalesAg: Record<string, number> = {}
+    for (const m of meses) {
+      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+      totalesAg[clave] = ag.templates.reduce((s, f) => s + (f.montos[clave] || 0), 0)
+    }
+    const tieneAlgo = Object.values(totalesAg).some(v => v > 0)
+    if (!tieneAlgo) return null
+
+    return (
+      <Fragment key={ag.clave}>
+        {/* Fila agrupador */}
+        <tr
+          key={`ag-${ag.nombre}`}
+          className="border-b bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
+          onClick={() => toggleAgrupador(ag.clave)}
+        >
+          <td className="sticky left-0 z-10 bg-gray-100 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+            {expandido
+              ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+              : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+            }
+            {ag.nombre}
+          </td>
+          {meses.map(m => {
+            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+            const esActual = clave === mesActualClave
+            return (
+              <td
+                key={clave}
+                className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                  esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
+                }`}
+              >
+                {fmt(totalesAg[clave] || 0)}
+              </td>
+            )
+          })}
+        </tr>
+
+        {/* Filas hijas: sub-agrupadas por categoria cuando eso ordena algo.
+            "Impuestos Rurales" mezcla 11 inmobiliarios con 10 de red vial y
+            leerlo es imposible; "Gastos Bancarios" tiene una categoria por
+            template y sub-agruparlo seria puro anidado vacio. Por eso solo se
+            sub-agrupa si hay 2+ categorias y alguna junta mas de un template.
+            Sale todo de datos que YA existen: no se creo ninguna categoria. */}
+        {expandido && (subAgrupa(ag)
+          ? porCateg(ag.templates).map(([categ, hijos]) => {
+            const claveSub = `${ag.clave}||${categ}`
+            const subAbierto = expandidos[claveSub] ?? false
+            const totalesSub: Record<string, number> = {}
+            for (const m of meses) {
+              const k = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+              totalesSub[k] = hijos.reduce((x, f) => x + (f.montos[k] || 0), 0)
+            }
+            return (
+              <>
+                <tr key={`sub-${claveSub}`}
+                  className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100"
+                  onClick={() => toggleAgrupador(claveSub)}>
+                  <td className="sticky left-0 z-10 bg-gray-50 px-4 py-1.5 pl-8 text-xs font-medium text-gray-600 flex items-center gap-1">
+                    {subAbierto
+                      ? <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />
+                      : <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
+                    }
+                    {categ}
+                    <span className="ml-1 text-gray-400">({hijos.length})</span>
+                  </td>
+                  {meses.map(m => {
+                    const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                    return (
+                      <td key={clave}
+                        className={`px-3 py-1.5 text-right text-xs font-medium text-gray-600 ${
+                          clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                        {fmt(totalesSub[clave] || 0)}
+                      </td>
+                    )
+                  })}
+                </tr>
+                {subAbierto && hijos.map(t => (
+                  <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
+                    <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-14 text-gray-600 text-xs">
+                      {t.nombre}
+                      <EtiquetaMetodo t={t} />
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
+                    })}
+                  </tr>
+                ))}
+              </>
+            )
+          })
+          : ag.templates.map(t => (
+            <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
+              <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-gray-600 text-xs">
+                {t.nombre}
+                <span className="ml-2 text-gray-400">{t.categ}</span>
+                <EtiquetaMetodo t={t} />
+              </td>
+              {meses.map(m => {
+                const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
+              })}
+            </tr>
+          ))
+        )}
+      </Fragment>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -1355,121 +1550,19 @@ Clic para presupuestar la venta`}
                   </>
                 )}
 
-                {/* ── Agrupadores / Templates ── */}
-                {agrupadores.map(ag => {
-                  const expandido = expandidos[ag.nombre] ?? false
+                {/* ══ EGRESOS ─ la seccion grande: templates + sueldos + cuentas + costos + IIBB ══
+                    Mismo orden y colores que el dashboard (`tabla-resumen-financiero.tsx`),
+                    para poder comparar las dos pantallas mes a mes sin traducir nada. */}
+                {seccionesVisibles.filter(s => s.tipo === "egreso").map(s => (
+                  <tr key={`sec-${s.tipo}`} className={`border-t-2 border-gray-300 ${s.fondo}`}>
+                    <td className={`sticky left-0 z-10 ${s.fondo} px-4 py-2 font-bold text-xs tracking-wide ${s.texto}`}>
+                      {s.titulo}
+                    </td>
+                    {meses.map(m => <td key={`${m.anio}-${m.mes}`} className={s.fondo} />)}
+                  </tr>
+                ))}
 
-                  // Total del agrupador por mes
-                  const totalesAg: Record<string, number> = {}
-                  for (const m of meses) {
-                    const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                    totalesAg[clave] = ag.templates.reduce((s, f) => s + (f.montos[clave] || 0), 0)
-                  }
-                  const tieneAlgo = Object.values(totalesAg).some(v => v > 0)
-                  if (!tieneAlgo) return null
-
-                  return (
-                    <>
-                      {/* Fila agrupador */}
-                      <tr
-                        key={`ag-${ag.nombre}`}
-                        className="border-b bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
-                        onClick={() => toggleAgrupador(ag.nombre)}
-                      >
-                        <td className="sticky left-0 z-10 bg-gray-100 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
-                          {expandido
-                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
-                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />
-                          }
-                          {ag.nombre}
-                        </td>
-                        {meses.map(m => {
-                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                          const esActual = clave === mesActualClave
-                          return (
-                            <td
-                              key={clave}
-                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
-                                esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""
-                              }`}
-                            >
-                              {fmt(totalesAg[clave] || 0)}
-                            </td>
-                          )
-                        })}
-                      </tr>
-
-                      {/* Filas hijas: sub-agrupadas por categoria cuando eso ordena algo.
-                          "Impuestos Rurales" mezcla 11 inmobiliarios con 10 de red vial y
-                          leerlo es imposible; "Gastos Bancarios" tiene una categoria por
-                          template y sub-agruparlo seria puro anidado vacio. Por eso solo se
-                          sub-agrupa si hay 2+ categorias y alguna junta mas de un template.
-                          Sale todo de datos que YA existen: no se creo ninguna categoria. */}
-                      {expandido && (subAgrupa(ag)
-                        ? porCateg(ag.templates).map(([categ, hijos]) => {
-                          const claveSub = `${ag.nombre}||${categ}`
-                          const subAbierto = expandidos[claveSub] ?? false
-                          const totalesSub: Record<string, number> = {}
-                          for (const m of meses) {
-                            const k = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                            totalesSub[k] = hijos.reduce((x, f) => x + (f.montos[k] || 0), 0)
-                          }
-                          return (
-                            <>
-                              <tr key={`sub-${claveSub}`}
-                                className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100"
-                                onClick={() => toggleAgrupador(claveSub)}>
-                                <td className="sticky left-0 z-10 bg-gray-50 px-4 py-1.5 pl-8 text-xs font-medium text-gray-600 flex items-center gap-1">
-                                  {subAbierto
-                                    ? <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />
-                                    : <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />
-                                  }
-                                  {categ}
-                                  <span className="ml-1 text-gray-400">({hijos.length})</span>
-                                </td>
-                                {meses.map(m => {
-                                  const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                                  return (
-                                    <td key={clave}
-                                      className={`px-3 py-1.5 text-right text-xs font-medium text-gray-600 ${
-                                        clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
-                                      {fmt(totalesSub[clave] || 0)}
-                                    </td>
-                                  )
-                                })}
-                              </tr>
-                              {subAbierto && hijos.map(t => (
-                                <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
-                                  <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-14 text-gray-600 text-xs">
-                                    {t.nombre}
-                                    <EtiquetaMetodo t={t} />
-                                  </td>
-                                  {meses.map(m => {
-                                    const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                                    return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
-                                  })}
-                                </tr>
-                              ))}
-                            </>
-                          )
-                        })
-                        : ag.templates.map(t => (
-                          <tr key={t.id} className="border-b hover:bg-gray-50 transition-colors">
-                            <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-gray-600 text-xs">
-                              {t.nombre}
-                              <span className="ml-2 text-gray-400">{t.categ}</span>
-                              <EtiquetaMetodo t={t} />
-                            </td>
-                            {meses.map(m => {
-                              const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                              return <CeldaTpl key={clave} t={t} clave={clave} esActual={clave === mesActualClave} />
-                            })}
-                          </tr>
-                        ))
-                      )}
-                    </>
-                  )
-                })}
+                {agrupadores.filter(ag => ag.tipo === "egreso").map(renderAgrupador)}
 
                 {/* ── Sueldos ── */}
                 {sueldoFilas.length > 0 && (() => {
@@ -1678,11 +1771,70 @@ Clic para presupuestar la venta`}
                   )
                 })()}
 
-                {/* ── Total general ── */}
+
+                {/* ── Subtotal EGRESOS ── */}
+                {seccionesVisibles.filter(s => s.tipo === "egreso").map(s => (
+                  <tr key={`sub-${s.tipo}`} className={`border-t ${s.subtotal}`}>
+                    <td className={`sticky left-0 z-10 ${s.subtotal} px-4 py-2 font-bold ${s.texto}`}>
+                      Subtotal {s.titulo.toLowerCase()}
+                    </td>
+                    {meses.map(m => {
+                      const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                      const esActual = clave === mesActualClave
+                      return (
+                        <td key={clave} className={`px-3 py-2 text-right font-bold ${s.texto} ${esActual ? "border-l-2 border-blue-300" : ""}`}>
+                          {fmt(subtotalPorSeccion[s.tipo]?.[clave] || 0)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+
+                {/* ══ DISTRIBUCIONES (y financieros, si alguna vez se proyectan) ══
+                    Los retiros de socios SI son salida de caja — por eso se presupuestan y
+                    entran en el TOTAL — pero no son gasto operativo: verlos aparte es la unica
+                    forma de saber cuanto del egreso es estructura y cuanto es reparto. */}
+                {seccionesVisibles.filter(s => s.tipo !== "egreso").map(s => (
+                  <Fragment key={`sec-${s.tipo}`}>
+                    <tr className={`border-t-2 border-gray-300 ${s.fondo}`}>
+                      <td className={`sticky left-0 z-10 ${s.fondo} px-4 py-2 font-bold text-xs tracking-wide ${s.texto}`}>
+                        {s.titulo}
+                      </td>
+                      {meses.map(m => <td key={`${m.anio}-${m.mes}`} className={s.fondo} />)}
+                    </tr>
+
+                    {agrupadores.filter(ag => ag.tipo === s.tipo).map(renderAgrupador)}
+
+                    <tr className={`border-t ${s.subtotal}`}>
+                      <td className={`sticky left-0 z-10 ${s.subtotal} px-4 py-2 font-bold ${s.texto}`}>
+                        Subtotal {s.titulo.toLowerCase()}
+                      </td>
+                      {meses.map(m => {
+                        const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                        const esActual = clave === mesActualClave
+                        return (
+                          <td key={clave} className={`px-3 py-2 text-right font-bold ${s.texto} ${esActual ? "border-l-2 border-blue-300" : ""}`}>
+                            {fmt(subtotalPorSeccion[s.tipo]?.[clave] || 0)}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  </Fragment>
+                ))}
+
+                {/* ── Total general ──
+                    Suma TODAS las secciones. Los retiros van adentro a propósito: el
+                    presupuesto es de caja y esa plata sale. La separación de arriba es para
+                    poder leerlo, no para excluirlo. */}
                 <tr className="border-t-2 border-gray-400 bg-gray-800">
                   <td className="sticky left-0 z-10 bg-gray-800 px-4 py-3 font-bold text-white flex items-center gap-2">
                     <TrendingDown className="h-4 w-4" />
                     TOTAL EGRESOS MSA
+                    {seccionesVisibles.some(s => s.tipo !== "egreso") && (
+                      <span className="font-normal text-[10px] text-gray-300">
+                        (incluye distribuciones)
+                      </span>
+                    )}
                   </td>
                   {meses.map(m => {
                     const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`

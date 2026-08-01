@@ -681,12 +681,36 @@ mensual) y conviene guardar sin que ensucie las proyecciones.
 
 ## 📊 Presupuesto → leer la grilla
 
+### Cómo está ordenada *(cambió 2026-07-31, sin testear)*
+
+La grilla usa **las mismas secciones que el Dashboard**, en el mismo orden y con los mismos
+colores, para poder comparar las dos pantallas mes a mes sin traducir nada:
+
+```
+INGRESOS          arrendamientos · ganadería · hacienda
+EGRESOS (rojo)    templates ▶ · Sueldos · Cuentas contables · Costos de producción · IIBB
+                  Subtotal egresos
+DISTRIBUCIONES    Retiros / Distribución Socios ▶
+  (violeta)       Subtotal distribuciones
+──────────────────────────────────────────────
+TOTAL EGRESOS MSA (incluye distribuciones)
+RESULTADO
+SALDO ACUMULADO
+```
+
+**Por qué los retiros van aparte pero igual suman.** El presupuesto es **de caja**: cuando
+retirás plata, sale. Por eso el retiro entra en el TOTAL igual que un gasto. Pero **no es gasto
+operativo**, y mezclarlo te impide contestar la pregunta que importa: *¿cuánto me cuesta la
+empresa y cuánto estamos repartiendo?* Con las dos secciones separadas lo leés directo.
+
+En qué sección cae cada template lo decide su campo **Tipo** (ver *Renovar Campaña → El campo
+Tipo*). Si cambiás el Tipo de un template, cambia de sección.
+
 ### Qué bloques suman
-El presupuesto junta en un solo TOTAL EGRESOS: **templates** (sus cuotas), **sueldos**,
-**cuentas contables** (lo que llega por factura), **costos de producción** (derivados de las
-actividades del lote) e **IIBB**. Ninguno se pisa con otro: las cuentas de producción salen
-excluidas porque ya entran por Actividades, y Federación Patronal se descuenta de su cuenta
-porque va por template.
+Dentro de EGRESOS: **templates** (sus cuotas), **sueldos**, **cuentas contables** (lo que llega
+por factura), **costos de producción** (derivados de las actividades del lote) e **IIBB**.
+Ninguno se pisa con otro: las cuentas de producción salen excluidas porque ya entran por
+Actividades, y Federación Patronal se descuenta de su cuenta porque va por template.
 
 Cada bloque se abre con el ▶ y se puede ver su detalle.
 

@@ -139,6 +139,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
 | B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
 | C-17 / C-19 | 🔴 | Alta | **Cerrar el presupuesto como una sola cosa.** (a) **C-19**: bajar el bloque de cuentas contables a la grilla y sumarlo al TOTAL EGRESOS (hoy está en un panel aparte a propósito, ver cierre de sesión); (b) **C-7**: ídem costos de producción, que ya se calculan por tramo pero no bajan; (c) **C-17**: proyectar los templates donde no hay cuota cargada — las cuotas se cortan en dic-2026. La distinción de qué template quiere el usuario cargado a mano ya existe en `egresos_sin_factura.aplica_generacion` (true = Cargas Sociales, SICORE, UATRE… = avisar 'falta generar la campaña'; false/null = proyectar en silencio). 2026-07-30. |
+| C-22 | 🟡 | Media | **Estructura del dashboard en el presupuesto** — **paso 1 HECHO** (2026-07-31, sin testear): la grilla se parte en secciones **EGRESOS / DISTRIBUCIONES** con subtotal cada una, mismos títulos y colores que `tabla-resumen-financiero.tsx`. Los retiros dejan de estar escondidos dentro del total (siguen sumando: el presupuesto es de caja). Ningún número cambió. **Falta el paso 2**: dentro de cada sección ordenar por `nombre_totalizadora` en vez de alfabético — eso sí depende de la Fase 1 de C-24. Dossier § C-22. |
 | C-27 | ✅ | — | **`tipo` en el template** (2026-07-31, **sin testear**) — columna `egresos_sin_factura.tipo` cargada en los **176** templates (150 egreso · 14 distribucion · 11 financiero · 1 ingreso). Cascada `template.tipo ?? cuenta.tipo ?? signo` en `resolverTipo()` (`lib/presupuesto/templates.ts`), usada por el dashboard y el presupuesto. **Cierra la Fase 0 de C-24 por otro camino**: el template ya no depende de que su categoría esté en el plan (70 de 123 activos no lo estaban). **Efecto medido: $43,65 M en 15 movimientos pasan de egresos operativos a distribuciones.** El wizard ahora pide el Tipo. Dossier § C-27. |
 | C-26 | 🔴 | Alta | **Las otras dos puertas de alta crean templates incompletos** — el **wizard ya está arreglado** (C-27: pide Tipo y lo sugiere desde el plan), pero `modal-crear-template-faltante` (toma la categ del movimiento bancario) y `generador-renovacion-campana` (clona la del original) siguen creando sin `tipo` y ofreciendo las 23 categorías huérfanas. Hoy no rompen porque la cascada los salva, pero el hueco vuelve de a poco. Falta además que las tres lean las categorías **del plan** y no de los templates. Conviene una pieza compartida, como `SelectorCuentaContable`. 2026-07-31. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
@@ -1692,7 +1693,9 @@ a nada. → **C-25**.
    `egresos_sin_factura`, `reglas_conciliacion` y las copias del extracto.
 
 **Fase 4 — el presupuesto**
-9. Reordenar la grilla por `tipo` → totalizadora (C-22).
+9. Reordenar la grilla por `tipo` → totalizadora (C-22). **`tipo` ya está hecho** (secciones
+   EGRESOS / DISTRIBUCIONES con subtotal, patrón del dashboard); falta la totalizadora, que sí
+   depende de la Fase 1.
 
 
 ##### 🔁 C-26 · El wizard perpetúa el problema — lo hallado al preguntar por él
@@ -1958,11 +1961,59 @@ de producción, SICORE si algún día se deriva), el template del mismo concepto
 
 ---
 
-#### 🏛️ C-22 · USAR LA ESTRUCTURA DEL DASHBOARD EN EL PRESUPUESTO *(2026-07-31, pendiente)*
+#### 🏛️ C-22 · USAR LA ESTRUCTURA DEL DASHBOARD EN EL PRESUPUESTO
+*(2026-07-31 — **PASO 1 HECHO** (secciones por `tipo`), falta el paso 2 (totalizadoras). Sin testear.)*
 
 > *"los agrupadores macro que encontraste, fijate que se usaron para ordenar el dashboard que
 > registra y reporta el pasado. Esa misma estructura de organización deberíamos usarla para el
 > presupuesto."*
+
+---
+
+##### ✅ PASO 1 — secciones por tipo, con el patrón del dashboard *(hecho)*
+
+> *"dale, hacelo con el patrón del dashboard"*
+
+Antes: el presupuesto listaba las agrupadoras **en orden alfabético, todas mezcladas**, y cerraba
+con un único `TOTAL EGRESOS MSA`. Los retiros de socios quedaban adentro sin distinguirse — el
+monto estaba bien (es caja que sale) pero no se podía leer cuánto del egreso era estructura y
+cuánto reparto.
+
+Ahora la grilla se parte igual que `tabla-resumen-financiero.tsx`, mismos títulos y colores:
+
+```
+INGRESOS — Arrendamientos · ganadería · hacienda
+EGRESOS            (rojo)     agrupadoras ▶ · Sueldos · Cuentas contables · Costos · IIBB
+                              Subtotal egresos
+DISTRIBUCIONES     (violeta)  Retiros / Distribucion Socios ▶
+                              Subtotal distribuciones
+TOTAL EGRESOS MSA  (incluye distribuciones)
+RESULTADO
+SALDO ACUMULADO
+```
+
+**Ningún número cambió** — es presentación. El TOTAL sigue sumando todo, y los retiros siguen
+adentro **a propósito**: el presupuesto es de caja y esa plata sale. La separación es para poder
+leerlo, no para excluirlo. Cuando hay distribuciones, el total lo aclara.
+
+**Detalles de implementación**
+- Las agrupadoras se arman por **`tipo` + nombre**, no sólo por nombre: si una mezclara gasto con
+  retiro, aparece en las dos secciones con su parte. Igual que el dashboard. Por eso `Agrupador`
+  ganó `clave = tipo||nombre` — el nombre solo ya no identifica una fila.
+- El render de una agrupadora se extrajo a `renderAgrupador()`, porque ahora se llama una vez
+  por sección.
+- `financiero` está declarado como sección aunque hoy no aparezca: sus templates dan
+  `no_proyectar`, quedan en cero y se filtran solos.
+- ⚠️ **Guardarraíl**: un agrupador cuyo tipo no tenga sección **cae en EGRESOS**, nunca se omite.
+  Si se omitiera seguiría sumando en el TOTAL sin aparecer en ninguna fila y el subtotal dejaría
+  de cerrar **en silencio** — la misma familia de bug que veníamos arrastrando.
+
+**En MSA la sección DISTRIBUCIONES muestra** `Retiro MA mensual` (~$8 M a futuro) y `Retiro PAM`
+(~$350 k). Los 5 semestrales MSA todavía no tienen cuotas, así que no proyectan.
+
+##### ⏳ PASO 2 — bajar a totalizadora *(pendiente)*
+Dentro de cada sección, ordenar por `nombre_totalizadora` en vez de alfabético. Eso es lo que
+sigue abajo y depende de la Fase 1 de C-24 (faltan `nro_cuenta`/`cta_totalizadora` en 22 cuentas).
 
 Tiene todo el sentido: el pasado y el futuro deberían leerse con la misma grilla. Hoy no coinciden
 — el presupuesto agrupa los templates por `cuenta_agrupadora` (una convención propia) y las

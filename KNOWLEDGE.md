@@ -1029,3 +1029,26 @@ hace ocho meses cuyo template se dio de baja **perdía su clasificación** y ca�
 dado de baja después.
 
 **Tags**: `#activo` `#historico` `#filtro-de-mas`
+
+---
+
+## Si un total se parte en subtotales, el resto tiene que caer en alguno `#ui #totales #2026-07-31`
+
+Al partir la grilla del presupuesto en secciones por `tipo` (EGRESOS / DISTRIBUCIONES) apareció
+un agujero silencioso: si una agrupadora tuviera un tipo **sin sección definida**, no se
+renderizaría en ninguna fila — pero **seguiría sumando en el TOTAL**, que se calcula aparte
+recorriendo todo. El usuario vería un total que no coincide con la suma de lo que tiene delante,
+sin nada que se lo indique.
+
+Hoy no puede pasar (`financiero` e `ingreso` dan `no_proyectar` y quedan filtrados en cero),
+pero "hoy no puede pasar" no es una garantía: alcanza con que alguien agregue un valor al enum.
+
+**La regla**: cuando un total se descompone en secciones, la asignación a sección tiene que ser
+**total** — con un default explícito que capture lo no previsto, no un filtro que lo descarte.
+Acá: lo que no tiene sección cae en EGRESOS, que es el default seguro del resto del sistema.
+
+**El olor a evitar**: `items.filter(x => x.tipo === s.tipo)` repetido por sección, sin nada que
+garantice que la unión de los filtros sea el conjunto entero. Un `filter` por sección descarta
+en silencio; un `switch` con `default` obliga a decidir.
+
+**Tags**: `#subtotales` `#no-cierra` `#default-explicito` `#particion-total`
