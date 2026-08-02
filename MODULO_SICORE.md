@@ -1067,7 +1067,7 @@ neto_pagado = anticipo.monto - monto_sicore - descuento_aplicado
 
 ## 28. Integración SICORE + ECHEQ (2026-03-20)
 
-Cuando el pago se realiza con un cheque electrónico, el flujo SICORE se combina con el flujo ECHEQ. Ver documentación completa en **ECHEQ.md**. Puntos clave:
+Cuando el pago se realiza con un cheque electrónico, el flujo SICORE se combina con el flujo ECHEQ. Ver documentación completa en **`MODULO_ECHEQ.md`**. Puntos clave:
 
 ### 28.1. La quincena se calcula por `fecha_emision` del ECHEQ
 

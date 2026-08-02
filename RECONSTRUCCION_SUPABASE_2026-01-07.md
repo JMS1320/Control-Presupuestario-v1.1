@@ -1,5 +1,11 @@
 # 🏗️ RECONSTRUCCIÓN SUPABASE - 2026-01-07
 
+> ⚠️ **Nombres de archivo desactualizados (2026-08-02).** Los docs de módulo citados en este
+> archivo se renombraron a `MODULO_*.md` (ej. `DISEÑO_TERNEROS.md` → `MODULO_TERNEROS.md`,
+> `SICORE.md` → `MODULO_SICORE.md`). El contenido de este documento sigue vigente; sólo cambiaron
+> los nombres. Mapa completo → `PENDIENTES.md` § A-DOC-02.
+> (Este archivo **sí** se actualiza: recibe los ALTERs post-backup en § CAMBIOS POST-RECONSTRUCCIÓN.)
+
 ## 📋 CONTEXTO INICIAL
 
 **Fecha inicio:** 2026-01-07 20:45 (Argentina)
@@ -10965,6 +10971,61 @@ a3fb0ab - Feature: reglas de conciliacion filtradas por cuenta bancaria
 
 ---
 
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-18 · Templates: `periodicidad` + `aplica_generacion`
+
+**Contexto:** para la **regeneración de campaña de templates** (renovar cuotas al nuevo período). Antes anual/bianual se **infería** del formato del string `año` (`"2026"` vs `"25/26"`) — frágil, y el wizard solo escribía single-year. Ahora es dato explícito. Ver `MANUAL-USO.md` § Templates y `PENDIENTES.md` → B-FEAT-RENOVAR-CAMPAÑA. **NO está en el backup original.**
+
+```sql
+ALTER TABLE public.egresos_sin_factura
+  ADD COLUMN IF NOT EXISTS periodicidad text,       -- 'anual' (calendario) | 'bianual' (campaña jul-jun)
+  ADD COLUMN IF NOT EXISTS aplica_generacion boolean; -- entra a la regeneración automática (independiente de fijo/abierto)
+
+-- Siembra periodicidad desde el formato de "año":
+UPDATE public.egresos_sin_factura SET periodicidad = CASE
+  WHEN "año" LIKE '%/%'     THEN 'bianual'
+  WHEN "año" ~ '^[0-9]{4}$' THEN 'anual'
+  ELSE NULL END
+WHERE periodicidad IS NULL;
+
+-- Siembra aplica_generacion SOLO bianuales (decisión del usuario); anuales quedan NULL (a decidir en el generador):
+UPDATE public.egresos_sin_factura SET aplica_generacion = true  WHERE periodicidad='bianual' AND tipo_template='fijo';
+UPDATE public.egresos_sin_factura SET aplica_generacion = false WHERE periodicidad='bianual' AND tipo_template='abierto';
+UPDATE public.egresos_sin_factura SET aplica_generacion = true  WHERE nombre_referencia='Tarjeta Visa Business MSA'; -- abierto pero regenera (monto estimado)
+```
+
+Resultado siembra (activos): bianual fijo=true ×10 (9 MSA + Acciones), bianual abierto=false ×3 (Caja, Interbancaria BAPRO/Santander), bianual abierto=true ×1 (Tarjeta Visa Business MSA), anual (58 fijo + 46 abierto)=NULL, sin año ×2=NULL. El **wizard** (`wizard-templates-egresos.tsx`) ahora captura ambos campos y arma `año` según periodicidad (bianual → etiqueta campaña "26/27").
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-18 · Sueldos: lock "mes de trabajo" (`sueldos.config`)
+
+**Contexto:** módulo Sueldos gana un **lock de mes editable** ("mes de trabajo"): un único mes se puede editar; el resto se ve en solo lectura. El lock persiste en una tabla de config de una sola fila. Ver `MANUAL-USO.md` § Sueldos y `PENDIENTES.md` → B-FEAT-RENOVAR-CAMPAÑA (punto 1). **NO está en el backup original.**
+
+```sql
+-- Patrón espejo del resto de sueldos: sueldos.X (tabla base) + public.sueldos_X (vista auto-actualizable). Sin RLS (como sueldos.campanas).
+CREATE TABLE IF NOT EXISTS sueldos.config (
+  id smallint PRIMARY KEY DEFAULT 1,
+  mes_trabajo_anio smallint,
+  mes_trabajo_mes  smallint,
+  updated_at timestamptz DEFAULT now(),
+  CONSTRAINT sueldos_config_single_row CHECK (id = 1)   -- garantiza una sola fila
+);
+
+INSERT INTO sueldos.config (id, mes_trabajo_anio, mes_trabajo_mes)
+VALUES (1, 2026, 6) ON CONFLICT (id) DO NOTHING;         -- seed: lock inicial en junio 2026
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON sueldos.config TO anon, authenticated, service_role;
+
+CREATE OR REPLACE VIEW public.sueldos_config AS
+  SELECT id, mes_trabajo_anio, mes_trabajo_mes, updated_at FROM sueldos.config;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.sueldos_config TO anon, authenticated, service_role;
+```
+
+La app lee/escribe vía `supabase.from('sueldos_config')` (id=1). El lock se mueve con el botón "Trabajar en este mes" (`moverLock` en `tab-sueldos.tsx`).
+
+---
+
 ## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-04 · Refactor fechas (fecha_pago)
 
 **Contexto:** se separa `fecha_pago` (fecha real de pago) de `fecha_vencimiento` (firme). Detalle y plan de test: `PENDIENTES.md` → A-TEST-06. **NO están en el backup original.**
@@ -11054,3 +11115,610 @@ CREATE INDEX IF NOT EXISTS idx_mails_pago_estado ON public.mails_pago (estado);
 
 -- Aplicado 2026-07-10 (aditivo): toggle para adjuntar (o no) el Detalle PDF
 ALTER TABLE public.mails_pago ADD COLUMN IF NOT EXISTS adjuntar_detalle boolean DEFAULT true;
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-26 · Presupuesto de INGRESOS (arrendamientos agrícolas)
+
+5 tablas nuevas en `public`. **NO están en el backup** — re-crearlas ante una reconstrucción.
+Diseño completo (fórmulas, reglas de movimiento, IIBB, UI) → `DISEÑO_PRESUPUESTO.md`
+§ INGRESOS — Arrendamientos agrícolas.
+
+**Por qué todo en `public` y no en un schema propio**: TC/IPC/precios son datos macro
+multiempresa; contratos/cuotas son tablas de Ventas. Un schema aparte obliga a exponerlo en
+`pgrst.db_schemas` (no queda en el backup) y arrastra la trampa de `.schema()` antes de `.from()`.
+Los contratos llevan columna `empresa` en vez de triplicar estructura por schema.
+
+```sql
+CREATE TABLE public.tipos_cambio (
+  id uuid PK, anio int, mes int CHECK 1..12,
+  tc_presupuestado numeric(12,4), tc_real numeric(12,4),
+  fuente varchar(20) DEFAULT 'manual', created_at, updated_at,
+  UNIQUE (anio, mes) );
+
+CREATE TABLE public.precios_granos (
+  id uuid PK, grano varchar(20) DEFAULT 'soja', anio int, mes int CHECK 1..12,
+  precio_usd numeric(12,2) NOT NULL, fuente varchar(20) DEFAULT 'manual',
+  created_at, updated_at, UNIQUE (grano, anio, mes) );
+
+CREATE TABLE public.contratos_arrendamiento (
+  id uuid PK, empresa varchar(10) CHECK IN ('MSA','PAM','MA'), campania varchar(10),
+  centro_costo text, cliente_cuit varchar(13), cliente_nombre varchar(200),
+  has numeric(10,2) CHECK >0, qq_ha_total numeric(8,2) CHECK >0,
+  grano varchar(20) DEFAULT 'soja',
+  cuenta_contable text DEFAULT 'ARRENDAMIENTOS Venta',   -- 4109, ya existe e imputable
+  activo boolean DEFAULT true, notas text, created_at, updated_at );
+CREATE INDEX idx_contratos_arr_empresa_camp ON contratos_arrendamiento(empresa, campania);
+
+CREATE TABLE public.cuotas_arrendamiento (
+  id uuid PK, contrato_id uuid FK->contratos_arrendamiento ON DELETE CASCADE,
+  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,
+  fecha_cobro_estimada date, posicion_anio int, posicion_mes int CHECK 1..12,
+  fecha_cobro_original date, posicion_orig_anio int, posicion_orig_mes int,  -- "volver a default"
+  estado varchar(20) DEFAULT 'presupuestado'
+    CHECK IN ('presupuestado','parcial','fijado','disponible'),
+  notas text, created_at, updated_at, UNIQUE (contrato_id, numero_cuota) );
+CREATE INDEX idx_cuotas_arr_contrato ON cuotas_arrendamiento(contrato_id);
+CREATE INDEX idx_cuotas_arr_fecha    ON cuotas_arrendamiento(fecha_cobro_estimada);
+
+CREATE TABLE public.fijaciones_arrendamiento (
+  id uuid PK, cuota_id uuid FK->cuotas_arrendamiento ON DELETE CASCADE,
+  fecha_fijacion date, tons numeric(12,3) CHECK >0,
+  modo varchar(10) CHECK IN ('matba','pizarra'),
+  precio_usd numeric(12,2), precio_pesos numeric(15,2), tc numeric(12,4),  -- CONGELADOS
+  monto_pesos numeric(15,2), fecha_cobro date,   -- pizarra: fijacion + 20 días corridos
+  comprobante_id uuid,  -- FK LÓGICA a {schema}.comprobantes_venta (schema = contrato.empresa)
+  notas text, created_at );
+CREATE INDEX idx_fijaciones_arr_cuota ON fijaciones_arrendamiento(cuota_id);
+```
+
+**RLS + grants**: mismo patrón que el resto de `public` — RLS ON + policy `allow_all_*` FOR ALL
+USING(true) WITH CHECK(true) + `GRANT ALL TO anon, authenticated, service_role`.
+(Ver A-SEC-01 en PENDIENTES: `anon` tiene grants plenos en toda la app.)
+
+**Datos sembrados (MSA, campañas 26/27 y 27/28)** — 4 contratos + 14 cuotas, tomados de
+`exports_app/- Desarrollo Presuesto..xlsx` solapa "Primeros Pasos". La campaña 27/28 es
+**réplica de 26/27 con fechas +1 año**, a confirmar con datos reales.
+Verificado: tons y % coinciden con la planilla y el guardarraíl `Σ qq = qq_ha_total` da OK en los 4.
+
+| Campaña | Campo | Has | qq/ha | Tons | Cuotas |
+|---|---|---:|---:|---:|---:|
+| 26/27 | Nazarenas | 144,93 | 15 | 217,395 | 3 |
+| 26/27 | Rojas | 242,00 | 24 | 580,800 | 4 |
+| 27/28 | Nazarenas | 144,93 | 15 | 217,395 | 3 |
+| 27/28 | Rojas | 242,00 | 24 | 580,800 | 4 |
+
+⚠️ **Pendiente de dato**: `cliente_cuit` en blanco — Sanpa y Provinvest **no están** en
+`public.proveedores` (el único `es_cliente` es AFA). Cargar cuando el usuario pase los CUITs.
+
+-- Aplicado 2026-07-26 (aditivo): precio manual por cuota de arrendamiento.
+-- Pisa el precio de `precios_granos`. Necesario para VALORIZAR las tons disponibles
+-- (al moverlas se les asigna precio) y para forzar un valor puntual en cualquier cuota.
+-- NULL = usa la posición. Se limpia con "volver a default".
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS precio_usd_override numeric(12,2);
+
+-- Aplicado 2026-07-26 (aditivo): precio en PESOS por cuota (pizarra Rosario disponible).
+-- Regla: si la cuota se cobra en el MES ACTUAL se vende disponible y la pizarra cotiza en
+-- ARS (no tiene futuros) -> precio en pesos directo, SIN TC. Si se cobra en un mes posterior
+-- va por Matba (USD de la posicion x TC). Los dos overrides son EXCLUYENTES.
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS precio_pesos_override numeric(15,2);
+
+-- Aplicado 2026-07-26: LA FIJACION ES LA VENTA. Renombre + fijacion en DOS MOMENTOS.
+-- Correccion de modelo: se habia planteado "la fijacion genera un comprobante", como si
+-- el comprobante fuera el hecho principal. Es al reves: la fijacion ES la venta, y el
+-- comprobante (factura/liquidacion) viene DESPUES. Cita del usuario: "Venta origina
+-- Factura/Liquidacion que origina Cobro".
+ALTER TABLE public.fijaciones_arrendamiento RENAME TO ventas_arrendamiento;
+ALTER TABLE public.ventas_arrendamiento RENAME COLUMN fecha_fijacion TO fecha_fijacion_precio;
+ALTER TABLE public.ventas_arrendamiento ADD COLUMN IF NOT EXISTS fecha_fijacion_tc date;
+-- Precio y TC se fijan en momentos distintos -> los tres pasan a nullable:
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN fecha_fijacion_precio DROP NOT NULL;
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN monto_pesos           DROP NOT NULL;
+ALTER TABLE public.ventas_arrendamiento ALTER COLUMN fecha_cobro           DROP NOT NULL;
+-- Split al fijar parcial: una cuota se fija ENTERA o se parte (la original queda con lo
+-- vendido, el saldo pasa a una cuota nueva que se puede mover/valorizar por su cuenta).
+ALTER TABLE public.cuotas_arrendamiento
+  ADD COLUMN IF NOT EXISTS cuota_padre_id uuid REFERENCES public.cuotas_arrendamiento(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_cuotas_arr_padre ON public.cuotas_arrendamiento(cuota_padre_id);
+CREATE INDEX IF NOT EXISTS idx_ventas_arr_cuota ON public.ventas_arrendamiento(cuota_id);
+
+-- Aplicado 2026-07-26 (aditivo): plazo de cobro del disponible POR CONTRATO.
+-- Los 20 dias no podian ser constante global: Sanpa paga a 15. El plazo se cuenta
+-- desde la FECHA DE FIJACION (= fecha de la venta), que no siempre es hoy.
+ALTER TABLE public.contratos_arrendamiento
+  ADD COLUMN IF NOT EXISTS dias_cobro_disponible integer NOT NULL DEFAULT 20;
+-- Dato: los contratos de Sanpa (Rojas 26/27 y 27/28) quedaron en 15.
+UPDATE public.contratos_arrendamiento SET dias_cobro_disponible = 15 WHERE cliente_nombre = 'Sanpa';
+
+-- Aplicado 2026-07-26: vinculacion VENTA <-> FACTURA + vista unificada de ventas.
+-- No se pudo reusar msa.ventas_comprobantes (su FK apunta a msa.ventas = granos).
+-- Se hizo generica/polimorfica, que ademas es lo coherente: los comprobantes viven en
+-- schema por empresa, asi que la FK cruzada ya era imposible.
+CREATE TABLE public.ventas_facturas (
+  id uuid PK, venta_tipo varchar(20) CHECK IN ('arrendamiento','granos','ganaderia'),
+  venta_id uuid, empresa varchar(10), comprobante_id uuid,
+  monto_asignado numeric(15,2),
+  vinculado boolean NOT NULL DEFAULT true,  -- false = "la FC responde a otra cosa"
+  nota text, created_at, UNIQUE (venta_tipo, venta_id, comprobante_id) );
+-- La fila existe en AMBOS casos (si y no) para que la alerta no vuelva a preguntar.
+CREATE INDEX idx_ventas_facturas_venta ON public.ventas_facturas(venta_tipo, venta_id);
+CREATE INDEX idx_ventas_facturas_comp  ON public.ventas_facturas(comprobante_id);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- VIEW public.ventas_unificadas: los tres tipos de venta en el formato comun que
+-- consumen Cash Flow y el motor (fecha, cliente, monto, cuenta contable, centro de
+-- costo) + `facturado` (suma de lo vinculado) + `falta_tc`. Hoy solo arrendamiento;
+-- granos y ganaderia se suman con UNION ALL cuando existan.
+
+-- Aplicado 2026-07-26: GANADERIA (presupuesto de venta de destete). NO en el backup.
+CREATE TABLE public.precios_hacienda (
+  id uuid PK, categoria varchar(60), anio int, mes int CHECK 1..12,
+  precio_pesos_kg numeric(12,2), fuente varchar(20) DEFAULT 'manual',
+  created_at, updated_at, UNIQUE (categoria, anio, mes) );
+-- ARS por KG y por CATEGORIA. Se mantiene SEPARADA de precios_granos (USD por TONELADA
+-- y por posicion) a proposito: distinta unidad, moneda y dimension.
+
+CREATE TABLE public.presupuesto_ganaderia (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA' CHECK IN ('MSA','PAM','MA'),
+  campania varchar(10), centro_costo text, descripcion text,
+  stock_vientres int, pct_destete numeric(6,4) DEFAULT 0.85,
+  pct_machos numeric(6,4) DEFAULT 0.50, pct_reposicion numeric(6,4) DEFAULT 0.20,
+  peso_macho_kg numeric(8,2) DEFAULT 200, peso_hembra_kg numeric(8,2) DEFAULT 170,
+  precio_kg_override numeric(12,2), fecha_cobro_estimada date,
+  -- ALICUOTAS POR CONCEPTO, no constantes globales:
+  alicuota_iva numeric(6,4) DEFAULT 0.105,   -- ganaderia 10,5% (arrendamiento exento)
+  alicuota_iibb numeric(6,4) DEFAULT 0.01,   -- ganaderia 1%    (arrendamiento 5%)
+  cuenta_contable text DEFAULT 'VENTA DESTETE MACHO Y HEMBRA',
+  activo boolean DEFAULT true, notas text, created_at, updated_at );
+CREATE INDEX idx_presu_gan_empresa ON public.presupuesto_ganaderia(empresa, campania);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- Dato 2026-07-28: CUITs de clientes en los contratos de arrendamiento.
+-- Se alinearon A LA FACTURA (msa.comprobantes_venta), que es la fuente de verdad del
+-- usuario, no al dato tipeado en el chat.
+UPDATE public.contratos_arrendamiento
+   SET cliente_cuit='30712200662', cliente_nombre='Sanpa Semillas SA' WHERE centro_costo='Rojas';
+UPDATE public.contratos_arrendamiento
+   SET cliente_cuit='33710346939', cliente_nombre='Provinvest'        WHERE centro_costo='Nazarenas';
+-- Nota sin accion: 30712200662 NO pasa la validacion de digito verificador (le
+-- corresponderia terminar en 5). El usuario confirmo que la factura es el dato real.
+
+-- Dato 2026-07-28: alta de clientes faltantes en proveedores desde los comprobantes de
+-- venta (datos de ARCA). Parche manual del bug B-BUG-CLIENTE-NO-SE-CREA: las ventas no
+-- dan de alta el cliente. Es GENERICO -> se puede re-correr hasta que este el fix.
+INSERT INTO public.proveedores (cuit, razon_social, es_cliente, es_proveedor, fc_modo, notas)
+SELECT DISTINCT ON (cv.cuit_cliente)
+       cv.cuit_cliente, cv.denominacion_cliente, true,
+       EXISTS (SELECT 1 FROM msa.comprobantes_arca a WHERE a.cuit = cv.cuit_cliente),
+       'sin_config', 'Alta automatica desde comprobantes de venta (ARCA) — 2026-07-28'
+FROM msa.comprobantes_venta cv
+WHERE cv.cuit_cliente IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.proveedores p WHERE p.cuit = cv.cuit_cliente)
+ORDER BY cv.cuit_cliente, cv.fecha_liquidacion DESC;
+-- Dio de alta: Sanpa Semillas SA (30712200662) y PROVINVEST S.A. (33710346939), ambos
+-- clientes puros (es_proveedor=false, no tienen facturas de compra).
+
+-- Aplicado 2026-07-29: EVOLUCION PROYECTADA DEL RODEO (linea de tiempo). NO en el backup.
+-- Modelo de la solapa "ciclo ganadero" del Excel. El rodeo rueda solo anio a anio.
+CREATE TABLE productivo.stock_ciclos (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA', campania varchar(10), orden int,
+  fecha_servicio date, fecha_destete date,
+  -- NULL = hereda del cierre del periodo anterior. El 1ro se carga a mano (foto de hoy).
+  vacas_apertura numeric(10,2), vaquillonas_apertura numeric(10,2),
+  -- Parametros POR PERIODO (la reposicion es decision de estrategia, cambia anio a anio)
+  pct_destete numeric(6,4) DEFAULT 0.85, pct_machos numeric(6,4) DEFAULT 0.50,
+  pct_descarte_falladas numeric(6,4) DEFAULT 0.50, pct_reposicion numeric(6,4) DEFAULT 0.20,
+  peso_destete_kg numeric(8,2) DEFAULT 200,
+  -- Reales: pisan el calculo y recalculan todo lo posterior
+  real_destetados numeric(10,2), real_machos numeric(10,2),
+  real_hembras numeric(10,2), real_descarte numeric(10,2),
+  notas text, created_at, updated_at, UNIQUE (empresa, campania) );
+CREATE INDEX idx_stock_ciclos_orden ON productivo.stock_ciclos(empresa, orden);
+
+CREATE TABLE productivo.stock_lotes (
+  id uuid PK, empresa varchar(10) DEFAULT 'MSA',
+  ciclo_id uuid FK->stock_ciclos ON DELETE CASCADE (NULL = viene del stock inicial),
+  categoria varchar(60), origen varchar(20) CHECK IN ('destete','descarte','stock_inicial'),
+  cantidad numeric(10,2), fecha_disponible date, peso_base_kg numeric(8,2),
+  ganancia_diaria_kg numeric(6,3) DEFAULT 0,  -- engorde si no se vende al destete
+  notas text, created_at, updated_at );
+CREATE INDEX idx_stock_lotes_ciclo ON productivo.stock_lotes(ciclo_id);
+
+CREATE TABLE productivo.stock_ventas (
+  id uuid PK, lote_id uuid FK->stock_lotes ON DELETE CASCADE,
+  fecha_venta date, cantidad numeric(10,2) CHECK >0,
+  peso_kg numeric(8,2), precio_kg numeric(12,2),  -- congelados al vender
+  monto_neto numeric(15,2), notas text, created_at );
+CREATE INDEX idx_stock_ventas_lote ON productivo.stock_ventas(lote_id);
+-- RLS allow_all + GRANT ALL a anon/authenticated/service_role (patron del resto).
+
+-- Aplicado 2026-07-29: ciclo ganadero, correccion de criterios (charla con el usuario).
+ALTER TABLE productivo.stock_ciclos ALTER COLUMN pct_descarte_falladas SET DEFAULT 0.80;
+-- pct_reposicion se calcula sobre la BASE ENTORADA (rodeo a servicio), no sobre las
+-- terneras destetadas. 220 x 20% = 44, que coincide con las 45 que el usuario marco.
+-- pct_descarte_falladas default 0.80: del 15% que no desteta, la mayor parte es falla de
+-- la vaca (se vende); el resto es falla del ternero y la vaca puede quedarse.
+
+-- Aplicado 2026-07-29: peso de la vaca refugo + proteccion de la edicion manual.
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS peso_descarte_kg numeric(8,2) NOT NULL DEFAULT 450;
+-- Antes estaba hardcodeado en 400 y era un valor inventado. 450 lo dio el usuario.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS cantidad_calculada numeric(10,2);
+-- Si cantidad != cantidad_calculada, el usuario lo edito a mano (p.ej. descontando la
+-- mortandad de las vacas de refugo) y el regenerado NO lo pisa.
+
+-- Aplicado 2026-07-29: reposicion en CABEZAS cuando el dato se sabe.
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS real_retenidas numeric(10,2);
+-- Pisa a pct_reposicion. Es un numero firme y NO escala si despues cambia el rodeo --
+-- por eso no alcanzaba con guardar solo el %.
+
+-- Aplicado 2026-07-30: ganaderia -- proyeccion de venta, toritos, pesos por sexo y
+-- bandas de precio por peso. NO en el backup.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS fecha_venta_estimada date,
+  ADD COLUMN IF NOT EXISTS precio_kg_override   numeric(12,2),
+  ADD COLUMN IF NOT EXISTS dias_cobro           integer NOT NULL DEFAULT 0;
+-- Sin fecha_venta_estimada el lote es inventario; con fecha es ingreso presupuestado.
+
+ALTER TABLE productivo.stock_ciclos
+  ADD COLUMN IF NOT EXISTS toritos_retenidos      numeric(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS peso_destete_macho_kg  numeric(8,2),
+  ADD COLUMN IF NOT EXISTS peso_destete_hembra_kg numeric(8,2);
+-- G-4: los toritos no van a venta. G-5: el peso al destete difiere por sexo
+-- (198,17 machos vs 169,30 hembras); peso_destete_kg queda de fallback.
+
+ALTER TABLE public.precios_hacienda
+  ADD COLUMN IF NOT EXISTS peso_desde numeric(8,2),
+  ADD COLUMN IF NOT EXISTS peso_hasta numeric(8,2);
+CREATE INDEX IF NOT EXISTS idx_precios_hacienda_banda
+  ON public.precios_hacienda(peso_desde, peso_hasta);
+-- La hacienda se cotiza por BANDA DE PESO: un ternero de 190 kg no vale lo mismo por
+-- kilo que uno de 260. Las bandas viven en lib/ganaderia/calculo.ts (BANDAS_HACIENDA).
+
+-- Aplicado 2026-07-30: cadena de la venta de hacienda (desbaste, CZ, IVA, IIBB).
+-- Mismos criterios que el analisis de engorde (components/analisis-productivo.tsx), que
+-- ya modelaba desbaste 5% y CZ 4%. El precio SIEMPRE va por el kg NETO de desbaste.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS pct_desbaste  numeric(6,4) NOT NULL DEFAULT 0.05,
+  ADD COLUMN IF NOT EXISTS pct_cz        numeric(6,4) NOT NULL DEFAULT 0.04,
+  ADD COLUMN IF NOT EXISTS alicuota_iva  numeric(6,4) NOT NULL DEFAULT 0.105,
+  ADD COLUMN IF NOT EXISTS alicuota_iibb numeric(6,4) NOT NULL DEFAULT 0.01;
+
+-- Aplicado 2026-07-30: plazo de cobro en VARIAS CUOTAS.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS plazo_cobro text NOT NULL DEFAULT '0';
+-- "0"=contado, "30", "30/60", "30/60/90". El monto se reparte en partes iguales.
+-- dias_cobro queda DEPRECADO (un solo entero no admitia cuotas).
+
+-- Aplicado 2026-07-30: fecha a la que corresponde el peso del lote.
+ALTER TABLE productivo.stock_lotes ADD COLUMN IF NOT EXISTS fecha_peso date;
+UPDATE productivo.stock_lotes SET fecha_peso = fecha_disponible WHERE fecha_peso IS NULL;
+-- Bug que corrige: el usuario cargaba el peso de HOY y la app lo tomaba como del destete,
+-- sumandole despues la ganancia diaria desde el destete -> engordaba dos veces.
+
+-- Aplicado 2026-07-30: `fuente` de 20 a 60 chars. No alcanzaba para la procedencia de un
+-- precio derivado ("rel 80% de Ternero 200/220" son 27) y el upsert fallaba con
+-- "value too long for type character varying(20)".
+ALTER TABLE public.precios_hacienda ALTER COLUMN fuente TYPE varchar(60);
+ALTER TABLE public.precios_granos   ALTER COLUMN fuente TYPE varchar(60);
+ALTER TABLE public.tipos_cambio     ALTER COLUMN fuente TYPE varchar(60);
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Actividades productivas y costos directos
+
+**FASE C · C-2.** El costo directo NO es un template: es una consecuencia calculada de la
+actividad que se decide hacer. Y como cada actividad tiene sus propios insumos, la lista de
+costos es una **tabla hija**, no un juego fijo de columnas — así una actividad nueva no exige
+migrar nada. Ver `PENDIENTES.md` § FASE C.
+
+```sql
+CREATE TABLE productivo.actividades (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  tipo text NOT NULL DEFAULT 'recria',        -- recria | engorde | pastoreo | cria | otro
+  nombre text NOT NULL,
+  ganancia_diaria_kg numeric(6,3) NOT NULL DEFAULT 0,   -- el RINDE
+  racion_pct_pv numeric(6,5) NOT NULL DEFAULT 0,        -- fracción: 1,5 % -> 0.015
+  pct_mortandad numeric(6,5) NOT NULL DEFAULT 0,
+  notas text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE productivo.actividad_insumos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actividad_id uuid NOT NULL REFERENCES productivo.actividades(id) ON DELETE CASCADE,
+  orden integer NOT NULL DEFAULT 0,
+  concepto text NOT NULL,
+  -- pct_racion | kg_cabeza_dia | unid_cabeza_mes | unid_cabeza_evento
+  -- dosis_cada_kg | monto_cabeza | monto_ha | monto_mes
+  modo text NOT NULL DEFAULT 'pct_racion',
+  valor numeric(14,5) NOT NULL DEFAULT 0,
+  unidad text,
+  momento text NOT NULL DEFAULT 'diario',     -- diario | mensual | inicio | fin
+  precio_unitario numeric(14,4),
+  categoria_insumo_id uuid REFERENCES productivo.categorias_insumo(id) ON DELETE SET NULL,
+  producto text,
+  notas text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_actividades_empresa ON productivo.actividades(empresa, activo);
+CREATE INDEX idx_actividad_insumos_act ON productivo.actividad_insumos(actividad_id, orden);
+
+ALTER TABLE productivo.actividades       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE productivo.actividad_insumos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY actividades_all       ON productivo.actividades       FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY actividad_insumos_all ON productivo.actividad_insumos FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON productivo.actividades       TO anon, authenticated, service_role;
+GRANT ALL ON productivo.actividad_insumos TO anon, authenticated, service_role;
+```
+
+**Semilla** (defaults del análisis de engorde — punto de partida, todo editable desde la UI):
+
+```sql
+WITH a AS (
+  INSERT INTO productivo.actividades (empresa, tipo, nombre, ganancia_diaria_kg, racion_pct_pv, pct_mortandad, notas)
+  VALUES
+    ('MSA','recria','Recría',  0.500, 0.01500, 0.01000, 'Defaults del análisis de engorde. Ajustar con datos reales.'),
+    ('MSA','engorde','Engorde', 0.700, 0.01500, 0.01000, 'Defaults del análisis de engorde. Ajustar con datos reales.')
+  RETURNING id, tipo
+)
+INSERT INTO productivo.actividad_insumos (actividad_id, orden, concepto, modo, valor, unidad, momento, precio_unitario)
+SELECT a.id, v.orden, v.concepto, v.modo, v.valor, v.unidad, v.momento, v.precio
+FROM a CROSS JOIN (VALUES
+  (1,'Maíz',        'pct_racion', 0.85, 'kg', 'diario', 270.0),
+  (2,'Concentrado', 'pct_racion', 0.15, 'kg', 'diario', 745.0)
+) AS v(orden, concepto, modo, valor, unidad, momento, precio);
+```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Tramos de actividad por lote (FASE C · C-3/C-4)
+
+La actividad aplicada a un lote entre dos fechas. De acá salen **la curva de peso** (que define
+el peso a la venta, la banda de precio y la factura) **y el costo** de alimentación.
+
+```sql
+CREATE TABLE productivo.lote_tramos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lote_id uuid NOT NULL REFERENCES productivo.stock_lotes(id) ON DELETE CASCADE,
+  -- restrict a propósito: borrar una actividad usada por un tramo tiene que fallar fuerte,
+  -- no dejar el tramo sin parámetros en silencio.
+  actividad_id uuid NOT NULL REFERENCES productivo.actividades(id) ON DELETE RESTRICT,
+  orden integer NOT NULL DEFAULT 0,
+  fecha_desde date NOT NULL,
+  fecha_hasta date NOT NULL,
+  hectareas numeric(10,2),        -- sólo para los costos por hectárea (verdeo)
+  notas text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT lote_tramos_fechas CHECK (fecha_hasta > fecha_desde)
+);
+CREATE INDEX idx_lote_tramos_lote ON productivo.lote_tramos(lote_id, orden);
+ALTER TABLE productivo.lote_tramos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY lote_tramos_all ON productivo.lote_tramos FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON productivo.lote_tramos TO anon, authenticated, service_role;
+
+-- C-4: la ganancia diaria del lote pasa a salir de los tramos. `ganancia_diaria_kg` queda
+-- como fallback (días sin tramo) y, con este flag, como override manual explícito.
+ALTER TABLE productivo.stock_lotes
+  ADD COLUMN IF NOT EXISTS ganancia_override boolean NOT NULL DEFAULT false;
+```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Moneda en los costos de actividad (FASE C)
+
+Pedido del usuario: *"pesos por ha y dólar por ha deben estar"*. Un costo agrícola se piensa en
+USD/ha; se convierte al TC presupuestado del mes de cada gasto (serie `public.tipos_cambio`, con
+arrastre hacia adelante, igual que el arrendamiento).
+
+```sql
+ALTER TABLE productivo.actividad_insumos
+  ADD COLUMN IF NOT EXISTS moneda text NOT NULL DEFAULT 'ARS';
+
+COMMENT ON COLUMN productivo.actividad_insumos.moneda IS
+  'ARS | USD. En USD el monto se convierte al TC presupuestado del mes de cada gasto.';
+COMMENT ON COLUMN productivo.actividades.tipo IS
+  'recria | engorde | pastoreo | cria | agricola | otro. Las agrícolas no usan racion_pct_pv ni ganancia_diaria_kg.';
+```
+
+Sin cambio de esquema, pero nuevos valores admitidos por la app en columnas ya existentes:
+- `actividad_insumos.modo` suma **`pct_produccion`** (el costo es un % de lo producido: cosecha,
+  aparcería).
+- `actividad_insumos.momento` suma **`ciclo`** (el monto pertenece al ciclo entero).
+
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Saldo de arranque del presupuesto
+
+Punto de partida del **saldo acumulado**. Se carga a mano; provisorio hasta derivarlo de los
+saldos bancarios (ver `PENDIENTES.md` § FASE C · C-10).
+
+```sql
+CREATE TABLE public.presupuesto_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL UNIQUE,
+  saldo_inicial numeric(16,2) NOT NULL DEFAULT 0,
+  -- Mes al que corresponde ese saldo (YYYY-MM): es el saldo AL EMPEZAR ese mes.
+  -- Permite avisar cuando quedó viejo respecto de la grilla.
+  mes_inicial text,
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.presupuesto_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_config_all ON public.presupuesto_config FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_config TO anon, authenticated, service_role;
+```
+
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Presupuesto de cuentas contables
+
+```sql
+CREATE TABLE public.presupuesto_cuenta_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  nro_cuenta text NOT NULL,
+  -- ultima_fc | promedio_n | estacional | por_cabeza | manual | excluida
+  modo text NOT NULL DEFAULT 'promedio_n',
+  meses_promedio integer,
+  monto_manual numeric(16,2),
+  cabezas_referencia numeric(10,2),
+  cabezas_proyectadas numeric(10,2),
+  inflacion_mensual numeric(6,5),
+  motivo_exclusion text,
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (empresa, nro_cuenta)
+);
+ALTER TABLE public.presupuesto_cuenta_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_cuenta_config_all ON public.presupuesto_cuenta_config FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_cuenta_config TO anon, authenticated, service_role;
+
+ALTER TABLE public.presupuesto_config
+  ADD COLUMN IF NOT EXISTS inflacion_mensual numeric(6,5) NOT NULL DEFAULT 0;
+```
+
+Y la vista `public.presupuesto_historia_cuentas`, que unifica `msa.comprobantes_historico` con
+`msa.comprobantes_arca` por `nro_cuenta` — el DDL completo está en la migración
+`presupuesto_cuentas_modo_y_vista_historia`. Los tres problemas que resuelve (nombres partidos
+por mayúsculas, `nro_cuenta` faltante en ARCA, solape de dic-2025) están explicados en
+`ARQUITECTURA-BD.md` y en el propio comentario de la vista.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Historia del presupuesto desde canales
+
+Dos vistas para poder presupuestar desde los **canales de pago conciliados**, que es el método
+con el que el usuario presupuestó durante años: cada movimiento de banco / caja / tarjeta lleva
+su `nro_cuenta` imputado en la conciliación.
+
+- `public.presupuesto_historia_canales` — banco + caja (general/sigot/ams) + tarjeta agrupado
+  por `nro_cuenta` y mes; monto = débitos **netos de créditos**; sólo movimientos imputados.
+- `public.presupuesto_cobertura_canales` — cuánto de cada canal está conciliado. Sin esto la
+  vista anterior miente por omisión: muestra sólo lo imputado y parece que se gastó menos.
+
+DDL completo en la migración `presupuesto_historia_canales`.
+
+Y el dato de configuración que fija el criterio de Federación Patronal:
+
+```sql
+INSERT INTO public.presupuesto_cuenta_config (empresa, nro_cuenta, modo, motivo_exclusion, notas)
+VALUES ('MSA', '422113', 'excluida',
+        'Va por template: Federación Patronal factura semestral y las cuotas están cargadas',
+        'Único caso donde template y factura se pisan (verificado 2026-07-30).')
+ON CONFLICT (empresa, nro_cuenta) DO UPDATE SET ...;
+```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-30 · Exclusión por proveedor en el presupuesto
+
+```sql
+ALTER TABLE public.presupuesto_cuenta_config
+  ADD COLUMN IF NOT EXISTS cuits_excluidos text[] NOT NULL DEFAULT '{}';
+```
+
+Excluir la cuenta entera dejaba una trampa: un proveedor nuevo en esa cuenta desaparecería del
+presupuesto sin aviso. Con `cuits_excluidos` se descuenta sólo el proveedor que ya entra por
+otro lado y la cuenta sigue viva.
+
+Vista `public.presupuesto_historia_cuenta_proveedor` (cuenta × CUIT × mes) — hace falta para
+poder descontar un CUIT puntual y para ver de qué se compone cada cuenta. DDL completo en la
+migración `presupuesto_excluir_por_proveedor`.
+
+Dato de configuración (Federación Patronal va por template):
+
+```sql
+UPDATE public.presupuesto_cuenta_config
+   SET modo = 'promedio_n', meses_promedio = 3,
+       cuits_excluidos = ARRAY['33707366589'], motivo_exclusion = NULL
+ WHERE empresa = 'MSA' AND nro_cuenta = '422113';
+```
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-31 · Método de proyección por template
+
+Con qué método el presupuesto completa los meses donde un template NO tiene cuota cargada.
+Sin fila acá el método se **hereda de `egresos_sin_factura.cuotas`** (número de cuotas al año,
+cargado en 64 de 66 templates); esta tabla es sólo para las excepciones.
+
+```sql
+CREATE TABLE public.presupuesto_template_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa text NOT NULL DEFAULT 'MSA',
+  template_id uuid NOT NULL REFERENCES public.egresos_sin_factura(id) ON DELETE CASCADE,
+  -- declaradas | mensual | patron | promedio | manual | no_proyectar
+  metodo text NOT NULL,
+  monto_manual numeric(16,2),
+  notas text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (empresa, template_id)
+);
+ALTER TABLE public.presupuesto_template_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY presupuesto_template_config_all ON public.presupuesto_template_config
+  FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.presupuesto_template_config TO anon, authenticated, service_role;
+```
+
+Motivo: la primera versión inferia la periodicidad de la historia de cuotas y con un solo mes
+cargado daba "mensual". Impuesto a las Ganancias (1 cuota/año, $5 M) se proyectaba 12 veces
+— ~$55 M de egreso fantasma en una fila. **El dato declarado tiene que ganarle a lo inferido.**
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-07-31 · `tipo` en los templates
+
+**NO está en el backup.** Al reconstruir hay que correr el ALTER **y volver a cargar los valores**
+(el UPDATE de abajo los reconstruye enteros a partir de la agrupadora y la categ).
+
+```sql
+-- 1) La columna. El enum tipo_cuenta ya existe (lo usa cuentas_contables).
+ALTER TABLE public.egresos_sin_factura
+  ADD COLUMN IF NOT EXISTS tipo public.tipo_cuenta;
+
+COMMENT ON COLUMN public.egresos_sin_factura.tipo IS
+  'Naturaleza del template para el Presupuesto y el Dashboard: ingreso | egreso | financiero | distribucion | NO. '
+  'Es la fuente de verdad del template (no hereda de cuentas_contables, que clasifica facturas). '
+  'financiero = la plata no sale de la empresa (FCI, caja, interbancarias, tarjetas, creditos) -> no se presupuesta. '
+  'distribucion = retiros de socios -> no es gasto operativo. '
+  'Si queda NULL, el codigo cae a cuentas_contables.tipo y luego al signo del monto.';
+
+-- 2) Los valores de los 176 templates (activos e inactivos).
+UPDATE public.egresos_sin_factura SET tipo =
+  CASE
+    WHEN cuenta_agrupadora = 'Retiros / Distribucion Socios' THEN 'distribucion'
+    WHEN upper(trim(categ)) IN ('CAJA','CRED P','CRED T','FCI','TARJETAS MSA','TARJETAS PAM','TRANSFERENCIAS INTERBANCARIAS') THEN 'financiero'
+    WHEN trim(nombre_referencia) ILIKE 'Otros Ingresos%' THEN 'ingreso'
+    ELSE 'egreso'
+  END::public.tipo_cuenta;
+
+-- 3) Control: debe dar 150 egreso / 14 distribucion / 11 financiero / 1 ingreso, y 0 sin tipo.
+SELECT tipo::text, count(*) FROM public.egresos_sin_factura GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**Por qué existe** — el tipo se sacaba de `cuentas_contables` cruzando por `categ`, y **70 de los
+123 templates activos tienen una categoría que no está en el plan de cuentas**. Esos caían al
+**signo del monto**: todo débito era "egreso". Para los gastos acertaba de casualidad, pero
+mandaba los **retiros de socios a egresos operativos** — $43,65 M en 15 movimientos.
+
+**No es un dato duplicado**: `cuentas_contables.tipo` clasifica **facturas** (que apuntan por
+`cuenta_contable`), `egresos_sin_factura.tipo` clasifica **templates**. Se siguen necesitando las
+dos. La precedencia vive en `resolverTipo()` (`lib/presupuesto/templates.ts`) y en ningún otro
+lado.
+
+**Se cargaron también los inactivos** (50), para que reactivar uno no reabra el hueco.
+
+Ver `PENDIENTES.md` § **C-27**.

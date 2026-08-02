@@ -3,7 +3,28 @@
 > Único lugar donde se documentan los pendientes (bugs, testing, features, operacional, seguridad, datos).
 > Reemplaza a `PENDIENTES_GENERAL.md`, `PENDIENTES_PUSH_A_MAIN.md`, `PENDIENTES-PROXIMA-SESION.md` y a las secciones de pendientes sueltas en `CLAUDE.md`.
 
-**Última actualización:** 2026-06-21
+**Última actualización:** 2026-08-02
+
+---
+
+## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
+
+> **2026-08 — Presupuesto.** Probar lo desarrollado (C-22 secciones por tipo, C-27 `tipo` en
+> templates) y seguir con C-24 fases 1-4 (plan de cuentas texto → número).
+>
+> Alternar según circunstancias es normal: si hay que corregir pagos o conciliación en el medio,
+> **eso también es trabajo del norte** (todo alimenta al presupuesto). Actualizar esta línea
+> cuando cambie el foco, con fecha.
+
+### ⏳ Evento con fecha — balance 25/26
+| Hito | Fecha | Estado |
+|------|-------|--------|
+| Corte del ejercicio | **30/06/2026** | ✅ pasó |
+| Papeles de trabajo → **al contador** | **01/10/2026** | 🔴 ~2 meses |
+| Presentación a **ARCA** | **01/11/2026** | 🔴 ~3 meses |
+
+**Objetivo:** que los papeles de trabajo sean un **export del sistema** → [A-FEAT-09](#a-feat-09).
+El usuario avisó que puede no llegarse para el 01/10 — hay que **decidir con tiempo**, no el 25/09.
 
 ---
 
@@ -46,12 +67,88 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|--------|------|------|--------------|
 | A-OP-01 | 🔴 | Alta | MCP Supabase quedó en WRITE — revertir a read-only | ✅ `.mcp.json` sin `--read-only` |
 | A-OP-02 | ✅ | Media | Archivo `nul` basura en el repo — BORRADO 2026-06-21 (era el error capturado "dir: cannot access 'vercel.json'"). `git add -A` ya funciona | resuelto |
-| A-OP-03 | 🔴 | Alta | Merge `desarrollo` → `main` (20 commits) | ✅ `git rev-list --count main..desarrollo` = 20 |
+| A-OP-03 | 🔴 | Alta | Merge `desarrollo` → `main` — **son 133 commits, no 20** (re-contado 2026-08-02). La mayoría **sin testear** (todo el presupuesto de julio). `main` = auto-deploy a producción: mergear hoy publica trabajo sin probar | ✅ `git rev-list --count main..desarrollo` = **133** (2026-08-02) |
 | A-OP-04 | ⏸️ | Media | Auditar Secciones C y D junto al usuario | — |
 | A-OP-05 | 🔴 | Baja | Carpeta vacía `arca-poc/` — borrar a mano (Windows handle) | — |
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) |
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) |
 | A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) |
+
+### 💰 PRESUPUESTO — lista del usuario 2026-08-02 (`P-NN`)
+> Batch dictado por el usuario el 2026-08-02. **Prefijo `P-`** = mejoras del módulo Presupuesto
+> (se documenta acá porque rompe el patrón `X-TIPO-NN`: es un lote temático).
+> Estado: 🟢 entendido y accionable · ❓ necesita que el usuario aclare · 🔗 ya existe algo.
+> Detalle y agrupación → [P-LOTE](#p-lote).
+
+| ID | Est | Ítem |
+|----|-----|------|
+| P-01 | 🟢 | Botón para **actualizar el presupuesto** (recalcular a demanda) |
+| P-02 | ❓ | **"Este mes sí/no"** en el mes de arranque: si ya se pagó, no presupuestar; si no, sí. *El usuario avisa que **contradice otras alternativas*** |
+| P-03 | 🟢 | **Edición de sueldos** — poner un sueldo a cada empleado con la info disponible, más allá del histórico |
+| P-04 | ❓ | **¿IPC siempre? ¿Está trabajando bien el IPC?** — auditar el modo |
+| P-05 | 🔗 | **Costos de producción** al presupuesto — ya abierto como C-7 / B-FEAT-COSTOS-PRODUCTIVOS |
+| P-06 | ❓ | **¿Las FC en dólares están bien tomadas** en el presupuesto? — auditar |
+| P-07 | 🔗 | **Alerta presupuestado vs histórico** — `controlarPresupuesto()` ya existe en `modos.ts`; ver qué falta |
+| P-08 | ❓ | **Kg por ha / valor Índice Novillo** como unidad de presupuestación (ej. IATF = tantos kg por cabeza por año) |
+| P-09 | 🟢 | **Monto en un solo mes**, por única vez (override puntual de celda) |
+| P-10 | ❓ | **Anualizado que se engrosa**: si algo se gasta 1 vez al año y se presupuesta como promedio mensual, el no-gasto de cada mes debe acumularse para el mes en que caiga |
+| P-11 | 🟢 | Mostrar **IPC de 12 meses** |
+| P-12 | ❓ | **Ajuste de 2 meses en uno**: si hay 1 FC/mes y un mes viene vacío y otro con 2, poder corregirlo |
+| P-13 | ❓ | **IATF**: cae bien en los meses que ya existen, pero poder aplicarle la fórmula **por cabeza** |
+| P-14 | ❓ | **Por cabeza + IPC deberían ser acumulables** (hoy los modos son excluyentes) |
+| P-15 | 🟢 | **Mostrar el ejemplo de lo que presupuesta**: si elijo "última FC", ver la muestra usada y el resultado |
+| P-16 | 🟢 | 🐞 **Modo "mismo del año pasado" no salta de año** — ej. Seguridad y Alarma de ene-2026 debería aparecer en **ene-2027** y no aparece |
+| P-17 | ❓ | **Presupuesto anual con arrastre**: poner el monto en un mes tentativo y, si no se gasta, que pase al siguiente; si no se cumple en 11 meses queda para el 12°. **+ alerta** "se gastó cero el último año y seguís presupuestando $1.500.000 anual" |
+| P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
+| P-19 | 🟢 | **Períodos contables de templates — YA EXISTEN, hay que USARLOS.** ⚠️ Claude afirmó el 2026-08-02 que "no hay columna de campaña"; **es falso**, lo corrigió el usuario. `egresos_sin_factura` tiene **`año`** (label "26/27"), **`periodicidad`** ('anual'\|'bianual') y **`template_origen_id`** → el template del que se clonó. El generador escribe `año: targetLabel` al renovar. Lo que falta es que el **Presupuesto los lea** |
+| P-20 | ❓ | Repensar el diseño a la luz de los períodos — a ver **con el contexto específico de Templates** (decisión del usuario: no diseñar en abstracto) |
+| P-21 | 🟢 | **Sueldo y SUSS con aguinaldo** |
+| P-22 | 🔗 | **Que templates se muestren como cuentas contables** — se cruza con C-19 / C-24 |
+| P-23 | ❓ | **Cuotas que dicen "templates" pero no autogeneran la próxima campaña** si no está llena |
+| P-24 | 🔗 | **Separar siempre en secciones**: lo que se proyecta, lo que no, y todos — C-22 paso 1 ya hizo EGRESOS/DISTRIBUCIONES |
+| P-25 | ❓ | **Calendario fijo por cuenta**: Ant. Ganancias son 10 cuotas en los mismos meses; Inmobiliario 4 vencimientos fijos. Que la BD sepa el calendario y presupueste eso, dejando de lado las excepciones |
+| P-26 | 🟢 | **Débitos y créditos** = 0,6% de ingresos + 0,6% de egresos, **sin contar FCI** |
+| P-27 | ❓ | **Ver lo que quedó pendiente del mes anterior** (julio, en este caso) |
+| P-28 | ❓ | Alternativa: **último saldo ± movimientos**, y mostrar desde el último saldo |
+| P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
+| P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
+| P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-33 | 🔴 | **Auditar los "no presupuestar" y los estacionales vacíos** — el usuario: *"mucho de lo que puse no proyectar es por algún problema"* y *"muchos de los que puse mismo del año pasado no figura nada presupuestado"*. Cada exclusión es una **pista de bug**; los estacionales vacíos son los **casos de test de [P-16](#p-16)** |
+| P-31 | 🔗 | **Vincular las proyecciones de venta al presupuesto** — se cruza con A-FEAT-10 y con Ingresos/arrendamientos |
+
+### 🐄 MARGEN POR ACTIVIDAD — módulo nuevo (2026-08-02)
+| ID | Est | Ítem |
+|----|-----|------|
+| M-01 | 🟡 | **Módulo Margen por actividad** — Arrend. Rojas · Arrend. Nazarenas (agrícolas) · **Cría** · Recría. Modelo teórico + real por campaña, y de ahí salen los **costos directos** del presupuesto. Fuente: `exports_app/MARGENES - Situacion Actual.xlsx` § MARGEN CRIA | → [M-01](#m-01) |
+
+### 🏁 Norte — features del resultado final (2026-08-02)
+> Salen de la ampliación del norte (§ [A-DOC-07](#a-doc-07)). Son **objetivos grandes**, no tareas:
+> se van abordando a medida que los eventos los piden. Sirven para saber si algo que estamos
+> haciendo suma o no.
+
+| ID | Estado | Prio | Ítem | Detalle |
+|----|--------|------|------|---------|
+| A-FEAT-09 | 🔴 | **Alta (fecha)** | **Papeles de trabajo del balance = export del sistema** — balance 25/26, corte 30/06/26, al contador **01/10/2026**. Puede no llegarse: decidir con tiempo | → [A-FEAT-09](#a-feat-09) |
+| A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) |
+| A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) |
+| A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) |
+
+### 📚 Documentación (auditoría de dimensiones, 2026-08-02)
+> Origen: comparación de nuestro `CLAUDE.md` contra el `CLAUDE.md` de otro proyecto del usuario ("Remates Televisados"), que trajo reglas de proceso mejores. Salió de ahí `CLAUDE_BASE.md` (plantilla portable) + esta auditoría de los 31 `.md` del repo. **Casi todos esperan una decisión del usuario (⏸️), no trabajo de Claude.**
+
+| ID | Estado | Prio | Ítem | Detalle |
+|----|--------|------|------|---------|
+| A-DOC-01 | ✅ | **Alta** | **Lista de dimensiones cerrada** — DECIDIDO 2026-08-02: 8 dimensiones + regla de cierre + **Claude no crea dimensiones sin autorización**. Aplicado a `CLAUDE.md` | → [A-DOC-01](#a-doc-01) |
+| A-DOC-02 | ✅ | Media | 13 docs de módulo con 4 convenciones → **renombrados a `MODULO_*` 2026-08-02** (`git mv`, historial intacto) + `MODULO_ARCA.md` creado | → [A-DOC-02](#a-doc-02) |
+| A-DOC-02b | 🔴 | Baja | **Consolidar SICORE** — quedan `MODULO_SICORE.md` (51 KB) + `MODULO_SICORE_RETENCIONES.md` (12 KB) + la historia cruda en `arca-api/`. Abordar al tocar el módulo | → [A-DOC-02b](#a-doc-02b) |
+| A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) |
+| A-DOC-03 | ⏸️ | Baja | 3 archivos de reconstrucción (553 KB) del mismo tema; sólo 1 declarado | → [A-DOC-03](#a-doc-03) |
+| A-DOC-04 | ⏸️ | Baja | `README.md` (ago-2025) desactualizado y fuera de toda dimensión | → [A-DOC-04](#a-doc-04) |
+| A-DOC-05 | ✅ | Media | 5 `.md` huérfanos — RESUELTOS 2026-08-02: sesión→HISTORIAL · `Usuarios.md`→`MODULO_USUARIOS.md` (+ [A-SEC-03](#a-sec-03)) · 2 de ARCA→`MODULO_ARCA.md` · las plantillas se las lleva el usuario | → [A-DOC-05](#a-doc-05) |
+| A-DOC-06 | ✅ | Media | 6 reglas permanentes vivían **sólo en memoria** — SUBIDAS a `CLAUDE.md` 2026-08-02 (2 § nuevas + 1 bullet); memorias reducidas a punteros | → [A-DOC-06](#a-doc-06) |
+| A-DOC-07 | ✅ | Media | Qué es + **norte** en `CLAUDE.md` (2026-08-02). Norte = presupuesto autoalimentado; **todo alimenta al presupuesto**. Queda **abierto a ampliación** por el usuario | → [A-DOC-07](#a-doc-07) |
+| A-DOC-08 | ✅ | Media | Lista de 47 ítems sin testear vivía en memoria y **B-TEST-10 la citaba desde acá** — MIGRADA 2026-08-02: 8 filas nuevas (`B-TEST-11..18`) + 28 a [C-01](#c-01) transcriptos | → [A-DOC-08](#a-doc-08) |
+| A-DOC-10 | 🔴 | Media | **Otras 19 fugas doc→memoria** — `B-TEST-10` NO era la única: hay ~19 `"Detalle: memory/…"` repartidas en 5 dimensiones. Hay que absorber el contenido | → [A-DOC-10](#a-doc-10) |
 
 ### Bugs (sesiones de junio)
 | ID | Estado | Prio | Ítem | Detalle |
@@ -76,7 +173,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) |
-| A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. |
+| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) |
+| A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. |
 
 ### Datos (los carga el usuario)
 | ID | Estado | Ítem |
@@ -117,20 +215,31 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 ### Features a medio hacer
 | ID | Estado | Prio | Ítem |
 |----|--------|------|------|
+| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) |
 | B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar |
-| B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `PLAN_DASHBOARD_REDISEÑO.md` |
+| B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` |
 | B-FEAT-04 | 🔴 | Media | Templates bancarios separar MSA/PAM/MA + reglas PAM/MA |
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos |
 | B-FEAT-06 | 🔴 | Media | Subdiario Ventas — igualar flujo a Compras (esperando que el usuario explique diferencias) |
 | B-FEAT-07 | 🔴 | Media | Proveedores — carga orgánica (poblar desde facturas/extractos, no de a uno) |
+| B-BUG-CLIENTE-NO-SE-CREA | 🔴 | Alta | **Las VENTAS no dan de alta el cliente en `proveedores`** (compras sí) — rompe la regla consensuada "si hay factura, tiene que estar en proveedores/clientes". Causa raíz identificada, ver [dossier](#b-bug-cliente-no-se-crea). (2026-07-28) |
 | B-FEAT-08 | 🔴 | Baja | Margen por superposición — órdenes agrícolas (diseño aprobado, ~25-30 líneas) |
 | B-FEAT-09 | 🔴 | Baja | Editar empleado existente (hoy sólo SQL) |
 | B-FEAT-10 | 🔴 | Baja | `formatoCantidad('L')` — muestra ml como L ("1122 L" vs "1,122 L") |
 | B-FEAT-11 | 🔴 | Media | **Extracto bancario de ECHEQs endosados** — los echeqs endosados entran y salen pero NUNCA se acreditan en cuenta bancaria → es el único medio de pago que queda sin conciliar. Hace falta un "extracto" propio (importar por Excel o carga directa) para registrarlos y conciliarlos. NO desarrollar ahora — pedido del usuario 2026-06-22. |
 | B-FEAT-12 | 🔴 | Baja | **Tarjeta — tabla colapsable por mes**: hoy es tira-resumen arriba + tabla plana completa abajo (commit 1c0ebc5). Mejora: unificar en una sola grilla colapsable por resumen (meses plegados → desplegar filas) manteniendo columnas/edición/selector. (2026-06-22) |
 | B-FEAT-MAIL-DETALLE | 🟢 | Media | **Mail automático de Detalle de pago al proveedor** (con certificado SICORE adjunto si hay retención). Un mail POR PAGO (1 FC o grupo de N → 1 mail). Flujo: tilde "✉ enviar detalle" en el pago (default ON si SICORE) → app arma Detalle PDF (`lib/pagos/pdf-detalle-pago`, ya renombrado Comprobante→Detalle) + certificado (`generarCertificadoRetencion(...,true)` en vista-facturas-arca, a extraer a lib) → encola en `public.mails_pago` (CREADA 2026-07-09, ver RECONSTRUCCION). **GAS** lee `pendiente` → crea **BORRADORES** en Gmail (asunto+cuerpo+adjuntos) → marca (después: enviar directo). Sin horarios, en lote manual. Email = `proveedores.email_pagos` (sin campo nuevo). Mensaje = template autollenado editable (el mensaje del **lote Galicia/banco es OTRO**, no se mezcla). **HECHO:** rename Comprobante→Detalle · tabla `mails_pago` · **GAS** `gas-mail-detalle/EnviarMailsDetalle.gs` (crea borradores desde la cola). **Decidido:** encolar va en el **botón Pagos (Modal = vista-facturas-arca)** donde ya está SICORE + el detalle PDF + `generarCertificadoRetencion(...,true)`; el **panel de seteo/revisión** va en Cash Flow. **HECHO (2026-07-09, sin testear):** modo base64 en detalle PDF del Modal · `encolarMailDetalle` (detalle+certificado+email_pagos+INSERT) · botón **✉** junto al 📄 en **Pagos ARCA** del Modal · **panel `PanelMailsPago`** ("✉ Mails de detalle" en Cash Flow: lista cola, edita destinatario/asunto/cuerpo, toggle adjunto, borra, ve estado). **✉ en:** ARCA (grupo + por FC) y Templates (grupo + por item) — templates sin certificado (no tienen SICORE), email por `cuit_quien_cobra`. **TESTEADO OK (2026-07-10):** borradores creados en Gmail (cuenta San Manuel) con detalle + certificado adjuntos y fecha de pago en el cuerpo. **NUEVO (2026-07-10):** (a) línea `Fecha de pago:` en el cuerpo (de `sicore_retenciones.fecha_pago`; si no, la estimada; si no, puntos `..............` para completar a mano); (b) botón **'Enviar Borrador'** por fila **+ 'Enviar todos los pendientes'** en el panel — disparan el **GAS web app** vía `fetch` **no-cors** (`?id=<uuid>` uno / sin id todos); URL guardada en localStorage `gas_mails_url`; refresca estado a ~3-4s; (c) **GAS = Web App** (`doGet`) en proyecto **SEPARADO** de la cuenta **sanmanuel.sp@gmail.com** (Execute as: Me=San Manuel · Who has access: Anyone) → los borradores salen de esa casilla. **LockService + guarda por `gmail_draft_id`** → no duplica ante doble disparo; (d) **REFACTOR a lib compartida** (regla DRY): `lib/pagos/encolar-mail-detalle.ts` (lógica, UI-agnóstica, devuelve resultado) + `lib/pagos/certificado-retencion.ts` (cert movido del inline) + `lib/pagos/pdf-detalle-pago.ts` (opción `returnBase64`). El modal (`encolarMailDetalle` = wrapper con alert) y Cash Flow llaman la MISMA función; (e) **Cash Flow: botón '✉ Encolar mail detalle'** sobre filas seleccionadas (agrupa x proveedor, junta `id`/`ids_grupo` como `factura_id` para el cert) → **sirve para proveedores YA pagados** (el modal de Pagos no muestra pagadas; Cash Flow es lo que se usa de acá en más). Cert matchea por `sicore_retenciones.factura_id` (ya no depende de `registrosV2`). **Config real del GAS:** `SUPABASE_URL='https://lyojiaglcictmboqwxfm.supabase.co'` + anon key. **FALTA:** (1) los 2 sitios del modal-detalle interno (7373/7400) sin ✉ (secundario); (2) pasar `createDraft`→`sendEmail` en el GAS cuando el user valide envío directo; (3) al cambiar el código del GAS → redeploy 'Gestionar implementaciones → Nueva versión' (la URL no cambia); (4) duplicación pre-existente pdf/cert inline en el modal (se limpia al deprecar el Modal, E5). (2026-07-10) |
+| B-BUG-PDF-DETALLE | 🟢 | Media | **PDF "Detalle de pago" no muestra descuentos / SICORE** — ✅ **RESUELTO (2026-07-21, commit 0d21d58, sin testear).** Causa: el generador (`lib/pagos/pdf-detalle-pago.ts`) SÍ maneja SICORE/descuento (columnas condicionales), pero la **`CashFlowRow`** del hook (`useMultiCashFlowData`) NO incluía `monto_sicore`/`descuento_aplicado`/`monto_a_abonar` (solo `sicore`/`imp_total`) → el caller del Cash Flow (`generarPDFPagosSeleccionados`) recibía `undefined` → columnas no aparecían. **Fix:** exponer los 3 campos en la fila ARCA individual + de grupo (suma). El **Modal** (`mapFacsAItems`) ya los pasaba bien (bug era solo Cash Flow). **Testear: descargar detalle desde Cash Flow y ver Retención/Descuento.** |
+| B-FEAT-PAGO-MULTIMEDIO | 🟢 | Media | **Detalle de pago con VARIOS medios (transferencia + echeq)** — ✅ **HECHO (2026-07-21, commit 4e033f1, sin testear).** Nueva lib `lib/pagos/medios-pago.ts` (`obtenerMediosPagoFactura`: reúne anticipos=transferencia + cheques=echeq + transferencias directas del extracto `msa_galicia`, por `factura_id`/`template_cuota_id`). El **PDF Detalle de pago** ahora agrega una sección **"Desglose del pago"**: cada medio (con banco/nro/fecha del echeq) + Retención SICORE + Descuento = **Total factura** (con aviso ⚠ si no cuadra ±$1); la tabla principal oculta Transferido/Cancelado cuando hay desglose. Lo pasa el caller del Cash Flow (`generarPDFPagosSeleccionados`, solo ARCA). **Caso testigo Longo:** anticipo 6.505.867,50 + echeq 1.456.737,50 + SICORE 129.270 = 8.091.875. **✅ FASE 2 HECHA (2026-07-21, commit 3819fb5):** el **✉ mail-detalle** también usa el desglose — PDF adjunto con la sección + cuerpo del mail listando cada medio (transferencia/echeq). Seleccionando **solo el echeq** el mail incluye la transferencia automáticamente. **BUG CORREGIDO (mismo commit):** el cert SICORE no se adjuntaba al seleccionar echeq+transferencia juntos → el `tipo` se decidía por `fs[0].origen` (si la 1ra fila del grupo era la transferencia/ANTICIPO, `tipo=template` y se salteaba el cert). Fix: `tipo='arca'` si CUALQUIER fila es ARCA (mail + PDF). **Testear.** Residual menor: seleccionar las 2 líneas duplica el anticipo en los totales del cuerpo → mejor marcar solo el echeq (o pulir para que la transferencia no haga falta seleccionarla). **Falta:** la vista pantalla-detalle (secundario). |
 | B-FEAT-14 | 🔴 | Media | **Análisis productivo-económico (engorde)** — módulo NUEVO en Historial pesadas (`components/analisis-productivo.tsx` + `segmentador.tsx`). Incluye: multi-segmentador · marcado reposición (es_torito) · análisis margen (calcular) · escenario B dinámico (16 vars) · cadena de etapas · punto de equilibrio · análisis de sensibilidad · guardar/cargar/borrar estudios (localStorage+.json) · **precios de mercado** (scraping entresurcosycorralesya, botón mkt auto-poblar por kg neto+sexo). **Falta TESTEAR TODO** contra el Excel del usuario (ver `MANUAL-USO.md` + memoria `project_analisis_productivo`). **v2 pendiente:** (a) **sub-modal** para ver la sensibilidad más ancha; (b) **persistir** la config de sensibilidad en el estudio (hoy sesión); (c) **export Excel/PDF**: hoy cada segmento exporta lo suyo, PERO no hay export **COMBINADO** (todos los segmentos + la combinada) y el export **no refleja** el punto de salida (sigue "punta a punta") ni el tilde incluido/A-vs-B. El **guardado local + JSON SÍ captura todo** (incluido, salidaEtapa, duplicados). (d) agrupador de segmentos + sensibilidad de cadena. (2026-07-09) · **HECHO 2026-07-10/11 (commits 0551bb8/2941fb5/aff89e6/88a3a5a):** (1) precios de mercado scrapeados se **guardan/restauran CON el estudio**; (2) **congelar segmentado** con foto + receta → al cargar la app pregunta **📌 foto** (snapshot, no toca BD) vs **🔄 re-link** (reproduce del config); (3) **Estimado configurable** *desde* (pesada base) / *hasta* (fecha del análisis) → reproduce el kilaje exacto y permite recuperar estudios viejos a mano; (4) **import pesadas por columna `Caravana` no oficial** (CUT/Descarte en `caravana_oficial`, toros en `caravana_interna`). Testeado visualmente OK por el usuario. · **HECHO 2026-07-13:** (5) **export COMBINADO del estudio** (⬇ PDF total = resumen + detalle por segmento · ⬇ Excel total = hoja Resumen + hoja por segmento; PDF declarativo reusado del export individual; respeta tilde `incluido`) → cierra el v2-(c); (6) **💾 Actualizar «estudio»** (sobrescribe el estudio abierto sin re-tipear nombre) + **Guardar como…** (nuevo) → evita duplicados. · **⏳ PENDIENTE DE TEST (2026-07-13, el usuario testea luego):** commits `9150fdb` (export combinado PDF/Excel + Actualizar), `93f540e` (detalle por etapa en el export), `9da43e8` (panel de sección Fase 1: individuos + sub-segmentar), `f58bf39` (panel de sección Fase 2: índices históricos ganancia p-p / últimas pesadas + promedio grupo). Todo en `desarrollo`, sin mergear. |
+| B-FEAT-COSTOS-PRODUCTIVOS | 🔴 | Alta | **Costos productivos atados a la venta (ganadería)** — cada venta presupuestada lleva su costo variable: maíz, concentrado, sanidad, verdeos. **La unidad de planificación es la ACTIVIDAD**: se carga "este lote hace recría del 1/4 al 30/9" y salen solos la curva de peso, el consumo mes a mes, lo que falta comprar y el egreso. El motor de ración YA existe (`calcular()` en `analisis-productivo.tsx:150`) y el stock de insumos también (`productivo.stock_insumos` / `movimientos_insumos`). Plan C-1..C-8 en el dossier § FASE C. **0 código** — planificado 2026-07-30. |
+| B-FEAT-PRESUPUESTO-CUENTAS | 🟡 | Alta | **Presupuestar cuentas contables** — panel nuevo en Presupuesto (`components/panel-presupuesto-cuentas.tsx` + `lib/presupuesto/modos.ts`). 6 modos por cuenta (última FC · promedio N · estacional · por cabeza · manual · excluida) con sugerencia automática según cómo se comportó la cuenta, explicación de cómo se calculó cada celda, y control de cordura contra los últimos 6 meses reales. Vista `presupuesto_historia_cuentas` unifica ARCA + histórico por `nro_cuenta` (estaban partidos por mayúsculas y solapados en dic-2025). **Sin testear** — 2026-07-30. |
+| B-FEAT-CONTROL-PROVEEDORES | 🟡 | Media | **Control de subas de proveedores vs IPC** — panel en Presupuesto (`components/panel-control-proveedores.tsx` + `lib/proveedores/control-subas.ts`) con export Excel y PDF. Mide punta a punta (NO mín-máx: el monto mezcla precio y cantidad) y separa precio de consumo contando cuántas veces bajó. Semáforo contra el IPC acumulado del mismo período; si falta IPC no inventa la comparación. **`indices_ipc` está vacía** — se carga en Precios y TC. **Sin testear** — 2026-07-30. |
+| C-17 / C-19 | 🔴 | Alta | **Cerrar el presupuesto como una sola cosa.** (a) **C-19**: bajar el bloque de cuentas contables a la grilla y sumarlo al TOTAL EGRESOS (hoy está en un panel aparte a propósito, ver cierre de sesión); (b) **C-7**: ídem costos de producción, que ya se calculan por tramo pero no bajan; (c) **C-17**: proyectar los templates donde no hay cuota cargada — las cuotas se cortan en dic-2026. La distinción de qué template quiere el usuario cargado a mano ya existe en `egresos_sin_factura.aplica_generacion` (true = Cargas Sociales, SICORE, UATRE… = avisar 'falta generar la campaña'; false/null = proyectar en silencio). 2026-07-30. |
+| C-22 | 🟡 | Media | **Estructura del dashboard en el presupuesto** — **paso 1 HECHO** (2026-07-31, sin testear): la grilla se parte en secciones **EGRESOS / DISTRIBUCIONES** con subtotal cada una, mismos títulos y colores que `tabla-resumen-financiero.tsx`. Los retiros dejan de estar escondidos dentro del total (siguen sumando: el presupuesto es de caja). Ningún número cambió. **Falta el paso 2**: dentro de cada sección ordenar por `nombre_totalizadora` en vez de alfabético — eso sí depende de la Fase 1 de C-24. Dossier § C-22. |
+| C-27 | ✅ | — | **`tipo` en el template** (2026-07-31, **sin testear**) — columna `egresos_sin_factura.tipo` cargada en los **176** templates (150 egreso · 14 distribucion · 11 financiero · 1 ingreso). Cascada `template.tipo ?? cuenta.tipo ?? signo` en `resolverTipo()` (`lib/presupuesto/templates.ts`), usada por el dashboard y el presupuesto. **Cierra la Fase 0 de C-24 por otro camino**: el template ya no depende de que su categoría esté en el plan (70 de 123 activos no lo estaban). **Efecto medido: $43,65 M en 15 movimientos pasan de egresos operativos a distribuciones.** El wizard ahora pide el Tipo. Dossier § C-27. |
+| C-26 | 🔴 | Alta | **Las otras dos puertas de alta crean templates incompletos** — el **wizard ya está arreglado** (C-27: pide Tipo y lo sugiere desde el plan), pero `modal-crear-template-faltante` (toma la categ del movimiento bancario) y `generador-renovacion-campana` (clona la del original) siguen creando sin `tipo` y ofreciendo las 23 categorías huérfanas. Hoy no rompen porque la cascada los salva, pero el hueco vuelve de a poco. Falta además que las tres lean las categorías **del plan** y no de los templates. Conviene una pieza compartida, como `SelectorCuentaContable`. 2026-07-31. |
 | B-FEAT-15 | ⏸️ | Baja | **Pesadas sin caravana (`sin_idv`)** — hoy se cuentan y se **descartan**. Pedido: en el import preguntar "dejar de lado / sumar al total (sin caravana)" y que cuenten en el promedio de la segmentación. **Diferido por el usuario**: complica el sexo (un pesaje sin caravana no tiene sexo → no cae limpio en Machos/Hembras del multi-segmentador). Retomar con calma. (2026-07-09) · **Nota:** distinto del import por columna `Caravana` NO oficial (CUT/Descarte, toros) que SÍ se hizo (commit aff89e6, B-FEAT-14); `sin_idv` = pesaje sin ninguna caravana, sigue diferido. |
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) |
@@ -148,7 +257,14 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-TEST-07 | 🔴 | Insumos — unidad correcta (f6a7a61) · sólo EJECUTADAS (ddef961) · agrícola=ganadero (85924fa) · InsumoCombobox (bf75b18) |
 | B-TEST-08 | 🔴 | Import pesadas — validación fecha única + popover ayuda (b559843) |
 | B-TEST-09 | 🔴 | Órdenes ganaderas — recría + carga manual (c4d2bab) |
-| B-TEST-10 | 🔴 | Resto ítems 29-47 de la lista de testing (ver `memory/feedback_testing_pendiente.md`) |
+| B-TEST-11 | 🔴 | Escenario B agrupado por `grupo_pago_id` — modal NC con subtotales, summary en rojo si no cuadra, ocultar grupos ya aplicados (commit 47ad5f1, ya en main) |
+| B-TEST-12 | 🔴 | Filtro "Tipo de comprobante" en Facturas ARCA — selector con SÓLO los tipos presentes (no toda la lista AFIP) |
+| B-TEST-13 | 🔴 | Filtro "Solo NC" en Vista Pagos |
+| B-TEST-14 | 🔴 | Fix vinculación anticipo — no ofrece facturas en estado `anterior` (caso Nuñez Omar) |
+| B-TEST-15 | 🔴 | Templates Caja → estado `programado` para proyecciones; cuotas de presupuesto eliminadas |
+| B-TEST-16 | 🔴 | Excel de jerarquía de cuentas — `scripts/generar-jerarquia-cuentas.cjs` (jerarquía por `nombre_totalizadora`, no por número) |
+| B-TEST-17 | 🔴 | InsumoCombobox — selector único en órdenes (buscador acento-insensible, no acepta texto libre, "➕ Nuevo insumo" crea en el momento) |
+| B-TEST-18 | 🔴 | Órdenes agrícolas — muestran insumos usados y cantidades (igual que ganaderas) |
 
 ---
 
@@ -156,7 +272,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Estado | Ítem | Por qué dudoso |
 |----|--------|------|----------------|
-| C-01 | ❓ | Testing ítems 1-24 (extracto, dashboard, selectores sub-categorías, etc.) | De abr/may; muchos quizá ya testeados |
+| C-01 | ❓ | **Testing ítems 1-28** (extracto, dashboard, selectores, motor, sueldos, cancelación FC/NC…) — **los 28 transcriptos** en el dossier | De abr/may-2026; muchos quizá ya testeados. Absorbidos de la memoria 2026-08-02 → [C-01](#c-01) |
 | C-02 | ❓ | Sistema Reglas Contable e Interno (3865ea8) | Implementado, nunca testeado, viejísimo (2025-08) |
 | C-03 | ❓ | Investigar estado "auditado" en conciliación | Vago, 2025-08, puede estar resuelto |
 | C-04 | ❓ | Estados dropdown en Templates (input → Select) | Mejora menor 2025-08 |
@@ -200,6 +316,11 @@ Hay dos grupos de archivos sueltos en la raíz. **El usuario pidió que Claude l
 2. **Varios `tmpclaude-XXXX-cwd`**: archivos temporales generados por el harness de Claude Code (artefactos de sesiones, marcadores de working directory). **Hay que confirmar qué son exactamente y si es seguro borrarlos** antes de hacerlo — no asumir. Probablemente basura de sesiones viejas, pero verificar que ninguno esté en uso por una sesión activa.
 
 **Al abordar:** primero listar y clasificar cada grupo, explicárselo al usuario, y recién entonces decidir destino. No borrar en bloque.
+
+**Frontera con los [A-DOC-*](#a-doc-01) (2026-08-02):** este pendiente cubre los archivos de
+**trabajo** del usuario (`.xlsx` / `.csv` / `.pdf`) y los `tmpclaude-*`. La **documentación `.md`**
+(31 archivos) la cubre la auditoría de dimensiones A-DOC-01..08. Si al abordar uno se mueve algo
+del otro, anotarlo en ambos.
 
 ---
 
@@ -247,6 +368,714 @@ Hay dos grupos de archivos sueltos en la raíz. **El usuario pidió que Claude l
 3. Asegurar que el proceso incluya los **cambios no-backup** documentados en `RECONSTRUCCION_SUPABASE` § CAMBIOS POST-RECONSTRUCCIÓN.
 
 **Relación:** complementa A-SEC-01 (si `anon` puede truncar todo, un restore confiable es la red de seguridad).
+
+---
+
+## <a id="p-lote"></a>P-LOTE — Presupuesto: los 3 conceptos de fondo (2026-08-02)
+
+Tres cosas que el usuario pidió y que **no son features sueltas: son cambios de modelo**. Todo lo
+demás de la lista `P-*` se apoya en esto.
+
+### 1. Los modos tienen que **componerse**, no elegirse
+
+Hoy `ModoPresupuesto` es un enum de 6 valores **excluyentes**: una cuenta tiene *un* modo. El
+usuario necesita combinarlos.
+
+> *"Algo se calcula por cabeza hoy pero además sumarle el IPC del año. Además se pone en un solo
+> mes o se desglosa en el año. Está puesto como uno u otro y ahí falta configuración para poder
+> sacar todo el provecho."*
+>
+> *"Si son 9 kg de carne por cabeza, podemos —si tenemos presupuesto del kg de carne— usarlo; si
+> no, tomar lo pagado el año anterior dividido las cabezas y tenemos lo pagado por cabeza,
+> aplicarle IPC y multiplicarlo por las cabezas nuevas. Lo importante es el concepto de que a
+> veces no es una o la otra sino que son cosas diferentes que interactúan."*
+
+**Lo que se desprende: un modo son 3 decisiones independientes, no una.**
+| Eje | Qué responde | Opciones |
+|-----|--------------|----------|
+| **BASE** | de dónde sale el monto unitario | última FC · promedio N · mismo mes año anterior · **$/cabeza** · **unidad física** (kg novillo, kg carne) · manual |
+| **AJUSTE** | cómo se actualiza al futuro | ninguno · **IPC** · dólar · precio de la unidad física |
+| **DISTRIBUCIÓN** | cuándo cae en el año | mensual · **un solo mes** · calendario fijo (N cuotas en meses dados) · **cupo anual con arrastre** |
+
+Hoy los 6 modos son combinaciones fijas de esos tres ejes. Separarlos es lo que habilita
+[P-13](#p-lote) (IATF por cabeza), [P-14](#p-lote), [P-09](#p-lote), [P-25](#p-lote) y
+[P-10/P-17](#p-lote) **con una sola pieza** en vez de cinco parches.
+
+**El caso del $/cabeza con fallback** (segunda cita) muestra que la BASE puede tener **cascada**:
+si hay precio de la unidad física, usarlo; si no, derivarlo de la historia (pagado ÷ cabezas).
+Es la misma idea de `resolverTipo()` en C-27.
+
+### 2. El presupuesto anual **no se pierde si no se gasta en el mes**
+
+> *"Se compran 7000 lts anuales de gas oil pero 1 o 2 veces por año. ¿Qué pasa si lo pongo en
+> marzo y finalmente lo compro más adelante? Si tengo conciliada la compra no pasa nada porque se
+> va de saldo, pero ¿si aún no concilié? En uno de mis ejemplos, si no concilié, aún figura en el
+> presupuesto, entonces estaría bien según ese formato. **Lo que no puede pasar es que por no
+> hacerlo en el mes se pierda el presupuesto.**"*
+
+El invariante a respetar: **lo presupuestado y no ejecutado se arrastra, no se evapora.** El mes
+asignado es una *estimación de cuándo*, no un vencimiento. Se cierra sólo contra la **realidad**
+(la conciliación), no contra el calendario.
+
+**Solución acordada — "cupo anual con saldo", como VARIANTE, no como regla universal.** El usuario
+(2026-08-02): *"me gusta pero puede que no todos los casos apliquen, entonces sería una variante"*.
+Encaja como una opción del eje **DISTRIBUCIÓN** de arriba, junto a mensual / un solo mes /
+calendario fijo. Cada cuenta elige la suya.
+
+Cómo funciona: la cuenta tiene un **cupo anual** (ej. 7000 lts de gasoil) y un **mes tentativo**.
+Lo ejecutado descuenta del cupo; el saldo se muestra en el mes tentativo y **se corre solo**
+mientras no se ejecute; si llega el mes 12 con saldo, cae todo ahí. **Ventaja sobre el promedio
+mensual:** el número que se ve es siempre *lo que falta gastar*, que es la pregunta real — el
+promedio, a mitad de año, ya no representa nada porque la compra viene entera.
+
+### 3. Los controles son **requisito de cierre**, no un extra
+
+> *"Habrá muchos controles para sentirme seguro. Por empezar es un requisito pasar por esto para
+> considerar terminado el módulo y es uno de los puntos principales."*
+
+→ [P-32](#p-32).
+
+---
+
+## <a id="p-32"></a>P-32 — Batería de controles del Presupuesto (requisito de cierre)
+
+**Lo que hay hoy:** `controlarPresupuesto()` en `lib/presupuesto/modos.ts` — control de cordura
+contra los últimos 6 meses reales, con niveles `alta`/`media`.
+
+**Lo que pidió el usuario:** que sean **muchos** y que **pasar por ellos sea condición para dar el
+módulo por terminado**. Por ahora, sólo anotar ideas.
+
+### Ideas de controles (borrador — falta que el usuario elija y agregue)
+
+**Cordura del monto**
+- Presupuestado vs. histórico del mismo mes: desvío > X% → avisar *(ya existe)*
+- Presupuestado vs. promedio de los últimos 12 meses
+- Cuenta que **saltó de orden de magnitud** respecto de su propia serie
+- Cuenta con historia que quedó en **$0** presupuestada (¿se excluyó sin querer?)
+
+**Cobertura — lo que falta presupuestar**
+- Cuentas con movimiento en los últimos 12 meses y **sin presupuestar** en los próximos 12
+- Templates cuyas **cuotas se terminan** dentro del horizonte y no tienen campaña nueva generada
+  (se cruza con el Generador Renovar Campaña y con [P-23](#p-lote))
+- Cuentas del plan **sin `tipo`** o con `categ` huérfana (C-26)
+- Proveedor recurrente que **dejó de aparecer** (¿se perdió una FC o dejó de operar?)
+
+**Coherencia interna**
+- **Doble conteo**: el mismo concepto entrando por template *y* por cuenta contable (C-24/C-19)
+- Suma de secciones = total (C-22)
+- Lo `financiero` no debe estar en egresos operativos (C-27)
+- Cuentas marcadas `excluida`: listar **con su motivo**, porque muchas esconden un bug ([P-33](#p-lote))
+
+**Contra la realidad**
+- Presupuestado vs. **ejecutado** del mes cerrado, por cuenta (el control que cierra el ciclo)
+- Anual: *"se gastó cero el último año y seguís presupuestando $1.500.000"* — el que pidió
+  explícitamente en [P-17](#p-lote)
+- Presupuesto vs. **saldo bancario proyectado** (¿alcanza la plata?)
+
+**Trazabilidad**
+- Toda celda tiene que poder **explicar de dónde salió** (base, ajuste, muestra usada) —
+  [P-15](#p-lote). Un control que no se puede explicar no sirve para decidir.
+
+---
+
+## <a id="m-01"></a>M-01 — Módulo Margen por actividad (Cría, Recría, Arrendamientos)
+
+**Pedido del usuario 2026-08-02.** Sale del norte: *"resultado por actividad, período por período,
+más la proyección"* ([A-FEAT-12](#a-feat-12)). Actividades por ahora: **Arrendamiento Rojas**,
+**Arrendamiento Nazarenas** (agrícolas), **Cría** y **Recría**.
+
+**Fuente del modelo:** `exports_app/MARGENES - Situacion Actual.xlsx`, pestaña **MARGEN CRIA**
+(la única a mirar por ahora; el libro tiene 15 pestañas, el resto es contexto).
+
+### Lo que hace hoy el Excel (leído 2026-08-02)
+Margen bruto ganadero clásico, **en U$S/ha, sin IVA**, sobre 175 has, TC $1450. Cinco bloques:
+
+1. **Parámetros de producción** → carga (1,37 vacas/ha), receptividad, **% destete 85%**,
+   % reposición vaquillonas 23%, % refugo vacas 20%, toros en servicio 5%, toros refugo 1%.
+   De ahí salen las **cabezas**: 240 vacas, 204 terneros, 55 vaquillonas, 48 refugo, 12 toros.
+2. **Planteo técnico** → % campo natural 91%, % pasturas 9%, % promoción verdeos 65%,
+   tons de silo, rollos/vaca → **hectáreas por recurso forrajero**.
+3. **Precios** (U$S/kg) → ternero/ternera 3,79 · vaca 2,07 · toro venta 2,07 · toro compra 1400 U$S/cab.
+4. **Cotizaciones de insumos y servicios** → sueldos, sanidad vacas/terneros/toros, **IATF**,
+   implantación y mantenimiento de pasturas, promoción rye grass, verdeos, silo, rollos,
+   **% gastos de venta** (3% hacienda liviana / 9% vacas y toros) y **% gastos de compra** (6%).
+5. **Análisis económico**:
+   - `INGRESO NETO` = ventas (terneros + vacas + toros) − gastos de venta − compra de toros
+   - `TOTAL GASTOS DIRECTOS` = sueldos · recompra reposición · sanidad · renovación y
+     mantenimiento de pasturas · promoción y mantenimiento de verdeos · silo · rollos · gas oil
+   - `TOTAL MANTENIMIENTO/MEJORAS/VARIOS` = aguadas · automotores · combustible · instalaciones ·
+     arreglo de maquinarias · materiales · seguros · varios
+   - **`MARGEN BRUTO` = ingreso neto − directos − mantenimiento** (382,88 U$S/ha en el caso base)
+   - Y al final lo compara contra el **alquiler** → *ganancia sobre alquiler* (el costo de
+     oportunidad de no arrendar el campo).
+
+### Para qué lo quiere el usuario
+- Tenerlo en la app para **campañas pasadas con datos reales** y **presupuestado** para la
+  campaña actual y la siguiente.
+- **Conexión con Presupuesto (lo que motiva todo):** *"la cría tiene una serie de costos directos
+  que son los que menos medidos tengo"*. La idea es **poner la teoría** (este modelo), después
+  **colectar factura a factura** los costos reales, **comparar teoría contra realidad**, y que
+  **desde Margen se llenen los costos directos del Presupuesto**.
+
+### Respuestas del usuario (2026-08-02)
+1. **Unidad de campaña: la campaña contable es siempre 1/7 → 30/6**, y **agrupa todas las
+   actividades**. (Coincide con el período "bianual jul-jun" del Generador Renovar Campaña.)
+2. **Imputación de la factura a la actividad** — ideas, sin cerrar: que **las cuentas contables o
+   los templates tengan su actividad**; que ciertas haya que **desglosar** entre actividades; y
+   que ciertas sean **estructura** y se repartan **por hectárea** entre todas.
+3. **Quién manda cuando teoría y realidad difieren** — a definir.
+
+**Ritmo acordado:** el diseño del módulo **espera** a que se terminen las mejoras fáciles y claras
+del Presupuesto (`P-*` marcadas 🟢).
+
+### Estado
+🟡 **Sin diseñar todavía.** El usuario aprobó que sea un módulo propio → `MODULO_MARGEN.md`
+(dimensión MÓDULOS) cuando se arranque el diseño.
+
+**Piezas que ya existen y hay que reusar, no rehacer:** `centros_costo` (tabla maestra +
+`CentroCostoCombobox` en 6 lugares) · el módulo productivo (rodeos, pesadas, órdenes, stock de
+insumos) · el motor de ración `calcular()` en `analisis-productivo.tsx` · las cuentas de
+producción que `esProduccion()` ya excluye del presupuesto por entrar "por Actividades y costos".
+
+---
+
+## 🏁 A-FEAT-09..12 — El resultado final del sistema (norte, 2026-08-02)
+
+**Contexto común.** Salen de la ampliación del norte que hizo el usuario el 2026-08-02
+(§ [A-DOC-07](#a-doc-07)). No son tareas: son **los cuatro resultados que el sistema tiene que
+poder dar**. Sirven como vara — ante cualquier desarrollo, preguntarse a cuál de los cuatro sirve.
+
+**Cómo se abordan (criterio del usuario):** *"esto conlleva bastante tiempo y se irá trabajando a
+medida que se dan los eventos"*. El orden lo marcan los **vencimientos y cierres**, no un roadmap.
+Cuando se acerca un evento, lo que ese evento necesita pasa a ser el foco.
+
+---
+
+## <a id="a-feat-09"></a>A-FEAT-09 — Papeles de trabajo del balance = export del sistema ⏳ FECHA DURA
+
+**Qué:** que los papeles de trabajo que hoy se arman a mano para el contador salgan como **export
+del sistema**.
+
+**Ejercicio 25/26:**
+| Hito | Fecha |
+|------|-------|
+| Corte del ejercicio | 30/06/2026 (ya pasó) |
+| Entrega al contador | **01/10/2026** |
+| Presentación a ARCA | **01/11/2026** |
+
+**Lo que dijo el usuario (2026-08-02):** *"la idea es que papeles de trabajo sea un export de
+sistema. Veremos si llegamos a eso para el 1/10."*
+
+### 🔨 Cómo se va a hacer — decidido por el usuario 2026-08-02
+
+**No se define todo antes: se construye haciéndolo.** El usuario va a **armar el balance desde la
+app** y, a medida que lo hace, se desarrolla y configura el export. El formato queda asentado y
+**para el balance siguiente ya está hecho**.
+
+> *"por eso se hace a medida que lo hago. Cuando lleguemos a preparar el balance yo intentaré
+> hacerlo desde app desarrollando el export de papeles de trabajo. A medida que lo hago lo
+> configuramos y va quedando el formato para que el próximo balance ya esté hecho."*
+
+**Lo que aporta cada uno cuando arranque:**
+- **Usuario** → la **lista de papeles de trabajo**, qué debe tener cada uno, formato.
+  (No hace falta pedírsela antes: la trae al empezar.)
+- **Claude** → el export, incremental, papel por papel, a medida que aparecen.
+
+**Riesgo que queda vivo (menor, pero real):** el trabajo del balance y el desarrollo van **en
+paralelo y contra reloj**. Si un papel se traba, la prioridad es **el balance**, no el export —
+se arma ese a mano y el export queda para el año que viene. Eso no es un fracaso: es el diseño
+incremental funcionando.
+
+**Piezas que ya existen y probablemente sirvan:** subdiarios, libro IVA compras/ventas, plan de
+cuentas, jerarquía de cuentas, `Libro Diario 24-25.xlsx`.
+
+**Dependencia:** ¿alcanza con exportar, o hay que ajustar antes el plan de cuentas
+([C-24](#c-24))? El usuario: *"volveremos a eso pronto"*.
+
+**Relación con el norte:** es el primer evento concreto donde el sistema tiene que **reemplazar
+trabajo manual**, no sólo informar.
+
+---
+
+## <a id="a-feat-10"></a>A-FEAT-10 — Resultado del período contable y del período en curso
+
+**Qué:** que el sistema dé (a) el **resultado del período contable cerrado** (ganancia) y (b) el
+**resultado del período en curso** = **lo registrado a la fecha + el presupuesto** de lo que falta
+para completar el período.
+
+**Por qué es del norte:** es la unión más directa entre contabilidad y presupuesto — el presupuesto
+deja de ser una proyección aparte y pasa a **completar** el resultado real. Es la razón por la que
+"todo alimenta al presupuesto" tiene que ser cierto: si un módulo no alimenta, el resultado en
+curso queda mal.
+
+**A definir:** qué se toma como "registrado a la fecha" (¿devengado? ¿percibido?), y cómo se evita
+el **doble conteo** entre lo ya registrado y lo presupuestado para el mismo concepto — el mismo
+problema que ya aparece en [C-24](#c-24) (templates ↔ cuentas contables).
+
+---
+
+## <a id="a-feat-11"></a>A-FEAT-11 — Presupuesto a 2 años constante
+
+**Qué:** que el presupuesto sea **siempre de 2 años hacia adelante** (ventana móvil), no un
+ejercicio que se arma una vez al año y se consume.
+
+**A definir:** cada cuánto rueda la ventana (¿mensual?), qué pasa con lo ya afinado a mano cuando
+rueda (**no se pisa** — ver § Datos de `CLAUDE.md`), y cómo se renueva lo recurrente. Se cruza con
+el **Generador Renovar Campaña**, que ya existe y hace algo parecido para templates.
+
+---
+
+## <a id="a-feat-12"></a>A-FEAT-12 — Resultado por actividad, período por período, + proyección
+
+**Qué:** resultado **por actividad** (ganadería, agricultura, arrendamientos…), período a período,
+con su **proyección**.
+
+**Estado:** hay bastante base — centros de costo, el módulo productivo, y el análisis de costos por
+actividad (FASE C, [[project_costos_productivos_plan]]). Falta la vista de resultado por actividad
+que cruce eso con la contabilidad y la proyección.
+
+**A definir:** la lista canónica de actividades y cómo se imputa lo que sirve a más de una
+(estructura, administración) — si se prorratea o queda aparte.
+
+---
+
+## <a id="a-doc-09"></a>A-DOC-09 — `MODULO_ARCA.md` está documentado por la mitad
+
+`MODULO_ARCA.md` (creado 2026-08-02) cubre **la puerta de entrada**: el subproyecto `arca-api/`,
+qué se logró (descarga de comprobantes emitidos y recibidos con login automatizado a ARCA), qué no
+(fases SIRE y Portal IVA) y la investigación previa.
+
+**Falta todo el lado de la app**, que hoy no está en ninguna dimensión:
+- `app/api/arca` · `app/api/arca-asignar` · `app/api/import-facturas-arca`
+- `lib/arca`
+- `components/vista-facturas-arca.tsx` · `components/vista-asignacion-arca.tsx`
+- Reglas de importación por CUIT (`modal-reglas-import.tsx`)
+- Relación con `app/api/gas` (búsqueda automática de PDFs de facturas)
+
+**Por qué importa:** es el módulo por donde entra la información oficial. Si ARCA alimenta
+incompleto, el resultado del período en curso ([A-FEAT-10](#a-feat-10)) sale mal — y el norte dice
+que todo alimenta al presupuesto.
+
+**Además, sin verificar:** el código de `arca-api/` no corre desde el **19/09/2025**. Los
+selectores de un sitio ajeno se rompen sin aviso. Antes de confiar en la descarga automática,
+correr `arca-api/scripts/test-login.js`.
+
+---
+
+## 📚 A-DOC — Auditoría de dimensiones de documentación (2026-08-02)
+
+**Contexto común a todos los A-DOC.** El usuario trajo el `CLAUDE.md` de otro proyecto suyo
+("Remates Televisados") para comparar reglas y destilar una base portable. De ahí salieron dos
+cosas: **`CLAUDE_BASE.md`** (plantilla de 12 secciones, sin nada de dominio, para arrancar
+cualquier proyecto) y esta auditoría de los **31 `.md`** del repo.
+
+**La regla que fijó el usuario (2026-08-02):**
+> La **cantidad** de dimensiones la define cada proyecto (pueden ser 4 o 9). Lo que **no** varía
+> es que la lista sea **cerrada y exhaustiva**: cada dimensión con archivo exacto y criterio de
+> qué entra. **Nada de "etc."**. Si algo no cae en ninguna dimensión: o cae y no lo vimos, o se
+> **crea la dimensión y se anota en `CLAUDE.md` en ese momento**. Un `.md` en la raíz que no es
+> dimensión declarada es un error a corregir, no una excepción.
+
+**Frontera con [A-OP-06](#a-op-06):** A-OP-06 = archivos de **trabajo** del usuario en la raíz
+(`.xlsx` / `.csv` / `.pdf`) + `tmpclaude-*`. Los **A-DOC** = sólo la **documentación `.md`**.
+No se pisan; si uno mueve algo del otro, anotarlo en los dos.
+
+**Lo que NO se hizo (a propósito):** no se borró, movió ni renombró ningún archivo. Todo espera
+decisión del usuario.
+
+---
+
+## <a id="a-doc-01"></a>A-DOC-01 — Lista de dimensiones cerrada (✅ DECIDIDO 2026-08-02)
+
+> **RESUELTO.** El usuario aprobó las 8 dimensiones y agregó una condición propia:
+> **crear una dimensión nueva requiere su autorización explícita** — Claude propone, el usuario
+> autoriza; sin autorización no se crea el archivo. También decidió que **`README.md` se conserva**
+> (excepción declarada, cara pública del repo) y que **`CLAUDE_BASE.md` lo saca él** del proyecto,
+> por haber cumplido su función de plantilla.
+> **Aplicado a `CLAUDE.md`** § Documentación (tabla de 8 + fronteras + regla de cierre) el mismo día.
+> Lo que sigue abajo es el análisis que llevó a la decisión.
+
+**Fenómeno.** La regla de `CLAUDE.md` § Documentación termina en *"`DISEÑO_*.md`,
+`CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`, **etc.**"*. Ese "etc." es la puerta
+por la que entraron 8 archivos que no pertenecen a ninguna dimensión declarada.
+
+**Estado real (verificado 2026-08-02):** 31 `.md` · 6 dimensiones declaradas · las 6 están vivas
+y se usan (`PENDIENTES` 289 KB, `MANUAL-USO` 74 KB, `KNOWLEDGE` 55 KB, `ARQUITECTURA-BD` 29 KB,
+todas tocadas el 31/07). **No sobra ninguna dimensión: sobran archivos fuera de dimensión.**
+
+**Propuesta — pasar de 6 a 8:**
+
+| # | Dimensión | Archivo(s) | Qué entra |
+|---|---|---|---|
+| 1 | PENDIENTES | `PENDIENTES.md` | todo lo por hacer (índice + dossier con ID) |
+| 2 | ARQUITECTURA BD | `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md` | tablas, columnas, permisos, RPC |
+| 3 | RECONSTRUCCIÓN | `RECONSTRUCCION_SUPABASE_2026-01-07.md` | cómo rehacer la BD + ALTERs post-backup |
+| 4 | MANUAL | `MANUAL-USO.md` | cómo se opera cada módulo |
+| 5 | CONOCIMIENTO | `KNOWLEDGE.md` | qué funciona, qué se descartó y por qué, troubleshooting |
+| 6 | ERRORES | `ERRORES_CONOCIDOS.md` | baseline de errores preexistentes |
+| 7 | **MÓDULOS** *(nueva)* | `MODULO_<NOMBRE>.md` | diseño y decisiones por módulo — **una sola convención** (ver A-DOC-02) |
+| 8 | **HISTORIAL** *(nueva)* | `CLAUDE_HISTORICO.md` | sesiones cerradas, referencia |
+
+Más la **memoria** (`memory/`), que **no es dimensión**: es continuidad de Claude, y **la doc manda
+sobre ella** (si se contradicen, gana la doc y se corrige la memoria).
+
+**Regla de cierre (aprobada):** cualquier `.md` en la raíz que no sea una de estas 8, ni
+`CLAUDE.md`, ni `README.md`, está mal ubicado. Y **Claude no crea dimensiones nuevas por su
+cuenta**: propone, el usuario autoriza.
+
+---
+
+## <a id="a-doc-02"></a>A-DOC-02 — 13 docs de módulo, 4 convenciones de nombre (✅ HECHO 2026-08-02)
+
+> **RESUELTO.** El usuario eligió la opción (a): renombrar los 13 ahora, consolidar SICORE después.
+> Prefijo elegido: **`MODULO_`** (ASCII puro — `DISEÑO_`/`REDISEÑO` llevaban **ñ**, y en este
+> entorno los acentos en nombres ya dieron problemas).
+>
+> **Hecho:** 13 `git mv` (historial intacto) · `MODULO_ARCA.md` creado · los 2 docs huérfanos de
+> ARCA movidos a `arca-api/` · 8 referencias vivas actualizadas · nota de "nombres viejos" al
+> inicio de `CLAUDE_HISTORICO.md` y `RECONSTRUCCION_SUPABASE_2026-01-07.md` (no se reescriben:
+> son archivo).
+>
+> **Mapa del renombrado:**
+> `DISEÑO_PRESUPUESTO`→`MODULO_PRESUPUESTO` · `DISEÑO_SUELDOS`→`MODULO_SUELDOS` ·
+> `DISEÑO_TERNEROS`→`MODULO_TERNEROS` · `DISEÑO_AGROQUIMICOS`→`MODULO_AGROQUIMICOS` ·
+> `DISEÑO_TEMPLATES`→`MODULO_TEMPLATES` · `DISEÑO_MAIL_PROVEEDORES`→`MODULO_MAIL_PROVEEDORES` ·
+> `PLAN_DASHBOARD_REDISEÑO`→`MODULO_DASHBOARD` · `PLAN_REGLAS_TEMPLATES_BANCARIOS`→`MODULO_REGLAS_BANCARIAS` ·
+> `ECHEQ`→`MODULO_ECHEQ` · `CONCILIACION-CONTABILIDAD`→`MODULO_CONCILIACION` ·
+> `VINCULACION-ANTICIPOS`→`MODULO_ANTICIPOS` · `SICORE`→`MODULO_SICORE` ·
+> `DISEÑO_SICORE_RETENCIONES`→`MODULO_SICORE_RETENCIONES`
+>
+> ⚠️ **Renombrar no actualiza**: cinco de estos no se tocan desde feb-may. Tienen nombre prolijo y
+> contenido viejo.
+> 🔎 **Anotado al pasar:** `MODULO_CONCILIACION.md` pesa **127 KB** (más que `KNOWLEDGE.md` entero)
+> y el nombre viejo sugería dos cosas (conciliación + contabilidad). Puede haber un módulo
+> escondido adentro. No se abrió.
+
+Son todos lo mismo (documentación de un módulo) con cuatro nombres distintos:
+- `DISEÑO_*.md` → 7: agroquímicos, mail-proveedores, presupuesto, sicore-retenciones, sueldos, templates, terneros
+- `PLAN_*.md` → 2: dashboard-rediseño, reglas-templates-bancarios
+- **nombre pelado** → `ECHEQ.md`, `SICORE.md`
+- **nombre-con-guion** → `CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`
+
+**Por qué duele.** Cuatro nombres para una dimensión = nadie sabe dónde buscar ni dónde escribir,
+y se crea un archivo nuevo en vez de ampliar el que ya existe. Caso testigo: **SICORE tiene tres
+archivos** — `SICORE.md` (51 KB), `DISEÑO_SICORE_RETENCIONES.md` (12 KB) e
+`INTEGRACION_SICORE_ARCA.md` (35 KB, huérfano, ver A-DOC-05).
+
+---
+
+## <a id="a-doc-02b"></a>A-DOC-02b — Consolidar la documentación de SICORE
+
+Quedaron **dos archivos vivos** sobre el mismo módulo, escritos en momentos distintos y
+**posiblemente contradictorios**:
+- `MODULO_SICORE.md` (51 KB, abr-2026) — "documentación técnica completa del módulo"
+- `MODULO_SICORE_RETENCIONES.md` (12 KB, abr-2026) — el diseño de retenciones
+
+Más la historia cruda del intento de automatizar SIRE, que se movió a
+`arca-api/INTEGRACION_SICORE_ARCA.md` (ver [MODULO_ARCA.md](MODULO_ARCA.md)).
+
+**Por qué no se hizo ahora:** consolidar no es renombrar — hay que leer 63 KB y decidir qué
+sobrevive. Eso necesita criterio del usuario y no se puede hacer al pasar.
+
+**Cuándo abordarlo:** la próxima vez que se toque el módulo SICORE. Antes no vale la pena.
+
+---
+
+## <a id="a-doc-03"></a>A-DOC-03 — Tres archivos de reconstrucción (553 KB del mismo tema)
+
+- `RECONSTRUCCION_SUPABASE_2026-01-07.md` — 457 KB — **el único declarado** en `CLAUDE.md`; recibe los ALTERs post-backup
+- `RECONSTRUCCION_EXITOSA.md` — 84 KB — bitácora del 2026-01-08 ("qué se hizo")
+- `GUIA_RAPIDA_RECONSTRUCCION.md` — 12 KB — checklist de 2 h; dice ser derivado del primero
+
+**🧊 CONGELADO por decisión del usuario (2026-08-02).** No se toca hasta resolver
+[A-OP-08](#a-op-08), que necesita justamente estos archivos para verificar si el backup/restore
+confiable sigue pendiente. Ordenar 553 KB ahora, sabiendo que A-OP-08 obliga a releerlos igual,
+es trabajo doble.
+
+**Opción sugerida para cuando se descongele:** el de 457 KB queda como maestro, la guía rápida se
+conserva como su checklist (declarada), y `RECONSTRUCCION_EXITOSA` se absorbe en
+`CLAUDE_HISTORICO.md` (es bitácora de una sesión).
+
+---
+
+## <a id="a-doc-04"></a>A-DOC-04 — Podar `README.md` (decidido, diferido)
+
+**Decisión del usuario 2026-08-02:** el README **se conserva** (excepción declarada en
+`CLAUDE.md`) y **se poda**. El trabajo queda como pendiente, no se hizo ahora.
+
+17 KB, **agosto 2025**, generado por v0. Tiene dos mitades muy distintas:
+
+**✅ Se queda — sirve y no está duplicado en ninguna dimensión:**
+- Instalación rápida
+- **Configuración crítica de Supabase** (~109 líneas, § línea 60)
+- Estructura del proyecto · Tecnologías · Flujo de trabajo de desarrollo
+
+**❌ Se borra — le pisa el terreno a otras dimensiones y está viejo:**
+- § "Estado Actual del Desarrollo" → eso es `PENDIENTES.md`
+- § "Visión Futura — Rediseño Completo del Sistema" → eso es el **norte** (`CLAUDE.md`), ya escrito
+- § "Estado Actual — Desarrollo de Cash Flow (En Progreso)" → de hace un año
+
+**Además:** actualizar la descripción de apertura — dice *"sistema de análisis financiero para
+procesar movimientos bancarios de MSA Galicia"*, y hoy es un **sistema de gestión contable y
+productiva**.
+
+**Motivo de podar en vez de reescribir:** la parte de instalación/config es valiosa y no está en
+otro lado; la parte de estado es exactamente lo que la regla de dimensiones prohíbe (un archivo
+contando lo que ya cuenta `PENDIENTES.md`).
+
+---
+
+## <a id="a-doc-05"></a>A-DOC-05 — Cinco `.md` huérfanos
+
+| Archivo | Qué es | Destino sugerido |
+|---|---|---|
+| `SESION-2025-09-11.md` (4,5 KB) | notas de una sesión suelta | absorber en `CLAUDE_HISTORICO.md` |
+| ~~`INTEGRACION_SICORE_ARCA.md`~~ | bitácora del desarrollo Selenium | ✅ **RESUELTO 2026-08-02** — destilado en `MODULO_ARCA.md`, original movido a `arca-api/` |
+| ~~`INVESTIGACION_INTEGRACION_ARCA_AFIP.md`~~ | investigación de opciones | ✅ **RESUELTO 2026-08-02** — ídem |
+| `Usuarios.md` (12 KB, abr-2026) | análisis de roles, accesos y restricciones de escritura | MÓDULOS, o se cruza con [A-SEC-01](#a-sec-01) |
+| `CLAUDE_otro proyecto.md` (+ copia en `AutoMejoras/`) | la plantilla que trajo el usuario | ya destilada en `CLAUDE_BASE.md`; archivar o borrar la copia duplicada |
+
+**Falta decidir (usuario):** destino de cada uno.
+
+---
+
+## <a id="a-doc-06"></a>A-DOC-06 — Seis reglas permanentes vivían sólo en memoria (✅ HECHO 2026-08-02)
+
+> **RESUELTO.** El usuario: *"si la pregunta es si las reglas deben estar en CLAUDE en vez de la
+> memoria, la respuesta es sí"*. Aplicado como **2 secciones nuevas + 1 bullet** (no 6 secciones,
+> para no inflar el archivo): § ♻️ *Centralizar, no duplicar* (reglas 1 y 4), § 📝 *Motivos,
+> errores y testing* (reglas 2, 3 y 6) y un bullet *"Nada destructivo, nunca"* dentro de la
+> § 🛑 *Datos* que ya existía (regla 5). Las 6 memorias quedaron como **punteros de 3 líneas**
+> con el caso testigo y los links — no se borraron, para no perder el grafo de referencias.
+> `feedback_testing_pendiente` conserva su lista de 68 ítems hasta resolver [A-DOC-08](#a-doc-08).
+
+Estas son **reglas**, no estado, y hoy sólo existen en `memory/` (que es de Claude, envejece y
+llega con avisos de "68 días"), no en `CLAUDE.md` (que es del usuario y se carga siempre):
+
+1. `feedback_reutilizar_componentes` — centralizar, no duplicar (`SelectorCuentaContable` vs `CategCombobox`)
+2. `feedback_documentar_motivos` — toda regla lleva su por qué; el usuario prioriza con eso
+3. `feedback_baseline_errores_conocidos` — captura barata / investigación diferida
+4. `feedback_actualizar_descargas_al_agregar_features` — si la vista tiene export, se actualiza el export
+5. `feedback_gas_drive_nunca_destruir` — find-or-create; ya se perdió un backup por un "replace"
+6. `feedback_testing_pendiente` — no dar por terminado lo que no se probó
+
+**Propuesta:** subirlas a `CLAUDE.md` (secciones "Centralizar, no duplicar" y "Motivos, errores y
+testing", ya redactadas en la sesión del 2026-08-02); en memoria queda **un puntero de una línea**,
+no el texto duplicado — así no quedan dos versiones que se desincronizan.
+
+**Falta decidir (usuario):** ¿se suben?
+
+---
+
+## <a id="a-doc-07"></a>A-DOC-07 — `CLAUDE.md` no dice qué hace la app (🟡 parcial)
+
+`CLAUDE.md` arranca directo con las reglas: ninguna línea explica qué es el sistema. Sin eso, la
+regla "todo cuelga del norte" (propuesta para la § Regla de contexto) no tiene de dónde colgar.
+
+**Respondido por el usuario (2026-08-02):** *"el proyecto es un sistema de gestión contable y
+productiva"*. Aplicado a `CLAUDE.md` ese mismo día.
+
+### ✅ Norte — definido 2026-08-02
+
+**Qué dijo el usuario:** *"el desarrollo de presupuesto autoalimentado del sistema contable, muy
+versátil, a ser afinado por el usuario"*. Y la ampliación, que es la parte operativa:
+> *"debe quedar claro que **todo alimenta al presupuesto**. Cada faceta lo más probable es que
+> incida o debería incidir en el presupuesto. **Que no esté creado el vínculo no quiere decir que
+> no debiera existir.**"*
+
+**Por qué esto es un norte y no un foco.** El usuario preguntó si el norte era "el próximo gran
+objetivo". No: eso es el **foco**, que rota (§ FOCO ACTUAL al inicio de este archivo) y por eso no
+puede vivir en `CLAUDE.md`, que "rara vez cambia". Lo que él describió **sí** califica como norte
+porque "autoalimentado" obliga a **toda la cadena** (ARCA, extractos, pagos, sueldos, productivo) a
+alimentar bien — eso no rota.
+
+**Consecuencia práctica (lo que cambia en el día a día):** al tocar cualquier módulo hay que
+preguntarse *¿cómo incide esto en el presupuesto?* Si el vínculo no existe, **es un hueco a
+registrar**, no un no-problema. Esto resuelve la duda que el usuario planteó: corregir pagos
+mientras se trabaja en presupuesto **no** es desviarse del norte — si pagos alimenta mal, el
+presupuesto se autoalimenta con basura.
+
+### 🏁 Ampliación 2026-08-02 — el resultado final
+
+El usuario definió **qué tiene que poder dar el sistema al final**:
+1. **Resultado del período contable** (ganancia) **y del período en curso** (lo registrado a la
+   fecha **+ el presupuesto** de lo que falta).
+2. **Presupuesto a 2 años constante.**
+3. **Resultado por actividad**, período por período, **+ proyección**.
+4. Sin dejar de ser un **sistema contable y productivo completo**.
+
+→ Cada uno quedó como pendiente: [A-FEAT-10](#a-feat-10), [A-FEAT-11](#a-feat-11),
+[A-FEAT-12](#a-feat-12). El punto 4 no es un ítem: es la condición de todo lo demás.
+
+**Cómo se avanza — criterio del usuario:** *"esto conlleva bastante tiempo y se irá trabajando a
+medida que se dan los eventos"*. **El orden lo marcan los vencimientos, no un roadmap.** Primer
+evento con fecha: papeles de trabajo del balance 25/26 → [A-FEAT-09](#a-feat-09) (01/10/2026).
+
+**Estado: 🚧 abierto a ampliación.** El usuario avisó que "probablemente falte info al norte" y que
+definirlo le sirve. Cada vez que lo amplíe → actualizar `CLAUDE.md` § Norte y anotar acá la fecha.
+
+---
+
+## <a id="a-doc-08"></a>A-DOC-08 — La lista de 68 ítems sin testear vive en memoria
+
+`feedback_testing_pendiente` (memoria) arrastra una lista numerada de **47** funcionalidades sin
+testear, actualizada por última vez el **2026-05-27**. Eso es **estado**, no regla: su lugar
+natural es `PENDIENTES.md` (filas `TEST`), que ya tiene estados e IDs estables.
+
+⚠️ **Lo peor no es que esté en memoria: es que `PENDIENTES.md` depende de ella.** La fila
+**B-TEST-10** dice literalmente *"Resto ítems 29-47 de la lista de testing (ver
+`memory/feedback_testing_pendiente.md`)"* — o sea, la fuente única de verdad **delega en la
+memoria de Claude**, que es exactamente lo que la regla prohíbe.
+
+**Mapeo real (verificado 2026-08-02):**
+- Ítems **29-47** → 9 ya tienen fila propia: #47→B-TEST-01 · #36→B-TEST-02 · #32→B-TEST-03 ·
+  #38/39→B-TEST-04 · #35→B-TEST-05 · #42→B-TEST-06 · #43→B-TEST-07 · #41→B-TEST-08 ·
+  #44→B-TEST-09. **Quedan 8 sin fila**: 29, 30, 31, 33, 37, 40, 45, 46.
+- Ítems **1-28** → **no están** en `PENDIENTES.md` (los `A-TEST-01..06` son de otros temas).
+  Son de mayo o antes: **varios ya deben estar testeados o pisados por desarrollos posteriores.**
+
+### ✅ RESUELTO 2026-08-02 — opción (c)
+
+El usuario eligió cortar la dependencia sin inventar certezas sobre qué está testeado:
+1. **8 filas nuevas** `B-TEST-11..18` — los ítems 29, 30, 31, 33, 37, 40, 45, 46.
+2. **`B-TEST-10` eliminada** — era la que apuntaba a `memory/` para saber *qué falta*.
+3. **Ítems 1-28 → [C-01](#c-01)**, **transcriptos completos** en su dossier (no un conteo): la
+   Sección C existe justamente para "dudosos, probable que varios ya no apliquen". Se resuelven
+   al auditar la Sección C ([A-OP-04](#a-op-04)).
+4. **La memoria quedó como puntero** a este archivo.
+
+**Ítem #34** (schema MA expuesto / fix `.schema('msa')`) quedó cubierto por `B-TEST-06`, que es el
+mismo fix del motor.
+
+**Regla adoptada para que no se repita** → `CLAUDE.md` § Documentación:
+> La memoria puede citar a la documentación. **La documentación NO puede citar a la memoria.**
+
+---
+
+## <a id="a-sec-03"></a>A-SEC-03 — Terminar el módulo Usuarios y ponerlo activo
+
+**Decidido por el usuario 2026-08-02** al ordenar la documentación: `Usuarios.md` (huérfano en la
+raíz desde abr-2026) pasó a ser **`MODULO_USUARIOS.md`**, y el módulo hay que **terminarlo y
+activarlo**.
+
+### Lo que hay hoy (funcionando)
+Rutas-como-password en `config/access-routes.ts`: `adminjms1320` → `admin` (ve todo) ·
+`ulises` → `contable` (sólo la tab Egresos: Facturas ARCA + Templates). El rol sale de la URL en
+`app/[accessRoute]/page.tsx` y baja como prop a `dashboard.tsx`. Hay restricciones finas ya
+implementadas en `vista-facturas-arca.tsx` (DDJJ IVA, quincena SICORE, botón Revertir, secciones
+de Vista de Pagos).
+
+### 🐞 Bug documentado y sin arreglar
+`userRole` se pasa de `dashboard.tsx` a `VistaEgresos`, pero **`VistaEgresos` no recibe el prop**
+(función sin parámetros). El prop se pierde y no llega a los sub-componentes. Por eso
+`vista-facturas-arca.tsx` lee el rol **directamente de `window.location`** como workaround.
+
+### Lo que el usuario quiere (y hoy no existe)
+1. Que **todo lo nuevo quede restringido por defecto** para no-admin.
+2. **No tener que acordarse** de agregar la restricción en cada feature.
+3. Dar acceso **de a poco (opt-in)**, no bloquear de a poco (opt-out).
+
+### El plan ya está decidido — falta ejecutarlo
+`MODULO_USUARIOS.md` compara 4 opciones (wrapper del cliente, guard por función, hook
+`useSupabase()`, RLS minimalista) y **selecciona la Opción A — RLS Minimalista con Supabase Auth**.
+Los 9 pasos están escritos ahí: instalar `@supabase/ssr` · crear usuario admin en Supabase Auth ·
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` en Vercel y `.env.local` · migrar `lib/supabase.ts` al cliente SSR ·
+`middleware.ts` para refresh de sesión · sign-in silencioso del admin · políticas RLS (lectura
+libre + escritura sólo `authenticated`) · verificar que las API routes con `service_role` no se
+rompen · testing (Ulises no escribe, admin sí).
+
+### Por qué importa — es el fix de fondo de [A-SEC-01](#a-sec-01)
+A-SEC-01 dice que **`anon` puede borrar todas las tablas**. Este módulo **es** su solución: hoy
+los accesos son "UX + validación de URL" y **no protegen la API**. Está escrito y sin hacer desde
+abril.
+
+**Nota:** las restricciones finas de Ulises son de **visibilidad/UX** y sobreviven igual a RLS —
+son independientes.
+
+---
+
+## <a id="a-doc-10"></a>A-DOC-10 — Otras 19 fugas doc → memoria
+
+**Hallazgo 2026-08-02, corrigiendo una afirmación mía errónea.** Al escribir la regla "la doc no
+cita a la memoria" dije que `B-TEST-10` era la **única** fuga. **No lo era.** El grep sobre las
+dimensiones da **19 citas más**:
+
+| Archivo | Citas | Forma típica |
+|---|---|---|
+| `PENDIENTES.md` | 14 | *"Detalle: `memory/project_xxx.md`"* al pie de un dossier |
+| `RECONSTRUCCION_SUPABASE_2026-01-07.md` | 4 | *"Documentación: `memory/reference_ventas_msa.md`"* |
+| `MODULO_DASHBOARD.md` | 3 | ídem |
+| `KNOWLEDGE.md` | 1 | ídem |
+| `MODULO_REGLAS_BANCARIAS.md` | 1 | ídem |
+
+*(No cuentan las menciones dentro del texto de la propia regla en `CLAUDE.md` / `CLAUDE_BASE.md`,
+ni `CLAUDE_HISTORICO.md`, que es archivo congelado.)*
+
+**Por qué es la misma falla, no una menor.** El patrón es idéntico al de `B-TEST-10`: el dossier
+resume y manda **el detalle** a la memoria. Si la memoria se pierde o envejece, la dimensión queda
+con la mitad de la historia y un puntero muerto — que es exactamente lo que la regla previene.
+
+**Qué hay que hacer:** por cada cita, **absorber lo que sirve** en la dimensión y borrar el
+puntero. No es mecánico: hay que leer cada memoria y decidir qué merece subir (varias son de
+2025-2026 temprano y pueden estar desactualizadas).
+
+**Cuándo:** no urgente. Conviene hacerlo **por tema** — cuando se toque cada dossier, se absorbe
+el suyo. Forzar los 19 de una es releer ~19 memorias sin motivo.
+
+**Chequeo:** `grep -c "memory/" *.md` sobre las dimensiones. Ojo con los falsos positivos: el
+texto de la regla en `CLAUDE.md` menciona `memory/` a propósito.
+
+---
+
+## <a id="c-01"></a>C-01 — Testing ítems 1-28 (absorbidos de la memoria, 2026-08-02)
+
+Lista de funcionalidades sin testear armada entre **abril y mayo de 2026**. Vivía en
+`memory/feedback_testing_pendiente.md`; se transcribe acá para que `PENDIENTES.md` no dependa de
+la memoria de Claude.
+
+> ⚠️ **Estado real desconocido.** Son de mayo o antes y hubo dos meses de desarrollo encima.
+> Varios ya deben estar testeados, y otros pisados por cambios posteriores. **No asumir que están
+> pendientes.** Se auditan junto al resto de la Sección C ([A-OP-04](#a-op-04)).
+
+**Extracto bancario**
+1. Sistema revisión extracto — revisado/notas operador, visual rojo translúcido, marcado masivo
+2. Filtros rápidos — chips con contadores (Pendientes, Auditar, CATEG Inválida, Sin CATEG)
+3. Búsqueda mejorada — 9 columnas
+12. Detalle editable — inline + masivo
+13. Categ propagada — asignación de cuentas propaga categ automáticamente
+18. Columnas Proveedor y Comprobantes — 2 columnas nuevas visibles por defecto
+
+**Dashboard**
+5. Agrupado por templates — agrupa por nombre de template
+6. Expandible sub-categorías — desglose multi-cuenta
+
+**Selectores de cuenta**
+7. Selector sub-categorías extracto — texto libre + existentes + templates + plan de cuentas
+8. Selector sub-categorías cash flow — ídem
+9. `SelectorCuentaContable` unificado — historial proveedor + jerarquía + buscador
+15. `SelectorCuentaContable` jerarquía completa — muestra la ruta entera (RESULTADOS > EGRESOS > …)
+
+**Motor de conciliación**
+10. Re-asignación de movimientos conciliados — cambiar template/factura post-conciliación
+17. Pre-filtro CUIT bancario — si el banco informa CUIT, filtra candidatos antes de comparar montos
+20. Tab Grupo en asignación manual — vincular extracto a grupo de cuotas, desglose expandible
+21. Auditar→conciliado smart — no pide vincular si ya tiene origen asignado
+23. Pre-filtro haberes — "haber" restringe el pool a sueldos
+24. Regla empleado contable/interno — Tipo C en el motor para sueldos
+
+**Pagos / facturas**
+11. Detalle mejorado de facturas — formato FC/ND/NC en el importer (sin código tipo AFIP)
+14. Fecha editable en Vista Pagos — click para cambiar fecha en facturas ARCA y templates
+16. Bloqueo de edición de monto en filas agrupadas de Cash Flow — `toast.error` al intentar editar
+26. Multi-CUIT en agrupación ARCA — alerta al agrupar facturas de distinto CUIT
+27. Cancelación FC/NC en Vista Pagos — escenario A (FC+NC mismo CUIT) y B (NC contra descuentos)
+28. Pago parcial con anticipo + ECHEQ — crear anticipo, vincular a FC, pagar el saldo con un segundo ECHEQ
+
+**Otros**
+4. Búsqueda rápida en templates — nueva, reactiva
+19. BBDD Proveedores — 105 proveedores, auto-poblada desde ARCA + templates
+22. Filtro categ aplica sólo a visibles — búsqueda + Aplicar filtra como Excel
+25. Agrupación de sueldos — agrupar/desagrupar en Vista Pagos; Cash Flow agrupa en fila única
 
 ---
 
@@ -475,6 +1304,30 @@ Handoff completo + qué quedó pausado en memoria [[gas-pdf-testing-handoff]]. *
   - ✅ **HECHO (commit 6914e1a, GAS no involucrado)**: campo **`fc`** en `reglas_ctas_import_arca` + import lo aplica (`fc = regla.fc || 'Buscar'`) + `ModalReglasImport` con selector FC. **Pendiente USUARIO (testing)**: cargar `FC=Portal` en las reglas de Autopistas del Sol/Urbanas, Corredores Viales, DirecTV (ya tienen estado=credito). Y corregir la factura de Autopistas que quedó `NO Mail` (workaround Config PDFs→portal+re-buscar, o SQL puntual). Las reglas aplican a importaciones NUEVAS, no retroactivo.
   - ⏳ Aún: 2 columnas de mail (`email_facturacion` 3 = Config PDFs vs `email_pagos` 26 = Galicia) → aclarar/unificar. + Selector de `fc` manual por factura. Detalle en memoria [[config-proveedores-fragmentada]].
 
+#### 🔵 AUDIT MULTI-EMPRESA (MSA / PAM / MA) — al terminar de afinar Cash Flow/pagos/SICORE (2026-07-15)
+- **Qué:** cuando cerremos el afinado de todo (pagos, grupos, cash flow), hacer un **audit** de que funciona para las **3 empresas: MSA, PAM y MA**. Hoy hay cosas hardcodeadas a `msa` (Cash Flow carga FCs de msa; `agruparPagos({schema:'msa'})`; etc.). **NOTA: SICORE es SOLO MSA** (PAM y MA no usan SICORE) → el `'msa'` hardcodeado en SICORE (`registrarEnSicoreRetenciones`, cálculos, pagos previos) es CORRECTO, no entra en este audit.
+- **Regla de trabajo (vinculante de acá en más):** al desarrollar cualquier cosa nueva de pagos/cash flow, **pensar y dejar preparado para las 3 empresas desde el vamos** (schema parametrizable), no solo MSA. Evitar acumular deuda de hardcodeos msa.
+- **Cuándo:** al final del afinado. Listar dónde está hardcodeado `msa` y qué falta para PAM/MA (¿existe `sicore_retenciones`/`grupos_pago` en pam/ma? ¿el Cash Flow debe mostrar FCs de las 3?).
+
+#### ⏳ PENDIENTE DE TEST — tanda Cash Flow / SICORE / grupos (2026-07-15/17, todo en `desarrollo`, sin mergear)
+Migración de pagos/SICORE al Cash Flow (E1-E4 + fixes). Testear en preview antes de merge a main. Detalle en memoria [[project_sicore_cash_flow_estado]].
+- **SICORE v2 desde Cash Flow:** pagar una FC con retención → queda en `msa.sicore_retenciones` idéntico al Modal (cert, quincena, base, retención). Guarda estado_quincena (declarada bloquea / cerrada confirma) — commit b589818.
+- **Fac C (tipo 11):** nunca retiene (36c8e54). **Descuento:** se estampa en la FC (`descuento_aplicado`) + %/monto + desglose Gravado/IVA/Total + Transferencia + 2 decimales (36c8e54, 29010f9). **Sin retención + descuento** pronto pago (d57549d).
+- **Mínimo no imponible acumulado (Idea 2, e3657a5):** FC bajo mínimo que acumuladas superan → retienen; caso día-3/día-13; NC resta; independiente del orden; checkbox override. **Gate por proveedor en lote (Idea 1, 8b4fd9e):** agrupa por CUIT, decide por total del proveedor. **Caso testigo: Alcorta 2 FC + 1 NC + descuento, pago 16/07 (26-07 2da).**
+- **fecha_pago editable inline** para FC en Cash Flow (64c83ea). **Fix quincena zona horaria** (b325555, ver abajo).
+- **Grupos (acb234b):** agrupar (nombre combinado, responsable templates) + **desagrupar** (botón ✕ en la fila-grupo).
+- **Reset (d586a21, 20777b3):** el "Resetear" aparece en pagar/preparado (grilla Facturas ARCA) + revertir a pendiente en Cash Flow hace reset completo (anula v2 + limpia sicore/tc/descuento/**fecha_pago** + monto_a_abonar→imp_total + fecha_estimada→venc si existe). Lib `lib/sicore/resetear-retencion.ts`.
+- **PENDIENTES tras el test:** merge a main · chequeo descuentos últimos 30 días (ver abajo) · Idea 1 refinamientos si aparecen · audit multi-empresa (SICORE es solo MSA).
+
+#### ✅ Fix quincena SICORE por zona horaria (2026-07-16, commit b325555) — datos viejos NO se revisan (decisión del usuario 2026-07-17)
+- **Bug corregido:** `generarQuincenaSicore` hacía `new Date("YYYY-MM-DD")` (UTC medianoche) y leía `.getDate()` en local → en Argentina (UTC−3) corría 1 día atrás. Solo afectaba la quincena cuando la fecha caía el **día 16** (→ 1ra en vez de 2da) o el **día 1** (→ 2da del mes anterior). Estaba en las 2 copias (lib `lib/sicore/quincena.ts` + local del Modal `vista-facturas-arca` ~l.3255). Fix: parsear el string directo, sin `Date`.
+- **Datos viejos:** el usuario decidió **NO revisar** registros previos con fecha día 1/16 (no hace falta). Si en algún momento se quisiera: query `msa.sicore_retenciones` donde `EXTRACT(DAY FROM fecha_pago) IN (1,16)` y comparar quincena.
+
+#### 🔴 URGENTE — Chequear descuentos NO registrados en la FC (últimos 30 días) (2026-07-15, HACER DESPUÉS del test SICORE)
+- **Motivo:** bug detectado — al pagar desde **Cash Flow** con **descuento**, el descuento bajaba el saldo y se mandaba bien al registro v2 (`sicore_retenciones`), **pero NO se estampaba `descuento_aplicado` en la fila de la factura** (`comprobantes_arca`). Fix aplicado 2026-07-15 (commit 36c8e54), pero **los pagos previos pueden haber quedado con `descuento_aplicado = null` desfasado**.
+- **Acción:** query BBDD sobre pagos de **últimos ~30 días** — comparar `comprobantes_arca.descuento_aplicado` vs lo que figura en `sicore_retenciones.descuento_aplicado` (o vs `monto_a_abonar` vs `imp_total − monto_sicore`) para detectar facturas donde hubo descuento pero la FC quedó en null. Revisar con el usuario antes de corregir dato (regla: no tocar datos sin preguntar).
+- **Cuándo:** después de cerrar el test de SICORE en Cash Flow. Ver memoria [[project_sicore_cash_flow_estado]].
+
 #### 🧾 SICORE — export TXT debe generar con PUNTO decimal (2026-07-13, ✅ diagnóstico cerrado · ⏳ falta cambio de código)
 - **Resuelto el bloqueo**: junio no subía a ARCA ("Importe/Base/Retención debería ser Numérico Positivo"). Causa = **separador decimal**: ARCA/SICORE **9.0** importa con **Punto** por defecto y el TXT de la app usa **coma**. **CONFIRMADO por el usuario (2026-07-13)**: los archivos con **punto** (`_PUNTO`, generados con `tr ',' '.'`) subieron OK con la config en Punto. ⚠️ No es dato oficial de AFIP (diagnóstico + guías de terceros + prueba real).
 - **✅ IMPLEMENTADO (2026-07-14, commit 5076f20, en `desarrollo` — falta testear)**: el **export TXT genera con punto**. **Hardcode punto**: `vista-facturas-arca.tsx` función `formatMonto` → sacado el `.replace('.', ',')` (el `toFixed(2)` ya da punto). **TESTEAR**: regenerar una quincena y comparar el TXT byte a byte contra un `_PUNTO` conocido-bueno + subir a ARCA (config en Punto). Detalle histórico del cambio exacto: Es la ÚNICA función que pone coma en el TXT y la usan las 2 ramas (quincena cerrada `~4935/4939/4943` y nueva `~4991/4995/4999`) en los 3 campos. NO tocar: Excel/PDF (usan su propio formateo es-AR, no van a ARCA), fechas (usan `/`), anchos (punto y coma = 1 char → sigue 145). **Testear**: regenerar una quincena y comparar el TXT byte a byte contra un `_PUNTO` conocido-bueno. Requiere que la config de ARCA quede en Punto (default v9.0). Detalle: KNOWLEDGE (#sicore #arca) + `memory/project_sicore_error_importacion_arca`.
@@ -501,8 +1354,37 @@ Handoff completo + qué quedó pausado en memoria [[gas-pdf-testing-handoff]]. *
   - **Templates `fijo` a renovar (última cuota jun/jul 2026):** Seguro Accidentes de Trabajo (05/06), Seguro Flota (05/06), UATRE (05/06), SICORE 1ra Quincena (30/06), Tarjeta Visa Business MSA (05/07), Cargas Sociales (09/07), SICORE 2da Quincena (13/07), IIBB Mensual MSA (15/07), Acciones y Participaciones (30/07), Imp. Ganancias / Bs Pers PAM (30/07).
   - **Templates `abierto` (NO necesitan renovación programada — se cargan por conciliación/manual):** Comision Cuenta Bancaria, Créditos Pagados, Sellos Bancario, Retiro PAM, Fondo Educativo, Comision Extraccion Efectivo, Comision Transferencias, Debitos/Creditos, FIMA Premium Galicia, Iva Bancario, Percepcion IVA, Caja, Otros Gastos, Retiros semestrales (Andres/Jose/Manuel/Mechi/Soledad).
   - **Observación:** consultar con SQL `MAX(fecha_estimada)` por template de `cuotas_egresos_sin_factura` para el listado al día. Los `fijo` son los urgentes (cronograma que se corta).
+  - **📋 GENERADOR DE REGENERACIÓN — diseño acordado (2026-07-18):**
+    - **✅ HECHO — campos nuevos** en `public.egresos_sin_factura` (NO en backup, ver RECONSTRUCCION): **`periodicidad`** ('anual' calendario | 'bianual' campaña jul-jun, explícito en vez de inferir del string `año`) + **`aplica_generacion`** (bool, entra a la regeneración automática, **independiente** de fijo/abierto). Sembrados: bianuales con decisión exacta del usuario (9 MSA fijo + Tarjeta Visa Business MSA = true; Caja + 2 Interbancarias = false); **anuales = NULL** (a decidir en el generador, caso por caso). **Wizard ya captura ambos** (arma `año` según periodicidad).
+    - **Corrección conceptual del usuario:** abierto/cerrado (fijo) **nunca fue tema de monto** sino de *cuotas preestablecidas vs generadas en vivo contra conciliación*. `aplica_generacion` resuelve los abiertos-con-cronograma (Tarjeta) sin depender de esa etiqueta.
+    - **Decisiones bianuales (26/27):** MSA fijo (9) = regeneran. **Acciones y Participaciones**: el usuario crea manual la cuota `25/26` (jul-2027, +1 año de la actual jul-2026) para que al generar 26/27 caiga en 2028 → pendiente consulta contable (pagos a campaña vencida). **Caja** = sin cuotas. **Interbancarias** = que el generador **pregunte/opt-in**. **Tarjeta Visa Business MSA** = regenera con **monto estimado**.
+    - **DATA es IRREGULAR** (verificado): montos variables (Cargas Sociales 7 distintos), algunos en 0 (Anticipo Ganancias), cadencias mixtas (1/10/12 cuotas), y cantidades que no cierran (Seguro Accidentes/UATRE tienen 15 cuotas, UATRE arranca ene-2025 fuera de campaña; el campo `cuotas` del template ≠ cuotas reales). → **un "correr fechas +1 año y copiar monto" NO alcanza.**
+    - **✅ GENERADOR v1 HECHO (2026-07-18, sin testear):** `components/generador-renovacion-campana.tsx` + botón "Renovar campaña" en `vista-templates-egresos.tsx`. **General** (bianual jul-jun / anual calendario), **Modelo A** (clona fila con año target + cuotas), **columnas dinámicas** (mín 12 + spillover), **pre-carga** corriendo el último período de cada template al target (`yearShift = targetY1 − sourceY1`, por eso Acciones 24/25→2028 solo), **editable**, **2 secciones colapsables** (Previstas aplica=true / No aplican con opt-in que persiste `aplica_generacion`), **descripción** rearmada con mes/año nuevo. **FALTA TESTEAR en bianual** + iterar detalles (ver abajo). Pensado para extenderse.
+    - **✅ Iteración 2026-07-18 (commit 8f77036):** botón **Vaciar fila** (deja en cero; mitiga UATRE) + **Replicar** (primer monto → 12 meses base) + **fechas: preserva el día real** de la cuota origen (antes día 1; shift solo el año).
+    - **🔴 REGISTRO DE LOS 7 PUNTOS (2026-07-18/19, preguntas usuario + respuestas + estado; ver memoria [[project_generador_renovacion_templates]]):**
+      1. **Deseleccionar previstas — ✅ HECHO (2026-07-19):** checkbox por fila en "Previstas" (toggle `incluir`, temporal, NO toca `aplica_generacion`). Fila excluida se ve gris y no se genera.
+      2. **Template que NO genera igual presente en la campaña nueva — ✅ RESUELTO:** el selector de abiertos (Pago Manual, `vista-cash-flow.tsx:1260`) filtra por `tipo_template='abierto'`+`activo=true`, **NO por `año`** → los abiertos **persisten entre años solos**, no hay que renovarlos. **Corrección del usuario (✅ HECHO 2026-07-19):** si deselecciona un template **previsto**, al **Confirmar/Generar** la app **avisa** (window.confirm listando los deseleccionados) antes de proceder. (NO se crea fila vacía para fijos deseleccionados — no sirve.)
+      3. **Fechas visibles/editables — ✅ HECHO (2026-07-19):** cada celda con monto muestra un mini-input **"día"** editable (`setDia`). Editar el día NO cambia de columna; para mover de mes = vaciar y poner en el mes destino.
+      4. **Varias cuotas por mes — ✅ HECHO completo (2026-07-19):** (fase 1) display suma + anillo naranja + badge "Σn" + tooltip; genera 1 cuota. (fase 2) **botón "detalle" por fila** (ícono lista): modal que edita las **cuotas individuales** (mes/día/monto, permite VARIAS por mes, agregar/quitar). Si la fila tiene detalle, **GANA** sobre la matriz al generar (badge "detalle" en la fila). `Fila.raw` (cuotas individuales corridas) + `Fila.detalle` (override). NO se reusó el wizard.
+      **Vencimiento (idea del usuario, ✅ HECHO 2026-07-19):** checkbox **"venc"** por fila → si está tildado, las cuotas se generan con `fecha_vencimiento` = la fecha (sino solo `fecha_estimada`). Default por fila = `tipo_fecha` del origen.
+      5. **UATRE — ✅ RESUELTO (2026-07-19):** eran 6 cuotas ene–jun 2025, monto 0, estado `conciliado` **huérfano** (0 referencias en `template_cuota_id` de msa_galicia/caja/tarjeta). **Borradas** con OK del usuario. Ya no propone esos ceros en 2026.
+      6. **~~Replicar a meses puntuales~~ — DESCARTADO (2026-07-19):** sobre-interpretación; el usuario no lo pidió y no aporta. Replicar (12 base) + edición manual alcanza.
+      7. **Guardarraíl → ✅ HECHO como ADVERTENCIA, no restricción (2026-07-19):** el usuario aclaró que **nada se pisa** (Modelo A = templates y cuotas distintas, no hay overwrite) y que **no quiere limitar** (un template puede legítimamente empezar a pagarse antes). Entonces: las columnas **anteriores al inicio del período** se **marcan en ámbar (⚠) + banner de aviso**, pero **NO se bloquean** (UATRE se ve pero se puede vaciar/ignorar). Detalles aún abiertos: `fecha_vencimiento` no se setea · fila vieja NO se desactiva · master reusado · Acciones shift +2 → 2028 (¿falta 25/26 intermedia? = consulta contable) · Interbancarias opt-in.
+    - **Pendiente arquitectónico menor:** revisar si el eje `tipo_template` (fijo/abierto) queda redundante con `aplica_generacion` una vez estabilizado.
   - **⚠️ Verificar la `descripcion` de cada cuota al regenerar (2026-07-04):** al generar cuotas, el wizard arma `cuota.descripcion` con la fórmula `nombre_referencia + " " + responsable + " - " + mes + " " + año` (`wizard-templates-egresos.tsx` l.168; anual sin mes, l.178). Ej.: "Aportes Domesticas MA - Diciembre 2026". **Esa `descripcion` es la que viaja al `detalle` del movimiento bancario al conciliar** (`useMultiCashFlowData` → `detalle_usuario` → `useMotorConciliacion` l.508). Por eso el generador de campaña nueva **debe reproducir esta fórmula** con el período/año nuevo (mes correcto por cuota, año de la campaña) — sino las cuotas nuevas quedan sin descripción o con el período viejo, y el extracto conciliado pierde la etiqueta. Revisar bien este armado en el momento de construir la renovación.
-- **⏸️ B-FEAT-BASE-OPERATIVA — Dónde se gestionan los pagos: Modal de Pagos vs Cash Flow (2026-07-05, DECISIÓN PENDIENTE)**: el usuario gestiona el ~90% desde el **Modal de Pagos** (botón "Pagos" en Facturas); antes usaba el **Cash Flow** y quiere volver a él como **panel único**, mejorándolo para reemplazar al Modal. Propuesta usuario: Cash Flow default "operativo" = desde hoy + todo lo impago (nunca conciliado) + filtros/chips → deprecar el Modal. Propuesta Claude: mejorar columnas del Modal (roles fijos + color). **Ambas conservadas en `MANUAL-USO.md` § Pagos/Egresos → evaluar juntas antes de tocar código.** NO tocar pagos hasta decidir. **Mapa de edición (4 lugares + Modo Pagos + Pago Manual) y estrategia de centralización en `MANUAL-USO.md`** (resumen: potenciar Cash Flow + BORRAR el Modal; grillas = limpieza posterior). ⚠️ Avisos: (a) las grillas tienen código propio → features nuevas (ej. `fecha_pago`) no aparecen ahí salvo que se agreguen explícitamente (no darlas por hechas); (b) el "Modo Pagos" del Cash Flow es mismo código, estudiar al final si se usa. **Plan por etapas E0-E6 + inventario de funciones + SICORE v1/v2 (CRÍTICO: Cash Flow solo hace v1 incompleta; v2 completa vive en el Modal) → todo en `MANUAL-USO.md` § Pagos.**
+  - **📋 AUDIT SUELDOS para campaña nueva (2026-07-17) — inventario = SOLO Sueldos + Templates** (productivo va aparte/operativo; `comprobantes_arca.campana` NULL/sin uso). **Lo que YA existe:** `crearCampana` (`tab-sueldos.tsx` ~712-811) crea la campaña + genera períodos mensuales (Jul→Jun) de los empleados con `activo=true`, copiando params del ÚLTIMO período y calculando bruto por `tipo_empleado`; desactiva la campaña anterior. `darDeBaja` (~830) setea SOLO `fecha_egreso`. `crearEmpleado` (~875) guarda el promedio según tipo. **Diseño acordado con el usuario (a programar):**
+    1. **Campaña = derivada del mes, NO switch.** ✅ **HECHO (2026-07-18, sin testear):** **LOCK de "mes de trabajo"** en `sueldos.config` (tabla 1 fila + vista `public.sueldos_config`, NO en backup → ver RECONSTRUCCION). Al entrar posiciona en el mes de trabajo (badge verde 🔒); otros meses en **solo lectura** (lápiz/Registrar Anticipo/editar-eliminar pago deshabilitados + guardas en las funciones); botón **"Trabajar en este mes"** mueve el lock (`moverLock`). **Rango de navegación = UNIÓN de todas las campañas** (no solo la activa) → junio 25/26 + julio 26/27 conviven. NO hace falta selector de campaña ni activar/desactivar. `tab-sueldos.tsx`.
+    2. **Todo por FECHAS (ingreso/egreso), no por flag `activo`.** El flag es redundante y hoy `crearCampana` filtra por él (debería filtrar por fechas). Baja = poner `fecha_egreso`; los períodos viejos NUNCA se borran (son la verdad de lo cobrado). Coria/Pucheta quedaron `activo=true` con egreso 2026-01-31 (baja a medias) → limpiar con OK del usuario.
+    3. **Eventuales (Fabian Vulcano) — DECIDIDO: Opción A (2026-07-17):** un solo par `desde/hasta` que se **pisa** al volver (re-alta = actualizar desde/hasta al nuevo tramo). **Convención acordada:** lo ÚNICO que cambia es `desde/hasta`; **los PERÍODOS del empleado perduran** (verdad de lo cobrado, nunca se borran). `desde/hasta` = "tramo vigente", sirve solo para **GENERAR** los períodos de la campaña. ⚠️ **Al implementar:** ver/editar un mes debe depender de que el **período EXISTA**, NO re-filtrar por `desde/hasta` (sino los tramos viejos desaparecen tras la re-alta). (Opción B = tabla `empleado_tramos` descartada por ahora; retomar solo si los eventuales se vuelven frecuentes.)
+    4. **Alta pide tipo + montos iniciales + promedio y los propaga.** ✅ **HECHO (2026-07-18):** `crearEmpleado` ya captura el promedio; y ahora genera los períodos **por FECHA DE ALTA** (recorre `todasCampanas` según ingreso/egreso, campana_id de cada una), **no** por la campaña activa. (Empleado nuevo sin período previo: se cargan los montos en el alta.)
+    5. **Al crear campaña: revisión empleado por empleado.** ✅ **HECHO (2026-07-18):** al confirmar la campaña se abre una **tabla de revisión** (`modalRevisionCampana`, primer mes = julio) con todos los vigentes; el lápiz reusa el **modal de edición mensual** (`abrirEdicion(p, forzar=true)` para saltear el lock) → editás el fijo y al **propagar hacia adelante** se aplica a toda la campaña. Genera propagando solo lo **fijo**; lo **móvil** (días/horas/francos) queda EN BLANCO. **Decisión del usuario: SIN % masivo** (se edita uno por uno, propone el último mes). El campo `empleado.*_promedio` queda para el presupuesto futuro (punto 7).
+    5b. **Check "Activar" al crear campaña: ELIMINADO (2026-07-18).** La campaña nueva **siempre queda activa** (desactiva la anterior). `activa` = solo rótulo del header (la navegación es por unión). Pendiente menor (opcional): toggle activar/desactivar en la lista de campañas si alguna vez hace falta reactivar una vieja.
+    6. **`sueldos.componentes_salario` = tabla MUERTA** (verificado: el código NO la lee; el sueldo sale del último período). Hay tabla `sueldos.componentes_salario` + probable vista `public.sueldos_componentes_salario`. **A hacer: verificar que no haya dependencias y DROPEAR (vista + tabla).** No borrar sin chequear que no rompa nada.
+    7. **`empleado.dias_promedio/horas_promedio/francos_dias_promedio`** (`sueldos.empleados`): HOY se ESCRIBEN en el alta pero NO se LEEN en ningún cálculo (capturados/dormidos). Valores: Fabian 22 días, Elvio 16, AMS 45 hs, Ruben 5 francos, Wilson 4. **Es el "valor típico" para PRESUPUESTAR** (los francos "que más o menos siempre son así") → cuando se haga el presupuesto, proyectar con ESTOS campos, sin ensuciar los períodos reales.
+    8. **Aguinaldos** (`periodos.aguinaldo_a/b`) se cargan a mano, sin cálculo (dic-2026 / jun-2027). No desarrollado.
+    9. **Adelanto julio 2026:** el período julio no existía (25/26 cierra en junio) → el usuario NO lo cargó por falta de habilitación. Al crear la campaña nueva debe poder cargarse (el pago referencia un `periodo_id`).
+    10. **Cambio en el "propagar" (a hacer cuando se toque esto):** hoy al editar **francos** (dato móvil) pregunta si propagar → debería preguntar SOLO al cambiar el **sueldo fijo** (que es un aumento y sí aplica a futuro); los móviles no se propagan.
+- **⏸️ B-FEAT-BASE-OPERATIVA — Dónde se gestionan los pagos: Modal de Pagos vs Cash Flow (2026-07-05, DECISIÓN PENDIENTE)**: el usuario gestiona el ~90% desde el **Modal de Pagos** (botón "Pagos" en Facturas); antes usaba el **Cash Flow** y quiere volver a él como **panel único**, mejorándolo para reemplazar al Modal. Propuesta usuario: Cash Flow default "operativo" = desde hoy + todo lo impago (nunca conciliado) + filtros/chips → deprecar el Modal. Propuesta Claude: mejorar columnas del Modal (roles fijos + color). **Ambas conservadas en `MANUAL-USO.md` § Pagos/Egresos → evaluar juntas antes de tocar código.** NO tocar pagos hasta decidir. **Mapa de edición (4 lugares + Modo Pagos + Pago Manual) y estrategia de centralización en `MANUAL-USO.md`** (resumen: potenciar Cash Flow + BORRAR el Modal; grillas = limpieza posterior). ⚠️ Avisos: (a) las grillas tienen código propio → features nuevas (ej. `fecha_pago`) no aparecen ahí salvo que se agreguen explícitamente (no darlas por hechas); (b) el "Modo Pagos" del Cash Flow es mismo código, estudiar al final si se usa. **Plan por etapas E0-E6 + inventario de funciones → todo en `MANUAL-USO.md` § Pagos.** **ACTUALIZADO 2026-07-15:** la registración SICORE **v2 YA está en el Cash Flow** (usa `lib/sicore/registrar-retencion.ts` compartido; E3 grueso + E4 hechos) — la nota vieja "Cash Flow solo hace v1" quedó obsoleta. Quedan **gaps de paridad** vs el Modal (ver MANUAL-USO § SICORE + memoria [[project_sicore_cash_flow_estado]]); el **#1 (guarda estado_quincena antes de estampar)** se está arreglando 2026-07-15. Gestión SICORE queda en la vista ARCA.
 - **B-FEAT-OTROS-INGRESOS — Template de ingresos sin factura/liquidación (símil "Otros Gastos") (2026-07-03)**: para registrar **cobros de ventas que solo tienen contrato** (no liquidación ni factura ARCA) — se imputan como ingreso a "Otros Ingresos" y fluyen por Cash Flow + conciliación, igual que "Otros Gastos" pero del lado del ingreso.
   - **Ya soportado:** el sistema de templates maneja ingresos vía `es_bidireccional=true` + cuota `tipo_movimiento='ingreso'` → entra como **crédito** en el cash flow (`useMultiCashFlowData` l.227/243-244). El botón **Pago Manual ya deja elegir ingreso/egreso** si el template es bidireccional (`vista-cash-flow` l.1043).
   - **✅ RESUELTO (2026-07-03, commit pendiente):** se destrabó el cruce — el wizard ya **permite multi_cuenta + bidireccional a la vez** (`wizard-templates-egresos`: sacado el force en el save l.293 y en el onCheckedChange del checkbox). **Pago Manual ya soportaba la combinación** (el selector Egreso/Ingreso se muestra por `es_bidireccional` l.2644 y la sub-categoría por `es_multi_cuenta` l.2714 — independientes; el guardado maneja ambos l.1043-1044). **Ahora: crear "Otros Ingresos" en el wizard con tipo Abierto + Multi-cuenta + Bidireccional → cobros con sub-cuentas, símil "Otros Gastos".**
@@ -929,6 +1811,2388 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 - Grandes créditos "Transferencias Cash Proveedores" ($89,5M, $5M, $11,8M) → ingresos/movimientos entre cuentas, probablemente no son egresos conciliables por regla.
 
 **Pendiente de análisis profundo:** cruzar cada pendiente con su posible match (mismo monto en ARCA/template/sueldo no conciliado) para listar (a) los que deberían haber conciliado solos y por qué no, y (b) el set de reglas nuevas a proponer. Requiere una corrida de query de cruce monto↔candidatos.
+
+---
+
+## <a id="b-bug-cliente-no-se-crea"></a>B-BUG-CLIENTE-NO-SE-CREA — Las ventas no dan de alta el cliente en `proveedores` (2026-07-28)
+
+**Cómo apareció**: al cargar los CUITs de Sanpa y Provinvest en los contratos de arrendamiento
+se vio que **ninguno de los dos está en `public.proveedores`**, aunque los dos **ya tienen
+factura de venta cargada** en `msa.comprobantes_venta`. El usuario lo marcó como violación de
+la regla consensuada: *"si estaba la factura, tendría que estar cargado en proveedores/clientes"*.
+
+**Causa raíz — asimetría compras vs ventas** (verificado en el código, 4 entradas de ventas):
+
+| Flujo | Qué hace con `proveedores` |
+|---|---|
+| **Compras** — `app/api/import-facturas-arca/route.ts:624` | ✅ **auto-crea** los que faltan, en bloque, sin romper el import si falla |
+| **Ventas · IMPORT** — `app/api/import-ventas/route.ts` | ❌🔴 **no toca `proveedores` en absoluto** — el peor caso: es la vía masiva |
+| **Ventas** — `components/modal-venta-msa.tsx:200` | ❌ sólo `UPDATE … SET es_cliente=true WHERE cuit=X` |
+| **Ventas** — `components/modal-comprobante-venta-msa.tsx:217` | ❌ ídem, sólo UPDATE |
+| **Ventas** — `components/modal-liquidacion-msa.tsx:573` | ❌ ídem, sólo UPDATE |
+
+Dos fallas distintas:
+- El **`UPDATE` matchea 0 filas y no falla** → si el cliente no existe, no pasa nada y nadie se
+  entera. Hueco silencioso.
+- El **importador de ventas ni siquiera lo intenta** → es por donde entra el volumen (ARCA
+  Comprobantes Emitidos), así que es el que más clientes deja sin registrar.
+
+**Fix**: replicar del lado de ventas lo que ya hace el importador de compras — **upsert** (crear
+si no existe con `es_cliente = true`, y si existe marcar el flag), en los **4 puntos**.
+Extraerlo a una **función compartida en `lib/`** (regla DRY) en vez de repetirlo 4 veces; el
+importador de compras debería terminar usando la misma.
+Criterio para `es_proveedor`: `true` sólo si tiene factura de compra a su nombre (los clientes
+puros van en `false`).
+
+**Relacionado**: es la misma familia que **B-FEAT-07** (carga orgánica de proveedores). Este es
+el caso concreto y acotado; B-FEAT-07 es el barrido general.
+
+**Datos — ✅ RESUELTO 2026-07-28** (el bug de código sigue abierto): se dieron de alta los 2
+clientes faltantes tomando `cuit` y `razon_social` de **`msa.comprobantes_venta`** (los datos
+que vienen de ARCA), con `es_cliente = true` y `es_proveedor` calculado según tengan o no
+factura de compra — los dos son **clientes puros**, así que quedaron en `false`.
+Ahora los 4 contratos de arrendamiento resuelven contra `proveedores`.
+
+El INSERT se escribió **genérico** (todo `cuit_cliente` de `comprobantes_venta` que no esté en
+`proveedores`), así que se puede volver a correr como parche manual hasta que esté el fix.
+
+> 🔎 **Nota de dato, sin acción**: el CUIT de Sanpa en la factura (`30712200662`) **no pasa la
+> validación de dígito verificador** (le correspondería terminar en 5). El usuario confirmó que
+> *"las facturas tienen los datos reales"*, así que los contratos se alinearon a la factura.
+> Queda anotado por si algún día ARCA lo rechaza.
+
+---
+
+## <a id="b-feat-presu-ingresos"></a>B-FEAT-PRESU-INGRESOS — Presupuesto de INGRESOS: arrendamientos agrícolas (2026-07-26)
+
+**Diseño completo** (fórmulas, reglas, DDL, UI, fases) → `MODULO_PRESUPUESTO.md`
+§ INGRESOS — Arrendamientos agrícolas. **Origen**: `exports_app/- Desarrollo Presuesto..xlsx`.
+
+**Decisión arquitectural**: el presupuesto de ingresos NO se carga en Presupuesto — se carga como
+**Ventas** (contrato → cuota → fijación → factura → cobro) y Presupuesto **lee**. Una sola fila que
+nace presupuestada y se vuelve real, igual que las cuotas de templates. Todo en `public` (sin schema
+propio); contratos con columna `empresa`.
+
+### ✅ HECHO (2026-07-26, sin testear)
+1. **BD** — 5 tablas: `tipos_cambio`, `precios_granos`, `contratos_arrendamiento`,
+   `cuotas_arrendamiento`, `fijaciones_arrendamiento`. **No están en el backup** → DDL en
+   `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+2. **Datos MSA sembrados** — 4 contratos (Nazarenas/Rojas × campañas 26/27 y 27/28) + 14 cuotas.
+   Verificado contra la planilla: tons, % y guardarraíl `Σ qq = qq_ha_total` OK en los 4.
+3. **`lib/arrendamientos/calculo.ts`** — fuente única de fórmulas: tons, %, guardarraíl, resolución
+   de precio con arrastre, TC (real > presupuestado > arrastre), monto de cuota, tons
+   fijadas/disponibles, estado derivado, reglas de movimiento, IIBB 5%, ganancias 6%,
+   pizarra +20 días.
+4. **`components/configurador-precios-tc.tsx`** — ABM de las dos series macro (precio USD/ton por
+   posición + TC presupuestado/real), 36 meses, edición inline es-AR, guarda al salir del campo.
+   Se abre con el botón "Precios y TC" en la solapa Presupuesto.
+5. **`components/tab-presupuesto.tsx`** — horizonte 13 → **24 meses**; bloque **INGRESOS** con
+   **3 filas por campo** (Fijado / Presupuestado / Disponible a fijar), badge de tn sin fijar,
+   marca `*` cuando el precio o el TC se arrastraron, y fila **RESULTADO** (Ingresos − Egresos).
+
+### ✅ HECHO (2026-07-26, 2ª tanda — sin testear)
+6. **Fix arrastre TC** — `resolverTC` sólo arrastraba hacia atrás mientras `resolverPrecio`
+   arrastra hacia adelante: una cuota con mes de cobro previo a todo el TC cargado quedaba en
+   $0 (caso Rojas jul-26). Ahora es bidireccional.
+7. **Mover y valorizar desde Presupuesto** — celdas de Presupuestado/Disponible clickeables →
+   modal con fecha de cobro + precio + "volver a default". Columnas `precio_usd_override` y
+   `precio_pesos_override`. **El modo lo decide la fecha**: mes actual → pizarra en **pesos**
+   sin TC; mes posterior → Matba en **USD** × TC. Al cambiar de unidad el campo se limpia.
+8. **LA FIJACIÓN ES LA VENTA** — `fijaciones_arrendamiento` → **`ventas_arrendamiento`**.
+   Precio y TC en **dos momentos** (`fecha_fijacion_precio` / `fecha_fijacion_tc`); hasta que
+   estén los dos el monto en pesos es estimado. Estados: sin_precio / sin_tc / cerrada.
+9. **Sub-solapa Arrendamiento en Ventas** (`components/vista-arrendamientos.tsx`, dentro de
+   Ingresos): ABM de contratos, grilla de cuotas (tons/%/cobro/posición/vendido/disponible/
+   estado), **Fijar** (total o parcial), **Fijar TC** sobre una venta ya hecha, guardarraíl
+   visible. Fijar **parcial parte la cuota**: el saldo pasa a una cuota nueva (`cuota_padre_id`).
+
+10. **Cash Flow ve las ventas** — vista **`public.ventas_unificadas`** (formato común de los 3
+    tipos + `facturado` + `falta_tc`). Cash Flow tenía origen `VENTA` pero leía
+    `msa.comprobantes_venta` (**facturas**): la venta fijada no aparecía en ningún lado.
+    Ahora entra como ingreso comprometido, y si hay factura parcial sigue el **remanente**.
+11. **Vinculación FC ↔ venta** — tabla **`public.ventas_facturas`** (polimórfica: no se pudo
+    reusar `msa.ventas_comprobantes`, su FK apunta a `msa.ventas`). Alerta en Vista Principal
+    (`components/alertas-fc-venta.tsx`): match **por CUIT** (las ventas son pocas), monto
+    asignado editable con default = mín(factura, remanente). **Sí** → Cash Flow muestra sólo
+    la FC · **No** → dos ingresos y la venta sigue esperando. La decisión se guarda en ambos
+    casos para no repreguntar.
+12. **`MANUAL-USO.md`** — sección "Arrendamientos agrícolas" con el flujo completo.
+
+### ⏳ FALTA
+- ✅ ~~Cargar los CUITs de Sanpa y Provinvest~~ — **HECHO 2026-07-28**: Rojas → `Sanpa Semillas
+  SA` `30712200662` (alineado a la factura, ver B-BUG-CLIENTE-NO-SE-CREA) · Nazarenas →
+  `Provinvest` `33710346939`. La vinculación FC↔venta ya puede matchear.
+- **Generar el comprobante** (factura/liquidación) desde la venta → motor rama VENTA → cobro.
+- **Granos y ganadería** en `ventas_unificadas` (hoy la vista sólo trae arrendamiento).
+- **Volcado del IIBB al template** `IIBB Mensual MSA` (`fba5c3f9-…`), patrón SICORE: explícito,
+  idempotente, con reset; traza en `detalle` para no pisar montos escritos a mano. → `lib/iibb/`.
+  ⚠️ La alícuota **no puede ser una constante global**: arrendamiento 5%, ganadería 1%. Hoy
+  está hardcodeada en `lib/arrendamientos/calculo.ts` (`ALICUOTA_IIBB`), igual que `EXENTO_IVA`
+  (arrendamiento exento, ganadería 10,5%). Volverlas configurables **por concepto**.
+- **Ganadería** — solapa nueva del Excel, ver bloque al final de este dossier.
+- **Cash Flow**: ingresos fijados + edición de cuotas como interfaz sobre Ventas.
+- **Replicar a PAM y MA** (incluye crear `pam.comprobantes_venta`, que no existe).
+- **Cargar `indices_ipc`** (tabla vacía).
+
+### ❓ ABIERTO — a resolver con el usuario
+1. **CUITs de Sanpa y Provinvest** — no están en `public.proveedores` (el único `es_cliente` es
+   AFA). Los contratos quedaron con `cliente_cuit` NULL.
+2. **Rojas cuota 1 (10/07/2026) ya venció** y quedó `presupuestado`. ¿Se fijó y cobró, o pasó a
+   disponible?
+3. **Campaña 27/28** es réplica de 26/27 con fechas +1 año — confirmar contra los contratos reales.
+4. **Precios**: hoy carga manual. Mejora futura: traer Matba/Rofex automático.
+5. **Ganancias 6% ↔ `retenciones_recibidas`**: hoy sólo menor ingreso. Futuro: encadenar para
+   recuperarlo contra el impuesto.
+
+### 🐄 GANADERÍA — relevado 2026-07-26, sin implementar
+
+Solapa nueva del Excel. Modelo: `stock vientres × % destete → terneros`, split machos/hembras,
+menos reposición (% sobre vientres) = cabezas a vender × peso × precio $/kg → **IVA 10,5%** →
+total cobro. Más **IIBB 1%** el mes siguiente (vs 5% del arrendamiento) y retenciones reales
+de los compradores.
+
+**Respuestas del usuario**: precio **editable desde Presupuesto** (mismo mecanismo que el
+override de soja) · IIBB 1% **sobre el neto** · el IVA impacta **sólo el flujo de caja** (después
+va la factura de venta) · vaca de descarte **a afinar** · siempre **MSA** · **hay plazos** entre
+venta y cobro · reposición = **parámetro aproximado**.
+
+**Hallazgo**: los parámetros ya están en `productivo.ciclos_cria` con valores reales, y difieren
+de los de la planilla. Ciclo 2025 (el que se cobra en marzo 2027): **220 vientres** a servicio
+(192 vaca + 28 vaquillona), no 200. Ciclo 2024 cerrado: **88,3% de destete** (189/214) vs 85%
+supuesto, y split **56,6/43,4** machos/hembras vs 50/50 supuesto, `kg_promedio` real 197,34.
+→ La app puede **derivar los parámetros del historial** y ofrecerlos como default con override.
+*(Nota de dato: en el ciclo 2025 la Vaca tiene 192 servicio − 181 preñadas − 7 vacías = 4 cabezas
+sin explicar; en Vaquillona cierra perfecto.)*
+
+**Ya existe y sirve**: las 15 `productivo.categorias_hacienda` cubren el roll-forward
+(`Vaca`, `Vaca CUT/Descarte`, `Vaquillona de Reposicion`, `Vaquillona Preñada`, `Ternero/a al Pie`,
+`Ternero/a Recria`). **`productivo.stock_hacienda` existe pero está VACÍA y no tiene dimensión
+temporal** — es una foto del stock de hoy, no sirve para el roll-forward año a año que el usuario
+describe (marzo 28 = stock − descartes + reposición; marzo 29 = ese número − descarte + reposición).
+Hay que agregarle período o hacer tabla de stock proyectado.
+
+**Decisión heredada**: igual que el arrendamiento, **Productivo calcula el stock proyectado →
+genera las ventas → Presupuesto lee**. Lo dice el propio usuario en la planilla (B20).
+
+#### 🚧 Qué falta decidir antes de implementar ganadería
+1. **Precio $/kg a futuro**: el usuario lo quiere **editable desde Presupuesto** (mismo
+   mecanismo que el override de soja). Falta definir si hay algún índice de referencia
+   (novillo Cañuelas, Rosgan) o es 100% carga manual. Acá **no hay Matba**.
+2. **Plazos de cobro**: dijo "hay plazos" pero no cuáles. En arrendamiento esto terminó siendo
+   `dias_cobro_disponible` **por contrato** — acá probablemente sea por comprador/consignatario.
+3. **Vaca de descarte**: es una línea de ingreso que **no está en la grilla del Excel**. Falta
+   cuántas por año, peso y precio. Ya hay un movimiento real cargado (4 Vaca CUT/Descarte,
+   30/03/2026, sin peso ni precio).
+4. **Roll-forward del stock**: dónde vive. `productivo.stock_hacienda` está vacía y **sin
+   dimensión temporal** → hay que agregarle período o hacer tabla de stock proyectado.
+5. **Parámetros**: ¿derivados del historial de `ciclos_cria` con override, o carga manual?
+   (El usuario todavía no lo respondió; la recomendación es derivar + override.)
+
+#### ✅ HECHO (2026-07-26, sin testear) — ganadería ya se muestra en Presupuesto
+- **BD**: `public.precios_hacienda` (ARS/kg por categoría y mes — **separada** de
+  `precios_granos`, que es USD/ton por posición) + `public.presupuesto_ganaderia`
+  (vientres, %destete, %machos, %reposición, pesos, fecha de cobro, **alícuotas en la fila**).
+- **`lib/ganaderia/calculo.ts`**: fórmulas de la planilla + `resolverPrecioHacienda` (con
+  arrastre) + `referenciaHistorica()` que saca vientres/%destete/%machos/kg del último ciclo
+  cerrado de `productivo.ciclos_cria`. Verificado contra el Excel: $190.667.750 exacto.
+- **`components/vista-ganaderia.tsx`** en **Ingresos → Ganadería**: ABM de proyecciones +
+  grilla igual a la del Excel (cantidad/reposición/venta/peso/kg/precio/neto/IVA/total) + línea
+  de IIBB con su mes. Muestra la **referencia histórica real** al lado de cada campo, sin pisar.
+- **Precios y TC**: 3 columnas nuevas de hacienda (`Ternero`, `Ternera`, `Vaca CUT/Descarte`).
+- **Presupuesto**: fila 🐄 por proyección en INGRESOS (total cobrado = neto + IVA) + fila
+  **IIBB ganadería** en EGRESOS el mes siguiente al cobro.
+
+#### ⚠️ Deuda técnica que ganadería DESTAPÓ — PARCIALMENTE resuelta
+- ✅ Ganadería lleva **`alicuota_iva` y `alicuota_iibb` en la fila**, no en el código.
+- ✅ Las constantes de arrendamiento se renombraron para que no se generalicen por accidente:
+  `ALICUOTA_IIBB_ARRENDAMIENTO`, `ALICUOTA_GANANCIAS_ARRENDAMIENTO`, `ARRENDAMIENTO_EXENTO_IVA`.
+- ⏳ **Falta**: cuando se haga el volcado del IIBB al template, tiene que tomar la alícuota
+  **del concepto** (5% arrendamiento / 1% ganadería), no una constante.
+
+#### 🔄 CICLO GANADERO — modelo de evolución del stock (solapa "ciclo ganadero" del Excel, 2026-07-29)
+
+El usuario agregó una solapa con el **modelo del ciclo**. Es la base que faltaba: en vez de
+tipear el stock campaña por campaña, **el rodeo rueda solo año a año** y de ahí salen las ventas.
+
+**Foto de stock (hoy)** — es el arranque, se carga una vez:
+```
+Vacas 177 + Vaquillonas Preñadas 27 = 204   ← rodeo de cría (de acá sale el % de preñez)
+Vacas Descarte 8                             → a vender
+Ternero Recría 97                            → a vender
+Ternera Recría 81 − Reserva Reposición 60 = 21 → a vender
+Reserva Reposición 60                        → entra al rodeo
+```
+> ⚠️ El **204** es esto (177 + 27). **No** confundir con el **214** que sugería la app, que salía
+> de `ciclos_cria` del último ciclo cerrado (2024: 160 + 54). La referencia estaba mal elegida:
+> mira el pasado cuando lo que hace falta es la foto de hoy.
+
+**📅 LA CAMPAÑA ES LA COMERCIAL JULIO–JUNIO**, igual que en el resto de la app. Con ese
+calendario cada campaña contiene **exactamente un servicio y un destete**:
+```
+campaña 25/26 (jul-25 → jun-26):  servicio 10/2025 (220 cab)  ·  destete 3/2026 (189)
+campaña 26/27 (jul-26 → jun-27):  servicio 10/2026 (264 cab)  ·  destete 3/2027
+```
+`campaniaDeServicio(Y) = Y/(Y+1)` — octubre de Y cae en jul-Y/jun-(Y+1).
+
+> Estuvo mal mapeado una campaña de más (el servicio de oct-2025 iba a la 26/27). Síntoma:
+> el chequeo de reposición mostraba "marcadas 45" en **dos** campañas a la vez, porque las
+> dos caían dentro de los ±90 días de la misma pesada.
+
+**⚠️ EL PERÍODO VA DE SERVICIO A SERVICIO** (definición final, 2026-07-30). Un servicio y su
+propio destete abarcan 17 meses y se superponen con el ciclo siguiente; en cambio de servicio a
+servicio son 12 meses limpios, y ahí **el cierre de un período ES la apertura del siguiente**:
+```
+rodeo(N+1) = rodeo(N) − refugo(N) + retenidas(N)
+vacas(N+1) = vacas(N) + vaquillonas(N) − refugo(N)   ← las vaquillonas paren y pasan a vaca
+```
+Verificado con datos reales:
+```
+1/10/24:  214 (160+54) − 22 refugo + 28 vaquillonas = 220  ✓
+1/10/25:  220 (192+28) − 16 refugo + 60 vaquillonas = 264  ✓ (= los 204 + 60 del usuario)
+```
+
+**El único corrimiento está en el DESTETE, no en el stock**: los terneros que se destetan
+durante el período N son el producto del servicio del período **N−1** (16 meses antes). Por eso
+el `%destete` y las falladas se miden contra `rodeo(N−1)`, mientras que el refugo se descuenta
+del rodeo **vigente** — son las mismas vacas un año después.
+
+Consecuencia en `proponerDesdeCiclosCria`: **cada registro de `ciclos_cria` se reparte entre DOS
+períodos** (el servicio abre uno, su destete ocurre en el siguiente). Meter las dos cosas en la
+misma fila era lo que rompía el encadenamiento.
+
+> **Historial del error (3 intentos)**: (1) se encadenó todo a N+1 → las vaquillonas entraban a
+> un servicio anterior a su destete; (2) se corrigió todo a N+2 → se rompió que el cierre fuera
+> la apertura del siguiente; (3) definitivo: el stock encadena a N+1 sin lag y sólo el destete
+> mira a N−1. El error de fondo fue definir el período como "un servicio y su destete" en vez de
+> "de servicio a servicio".
+
+**Motor del ciclo (anual: servicio octubre → tacto → destete marzo):**
+```
+Rodeo      = Vacas + Vaquillonas de reposición
+Destete    = Rodeo × %destete          → mitad ternera, mitad ternero
+Falladas   = Rodeo × (1 − %destete)    ← la merma entre vaca entorada y vaca destetada
+Descarte   = Falladas × %descarte      → VENTA (default 50%)
+───────── cierre del período ─────────
+Vacas(t+1)       = Vacas(t) − Descarte
+Vaquillonas(t+1) = Ternera(t) × %reposición
+```
+
+**Respuestas del usuario (2026-07-29)** a las dudas del modelo:
+1. **El descarte sale de AMBAS** (vaca y vaquillona), no sólo de vaca. Default: la mitad de las
+   fallas se le imputa a la vaca → se descarta. **Editable.**
+2. El descarte 0 en octubre era **un error de la fórmula del Excel** (`F28` vacía). **Todos los
+   años es igual.**
+3. Split ternera/ternero: **50/50 por defecto** (editable; el real histórico es 56,6/43,4).
+4. **El 20% de reposición es para MANTENER el rodeo.** Hoy están **incrementando**, así que este
+   año guardan más. → el % **no puede ser constante: es por período**, es una decisión de
+   estrategia.
+5. **La recría de 2026 se iba a vender en marzo (destete) y se decidió retenerla.** Falta definir
+   cuándo se vende, y puede ser **venta parcial o todo junto**.
+
+**Fechas del ciclo — DERIVADAS, no se piden** (decisión del usuario 2026-07-29): la campaña
+siempre tiene **un servicio, una parición y un destete**, así que el nombre de la campaña ya los
+determina. Pedirlos como input era ruido y encima invitaba a que el dato tipeado se contradijera
+con la campaña.
+```
+campaña 27/28  →  servicio  oct-2026   ← ojo: cae en la campaña ANTERIOR
+                  parición  jul-2027
+                  destete   mar-2028
+```
+Constantes `MES_SERVICIO=10 · MES_PARICION=7 · MES_DESTETE=3` en `lib/ganaderia/ciclo.ts`
+(`fechasCampania()`). Las columnas `fecha_servicio`/`fecha_destete` de la BD quedan **sólo para
+las fechas REALES** cuando ocurren; `fechaDestete()` devuelve la real si existe y si no la
+derivada. Las reales ya viven en `ciclos_cria` → **pendiente**: traerlas de ahí en vez de
+retipearlas.
+
+**Lo que pidió** (validado, a implementar): un lugar donde ver la **evolución del stock
+proyectado como línea de tiempo**, que arranque del stock actual, proponga los pasos futuros por
+defecto, y sea un **espacio de trabajo interactivo** donde editar a medida que las cosas se hacen
+reales. **De ahí salen las ventas proyectadas.**
+
+Es el mismo patrón que arrendamiento (contrato → cuotas → fijar): acá es
+**stock → períodos → lotes vendibles → venta (parcial o total)**.
+
+#### 🐛 `terneros.es_torito` está SOBRECARGADO — y se usa distinto en dos lugares
+
+El flag marca dos cosas según el sexo: en **machos** = torito · en **hembras** = retenida para
+reposición. La convención la fija `tab-terneros.tsx` (modo reposición) y ahí está bien aplicada:
+```ts
+toritos     = es_torito && sexo === 'Macho'     // tab-terneros.tsx:626,731
+ternerasRep = es_torito && sexo === 'Hembra'    // tab-terneros.tsx:627,732
+```
+**Pero `vista-sector-productivo.tsx` NO distingue el sexo**, y ahí es un bug:
+```ts
+categoriaPropuesta()  // :4131 — if (es_torito) → 'Torito', sin mirar el sexo
+const toritos = asignaciones.filter(t => t.es_torito)   // :4051 — incluye hembras marcadas
+```
+→ En el flujo de **cambio de categoría**, una ternera marcada para reposición se proponía como
+**"Torito"**, y encima caía en DOS grupos a la vez (`hembras` y `toritos`) porque `toritos` no
+filtraba por sexo: doble conteo.
+
+✅ **CORREGIDO 2026-07-29**: `categoriaPropuesta()` lee el flag junto con el sexo
+(macho+marcado → Torito · hembra+marcada → Vaquillona de Reposicion), los 4 grupos pasaron a ser
+**excluyentes**, y se agregó el grupo **"Terneras reposición"** que faltaba.
+
+Aparte del bug: el nombre engaña. Convendría partirlo en dos flags (`es_torito` /
+`es_reposicion`) o renombrarlo a algo neutro tipo `marcado_retencion`.
+
+#### ✅ ESTADO VERIFICADO — 4 campañas cargadas (2026-07-30)
+```
+                24/25    25/26    26/27    27/28
+RODEO             214      220      260      300
+Destetados          0      189      187      221
+Refugo+mort        22       20       27       32
+Retenidas          28       60       67       32
+TOTAL A SERVICIO  220      260      300      300
+```
+**La cadena cierra**: cierre(N) = apertura(N+1) en los tres saltos. ✓
+
+⚠️ **Dos cosas a mirar** en los datos cargados:
+- El **25/26 cierra en 260**, no en los **264** reales. Falta cargarle `real_descarte = 16`
+  (hoy calcula 20 con el 80%). El refugo realizado fue 64% de las falladas, no 80% → **G-2**.
+- El **24/25 quedó con `pct_descarte_falladas = 0`**: al escribir 22 cabezas, la sincronización
+  calculó `22 / falladas` y las falladas eran 0. No molesta porque `real_descarte = 22` manda,
+  pero si algún día se limpia el override el refugo se va a cero en silencio. → ver G-6.
+
+**G-6 · La sincronización %↔cabezas divide por cero** 🟡 *(nuevo)*
+En el refugo, `pct = cabezas / falladas`. Si `falladas = 0` el % queda en 0 y se guarda así.
+Debería no tocar el % cuando la base es 0, o avisar.
+
+#### 🔍 REVISIÓN DEL MODELO — 5 puntos abiertos (2026-07-30)
+
+Salieron de analizar la primera carga real. **No son del arranque**: salvo el 1, todos vuelven
+cada año. Verificados contra la línea de tiempo generada con datos reales (24/25 y 25/26).
+
+**G-1 · El guardarraíl de retención ANULA el dato cargado** 🔴 *(bloqueante — se arregla ya)*
+`retenidas = min(retenidasTeorica, terneras)`. Si el período no tiene destete cargado,
+`terneras = 0` y **cualquier número que el usuario cargue se topea a cero**. Caso real: cargó
+`real_retenidas = 28` en la 24/25, se guardó bien en la BD, y la app mostraba 0.
+El tope sólo debe aplicar cuando el destete **se conoce**; si no hay dato, `terneras` es
+desconocido, no cero. Ídem la advertencia ⚠, que hoy es un falso positivo permanente en el
+primer período.
+
+**G-2 · El % de refugo no se calibra con la realidad** 🟡
+El default es 80% de las falladas; el realizado del 25/26 dio **64%** (16 sobre 25). Un dato no
+hace tendencia, pero la app debería **mostrar el ratio realizado** cuando es derivable, para
+ajustar el supuesto con evidencia. Hoy no lo calcula ni lo muestra.
+
+**G-3 · Falta un período para presupuestar el último destete** 🔴 *(afecta el resultado)*
+El destete de un período viene del servicio del **anterior**, así que **el servicio del último
+período nunca desteta**:
+```
+26/27  servicio oct-2026 (rodeo 244)  →  desteta marzo 2028 = período 27/28
+```
+Si la línea llega hasta 26/27, **esas ventas no existen en el presupuesto**.
+**Regla: para N campañas de ventas hacen falta N+1 períodos de stock.** El usuario quiere 2
+campañas presentes → 3 o 4 períodos cargados. Convendría que la app lo avise.
+
+**G-4 · Los toritos no existen en el modelo del ciclo** 🟡
+`terneros_venta = terneros`: manda todos los machos a venta. Pero se retienen 9 toritos, así que
+el número del ciclo está inflado respecto de lo que realmente se vende. Es el espejo de lo que
+sí se contempló con las terneras de reposición. Hoy se corrige en el panel de lotes.
+
+**G-5 · Un solo peso al destete para ambos sexos** 🟡
+`peso_destete_kg` = 197,34 es el promedio de la tropa; el real es **198,17 machos / 169,30
+hembras** (29 kg de diferencia). Los lotes lo resuelven bien porque se traen separados de la
+pesada, pero el número del ciclo induce a error si se usa para estimar.
+
+**G-7 · El lote duplica la cantidad en vez de derivarla** 🟡 *(idea de simplificación, 2026-07-30)*
+Hoy `stock_lotes.cantidad` **copia** el número del ciclo, y protegemos las ediciones manuales con
+`cantidad_calculada` + la marca ✎. Funciona, pero deja **dos lugares que pueden decir cosas
+distintas** sobre cuántas cabezas hay.
+
+Alternativa más limpia: que **la línea de tiempo sea la única dueña del "cuánto"** y el lote sólo
+dueño del "cuándo, a cuánto y en cuántas veces".
+- El lote **deriva** la cantidad del ciclo en vez de copiarla.
+- La **mortandad se descuenta en el ciclo**, no en el lote — que es donde conceptualmente
+  pertenece, porque la fila ya se llama *"refugo + mortandad"*.
+- Desaparecen `cantidad_calculada`, la marca ✎ y el aviso de desactualizado: no puede haber
+  desfasaje si hay una sola fuente.
+
+Costo: hay que separar en el ciclo lo que se vende de lo que se muere, hoy juntos en una fila.
+No urge, pero cada vez que aparezca un bug de sincronización entre ciclo y lote, la causa va a
+ser esta.
+
+##### Lo que sí es sólo del arranque
+- El refugo y la reposición del **24/25** (22 y 28) faltan porque su destete viene de un ciclo
+  anterior al más viejo de `ciclos_cria`. El primer período siempre va a estar cojo; una vez
+  cargado no vuelve a pasar.
+
+##### Automatizaciones posibles (hoy se hacen a mano)
+- **Refugo por diferencia**: `refugo(N) = rodeo(N) + retenidas(N) − rodeo(N+1)`, cuando se conoce
+  el rodeo real del período siguiente. Cada octubre queda derivable.
+- **Reposición desde las marcadas**: el chequeo ya compara contra las hembras marcadas en la
+  pesada; falta el botón que la traiga en vez de sólo avisar.
+
+#### 🗺️ PLAN DE ACCIÓN — de las cabezas al presupuesto (acordado 2026-07-30)
+
+**Principio** (mismo que arrendamiento): *Productivo dice qué hay · Ventas decide vender ·
+Presupuesto lee.*
+```
+ciclo  →  lote (cabezas disponibles)  →  venta  →  factura  →  cobro  →  Presupuesto
+```
+**Tres capas en el presupuesto**, igual que en arrendamiento (Fijado/Presupuestado/Disponible):
+
+| Capa | Qué es | Precio |
+|---|---|---|
+| **Vendido** | fecha y precio decididos | congelado |
+| **Presupuestado** | venta planificada (lote con fecha) | de tabla, se recalcula |
+| **Disponible** | existe, sin fecha de venta | de tabla, informativo |
+
+##### FASE A — Proyecciones de venta → Presupuesto ← **HECHA (sin testear)**
+1. **Categorías completas.** Hoy faltan `Ternero al Pie`, `Ternera al Pie` y `Toro`. La
+   categoría depende de **cuándo se vende**: el destete de 3/27 se vende *al pie*, la recría
+   actual se vende como *recría*. Y hay **toros de refugo**, que no salen del ciclo (los toros
+   no están modelados en el rodeo) → lote manual.
+2. **Arreglar la generación** — G-4 (los toritos no deben ir a venta) y G-5 (peso por sexo, no
+   el promedio de la tropa).
+3. **Precios por categoría** en Precios y TC. Son ~9 categorías: no entran como columnas, va
+   con selector de categoría.
+4. **Proyección en el lote**: `fecha_venta_estimada` + precio (de tabla u override) + plazo de
+   cobro → mes de cobro.
+5. **Presupuesto lee**: fila 🐄 *Venta de hacienda* con el monto en el mes de cobro, y una
+   fila por categoría con lo **disponible sin fecha** en **cabezas y kg** (no en plata) —
+   igual que las toneladas de soja disponibles a fijar.
+   ✅ Incluye la **cadena completa de la venta**, con los mismos criterios del análisis de
+   engorde (que ya modelaba desbaste 5% y CZ 4%):
+```
+kg brutos = cabezas × peso a la fecha de venta
+− desbaste %                → merma de kg
+= kg NETOS                  ← el precio SIEMPRE va por el neto de desbaste
+× precio $/kg  = VENTA NETA ← el neto gravado, lo que se factura
++ IVA 10,5%    = total factura
+− CZ % (comercialización)   → comisión del consignatario
+= INGRESA AL BANCO          ← lo que ve el presupuesto
+IIBB 1% sobre la venta neta → egreso el mes SIGUIENTE
+```
+   Los cuatro porcentajes van **en el lote**, no como constantes.
+   ⏳ **Pendiente menor**: la comisión de CZ probablemente lleve su propio IVA (21%); hoy se
+   descuenta sin IVA. A confirmar con el usuario.
+
+**G-8 · Los kg por vender salen del CICLO, no del lote** ✅ **HECHO 2026-07-30**
+Antes la fila *"Disponible sin fecha"* del presupuesto necesitaba que el **lote existiera**. El
+usuario lo señaló: el paralelo real con la soja es que **las toneladas disponibles se ven sin que
+exista ninguna venta** — salen del contrato. Acá tienen que salir del **ciclo**.
+
+> *"como sabemos por las campañas los kg producidos y a partir de qué fecha, que el presupuesto
+> lo muestre como en soja, sin necesidad de crear la venta. Más como un control para que no se
+> olvide que hay stock sin vender."*
+
+Y como control es más útil así: si hace falta generar el lote para que te avise que hay stock sin
+vender, el aviso llega tarde.
+
+**Resuelto en `lib/ganaderia/disponibilidad.ts`.** El presupuesto ya no le pregunta al lote
+cuántas cabezas hay: se lo pregunta a la **fuente** y resta.
+
+    disponible = existencia − lo comprometido en un lote CON fecha de venta
+
+- **Existencia del stock de hoy** → `existenciasDePesada()`, última pesada de cada animal
+  (excluye toritos y terneras de reposición, que no se venden).
+- **Existencia de los destetes futuros** → `existenciasDeCiclos()`, sobre `calcularLineaTiempo`.
+  Sólo los destetes **posteriores** al mes actual: los pasados ya están en la pesada y contarlos
+  otra vez duplicaría el stock.
+- Un lote **sin** fecha de venta **no** se resta: no hay venta presupuestada, así que sigue siendo
+  disponible (y no se duplica, porque salió de la misma existencia).
+
+**El doble conteo se resuelve por CLAVE DE TROPA, no por nombre de categoría.** Es la parte no
+obvia: el mismo animal se llama *"al Pie"* si se vende en el destete y *"Recría"* si se vende
+después. Cruzar por el nombre hacía que el lote del destete no neteara contra su propia
+existencia y el disponible saliera duplicado. La clave es `pesada|macho` o `ciclo:<uuid>|hembra`,
+derivada de `stock_lotes.ciclo_id` (que está poblado en los lotes de destete y `null` en los de
+stock inicial). Ver `claveDeLote()`.
+
+**El promedio del saldo baja, como tiene que bajar.** Se restan también los KILOS, al peso
+promedio de lo comprometido — si se venden los más pesados, los que quedan pesan menos:
+
+    98 cab · 245,5 kg prom = 24.063 kg
+    − 55 cab · 275,2 kg    = −15.137 kg
+    ─────────────────────────────────────
+      43 cab ·  8.926 kg  → 207,6 kg prom     ← NO 245,5
+
+Los dos lados tienen que estar medidos a la **misma fecha** o se mezclan kilos de momentos
+distintos: por eso se usa `peso_base_kg` (peso a `fecha_peso`, la pesada) y **no** el peso
+proyectado a la venta, que ya incluye la ganancia diaria.
+
+Verificado contra los datos reales con `scripts/verificar-disponibilidad-hacienda.ts`
+(`npx tsx scripts/verificar-disponibilidad-hacienda.ts`) — 9 checks, incluido que el lote de un
+ciclo NO netee contra el stock de hoy. ⏳ **Falta test del usuario en pantalla.**
+
+**G-9 · Venta de hacienda desglosada por categoría** ✅ **HECHO 2026-07-30**
+`🐄 Venta de hacienda` pasó de ser **una fila sumada** a **una fila por categoría**, con el total
+arriba. Cada fila lleva las dos capas en la misma línea:
+- meses con venta presupuestada → **plata**;
+- el mes en que se disponibilizan → **cabezas + peso promedio** (ámbar), si quedó saldo sin vender.
+
+Se listan sólo las categorías que tienen algo. Una categoría sin ninguna venta (el caso del
+usuario: machos livianos y terneras de recría) igual aparece, marcada *"sin venta presupuestada"*,
+mostrando sólo el disponible. El tooltip de la celda explica la resta: *"98 cab. existentes −
+55 con venta presupuestada · stock de hoy"*.
+
+⏳ **Falta test del usuario.**
+
+##### FASE B — Acople con Ventas *(después)*
+6. **Decidir dónde vive la venta.** `productivo.stock_ventas` existe pero por coherencia con
+   arrendamiento la venta debería registrarse del lado comercial (Ventas → Ganadería). Mueve
+   una tabla de schema: requiere acuerdo.
+7. **Pantalla de venta**: cantidad parcial, fecha, peso (calculado con ganancia diaria,
+   editable), precio, plazo de cobro. **Congela peso y precio.**
+8. **`ventas_unificadas`** incorpora ganadería → Cash Flow la ve.
+9. **Deprecar `presupuesto_ganaderia`** y borrar la fila que quedó corrupta del bug de %.
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+---
+
+
+---
+
+---
+
+#### 🔑 C-24 · PLAN DE CUENTAS: DEL TEXTO AL NÚMERO *(análisis completo 2026-07-31 — 0 código)*
+
+Análisis a fondo de cómo se clasifica un egreso, disparado por una observación del usuario:
+*"el nombre de la cuenta contable de los templates son prácticamente el nombre de los
+templates… creo que hubiera sido más fácil usar la columna template en vez de crear una nueva
+para ponerle el mismo nombre"*. Tenía razón, y tirando de ese hilo salió todo lo demás.
+
+##### 1 · La redundancia es real y está medida
+Dentro de **`cuentas_contables`**, las columnas `categ` y `cuenta_contable` son **idénticas en
+135 de 143 filas**. Las 8 que difieren son abreviaturas o nombres formales:
+
+| `categ` | `cuenta_contable` | qué agrega |
+|---|---|---|
+| `FCI` | Fondos Comunes de Inversión | sigla → nombre |
+| `CRED P` / `CRED T` | Créditos Pagados / Tomados | código interno → nombre |
+| `Com. Uso Atm` | Comisión Uso ATM | abreviatura y tildes |
+| `Debitos / Creditos` | Débitos / Créditos **Ley 25413** | referencia legal |
+| `CAJA` | Movimientos a/desde Caja | precisa que es el movimiento, no el saldo |
+| `Tarjetas MSA` | Pago Tarjeta MSA | ídem |
+
+**Por qué existen las dos**: cada consumidor apunta a una distinta. Las **facturas** referencian
+`cuenta_contable` (`msa.comprobantes_arca`, 42 cuentas distintas); los **templates** referencian
+`categ`. Se duplicó el nombre para que cada lado tuviera "su" columna. Es historia, no diseño.
+
+##### 2 · Por qué `categ` no puede SER la cuenta (pero sí es el puntero)
+Granularidad: **45 categorías** contra **17 agrupadoras** y 143 cuentas. Como *nivel* es el
+correcto — la propuesta usa esa misma granularidad. Como *identidad* no sirve:
+
+1. **Las facturas no tienen `categ`.** Si los templates la usaran como cuenta, habría **dos
+   planes paralelos** y no se podrían sumar templates + facturas en el mismo reporte.
+2. **Es texto libre y editable** desde la grilla (está en `camposEditables`).
+3. **Es plana**: sin padre no hay totalizadora ni reporte por rama.
+4. **No dice la naturaleza** (gasto / ingreso / financiero). Eso es `tipo`.
+
+Y el dato que lo cierra: **`Impuesto inmobiliario` y `Impuesto Red Vial` cuelgan de DOS
+agrupadoras cada una** (Rurales y Urbanos). Si `categ` fuera la cuenta y la agrupadora su padre,
+esa cuenta tendría dos padres — imposible en un plan de cuentas. Lo rural/urbano es operativo,
+no contable.
+
+*(Esto obliga a corregir la propuesta: `424101 IMPUESTO INMOBILIARIO` no puede colgar de
+"IMPUESTOS Y TASAS **RURALES**", porque uno de sus 42 templates es urbano. El padre debe
+llamarse **IMPUESTOS INMOBILIARIOS Y TASAS**.)*
+
+##### 3 · ¿La agrupadora como cuenta? No — es la totalizadora
+17 agrupadoras para 173 templates: demasiado gruesa (*Impuestos Rurales* mezcla inmobiliario con
+red vial). Y es una taxonomía **operativa** que legítimamente difiere de la contable —
+*Seguros* → *ADMINISTRACION Y ESTRUCTURA*. Su lugar es **totalizadora**: coincide con ella en 28
+de 41 casos.
+
+##### 4 · 🔄 CORRECCIÓN — el extracto SÍ linkea por ID
+Primero se dijo que renombrar categorías rompería 776 filas. **Es falso.** De las 661 del
+extracto MSA, **612 (93 %) tienen un ID**:
+
+| | filas |
+|---|---:|
+| `template_cuota_id` + `template_id` | **469** |
+| `comprobante_arca_id` | 108 |
+| `sueldo_pago_id` | 36 |
+| `anticipo_id` | 7 |
+
+El `categ` del extracto es una **copia denormalizada** para mostrar sin joins. El vínculo real
+es el UUID.
+
+**Pero ojo con la conclusión inversa**: lo que tiene ID es el **template**, no la categ. Las
+únicas FK del sistema son `cuotas → egresos_sin_factura.id`, `egresos_sin_factura.template_origen_id`
+y `presupuesto_template_config.template_id`. **Nadie referencia `cuentas_contables.id`.** La
+clasificación contable sigue siendo texto:
+
+```
+extracto  → template          UUID ✓
+template  → cuenta contable   TEXTO (categ ↔ categ)
+extracto  → cuenta contable   TEXTO, o nro_cuenta en sólo 106 de 661
+```
+
+##### 5 · Dónde el texto SÍ es identidad: las 77 reglas
+`reglas_conciliacion` identifica el destino **sólo por `categ`** (22 categorías distintas).
+Se revisó `llena_template` esperando un puntero y es un **booleano** ("esta regla llena un
+template"), no dice cuál.
+
+Es el único lugar que importa de verdad, porque **clasifica hacia adelante**: si una regla
+escribe un nombre que ya no existe, cada movimiento nuevo nace huérfano y no se nota.
+
+Y ahí hay una oportunidad: **`reglas_conciliacion.codigo_contable` existe y está vacía en las
+77**. Es exactamente donde va el número.
+
+##### 6 · 🔄 CORRECCIÓN — `codigo_contable` NO está muerta
+Se la había llamado columna muerta. **Falso**: el motor de conciliación
+(`hooks/useMotorConciliacion.ts`) la lee de las reglas y la estampa en el movimiento. Y
+**`"No lleva"` es un valor con significado**, no basura — hay una función
+`esValorContableValido()` que detecta esa cadena para saber que ese movimiento no lleva código.
+
+La única realmente sin uso es **`cuentas_contables.grupo_cuenta`**: NULL en las 143 filas, no
+aparece en ningún `.ts`/`.tsx`, vino de la columna homónima del CSV de importación. Ya estaba
+anotada en `RECONSTRUCCION_SUPABASE`. **No se borra**: una columna NULL no molesta.
+
+##### 7 · 🔄 CORRECCIÓN — "que no se abrevie" era mala idea
+Se había sugerido que el nombre de la cuenta fuera igual a la categoría, expandiendo las
+abreviaturas. **Eso es justamente lo que rompe**: `FCI` está grabado **51 veces** en el extracto.
+`categ` ya no es un nombre, es **un dato en producción** — las abreviaturas no son un descuido,
+son la etiqueta corta con la que se viene operando.
+
+La división que ya existe de hecho está bien: `categ` = **etiqueta operativa** (corta, la que se
+tipea y se graba), `cuenta_contable` = **nombre de presentación** (el de los reportes).
+
+##### 8 · Las 49 filas del extracto sin ningún ID
+| | filas | qué son |
+|---|---:|---|
+| `pendiente` · `INVALIDA:` | **39** | **sin conciliar**, $23,8 M. `"INVALIDA:"` lo escribe el motor cuando no encuentra regla. Trabajo pendiente, no falla |
+| `conciliado` · ANTICIPO COBRO | 5 | cobros, $0 de débito |
+| `conciliado` · ANTICIPO | **4** | **$2,79 M conciliados sin `anticipo_id`** |
+| `conciliado` · Sueldos | **1** | conciliado sin `sueldo_pago_id` |
+
+Los **5 conciliados sin ID** son un hueco de trazabilidad: dados por conciliados pero sin apuntar
+a nada. → **C-25**.
+
+##### 9 · PASO A PASO
+**El orden importa: hacer el paso 8 antes del 5-7 es exactamente lo que rompe.**
+
+**Fase 0 — desbloquea el presupuesto, sin riesgo** — ✅ **HECHA 2026-07-31, por otro camino**
+1. ~~Completar la columna TIPO de las 23 categorías~~ → se resolvió **en el template**, no en el
+   plan. Ver § **C-27** acá abajo. El resultado es el mismo (los montos ya dan bien) y además
+   no depende de que la categoría exista en el plan.
+   *Sigue conviniendo completar el plan (Fase 1), pero ya no bloquea nada.*
+
+**Fase 1 — ordenar el plan de cuentas**
+2. Dar de alta las cuentas propuestas con su `nro_cuenta`.
+3. Completar `nro_cuenta` y `cta_totalizadora` en las 22 que no lo tienen.
+4. Unificar las 2 totalizadoras duplicadas por mayúsculas (29 filas).
+
+**Fase 2 — pasar del texto al número** ← *acá se corta la fragilidad*
+5. Guardar el `nro_cuenta` en el template.
+6. Guardar el `nro_cuenta` en las 77 reglas (la columna ya existe, vacía).
+7. Que el motor y el presupuesto crucen por número.
+
+**Fase 2b — cerrar la puerta (C-26)**
+7b. Que el wizard y las otras dos puertas de alta lean las categorías **del plan de cuentas** y
+    no de los templates. Si no, el problema se reproduce solo: hoy el wizard ofrece las 23
+    huérfanas como opción válida.
+
+**Fase 3 — recién ahora, lo cosmético**
+8. Renombrar categorías. Sin riesgo, porque ya nada cruza por texto. Hasta entonces, cualquier
+   renombre es un **UPDATE coordinado de 4 lugares**: `cuentas_contables`,
+   `egresos_sin_factura`, `reglas_conciliacion` y las copias del extracto.
+
+**Fase 4 — el presupuesto**
+9. Reordenar la grilla por `tipo` → totalizadora (C-22). **`tipo` ya está hecho** (secciones
+   EGRESOS / DISTRIBUCIONES con subtotal, patrón del dashboard); falta la totalizadora, que sí
+   depende de la Fase 1.
+
+
+##### 🔁 C-26 · El wizard perpetúa el problema — lo hallado al preguntar por él
+
+> *"¿anotaste como pendiente que debemos actualizar el wizard para que las futuras creaciones de
+> templates se creen con su estructura completa?"*
+
+**No estaba anotado.** Y revisándolo, el wizard no sólo no valida: **es la causa de que el
+problema se reproduzca solo.**
+
+`components/wizard-templates-egresos.tsx` (l. 116-124) carga el desplegable de categorías
+**desde `egresos_sin_factura`**, o sea desde los templates que ya existen:
+
+```ts
+const { data } = await supabase
+  .from('egresos_sin_factura')       // ← los templates, NO el plan de cuentas
+  .select('categ, cuenta_agrupadora')
+const categsUnicas = [...new Set(data.map(d => d.categ)...)]
+```
+
+Consecuencia: **las 23 categorías huérfanas se siguen ofreciendo como opción válida**. Cada
+template nuevo que elija "Impuesto inmobiliario" nace sin `tipo` y sin totalizadora, y refuerza
+la categoría en la lista para el siguiente. Es un lazo cerrado: el wizard lee de los templates
+y escribe en los templates; el plan de cuentas nunca participa.
+
+Por eso hay 23 categorías fuera del plan y no dos o tres. **No se van a terminar solas.**
+
+##### Qué habría que cambiar
+1. **Cargar las categorías desde `cuentas_contables`**, no desde los templates. Mostrando al
+   lado el `tipo` (`egreso` · `financiero` · `distribucion`), que es lo que decide si se
+   presupuesta — así se elige viendo la consecuencia.
+2. **Marcar las que no están en el plan.** Si se elige una huérfana (para no romper lo que hay),
+   avisar que el template va a quedar sin clasificar.
+3. **Permitir crear la cuenta desde ahí**: si de verdad hace falta una categoría nueva, que el
+   wizard ofrezca darla de alta en el plan con su `tipo` y su totalizadora, en vez de dejar el
+   hueco. Es el momento exacto en que el usuario sabe qué es lo que está creando.
+4. **Cuando esté la Fase 2 de C-24**, guardar el `nro_cuenta` y dejar de guardar sólo el texto.
+
+##### Ojo: hay más de una puerta de entrada
+`egresos_sin_factura` se escribe desde **ocho** componentes:
+`wizard-templates-egresos` · `modal-crear-template-faltante` · `generador-renovacion-campana` ·
+`vista-templates-egresos` · `vista-templates-agrupada` · `vista-cash-flow` ·
+`vista-extracto-bancario` · `configurador-reglas` / `configurador-reglas-contable`.
+
+Dos que importan tanto como el wizard:
+- **`modal-crear-template-faltante`** — crea el template tomando la `categ` **del movimiento
+  bancario** y usándola también de `nombre_referencia`. Si esa categ no está en el plan, nace
+  huérfano igual.
+- **`generador-renovacion-campana`** — clona templates para la campaña nueva, así que **hereda
+  la categoría del original**: si el viejo estaba huérfano, el nuevo también.
+
+Poner la validación sólo en el wizard tapa una de tres. Lo que conviene es **una pieza compartida**
+—un selector de categoría que lea del plan— y usarla en los tres, igual que se hizo con
+`SelectorCuentaContable` y `ProveedorCombobox`.
+
+**Prioridad**: hacerlo **después** de la Fase 0/1 de C-24. Validar contra un plan al que le
+faltan 23 categorías bloquearía el trabajo diario en vez de ayudar.
+
+
+##### 10 · Herramientas
+- `npx tsx scripts/reporte-categorias-templates.ts` → estado actual (5 solapas)
+- `npx tsx scripts/propuesta-plan-de-cuentas.ts` → **la propuesta** (5 solapas): 32 cuentas
+  (26 crear · 4 completar · 2 reusar), los códigos que faltan, a qué cuenta iría cada template,
+  el plan actual y qué emprolijar. Con eso **los 173 templates quedan con cuenta**.
+- Los dos escriben una copia `_v2` si el archivo está abierto en Excel.
+
+**C-25** — 5 movimientos conciliados sin ID (4 anticipos por $2,79 M + 1 sueldo).
+
+
+---
+
+#### ✅ C-27 · `tipo` EN EL TEMPLATE — la Fase 0, resuelta al revés *(2026-07-31, HECHO, sin testear)*
+
+> *"tenemos ingreso egreso financiero y distribucion. sería bueno adjudicarle a cada template su
+> tipo verdad? hacer la columna tipo en templates y llenar a cada uno con su tipo… ya nos
+> olvidamos de cómo trabaja los templates dentro de cuentas."*
+
+El usuario propuso lo contrario a lo planeado: en vez de completar el **plan de cuentas** para
+que los templates hereden su tipo, **darle el tipo al template**. Tiene razón, y por un motivo
+que en el análisis original no se vio:
+
+**El `tipo` del plan y el `tipo` del template no son el mismo dato.** El plan clasifica
+**facturas** (que apuntan por `cuenta_contable`); el template clasifica **templates**. Cada uno
+clasifica su propia población. La objeción de "dos fuentes de verdad" que se había puesto en
+contra de esta idea **no aplica** — y el plan se sigue necesitando igual para las facturas.
+
+Ventaja concreta sobre la Fase 0 original: **ningún template queda dependiendo de que su
+categoría exista en el plan.** Eran 70 de 123 activos los que no existían.
+
+##### La cascada
+```
+egresos_sin_factura.tipo     ← manda. Cargado en los 176.
+   ↓ sólo si está NULL
+cuentas_contables.tipo       ← por `categ`. Fallback para lo que se cree de acá en adelante.
+   ↓ sólo si tampoco está
+signo del monto              ← último recurso. `resolverTipo` avisa que adivinó.
+```
+
+##### Lo que se cargó (los 176, no sólo los activos)
+| tipo | total | activos | cuáles |
+|---|---:|---:|---|
+| `egreso` | 150 | 102 | impuestos, ARCA, SICORE, comisiones, expensas, seguros… |
+| `distribucion` | **14** | 13 | los retiros de socios (6 MSA + 6 PAM + Retiro MA mensual + Retiro PAM) |
+| `financiero` | **11** | 10 | FCI ×2, Caja, Interbancarias ×2, Créditos Pagados ×2, Créditos Tomados, Tarjetas ×3 |
+| `ingreso` | **1** | 1 | Otros Ingresos |
+
+Se cargaron **también los inactivos**, para que al reactivar uno no vuelva el hueco.
+
+##### El bug que cierra
+`Retiro MA mensual` y compañía: su `categ` no está en el plan → el dashboard caía al **signo del
+monto** → un débito es "egreso" → los retiros de socios sumaban a **egresos operativos**.
+
+**Medido después del cambio: 15 movimientos, $43,65 M** que pasan de egresos a distribuciones.
+Y nada más se movió — se verificó que ese es el **único** grupo que cambia de sección.
+
+##### Qué se tocó
+| | |
+|---|---|
+| BD | `egresos_sin_factura.tipo` (enum `tipo_cuenta`, nullable, con `comment`) — **no está en el backup** |
+| `lib/presupuesto/templates.ts` | `resolverTipo()` · `tipoEfectivo()` · `origenTipo()`. La cascada vive **acá y sólo acá** |
+| `hooks/useFinancialData.ts` | usa `resolverTipo`. **Además** se le sacó el `.eq("activo", true)` al cargar templates: un movimiento de un template dado de baja perdía su clasificación |
+| `components/tab-presupuesto.tsx` · `seccion-metodos-templates.tsx` | traen `tipo` y lo pasan al `TemplateInfo`. La columna de la pantalla de métodos ahora dice `(plan)` cuando el tipo no lo declaró el template |
+| `components/wizard-templates-egresos.tsx` | **selector de Tipo obligatorio**, sugerido desde el plan al elegir la categoría. Se guarda en el insert y sale en el resumen del último paso |
+| `scripts/verificar-templates.ts` | 13 casos nuevos (precedencia, origen, el caso Retiro MA, la cascada completa). Pasa |
+
+##### ⚠️ Lo que NO cubre — las otras dos puertas de alta
+El wizard ya pide el tipo, pero **`modal-crear-template-faltante` y `generador-renovacion-campana`
+siguen creando templates sin `tipo`**. Ahí la cascada los salva (caen al plan o al signo), así que
+no rompen — pero el hueco vuelve de a poco. → sigue siendo **C-26**, que ahora tiene un ítem más:
+además de leer las categorías del plan, esas dos puertas tienen que **setear `tipo`**.
+
+##### Qué queda de C-24 después de esto
+La Fase 0 está cerrada. **Las fases 1 a 4 siguen abiertas y siguen valiendo** — pero ya no
+bloquean el presupuesto, pasaron a ser prolijidad:
+- **Fase 1** (completar el plan) — hoy sólo afecta a las **facturas**, no a los templates.
+- **Fases 2-3** (texto → número, renombrar) — sin cambios.
+
+#### 📗 Set completo de retiros semestrales + reporte del plan de cuentas *(2026-07-31)*
+
+##### Los 12 templates ya están
+6 personas × 2 empresas, **sin cuotas** (los montos los carga el usuario cuando los defina):
+
+| | Templates |
+|---|---|
+| **MSA** | Andrés · José · Manuel · Mechi · Soledad · **MA** (este último inactivo) |
+| **PAM** | Andrés · José · Manuel · Mechi · Soledad · **MA** (nuevo) |
+
+El *Retiro MA semestral* que existía (`MSA/PAM`, inactivo) se **reasignó a MSA** y se renombró
+`Retiro MA semestral MSA`: no tenía cuotas ejecutadas —las dos estaban en $0— así que se pudo
+reusar sin perder nada. Queda **inactivo**; el usuario lo activa desde la grilla con el toggle
+nuevo. Se creó aparte el de PAM.
+
+⚠️ Los 5 PAM originales **conservan sus cuotas**: cada uno tiene $6.000.000 con fecha 25/07/2026
+en estado `pendiente` (vencida). Son $30 M que no aparecen en el presupuesto de MSA por ser PAM
+— ver C-21.
+
+##### El reporte para completar el plan de cuentas
+`npx tsx scripts/reporte-categorias-templates.ts` → genera
+`Plan_de_cuentas_a_completar_<fecha>.xlsx` en la raíz, con tres solapas:
+
+1. **A completar** — las **23 categorías** que usan templates y no existen en
+   `cuentas_contables`, ordenadas por cuántos templates dependen de cada una. Trae columnas
+   vacías `→ TIPO`, `→ Nombre totalizadora`, `→ Nro cuenta`, `→ Nombre de la cuenta`.
+2. **Todos los templates** — los 173, con su categoría, si matchea, y el tipo, **nombre de
+   cuenta**, totalizadora y nro que heredan. La foto completa.
+3. **Valores válidos** — los `tipo` y las totalizadoras que ya existen, con qué decide cada uno,
+   para completar sin adivinar.
+4. **Plan de cuentas actual** — las 143 cuentas con nro, nombre, categoría, tipo, totalizadora,
+   imputable, activa y cuántos templates usan cada una. Para revisar la consistencia de lo que
+   ya está (108 `egreso` · 26 `ingreso` · 8 `financiero` · 1 `NO`; sólo 22 las usa un template).
+5. **Revisar consistencia** — lo que conviene arreglar del plan actual. Hoy son **dos**, las dos
+   totalizadoras escritas de dos formas: `EGRESOS`/`Egresos` (8 cuentas) y
+   `EGRESOS POR GANADERIA`/`Egresos Por Ganaderia` (21). Agrupar por el nombre partiría la
+   jerarquía en dos ramas — el mismo problema que tuvimos entre ARCA y el histórico.
+   **Ninguna cuenta quedó sin `tipo`**: el plan está más limpio de lo esperado.
+
+Si el archivo está abierto en Excel, el script escribe una copia `_v2` en vez de fallar.
+
+**132 templates dependen de esas 23 categorías** (73 de MSA). Las más pesadas son
+*Impuesto inmobiliario* (42) y *Impuesto Red Vial* (40): el plan de cuentas **no tiene rama de
+impuestos**, porque siempre se pagaron por template y nunca tuvieron factura.
+
+##### Con el `tipo` solo ya se arregla lo que importa
+De las dos capas que faltan, **`tipo` es la que produce números mal** — decide si el template se
+presupuesta, y equivocarse ahí es lo que metía $135 M de FCI y $87 M de Ganancias. La
+**totalizadora sólo ordena** el reporte (C-22): mientras falte, el número está bien y lo único
+que pasa es que el presupuesto agrupa por `cuenta_agrupadora` en vez de por la jerarquía
+contable.
+
+Así que si el usuario completa **sólo la columna TIPO**, queda resuelto el 100 % de lo que afecta
+a los montos.
+
+#### 🐄 PRESUPUESTAR LA VENTA DESDE EL PRESUPUESTO + VACAS DE REFUGO *(2026-07-31, sin testear)*
+
+##### Vacas de refugo — era un pendiente, ahora se ven
+> *"además de esto no se están mostrando los kg disponibles de las ventas no presupuestadas de
+> vacas refugo, ¿verdad? ¿Es un pendiente?"*
+
+**Sí, lo era.** `existenciasDeCiclos()` sólo emitía `terneros_venta` y `terneras_venta`; el
+**descarte** se calculaba en `calcularCiclo()` pero nunca llegaba al presupuesto. Con
+`peso_descarte_kg = 450` cargado en todas las campañas y 22–32 cabezas por ciclo, son
+**~10.000 a 14.000 kg por campaña** que no se veían.
+
+Ahora aparecen como `Vaca CUT/Descarte` en el mes del destete, igual que el resto.
+
+**Y hubo que darles clave de tropa propia.** La vaca de refugo y la ternera son las dos hembras,
+pero salen de tropas distintas: la vaca del rodeo de cría que se descarta, la ternera del destete.
+Con la clave vieja (`ciclo:<id>|hembra`) un lote de terneras habría neteado contra las vacas
+disponibles. `tropaDeCategoria()` devuelve ahora `macho` · `hembra` · `descarte`, y el
+verificador comprueba que vender las terneras no toque el refugo.
+
+##### Presupuestar la venta sin salir del presupuesto
+> *"¿podríamos tener la posibilidad de represupuestar ventas desde el presupuesto y que
+> actualice las ventas presupuestadas y se reubique en el presupuesto? Así no salgo de él para
+> ir haciendo ese trabajo."*
+
+Las celdas ámbar de **cabezas disponibles** pasan a ser clickeables: se abre un formulario chico
+(cuántas · cuándo · precio · plazo), se guarda el lote y la celda **se convierte en plata** al
+recargar. Sin salir de la pantalla.
+
+`components/modal-presupuestar-venta.tsx`. Es deliberadamente **chico y no el editor completo de
+lotes**: acá se decide lo mínimo con los defaults de la tabla —desbaste y comisión por peso,
+precio de la banda del mes, todas las cabezas disponibles, venta a fin del mes en que se
+disponibilizan— y muestra el desglose hasta el "INGRESA". El ajuste fino (ganancia diaria,
+tramos de actividad, desbaste fuera de tabla) sigue en Productivo → Evolución Rodeo, sobre el
+mismo lote.
+
+**El detalle que hace que el neteo siga funcionando**: la celda trae su `clave` de tropa, y de
+ahí sale el `ciclo_id` que se guarda en el lote. Sin eso la venta no descontaría de la existencia
+correcta y las cabezas quedarían disponibles y vendidas a la vez.
+
+`ganancia_diaria_kg` arranca en **0** a propósito: para una venta cargada al toque, suponer que
+el animal engorda sería inventar kilos. Si se la va a retener, se le asigna actividad en
+Productivo y la curva se arma sola.
+
+##### Pendiente que deja
+**C-23** — lo mismo para el otro lado: editar o borrar una venta ya presupuestada desde el
+presupuesto (hoy la celda con plata no es clickeable, hay que ir a Productivo). Y el equivalente
+para arrendamientos, que ya tiene su modal de cuotas pero no permite crear.
+
+
+#### 🧾 IIBB MENSUAL — doble conteo confirmado *(2026-07-31)*
+
+> *"IIBB mensual MSA deberíamos no proyectarlo, ¿verdad? Ya que se calcula según ventas y el
+> proyectado hace como un promedio que duplica el egreso."*
+
+**Sí, es doble conteo.** El presupuesto ya tiene la fila derivada **IIBB total** (5 % de la venta
+de arrendamiento + hacienda + ganadería, el mes siguiente al cobro) **y además** el template
+*IIBB Mensual MSA*, que proyecta el promedio de sus 12 cuotas ($296.185/mes, $3,55 M cargados
+ago-25 → jul-26). Son el mismo impuesto contado dos veces.
+
+**El arreglo es `no_proyectar`, no borrar el template**, y el matiz importa: las **12 cuotas
+cargadas siguen mandando** (son lo que efectivamente se declaró), sólo se deja de proyectar hacia
+adelante donde no hay cuota. Ahí toma el relevo la fila derivada, que sí sigue a las ventas.
+
+Lo hace el usuario desde el panel: *Cuentas contables → Cómo se completan los templates →
+IIBB Mensual MSA → método "No proyectar"*. Su elección queda marcada como manual y sobrevive a
+cualquier cambio de heurística.
+
+**Regla general que deja**: cuando el presupuesto **calcula algo solo** (IIBB de ventas, costos
+de producción, SICORE si algún día se deriva), el template del mismo concepto tiene que ir a
+`no_proyectar`. Sus cuotas cargadas siguen valiendo; lo que sobra es la proyección.
+
+---
+
+#### ✅ Verificado: el presupuesto NO duplica Anual vs Cuota *(2026-07-31, sin cambios de código)*
+
+> *"es muy posible que yo haya puesto cuotas de templates que no generaron egresos reales.
+> ejemplo inmobiliario anual que lo llené pero elegí pagar en cuotas… si toma todo, tomaría
+> duplicado."*
+
+Duda razonable, **verificada y descartada**. Queda anotado para no volver a levantarla.
+
+**El flag `activo` ya es el interruptor**, y está bien mantenido. De los 42 pares Anual/Cuota,
+41 tienen el Anual apagado y 1 prendido — justo el que se paga anual. `Lote Puerto` lo muestra
+cruzado, que es la mejor prueba de que es deliberado:
+
+| | Anual | Cuota |
+|---|---|---|
+| Inmobiliario Lote Puerto | ✅ activo | ❌ inactivo |
+| Red Vial Lote Puerto | ❌ inactivo | ✅ activo |
+
+`tab-presupuesto` carga con `.eq("activo", true)` → los **41 Anual apagados ($57,7 M en cuotas
+viejas) no entran**. Sin doble conteo.
+
+##### Y el otro miedo: cuotas cargadas que nunca pasaron
+También chico. Cuotas ya vencidas que siguen en `pendiente`: **14**, pero 9 son del **mes en
+curso** (normal, todavía abierto). Viejas de verdad hay dos: `ABL Libertad Cuota` 2026-03
+($270.123) y `Caja` 2026-06 ($900.000, y `Caja` es `financiero` → no se proyecta igual).
+**Queda una sola para mirar**: la ABL de marzo.
+
+##### ⛔ Lo que NO hay que hacer: exigir "conciliado"
+Se evaluó filtrar la proyección por estado conciliado. **Sería un error**: hay **128 cuotas
+pendientes por vencer** (la campaña cargada) que son el dato **más firme** que existe — un
+compromiso futuro no puede estar conciliado. El criterio correcto no es *"conciliado"* sino
+*"ya pasó su fecha y sigue pendiente"*, y eso es **una** cuota. No se tocó nada.
+*(El usuario lo cerró: "fue un error conceptual mío".)*
+
+#### 🏛️ C-22 · USAR LA ESTRUCTURA DEL DASHBOARD EN EL PRESUPUESTO
+*(2026-07-31 — **PASO 1 HECHO** (secciones por `tipo`), falta el paso 2 (totalizadoras). Sin testear.)*
+
+> *"los agrupadores macro que encontraste, fijate que se usaron para ordenar el dashboard que
+> registra y reporta el pasado. Esa misma estructura de organización deberíamos usarla para el
+> presupuesto."*
+
+---
+
+##### ✅ PASO 1 — secciones por tipo, con el patrón del dashboard *(hecho)*
+
+> *"dale, hacelo con el patrón del dashboard"*
+
+Antes: el presupuesto listaba las agrupadoras **en orden alfabético, todas mezcladas**, y cerraba
+con un único `TOTAL EGRESOS MSA`. Los retiros de socios quedaban adentro sin distinguirse — el
+monto estaba bien (es caja que sale) pero no se podía leer cuánto del egreso era estructura y
+cuánto reparto.
+
+Ahora la grilla se parte igual que `tabla-resumen-financiero.tsx`, mismos títulos y colores:
+
+```
+INGRESOS — Arrendamientos · ganadería · hacienda
+EGRESOS            (rojo)     agrupadoras ▶ · Sueldos · Cuentas contables · Costos · IIBB
+                              Subtotal egresos
+DISTRIBUCIONES     (violeta)  Retiros / Distribucion Socios ▶
+                              Subtotal distribuciones
+TOTAL EGRESOS MSA  (incluye distribuciones)
+RESULTADO
+SALDO ACUMULADO
+```
+
+**Ningún número cambió** — es presentación. El TOTAL sigue sumando todo, y los retiros siguen
+adentro **a propósito**: el presupuesto es de caja y esa plata sale. La separación es para poder
+leerlo, no para excluirlo. Cuando hay distribuciones, el total lo aclara.
+
+**Detalles de implementación**
+- Las agrupadoras se arman por **`tipo` + nombre**, no sólo por nombre: si una mezclara gasto con
+  retiro, aparece en las dos secciones con su parte. Igual que el dashboard. Por eso `Agrupador`
+  ganó `clave = tipo||nombre` — el nombre solo ya no identifica una fila.
+- El render de una agrupadora se extrajo a `renderAgrupador()`, porque ahora se llama una vez
+  por sección.
+- `financiero` está declarado como sección aunque hoy no aparezca: sus templates dan
+  `no_proyectar`, quedan en cero y se filtran solos.
+- ⚠️ **Guardarraíl**: un agrupador cuyo tipo no tenga sección **cae en EGRESOS**, nunca se omite.
+  Si se omitiera seguiría sumando en el TOTAL sin aparecer en ninguna fila y el subtotal dejaría
+  de cerrar **en silencio** — la misma familia de bug que veníamos arrastrando.
+
+**En MSA la sección DISTRIBUCIONES muestra** `Retiro MA mensual` (~$8 M a futuro) y `Retiro PAM`
+(~$350 k). Los 5 semestrales MSA todavía no tienen cuotas, así que no proyectan.
+
+##### ⏳ PASO 2 — bajar a totalizadora *(pendiente — y NO es lo que parecía)*
+
+Dentro de cada sección, ordenar por `nombre_totalizadora` en vez de alfabético.
+
+> *"si te lleno la totalizadora en el excel ya arreglaríamos eso verdad?"*
+
+**No alcanza, y por un motivo que hay que tener claro antes de perder tiempo llenando.** Medido
+sobre los 68 templates activos MSA con agrupadora:
+
+| | templates | qué les falta |
+|---|---:|---|
+| Llegan OK a su totalizadora | 23 | nada (bancarios, impuestos bancarios, seguros, financieros) |
+| En el plan **pero sin** totalizadora | **0** | — |
+| Su `categ` **no existe** en el plan | **45** | **la cuenta entera** |
+
+**El casillero "sin totalizadora" está vacío**: toda categoría que ya está en el plan ya la tiene
+cargada. El hueco no son totalizadoras en blanco — son **17 categorías que no existen como
+cuenta**, y para esas no hay fila donde escribir nada:
+
+`Impuesto inmobiliario` · `Impuesto Red Vial` · `Impuesto Automotores` · `Impuesto IIBB` ·
+`Impuestos ARCA` · `Impuestos Laborales ARCA` · `Retenciones ARCA` · `CZ Ganadera` ·
+`Gastos Reintegro JMS` · + las 8 de retiros (`Distribucion Mama/Andres/Jose/Manuel/Mechi/Soledad`,
+`Retiro PAM`)
+
+⚠️ **Las 8 de retiros son un caso aparte**: ya están resueltas para el presupuesto (el template
+tiene `tipo = distribucion`) y **no cuelgan de una totalizadora de EGRESOS** — no son gasto. Si
+se les pone una, tiene que ser propia (tipo *DISTRIBUCION A SOCIOS*), no bajo Administración y
+Estructura.
+
+##### Por qué conviene NO hacerlo todavía — decisión del usuario
+> *"de cualquier manera es un tema de ordenamiento. ahora podemos dejarlo así también verdad?"*
+
+Sí, y hay un argumento activo para esperar: ordenar por totalizadora hoy **ordenaría 23 de 68
+templates** y mandaría los otros 45 a un cajón "sin clasificar". **Se leería peor que el
+alfabético actual.** Conviene hacerlo cuando estén las 17 categorías, no antes.
+
+Insumo listo: `Propuesta_plan_de_cuentas_2026-07-31.xlsx` (o regenerarlo con
+`npx tsx scripts/propuesta-plan-de-cuentas.ts`). Lo que hace falta del usuario por cada
+categoría: **número de cuenta** y **de qué totalizadora cuelga**. Decisión abierta suya: si
+quiere una cuenta por template o pocas cuentas con varios templates cada una (hoy
+`Impuesto inmobiliario` ya junta 42).
+
+Tiene todo el sentido: el pasado y el futuro deberían leerse con la misma grilla. Hoy no coinciden
+— el presupuesto agrupa los templates por `cuenta_agrupadora` (una convención propia) y las
+cuentas contables por su nombre, mientras el dashboard usa la jerarquía contable.
+
+##### La estructura que ya existe
+`cuentas_contables.tipo` (macro) + `nombre_totalizadora` (jerarquía):
+
+```
+tipo = ingreso     RESULTADOS → INGRESOS → VENTA DE CEREALES · VENTA DE HACIENDA ·
+                                            ARRENDAMIENTOS Venta · VENTA BIENES DE USO
+                   CREDITOS FISCALES
+tipo = egreso      RESULTADOS → EGRESOS → EGRESOS POR ADMINISTRACION Y ESTRUCTURA (25 cuentas)
+                                        · EGRESOS POR AGRICULTURA → INSUMOS (11) · LABORES (11)
+                                        · EGRESOS POR GANADERIA (16) → GASTOS DE ALIMENTACION (6)
+                                        · EGRESOS POR MAQUINARIAS Y HERR (3)
+                                        · COMERCIALIZACION (6) · SEGUROS CULTIVO
+                   GASTOS BANCARIOS (7) · IMPUESTOS BANCARIOS (7)
+tipo = financiero  MOVIMIENTOS ENTRE CANALES (4) · MOVIMIENTOS FINANCIEROS (4)
+```
+
+##### Dos obstáculos concretos, los dos de datos
+**1 · Faltan 14 categorías en el plan de cuentas** — y son las que usan 40 templates:
+
+| Categoría del template | Templates | Qué son |
+|---|---:|---|
+| Impuesto inmobiliario | 12 | los inmobiliarios rurales + Lote Puerto |
+| Impuesto Red Vial | 11 | ídem |
+| Impuesto Automotores | 4 | patentes |
+| Impuestos ARCA | 3 | Ganancias, Anticipo, Acciones y Participaciones |
+| Impuestos Laborales ARCA | 2 | Cargas Sociales, UATRE |
+| Retenciones ARCA | 2 | SICORE 1ra y 2da |
+| Impuesto IIBB · Complementario · CZ Ganadera · Reintegro JMS · Distribucion Mama · Retiro PAM | 6 | sueltas |
+
+El plan de cuentas **no tiene una rama de impuestos**: tiene sentido, porque los impuestos se
+pagan por template y nunca tuvieron factura. Pero mientras no existan, esos 40 templates no
+tienen totalizadora y no se pueden ordenar con la estructura del dashboard.
+
+**2 · Las totalizadoras tienen inconsistencias de mayúsculas**: conviven `EGRESOS` con `Egresos`
+y `EGRESOS POR GANADERIA` con `Egresos Por Ganaderia`. Agrupar por el nombre partiría la
+jerarquía en dos, exactamente como pasó con los nombres de cuenta entre ARCA y el histórico.
+Hay que normalizar o agrupar por `cta_totalizadora` (el código) en vez del nombre.
+
+##### Plan
+1. Dar de alta las 14 categorías faltantes en `cuentas_contables`, con su `tipo` y su
+   totalizadora. **Es del usuario**: define el plan de cuentas.
+2. Normalizar las totalizadoras duplicadas por mayúsculas (o agrupar por código).
+3. Recién ahí, reordenar el presupuesto por `tipo` → `nombre_totalizadora` → cuenta/template.
+
+Hacer el paso 3 antes de los otros dos dejaría 40 templates en un cajón "sin clasificar", que es
+peor que la organización actual.
+
+**Efecto colateral bueno**: alta esas 14 categorías y **C-20 se completa solo** — hoy esos mismos
+40 templates se asumen gasto por no tener `tipo`.
+
+---
+
+#### 📋 REGLA — todo template nuevo necesita su macro categoría *(usuario, 2026-07-31)*
+
+> *"ojo al crear template que debemos adjudicarle siempre la macro categoría: ingreso, egreso,
+> financiero, etc."*
+
+La `categ` de un template tiene que existir en `public.cuentas_contables` con su `tipo` cargado.
+De ese `tipo` dependen dos cosas del presupuesto:
+- si el template **se presupuesta** (`financiero` no, ver C-20);
+- **dónde aparece** cuando se ordene por la estructura del dashboard (C-22).
+
+Un template sin categoría en el plan de cuentas se asume gasto y queda sin ubicación. El panel
+de métodos lo muestra como *"sin clasificar"*.
+
+
+#### ✅ C-20 — "No es gasto" sale del PLAN DE CUENTAS, no del nombre *(2026-07-31, sin testear)*
+
+La versión anterior tenía una lista de agrupadoras (`Inversiones`, `Movimientos Internos empresa`,
+`Créditos Bancarios`). Funcionaba pero **dependía de cómo se llamaran**: un renombre y el gasto
+fantasma volvía sin aviso.
+
+**El dato ya estaba**: `public.cuentas_contables.tipo`, un enum `tipo_cuenta` con
+`ingreso · egreso · financiero · distribucion · NO`. Se llega desde el template por su `categ`.
+
+| `tipo` | Qué hace el presupuesto | Templates MSA |
+|---|---|---:|
+| **`financiero`** | **No proyecta** — la plata cambia de lugar pero no sale | 7 |
+| `egreso` | Proyecta normal | 16 |
+| `distribucion` | **Proyecta** — los retiros de socios sí salen de la caja | — |
+| `ingreso` · `NO` | No proyecta, avisa | — |
+| sin match | Proyecta (default seguro) | 40 |
+
+Separa fino justo donde importa: las **comisiones bancarias son `egreso`** (gasto de verdad)
+aunque vivan en "Gastos Bancarios", mientras el FCI (`Fondos Comunes de Inversión` →
+`MOVIMIENTOS FINANCIEROS`), la caja y las interbancarias (`MOVIMIENTOS ENTRE CANALES`) son
+`financiero`.
+
+##### Tarjetas también quedó afuera — confirmado por el usuario
+*Tarjeta Visa Business MSA* sale `financiero` y hasta ahora se presupuestaba (declara 12 cuotas).
+Ya no. El motivo es el doble conteo: **el pago del resumen duplica los gastos que ya entran por
+su cuenta contable**. Es lo mismo que el usuario había señalado sobre los canales de pago.
+
+##### Lo que NO cubre — y se muestra
+**40 de 63 templates no matchean** con el plan de cuentas: sus `categ` ("Impuesto inmobiliario",
+"Impuesto Red Vial", los automotores, los retiros) no existen en `cuentas_contables`. Se asumen
+gasto, que hoy es correcto para todos.
+
+Pero el mecanismo depende de ese match, así que el panel muestra una columna **Tipo** y avisa
+cuántos están *sin clasificar*. Si algún día entra un template financiero con una categoría que
+tampoco existe, se va a presupuestar — y el aviso es lo que lo hace visible.
+
+De paso queda expuesta una deuda de datos real: **40 categorías de template que no están en el
+plan de cuentas**.
+
+**Verificador**: 36 checks. Los nuevos comprueban que renombrar la agrupadora no cambie nada y
+que, al revés, una agrupadora llamada "Inversiones" pero con `tipo = egreso` sí se presupueste.
+
+---
+
+#### 💰 RETIROS DE SOCIOS — 5 de 6 quedan fuera del presupuesto MSA *(hallazgo 2026-07-31)*
+
+> *"retiros semestrales mamá, Manuel, etc. (son 6 personas en total) ¿están dentro?"*
+
+Los 6 templates existen, pero **sólo el de MA entra al presupuesto de MSA**. Los otros cinco
+tienen `responsable = 'PAM'` y el presupuesto filtra por `responsable ILIKE '%MSA%'`.
+
+| Template | Responsable | Cuotas | Total cargado | ¿Entra? |
+|---|---|---:|---:|---|
+| Retiro MA mensual | MSA/PAM | 12 | $45.945.000 | ✅ sí |
+| Retiro PAM | MSA | abierto | $6.055.000 | ✅ sí |
+| Retiro Andrés semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro José semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Manuel semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Mechi semestral | PAM | 2 | $6.000.000 | ❌ no |
+| Retiro Soledad semestral | PAM | 2 | $6.000.000 | ❌ no |
+| ~~Retiro MA semestral~~ | MSA/PAM | 2 | $0 | inactivo |
+
+**Son $30 M cargados que no aparecen en el presupuesto de MSA.** Puede estar bien (si los paga
+PAM) o puede ser un hueco (si salen de la caja de MSA y sólo se imputan a PAM). **Decisión del
+usuario** — no se tocó nada.
+
+Si hay que incluirlos, la vía correcta **no** es cambiar el filtro por responsable —eso metería
+todo PAM— sino marcar esos cinco como MSA/PAM, igual que ya está el de MA.
+
+**C-21**: definir si los retiros semestrales de socios salen de la caja de MSA.
+
+#### 💸 LO QUE NO ES GASTO NO SE PRESUPUESTA *(2026-07-31, sin testear)*
+
+> *"FCI no se debería presupuestar ya que es dinero que si egresa es porque se coloca a tasa y
+> está disponible de cobrarse con su rendimiento de inmediato. Presupuestar colocaciones no
+> tiene sentido: es preferible que no se presupueste nada, o en tal caso hacerlo yo a mano."*
+
+El usuario tenía razón y el error era el más grande que quedaba. **FIMA Premium (FCI)**
+promediaba **$7,5 M** y se proyectaba **todos los meses** (heredaba `promedio` por ser
+`tipo_recurrencia = 'abierto'`): **~$135 M de egreso inventado** en 18 meses. Más que el bug de
+Ganancias del día anterior.
+
+##### No es sólo el FCI: es una familia
+Tres agrupadoras enteras que **no son gasto** — la plata se mueve pero no se va:
+
+| Agrupadora | Templates | Qué pasaba |
+|---|---|---|
+| **Inversiones** | FIMA Premium (FCI) | $7,5 M/mes proyectados |
+| **Movimientos Internos empresa** | Caja, Interbancaria BAPRO, Interbancaria Santander | Caja $750 k × 12/año; las interbancarias 2/año |
+| **Créditos Bancarios** | Créditos Pagados, Créditos Tomados | financiación — y **"Créditos Tomados" es un INGRESO** apareciendo en egresos |
+
+`esMovimientoInterno()` en `lib/presupuesto/templates.ts` los devuelve con su motivo, y
+`metodoHeredado()` los corta **antes que nada**: da igual cuántas cuotas declaren. Se puede pisar
+eligiendo un método a mano, que es la salida que pidió el usuario.
+
+⚠️ ~~Es por nombre de agrupadora~~ → **C-20 RESUELTO el 2026-07-31**: el criterio pasó a ser
+`cuentas_contables.tipo` (ver la sección de arriba). Ya no depende de cómo se llame nada.
+
+##### La otra pregunta: los gastos bancarios
+> *"hay templates que se llenan automáticamente con gastos bancarios, por ejemplo comisiones.
+> Esos sí se pueden presupuestar en función de gastos históricos. Nunca se llenan antes, siempre
+> durante. No sé si alguno de los 10 que me decías es uno de esos o son otros casos."*
+
+**Son otros casos, y los bancarios ya estaban bien.**
+
+Hay un campo que los marca: **`solo_conciliacion = true`**, y son exactamente los 14 de gastos e
+impuestos bancarios (Com. Uso ATM, Comisión Cuenta Bancaria, Cheques, Transferencias, Extracción,
+Certificaciones, Caja de Seguridad, Débitos/Créditos, IIBB Bancario, Impuesto País, IVA Bancario,
+Percepción IVA, Percepción RG 5463, Sellos). Todos tienen `cuotas = 0` → heredan **promedio
+mensual**, que es justo lo que el usuario describe.
+
+Los **10 que declaran más cuotas de las que tienen** son otro grupo: todos `cuotas = 12`
+(mensuales con campaña a medio cargar) — Cargas Sociales 12 vs 6, UATRE 12 vs 3, SICORE 1ra 12
+vs 4 y 2da 12 vs 6, IIBB Mensual 12 vs 1, Seguro Flota y Accidentes 12 vs 5, Tarjeta Visa 12 vs
+6, Retiro MA 12 vs 6, y **Caja** 12 vs 5. Ningún bancario entre ellos.
+
+*(Caja sale de esa lista con este cambio: pasa a no proyectarse por ser movimiento interno.)*
+
+##### Verificado
+`scripts/verificar-templates.ts` — 28 checks. Nuevos: que el FCI no aporte un peso, que Caja no
+proyecte aunque declare 12 cuotas, que un gasto real sí siga proyectando, que el usuario pueda
+ponerlo a mano igual, y que las comisiones bancarias sigan yendo por promedio.
+
+
+#### 🔧 TEMPLATES: JERARQUÍA DE MÉTODO, HEREDADA DE `cuotas` *(2026-07-31, sin testear)*
+
+##### El bug que lo motivó — lo detectó el usuario sin ver los datos
+> *"un template que era anual, si se puso mensual está aumentando 11 veces más el egreso.
+> ¿No sé si ya teníamos data en los templates como para corregir de origen?"*
+
+Tenía razón en las dos cosas. La primera versión **inferia la periodicidad de la historia de
+cuotas**: si los meses con cuota eran ≥ 80 % del tramo, "mensual". Con **un solo mes** cargado
+eso da densidad 1,00 → mensual → doce pagos al año.
+
+| Template | Declara | Historia | Inferido | Monto | Fantasma/año |
+|---|---:|---:|---|---:|---:|
+| **Imp. Ganancias MSA** | 1 cuota | 1 mes | MENSUAL | $5.000.123 | **$55 M** |
+| **Acciones y Participaciones** | 1 cuota | 1 mes | MENSUAL | $2.500.123 | **$27,5 M** |
+| Imp. Automotores Voyage | 1 cuota | 1 mes | MENSUAL | $439.827 | $4,8 M |
+| Inmobiliario Lote Puerto | 1 cuota | 1 mes | MENSUAL | $19.094 | $0,2 M |
+
+**~$87 M anuales de egreso inventado en cuatro filas**, sobre un gasto real de ~$23 M/mes.
+
+**Y el dato ya estaba**: `egresos_sin_factura.cuotas` es el número de cuotas al año y está
+cargado en 64 de 66 templates. Inferí de la historia algo que el template ya declaraba. Error de
+diseño: **inferir es para cuando no hay dato**, nunca para pisarlo.
+
+##### La jerarquía, de más firme a más blando
+1. **Cuota cargada** → manda siempre. Dato firme.
+2. **Método elegido a mano** → `public.presupuesto_template_config` (no está en el backup).
+3. **`cuotas` declarado** → cuántos pagos al año lo dice el template; en qué meses, la historia.
+4. **Patrón por densidad** → sólo si no hay nada declarado. Último recurso, ya no primera opción.
+
+##### Qué se hereda de `cuotas`
+| `cuotas` | Método | Cuántos templates |
+|---:|---|---:|
+| 12 | **Todos los meses** | 10 |
+| 1 – 11 | **Esas cuotas**, en los meses que muestra la historia | 29 |
+| 0 · `null` · `tipo_recurrencia = 'abierto'` | **Promedio mensual** (sin periodicidad fija) | 22 |
+| sin historia | **No proyectar** | 10 |
+
+`tipo_recurrencia = 'abierto'` gana sobre `cuotas`: Otros Gastos y Pasajes no tienen calendario
+aunque declaren un número.
+
+**El promedio divide por el SPAN, no por los meses con cuota** — misma regla que las cuentas
+contables. Comisión Transferencias: $140.000 en 5 meses de tramo da $28.000/mes, no $35.000.
+
+##### Dos avisos que el usuario necesita ver
+- **Declara más cuotas de las que hay** (10 templates: Cargas Sociales 12 vs 6, UATRE 12 vs 3,
+  Anticipo Ganancias 10 vs 0…). Se proyectan las conocidas, así que **el presupuesto puede estar
+  corto**. Va un ⚠ por fila y un resumen arriba de la tabla.
+- **Falta generar la campaña** (`aplica_generacion = true`): sigue igual, banda ámbar arriba.
+
+##### Dónde se edita
+Dentro del panel **"Cuentas contables"**, sección *"Cómo se completan los templates"* — van
+juntos porque son la misma pregunta que hizo el usuario. Muestra por template: cuántas cuotas
+declara, cuántos meses tienen cuota cargada, el método (con `auto` y el motivo), cuántos meses
+proyecta y por cuánta plata, **ordenado por monto** para que lo caro aparezca primero.
+El ✨ devuelve al automático.
+
+En la grilla del presupuesto cada template muestra su método al lado del nombre: gris si es
+heredado, azul si se eligió a mano.
+
+**Verificador**: `scripts/verificar-templates.ts` — 20 checks, incluidos el caso Ganancias
+($60 M → $5 M), que la cuota cargada pise al método manual, y que el promedio divida por el span.
+
+#### ✅ C-19 · C-7 · C-17 — EL PRESUPUESTO QUEDÓ COMO UNA SOLA COSA *(2026-07-30, sin testear)*
+
+Los tres bloques que estaban afuera ahora bajan a la grilla, suman al **TOTAL EGRESOS** y por lo
+tanto al **RESULTADO** y al **SALDO ACUMULADO**.
+
+##### C-19 · Cuentas contables en la grilla
+Fila colapsable `📒 Cuentas contables`, con una sub-fila por cuenta. El **modo se sigue
+configurando en su panel** (botón "Cuentas contables"), igual que Precios y TC configura y la
+grilla muestra. Cada celda lleva su explicación en el tooltip.
+
+##### C-7 · Costos de producción en la grilla
+Fila `🌾 Costos de producción`, **una sub-fila por actividad** (no por lote): en el presupuesto
+interesa cuánto cuesta la recría, no cuánto cuesta cada lote. Sale de los tramos vía
+`tramosParaCosto()` + `consumoMensual()`, con el TC para los ítems en USD.
+
+Es una línea **derivada**, como quedó decidido: los costos directos no se registran en ningún
+lado, se calculan a partir de la actividad.
+
+##### C-17 · Los templates se proyectan donde no hay cuota
+`lib/presupuesto/templates.ts`. Las cuotas se cortaban en dic-2026 y el segundo año del
+presupuesto quedaba casi vacío — que no es lo mismo que no tener gasto.
+
+**Donde hay cuota, manda la cuota.** Donde no, se proyecta desde el mismo mes del año anterior
+(o la última cuota) más IPC. Las celdas proyectadas van **en cursiva** para que nunca se
+confundan con un dato firme.
+
+**Lo que NO se podía hacer: propagar la última cuota todos los meses.** Convertiría un impuesto
+anual en un gasto mensual — *Inmobiliario Cuota Rojas* paga en cinco meses y daría doce pagos.
+La proyección respeta **en qué meses paga cada template**, sacado de su historia (se piden las
+cuotas desde 18 meses antes justamente para tener con qué).
+
+**⚠️ La densidad como criterio principal fue un error y se corrigió al día siguiente** — ver la
+sección "TEMPLATES: JERARQUÍA DE MÉTODO" arriba. Con un solo mes de historia daba "mensual" y
+multiplicaba por 12 los impuestos anuales (~$87 M de egreso fantasma). Ahora el método se hereda
+de `cuotas`, que el template ya declara, y la densidad quedó como último recurso.
+
+##### El aviso, que era la mitad del pedido
+> *"por ej cargas sociales a mí me sirve crear la campaña con datos estimados porque me recuerda
+> el compromiso de pago, pero otros no. ¿Cómo haría el sistema para poder interpretar?"*
+
+**El campo ya existía y ya estaba bien cargado**: `egresos_sin_factura.aplica_generacion`.
+No hubo que inventar ninguna clasificación.
+
+| `aplica_generacion` | Qué hace el presupuesto |
+|---|---|
+| `true` (12: **Cargas Sociales**, SICORE 1ra/2da, UATRE, IIBB Mensual, Anticipo Ganancias, Imp. Ganancias, Acciones y Participaciones, Seguro Flota/Accidentes, Tarjeta Visa, Interbancaria BAPRO) | Proyecta **y avisa**: banda ámbar arriba con cuántos templates, cuántos meses y cuánta plata, y un `◦` en la celda. El aviso **es** el recordatorio del compromiso de pago. |
+| `false` / `null` (52) | Proyecta en silencio. No hace falta cargar nada. |
+
+Sin escribir **nada** en el template: la estimación vive en el Presupuesto, el compromiso en el
+template. Es la regla que el usuario recordó.
+
+**Verificador**: `npx tsx scripts/verificar-templates.ts` — 12 checks, incluido que un impuesto
+anual no se vuelva mensual y que la cuota cargada pise a la proyección.
+
+##### Lo que queda para verificar cuando se pruebe
+- El **TOTAL EGRESOS cambió**: ahora incluye cuentas contables y costos de producción. Vale la
+  pena mirar el salto contra lo que mostraba antes.
+- El **doble conteo** está cubierto por construcción (templates y cuentas no comparten conceptos;
+  las cuentas de producción salen `excluida`; Federación Patronal se descuenta por CUIT), pero
+  es lo primero a revisar si un número parece alto.
+
+
+## 🔚 CIERRE DE SESIÓN 2026-07-30 — Presupuesto (ingresos, costos, cuentas, proveedores)
+
+**Todo en `desarrollo`, nada mergeado a `main`. Build OK, tipos en 120 (baseline), 6 verificadores
+en verde. Sólo el export de caravanas está testeado por el usuario; el resto NO.**
+
+### Commits de la sesión
+| Commit | Qué |
+|---|---|
+| `29efaa4` | fix parser es-AR (`5700` se leía 5,7) → `lib/format/numero.ts` |
+| `ae81b48` | Hacienda por categoría + disponible **por diferencia** (cierra G-8, agrega G-9) |
+| `4853da8` | Plan FASE C (costos productivos) |
+| `1400ebc` | C-1 motor de ración a lib + C-2 actividades y costos directos |
+| `6b78758` | C-3 tramos + C-4 **curva de peso quebrada** |
+| `156e7e2` | moneda USD, `momento: ciclo`, `pct_produccion` + 2 bugs propios |
+| `d279453` | **saldo acumulado**, IIBB en un renglón, sub-agrupación por categoría |
+| `8014c07` · `33b2f9c` | export de **caravanas** para declarar (✅ **testeado OK**) |
+| `ff5edf9` | presupuestar **cuentas contables**: 6 modos + control de cordura |
+| `5b5f885` | **control de subas de proveedores** vs IPC + Excel y PDF |
+| `15661d7` | fuente facturas ↔ canales conmutable · IPC en escalones · Fed Patronal |
+| `d3cf7eb` | exclusión **por proveedor** y no por cuenta |
+
+### Verificadores (`npx tsx scripts/verificar-<x>.ts`)
+`disponibilidad-hacienda` (9) · `actividades` (18) · `tramos` (11) · `caravanas` (15) ·
+`presupuesto-cuentas` (23) · `control-proveedores` (16).
+Encontraron **tres bugs reales** que ya estaban escritos: la ventana del promedio cerrando en el
+último mes con dato (inflaba 35 %), los costos "al terminar" que no caían nunca, y el reparto del
+mes en curso.
+
+### BD nueva (nada de esto está en el backup)
+`productivo`: `actividades`, `actividad_insumos`, `lote_tramos`, `stock_lotes.ganancia_override`.
+`public`: `presupuesto_config` (+`inflacion_mensual`), `presupuesto_cuenta_config`
+(+`cuits_excluidos`), y las vistas `presupuesto_historia_cuentas`,
+`presupuesto_historia_cuenta_proveedor`, `presupuesto_historia_canales`,
+`presupuesto_cobertura_canales`. Todo con DDL en `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+
+⚠️ **El MCP de Supabase quedó en modo write** — hay que volverlo a `--read-only` (A-OP-01).
+
+---
+
+### 📌 Preguntas del usuario al cierre — respondidas
+
+#### 1 · ¿Las cuentas contables están separadas del presupuesto a propósito?
+**Sí, a propósito, y es transitorio.** El panel está arriba y **no suma al TOTAL EGRESOS** porque
+al construirlo no estaba verificado si se pisaba con templates. Ahora sí está verificado (no se
+pisan, salvo Federación Patronal que ya se resolvió), así que **el próximo paso es integrarlo**.
+
+**La intención**: que sea un bloque más de la grilla, al lado de templates y sueldos, sumando al
+TOTAL EGRESOS y por lo tanto al RESULTADO y al SALDO ACUMULADO. El panel de arriba queda como el
+lugar donde se **configura** el modo de cada cuenta (igual que Precios y TC configura y la grilla
+muestra).
+
+→ **C-19 ✅ HECHO** justo después (ver la sección de arriba): las cuentas contables ya bajan a la
+grilla y suman al TOTAL EGRESOS, junto con los costos de producción (C-7) y la proyección de
+templates (C-17).
+
+#### 2 · IPC cargado ✅ — verificado que funciona
+El usuario cargó **3 escalones**: jul-26 `2 %`, dic-26 `1,5 %`, jun-27 `1 %`. El arrastre los
+completa como corresponde:
+
+```
+jul-26  2,0 % exacto      dic-26  1,5 % exacto      jun-27  1,0 % exacto
+ago-26  2,0 % arrastrado  ene-27  1,5 % arrastrado   jul-27  1,0 % arrastrado
+… nov-26 2,0 %            … may-27 1,5 %             … ago-27 1,0 %
+```
+Acumulado ago-26 → ago-27: **21,9 %**. Ya lo usan el presupuesto de cuentas y el control de
+proveedores.
+
+#### 3 · ¿Cómo hacen los templates para presupuestar si no está cargada la campaña siguiente?
+**✅ RESUELTO en C-17** (ver arriba). Cuando se escribió esto todavía no estaba; el diagnóstico
+sigue valiendo: El presupuesto lee las cuotas cargadas, y las cuotas se cortan:
+
+| jul-26 | ago-26 | sep-26 | oct-26 | nov-26 | dic-26 | ene-27 |
+|---|---|---|---|---|---|---|
+| 30 · $61,4 M | **16 · $2,3 M** | 54 · $12,8 M | 14 · $3,6 M | 36 · $18,9 M | 33 · $9,2 M | **2 · $0,55 M** |
+
+Desparejo y **se termina en dic-2026**. Un presupuesto a 24 meses muestra el segundo año casi
+vacío, y eso no es que no haya gasto.
+
+#### 4 · ¿Cómo distingue el sistema qué template quiere el usuario cargado y cuál proyectado?
+**Ya existe el campo y ya está bien cargado: `egresos_sin_factura.aplica_generacion`.**
+Es el que usa el generador de campaña, y su semántica es justo la que el usuario describe —
+*"cargas sociales me sirve crear la campaña con datos estimados porque me recuerda el compromiso
+de pago, pero otros no"*.
+
+| `aplica_generacion` | Cuántos | Cuáles |
+|---|---|---|
+| `true` | 12 | **Cargas Sociales**, UATRE, SICORE 1ra y 2da, IIBB Mensual, Anticipo Ganancias, Imp. Ganancias, Acciones y Participaciones, Seguro Flota, Seguro Accidentes, Tarjeta Visa, Interbancaria BAPRO |
+| `false` | 2 | Caja, Interbancaria Santander |
+| `null` | 50 | impuestos rurales y automotores, comisiones bancarias, retiros, etc. |
+
+Cargas Sociales está en `true`, que es exactamente lo que el usuario dijo que quiere. **El dato ya
+está**, no hay que inventar ninguna clasificación nueva.
+
+**La regla, ya implementada:**
+
+| Situación | Qué hace el presupuesto |
+|---|---|
+| El mes **tiene cuota** cargada | Usa la cuota. Dato firme, no se toca. |
+| Sin cuota y `aplica_generacion = true` | **Proyecta y avisa** *"falta generar la campaña"*. El aviso es el punto: es el recordatorio del compromiso de pago que el usuario quiere. |
+| Sin cuota y `false`/`null` | **Proyecta en silencio** con su modo. No hace falta cargar nada. |
+
+Y para proyectar se reusan los mismos modos de las cuentas contables, eligiendo según
+`periodicidad`: mensual → propagar la última cuota + IPC; anual/bianual → mismo mes del año
+anterior + IPC. Sin escribir **nada** en el template, que es la regla acordada hace tiempo: la
+estimación vive en el Presupuesto, el dato firme en el template.
+
+#### 5 · Costos de producción al presupuesto
+**✅ HECHO (C-7)**: los costos ya bajan a la grilla, una fila por actividad, sumando al TOTAL.
+
+---
+
+### 🗺️ Orden sugerido para retomar
+1. ~~C-19 + C-7 + C-17~~ ✅ **HECHOS** — el presupuesto ya es una sola cosa.
+2. **Testear** lo de esta sesión, que es mucho y está todo sin probar. Empezar por el TOTAL
+   EGRESOS, que ahora incluye dos bloques nuevos.
+4. **C-11** — control por canales (pagado vs facturado) para cazar el gasto sin comprobante.
+5. Resto: C-6 stock e insumos a comprar · C-12 cabezas automáticas · C-18 chequeo de cruce por
+   CUIT · A-OP-01 devolver el MCP a read-only.
+
+### ⏳ Sin testear (todo lo de esta sesión menos caravanas)
+**Presupuesto**: saldo acumulado · IIBB en un renglón · sub-agrupación de Impuestos Rurales ·
+venta de hacienda colapsable y por categoría · disponible por diferencia · 6 modos de cuentas ·
+control de cordura · fuente facturas/canales · exclusión por proveedor · control de subas.
+**Costos productivos**: actividades y costos con simulador · tramos en el lote · curva de peso
+quebrada.
+**Corregido por el usuario**: la actividad *Engorde* quedó en **90 / 10** (suma 100 %). El bug del
+input que se reformateaba está arreglado y la carga funciona.
+
+
+#### 🔀 FUENTE DEL PRESUPUESTO: FACTURAS ↔ CANALES *(2026-07-30)*
+
+##### Lo que el usuario aclaró — y por qué cambia el análisis
+> *"se puede presupuestar desde canales… durante mucho tiempo yo presupuesté desde canales. La
+> forma era que yo concilio los canales y les adjudico una cuenta contable o contra template,
+> sueldos, etc. Cada egreso o ingreso va a una cuenta específica. Entonces tomando desde canales
+> siempre supe cuánto veníamos gastando en cada cosa mes por mes."*
+
+**Mi objeción principal se cae.** Yo había dicho que desde canales no se puede imputar y que por
+eso no servía para proyectar. Es falso: **la conciliación adjudica la cuenta a cada movimiento**,
+así que el canal conciliado tiene composición igual que la factura, y además cobertura total y la
+fecha de pago (que es la que necesita el flujo de caja).
+
+Con el objetivo bien planteado — que el **saldo** cierre — el método por canales es, en datos
+completos, **al menos tan bueno como el de facturas y probablemente mejor**. Le quedan dos
+defectos reales: el SICORE corre plata entre dos cuentas (el total cierra, la composición no) y
+caja/tarjeta sin detallar son una bolsa hasta conciliarlas.
+
+##### Qué se hizo: la fuente es un interruptor, no una decisión
+En vez de elegir por el usuario, el panel de cuentas contables tiene un selector
+**Facturas / Canales de pago**. Los seis modos funcionan igual con cualquiera de las dos porque
+el motor recibe `PuntoHistorico[]` y no le importa de dónde salió.
+
+Vistas nuevas:
+- **`public.presupuesto_historia_canales`** — banco + caja (general/sigot/ams) + tarjeta,
+  agrupado por `nro_cuenta` y mes. Sólo movimientos con cuenta imputada, y el monto es el débito
+  **neto de créditos** (devoluciones y notas de crédito).
+- **`public.presupuesto_cobertura_canales`** — cuánto de cada canal está conciliado.
+
+##### ⚠️ Hoy la fuente por canales NO alcanza — y por eso se mide
+| Canal | Movimientos imputados | Débitos imputados | Período |
+|---|---|---|---|
+| banco | 106 / 661 (**16 %**) | $69,4 M de $432,6 M | feb → jun 2026 |
+| caja | 0 / 79 (**0 %**) | — | feb → may 2026 |
+| tarjeta | 5 / 320 (**2 %**) | $0,85 M de $38,3 M | oct 2024 → may 2026 |
+
+Con esta cobertura la vista **miente por omisión**: muestra sólo lo conciliado, así que parece que
+se gastó mucho menos. Por eso el panel muestra el porcentaje arriba y dice explícitamente que
+conviene la fuente por facturas mientras esté así. No es un defecto del método del usuario —
+es que en esta BD reconstruida la conciliación todavía no se puso al día.
+
+**Cuando la conciliación suba, la fuente por canales queda lista sin tocar código.**
+
+---
+
+#### 📈 IPC EN ESCALONES — se arrastra *(2026-07-30)*
+
+> *"para IPC y TC es necesaria la herramienta de propagación ya que presupuestaré escalones,
+> capaz pongo 6 meses con lo mismo y luego otros 6 de tal manera."*
+
+Cambio en dos lugares, los dos con `resolverSerie` de `lib/precios/serie.ts`:
+
+1. **`ipcAcumulado()`** (control de proveedores) — antes exigía el IPC mes por mes y devolvía
+   `null` si faltaba alguno. Ahora **arrastra el último cargado**: con un solo punto al inicio
+   alcanza, y dos escalones (3 % hasta marzo, 1 % desde abril) componen bien. Sólo da `null` si
+   no hay ningún punto que arrastrar.
+2. **El presupuesto de cuentas usa la serie de IPC si está cargada**, y la tasa fija sólo donde
+   no hay. `factorInflacion()` compone mes a mes en vez de elevar una tasa única, así que un
+   escalón se refleja en el mes exacto en que cambia. Cada cuenta puede seguir pisando las dos
+   con su propia tasa.
+
+⚠️ **Limitación conocida**: `resolverSerie` ignora los valores `<= 0` porque para un precio un
+cero significa "no cargado". Para el IPC eso implica que **un mes cargado en 0 % se comporta como
+vacío** y hereda el anterior. Si alguna vez hay deflación o un mes plano de verdad, hay que
+distinguirlo — no se tocó `resolverSerie` porque es compartida con precios y TC.
+
+---
+
+#### 🧾 FEDERACIÓN PATRONAL — resuelto por indicación del usuario *(2026-07-30)*
+
+> *"templates que sí tienen factura: es verdad, son pocos. Un ej es Fed Patronal que factura
+> semestral y va por cuotas. Me resultó más fácil poner las cuotas en templates… para este caso
+> particular ahora podríamos usar los templates para el presupuesto ya que es la realidad
+> financiera."*
+
+Hecho: `SEGUROS ESTRUCTURA` (422113) quedó como **`excluida`** en
+`presupuesto_cuenta_config`, con el motivo escrito — *"va por template: Federación Patronal
+factura semestral y las cuotas están cargadas"*. Es el único cruce real entre templates y
+cuentas, y ahora el presupuesto lo toma de un solo lado.
+
+El criterio general que deja: cuando algo **factura** pero **se paga en cuotas**, la cuota es la
+realidad financiera y el template gana. La factura sirve igual para el control de proveedores.
+
+
+##### 🔧 Corregido: la exclusión es por PROVEEDOR, no por cuenta *(2026-07-30)*
+> *"ok pero ¿hay más seguros estructura? porque podría haber alguno otro y habría que verlo.
+> Federación Patronal específicamente va por template."*
+
+Tenía razón. Yo había excluido la **cuenta** `422113` entera. Verificado: hoy es **100 %
+Federación Patronal** (mismo CUIT `33707366589` con tres grafías del nombre), así que no se
+perdía nada — **pero quedaba una trampa**: el día que entre otra aseguradora a esa cuenta, su
+gasto desaparecería del presupuesto sin que nadie se entere. Un cero silencioso es peor que un
+número mal.
+
+**Ahora se excluye el CUIT.** `presupuesto_cuenta_config.cuits_excluidos text[]` +
+`netearExcluidos()` en la lib: se descuenta el gasto de ese proveedor y la cuenta **sigue viva**
+con el modo que tenga. `422113` pasó de `excluida` a `promedio_n` con
+`cuits_excluidos = {33707366589}` — mismo resultado hoy ($0 para presupuestar), pero un
+proveedor nuevo se presupuesta solo.
+
+**Y se ve de qué se compone cada cuenta.** Al abrirla aparecen sus proveedores con total, meses
+y facturas, cada uno con un tilde para sacarlo del presupuesto. Es información que sirve más allá
+de este caso: es justo lo que decide qué modo le conviene a la cuenta (un proveedor con factura
+mensual → propagar la última; veinte proveedores → promedio). Avisa además si queda un **CUIT
+excluido sin facturas**, que es una exclusión colgada.
+
+Verificado en `scripts/verificar-presupuesto-cuentas.ts`: con dos aseguradoras, excluir el CUIT
+deja la cuenta presupuestando a la otra; excluir la cuenta la borraría.
+
+Otras cuentas de seguros: `4217 SEGUROS CULTIVO` (Sancor) ya sale excluida por ser `421*`
+= agricultura, que va por Actividades y costos. No hay otra cuenta de seguros con facturas.
+
+**C-18** — dejar un chequeo automático que cruce CUIT de templates contra CUIT de facturas y
+avise si aparece un cruce nuevo. Hoy se detectó a mano.
+
+
+#### 📈 CONTROL DE SUBAS DE PROVEEDORES vs IPC `B-FEAT-CONTROL-PROVEEDORES` 🟡
+*(2026-07-30, sin testear)*
+
+> *"analizar el ritmo de subas que viene teniendo y en comparación con el IPC… tal vez en vez
+> de ser algo individual puede aplicar a todos los proveedores que nos llega factura mensual,
+> que debería ser siempre igual y aumentar como máximo por IPC."*
+
+Panel en **Presupuesto → "Subas de proveedores"**. Export **Excel** (resumen + detalle mensual)
+y **PDF** apaisado.
+
+##### La decisión de fondo: NO se mide mínimo contra máximo
+Sería lo obvio y da cualquier cosa, porque **el monto de una factura mezcla precio y cantidad**
+y sólo el precio se compara con el IPC. Con los datos reales:
+
+| Proveedor | Mín→Máx | Qué es en realidad |
+|---|---|---|
+| AUTOPISTAS URBANAS | +160 % | no aumentó: se viajó más |
+| ALCORTA (veterinaria) | +690 % | no aumentó: se compró más |
+| FEDERACIÓN PATRONAL | +12.295 % | pólizas distintas |
+| MEDICUS | +23 % | **esto sí es un aumento de precio** |
+
+Entonces:
+- se mide **primero contra último** (la tendencia), no dos outliers cualesquiera;
+- se cuenta **cuántas veces bajó**. Un abono sube en escalones y casi nunca baja; un consumo
+  rebota. Ésa es la señal que separa precio de volumen.
+
+Los de volumen igual se listan, marcados como *"varía por consumo"* y sin semáforo: el número
+está, la conclusión no se saca sola. Se pueden esconder con un tilde.
+
+##### Cómo se lee
+`suba total` (punta a punta) · `suba mensual equivalente` · `IPC acumulado del mismo período` ·
+**brecha** en puntos. Semáforo: en línea (≤5 pts) · por encima · muy por encima (>20 pts).
+Al abrir un proveedor: la serie mes a mes con la variación de cada mes contra el IPC de ese mes.
+
+**El mes en curso no entra**: está a medio facturar y arruinaría justo la punta que importa.
+
+**Si falta IPC no se inventa la comparación.** `ipcAcumulado()` devuelve `null` cuando la serie
+tiene huecos — un acumulado calculado con meses faltantes queda corto y haría ver a *todos* por
+encima del IPC. Hoy `public.indices_ipc` está **vacía**: el panel muestra las subas igual y avisa
+dónde cargarlo (Precios y TC, columna IPC = variación mensual en %).
+
+Motor en `lib/proveedores/control-subas.ts`. Verificador:
+`npx tsx scripts/verificar-control-proveedores.ts` — 13 checks con los casos reales, incluido que
+Autopistas (+22 %) NO se marque como aumento por bajar 3 de 7 meses.
+
+##### Pendiente
+**C-15** — el análisis usa sólo `msa.comprobantes_arca` (dic-2025 en adelante). Podría extenderse
+al histórico para tener 13 meses en vez de 8, pero el histórico no trae CUIT normalizado del
+mismo modo; hay que verificarlo antes.
+
+---
+
+#### 🔄 CORRECCIONES a lo escrito antes *(el usuario, 2026-07-30)*
+
+##### 1 · El objetivo del presupuesto es el saldo, no la composición
+Yo había escrito *"la composición es justo lo que estás presupuestando"*. **Está mal.**
+
+> *"el objetivo del presupuesto es el análisis económico y financiero más allá de en qué se
+> gastó. Si debe ser prolijo, pero si el saldo a fin de mes proyectado es 1000 y sale 1000 el
+> presupuesto es un éxito más allá de estar mejor compuesto en sus partes. Para el análisis de
+> los gastos realizados tenemos los subdiarios y ahí no hay error."*
+
+El criterio de éxito es **el saldo proyectado**. La composición es un medio, no el fin — y para
+mirar el gasto en detalle ya están los subdiarios, que son exactos.
+
+**La recomendación no cambia, el motivo sí.** Sigue siendo *facturas para presupuestar, canales
+para controlar*, pero no porque la composición sea el objetivo. Es porque **no se puede proyectar
+un canal**: "banco" no es un concepto que crezca con el IPC ni que dependa de una decisión
+productiva. Se proyectan conceptos (la luz, el veterinario, el asesor) y después caen en un
+canal. El canal es el lado real, no el proyectado.
+
+Y con el objetivo bien planteado, **el control por canales sube de prioridad** (C-11): si lo que
+importa es que el saldo cierre, la cobertura total pesa más de lo que yo le había dado. La brecha
+entre pagado y facturado es exactamente el error del saldo.
+
+##### 2 · Templates y cuentas contables NO se pisan — verificado
+Yo había marcado un riesgo sistémico de doble conteo. **El usuario tenía razón**: los templates
+son, por definición, lo que **no** tiene factura.
+
+Verificado contra los datos: los 66 templates activos de MSA tienen `codigo_contable` en
+`"No lleva"` / `"Desglosar"` / `"CTA MA"` / `null`. **Ninguno** mapea a una cuenta con facturas
+imputadas. El cruce por cuenta da cero solapamiento.
+
+**La excepción, una sola y concreta:** cruzando por **CUIT** aparece
+**FEDERACIÓN PATRONAL SEGUROS** como templates *Seguro Flota* y *Seguro Accidentes de Trabajo*
+**y además** con 12 facturas ($7,77 M) en `SEGUROS ESTRUCTURA` (422113). Ese sí se contaría dos
+veces. No es un problema de arquitectura: es un caso para revisar con el usuario — probablemente
+el seguro deje de necesitar template ahora que llega por factura.
+
+→ **C-16**: revisar Federación Patronal (¿template o factura?) y dejar un chequeo por CUIT que
+avise si vuelve a pasar.
+
+##### 3 · Templates sin cuotas — el hueco real
+> *"para estos habría cuotas, y si no hubiera cuotas se presupuestaría? recuerda que muchas
+> veces me dijiste de no poner datos estimados en templates salvo raros casos ya que en
+> presupuesto usaría su lógica."*
+
+Exacto, y ése es el criterio correcto: **el dato firme vive en el template, la estimación vive
+en el Presupuesto.**
+
+Los datos muestran que el hueco es real. Cuotas cargadas por mes:
+
+| jul-26 | ago-26 | sep-26 | oct-26 | nov-26 | dic-26 | ene-27 |
+|---|---|---|---|---|---|---|
+| 30 · $61,4 M | 16 · $2,3 M | 54 · $12,8 M | 14 · $3,6 M | 36 · $18,9 M | 33 · $9,2 M | 2 · $0,55 M |
+
+La cobertura es **despareja** (ago tiene 16 cuotas contra 54 de sep) y **se corta en dic-2026**.
+Un presupuesto a 24 meses que lea sólo cuotas muestra los últimos 12 meses casi vacíos, y eso no
+es que no haya gasto: es que no está cargado.
+
+→ **C-17**: donde el template se queda sin cuotas, el Presupuesto tiene que **proyectar con su
+propia lógica** (los mismos modos que las cuentas contables: propagar la última cuota, promedio,
+o el mismo mes del año anterior según la periodicidad del template). Sin escribir nada en el
+template. Es la contracara de la regla de no cargar estimaciones ahí.
+
+
+#### 📒 PRESUPUESTAR CUENTAS CONTABLES `B-FEAT-PRESUPUESTO-CUENTAS` 🟡
+*(primera versión 2026-07-30, sin testear — leer el análisis antes de tocar nada)*
+
+> *"hay distintos indicios de cómo es mejor en cada caso… si una cuenta se compone siempre de
+> una fac de un proveedor simplemente se puede propagar esa FC… si es muy variada, la suma del
+> último mes… si tiene estacionalidad, un año atrás más inflación… que sea versátil, yo poder
+> cambiar la forma de presupuestarlo de un modo a otro."*
+
+##### 1 · Lo que dicen los datos (relevado 2026-07-30)
+
+**Cuánto hay**: 13 meses corridos, **jul-2025 → jul-2026**, 50 cuentas, $301 M.
+`msa.comprobantes_historico` (jul→dic 2025) + `msa.comprobantes_arca` (dic-2025→jul-2026).
+
+**Tres problemas que había que resolver antes de poder calcular nada:**
+
+1. **La misma cuenta estaba partida en dos por las mayúsculas.** El histórico guarda
+   `"Insumos veterinarios"` y ARCA `"INSUMOS VETERINARIOS"`: son la misma cuenta y quedaban
+   como dos series de 6 meses en vez de una de 11. Pasaba con LUZ, GASTOS MEDICOS, ASESOR
+   GANADERO, TELEFONOS y varias más. **La identidad es `nro_cuenta`, no el nombre.**
+2. **85 filas de ARCA no tienen `nro_cuenta`.** Se resuelven por nombre contra
+   `cuentas_contables` — verificado: las 85 resuelven sin ambigüedad.
+3. **Las dos fuentes se solapan en dic-2025** (40 fc / $16,39 M en ARCA contra 44 fc /
+   $16,48 M en el histórico: son las mismas facturas). Sumarlas duplicaba el mes.
+
+Resuelto en la vista **`public.presupuesto_historia_cuentas`**: clave `nro_cuenta`, el
+histórico manda donde existe y ARCA aporta desde ene-2026.
+
+**Cómo se comporta cada cuenta** — de acá salen los modos:
+
+| Cuenta | Perfil | Qué le sirve |
+|---|---|---|
+| ASESOR GANADERO | 1 prov, 1 fc/mes, escalones: 1.427k → 1.563k×3 → 1.633k×3 → 1.748k → 1.896k×2 → 2.067k×2 | **última factura** (el promedio queda siempre atrasado) |
+| ASESORAMIENTO CONTABLE · LUZ · TELÉFONOS · GASTOS MÉDICOS | 1-2 prov, monto parejo | **última factura** |
+| INSUMOS VETERINARIOS | 176k · 3.018k · 1.451k · **−28k** · 109k · 3.110k · — · 1.127k · 3.303k | **promedio** (propagar la última es una lotería) |
+| REPUESTOS Y REPARACIONES | 21 proveedores, CV 115 % | **promedio** |
+| IATF | 3 meses en 13, uno es nota de crédito | **por cabeza** o a mano |
+| AGROQUÍMICOS · SIEMBRA · COSECHA · MAÍZ · ROLLOS | ya se presupuestan en Actividades | **excluir** |
+
+##### 2 · Los modos
+
+`lib/presupuesto/modos.ts`. Cada cuenta elige el suyo; sin elección se usa la **sugerencia
+automática**, marcada con `(auto)` y con el motivo a la vista.
+
+| Modo | Qué hace | Para qué cuenta |
+|---|---|---|
+| `ultima_fc` | Propaga la última factura + inflación | 1 proveedor, monto parejo |
+| `promedio_n` | Promedio de los últimos N meses (default 3) | variadas, muchos proveedores |
+| `estacional` | Mismo mes del año pasado + inflación × 12 | estacional — **necesita 12 meses** |
+| `por_cabeza` | $/cabeza histórico × cabezas proyectadas | veterinaria, sanidad, sales |
+| `manual` | Monto fijo | sin historia |
+| `excluida` | No presupuesta, y dice por qué | lo que ya entra por Actividades |
+
+**Regla de sugerencia**: excluida si es producción → por cabeza si es sanidad → última factura
+si hay 1 proveedor, ≤2,5 fc/mes, CV ≤ 40 % y 6+ meses → si no, promedio. Menos de 3 meses, manual.
+
+##### 3 · Las dos trampas de los datos (y por qué el motor las trata así)
+
+**El mes en curso está a medio facturar.** Al 30/7/2026 julio tenía 29 facturas contra ~45 de
+promedio. Si entra como "último mes" o al promedio, subestima todo. **Se excluye siempre.**
+
+**Un mes sin factura no es un mes sin gasto.** LUZ no facturó en feb-2026 y en marzo aparece el
+doble: la factura se corrió. Por eso el promedio **divide por los meses de la ventana**, no por
+los que tienen factura. Con INSUMOS VETERINARIOS la diferencia es de 50 %:
+$1.472.602 dividiendo por 6 contra $2.208.903 dividiendo por los 4 con factura.
+
+Y la ventana **cierra en el último mes CERRADO**, no en el último con factura. Si una cuenta
+dejó de facturar en mayo y estamos en julio, junio fue un mes de cero y tiene que pesar. Este
+punto lo encontró el verificador: la primera versión cerraba en el último mes con dato e
+inflaba el promedio un 35 %.
+
+##### 4 · El control de cordura
+
+Arriba del panel, siempre visible. No busca precisión, busca que **no se escape nada grande**:
+
+- **El total se despegó**: presupuestado/mes contra el real de los últimos 6 meses cerrados.
+  Avisa si la diferencia pasa el 35 %.
+- **Una cuenta que gastó quedó en cero** — el olvido que más duele. Nivel alto si pesa más del
+  3 % del total.
+- **Una cuenta se despegó de su propia historia** (±60 %), pero sólo si además el monto pesa:
+  una cuenta chica que se duplica no importa.
+
+##### 5 · Dos maneras de armar el presupuesto — el planteo del usuario
+
+> *"mientras no haya detalle de caja todo lo que va a caja es un egreso, ídem tarjeta… se saca
+> la info de banco, echeqs endosados, caja y tarjeta. Lo bueno es que no se escapa nada, aun si
+> el proveedor se olvidó de facturar. Lo malo es que se ensucia con las retenciones SICORE…
+> luego se puede hacer por facturas recibidas y lo malo es que si hubo gastos sin factura se
+> presupuesta mal."*
+
+| | **Por canales de pago** (banco, echeq, caja, tarjeta) | **Por facturas recibidas** ← lo implementado |
+|---|---|---|
+| Cobertura | **Total**: nada se escapa, ni el gasto sin factura | Se pierde lo que no tiene factura |
+| Imputación | Pobre: caja y tarjeta son una bolsa hasta que se detallan | **Buena**: cada factura trae su cuenta contable |
+| SICORE | **Lo ensucia**: la retención sale de veterinaria y aparece como impuesto — dos cuentas mal | Limpio: la factura es por el total |
+| Timing | Fecha de pago | Fecha de la factura |
+| Datos hoy | Hay que armarlo | **13 meses ya listos y con cuenta imputada** |
+
+**Mi opinión**: **facturas para presupuestar, canales para controlar.** Son preguntas distintas
+y conviene no mezclarlas.
+
+Presupuestar es decir *"cuánto va a costar la luz"*, y eso necesita saber **qué** se compró —
+sólo la factura lo dice. La caja y la tarjeta, sin detalle, no se pueden imputar; y el SICORE
+rompe el dato en el peor lugar: la retención de veterinaria aparece como impuesto, así que
+**las dos** cuentas quedan mal (una de menos, otra de más). Un presupuesto construido sobre eso
+te da un total correcto con una composición equivocada — y la composición es justo lo que se
+presupuesta.
+
+Pero la fortaleza de los canales es real y no se resuelve con facturas: **no se escapa nada**.
+Ahí es donde sirve, y es exactamente el control que el usuario pidió: el total pagado por todos
+los canales de un período contra el total facturado del mismo período. Si el pago supera a la
+factura de manera sostenida, hay gasto sin comprobante y aparece como un número, no como una
+sospecha. **El SICORE deja de molestar** porque en el total se compensa: lo que se le resta a
+veterinaria se le suma a impuestos.
+
+→ Propuesta: mantener el presupuesto por facturas (ya está) y agregar el control por canales
+como **C-11**, un solo número por mes con su brecha. Es barato y cierra el agujero.
+
+##### 6 · Pendientes de esto
+
+**C-11 · Control por canales de pago** 🟡 — pagado total (banco + echeq + caja + tarjeta) contra
+facturado total, por mes. Detecta el gasto sin comprobante. No para presupuestar: para controlar.
+
+**C-12 · Cabezas proyectadas automáticas** 🟡 — hoy el modo `por_cabeza` toma dos números a mano
+(cabezas del histórico y proyectadas). El rodeo por campaña ya está en `stock_ciclos` +
+`calcularLineaTiempo`: se puede enganchar y que el gasto de sanidad siga solo a la evolución del
+rodeo.
+
+**C-13 · Estacionalidad real** 🟡 — hay 13 meses, así que el modo `estacional` casi no tiene con
+qué (y jul-2026 está incompleto). Recién en 2027 va a haber dos años comparables. Mientras tanto
+el modo existe y avisa que le faltan datos.
+
+**C-14 · Templates** ⏸️ — este panel presupuesta **cuentas contables** (lo que viene por
+factura). Los templates ya se proyectan por sus cuotas cargadas, que es información más firme
+que cualquier estimación: no necesitan modos. Lo que sí falta es decidir **cómo conviven** —
+hoy un gasto podría entrar por los dos lados. Ver la nota de doble conteo abajo.
+
+##### ⚠️ Doble conteo — lo que hay que vigilar
+El presupuesto de MSA junta ahora tres fuentes de egresos: **templates** (cuotas cargadas),
+**cuentas contables** (este panel) y **actividades** (costos de producción). Un mismo gasto no
+puede entrar por dos.
+
+- Producción ya está resuelto: las cuentas `421*`, `42305*` y las del verdeo salen `excluida`
+  con el motivo escrito.
+- **Templates vs cuentas contables: verificado, NO se pisan** (2026-07-30). Los templates son
+  por definición lo que no tiene factura: los 66 activos de MSA tienen `codigo_contable` en
+  "No lleva" / "Desglosar" / null y ninguno mapea a una cuenta con facturas. El aviso anterior
+  de riesgo sistémico estaba equivocado. **La única excepción real** es FEDERACIÓN PATRONAL
+  SEGUROS, que está como 2 templates y además factura $7,77 M en SEGUROS ESTRUCTURA → ver C-16.
+
+
+#### 🌾 FASE C — COSTOS PRODUCTIVOS ATADOS A LA VENTA `B-FEAT-COSTOS-PRODUCTIVOS` 🔴
+*(planificado 2026-07-30, 0 código — leer esto entero antes de empezar)*
+
+> *"cada decisión productiva conlleva gastos variables aparejados. cada venta presupuestada
+> podría tener siempre un costo productivo adjudicado. cantidad de maíz a dar, concentrado,
+> siembra de verdeos… lo más simple para empezar es maíz y concentrado. podría poner el stock
+> que hay y calcule la dif a comprar. (…) tendremos que dejar asentado los parámetros de la
+> recría y el engorde para poder simplemente decir este rodeo va a recría desde tal fecha a tal
+> y el sistema sepa qué calcular de insumos. Así cargando la actividad se calculan los ingresos
+> y costos, y es fácil de manejar."*
+
+##### La idea en una línea
+**La unidad de planificación es la ACTIVIDAD, no el insumo.** El usuario carga *"este lote hace
+recría del 1/4 al 30/9"* y de ahí salen solos: la curva de peso, el consumo de maíz y
+concentrado mes a mes, lo que falta comprar, y el egreso en el presupuesto. Nadie tipea kilos.
+
+##### Lo que YA está construido (no rehacer)
+
+| Pieza | Dónde | Estado |
+|---|---|---|
+| **Motor de ración** | `calcular()` en `components/analisis-productivo.tsx:150` | ✅ funciona, hay que **extraerlo a lib** |
+| **Stock de insumos** | `productivo.stock_insumos` (categoria, producto, cantidad, costo_unitario, unidad) | ✅ tabla viva |
+| **Movimientos** | `productivo.movimientos_insumos` (fecha, tipo, cantidad, costo, proveedor, cuit) | ✅ tabla viva |
+| **Categorías** | `productivo.categorias_insumo` con `ambito` agrícola/ganadero/ambos | ✅ sembrada |
+| **Motor de sanidad** | `ordenes_aplicacion` + `lineas_orden_aplicacion` (`dosis_cada_kg`, `peso_promedio_kg`) | ✅ **ya modela dosis por kg de peso vivo** |
+| **Curva de peso** | `stock_lotes.peso_base_kg` + `ganancia_diaria_kg` + `fecha_peso` | ✅ |
+
+El motor de ración es exactamente lo que hace falta, y es **por cabeza y por día**:
+
+```
+racKgDia  = pesoPromedio × racionPV        ← % del peso vivo
+maizKgDia = racKgDia × maizPct
+concKgDia = racKgDia × concPct
+kg lote   = kgDia × días × cabezas
+costo     = kg × precio
+```
+
+Como `pesoPromedio` y `días` **ya salen del lote**, el cálculo de consumo casi no necesita input
+nuevo: sólo los parámetros de la actividad. Ése es el punto que hace barato todo esto.
+
+##### Lo que falta
+
+**C-1 · Extraer el motor a `lib/productivo/racion.ts`** ✅ **HECHO** — ver arriba
+`calcular()` vive adentro de un componente de 1.367 líneas. Sacarlo a lib y que el análisis de
+engorde lo importe. Si el presupuesto reimplementa la fórmula, en tres meses dan distinto y no
+se va a saber cuál está bien. Es el mismo patrón de `lib/pagos/` y `lib/arrendamientos/calculo.ts`.
+
+**C-2 · Tabla de parámetros por actividad** — `productivo.actividades` ✅ **HECHO** (el esquema final es el de arriba: los insumos son tabla hija, no columnas fijas)
+Es el *"dejar asentado los parámetros de la recría y el engorde"*. Una fila por actividad:
+
+| campo | ejemplo | para qué |
+|---|---|---|
+| `tipo` | `recria` / `engorde` / `pastoreo` | qué proceso es |
+| `nombre` | "Recría verdeo invierno" | puede haber varias del mismo tipo |
+| `racion_pct_pv` | 1,5 % | ración diaria como % del peso vivo |
+| `pct_maiz` / `pct_concentrado` | 85 / 15 | mezcla |
+| `ganancia_diaria_kg` | 0,5 | **la curva de peso sale de acá** (ver C-4) |
+| `pct_mortandad` | 1 % | |
+| `costo_ha` + `has_por_cabeza` | verdeo | sólo para actividades con superficie |
+
+Defaults del análisis actual: ración 1,5 % PV · 85 % maíz · 15 % concentrado · maíz $270/kg.
+
+**C-3 · Tramos: la actividad se le asigna al lote** — `productivo.lote_tramos` ✅ **HECHO**
+`(lote_id, actividad_id, fecha_desde, fecha_hasta, orden)`. Varios tramos encadenados por lote
+— recría y después engorde — que es **la misma "cadena de etapas" que ya existe** en el análisis
+de engorde. Reusar ese concepto y, si se puede, la estructura.
+
+**C-4 · 🔑 El tramo debe MANEJAR la curva de peso, no sólo el costo** ✅ **HECHO**
+Hoy `stock_lotes.ganancia_diaria_kg` se tipea a mano y la actividad tendría su propia ganancia
+esperada. **Son el mismo número y van a divergir.** Si divergen, el peso con que se factura la
+venta y los kilos de maíz que se compran describen dos animales distintos.
+
+→ Al asignar el tramo, la ganancia diaria del lote **sale del tramo**. El campo del lote queda
+como override manual explícito (y marcado, como el `*` de precio arrastrado). Esto además le da
+al usuario la segunda punta de input que pidió: cargar la actividad define ingreso **y** costo
+de una sola vez.
+
+**C-5 · Consumo MENSUAL, no total** ✅ **HECHO** dentro de `consumoMensual()`
+El presupuesto es mensual, así que el consumo hay que integrarlo por mes: para cada mes, días
+del tramo dentro de ese mes × kg/día al peso promedio **de ese mes** (el peso sube, la ración
+sube con él). Devolver `Record<'YYYY-MM', { maiz_kg, conc_kg, ... }>`.
+
+**C-6 · Diferencia a comprar** — *lo que pidió textualmente*
+`a_comprar = consumo_proyectado − stock_actual`, contra `productivo.stock_insumos`. Dos avisos:
+- **El maíz puede ser propio.** MSA produce maíz. Consumir maíz propio **no es una salida de
+  caja**: es una venta que no se hace (costo de oportunidad). Mezclarlo con el maíz comprado
+  infla los egresos y rompe el Cash Flow. Hay que separar `propio` de `a comprar` desde el
+  principio — meterlo después es rehacer.
+- **Falta la categoría Maíz**: hoy sólo existen `Alimento balanceado` y `Sal/Minerales` (ámbito
+  ganadero) y ninguna tiene stock cargado. Sanidad sí está cargada y en uso.
+
+**C-7 · Al presupuesto (EGRESOS)** — ✅ **decidido por el usuario 2026-07-30: NO es template, es línea derivada.** Falta sólo pintarla.
+Una fila por actividad o por insumo, en el mes del consumo. **Decisión abierta, la misma que
+quedó pendiente con el IIBB de arrendamiento**: si el costo tiene que verse en Cash Flow hay que
+registrarlo en algún lado (template), y si no, es una línea derivada que sólo vive en el
+presupuesto. Preguntarle al usuario antes de implementar — no asumir.
+
+**C-8 · Enlace con el análisis de engorde** *(último, opcional)*
+El usuario fue explícito: *"para enlazar si creemos bueno con esa otra parte, pero más que nada
+por los conceptos"*. O sea **reusar conceptos ahora, decidir el enlace después**. C-1 ya captura
+casi todo el valor. Un enlace real (que un estudio guardado genere tramos) recién tiene sentido
+cuando C-2..C-6 estén andando y testeados.
+
+##### ✅ C-1 y C-2 — HECHO 2026-07-30 (sin testear)
+
+**Decisión del usuario que fijó la arquitectura** *(la respuesta a C-7, adelantada)*:
+> *"costos directos debe ser algo que muta con la actividad propuesta. **no será un template ni
+> nada así**. de acuerdo a la actividad se ponen los costos directos. así como para recría y
+> engorde hay ciertos insumos y **rindes**, para cada actividad lo habrá. lógico que debe ser
+> editable desde presupuesto los parámetros de cada actividad."*
+
+**C-7 queda resuelto**: el costo directo **no se registra en ningún lado** — no es template, no
+es factura esperada. Es una **consecuencia calculada** de la actividad que se decidió hacer.
+Cambia la actividad, cambia el costo solo. Misma naturaleza que el IIBB de arrendamiento: línea
+derivada que vive en el presupuesto.
+
+**Corrección al plan original**: el borrador de C-2 tenía columnas fijas (`pct_maiz`,
+`pct_concentrado`). Con *"para cada actividad lo habrá"* eso no sirve — cada actividad tiene sus
+propios insumos. Pasó a ser **tabla hija**: una lista de ítems que el usuario arma. Recría son
+dos renglones, engorde otros, y la actividad que se invente el año que viene tiene los suyos sin
+tocar código ni migrar la tabla.
+
+###### C-1 · Motor extraído — `lib/productivo/racion.ts`
+`calcular()` salió de `analisis-productivo.tsx` (1.367 líneas) a lib; el componente ahora lo
+importa. Fuente única: si el presupuesto reimplementara la fórmula, en tres meses dan distinto.
+Se sumaron los primitivos `pesoPromedio()`, `pesoFinal()`, `racionDiariaKg()`.
+
+⚠️ **Nombre heredado**: el campo `conversion` de la pantalla **no es conversión alimenticia**, es
+la **ganancia diaria en kg** (`kgGanados = días × conv`). Es el mismo número que
+`stock_lotes.ganancia_diaria_kg` y que `actividades.ganancia_diaria_kg`. Documentado en la lib
+para que nadie lo interprete mal; renombrar la etiqueta de la pantalla queda pendiente.
+
+###### C-2 · Actividades y costos — BD + lib + UI
+**Tablas nuevas** (`productivo`, RLS abierta + grants como el resto del schema, **no** en el backup):
+
+| tabla | qué guarda |
+|---|---|
+| `actividades` | `tipo`, `nombre`, **`ganancia_diaria_kg`** (el rinde), `racion_pct_pv`, `pct_mortandad`, `activo` |
+| `actividad_insumos` | `concepto`, `modo`, `valor`, `unidad`, `momento`, `precio_unitario`, `categoria_insumo_id`, `producto` |
+
+**Sembradas** con los defaults del análisis de engorde (Recría 0,5 kg/día · Engorde 0,7 kg/día ·
+ración 1,5 % PV · maíz 85 % a $270/kg · concentrado 15 % a $745/kg). Son punto de partida, todo
+editable.
+
+**`modo` es la pieza central**: decide el cuánto **y** el cuándo, y con eso las tres familias de
+costo entran en una sola tabla en vez de tres mecanismos distintos.
+
+| modo | escala con | ejemplo |
+|---|---|---|
+| `pct_racion` | % de la ración diaria | maíz 85 %, concentrado 15 % |
+| `kg_cabeza_dia` | kg fijos por cabeza y día | suplemento |
+| `unid_cabeza_mes` | por cabeza y mes | sal, minerales |
+| `unid_cabeza_evento` | por cabeza, puntual | vacuna |
+| `dosis_cada_kg` | 1 dosis cada N kg de peso vivo | el modelo de `lineas_orden_aplicacion` |
+| `monto_cabeza` / `monto_ha` / `monto_mes` | $ directos | flete · **verdeo** · alquiler |
+
+`momento` (`diario`/`mensual`/`inicio`/`fin`) define dónde cae; cada modo trae su default.
+
+**`consumoMensual()`** reparte el tramo mes a mes. El punto fino: **el consumo diario sube a lo
+largo del tramo** porque la ración es un % del peso vivo y el animal engorda. Cada mes se calcula
+con **su propio peso promedio** — usar el promedio de todo el período subestima el final y
+sobrestima el arranque. Verificado: 200 cab de 220 kg del 1/4 al 30/9 van de 580 kg de maíz/día
+en abril a 775 en septiembre.
+
+**UI**: `components/configurador-actividades.tsx`, botón *"Actividades y costos"* en Presupuesto
+al lado de *"Precios y TC"*. Parámetros y lista de conceptos editables inline, aviso si los
+`% de la ración` no suman 100 %, y un **simulador** (cabezas · peso · desde/hasta · hectáreas)
+que muestra el reparto mes a mes sin guardar nada — la forma más rápida de ver si un parámetro
+quedó mal cargado.
+
+**Verificador**: `npx tsx scripts/verificar-actividades.ts` — 9 checks (días que cierran, el maíz
+que crece con el peso, los puntuales una sola vez, el verdeo escalando por hectárea y no por
+cabeza).
+
+###### Lo que sigue
+**C-3** (tramos: atar la actividad al lote) → **C-4** (que el tramo maneje la curva de peso) →
+**C-5** ya está resuelto dentro de `consumoMensual()` → **C-6** (stock y diferencia a comprar,
+ojo maíz propio) → **C-8** (enlace con el análisis, opcional).
+
+##### ✅ C-3 y C-4 — HECHO 2026-07-30 (sin testear)
+
+###### C-3 · Tramos — `productivo.lote_tramos`
+`(lote_id, actividad_id, orden, fecha_desde, fecha_hasta, hectareas, notas)`, con
+`check (fecha_hasta > fecha_desde)`. **No está en el backup.** `actividad_id` va con
+`on delete restrict` a propósito: borrar una actividad usada por un tramo tiene que fallar
+fuerte, no dejar el tramo sin parámetros en silencio.
+
+UI en el **modal del lote** (Productivo → Evolución Rodeo → editar lote): agregar/quitar tramos,
+elegir actividad, fechas y hectáreas. Muestra la curva resultante y el costo de alimentación.
+Avisa si dos tramos **se pisan** (`solapamientos()`) — el peso se calcula igual pero el costo
+contaría los dos.
+
+###### C-4 · La curva de peso sale del tramo 🔑
+**El problema que resuelve**: `stock_lotes.ganancia_diaria_kg` se tipeaba a mano y la actividad
+trae su propia ganancia esperada. Son el mismo número. Si divergen, el peso con el que se
+factura la venta y los kilos de maíz que se compran **describen dos animales distintos**, y nada
+avisa.
+
+**La curva pasa a ser QUEBRADA, no una recta.** Con recría a 0,5 kg/día hasta octubre y engorde
+a 0,7 después, el peso ya no es `base + días × ganancia`: hay que integrar tramo por tramo. Caso
+verificado — 100 cab de 220 kg, recría 1/4→1/10 y engorde 1/10→1/1:
+
+| | |
+|---|---|
+| Recta vieja (0,3 kg/día del lote) | 302,5 kg |
+| **Curva quebrada** (183 d × 0,5 + 92 d × 0,7) | **375,9 kg** |
+
+73 kg de diferencia por cabeza — y como el peso define la **banda de precio**, cambia también
+el $/kg, no sólo los kilos.
+
+**Precedencia** (`lib/productivo/tramos.ts`):
+1. `ganancia_override = true` → manda la del lote y la curva vuelve a ser recta. Es el override
+   manual explícito, con checkbox marcado en el modal.
+2. Días cubiertos por un tramo → la ganancia de **esa actividad**.
+3. Días sin tramo → la del lote (fallback), y la UI los muestra en ámbar como
+   *"sin actividad asignada"*.
+
+**Cómo se enchufó sin romper nada**: `pesoEstimado()`, `valuarLote()` y `valuarLoteConPrecios()`
+de `lib/ganaderia/ciclo.ts` toman un parámetro **opcional** `curva?: CurvaPeso`, que es una
+función `(fecha) => peso`. Se pasa como callback y no importando `lib/productivo/tramos.ts` para
+**no armar un import circular** entre ganadería y productivo. Sin `curva` se comportan igual que
+antes, así que ningún llamador viejo cambia de resultado.
+
+Pasan la curva: `panel-lotes-hacienda` (lista, modal y total) y `tab-presupuesto`
+(`cargarHacienda`). Es la misma en las dos pantallas, que era el requisito.
+
+**El costo también arranca del peso real**: `tramosParaCosto()` le da a cada tramo su
+`peso_inicial_kg` sacado de la curva, así que el tramo de engorde empieza en 311,5 kg (lo que el
+animal pesa después de la recría) y no en los 220 del lote. Sin eso, la ración del engorde se
+calcularía sobre un animal chico.
+
+**Verificador**: `npx tsx scripts/verificar-tramos.ts` — 11 checks (curva quebrada, override,
+huecos sin tramo, peso inicial encadenado, solapamientos).
+
+###### Lo que sigue
+**C-7** pintar la línea de costo en EGRESOS del presupuesto (ya decidido: es línea derivada, no
+template) → **C-6** stock y diferencia a comprar (ojo maíz propio) → **C-8** enlace con el
+análisis de engorde, opcional.
+
+##### ✅ Tanda 2026-07-30 (b) — moneda, ciclo, % de lo producido, y dos bugs
+
+**Pedidos del usuario mientras testeaba, todos resueltos:**
+
+**1 · Moneda por ítem** — *"pesos por ha y dólar por ha deben estar"*.
+`actividad_insumos.moneda` (`ARS` | `USD`). En USD el monto se pasa a pesos al **TC
+presupuestado del mes de cada gasto**, con `resolverSerie` sobre `public.tipos_cambio` — la
+misma serie con arrastre que usa el arrendamiento. Un ciclo de seis meses puede usar varios TC,
+y la celda muestra en el tooltip cuál se aplicó. Si falta el TC de un mes el monto da $0 y la UI
+lo avisa en vez de esconderlo.
+
+**2 · `momento = 'ciclo'`** — *"una respuesta es ciclo. ej cultivo de soja: se sabe que se gastan
+tantos dólares en el ciclo del cultivo"*. El monto pertenece al ciclo entero, no a un día ni a un
+mes. Es el default de `monto_ha`.
+
+**3 · `modo = 'pct_produccion'`** — *"el precio del costo se determina según % de lo producido"*
+(cosecha, aparcería). Sale del `valor_produccion` del tramo. Sin ese valor da $0 y avisa; no
+inventa un número.
+
+**4 · `tipo = 'agricola'`** — no lleva ración ni ganancia diaria, así que esos campos **se
+esconden** en vez de mostrarse vacíos. Un concepto nuevo en una actividad agrícola arranca con
+los defaults útiles: por hectárea, en el ciclo, en USD.
+
+###### 🐛 Bug — el input se reformateaba mientras se escribía
+El usuario quiso cargar la ración de Engorde en **85 % maíz / 15 % concentrado** y quedó
+**8 % / 10 %**. No fue error suyo.
+
+**Causa**: el `value` del input se derivaba del estado y se re-formateaba en **cada tecla**. Al
+tipear `8` el campo ya decía `8,00` con el cursor al final, así que el `5` siguiente caía en el
+lugar equivocado. El mismo campo hacía imposible escribir cualquier número de dos dígitos.
+
+**Fix**: `InputNumero` (en `configurador-actividades.tsx`) guarda el **texto crudo** mientras
+está tocado y recién parsea y formatea al salir del campo. Lección general en `KNOWLEDGE.md`.
+
+Efecto colateral del fix: el guardado ya no puede leer del estado, porque el commit y el guardado
+pasan en el mismo tick. `guardarInsumo(i, cambios)` recibe los cambios explícitos.
+
+###### 🐛 Bug — los costos "al terminar" nunca caían
+`momento: 'fin'` (la cosecha) no aparecía nunca en un tramo que termina un día 1 — el caso normal
+de un cultivo (oct → abr).
+
+**Causa**: `esUltimo` se calculaba dentro del recorrido como `fin >= hasta`. En marzo `fin` es el
+31/3, menor que `hasta` (1/4); y abril tiene **cero días** y se descartaba. Ningún mes quedaba
+marcado como último.
+
+**Fix**: `consumoMensual()` pasó a **dos pasadas** — primero arma los meses con días, después
+calcula los costos con `esPrimero`/`esUltimo` por índice sobre la lista ya filtrada. Saber cuál
+es el último exige tener la lista entera; calcularlo al vuelo era el error.
+
+###### Otros ajustes
+- **`unidad` no se pide de más**: con `% de la ración` ya se sabe que son kg, y un monto directo
+  no tiene unidad. Era la fricción que reportó el usuario.
+- **El simulador no asume que arranca hoy**: las fechas empiezan **vacías**. Se puede estar
+  presupuestando la campaña que viene, y poner "hoy" por defecto es meter una suposición.
+- **El simulador SÓLO MUESTRA**: no guarda ni crea tramos. Lo que se plasma en el presupuesto son
+  los tramos del lote. Aclarado en pantalla.
+- **Borrar una actividad en uso** ahora explica el motivo (la FK de `lote_tramos` es RESTRICT) en
+  vez de mostrar el error crudo de Postgres.
+- **`🐄 Venta de hacienda` es colapsable** en el presupuesto, con el mismo patrón que Nazarenas y
+  Rojas, y muestra cuántas categorías tiene.
+
+**C-9 · Cómo se distribuye el costo del CICLO en el tiempo** 🟡 *(abierto, 2026-07-30)*
+> *"luego el ver cómo se distribuye en el tiempo tenemos que ver"* — el usuario.
+
+Hoy `momento: 'ciclo'` **prorratea por días** sobre el tramo. El **total del ciclo queda bien**,
+pero el mes a mes no: un cultivo no gasta parejo — la siembra y la cosecha son picos, y en el
+medio hay meses casi sin desembolso. Para el Cash Flow eso importa.
+
+Opciones a conversar: (a) una curva por tipo de cultivo (% del gasto por mes desde la siembra);
+(b) partir el ítem en varios con `momento: inicio/fin`; (c) un campo de "mes del ciclo" por ítem.
+La (b) ya se puede hacer hoy a mano y quizás alcance.
+
+##### ✅ Tanda 2026-07-30 (c) — saldo acumulado, IIBB unificado, sub-agrupación
+
+**1 · SALDO ACUMULADO** — *"debe estar el saldo acumulado de cada mes y no sólo el neto entre
+ingresos y egresos mes x mes"*.
+Fila nueva al pie, debajo de RESULTADO. Arrastra el resultado mes a mes desde un **saldo de
+arranque**. Sin esto el presupuesto sólo dice el resultado de cada mes, que no alcanza para saber
+si la caja da: un mes malo después de varios buenos no es lo mismo que ese mes con la caja en cero.
+
+`public.presupuesto_config` (empresa, `saldo_inicial`, `mes_inicial`, notas) — **no está en el
+backup**. Se carga a mano desde la propia fila (botón *"arranca en $X — editar"*).
+**Provisorio y a propósito**: el usuario lo pidió así, *"por ahora para poner a mano y luego vemos
+cómo emprolijamos"*. Lo natural sería derivarlo de los saldos bancarios reales → **C-10**.
+
+`mes_inicial` guarda a qué mes corresponde el saldo. Los meses **anteriores** a ese muestran `—`
+en vez de un número: no se puede acumular hacia atrás desde un saldo de otro momento. Es el aviso
+de que el saldo quedó viejo cuando la grilla avanza.
+
+**2 · IIBB en un solo renglón colapsable** — *"así como pusiste IIBB sobre venta de hacienda
+habría que poner de arrendamiento. Renglón aparte y colapsable a un solo renglón de IIBB total"*.
+`IIBB total` se abre en sus orígenes: venta hacienda · **arrendamiento (nuevo)** · ganadería.
+Sólo aparecen los que tienen monto.
+
+El de arrendamiento es **derivado igual que los otros**: 5 %
+(`ALICUOTA_IIBB_ARRENDAMIENTO`) de la venta del mes, cobrado el mes siguiente. No se registra en
+ningún template — sale de la venta, como el resto. Ya suma al TOTAL EGRESOS.
+
+**3 · Sub-agrupación de templates por categoría** — *"impuestos rurales tiene mezclado inmob y
+red vial. Tal vez una subagrupación con datos existentes sin crear nada nuevo"*.
+Se usa `egresos_sin_factura.categ`, que **ya existe**: no se creó ninguna categoría ni columna.
+
+**El criterio general** (aplicable a cualquier agrupador, que era el pedido):
+sub-agrupar sólo si hay **2+ categorías** y **alguna junta más de un template**.
+
+| agrupador | categs / templates | qué hace |
+|---|---|---|
+| Impuestos Rurales | 3 / 22 | **sub-agrupa** — 11 inmobiliarios + 10 red vial + 1 complementario |
+| Impuestos General | 5 / 9 | **sub-agrupa** — ARCA 3, laborales 2, retenciones 2 |
+| Gastos Bancarios | 7 / 7 | plano — una categ por template, anidar sería vacío |
+| Impuestos Automotores | 1 / 4 | plano — una sola categoría |
+
+`porCateg()` y `subAgrupa()` en `tab-presupuesto.tsx`.
+
+**C-10 · El saldo de arranque debería salir de los bancos** 🟡 *(abierto, 2026-07-30)*
+Hoy se tipea. Lo correcto sería tomar el saldo real de las cuentas a una fecha — el usuario ya lo
+anticipó (*"luego vemos cómo emprolijamos"*). Ojo con el alcance: el presupuesto es sólo MSA y los
+saldos son por cuenta bancaria; hay que decidir qué cuentas entran.
+
+##### ✅ Export de caravanas para declarar — HECHO y **TESTEADO OK** (2026-07-30)
+
+> *"quisiera un export de productivo para declarar las caravanas… un simple excel, machos por
+> un lado y hembras por el otro… primero debo decirle qué categorías quiero exportar… si pongo
+> las 3 me da una solapa por categoría… es importante borrar el espacio entre los primeros 3
+> dígitos (empezando por el cero) y el resto, pero debe empezar con el 0 y no omitirlo por ser
+> un nro."*
+
+**Dónde**: Productivo → Terneros → **Descargar Excel**. El modal ahora pregunta primero **qué**
+se baja — *Pesadas* (lo de siempre) o *Caravanas* (para declarar) — porque son dos archivos
+distintos, no una columna más.
+
+**Qué genera**: una **solapa por categoría** elegida, con `Caravana Oficial` y
+`Caravana Interna`. Categorías: Ternero Recría · Torito · Ternera Recría · Ternera Reposición.
+
+**El cero de la caravana** es el punto delicado. En la BD viene `"032 010012326481"`; para
+declarar va sin espacio y **empezando con 0**. Si la celda se escribe como número Excel se come
+el cero y queda `32010012326481`, que es **otra caravana**. Por eso se fuerza `t:'s'` y formato
+`@` en la columna. Verificado escribiendo y volviendo a leer el archivo:
+`scripts/verificar-caravanas.ts` (15 checks).
+
+**Qué queda afuera, a propósito**: las bajas (no se declaran) y los activos **sin caravana
+oficial cargada** — una fila vacía en un archivo de declaración no sirve. El modal dice cuántos
+son y lista sus caravanas internas para poder completarlos. Con los datos de hoy son **9**:
+8 toritos y 1 ternera de recría.
+
+**`lib/productivo/caravanas.ts`** — `normalizarCaravana()` + `categoriaDeTernero()`.
+Esta última es ahora el **único lugar** donde se interpreta `es_torito`, que está sobrecargado:
+en un macho significa "torito", en una hembra "ternera retenida para reposición". Tenerlo escrito
+en varios lados ya causó un bug (una hembra marcada aparecía como Torito y se contaba dos veces).
+`lib/ganaderia/disponibilidad.ts` pasó a usarlo.
+
+##### Tres familias de costo — no se calculan igual
+No forzarlas al mismo molde; cada una tiene su unidad:
+
+| familia | escala con | ejemplo | motor |
+|---|---|---|---|
+| **por cabeza-día** | cabezas × días × peso | maíz, concentrado | ✅ `calcular()` |
+| **por cabeza-evento** | cabezas × dosis (a veces por kg) | vacunas, antiparasitarios | ✅ `lineas_orden_aplicacion` |
+| **por hectárea** | superficie, **no** cabezas | siembra de verdeos | ❌ falta |
+
+El verdeo es el que rompe el patrón: es un costo fijo por hectárea que después se reparte entre
+las cabezas que lo pastorean. Dejarlo para el final y **no** intentar expresarlo como $/cabeza/día
+hasta tener el caso claro.
+
+##### Orden sugerido
+~~**C-1** (extraer motor) → **C-2 + C-3** (parámetros + tramos) → **C-4** (curva de peso desde el
+tramo) → **C-5** (mensualizar) → **C-6** (stock y diferencia, con propio vs comprado) →
+**C-7** (presupuesto, previa decisión) → **C-8** (enlace, si vale la pena).~~
+
+**Estado 2026-07-30: C-1..C-5 y C-7(decisión) hechos. Queda C-7 (pintar la línea), C-6 (stock y diferencia a comprar) y C-8 (enlace, opcional).**
+
+Arrancar por maíz y concentrado, como pidió. Sanidad después: el motor está pero es otra unidad.
+
+##### Deuda que este plan roza
+- `productivo.stock_insumos` tiene **stock negativo** (`Fasiolisida −216 ml`): hay consumos sin
+  la compra correspondiente. No es bloqueante para planificar, pero si C-6 lee ese stock para
+  calcular la diferencia a comprar, la va a calcular de más. Revisar antes de C-6.
+
+##### 🔑 Dos principios de arquitectura (pedidos por el usuario, 2026-07-30)
+
+**1 · Las series de precios ARRASTRAN HACIA ADELANTE** — `lib/precios/serie.ts`
+> *"pongo algunos precios actuales y quiero que los otros meses se propaguen hasta el próximo
+> input. Si algo se mueve de mes ya tiene el precio."*
+
+El valor de un mes es **el último cargado hasta ese mes**. Alcanza con cargar los meses donde el
+precio cambia. Si el mes es previo a toda la serie se toma el primero hacia adelante, para que
+no quede en cero.
+```
+ene  feb  mar  abr  may  jun          ene  feb  mar  abr  may  jun
+100   ·    ·   120   ·    ·     →     100  100  100  120  120  120
+```
+**Regla única para TODAS las series**: precios de granos, precios de hacienda, TC e IPC.
+`resolverSerie()` es la implementación; `resolverPrecio`, `resolverTC` y `resolverPrecioHacienda`
+la usan. ⚠️ Cambió el comportamiento de granos: antes tomaba el **siguiente** mes cargado.
+
+**2 · Dos puntas de input para el mismo dato**
+> *"desde presupuesto también pueda alterar las cifras de las ventas o los lotes. Como muchas
+> cosas en este sistema, muchas veces tiene dos puntas para input."*
+
+El precio se carga en **Presupuesto**; el *cuándo se vende* en **Productivo**; y desde
+**Presupuesto** se debe poder tocar la venta también. Igual que el arrendamiento, donde el modal
+de Presupuesto escribe sobre la cuota de Ventas.
+
+**Cómo se sostiene**: la lógica de mutación vive en `lib/`, no en el componente. Cualquier
+pantalla llama la misma función y escribe en la misma tabla — nunca hay copia ni sincronización.
+Al agregar una pantalla que edita algo existente, **extraer primero la función a `lib/`**.
+
+##### Datos que faltan del usuario
+- **Plazo de cobro** típico de hacienda (en arrendamiento fueron 15 y 20 días por cliente).
+- Si los **toritos** se venden en algún momento o son sólo reposición.
+- Cuántos **toros de refugo** por año, peso y precio.
+
+#### ⏳ FALTA en ganadería
+- **Venta de vaca de descarte**: la categoría y el precio ya están, pero **no hay línea** en la
+  proyección. Falta cuántas por año, peso y precio.
+- **Plazos de cobro**: hoy se carga la fecha de cobro directo. El usuario dijo "hay plazos" pero
+  no cuáles — en arrendamiento esto terminó siendo `dias_cobro_disponible` por contrato.
+- **Roll-forward del stock** (marzo 28 = stock − descartes + reposición; marzo 29 = ídem):
+  hoy los vientres se tipean por campaña. `productivo.stock_hacienda` sigue **vacía y sin
+  dimensión temporal**.
+- **Ganadería en `ventas_unificadas`** → hoy no llega a Cash Flow (sí a Presupuesto).
 
 ---
 ---

@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft, Download, Info } from "lucide-react"
 import * as XLSX from "xlsx"
+import {
+  normalizarCaravana, categoriaDeTernero, CATEGORIAS_TERNERO, type CategoriaTernero,
+} from "@/lib/productivo/caravanas"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
@@ -262,6 +265,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
+  /** Qué se baja: las pesadas (lo de siempre) o el listado de caravanas para declarar. */
+  const [tipoDescarga, setTipoDescarga] = useState<'pesadas' | 'caravanas'>('pesadas')
+  const [categoriasExport, setCategoriasExport] = useState<Set<CategoriaTernero>>(
+    new Set<CategoriaTernero>(['Ternero Recria', 'Ternera Recria']),
+  )
   const [fechasSeleccionadas, setFechasSeleccionadas] = useState<Set<string>>(new Set())
 
   // Bajas sin asignar (mortandad en hacienda sin caravana vinculada)
@@ -502,6 +510,78 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     const fecha = new Date().toISOString().split('T')[0]
     XLSX.writeFile(wb, `Terneros_${fecha}.xlsx`)
     setModalDescarga(false)
+  }
+
+  /** Activos de una categoría (con o sin caravana oficial). */
+  const activosDe = (c: CategoriaTernero) =>
+    terneros.filter(t => t.activo && categoriaDeTernero(t.sexo, t.es_torito) === c)
+
+  /**
+   * Lo que va al archivo: activos CON caravana oficial, ordenados por caravana.
+   *
+   * Las bajas no se declaran, y los que no tienen caravana oficial cargada quedan afuera
+   * a propósito: una fila vacía en un archivo de declaración no sirve para nada. El modal
+   * dice cuántos son para que se puedan completar.
+   */
+  const ternerosPorCategoria = (): [CategoriaTernero, Ternero[]][] =>
+    CATEGORIAS_TERNERO
+      .filter(c => categoriasExport.has(c))
+      .map(c => [
+        c,
+        activosDe(c)
+          .filter(t => normalizarCaravana(t.caravana_oficial) !== '')
+          .sort((a, b) => normalizarCaravana(a.caravana_oficial)
+            .localeCompare(normalizarCaravana(b.caravana_oficial))),
+      ] as [CategoriaTernero, Ternero[]])
+      .filter(([, lista]) => lista.length > 0)
+
+  /** Activos de las categorías elegidas a los que les falta la caravana oficial. */
+  const sinCaravanaOficial = () =>
+    CATEGORIAS_TERNERO
+      .filter(c => categoriasExport.has(c))
+      .flatMap(c => activosDe(c).filter(t => normalizarCaravana(t.caravana_oficial) === ''))
+
+  /**
+   * Excel simple para declarar: una solapa por categoría, con la caravana oficial sin
+   * espacios y **como texto**.
+   *
+   * Lo de "como texto" no es cosmético: la caravana empieza con cero ("032010012326481")
+   * y si la celda queda numérica Excel se lo come, dejando otra caravana. Por eso se fuerza
+   * `t:'s'` y formato `@` en toda la columna.
+   */
+  const descargarCaravanas = () => {
+    const grupos = ternerosPorCategoria()
+    if (grupos.length === 0) {
+      alert('No hay animales activos en las categorías elegidas.')
+      return
+    }
+
+    const wb = XLSX.utils.book_new()
+    for (const [categoria, lista] of grupos) {
+      const filas = lista.map(t => ({
+        'Caravana Oficial': normalizarCaravana(t.caravana_oficial),
+        'Caravana Interna': normalizarCaravana(t.caravana_interna),
+      }))
+      const ws = XLSX.utils.json_to_sheet(filas)
+      escribirColumnasTexto(ws, filas.length, ['A', 'B'])
+      // Los nombres de solapa de Excel no pueden pasar de 31 caracteres
+      XLSX.utils.book_append_sheet(wb, ws, `${categoria} (${lista.length})`.slice(0, 31))
+    }
+
+    const fecha = new Date().toISOString().split('T')[0]
+    XLSX.writeFile(wb, `Caravanas_${fecha}.xlsx`)
+    setModalDescarga(false)
+  }
+
+  /** Marca las columnas como texto para que no se pierda el cero de adelante. */
+  const escribirColumnasTexto = (ws: XLSX.WorkSheet, filas: number, columnas: string[]) => {
+    for (const col of columnas) {
+      for (let f = 2; f <= filas + 1; f++) {   // fila 1 = encabezado
+        const celda = ws[`${col}${f}`]
+        if (celda) { celda.t = 's'; celda.z = '@' }
+      }
+    }
+    ws['!cols'] = columnas.map(() => ({ wch: 20 }))
   }
 
   // ─── Import terneros ─────────────────────────────────────────────────────
@@ -1667,6 +1747,81 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Qué se baja. Antes sólo estaban las pesadas; el listado de caravanas es
+                para declarar y es otro archivo, no una columna más. */}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['pesadas', 'Pesadas', 'planilla con trazabilidad'],
+                ['caravanas', 'Caravanas', 'para declarar'],
+              ] as const).map(([valor, titulo, ayuda]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => setTipoDescarga(valor)}
+                  className={`rounded border px-3 py-2 text-left transition-colors ${
+                    tipoDescarga === valor
+                      ? 'border-emerald-600 bg-emerald-50'
+                      : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="block text-sm font-medium text-gray-800">{titulo}</span>
+                  <span className="block text-[11px] text-muted-foreground">{ayuda}</span>
+                </button>
+              ))}
+            </div>
+
+            {tipoDescarga === 'caravanas' ? (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Categorías a exportar</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Una solapa por categoría. Sólo animales activos.
+                </p>
+                {CATEGORIAS_TERNERO.map(cat => {
+                  const total = activosDe(cat).length
+                  const cuantos = activosDe(cat)
+                    .filter(t => normalizarCaravana(t.caravana_oficial) !== '').length
+                  return (
+                    <div key={cat} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id={`cat-${cat}`}
+                        checked={categoriasExport.has(cat)}
+                        disabled={cuantos === 0}
+                        onChange={e => {
+                          setCategoriasExport(prev => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(cat)
+                            else next.delete(cat)
+                            return next
+                          })
+                        }}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <label htmlFor={`cat-${cat}`}
+                        className={`text-sm ${cuantos === 0 ? 'text-gray-300' : 'cursor-pointer'}`}>
+                        {cat}{" "}
+                        <span className="text-muted-foreground">
+                          ({cuantos}{total !== cuantos ? ` de ${total}` : ''})
+                        </span>
+                      </label>
+                    </div>
+                  )
+                })}
+                {sinCaravanaOficial().length > 0 && (
+                  <p className="rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                    <strong>{sinCaravanaOficial().length}</strong> sin caravana oficial cargada
+                    {" "}— quedan afuera del archivo. Internas:{" "}
+                    {sinCaravanaOficial().slice(0, 12).map(t => t.caravana_interna || '?').join(', ')}
+                    {sinCaravanaOficial().length > 12 ? '…' : ''}
+                  </p>
+                )}
+                <p className="pt-1 text-[11px] text-muted-foreground">
+                  La caravana sale <strong>sin el espacio</strong> y como texto, para que no se
+                  pierda el cero de adelante.
+                </p>
+              </div>
+            ) : (
+            <>
             <p className="text-sm text-muted-foreground">
               Se exportarán <strong>{terneros.length}</strong> terneros con sus datos de trazabilidad.
             </p>
@@ -1715,13 +1870,17 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               </div>
             )}
 
+            </>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setModalDescarga(false)}>
                 Cancelar
               </Button>
               <Button
                 size="sm"
-                onClick={descargarExcel}
+                onClick={tipoDescarga === 'caravanas' ? descargarCaravanas : descargarExcel}
+                disabled={tipoDescarga === 'caravanas' && categoriasExport.size === 0}
                 className="bg-emerald-700 hover:bg-emerald-800"
               >
                 <Download className="h-4 w-4 mr-1" />

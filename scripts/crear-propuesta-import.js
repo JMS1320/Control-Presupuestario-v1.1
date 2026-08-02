@@ -1,0 +1,252 @@
+const XLSX = require('xlsx');
+
+const headers = [
+  'fecha', 'debitos', 'creditos', 'saldo',
+  'descripcion', 'tipo_de_movimiento', 'grupo_de_conceptos',
+  'concepto (movimiento raw completo)',
+  'leyendas_adicionales_1 (nombre)', 'leyendas_adicionales_2 (CUIT)',
+  'leyendas_adicionales_3 (referencia)', 'leyendas_adicionales_4 (banco)',
+  'numero_de_terminal', 'numero_de_comprobante', 'observaciones_cliente', 'origen',
+  '--- FUENTE ---'
+];
+
+const rows = [
+  // ── COMPRA DEBITO ──────────────────────────────────────────────────────────
+  ['27/03/2026', 14600, 0, 3687570.35,
+   'COMPRA DEBITO','','COMPRA_DEBITO',
+   'COMPRA DEBITO\nMERPAGO*LAEXPOSICION\n4517XXXXXXXXXX29\nA279',
+   'MERPAGO*LAEXPOSICION','','A279','',
+   '','4517XXXXXXXXXX29','','CA_GALICIA','MA'],
+  ['27/03/2026', 27500, 0, 3702170.35,
+   'COMPRA DEBITO','','COMPRA_DEBITO',
+   'COMPRA DEBITO\nPESCADERIA NAPOLI\n4517XXXXXXXXXX29\nA956',
+   'PESCADERIA NAPOLI','','A956','',
+   '','4517XXXXXXXXXX29','','CA_GALICIA','MA'],
+
+  // ── TRANSFERENCIA A TERCEROS — variante A (nombre + CUIT) ─────────────────
+  ['20/03/2026', 65000, 0, 7557398.85,
+   'TRANSFERENCIA A TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA A TERCEROS\nDEL RIO DONNELLY PAULA\n27190105585\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'DEL RIO DONNELLY PAULA','27190105585','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+  ['05/03/2026', 69000, 0, 7430244.40,
+   'TRANSFERENCIA A TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA A TERCEROS\nARECO ANA MATILDE\n27054569403\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'ARECO ANA MATILDE','27054569403','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+
+  // ── TRANSFERENCIA A TERCEROS — variante B (sin nombre, solo CUIT + CBU) ───
+  ['25/03/2026', 3711000, 0, 3729578.85,
+   'TRANSFERENCIA A TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA A TERCEROS\n20208914880\n0170017620000000448154\nFNCS\n4517XXXXXXXXXX29',
+   '','20208914880','0170017620000000448154','FNCS',
+   '','4517XXXXXXXXXX29','','CA_GALICIA','MA'],
+  ['18/03/2026', 110000, 0, 2946284.58,
+   'TRANSFERENCIA A TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA A TERCEROS\n20145266980\n0720146888000035929918\nRIOP\n4517XXXXXXXXXX29',
+   '','20145266980','0720146888000035929918','RIOP',
+   '','4517XXXXXXXXXX29','','CA_GALICIA','MA'],
+
+  // ── TRANSFERENCIA DE CUENTA PROPIA ────────────────────────────────────────
+  ['20/03/2026', 0, 5732814.27, 7667398.85,
+   'TRANSFERENCIA DE CUENTA PROPIA','','TRANSFERENCIA_PROPIA',
+   'TRANSFERENCIA DE CUENTA PROPIA\nMARIA DE LAS MERCEDES ARECO\n27066824611\nTRANSF.PROPIAS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'MARIA DE LAS MERCEDES ARECO','27066824611','TRANSF.PROPIAS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+  ['06/02/2026', 0, 300000, 526566.67,
+   'TRANSFERENCIA DE CUENTA PROPIA','','TRANSFERENCIA_PROPIA',
+   'TRANSFERENCIA DE CUENTA PROPIA\nSUCESION DE PLACIDO ALBERTO MARTINEZ\n20044390222\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'SUCESION DE PLACIDO ALBERTO MARTINEZ','20044390222','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','PAM'],
+
+  // ── TRANSFERENCIA DE TERCEROS (ingreso) ───────────────────────────────────
+  ['09/12/2025', 0, 16000, 906187.09,
+   'TRANSFERENCIA DE TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA DE TERCEROS\nRAQUEL MARIA MARTA T\n27220014237\n0000003100030996051487\nVARIOS',
+   'RAQUEL MARIA MARTA T','27220014237','VARIOS','',
+   '','0000003100030996051487','','CA_GALICIA','MA'],
+  ['17/11/2025', 0, 11500, 2958447.13,
+   'TRANSFERENCIA DE TERCEROS','','TRANSFERENCIA',
+   'TRANSFERENCIA DE TERCEROS\nANA MATILDE ARECO\n27054569403\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'ANA MATILDE ARECO','27054569403','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+
+  // ── SERVICIO PAGO A PROVEEDORES ───────────────────────────────────────────
+  ['05/03/2026', 0, 5000000, 10470145.32,
+   'SERVICIO PAGO A PROVEEDORES','','COBRO_PROVEEDORES',
+   'SERVICIO PAGO A PROVEEDORES\nMARTINEZ SOBRADO AGRO S.R.L.\n30617786016\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'MARTINEZ SOBRADO AGRO S.R.L.','30617786016','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+  ['27/02/2026', 0, 4100000, 5619945.32,
+   'SERVICIO PAGO A PROVEEDORES','','COBRO_PROVEEDORES',
+   'SERVICIO PAGO A PROVEEDORES\nSUCESION DE PLACIDO ALBERTO MARTINEZ\n20044390222\nVARIOS\nBANCO DE GALICIA Y BUENOS AIRES SAU',
+   'SUCESION DE PLACIDO ALBERTO MARTINEZ','20044390222','VARIOS','BANCO DE GALICIA Y BUENOS AIRES SAU',
+   '','','','CA_GALICIA','MA'],
+
+  // ── TRANSFERENCIAS CASH PROVEEDORES ──────────────────────────────────────
+  ['16/03/2026', 0, 5000, 3056284.58,
+   'TRANSFERENCIAS CASH PROVEEDORES','','COBRO_PROVEEDORES',
+   'TRANSFERENCIAS CASH PROVEEDORES\nPROVINVEST SA\n33710346939\nBANCO BBVA ARGENTINA S.A.',
+   'PROVINVEST SA','33710346939','','BANCO BBVA ARGENTINA S.A.',
+   '','','','CA_GALICIA','MA'],
+
+  // ── DEB. AUTOM. DE SERV. ─────────────────────────────────────────────────
+  ['16/03/2026', 138018.86, 0, 3051284.58,
+   'DEB. AUTOM. DE SERV.','','DEBITO_AUTOMATICO',
+   'DEB. AUTOM. DE SERV.\nAGUA Y SANE-AYSA\n\nCONSUMO\n004200358976\n0000055193',
+   'AGUA Y SANE-AYSA','','CONSUMO','',
+   '004200358976','0000055193','','CA_GALICIA','MA'],
+  ['10/03/2026', 5894.30, 0, 189136.74,
+   'DEB. AUTOM. DE SERV.','','DEBITO_AUTOMATICO',
+   'DEB. AUTOM. DE SERV.\nMETROGAS SA\n\nMETROGAS\nOP:52O01032026F\n010486643300',
+   'METROGAS SA','','METROGAS','',
+   'OP:52O01032026F','010486643300','','CA_GALICIA','PAM'],
+  ['05/02/2026', 29200, 0, 6252964.66,
+   'DEB. AUTOM. DE SERV.','','DEBITO_AUTOMATICO',
+   'DEB. AUTOM. DE SERV.\nAUT.CLUB ARG.CS\n\nCUOTA ACA\n0226 - 0226\n432063165',
+   'AUT.CLUB ARG.CS','','CUOTA ACA','',
+   '0226 - 0226','432063165','','CA_GALICIA','MA+PAM'],
+
+  // ── PAGO DE SERVICIOS ─────────────────────────────────────────────────────
+  ['23/02/2026', 271910.97, 0, 1519887.27,
+   'PAGO DE SERVICIOS','','PAGO_SERVICIO',
+   'PAGO DE SERVICIOS\nAGIP INM/ABL\n\n007001005392\n4517XXXXXXXXXX11\nA001',
+   'AGIP INM/ABL','','007001005392','',
+   'A001','4517XXXXXXXXXX11','','CA_GALICIA','MA'],
+  ['17/12/2025', 290302.99, 0, 3644982.84,
+   'PAGO DE SERVICIOS','','PAGO_SERVICIO',
+   'PAGO DE SERVICIOS\nGCBA INM/ABL\n\n007001005392\n4517XXXXXXXXXX11\nA001',
+   'GCBA INM/ABL','','007001005392','',
+   'A001','4517XXXXXXXXXX11','','CA_GALICIA','MA'],
+
+  // ── PAGO TARJETA VISA — MA (D.A.) ─────────────────────────────────────────
+  ['06/03/2026', 2296614.36, 0, 4026803.44,
+   'PAGO TARJETA VISA','','PAGO_TARJETA',
+   'PAGO TARJETA VISA\nD.A. AL VTO',
+   'D.A. AL VTO','','','',
+   '','','','CA_GALICIA','MA'],
+  ['15/01/2026', 2219234.17, 0, 1557188.41,
+   'PAGO TARJETA VISA','','PAGO_TARJETA',
+   'PAGO TARJETA VISA\nD.A. RECICLA',
+   'D.A. RECICLA','','','',
+   '','','','CA_GALICIA','MA'],
+
+  // ── PAGO TARJETA VISA — PAM (OPERACION + nro) ─────────────────────────────
+  ['06/02/2026', 6264, 0, 180239.55,
+   'PAGO TARJETA VISA','','PAGO_TARJETA',
+   'PAGO TARJETA VISA\nOPERACION 6150939036',
+   '','','','',
+   '','6150939036','','CA_GALICIA','PAM'],
+  ['06/02/2026', 340063.12, 0, 186503.55,
+   'PAGO TARJETA VISA','','PAGO_TARJETA',
+   'PAGO TARJETA VISA\nOPERACION 6150935348',
+   '','','','',
+   '','6150935348','','CA_GALICIA','PAM'],
+
+  // ── SUSCRIPCION FIMA ──────────────────────────────────────────────────────
+  ['20/03/2026', 10000, 0, 1934584.58,
+   'SUSCRIPCION FIMA','','INVERSION',
+   'SUSCRIPCION FIMA\nFIMA PREMIUM CLASE A\n\n\n\n200112733',
+   'FIMA PREMIUM CLASE A','','','',
+   '','200112733','','CA_GALICIA','MA'],
+
+  // ── EXTRACCION EN AUTOSERVICIO ────────────────────────────────────────────
+  ['20/03/2026', 900000, 0, 1944584.58,
+   'EXTRACCION EN AUTOSERVICIO','','EXTRACCION',
+   'EXTRACCION EN AUTOSERVICIO\n\n\nTerminal: 0500\n\n\n0360',
+   '','','Terminal: 0500','',
+   '0360','','','CA_GALICIA','MA'],
+  ['21/01/2026', 50000, 0, 201564.18,
+   'EXTRACCION EN AUTOSERVICIO','','EXTRACCION',
+   'EXTRACCION EN AUTOSERVICIO\n\n\nTerminal: 0502\nC018\n\n0018',
+   '','','Terminal: 0502','C018',
+   '0018','','','CA_GALICIA','PAM'],
+
+  // ── EXTRACCION CAJERO ─────────────────────────────────────────────────────
+  ['22/01/2026', 50000, 0, 1205628.41,
+   'EXTRACCION CAJERO','','EXTRACCION',
+   'EXTRACCION CAJERO\n\n\n4517XXXXXXXXXX11\nA474',
+   '','','','',
+   'A474','4517XXXXXXXXXX11','','CA_GALICIA','MA'],
+  ['23/12/2025', 400000, 0, 1875905.06,
+   'EXTRACCION CAJERO','','EXTRACCION',
+   'EXTRACCION CAJERO\n\n\n4517XXXXXXXXXX11\nA474',
+   '','','','',
+   'A474','4517XXXXXXXXXX11','','CA_GALICIA','MA'],
+
+  // ── INTERES CAPITALIZADO ──────────────────────────────────────────────────
+  ['25/03/2026', 0, 91.50, 3729670.35,
+   'INTERES CAPITALIZADO','','INTERES',
+   'INTERES CAPITALIZADO\nMarzo 2026',
+   'Marzo 2026','','','',
+   '','','','CA_GALICIA','MA'],
+  ['23/02/2026', 0, 4.35, 174280.81,
+   'INTERES CAPITALIZADO','','INTERES',
+   'INTERES CAPITALIZADO\nFebrero 2026',
+   'Febrero 2026','','','',
+   '','','','CA_GALICIA','PAM'],
+
+  // ── REINTEGRO PROMOCION GALICIA MODO ─────────────────────────────────────
+  ['20/03/2026', 0, 25000, 214136.74,
+   'REINTEGRO PROMOCION GALICIA MODO','','REINTEGRO',
+   'REINTEGRO PROMOCION GALICIA MODO\n20% en Disco & Vea',
+   '20% en Disco & Vea','','','',
+   '','','','CA_GALICIA','PAM'],
+
+  // ── REINTEGRO PROMOCION GALICIA ───────────────────────────────────────────
+  ['09/03/2026', 0, 10775, 195031.04,
+   'REINTEGRO PROMOCION GALICIA','','REINTEGRO',
+   'REINTEGRO PROMOCION GALICIA\nRest. Jockey Club Arg.',
+   'Rest. Jockey Club Arg.','','','',
+   '','','','CA_GALICIA','PAM'],
+  ['08/01/2026', 0, 3200, 40654.67,
+   'REINTEGRO PROMOCION GALICIA','','REINTEGRO',
+   'REINTEGRO PROMOCION GALICIA\nFreddo',
+   'Freddo','','','',
+   '','','','CA_GALICIA','PAM'],
+
+  // ── IVA (PAM) ─────────────────────────────────────────────────────────────
+  ['12/01/2026', 24897.82, 0, 241564.18,
+   'IVA','','CARGO_BANCARIO',
+   'IVA',
+   '','','','',
+   '','','','CA_GALICIA','PAM'],
+
+  // ── COM. CAJA DE SEGURIDAD (PAM) ──────────────────────────────────────────
+  ['12/01/2026', 118561.04, 0, 266462,
+   'COM. CAJA DE SEGURIDAD','','CARGO_BANCARIO',
+   'COM. CAJA DE SEGURIDAD',
+   '','','','',
+   '','','','CA_GALICIA','PAM'],
+];
+
+// Verificar que todas las filas tienen 17 elementos
+rows.forEach((row, i) => {
+  if (row.length !== 17) {
+    console.error(`ERROR fila ${i}: tiene ${row.length} elementos (esperado 17)`);
+    console.error(row);
+  }
+});
+
+const wb = XLSX.readFile('exports_app/Extracto_00006682461 - CA MA Pesos.xlsx');
+
+// Eliminar solapa anterior si existe
+const idx = wb.SheetNames.indexOf('Propuesta Import');
+if (idx !== -1) {
+  wb.SheetNames.splice(idx, 1);
+  delete wb.Sheets['Propuesta Import'];
+}
+
+const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+ws['!cols'] = [
+  {wch:12},{wch:14},{wch:14},{wch:14},
+  {wch:34},{wch:18},{wch:22},
+  {wch:55},
+  {wch:38},{wch:20},
+  {wch:28},{wch:38},
+  {wch:18},{wch:22},{wch:22},{wch:12},{wch:8}
+];
+
+XLSX.utils.book_append_sheet(wb, ws, 'Propuesta Import');
+XLSX.writeFile(wb, 'exports_app/Extracto_00006682461 - CA MA Pesos.xlsx');
+console.log('OK - ' + rows.length + ' filas en Propuesta Import');

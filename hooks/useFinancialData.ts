@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { supabase, type CuentaContable, type MovimientoMSA } from "@/lib/supabase"
+import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
 
 export type ResumenFinanciero = {
   mes: number
@@ -55,17 +56,21 @@ export function useFinancialData(año: number, semestre?: number) {
           fechaInicio = `${año}-07-01`
         }
 
-        // Templates activos con su agrupadora y flag multi-cuenta
-        const { data: allTemplates } = await supabase
+        // Templates con su agrupadora, tipo y flag multi-cuenta.
+        // Sin filtrar por `activo`: un movimiento histórico de un template dado de baja igual
+        // tiene que clasificar bien (si no, cae al plan de cuentas o al signo del monto).
+        const { data: allTemplates, error: templatesError } = await supabase
           .from("egresos_sin_factura")
-          .select("id, nombre_referencia, cuenta_agrupadora, es_multi_cuenta")
-          .eq("activo", true)
+          .select("id, nombre_referencia, cuenta_agrupadora, es_multi_cuenta, tipo")
 
-        const templateMap = new Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean }>()
+        if (templatesError) console.error("Error al obtener templates:", templatesError)
+
+        const templateMap = new Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean, tipo: TipoCuenta | null }>()
         ;(allTemplates || []).forEach((t: any) => templateMap.set(t.id, {
           nombre: t.nombre_referencia,
           agrupadora: t.cuenta_agrupadora || null,
           esMulti: !!t.es_multi_cuenta,
+          tipo: t.tipo || null,
         }))
 
         // Movimientos del período
@@ -137,7 +142,7 @@ function construirMapaCanonizacionTotalizadoras(cuentas: CuentaContable[]): Map<
 function procesarResumenFinanciero(
   movimientos: any[],
   cuentas: CuentaContable[],
-  templateMap: Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean }>
+  templateMap: Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean, tipo: TipoCuenta | null }>
 ): ResumenFinanciero[] {
   const cuentasMap = new Map(cuentas.map((c) => [c.categ, c]))
   const canonicalTotalizadoras = construirMapaCanonizacionTotalizadoras(cuentas)
@@ -165,10 +170,12 @@ function procesarResumenFinanciero(
     let tipo: string | undefined
 
     if (templateInfo && !templateInfo.esMulti) {
-      // Template normal: la agrupadora viene del template, el detalle es el nombre del template
+      // Template normal: la agrupadora viene del template, el detalle es el nombre del template.
+      // El tipo lo declara el propio template; el plan de cuentas y el signo son sólo fallback
+      // para templates nuevos sin clasificar (ver `resolverTipo`).
       agrupadora = canonicalizar(templateInfo.agrupadora) || AGRUPADORA_SIN_AGRUPAR
       detalle = templateInfo.nombre
-      tipo = cuentaInfo?.tipo || (monto >= 0 ? "ingreso" : "egreso")
+      tipo = resolverTipo(templateInfo.tipo, cuentaInfo?.tipo as TipoCuenta | undefined, monto).tipo
     } else if (cuentaInfo) {
       // Sin template normal (multi-cuenta o sin template): usar la cuenta contable
       agrupadora = canonicalizar(cuentaInfo.nombre_totalizadora) || AGRUPADORA_SIN_AGRUPAR

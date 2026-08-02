@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
@@ -916,10 +917,14 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
+              </TabsTrigger>
+              <TabsTrigger value="evolucion" className="flex items-center gap-2">
+                📈
+                Evolución Rodeo
               </TabsTrigger>
               <TabsTrigger value="cria" className="flex items-center gap-2">
                 🐮
@@ -941,6 +946,9 @@ export function VistaSectorProductivo() {
 
             <TabsContent value="hacienda">
               <TabHacienda />
+            </TabsContent>
+            <TabsContent value="evolucion">
+              <TabEvolucionRodeo />
             </TabsContent>
             <TabsContent value="cria">
               <TabTerneros modo="cria" />
@@ -4038,13 +4046,17 @@ function SubTabOrdenesAplicacion() {
     }))
 
     // Construir grupos resumidos
-    const hembras = asignaciones.filter(t => t.sexo === 'Hembra')
+    // Los 4 grupos son EXCLUYENTES. Antes una hembra marcada caia en 'hembras' Y en
+    // 'toritos' a la vez (doble conteo), porque 'toritos' no filtraba por sexo.
+    const hembras = asignaciones.filter(t => t.sexo === 'Hembra' && !t.es_torito)
     const machos = asignaciones.filter(t => t.sexo === 'Macho' && !t.es_torito)
-    const toritos = asignaciones.filter(t => t.es_torito)
+    const toritos = asignaciones.filter(t => t.sexo === 'Macho' && t.es_torito)
+    const ternerasRep = asignaciones.filter(t => t.sexo === 'Hembra' && t.es_torito)
 
     const catTerneraRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
     const catTerneroRecria = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
     const catTorito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
+    const catVaqRep = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'vaquillona de reposicion')
 
     const gruposInit: GrupoAsignacion[] = [
       {
@@ -4067,6 +4079,13 @@ function SubTabOrdenesAplicacion() {
         categoriaDestinoId: catTorito?.id || '',
         categoriaDestinoNombre: catTorito?.nombre || 'Torito',
         seleccionIndividual: false, individuosSeleccionados: toritos.map(t => t.id),
+      },
+      {
+        key: 'terneras_rep', label: 'Terneras reposición', emoji: '🐄', color: 'violet',
+        total: ternerasRep.length, cantidad: ternerasRep.length,
+        categoriaDestinoId: catVaqRep?.id || '',
+        categoriaDestinoNombre: catVaqRep?.nombre || 'Vaquillona de Reposicion',
+        seleccionIndividual: false, individuosSeleccionados: ternerasRep.map(t => t.id),
       },
     ].filter(g => g.total > 0)
 
@@ -4120,18 +4139,14 @@ function SubTabOrdenesAplicacion() {
       .map(c => c.id)
   }
 
+  // `es_torito` esta SOBRECARGADO: en machos marca toritos, en hembras marca las
+  // retenidas para reposicion. Hay que leerlo SIEMPRE junto con el sexo (misma
+  // convencion que tab-terneros.tsx). Antes devolvia 'Torito' para cualquier marcado,
+  // asi que una ternera de reposicion se proponia como Torito.
   const categoriaPropuesta = (sexo: string, es_torito: boolean | null): string => {
-    if (es_torito) {
-      const torito = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'torito')
-      return torito?.id || ''
-    }
-    if (sexo === 'Macho') {
-      const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternero recria')
-      return rec?.id || ''
-    }
-    // Hembra: default Ternera Recria
-    const rec = categoriasHacienda.find(c => c.nombre.toLowerCase() === 'ternera recria')
-    return rec?.id || ''
+    const cat = (n: string) => categoriasHacienda.find(c => c.nombre.toLowerCase() === n)?.id || ''
+    if (sexo === 'Macho') return es_torito ? cat('torito') : cat('ternero recria')
+    return es_torito ? cat('vaquillona de reposicion') : cat('ternera recria')
   }
 
   const categoriasDestinoRecria = () => {
@@ -4151,9 +4166,10 @@ function SubTabOrdenesAplicacion() {
       }
       // Cantidad = total → seleccionar todos automáticamente
       const todos = ternerosParaAsignar.filter(t => {
-        if (key === 'hembras') return t.sexo === 'Hembra'
+        if (key === 'hembras') return t.sexo === 'Hembra' && !t.es_torito
         if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
-        if (key === 'toritos') return t.es_torito
+        if (key === 'toritos') return t.sexo === 'Macho' && t.es_torito
+        if (key === 'terneras_rep') return t.sexo === 'Hembra' && t.es_torito
         return false
       }).map(t => t.id)
       return { ...g, cantidad: cant, seleccionIndividual: false, individuosSeleccionados: todos }
@@ -4184,9 +4200,10 @@ function SubTabOrdenesAplicacion() {
   // Obtener terneros de un grupo
   const ternerosDelGrupo = (key: string) => {
     return ternerosParaAsignar.filter(t => {
-      if (key === 'hembras') return t.sexo === 'Hembra'
+      if (key === 'hembras') return t.sexo === 'Hembra' && !t.es_torito
       if (key === 'machos') return t.sexo === 'Macho' && !t.es_torito
-      if (key === 'toritos') return t.es_torito
+      if (key === 'toritos') return t.sexo === 'Macho' && t.es_torito
+      if (key === 'terneras_rep') return t.sexo === 'Hembra' && t.es_torito
       return false
     })
   }

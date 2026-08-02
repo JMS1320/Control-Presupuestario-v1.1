@@ -1,4 +1,4 @@
-# DISEÑO_TEMPLATES.md — Arquitectura Completa de Templates
+# MODULO_TEMPLATES.md — Arquitectura Completa de Templates
 
 > Referencia definitiva para entender los tipos de templates, flags de BD, flujo Pago Manual,
 > comportamiento del motor de conciliación, y guards de conciliación manual.

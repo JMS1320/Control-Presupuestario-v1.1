@@ -16,6 +16,7 @@ import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Calendar, Plus, Save, ArrowLeft, ArrowRight, Eye, Check } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import type { TipoCuenta } from "@/lib/presupuesto/templates"
 
 // Tipos para el wizard
 interface DatosBasicos {
@@ -23,6 +24,12 @@ interface DatosBasicos {
   es_bidireccional: boolean
   es_multi_cuenta: boolean
   categ: string
+  /**
+   * Naturaleza del template. Decide si el Presupuesto lo proyecta y en qué sección del
+   * Dashboard suma. Se sugiere desde el plan de cuentas al elegir la categoría, pero se
+   * guarda en el template: es su dato, no una copia.
+   */
+  tipo: TipoCuenta
   cuenta_agrupadora: string
   centro_costo: string
   nombre_referencia: string
@@ -30,6 +37,8 @@ interface DatosBasicos {
   cuit_quien_cobra: string
   nombre_quien_cobra: string
   monto_base: number
+  periodicidad: 'anual' | 'bianual'   // anual (calendario) | bianual (campaña jul-jun)
+  aplica_generacion: boolean          // entra a la regeneración automática de cuotas
 }
 
 interface ConfiguracionRecurrencia {
@@ -81,6 +90,8 @@ const MESES = [
 export function WizardTemplatesEgresos() {
   const [categoriasTemplates, setCategoriasTemplates] = useState<string[]>([])
   const [cuentasAgrupadoras, setCuentasAgrupadoras] = useState<string[]>([])
+  /** `categ` (en mayúsculas) → tipo del plan de cuentas. Sólo para sugerir. */
+  const [tipoPorCateg, setTipoPorCateg] = useState<Record<string, TipoCuenta>>({})
   const [state, setState] = useState<WizardState>({
     paso: 1,
     datos_basicos: {
@@ -88,13 +99,16 @@ export function WizardTemplatesEgresos() {
       es_bidireccional: false,
       es_multi_cuenta: false,
       categ: '',
+      tipo: 'egreso',
       cuenta_agrupadora: '',
       centro_costo: '',
       nombre_referencia: '',
       responsable: '',
       cuit_quien_cobra: '',
       nombre_quien_cobra: '',
-      monto_base: 0
+      monto_base: 0,
+      periodicidad: 'anual',
+      aplica_generacion: true
     },
     configuracion: {
       tipo: 'mensual',
@@ -120,6 +134,18 @@ export function WizardTemplatesEgresos() {
           setCategoriasTemplates(categsUnicas)
           setCuentasAgrupadoras(agrupadoras)
         }
+
+        // El tipo del plan de cuentas, para sugerirlo al elegir la categoría.
+        // Es sólo una sugerencia: el valor que manda es el que se guarda en el template.
+        const { data: plan, error: planError } = await supabase
+          .from('cuentas_contables')
+          .select('categ, tipo')
+        if (planError) console.error('Error al cargar el plan de cuentas:', planError)
+        const mapa: Record<string, TipoCuenta> = {}
+        for (const c of ((plan || []) as any[])) {
+          if (c.categ && c.tipo) mapa[String(c.categ).trim().toUpperCase()] = c.tipo
+        }
+        setTipoPorCateg(mapa)
       } catch (error) {
         console.error('Error en cargarOpciones:', error)
       }
@@ -225,7 +251,7 @@ export function WizardTemplatesEgresos() {
   }
 
   // Función para actualizar datos básicos
-  const actualizarDatosBasicos = (campo: keyof DatosBasicos, valor: string | number) => {
+  const actualizarDatosBasicos = (campo: keyof DatosBasicos, valor: string | number | boolean) => {
     setState(prev => ({
       ...prev,
       datos_basicos: { ...prev.datos_basicos, [campo]: valor }
@@ -277,11 +303,17 @@ export function WizardTemplatesEgresos() {
       // 2. Crear renglón de egreso
       const esAbierto = state.datos_basicos.tipo_template === 'abierto'
       const esMultiCuenta = state.datos_basicos.es_multi_cuenta
+      // "año": anual = año calendario; bianual = etiqueta de campaña (jul-jun), p.ej. "26/27"
+      const esBianual = state.datos_basicos.periodicidad === 'bianual'
+      const yy = año_actual % 100
+      const etiquetaCampana = (new Date().getMonth() + 1) >= 7 ? `${yy}/${yy + 1}` : `${yy - 1}/${yy}`
+      const valorAnio = esBianual ? etiquetaCampana : String(año_actual)
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
           template_master_id: templateMaster.id,
           categ: esMultiCuenta ? null : state.datos_basicos.categ,
+          tipo: state.datos_basicos.tipo,
           cuenta_agrupadora: esMultiCuenta ? null : (state.datos_basicos.cuenta_agrupadora || null),
           centro_costo: state.datos_basicos.centro_costo,
           nombre_referencia: state.datos_basicos.nombre_referencia,
@@ -293,7 +325,9 @@ export function WizardTemplatesEgresos() {
           es_bidireccional: state.datos_basicos.es_bidireccional, // multi-cuenta + bidireccional ahora conviven (cobros con sub-cuentas)
           es_multi_cuenta: esMultiCuenta,
           configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
-          año: año_actual,
+          año: valorAnio,
+          periodicidad: state.datos_basicos.periodicidad,
+          aplica_generacion: state.datos_basicos.aplica_generacion,
           activo: true
         })
         .select()
@@ -344,13 +378,16 @@ export function WizardTemplatesEgresos() {
           es_bidireccional: false,
           es_multi_cuenta: false,
           categ: '',
+          tipo: 'egreso',
           cuenta_agrupadora: '',
           centro_costo: '',
           nombre_referencia: '',
           responsable: '',
           cuit_quien_cobra: '',
           nombre_quien_cobra: '',
-          monto_base: 0
+          monto_base: 0,
+          periodicidad: 'anual',
+          aplica_generacion: true
         },
         configuracion: {
           tipo: 'mensual',
@@ -464,6 +501,44 @@ export function WizardTemplatesEgresos() {
                   </div>
                 )}
 
+                {/* Periodicidad: anual (calendario) vs bianual (campaña jul-jun) */}
+                <div className="mt-4">
+                  <Label className="text-sm font-medium">Periodicidad *</Label>
+                  <RadioGroup
+                    value={state.datos_basicos.periodicidad}
+                    onValueChange={(value: 'anual' | 'bianual') => actualizarDatosBasicos('periodicidad', value)}
+                    className="mt-2 flex gap-6"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="anual" id="per_anual" />
+                      <Label htmlFor="per_anual" className="font-normal">
+                        <span className="font-medium">Anual</span>
+                        <span className="text-sm text-gray-500 ml-2">(año calendario, ej. 2026)</span>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="bianual" id="per_bianual" />
+                      <Label htmlFor="per_bianual" className="font-normal">
+                        <span className="font-medium">Bianual</span>
+                        <span className="text-sm text-gray-500 ml-2">(campaña jul–jun, ej. 26/27)</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {/* Aplica a la regeneración automática de cuotas (renovar campaña/año) */}
+                <div className="mt-4 flex items-center space-x-2">
+                  <Checkbox
+                    id="aplica_generacion"
+                    checked={state.datos_basicos.aplica_generacion}
+                    onCheckedChange={(checked) => actualizarDatosBasicos('aplica_generacion', checked === true)}
+                  />
+                  <Label htmlFor="aplica_generacion" className="font-normal">
+                    <span className="font-medium">♻️ Entra a la regeneración automática</span>
+                    <span className="text-sm text-gray-500 ml-2">(se le crean las cuotas del próximo período al renovar). Destildar los que se cargan solos por conciliación.</span>
+                  </Label>
+                </div>
+
                 {/* Opción Bidireccional */}
                 <div className="mt-4 flex items-center space-x-2">
                   <Checkbox
@@ -529,7 +604,13 @@ export function WizardTemplatesEgresos() {
                       id="categ"
                       list="categs-existentes"
                       value={state.datos_basicos.categ}
-                      onChange={(e) => actualizarDatosBasicos('categ', e.target.value)}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        actualizarDatosBasicos('categ', v)
+                        // Si esa categoría está en el plan, sugerir su tipo (se puede pisar abajo).
+                        const sug = tipoPorCateg[v.trim().toUpperCase()]
+                        if (sug) actualizarDatosBasicos('tipo', sug)
+                      }}
                       placeholder="Seleccionar o escribir nueva categoría"
                     />
                     <datalist id="categs-existentes">
@@ -561,6 +642,31 @@ export function WizardTemplatesEgresos() {
                     </datalist>
                   </div>
                 )}
+
+                {/* Tipo — decide si el Presupuesto lo proyecta y dónde suma en el Dashboard */}
+                <div>
+                  <Label htmlFor="tipo">Tipo *</Label>
+                  <Select
+                    value={state.datos_basicos.tipo}
+                    onValueChange={(v) => actualizarDatosBasicos('tipo', v as TipoCuenta)}
+                  >
+                    <SelectTrigger id="tipo">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="egreso">Egreso — gasto de verdad (se presupuesta)</SelectItem>
+                      <SelectItem value="distribucion">Distribución — retiro de socios (se presupuesta)</SelectItem>
+                      <SelectItem value="financiero">Financiero — la plata no sale de la empresa (NO se presupuesta)</SelectItem>
+                      <SelectItem value="ingreso">Ingreso — entra plata</SelectItem>
+                      <SelectItem value="NO">No computar</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {tipoPorCateg[state.datos_basicos.categ.trim().toUpperCase()]
+                      ? 'Sugerido desde el plan de cuentas por la categoría elegida. Se puede cambiar.'
+                      : 'Colocaciones, transferencias entre cuentas propias y pago de tarjeta son "financiero": no se proyectan como gasto.'}
+                  </p>
+                </div>
 
                 <div>
                   <Label htmlFor="centro_costo">Centro de Costo</Label>
@@ -870,6 +976,11 @@ export function WizardTemplatesEgresos() {
                         </div>
                       )}
                       <div><strong>Categoría:</strong> {state.datos_basicos.categ}</div>
+                      <div><strong>Tipo:</strong> {state.datos_basicos.tipo}
+                        {state.datos_basicos.tipo === 'financiero' && (
+                          <span className="text-violet-700"> — no se va a presupuestar</span>
+                        )}
+                      </div>
                       {state.datos_basicos.cuenta_agrupadora && (
                         <div><strong>Cuenta Agrupadora:</strong> {state.datos_basicos.cuenta_agrupadora}</div>
                       )}

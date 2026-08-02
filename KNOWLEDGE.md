@@ -162,6 +162,11 @@
 - Tabla `templates_master` para contenedor anual
 - Validaciones constraint y tipos
 
+### **🔗 Templates — hallazgos (2026-07-19, generador Renovar campaña):**
+- **El vínculo movimiento↔cuota de template es la columna `template_cuota_id`** en las tablas de movimientos (`public.msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `msa.caja_ams/caja_general/caja_sigot`, `ma.ma_galicia`, tarjetas). NO hay FK formal (se linkea por esa columna sin constraint). Para saber si una cuota está conciliada de verdad, buscar su `id` en `template_cuota_id`.
+- **Templates ABIERTOS son año-agnósticos:** el selector de Pago Manual (`vista-cash-flow.tsx:1260`) los trae por `tipo_template='abierto'` + `activo=true`, **sin filtrar `año`** → un abierto (Caja, comisiones) **persiste entre campañas/años solo**, no necesita "renovarse". Los que se renuevan (generan cuotas por período) son los **fijo** + los que tengan `aplica_generacion=true`.
+- **anual vs bianual** ya NO se infiere del string `año` — es la columna `periodicidad` ('anual' calendario | 'bianual' campaña jul-jun). El wizard la captura. Ver [[project_generador_renovacion_templates]].
+
 ### **🔧 Validaciones CATEG:**
 - Dropdown automático desde `cuentas_contables`
 - 4 modos validación: estricto, crear, lista, dropdown
@@ -769,3 +774,297 @@ ARCA_WSFE_URL=https://wswhomo.afip.gov.ar/wsfev1/service.asmx
 ---
 
 *📝 Final del archivo - Total secciones: 6 principales + índice navegable*
+---
+
+## Fechas de corte con "-31" fijo — ROMPE LA QUERY ENTERA `#fechas #supabase #bug #2026-07-29`
+**Contexto**: en Presupuesto, al ampliar el horizonte de 13 a 24 meses **desaparecieron todos
+los templates** de la vista (sueldos e ingresos seguían bien).
+
+**Causa**: el tope del rango se armaba concatenando `-31`:
+```ts
+const fechaHasta = `${ultimoMes.anio}-${String(ultimoMes.mes).padStart(2,"0")}-31`
+```
+Con 13 meses caía en julio (31 días, válido). Con 24 caía en **junio** → `"2028-06-31"` →
+Postgres: `date/time field value out of range`. La query fallaba **entera** y devolvía `null`.
+
+**Por qué fue invisible**: el código hacía `const { data: cuotas } = await …` **sin mirar
+`error`**. Sin cuotas, el filtro "agrupadores con algún monto > 0" descartaba todos los
+agrupadores → tabla sin templates, sin ningún mensaje.
+
+**Solución**: tope **exclusivo** en el primer día del mes siguiente + `.lt()` en vez de `.lte()`:
+```ts
+const finExclusivo = new Date(ultimoMes.anio, ultimoMes.mes, 1) // mes es 1-based → mes siguiente
+const fechaHasta = `${finExclusivo.getFullYear()}-${String(finExclusivo.getMonth()+1).padStart(2,"0")}-01`
+… .gte("fecha_estimada", fechaDesde).lt("fecha_estimada", fechaHasta)
+```
+**NO repetir**: armar fechas de fin de mes por concatenación (`-31`, `-30`). Usar día 0 del mes
+siguiente (`new Date(a, m, 0)`) o rango exclusivo.
+**Lección transversal**: **siempre desestructurar `error`** en las queries de supabase-js y
+loguearlo. Un `data` en `null` silencioso se ve igual que "no hay datos".
+**Tags**: `#fechas` `#supabase` `#silent-failure` `#presupuesto`
+
+---
+
+## Componente definido DENTRO de otro — el input pierde el foco al tipear `#react #ui #bug #2026-07-29`
+**Síntoma**: en el modal del ciclo ganadero, al editar un porcentaje se perdía la selección
+después de **cada tecla**. Borrabas un dígito y tenías que volver a hacer click para borrar el
+siguiente.
+
+**Causa**: `Seccion` estaba definido **adentro** de `ModalCiclo`:
+```tsx
+function ModalCiclo(...) {
+  const Seccion = ({ titulo, children }) => (<div>…</div>)   // ❌
+  return <Seccion titulo="…"><Input value={f.x} onChange={…} /></Seccion>
+}
+```
+Cada render crea una **función nueva**, o sea un **tipo de componente distinto** para React →
+desmonta y remonta todo el subárbol → el `<Input>` se recrea y pierde foco y selección.
+
+**Solución**: definirlo a **nivel de módulo**.
+
+**Ojo con la distinción**: `const campo = (k, label) => (<div>…</div>)` invocado como
+`{campo("x", "X")}` **NO tiene el problema** — devuelve elementos inline, no crea un tipo de
+componente. El problema es sólo cuando se usa como `<Componente>` en JSX.
+
+**NO repetir**: definir componentes (usados como `<X/>`) dentro del cuerpo de otro componente.
+**Tags**: `#react` `#focus` `#remount` `#modal`
+
+---
+
+## Modales más altos que la pantalla — se corta el fondo `#ui #modales #2026-07-30`
+**Síntoma**: en modales largos no se llegaba a los botones de abajo; había que hacer zoom out
+del navegador. Pasaba en **varios** modales del sistema, no en uno.
+
+**Causa**: `components/ui/dialog.tsx` → `DialogContent` no tenía `max-height` ni scroll. Los
+modales que sí funcionaban era porque cada uno se había puesto su `max-h-[90vh] overflow-y-auto`
+a mano. Al 2026-07-30 había **~30 sin él**.
+
+**Solución**: se arregla **UNA vez en el componente base**, no modal por modal:
+```tsx
+// components/ui/dialog.tsx — DialogContent
+"… max-w-lg max-h-[90vh] overflow-y-auto …"
+```
+Los que ya traían su propio `max-h` lo siguen pisando por orden de clases.
+
+**Regla**: cuando algo se repite en muchos componentes que usan un primitivo de `components/ui/`,
+mirar primero si se arregla en el primitivo. Es la diferencia entre un cambio y treinta.
+**Tags**: `#dialog` `#shadcn` `#overflow` `#un-solo-lugar`
+
+---
+
+## Input que se reformatea mientras se escribe: imposible tipear `#ui #inputs #bug #2026-07-30`
+
+El usuario quiso cargar 85 % y 15 % de ración y quedaron 8 % y 10 %. No fue error suyo.
+
+El campo mostraba `value={fmt(valorDelEstado)}` y guardaba en `onChange`. Al tipear `8` el estado
+pasaba a 8, el `value` se volvía `"8,00"` y el cursor saltaba al final: el `5` siguiente caía
+después de los decimales. **Cualquier número de más de un dígito era imposible de escribir.**
+
+**La regla**: un input controlado no puede reformatear su contenido en cada tecla. Mientras el
+campo está tocado hay que conservar el **texto crudo** y parsear/formatear recién en `onBlur`.
+
+```tsx
+const [crudo, setCrudo] = useState<string | null>(null)
+value={crudo ?? fmt(valor)}
+onChange={e => setCrudo(e.target.value)}
+onBlur={() => { if (crudo !== null) { onCommit(parse(crudo)); setCrudo(null) } }}
+```
+
+Es la contracara del bug de parseo es-AR (más abajo): allá el problema era **leer** el formato,
+acá es **imponerlo antes de tiempo**. Los dos salen de formatear y parsear en el mismo campo.
+
+**Ojo con el guardado**: si el commit pasa en `onBlur`, un `onBlur={() => guardar(item)}` al lado
+lee el estado **anterior** — los dos corren en el mismo tick. El guardado tiene que recibir los
+cambios explícitos, no leerlos del estado.
+
+**Tags**: `#input-controlado` `#onBlur` `#texto-crudo` `#es-ar`
+
+---
+
+## "El último mes" no se sabe hasta tener la lista entera `#fechas #calculo #bug #2026-07-30`
+
+Un costo marcado "al terminar" (la cosecha) nunca aparecía en un tramo que termina un día 1
+— o sea, en el caso normal de un cultivo (oct → abr).
+
+El recorrido mes a mes marcaba `esUltimo = fin >= hasta` sobre la marcha. En marzo `fin` es el
+31/3, menor que `hasta` (1/4). Y abril tiene **cero días** de tramo, así que se descartaba antes
+de evaluarse. Ningún mes quedaba marcado como último y el costo se perdía en silencio.
+
+**La regla**: "el primero" y "el último" son propiedades de la **lista filtrada**, no de cada
+elemento mientras se lo genera. Dos pasadas: armar los buckets con contenido, después recorrerlos
+por índice. Vale para cualquier reparto en el que algunos períodos pueden quedar vacíos.
+
+**Tags**: `#dos-pasadas` `#primero-ultimo` `#periodos-vacios` `#mes-partido`
+
+---
+
+## Antes de decir "esa columna está muerta", buscarla en el código `#deuda #datos #2026-07-31`
+
+Se dio por muerta `egresos_sin_factura.codigo_contable` porque 154 de 173 filas decían
+`"No lleva"` o `null`. Estaba **en uso**: el motor de conciliación la lee de las reglas y la
+estampa en el movimiento, y `"No lleva"` es un **valor con significado** — hay una función
+`esValorContableValido()` que busca exactamente esa cadena para saber que ese movimiento no
+lleva código contable.
+
+**La regla**: una columna con muchos valores repetidos o "vacíos aparentes" no está muerta hasta
+que se la busca en el código. Un `"No lleva"` puede ser una decisión registrada, no un hueco.
+Muerta es la que no aparece en ningún `.ts`/`.tsx` **y** está NULL en el 100 % de las filas
+(en este proyecto, sólo `cuentas_contables.grupo_cuenta`).
+
+**Tags**: `#columna-muerta` `#valor-centinela` `#antes-de-borrar`
+
+---
+
+## Etiqueta denormalizada: mirar quién la usa como IDENTIDAD `#modelado #ids #2026-07-31`
+
+Antes de renombrar una etiqueta que está copiada en muchas tablas, la pregunta no es *"¿en
+cuántas filas está?"* sino **"¿en cuáles es la identidad y no una copia para mostrar?"**.
+
+Caso concreto: `categ` estaba en 776 filas y parecía intocable. Pero el extracto bancario ya
+vincula por **UUID** (612 de 661 filas tienen `template_id`, `comprobante_arca_id`, etc.) — ahí
+`categ` es sólo una copia para no hacer joins. El **único** lugar donde el texto es la identidad
+real son las **77 reglas de conciliación**.
+
+El riesgo pasó de "776 filas" a "77 reglas", que es otra conversación. Y las reglas son
+justamente las peores, porque **clasifican hacia adelante**: si escriben un nombre que ya no
+existe, cada registro nuevo nace huérfano y nadie se entera.
+
+**Corolario**: el orden de una migración así es siempre el mismo — **primero** que todo apunte
+por número, **después** renombrar. Al revés se rompe.
+
+**Tags**: `#renombrar` `#denormalizado` `#identidad-vs-copia` `#orden-de-migracion`
+
+---
+
+## Netear stock: cruzar por NOMBRE de categoría duplica `#ganaderia #modelado #2026-07-30`
+
+Al desglosar la venta de hacienda por categoría, el disponible salía duplicado.
+
+**Por qué**: el mismo animal cambia de nombre según cuándo se vende. Sale `Ternero al Pie` si se
+vende dentro de los 45 días del destete y `Ternero Recria` si se vende después
+(`categoriaSegunFecha`). Entonces la existencia del destete (`Ternero al Pie`) y el lote que la
+consumía podían quedar bajo nombres distintos: no neteaban, y las cabezas se contaban dos veces.
+
+**La regla**: para restar stock hay que cruzar por **de dónde salió el animal**, no por cómo se
+lo llama hoy. La identidad de la tropa (`pesada|macho`, `ciclo:<uuid>|hembra`) es estable; el
+nombre de la categoría es una etiqueta de presentación que depende de una fecha.
+
+Vale para cualquier stock cuya categoría dependa del momento: hacienda, granos por posición,
+cualquier cosa que se reclasifique con el tiempo. Si la clave de agrupación puede cambiar sola,
+no sirve como clave de neteo.
+
+**Y el promedio del saldo no es el promedio general.** Si se retiran los más pesados, los que
+quedan pesan menos. Hay que restar cabezas **y** kilos, medidos a la **misma fecha** — mezclar un
+peso de hoy con uno proyectado a la venta (que ya tiene la ganancia diaria adentro) mete kilos
+que todavía no existen.
+
+**Tags**: `#neteo` `#doble-conteo` `#clave-estable` `#promedio-ponderado`
+
+---
+
+## Parseo es-AR: el punto de miles rompe el round-trip `#es-ar #numeros #bug #2026-07-30`
+**Rompió dos veces en el mismo módulo**, con síntomas distintos:
+1. **Porcentajes**: los defaults venían en fracción con punto (`0.105`) y el parser de montos
+   borra el punto → `105` → `/100` → **IVA 105%**. (`0.85` daba bien de casualidad.)
+2. **Precios**: la app formatea con `toLocaleString("es-AR")` → muestra `5.700,00`; ese texto
+   vuelve a entrar al parser, que hacía `parseFloat("5.700")` → **5,7**.
+
+**La raíz es la misma**: el punto es **separador de miles** en es-AR pero **decimal** para mucha
+gente que tipea, y encima el formateo de salida mete puntos que la entrada tiene que entender.
+Un `replace(/\./g,'')` a secas rompe `0.5`; un `parseFloat` a secas rompe `5.700`.
+
+**Solución**: `lib/format/numero.ts` → `parseNumeroAR()`, tolerante a las dos escrituras:
+```
+hay coma            → coma decimal, puntos miles    "7.000,50" → 7000.5
+empieza con "0."    → punto decimal                 "0.105"    → 0.105
+punto + 3 dígitos   → eran miles                    "5.700"    → 5700
+si no               → punto decimal                 "5.75"     → 5.75
+```
+Más `fmtNumeroAR()` (inverso) y `parsePorcentajeAR()` (% → fracción).
+
+**NO repetir**: escribir el parser inline en cada componente. Si un campo se **formatea** al
+mostrarlo, su parser tiene que poder **leer ese mismo formato**.
+**Tags**: `#parseAR` `#round-trip` `#toLocaleString` `#un-solo-lugar`
+
+---
+
+## Dos tablas con la misma columna no siempre son duplicación `#modelado #2026-07-31`
+
+Se resistió durante toda una conversación la idea de poner `tipo` en `egresos_sin_factura`
+porque `cuentas_contables.tipo` ya existía: "dos fuentes de verdad, van a divergir". El
+argumento estaba mal, y el usuario lo cortó con *"ya nos olvidamos de cómo trabaja los
+templates dentro de cuentas"*.
+
+**La pregunta correcta no es "¿el dato ya existe en otra tabla?" sino "¿clasifica a la misma
+población?"**. Acá no: `cuentas_contables.tipo` clasifica **facturas** (que llegan por
+`cuenta_contable`), `egresos_sin_factura.tipo` clasifica **templates** (que no tienen factura —
+por eso son templates). Cada tabla clasifica sus propias filas. No hay nada que pueda divergir
+porque nunca describen la misma cosa.
+
+Lo que sí era duplicación real: llegar al tipo de un template **cruzando por el nombre de la
+categoría**. Eso fallaba en **70 de 123 templates activos** cuya `categ` no está en el plan, y
+el fallback por signo mandaba los retiros de socios a egresos operativos ($43,65 M).
+
+**Señal de alarma para la próxima**: si para saber un atributo de X hay que hacer un join por
+texto a una tabla de Y, probablemente el atributo sea de X. La normalización que obliga a
+adivinar es peor que la columna repetida.
+
+**Corolario**: al agregar la columna, la precedencia va en **una** función
+(`resolverTipo()`), no repetida en cada consumidor. Los fallbacks se dejan para lo que se cree
+de acá en adelante, y el que se usó se **reporta** (`origen: 'template' | 'plan' | 'signo'`)
+para poder marcar en pantalla cuándo el sistema adivinó.
+
+**Tags**: `#duplicacion-aparente` `#poblaciones-distintas` `#join-por-texto` `#cascada`
+
+---
+
+## Un filtro `activo = true` puede romper datos históricos `#bugs #2026-07-31`
+
+`useFinancialData` cargaba los templates con `.eq("activo", true)` para armar el resumen del
+dashboard. Parece razonable — pero el resumen mira **movimientos pasados**, y un movimiento de
+hace ocho meses cuyo template se dio de baja **perdía su clasificación** y caía al fallback.
+
+**La regla**: filtrar por `activo` sirve para **elegir** (un desplegable, un alta). Para
+**interpretar el pasado** hay que traer todo: lo que ya pasó, pasó, aunque el maestro se haya
+dado de baja después.
+
+**Tags**: `#activo` `#historico` `#filtro-de-mas`
+
+---
+
+## Si un total se parte en subtotales, el resto tiene que caer en alguno `#ui #totales #2026-07-31`
+
+Al partir la grilla del presupuesto en secciones por `tipo` (EGRESOS / DISTRIBUCIONES) apareció
+un agujero silencioso: si una agrupadora tuviera un tipo **sin sección definida**, no se
+renderizaría en ninguna fila — pero **seguiría sumando en el TOTAL**, que se calcula aparte
+recorriendo todo. El usuario vería un total que no coincide con la suma de lo que tiene delante,
+sin nada que se lo indique.
+
+Hoy no puede pasar (`financiero` e `ingreso` dan `no_proyectar` y quedan filtrados en cero),
+pero "hoy no puede pasar" no es una garantía: alcanza con que alguien agregue un valor al enum.
+
+**La regla**: cuando un total se descompone en secciones, la asignación a sección tiene que ser
+**total** — con un default explícito que capture lo no previsto, no un filtro que lo descarte.
+Acá: lo que no tiene sección cae en EGRESOS, que es el default seguro del resto del sistema.
+
+**El olor a evitar**: `items.filter(x => x.tipo === s.tipo)` repetido por sección, sin nada que
+garantice que la unión de los filtros sea el conjunto entero. Un `filter` por sección descarta
+en silencio; un `switch` con `default` obliga a decidir.
+
+**Tags**: `#subtotales` `#no-cierra` `#default-explicito` `#particion-total`
+
+---
+
+## `AutoMejoras/` es un subproyecto aparte — NO tocar `#repo #2026-08-02`
+
+En la raíz del repo hay una carpeta **`AutoMejoras/`** (untracked, may-2026) con su propio índice,
+objetivos y scripts (`automejoras.bat`, `automejoras-pausar.bat`, `automejoras-reanudar.bat`,
+`settings-automejoras.json`, `CONFIG.md`, `OBJETIVOS - primeras ideas.md`, …).
+
+**Qué es (usuario, 2026-08-02):** *"era un programa aparte que trabajé para nosotros, en el
+relevamiento automático mientras no trabajo yo"*. O sea: una herramienta propia que corre sola
+haciendo relevamiento cuando el usuario no está frente a la máquina.
+
+**Regla:** **dejarlo como está.** No moverlo, no `.gitignore`-arlo, no borrarlo, no incluirlo en
+la auditoría de dimensiones de documentación — sus `.md` son del subproyecto, no de este repo.
+Decisión explícita del usuario al ordenar la documentación (`PENDIENTES.md` § A-DOC-05).

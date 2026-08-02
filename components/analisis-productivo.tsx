@@ -17,6 +17,7 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { toast } from "sonner"
 import type { FilaMercado } from "@/app/api/precios-mercado/route"
+import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
@@ -39,6 +40,9 @@ export type ModoCarga = "foto" | "relink"
 // Precios de mercado scrapeados, guardados con el estudio (opcional → estudios viejos no lo tienen)
 export interface EstudioMercado { desde: string; hasta: string; prima: string; macho: FilaMercado[] | null; hembra: FilaMercado[] | null; fechaScraping?: string }
 interface Estudio { version: number; fecha: string; segments: SegState[]; segConfigs?: SegConfig[]; segConfig?: SegConfig /* compat viejo */; mercado?: EstudioMercado }
+
+// El motor de racion y margen vive en lib: lo comparten esta pantalla y el Presupuesto.
+// Ver lib/productivo/racion.ts.
 
 export interface SegmentoAnalisis {
   label: string
@@ -137,54 +141,6 @@ interface StageForm {
   precioVenta: string; maizPrecio: string; concPrecio: string
   desbSal: string; czSal: string; mort: string
   racionPV: string; maizPct: string; concPct: string
-}
-
-// Inputs ya parseados (porcentajes como fracción, ej. 0.03). Función pura → se corre 1 vez por escenario.
-interface CalcInputs {
-  cant: number; d: number; conv: number; pIni: number
-  desbEnt: number; desbSal: number; czEnt: number; czSal: number; mort: number
-  precioCompra: number; precioVenta: number
-  racionPV: number; maizPct: number; concPct: number; maizPrecio: number; concPrecio: number
-}
-
-function calcular(i: CalcInputs) {
-  const kgGanados = i.d * i.conv                     // H17
-  const pFin = i.pIni + kgGanados                    // L16
-  const pProm = (pFin + i.pIni) / 2                  // H18
-  // Entrada
-  const mermaKgEnt = i.pIni * i.desbEnt
-  const pNetoEnt = i.pIni - mermaKgEnt               // C17
-  const brutoEnt = pNetoEnt * i.precioCompra         // C19
-  const mermaCzEnt = brutoEnt * i.czEnt
-  const netoEnt = brutoEnt - mermaCzEnt              // C20 = C28
-  // Salida
-  const mermaKgMort = pFin * i.mort                  // mortandad sobre bruto vendido
-  const pTrasMort = pFin - mermaKgMort               // saldo tras mortandad
-  const mermaKgSal = pTrasMort * i.desbSal           // desbaste sobre el saldo
-  const pNetoSal = pTrasMort - mermaKgSal            // L17
-  const brutoSal = pNetoSal * i.precioVenta          // L19
-  const mermaCzSal = brutoSal * i.czSal
-  const czNetoSal = brutoSal - mermaCzSal            // L20
-  // Ración
-  const racKgDia = pProm * i.racionPV                // H20
-  const maizKgDia = racKgDia * i.maizPct             // H22
-  const concKgDia = racKgDia * i.concPct             // H23
-  const maizCosto = -i.maizPrecio * maizKgDia * i.d  // L22 (por cabeza)
-  const concCosto = -concKgDia * i.d * i.concPrecio  // L23 (por cabeza)
-  const costoRacion = maizCosto + concCosto          // L24
-  const maizKgLote = maizKgDia * i.d * i.cant        // H24
-  const concKgLote = concKgDia * i.d * i.cant        // H25
-  // Resultado
-  const netoSalida = czNetoSal + costoRacion         // L28
-  const gananciaCab = netoSalida - netoEnt           // L30
-  const gananciaTotal = gananciaCab * i.cant         // L31
-  return {
-    cant: i.cant, d: i.d, kgGanados, pFin, pProm,
-    mermaKgEnt, pNetoEnt, brutoEnt, mermaCzEnt, netoEnt,
-    mermaKgMort, pTrasMort, mermaKgSal, pNetoSal, brutoSal, mermaCzSal, czNetoSal,
-    racKgDia, maizKgDia, concKgDia, maizCosto, concCosto, costoRacion, maizKgLote, concKgLote,
-    netoSalida, gananciaCab, gananciaTotal,
-  }
 }
 
 function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, onRegisterExport, mercado }: SegProps) {
