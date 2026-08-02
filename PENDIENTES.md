@@ -82,7 +82,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Est | Ítem |
 |----|-----|------|
-| P-01 | 🟢 | Botón para **actualizar el presupuesto** (recalcular a demanda) |
+| P-01 | ✅ | Botón **Actualizar** en el header del panel de cuentas (relee historia, config e IPC). 2026-08-02, sin testear |
 | P-02 | ❓ | **"Este mes sí/no"** en el mes de arranque: si ya se pagó, no presupuestar; si no, sí. *El usuario avisa que **contradice otras alternativas*** |
 | P-03 | 🟢 | **Edición de sueldos** — poner un sueldo a cada empleado con la info disponible, más allá del histórico |
 | P-04 | ❓ | **¿IPC siempre? ¿Está trabajando bien el IPC?** — auditar el modo |
@@ -92,11 +92,11 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-08 | ❓ | **Kg por ha / valor Índice Novillo** como unidad de presupuestación (ej. IATF = tantos kg por cabeza por año) |
 | P-09 | 🟢 | **Monto en un solo mes**, por única vez (override puntual de celda) |
 | P-10 | ❓ | **Anualizado que se engrosa**: si algo se gasta 1 vez al año y se presupuesta como promedio mensual, el no-gasto de cada mes debe acumularse para el mes en que caiga |
-| P-11 | 🟢 | Mostrar **IPC de 12 meses** |
+| P-11 | ✅ | **IPC acumulado de 12 meses** en el encabezado, con hasta qué mes. Y aviso ámbar si NO hay IPC cargado (antes usaba la tasa fija en silencio). 2026-08-02, sin testear |
 | P-12 | ❓ | **Ajuste de 2 meses en uno**: si hay 1 FC/mes y un mes viene vacío y otro con 2, poder corregirlo |
 | P-13 | ❓ | **IATF**: cae bien en los meses que ya existen, pero poder aplicarle la fórmula **por cabeza** |
 | P-14 | ❓ | **Por cabeza + IPC deberían ser acumulables** (hoy los modos son excluyentes) |
-| P-15 | 🟢 | **Mostrar el ejemplo de lo que presupuesta**: si elijo "última FC", ver la muestra usada y el resultado |
+| P-15 | ✅ | **La muestra del cálculo** en la fila abierta: los datos reales que se usaron + el resultado. Los meses sin factura salen tachados. `estacional` muestra el par origen→proyectado por mes. 2026-08-02, sin testear |
 | P-16 | ✅ | 🐞 **El modo "mismo del año pasado" NUNCA funcionó** — exigía 12 puntos de historia y un gasto anual tiene 1. **7 de 8 cuentas daban cero.** Arreglado 2026-08-02, falta testear → [P-16](#p-16) |
 | P-17 | ❓ | **Presupuesto anual con arrastre**: poner el monto en un mes tentativo y, si no se gasta, que pase al siguiente; si no se cumple en 11 meses queda para el 12°. **+ alerta** "se gastó cero el último año y seguís presupuestando $1.500.000 anual" |
 | P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
