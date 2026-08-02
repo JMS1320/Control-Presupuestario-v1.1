@@ -67,7 +67,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|--------|------|------|--------------|
 | A-OP-01 | 🔴 | Alta | MCP Supabase quedó en WRITE — revertir a read-only | ✅ `.mcp.json` sin `--read-only` |
 | A-OP-02 | ✅ | Media | Archivo `nul` basura en el repo — BORRADO 2026-06-21 (era el error capturado "dir: cannot access 'vercel.json'"). `git add -A` ya funciona | resuelto |
-| A-OP-03 | 🔴 | Alta | Merge `desarrollo` → `main` — **son 133 commits, no 20** (re-contado 2026-08-02). La mayoría **sin testear** (todo el presupuesto de julio). `main` = auto-deploy a producción: mergear hoy publica trabajo sin probar | ✅ `git rev-list --count main..desarrollo` = **133** (2026-08-02) |
+| A-OP-03 | ✅ | Alta | **MERGEADO 2026-08-02** (`d5a9f69`, 134 commits desde el 15/07). Decisión del usuario: *"todo lo hecho viene muy bien y funciona, sería como hacer un punto seguro"*. Build limpio antes de mergear (exit 0, 34 rutas). Etiquetado **`punto-seguro-2026-08-02`** → volver es `git reset --hard punto-seguro-2026-08-02` | ✅ `main..desarrollo` = 0 |
 | A-OP-04 | ⏸️ | Media | Auditar Secciones C y D junto al usuario | — |
 | A-OP-05 | 🔴 | Baja | Carpeta vacía `arca-poc/` — borrar a mano (Windows handle) | — |
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) |
@@ -97,7 +97,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-13 | ❓ | **IATF**: cae bien en los meses que ya existen, pero poder aplicarle la fórmula **por cabeza** |
 | P-14 | ❓ | **Por cabeza + IPC deberían ser acumulables** (hoy los modos son excluyentes) |
 | P-15 | 🟢 | **Mostrar el ejemplo de lo que presupuesta**: si elijo "última FC", ver la muestra usada y el resultado |
-| P-16 | 🟢 | 🐞 **Modo "mismo del año pasado" no salta de año** — ej. Seguridad y Alarma de ene-2026 debería aparecer en **ene-2027** y no aparece |
+| P-16 | ✅ | 🐞 **El modo "mismo del año pasado" NUNCA funcionó** — exigía 12 puntos de historia y un gasto anual tiene 1. **7 de 8 cuentas daban cero.** Arreglado 2026-08-02, falta testear → [P-16](#p-16) |
 | P-17 | ❓ | **Presupuesto anual con arrastre**: poner el monto en un mes tentativo y, si no se gasta, que pase al siguiente; si no se cumple en 11 meses queda para el 12°. **+ alerta** "se gastó cero el último año y seguís presupuestando $1.500.000 anual" |
 | P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
 | P-19 | 🟢 | **Períodos contables de templates — YA EXISTEN, hay que USARLOS.** ⚠️ Claude afirmó el 2026-08-02 que "no hay columna de campaña"; **es falso**, lo corrigió el usuario. `egresos_sin_factura` tiene **`año`** (label "26/27"), **`periodicidad`** ('anual'\|'bianual') y **`template_origen_id`** → el template del que se clonó. El generador escribe `año: targetLabel` al renovar. Lo que falta es que el **Presupuesto los lea** |
@@ -113,7 +113,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
-| P-33 | 🔴 | **Auditar los "no presupuestar" y los estacionales vacíos** — el usuario: *"mucho de lo que puse no proyectar es por algún problema"* y *"muchos de los que puse mismo del año pasado no figura nada presupuestado"*. Cada exclusión es una **pista de bug**; los estacionales vacíos son los **casos de test de [P-16](#p-16)** |
+| P-33 | 🟡 | **Auditado 2026-08-02** → [P-33](#p-33). De las 9 cuentas excluidas, **sólo 4 lo están por diseño**: 4 son **features faltantes** disfrazadas de exclusión (IPC+%, elegir mes, cupo anual, costos directos) y 1 es un gasto dado de baja. **El presupuesto está subestimado en esas 4.** Falta implementarlas |
 | P-31 | 🔗 | **Vincular las proyecciones de venta al presupuesto** — se cruza con A-FEAT-10 y con Ingresos/arrendamientos |
 
 ### 🐄 MARGEN POR ACTIVIDAD — módulo nuevo (2026-08-02)
@@ -475,6 +475,104 @@ módulo por terminado**. Por ahora, sólo anotar ideas.
 **Trazabilidad**
 - Toda celda tiene que poder **explicar de dónde salió** (base, ajuste, muestra usada) —
   [P-15](#p-lote). Un control que no se puede explicar no sirve para decidir.
+
+---
+
+## <a id="p-16"></a>P-16 — 🐞 El modo "mismo del año pasado" nunca funcionó (✅ ARREGLADO 2026-08-02)
+
+**Lo que reportó el usuario:** *"cuando pongo mismo de año pasado, ej. Seguridad y Alarma, me
+debería saltar en enero del 27 (ene 2026 + 1 año) y no aparece"*.
+
+**Lo que era en realidad — peor que "no salta de año":**
+
+```ts
+if (h.length < 12) return vacio(`Necesita 12 meses de historia y hay ${h.length}`)
+```
+
+`historia` sale de la vista `presupuesto_historia_cuentas`, que **agrupa facturas**: un mes sin
+factura **no genera fila**. Un gasto anual tiene **1 punto por año**. Con tres años de historia
+son 3 puntos, nunca 12 → el guard lo mandaba a cero **siempre**.
+
+**El modo diseñado para lo estacional y anual rechazaba exactamente los gastos estacionales y
+anuales.**
+
+### Medido contra la BD (2026-08-02)
+Las 8 cuentas que el usuario había puesto en `estacional`:
+
+| Cuenta | Puntos | Con el bug | Arreglado |
+|---|---:|---|---|
+| 422118 LUZ | 12 | ✅ única que andaba | ✅ |
+| 422115 SUPERMERCADOS Y CARNICERIA | 2 | ❌ cero | ✅ ago-26 y feb-27 |
+| 422108 GASTOS OFICINA | 2 | ❌ cero | ✅ sep-26 y ene-27 |
+| 42306 GASTOS VARIOS GANADERIA | 2 | ❌ cero | ✅ feb-27 y mar-27 |
+| 422122 INFORMATICA | 1 | ❌ cero | ✅ ago-26 |
+| 422114 HONORARIOS ESCRIBANIA | 1 | ❌ cero | ✅ ago-26 |
+| 422134 GAS | 1 | ❌ cero | ✅ may-27 |
+| **422127 SEGURIDAD Y ALARMA** | 1 (ene-26) | ❌ cero | ✅ **ene-27** ← el caso reportado |
+
+**7 de 8 en cero.** Ahora 8 de 8.
+
+### El fix
+Se saca el mínimo global. **No se exige un mínimo de historia: se exige EL MES.** Si falta el
+mismo mes del año anterior, la celda lo dice (*"Sin dato de mar-26"*), que es información y no un
+cero mudo. Un gasto anual muestra 11 celdas sin dato y una con monto — que es lo correcto.
+
+⚠️ **Primer intento fallido, anotado a propósito:** Claude cambió el guard a *lapso de historia
+≥ 12 meses*. Pasaba de 1/8 a 5/8 pero **seguía dejando en cero el caso reportado** (Seguridad y
+Alarma tiene 7 meses de lapso). Se detectó consultando los datos reales antes de commitear. La
+lección: el mínimo global estaba mal **en cualquier forma**, no en su valor.
+
+### Hallazgo lateral
+`sugerirModo()` **nunca sugiere `estacional`** — sólo aparece si el usuario lo elige a mano. Por
+eso el bug pasó desapercibido: nadie lo activaba automáticamente. Y explica por qué justo las
+cuentas que el usuario configuró a mano son las que quedaron en cero.
+
+**Type-check:** 121 errores, idéntico al baseline. 0 en `lib/presupuesto`.
+
+---
+
+## <a id="p-33"></a>P-33 — Las exclusiones son features faltantes disfrazadas (auditoría 2026-08-02)
+
+El usuario avisó: *"mirá las razones por las que puse muchos 'no presupuestar' para más data a
+corregir"*. Tenía razón. De las **9 cuentas excluidas**, sólo 4 lo están por diseño.
+
+### ✅ Exclusiones legítimas — el gasto entra por otro lado (4)
+| Cuenta | Motivo del usuario |
+|---|---|
+| 422113 SEGUROS ESTRUCTURA | "Va x Template" |
+| 422136 HONORARIOS AMS | "Va por Sueldos" |
+| 422137 HONORARIOS JMS | "Va vía Sueldos" |
+| 4230501 MAIZ | "ya entra como ración en Actividades y costos" *(la sugirió `esProduccion()`)* |
+
+> 💡 **Sobre SEGUROS ESTRUCTURA:** el comentario de `netearExcluidos()` dice justamente que
+> conviene **excluir el CUIT y no la cuenta entera**, para que si mañana entra otra aseguradora se
+> presupueste sola en vez de desaparecer sin que nadie se entere. Acá está excluida la cuenta
+> entera. Candidata a migrar a exclusión por proveedor.
+
+### ⚠️ Exclusión por baja del gasto, no por diseño (1)
+| Cuenta | Motivo |
+|---|---|
+| 422102 ARRENDAMIENTOS AGRICOLAS Compra | "No hay más" |
+
+No es que entre por otro lado: **es que ya no va a pasar**. Merece semántica propia (*dado de
+baja*) para que, si el gasto reaparece, **salte un aviso** en vez de quedar mudo para siempre.
+
+### 🔴 Las 4 que son features faltantes (el hallazgo)
+| Cuenta | Lo que escribió el usuario | Lo que en realidad pide |
+|---|---|---|
+| **42310** MATERIALES GANADERIA | *"poner eq por mes pero a tal % sobre IPC el año pasado"* | eje **AJUSTE**: IPC **+ un % extra**. Hoy el IPC es todo o nada |
+| **42325** AGUADAS | *"a mano pero poder elegir dónde poner… a mano puede ser con cálculos. Yo pondría por ej IPC + 30% más para el año tal, porque ya sé que el egreso será tanto más por la magnitud del trabajo"* | **AJUSTE** (IPC + %) **+ DISTRIBUCIÓN** (elegir el mes) = P-09 + fórmula |
+| **42501** COMBUST. Y LUB. MAQ. Y HERRAM. | *"Precisa adjudicar compras grandes y pocas"* | **cupo anual con arrastre** — es el caso del gasoil de P-10/P-17, dicho antes de que lo habláramos |
+| **42321** SEMILLAS GANADERIA | *"por costos directos"* | tiene que venir del **módulo Margen** ([M-01](#m-01)) |
+
+**Las 4 caen exactamente en los tres ejes de [P-LOTE](#p-lote)** (BASE × AJUSTE × DISTRIBUCIÓN) y
+en M-01. No son casos sueltos: son **la misma pieza faltante, vista cuatro veces**.
+
+**Consecuencia hoy:** el presupuesto está **subestimado** en esas 4 cuentas — valen $0 no porque
+no se vaya a gastar, sino porque no se podían calcular bien y se apagaron.
+
+**Al implementar los ejes:** revisar estas 4 primero, son los casos de prueba escritos por el
+propio usuario.
 
 ---
 

@@ -80,3 +80,43 @@ hooks/useMultiCashFlowData.ts
 - jsPDF (`'a4'` orientation, `lastAutoTable`, `undefined`→string en autoTable), Supabase joins (`egreso[]`), implicit any, uniones `'ANTICIPO'|'SUELDO'` vs `'ARCA'|'TEMPLATE'`, TS2737 (BigInt), TS18048 (posibles undefined). No rompen nada.
 
 **Quick win:** el `toast` de `useMultiCashFlowData` (1 import) arregla un bug real de UX.
+
+---
+
+## 🧮 Baseline de type-check — 2026-08-02 (121 errores preexistentes)
+
+**Hallazgo importante:** `next.config.mjs` tiene **`typescript: { ignoreBuildErrors: true }`**.
+Por eso `npm run build` **pasa limpio (exit 0) con 121 errores de tipos**. El build compila y
+empaqueta, pero **NO valida tipos**. Para el chequeo real hay que correr aparte:
+
+```bash
+npx tsc --noEmit -p tsconfig.json
+```
+
+**Consecuencia práctica:** "el build pasó" **no** significa "no rompí nada a nivel tipos". Ese
+baseline es éste.
+
+### Distribución (captura barata, sin investigar — se triagea en A-OP-07)
+
+| Archivo | Errores | Estado |
+|---|---:|---|
+| `components/vista-facturas-arca.tsx` | 45 | 🆕 |
+| `app/api/import-excel-dinamico/route.ts` | 14 | 🆕 |
+| `components/vista-extracto-bancario.tsx` | 13 | 🆕 |
+| `components/vista-cash-flow.tsx` | 13 | 🆕 |
+| `components/vista-templates-egresos.tsx` | 9 | 🆕 |
+| `components/vista-sector-productivo.tsx` | 6 | 🆕 |
+| `hooks/useMultiCashFlowData.ts` | 4 | 🆕 |
+| `components/vista-asignacion-arca.tsx` | 4 | 🆕 |
+| `components/vista-historico-facturas.tsx` | 3 | 🆕 |
+| `hooks/useAlertasTemplates.ts` | 2 | 🆕 |
+| `app/api/import-excel/route.ts` | 2 | 🆕 |
+| `app/importador-nuevo/page.tsx` · `components/reporte-detallado.tsx` · `components/tab-terneros.tsx` · `config/access-routes.ts` · `hooks/useInlineEditor.ts` · `scripts/reporte-categorias-templates.ts` | 1 c/u | 🆕 |
+
+**El más llamativo:** `app/api/import-excel-dinamico/route.ts` tiene **14 errores de identificadores
+inexistentes** (`NextResponse`, `supabase`, `XLSX`, `parseNumber`, `parseDate` — todos "Cannot find
+name"). Parece un archivo **al que le faltan los imports enteros**; probablemente ese endpoint está
+roto en runtime, no sólo en tipos. Candidato a mirar primero en el triage.
+
+**Verificado el 2026-08-02:** `lib/presupuesto/*` y `components/panel-presupuesto-cuentas.tsx`
+tienen **0 errores** — el fix de P-16 de ese día no agregó ninguno.

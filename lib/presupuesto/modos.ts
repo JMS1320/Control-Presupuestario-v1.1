@@ -352,8 +352,20 @@ export function calcularCuenta(
     }
 
     case 'estacional': {
-      if (h.length < 12) {
-        return vacio(`Necesita 12 meses de historia y hay ${h.length}`)
+      // No se exige un mínimo de historia: se exige EL MES.
+      //
+      // `historia` sale de agrupar facturas, así que un mes sin factura no genera fila. Un gasto
+      // anual —Seguridad y Alarma factura una vez, en ene-26— tiene UN punto: nunca llega a 12
+      // datos ni a 12 meses de lapso. Cualquier mínimo global lo manda a cero, que es justo el
+      // caso para el que este modo existe. (Antes pedía `h.length >= 12`: de las 8 cuentas
+      // puestas en estacional, 7 daban cero.)
+      //
+      // Lo único que hace falta es que exista el mismo mes del año anterior, y eso se resuelve
+      // celda por celda abajo. Si falta, la celda lo dice ("Sin dato de mar-26"), que es
+      // información y no un cero mudo. Un gasto anual va a mostrar 11 celdas sin dato y una con
+      // monto: eso es exactamente lo correcto.
+      if (h.length === 0) {
+        return vacio('Sin historia: no hay de dónde calcular')
       }
       const porClave = new Map(h.map(p => [clave(p.anio, p.mes), p.monto]))
       return ctx.meses.map(m => {
