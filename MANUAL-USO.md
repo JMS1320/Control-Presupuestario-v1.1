@@ -342,7 +342,7 @@ después en el panel de **métodos de templates** del Presupuesto, que muestra e
 > **La regla que ordena todo**: *"Venta origina Factura/Liquidación que origina Cobro"*.
 > El presupuesto de ingresos **no se carga en Presupuesto**: se carga en **Ventas**, y
 > Presupuesto lo lee. **Fijar = vender.**
-> Arquitectura y fórmulas → `DISEÑO_PRESUPUESTO.md` § INGRESOS — Arrendamientos agrícolas.
+> Arquitectura y fórmulas → `MODULO_PRESUPUESTO.md` § INGRESOS — Arrendamientos agrícolas.
 
 ### Dónde está cada cosa
 

@@ -345,7 +345,7 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 - **Columnas completas** → `ESTRUCTURA_BD_COLUMNAS.md` (apéndice auto-generado).
 - **Cambios no-backup** (ALTERs post-reconstrucción) → `RECONSTRUCCION_SUPABASE_2026-01-07.md` § "CAMBIOS POST-RECONSTRUCCIÓN".
 - **Pendientes** → `PENDIENTES.md` (incluye A-SEC-01 seguridad, A-BUG-12 conciliación tarjeta).
-- **Diseños por módulo**: `DISEÑO_TEMPLATES.md`, `DISEÑO_SUELDOS.md`, `DISEÑO_SICORE_RETENCIONES.md`, `DISEÑO_TERNEROS.md`, `CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`.
+- **Diseños por módulo** (dimensión MÓDULOS, renombrados 2026-08-02): `MODULO_TEMPLATES.md`, `MODULO_SUELDOS.md`, `MODULO_SICORE.md`, `MODULO_SICORE_RETENCIONES.md`, `MODULO_TERNEROS.md`, `MODULO_CONCILIACION.md`, `MODULO_ANTICIPOS.md`, `MODULO_ARCA.md`, `MODULO_PRESUPUESTO.md`, `MODULO_ECHEQ.md`, `MODULO_DASHBOARD.md`, `MODULO_REGLAS_BANCARIAS.md`, `MODULO_AGROQUIMICOS.md`, `MODULO_MAIL_PROVEEDORES.md`.
 - **Memorias clave**: `reference_schemas_expuestos_api`, `reference_supabase_schema_orden`, `project_tarjetas_modulo`.
 
 ---

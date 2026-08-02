@@ -1,5 +1,11 @@
 # 🏗️ RECONSTRUCCIÓN SUPABASE - 2026-01-07
 
+> ⚠️ **Nombres de archivo desactualizados (2026-08-02).** Los docs de módulo citados en este
+> archivo se renombraron a `MODULO_*.md` (ej. `DISEÑO_TERNEROS.md` → `MODULO_TERNEROS.md`,
+> `SICORE.md` → `MODULO_SICORE.md`). El contenido de este documento sigue vigente; sólo cambiaron
+> los nombres. Mapa completo → `PENDIENTES.md` § A-DOC-02.
+> (Este archivo **sí** se actualiza: recibe los ALTERs post-backup en § CAMBIOS POST-RECONSTRUCCIÓN.)
+
 ## 📋 CONTEXTO INICIAL
 
 **Fecha inicio:** 2026-01-07 20:45 (Argentina)

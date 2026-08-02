@@ -189,5 +189,5 @@ Cuando se crea/edita una regla nueva con `llena_template=true` y `cuenta_bancari
 - `components/configurador-reglas.tsx` — UI del Configurador donde irán los nuevos modales
 - `components/wizard-templates-egresos.tsx:281` — único lugar que hace INSERT en `egresos_sin_factura`
 - `hooks/useReglasConciliacion.ts` — CRUD de reglas
-- `DISEÑO_TEMPLATES.md` — arquitectura completa de templates
+- `MODULO_TEMPLATES.md` — arquitectura completa de templates
 - `memory/project_proxima_sesion.md` — pendientes operacionales generales

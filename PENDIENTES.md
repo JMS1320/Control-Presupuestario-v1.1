@@ -3,7 +3,28 @@
 > Único lugar donde se documentan los pendientes (bugs, testing, features, operacional, seguridad, datos).
 > Reemplaza a `PENDIENTES_GENERAL.md`, `PENDIENTES_PUSH_A_MAIN.md`, `PENDIENTES-PROXIMA-SESION.md` y a las secciones de pendientes sueltas en `CLAUDE.md`.
 
-**Última actualización:** 2026-06-21
+**Última actualización:** 2026-08-02
+
+---
+
+## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
+
+> **2026-08 — Presupuesto.** Probar lo desarrollado (C-22 secciones por tipo, C-27 `tipo` en
+> templates) y seguir con C-24 fases 1-4 (plan de cuentas texto → número).
+>
+> Alternar según circunstancias es normal: si hay que corregir pagos o conciliación en el medio,
+> **eso también es trabajo del norte** (todo alimenta al presupuesto). Actualizar esta línea
+> cuando cambie el foco, con fecha.
+
+### ⏳ Evento con fecha — balance 25/26
+| Hito | Fecha | Estado |
+|------|-------|--------|
+| Corte del ejercicio | **30/06/2026** | ✅ pasó |
+| Papeles de trabajo → **al contador** | **01/10/2026** | 🔴 ~2 meses |
+| Presentación a **ARCA** | **01/11/2026** | 🔴 ~3 meses |
+
+**Objetivo:** que los papeles de trabajo sean un **export del sistema** → [A-FEAT-09](#a-feat-09).
+El usuario avisó que puede no llegarse para el 01/10 — hay que **decidir con tiempo**, no el 25/09.
 
 ---
 
@@ -53,6 +74,35 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) |
 | A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) |
 
+### 🏁 Norte — features del resultado final (2026-08-02)
+> Salen de la ampliación del norte (§ [A-DOC-07](#a-doc-07)). Son **objetivos grandes**, no tareas:
+> se van abordando a medida que los eventos los piden. Sirven para saber si algo que estamos
+> haciendo suma o no.
+
+| ID | Estado | Prio | Ítem | Detalle |
+|----|--------|------|------|---------|
+| A-FEAT-09 | 🔴 | **Alta (fecha)** | **Papeles de trabajo del balance = export del sistema** — balance 25/26, corte 30/06/26, al contador **01/10/2026**. Puede no llegarse: decidir con tiempo | → [A-FEAT-09](#a-feat-09) |
+| A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) |
+| A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) |
+| A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) |
+
+### 📚 Documentación (auditoría de dimensiones, 2026-08-02)
+> Origen: comparación de nuestro `CLAUDE.md` contra el `CLAUDE.md` de otro proyecto del usuario ("Remates Televisados"), que trajo reglas de proceso mejores. Salió de ahí `CLAUDE_BASE.md` (plantilla portable) + esta auditoría de los 31 `.md` del repo. **Casi todos esperan una decisión del usuario (⏸️), no trabajo de Claude.**
+
+| ID | Estado | Prio | Ítem | Detalle |
+|----|--------|------|------|---------|
+| A-DOC-01 | ✅ | **Alta** | **Lista de dimensiones cerrada** — DECIDIDO 2026-08-02: 8 dimensiones + regla de cierre + **Claude no crea dimensiones sin autorización**. Aplicado a `CLAUDE.md` | → [A-DOC-01](#a-doc-01) |
+| A-DOC-02 | ✅ | Media | 13 docs de módulo con 4 convenciones → **renombrados a `MODULO_*` 2026-08-02** (`git mv`, historial intacto) + `MODULO_ARCA.md` creado | → [A-DOC-02](#a-doc-02) |
+| A-DOC-02b | 🔴 | Baja | **Consolidar SICORE** — quedan `MODULO_SICORE.md` (51 KB) + `MODULO_SICORE_RETENCIONES.md` (12 KB) + la historia cruda en `arca-api/`. Abordar al tocar el módulo | → [A-DOC-02b](#a-doc-02b) |
+| A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) |
+| A-DOC-03 | ⏸️ | Baja | 3 archivos de reconstrucción (553 KB) del mismo tema; sólo 1 declarado | → [A-DOC-03](#a-doc-03) |
+| A-DOC-04 | ⏸️ | Baja | `README.md` (ago-2025) desactualizado y fuera de toda dimensión | → [A-DOC-04](#a-doc-04) |
+| A-DOC-05 | ✅ | Media | 5 `.md` huérfanos — RESUELTOS 2026-08-02: sesión→HISTORIAL · `Usuarios.md`→`MODULO_USUARIOS.md` (+ [A-SEC-03](#a-sec-03)) · 2 de ARCA→`MODULO_ARCA.md` · las plantillas se las lleva el usuario | → [A-DOC-05](#a-doc-05) |
+| A-DOC-06 | ✅ | Media | 6 reglas permanentes vivían **sólo en memoria** — SUBIDAS a `CLAUDE.md` 2026-08-02 (2 § nuevas + 1 bullet); memorias reducidas a punteros | → [A-DOC-06](#a-doc-06) |
+| A-DOC-07 | ✅ | Media | Qué es + **norte** en `CLAUDE.md` (2026-08-02). Norte = presupuesto autoalimentado; **todo alimenta al presupuesto**. Queda **abierto a ampliación** por el usuario | → [A-DOC-07](#a-doc-07) |
+| A-DOC-08 | ✅ | Media | Lista de 47 ítems sin testear vivía en memoria y **B-TEST-10 la citaba desde acá** — MIGRADA 2026-08-02: 8 filas nuevas (`B-TEST-11..18`) + 28 a [C-01](#c-01) transcriptos | → [A-DOC-08](#a-doc-08) |
+| A-DOC-10 | 🔴 | Media | **Otras 19 fugas doc→memoria** — `B-TEST-10` NO era la única: hay ~19 `"Detalle: memory/…"` repartidas en 5 dimensiones. Hay que absorber el contenido | → [A-DOC-10](#a-doc-10) |
+
 ### Bugs (sesiones de junio)
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
@@ -76,7 +126,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) |
-| A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. |
+| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) |
+| A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. |
 
 ### Datos (los carga el usuario)
 | ID | Estado | Ítem |
@@ -120,7 +171,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) |
 | B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar |
-| B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `PLAN_DASHBOARD_REDISEÑO.md` |
+| B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` |
 | B-FEAT-04 | 🔴 | Media | Templates bancarios separar MSA/PAM/MA + reglas PAM/MA |
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos |
 | B-FEAT-06 | 🔴 | Media | Subdiario Ventas — igualar flujo a Compras (esperando que el usuario explique diferencias) |
@@ -159,7 +210,14 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | B-TEST-07 | 🔴 | Insumos — unidad correcta (f6a7a61) · sólo EJECUTADAS (ddef961) · agrícola=ganadero (85924fa) · InsumoCombobox (bf75b18) |
 | B-TEST-08 | 🔴 | Import pesadas — validación fecha única + popover ayuda (b559843) |
 | B-TEST-09 | 🔴 | Órdenes ganaderas — recría + carga manual (c4d2bab) |
-| B-TEST-10 | 🔴 | Resto ítems 29-47 de la lista de testing (ver `memory/feedback_testing_pendiente.md`) |
+| B-TEST-11 | 🔴 | Escenario B agrupado por `grupo_pago_id` — modal NC con subtotales, summary en rojo si no cuadra, ocultar grupos ya aplicados (commit 47ad5f1, ya en main) |
+| B-TEST-12 | 🔴 | Filtro "Tipo de comprobante" en Facturas ARCA — selector con SÓLO los tipos presentes (no toda la lista AFIP) |
+| B-TEST-13 | 🔴 | Filtro "Solo NC" en Vista Pagos |
+| B-TEST-14 | 🔴 | Fix vinculación anticipo — no ofrece facturas en estado `anterior` (caso Nuñez Omar) |
+| B-TEST-15 | 🔴 | Templates Caja → estado `programado` para proyecciones; cuotas de presupuesto eliminadas |
+| B-TEST-16 | 🔴 | Excel de jerarquía de cuentas — `scripts/generar-jerarquia-cuentas.cjs` (jerarquía por `nombre_totalizadora`, no por número) |
+| B-TEST-17 | 🔴 | InsumoCombobox — selector único en órdenes (buscador acento-insensible, no acepta texto libre, "➕ Nuevo insumo" crea en el momento) |
+| B-TEST-18 | 🔴 | Órdenes agrícolas — muestran insumos usados y cantidades (igual que ganaderas) |
 
 ---
 
@@ -167,7 +225,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Estado | Ítem | Por qué dudoso |
 |----|--------|------|----------------|
-| C-01 | ❓ | Testing ítems 1-24 (extracto, dashboard, selectores sub-categorías, etc.) | De abr/may; muchos quizá ya testeados |
+| C-01 | ❓ | **Testing ítems 1-28** (extracto, dashboard, selectores, motor, sueldos, cancelación FC/NC…) — **los 28 transcriptos** en el dossier | De abr/may-2026; muchos quizá ya testeados. Absorbidos de la memoria 2026-08-02 → [C-01](#c-01) |
 | C-02 | ❓ | Sistema Reglas Contable e Interno (3865ea8) | Implementado, nunca testeado, viejísimo (2025-08) |
 | C-03 | ❓ | Investigar estado "auditado" en conciliación | Vago, 2025-08, puede estar resuelto |
 | C-04 | ❓ | Estados dropdown en Templates (input → Select) | Mejora menor 2025-08 |
@@ -211,6 +269,11 @@ Hay dos grupos de archivos sueltos en la raíz. **El usuario pidió que Claude l
 2. **Varios `tmpclaude-XXXX-cwd`**: archivos temporales generados por el harness de Claude Code (artefactos de sesiones, marcadores de working directory). **Hay que confirmar qué son exactamente y si es seguro borrarlos** antes de hacerlo — no asumir. Probablemente basura de sesiones viejas, pero verificar que ninguno esté en uso por una sesión activa.
 
 **Al abordar:** primero listar y clasificar cada grupo, explicárselo al usuario, y recién entonces decidir destino. No borrar en bloque.
+
+**Frontera con los [A-DOC-*](#a-doc-01) (2026-08-02):** este pendiente cubre los archivos de
+**trabajo** del usuario (`.xlsx` / `.csv` / `.pdf`) y los `tmpclaude-*`. La **documentación `.md`**
+(31 archivos) la cubre la auditoría de dimensiones A-DOC-01..08. Si al abordar uno se mueve algo
+del otro, anotarlo en ambos.
 
 ---
 
@@ -258,6 +321,546 @@ Hay dos grupos de archivos sueltos en la raíz. **El usuario pidió que Claude l
 3. Asegurar que el proceso incluya los **cambios no-backup** documentados en `RECONSTRUCCION_SUPABASE` § CAMBIOS POST-RECONSTRUCCIÓN.
 
 **Relación:** complementa A-SEC-01 (si `anon` puede truncar todo, un restore confiable es la red de seguridad).
+
+---
+
+## 🏁 A-FEAT-09..12 — El resultado final del sistema (norte, 2026-08-02)
+
+**Contexto común.** Salen de la ampliación del norte que hizo el usuario el 2026-08-02
+(§ [A-DOC-07](#a-doc-07)). No son tareas: son **los cuatro resultados que el sistema tiene que
+poder dar**. Sirven como vara — ante cualquier desarrollo, preguntarse a cuál de los cuatro sirve.
+
+**Cómo se abordan (criterio del usuario):** *"esto conlleva bastante tiempo y se irá trabajando a
+medida que se dan los eventos"*. El orden lo marcan los **vencimientos y cierres**, no un roadmap.
+Cuando se acerca un evento, lo que ese evento necesita pasa a ser el foco.
+
+---
+
+## <a id="a-feat-09"></a>A-FEAT-09 — Papeles de trabajo del balance = export del sistema ⏳ FECHA DURA
+
+**Qué:** que los papeles de trabajo que hoy se arman a mano para el contador salgan como **export
+del sistema**.
+
+**Ejercicio 25/26:**
+| Hito | Fecha |
+|------|-------|
+| Corte del ejercicio | 30/06/2026 (ya pasó) |
+| Entrega al contador | **01/10/2026** |
+| Presentación a ARCA | **01/11/2026** |
+
+**Lo que dijo el usuario (2026-08-02):** *"la idea es que papeles de trabajo sea un export de
+sistema. Veremos si llegamos a eso para el 1/10."*
+
+### 🔨 Cómo se va a hacer — decidido por el usuario 2026-08-02
+
+**No se define todo antes: se construye haciéndolo.** El usuario va a **armar el balance desde la
+app** y, a medida que lo hace, se desarrolla y configura el export. El formato queda asentado y
+**para el balance siguiente ya está hecho**.
+
+> *"por eso se hace a medida que lo hago. Cuando lleguemos a preparar el balance yo intentaré
+> hacerlo desde app desarrollando el export de papeles de trabajo. A medida que lo hago lo
+> configuramos y va quedando el formato para que el próximo balance ya esté hecho."*
+
+**Lo que aporta cada uno cuando arranque:**
+- **Usuario** → la **lista de papeles de trabajo**, qué debe tener cada uno, formato.
+  (No hace falta pedírsela antes: la trae al empezar.)
+- **Claude** → el export, incremental, papel por papel, a medida que aparecen.
+
+**Riesgo que queda vivo (menor, pero real):** el trabajo del balance y el desarrollo van **en
+paralelo y contra reloj**. Si un papel se traba, la prioridad es **el balance**, no el export —
+se arma ese a mano y el export queda para el año que viene. Eso no es un fracaso: es el diseño
+incremental funcionando.
+
+**Piezas que ya existen y probablemente sirvan:** subdiarios, libro IVA compras/ventas, plan de
+cuentas, jerarquía de cuentas, `Libro Diario 24-25.xlsx`.
+
+**Dependencia:** ¿alcanza con exportar, o hay que ajustar antes el plan de cuentas
+([C-24](#c-24))? El usuario: *"volveremos a eso pronto"*.
+
+**Relación con el norte:** es el primer evento concreto donde el sistema tiene que **reemplazar
+trabajo manual**, no sólo informar.
+
+---
+
+## <a id="a-feat-10"></a>A-FEAT-10 — Resultado del período contable y del período en curso
+
+**Qué:** que el sistema dé (a) el **resultado del período contable cerrado** (ganancia) y (b) el
+**resultado del período en curso** = **lo registrado a la fecha + el presupuesto** de lo que falta
+para completar el período.
+
+**Por qué es del norte:** es la unión más directa entre contabilidad y presupuesto — el presupuesto
+deja de ser una proyección aparte y pasa a **completar** el resultado real. Es la razón por la que
+"todo alimenta al presupuesto" tiene que ser cierto: si un módulo no alimenta, el resultado en
+curso queda mal.
+
+**A definir:** qué se toma como "registrado a la fecha" (¿devengado? ¿percibido?), y cómo se evita
+el **doble conteo** entre lo ya registrado y lo presupuestado para el mismo concepto — el mismo
+problema que ya aparece en [C-24](#c-24) (templates ↔ cuentas contables).
+
+---
+
+## <a id="a-feat-11"></a>A-FEAT-11 — Presupuesto a 2 años constante
+
+**Qué:** que el presupuesto sea **siempre de 2 años hacia adelante** (ventana móvil), no un
+ejercicio que se arma una vez al año y se consume.
+
+**A definir:** cada cuánto rueda la ventana (¿mensual?), qué pasa con lo ya afinado a mano cuando
+rueda (**no se pisa** — ver § Datos de `CLAUDE.md`), y cómo se renueva lo recurrente. Se cruza con
+el **Generador Renovar Campaña**, que ya existe y hace algo parecido para templates.
+
+---
+
+## <a id="a-feat-12"></a>A-FEAT-12 — Resultado por actividad, período por período, + proyección
+
+**Qué:** resultado **por actividad** (ganadería, agricultura, arrendamientos…), período a período,
+con su **proyección**.
+
+**Estado:** hay bastante base — centros de costo, el módulo productivo, y el análisis de costos por
+actividad (FASE C, [[project_costos_productivos_plan]]). Falta la vista de resultado por actividad
+que cruce eso con la contabilidad y la proyección.
+
+**A definir:** la lista canónica de actividades y cómo se imputa lo que sirve a más de una
+(estructura, administración) — si se prorratea o queda aparte.
+
+---
+
+## <a id="a-doc-09"></a>A-DOC-09 — `MODULO_ARCA.md` está documentado por la mitad
+
+`MODULO_ARCA.md` (creado 2026-08-02) cubre **la puerta de entrada**: el subproyecto `arca-api/`,
+qué se logró (descarga de comprobantes emitidos y recibidos con login automatizado a ARCA), qué no
+(fases SIRE y Portal IVA) y la investigación previa.
+
+**Falta todo el lado de la app**, que hoy no está en ninguna dimensión:
+- `app/api/arca` · `app/api/arca-asignar` · `app/api/import-facturas-arca`
+- `lib/arca`
+- `components/vista-facturas-arca.tsx` · `components/vista-asignacion-arca.tsx`
+- Reglas de importación por CUIT (`modal-reglas-import.tsx`)
+- Relación con `app/api/gas` (búsqueda automática de PDFs de facturas)
+
+**Por qué importa:** es el módulo por donde entra la información oficial. Si ARCA alimenta
+incompleto, el resultado del período en curso ([A-FEAT-10](#a-feat-10)) sale mal — y el norte dice
+que todo alimenta al presupuesto.
+
+**Además, sin verificar:** el código de `arca-api/` no corre desde el **19/09/2025**. Los
+selectores de un sitio ajeno se rompen sin aviso. Antes de confiar en la descarga automática,
+correr `arca-api/scripts/test-login.js`.
+
+---
+
+## 📚 A-DOC — Auditoría de dimensiones de documentación (2026-08-02)
+
+**Contexto común a todos los A-DOC.** El usuario trajo el `CLAUDE.md` de otro proyecto suyo
+("Remates Televisados") para comparar reglas y destilar una base portable. De ahí salieron dos
+cosas: **`CLAUDE_BASE.md`** (plantilla de 12 secciones, sin nada de dominio, para arrancar
+cualquier proyecto) y esta auditoría de los **31 `.md`** del repo.
+
+**La regla que fijó el usuario (2026-08-02):**
+> La **cantidad** de dimensiones la define cada proyecto (pueden ser 4 o 9). Lo que **no** varía
+> es que la lista sea **cerrada y exhaustiva**: cada dimensión con archivo exacto y criterio de
+> qué entra. **Nada de "etc."**. Si algo no cae en ninguna dimensión: o cae y no lo vimos, o se
+> **crea la dimensión y se anota en `CLAUDE.md` en ese momento**. Un `.md` en la raíz que no es
+> dimensión declarada es un error a corregir, no una excepción.
+
+**Frontera con [A-OP-06](#a-op-06):** A-OP-06 = archivos de **trabajo** del usuario en la raíz
+(`.xlsx` / `.csv` / `.pdf`) + `tmpclaude-*`. Los **A-DOC** = sólo la **documentación `.md`**.
+No se pisan; si uno mueve algo del otro, anotarlo en los dos.
+
+**Lo que NO se hizo (a propósito):** no se borró, movió ni renombró ningún archivo. Todo espera
+decisión del usuario.
+
+---
+
+## <a id="a-doc-01"></a>A-DOC-01 — Lista de dimensiones cerrada (✅ DECIDIDO 2026-08-02)
+
+> **RESUELTO.** El usuario aprobó las 8 dimensiones y agregó una condición propia:
+> **crear una dimensión nueva requiere su autorización explícita** — Claude propone, el usuario
+> autoriza; sin autorización no se crea el archivo. También decidió que **`README.md` se conserva**
+> (excepción declarada, cara pública del repo) y que **`CLAUDE_BASE.md` lo saca él** del proyecto,
+> por haber cumplido su función de plantilla.
+> **Aplicado a `CLAUDE.md`** § Documentación (tabla de 8 + fronteras + regla de cierre) el mismo día.
+> Lo que sigue abajo es el análisis que llevó a la decisión.
+
+**Fenómeno.** La regla de `CLAUDE.md` § Documentación termina en *"`DISEÑO_*.md`,
+`CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`, **etc.**"*. Ese "etc." es la puerta
+por la que entraron 8 archivos que no pertenecen a ninguna dimensión declarada.
+
+**Estado real (verificado 2026-08-02):** 31 `.md` · 6 dimensiones declaradas · las 6 están vivas
+y se usan (`PENDIENTES` 289 KB, `MANUAL-USO` 74 KB, `KNOWLEDGE` 55 KB, `ARQUITECTURA-BD` 29 KB,
+todas tocadas el 31/07). **No sobra ninguna dimensión: sobran archivos fuera de dimensión.**
+
+**Propuesta — pasar de 6 a 8:**
+
+| # | Dimensión | Archivo(s) | Qué entra |
+|---|---|---|---|
+| 1 | PENDIENTES | `PENDIENTES.md` | todo lo por hacer (índice + dossier con ID) |
+| 2 | ARQUITECTURA BD | `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md` | tablas, columnas, permisos, RPC |
+| 3 | RECONSTRUCCIÓN | `RECONSTRUCCION_SUPABASE_2026-01-07.md` | cómo rehacer la BD + ALTERs post-backup |
+| 4 | MANUAL | `MANUAL-USO.md` | cómo se opera cada módulo |
+| 5 | CONOCIMIENTO | `KNOWLEDGE.md` | qué funciona, qué se descartó y por qué, troubleshooting |
+| 6 | ERRORES | `ERRORES_CONOCIDOS.md` | baseline de errores preexistentes |
+| 7 | **MÓDULOS** *(nueva)* | `MODULO_<NOMBRE>.md` | diseño y decisiones por módulo — **una sola convención** (ver A-DOC-02) |
+| 8 | **HISTORIAL** *(nueva)* | `CLAUDE_HISTORICO.md` | sesiones cerradas, referencia |
+
+Más la **memoria** (`memory/`), que **no es dimensión**: es continuidad de Claude, y **la doc manda
+sobre ella** (si se contradicen, gana la doc y se corrige la memoria).
+
+**Regla de cierre (aprobada):** cualquier `.md` en la raíz que no sea una de estas 8, ni
+`CLAUDE.md`, ni `README.md`, está mal ubicado. Y **Claude no crea dimensiones nuevas por su
+cuenta**: propone, el usuario autoriza.
+
+---
+
+## <a id="a-doc-02"></a>A-DOC-02 — 13 docs de módulo, 4 convenciones de nombre (✅ HECHO 2026-08-02)
+
+> **RESUELTO.** El usuario eligió la opción (a): renombrar los 13 ahora, consolidar SICORE después.
+> Prefijo elegido: **`MODULO_`** (ASCII puro — `DISEÑO_`/`REDISEÑO` llevaban **ñ**, y en este
+> entorno los acentos en nombres ya dieron problemas).
+>
+> **Hecho:** 13 `git mv` (historial intacto) · `MODULO_ARCA.md` creado · los 2 docs huérfanos de
+> ARCA movidos a `arca-api/` · 8 referencias vivas actualizadas · nota de "nombres viejos" al
+> inicio de `CLAUDE_HISTORICO.md` y `RECONSTRUCCION_SUPABASE_2026-01-07.md` (no se reescriben:
+> son archivo).
+>
+> **Mapa del renombrado:**
+> `DISEÑO_PRESUPUESTO`→`MODULO_PRESUPUESTO` · `DISEÑO_SUELDOS`→`MODULO_SUELDOS` ·
+> `DISEÑO_TERNEROS`→`MODULO_TERNEROS` · `DISEÑO_AGROQUIMICOS`→`MODULO_AGROQUIMICOS` ·
+> `DISEÑO_TEMPLATES`→`MODULO_TEMPLATES` · `DISEÑO_MAIL_PROVEEDORES`→`MODULO_MAIL_PROVEEDORES` ·
+> `PLAN_DASHBOARD_REDISEÑO`→`MODULO_DASHBOARD` · `PLAN_REGLAS_TEMPLATES_BANCARIOS`→`MODULO_REGLAS_BANCARIAS` ·
+> `ECHEQ`→`MODULO_ECHEQ` · `CONCILIACION-CONTABILIDAD`→`MODULO_CONCILIACION` ·
+> `VINCULACION-ANTICIPOS`→`MODULO_ANTICIPOS` · `SICORE`→`MODULO_SICORE` ·
+> `DISEÑO_SICORE_RETENCIONES`→`MODULO_SICORE_RETENCIONES`
+>
+> ⚠️ **Renombrar no actualiza**: cinco de estos no se tocan desde feb-may. Tienen nombre prolijo y
+> contenido viejo.
+> 🔎 **Anotado al pasar:** `MODULO_CONCILIACION.md` pesa **127 KB** (más que `KNOWLEDGE.md` entero)
+> y el nombre viejo sugería dos cosas (conciliación + contabilidad). Puede haber un módulo
+> escondido adentro. No se abrió.
+
+Son todos lo mismo (documentación de un módulo) con cuatro nombres distintos:
+- `DISEÑO_*.md` → 7: agroquímicos, mail-proveedores, presupuesto, sicore-retenciones, sueldos, templates, terneros
+- `PLAN_*.md` → 2: dashboard-rediseño, reglas-templates-bancarios
+- **nombre pelado** → `ECHEQ.md`, `SICORE.md`
+- **nombre-con-guion** → `CONCILIACION-CONTABILIDAD.md`, `VINCULACION-ANTICIPOS.md`
+
+**Por qué duele.** Cuatro nombres para una dimensión = nadie sabe dónde buscar ni dónde escribir,
+y se crea un archivo nuevo en vez de ampliar el que ya existe. Caso testigo: **SICORE tiene tres
+archivos** — `SICORE.md` (51 KB), `DISEÑO_SICORE_RETENCIONES.md` (12 KB) e
+`INTEGRACION_SICORE_ARCA.md` (35 KB, huérfano, ver A-DOC-05).
+
+---
+
+## <a id="a-doc-02b"></a>A-DOC-02b — Consolidar la documentación de SICORE
+
+Quedaron **dos archivos vivos** sobre el mismo módulo, escritos en momentos distintos y
+**posiblemente contradictorios**:
+- `MODULO_SICORE.md` (51 KB, abr-2026) — "documentación técnica completa del módulo"
+- `MODULO_SICORE_RETENCIONES.md` (12 KB, abr-2026) — el diseño de retenciones
+
+Más la historia cruda del intento de automatizar SIRE, que se movió a
+`arca-api/INTEGRACION_SICORE_ARCA.md` (ver [MODULO_ARCA.md](MODULO_ARCA.md)).
+
+**Por qué no se hizo ahora:** consolidar no es renombrar — hay que leer 63 KB y decidir qué
+sobrevive. Eso necesita criterio del usuario y no se puede hacer al pasar.
+
+**Cuándo abordarlo:** la próxima vez que se toque el módulo SICORE. Antes no vale la pena.
+
+---
+
+## <a id="a-doc-03"></a>A-DOC-03 — Tres archivos de reconstrucción (553 KB del mismo tema)
+
+- `RECONSTRUCCION_SUPABASE_2026-01-07.md` — 457 KB — **el único declarado** en `CLAUDE.md`; recibe los ALTERs post-backup
+- `RECONSTRUCCION_EXITOSA.md` — 84 KB — bitácora del 2026-01-08 ("qué se hizo")
+- `GUIA_RAPIDA_RECONSTRUCCION.md` — 12 KB — checklist de 2 h; dice ser derivado del primero
+
+**🧊 CONGELADO por decisión del usuario (2026-08-02).** No se toca hasta resolver
+[A-OP-08](#a-op-08), que necesita justamente estos archivos para verificar si el backup/restore
+confiable sigue pendiente. Ordenar 553 KB ahora, sabiendo que A-OP-08 obliga a releerlos igual,
+es trabajo doble.
+
+**Opción sugerida para cuando se descongele:** el de 457 KB queda como maestro, la guía rápida se
+conserva como su checklist (declarada), y `RECONSTRUCCION_EXITOSA` se absorbe en
+`CLAUDE_HISTORICO.md` (es bitácora de una sesión).
+
+---
+
+## <a id="a-doc-04"></a>A-DOC-04 — Podar `README.md` (decidido, diferido)
+
+**Decisión del usuario 2026-08-02:** el README **se conserva** (excepción declarada en
+`CLAUDE.md`) y **se poda**. El trabajo queda como pendiente, no se hizo ahora.
+
+17 KB, **agosto 2025**, generado por v0. Tiene dos mitades muy distintas:
+
+**✅ Se queda — sirve y no está duplicado en ninguna dimensión:**
+- Instalación rápida
+- **Configuración crítica de Supabase** (~109 líneas, § línea 60)
+- Estructura del proyecto · Tecnologías · Flujo de trabajo de desarrollo
+
+**❌ Se borra — le pisa el terreno a otras dimensiones y está viejo:**
+- § "Estado Actual del Desarrollo" → eso es `PENDIENTES.md`
+- § "Visión Futura — Rediseño Completo del Sistema" → eso es el **norte** (`CLAUDE.md`), ya escrito
+- § "Estado Actual — Desarrollo de Cash Flow (En Progreso)" → de hace un año
+
+**Además:** actualizar la descripción de apertura — dice *"sistema de análisis financiero para
+procesar movimientos bancarios de MSA Galicia"*, y hoy es un **sistema de gestión contable y
+productiva**.
+
+**Motivo de podar en vez de reescribir:** la parte de instalación/config es valiosa y no está en
+otro lado; la parte de estado es exactamente lo que la regla de dimensiones prohíbe (un archivo
+contando lo que ya cuenta `PENDIENTES.md`).
+
+---
+
+## <a id="a-doc-05"></a>A-DOC-05 — Cinco `.md` huérfanos
+
+| Archivo | Qué es | Destino sugerido |
+|---|---|---|
+| `SESION-2025-09-11.md` (4,5 KB) | notas de una sesión suelta | absorber en `CLAUDE_HISTORICO.md` |
+| ~~`INTEGRACION_SICORE_ARCA.md`~~ | bitácora del desarrollo Selenium | ✅ **RESUELTO 2026-08-02** — destilado en `MODULO_ARCA.md`, original movido a `arca-api/` |
+| ~~`INVESTIGACION_INTEGRACION_ARCA_AFIP.md`~~ | investigación de opciones | ✅ **RESUELTO 2026-08-02** — ídem |
+| `Usuarios.md` (12 KB, abr-2026) | análisis de roles, accesos y restricciones de escritura | MÓDULOS, o se cruza con [A-SEC-01](#a-sec-01) |
+| `CLAUDE_otro proyecto.md` (+ copia en `AutoMejoras/`) | la plantilla que trajo el usuario | ya destilada en `CLAUDE_BASE.md`; archivar o borrar la copia duplicada |
+
+**Falta decidir (usuario):** destino de cada uno.
+
+---
+
+## <a id="a-doc-06"></a>A-DOC-06 — Seis reglas permanentes vivían sólo en memoria (✅ HECHO 2026-08-02)
+
+> **RESUELTO.** El usuario: *"si la pregunta es si las reglas deben estar en CLAUDE en vez de la
+> memoria, la respuesta es sí"*. Aplicado como **2 secciones nuevas + 1 bullet** (no 6 secciones,
+> para no inflar el archivo): § ♻️ *Centralizar, no duplicar* (reglas 1 y 4), § 📝 *Motivos,
+> errores y testing* (reglas 2, 3 y 6) y un bullet *"Nada destructivo, nunca"* dentro de la
+> § 🛑 *Datos* que ya existía (regla 5). Las 6 memorias quedaron como **punteros de 3 líneas**
+> con el caso testigo y los links — no se borraron, para no perder el grafo de referencias.
+> `feedback_testing_pendiente` conserva su lista de 68 ítems hasta resolver [A-DOC-08](#a-doc-08).
+
+Estas son **reglas**, no estado, y hoy sólo existen en `memory/` (que es de Claude, envejece y
+llega con avisos de "68 días"), no en `CLAUDE.md` (que es del usuario y se carga siempre):
+
+1. `feedback_reutilizar_componentes` — centralizar, no duplicar (`SelectorCuentaContable` vs `CategCombobox`)
+2. `feedback_documentar_motivos` — toda regla lleva su por qué; el usuario prioriza con eso
+3. `feedback_baseline_errores_conocidos` — captura barata / investigación diferida
+4. `feedback_actualizar_descargas_al_agregar_features` — si la vista tiene export, se actualiza el export
+5. `feedback_gas_drive_nunca_destruir` — find-or-create; ya se perdió un backup por un "replace"
+6. `feedback_testing_pendiente` — no dar por terminado lo que no se probó
+
+**Propuesta:** subirlas a `CLAUDE.md` (secciones "Centralizar, no duplicar" y "Motivos, errores y
+testing", ya redactadas en la sesión del 2026-08-02); en memoria queda **un puntero de una línea**,
+no el texto duplicado — así no quedan dos versiones que se desincronizan.
+
+**Falta decidir (usuario):** ¿se suben?
+
+---
+
+## <a id="a-doc-07"></a>A-DOC-07 — `CLAUDE.md` no dice qué hace la app (🟡 parcial)
+
+`CLAUDE.md` arranca directo con las reglas: ninguna línea explica qué es el sistema. Sin eso, la
+regla "todo cuelga del norte" (propuesta para la § Regla de contexto) no tiene de dónde colgar.
+
+**Respondido por el usuario (2026-08-02):** *"el proyecto es un sistema de gestión contable y
+productiva"*. Aplicado a `CLAUDE.md` ese mismo día.
+
+### ✅ Norte — definido 2026-08-02
+
+**Qué dijo el usuario:** *"el desarrollo de presupuesto autoalimentado del sistema contable, muy
+versátil, a ser afinado por el usuario"*. Y la ampliación, que es la parte operativa:
+> *"debe quedar claro que **todo alimenta al presupuesto**. Cada faceta lo más probable es que
+> incida o debería incidir en el presupuesto. **Que no esté creado el vínculo no quiere decir que
+> no debiera existir.**"*
+
+**Por qué esto es un norte y no un foco.** El usuario preguntó si el norte era "el próximo gran
+objetivo". No: eso es el **foco**, que rota (§ FOCO ACTUAL al inicio de este archivo) y por eso no
+puede vivir en `CLAUDE.md`, que "rara vez cambia". Lo que él describió **sí** califica como norte
+porque "autoalimentado" obliga a **toda la cadena** (ARCA, extractos, pagos, sueldos, productivo) a
+alimentar bien — eso no rota.
+
+**Consecuencia práctica (lo que cambia en el día a día):** al tocar cualquier módulo hay que
+preguntarse *¿cómo incide esto en el presupuesto?* Si el vínculo no existe, **es un hueco a
+registrar**, no un no-problema. Esto resuelve la duda que el usuario planteó: corregir pagos
+mientras se trabaja en presupuesto **no** es desviarse del norte — si pagos alimenta mal, el
+presupuesto se autoalimenta con basura.
+
+### 🏁 Ampliación 2026-08-02 — el resultado final
+
+El usuario definió **qué tiene que poder dar el sistema al final**:
+1. **Resultado del período contable** (ganancia) **y del período en curso** (lo registrado a la
+   fecha **+ el presupuesto** de lo que falta).
+2. **Presupuesto a 2 años constante.**
+3. **Resultado por actividad**, período por período, **+ proyección**.
+4. Sin dejar de ser un **sistema contable y productivo completo**.
+
+→ Cada uno quedó como pendiente: [A-FEAT-10](#a-feat-10), [A-FEAT-11](#a-feat-11),
+[A-FEAT-12](#a-feat-12). El punto 4 no es un ítem: es la condición de todo lo demás.
+
+**Cómo se avanza — criterio del usuario:** *"esto conlleva bastante tiempo y se irá trabajando a
+medida que se dan los eventos"*. **El orden lo marcan los vencimientos, no un roadmap.** Primer
+evento con fecha: papeles de trabajo del balance 25/26 → [A-FEAT-09](#a-feat-09) (01/10/2026).
+
+**Estado: 🚧 abierto a ampliación.** El usuario avisó que "probablemente falte info al norte" y que
+definirlo le sirve. Cada vez que lo amplíe → actualizar `CLAUDE.md` § Norte y anotar acá la fecha.
+
+---
+
+## <a id="a-doc-08"></a>A-DOC-08 — La lista de 68 ítems sin testear vive en memoria
+
+`feedback_testing_pendiente` (memoria) arrastra una lista numerada de **47** funcionalidades sin
+testear, actualizada por última vez el **2026-05-27**. Eso es **estado**, no regla: su lugar
+natural es `PENDIENTES.md` (filas `TEST`), que ya tiene estados e IDs estables.
+
+⚠️ **Lo peor no es que esté en memoria: es que `PENDIENTES.md` depende de ella.** La fila
+**B-TEST-10** dice literalmente *"Resto ítems 29-47 de la lista de testing (ver
+`memory/feedback_testing_pendiente.md`)"* — o sea, la fuente única de verdad **delega en la
+memoria de Claude**, que es exactamente lo que la regla prohíbe.
+
+**Mapeo real (verificado 2026-08-02):**
+- Ítems **29-47** → 9 ya tienen fila propia: #47→B-TEST-01 · #36→B-TEST-02 · #32→B-TEST-03 ·
+  #38/39→B-TEST-04 · #35→B-TEST-05 · #42→B-TEST-06 · #43→B-TEST-07 · #41→B-TEST-08 ·
+  #44→B-TEST-09. **Quedan 8 sin fila**: 29, 30, 31, 33, 37, 40, 45, 46.
+- Ítems **1-28** → **no están** en `PENDIENTES.md` (los `A-TEST-01..06` son de otros temas).
+  Son de mayo o antes: **varios ya deben estar testeados o pisados por desarrollos posteriores.**
+
+### ✅ RESUELTO 2026-08-02 — opción (c)
+
+El usuario eligió cortar la dependencia sin inventar certezas sobre qué está testeado:
+1. **8 filas nuevas** `B-TEST-11..18` — los ítems 29, 30, 31, 33, 37, 40, 45, 46.
+2. **`B-TEST-10` eliminada** — era la que apuntaba a `memory/` para saber *qué falta*.
+3. **Ítems 1-28 → [C-01](#c-01)**, **transcriptos completos** en su dossier (no un conteo): la
+   Sección C existe justamente para "dudosos, probable que varios ya no apliquen". Se resuelven
+   al auditar la Sección C ([A-OP-04](#a-op-04)).
+4. **La memoria quedó como puntero** a este archivo.
+
+**Ítem #34** (schema MA expuesto / fix `.schema('msa')`) quedó cubierto por `B-TEST-06`, que es el
+mismo fix del motor.
+
+**Regla adoptada para que no se repita** → `CLAUDE.md` § Documentación:
+> La memoria puede citar a la documentación. **La documentación NO puede citar a la memoria.**
+
+---
+
+## <a id="a-sec-03"></a>A-SEC-03 — Terminar el módulo Usuarios y ponerlo activo
+
+**Decidido por el usuario 2026-08-02** al ordenar la documentación: `Usuarios.md` (huérfano en la
+raíz desde abr-2026) pasó a ser **`MODULO_USUARIOS.md`**, y el módulo hay que **terminarlo y
+activarlo**.
+
+### Lo que hay hoy (funcionando)
+Rutas-como-password en `config/access-routes.ts`: `adminjms1320` → `admin` (ve todo) ·
+`ulises` → `contable` (sólo la tab Egresos: Facturas ARCA + Templates). El rol sale de la URL en
+`app/[accessRoute]/page.tsx` y baja como prop a `dashboard.tsx`. Hay restricciones finas ya
+implementadas en `vista-facturas-arca.tsx` (DDJJ IVA, quincena SICORE, botón Revertir, secciones
+de Vista de Pagos).
+
+### 🐞 Bug documentado y sin arreglar
+`userRole` se pasa de `dashboard.tsx` a `VistaEgresos`, pero **`VistaEgresos` no recibe el prop**
+(función sin parámetros). El prop se pierde y no llega a los sub-componentes. Por eso
+`vista-facturas-arca.tsx` lee el rol **directamente de `window.location`** como workaround.
+
+### Lo que el usuario quiere (y hoy no existe)
+1. Que **todo lo nuevo quede restringido por defecto** para no-admin.
+2. **No tener que acordarse** de agregar la restricción en cada feature.
+3. Dar acceso **de a poco (opt-in)**, no bloquear de a poco (opt-out).
+
+### El plan ya está decidido — falta ejecutarlo
+`MODULO_USUARIOS.md` compara 4 opciones (wrapper del cliente, guard por función, hook
+`useSupabase()`, RLS minimalista) y **selecciona la Opción A — RLS Minimalista con Supabase Auth**.
+Los 9 pasos están escritos ahí: instalar `@supabase/ssr` · crear usuario admin en Supabase Auth ·
+`ADMIN_EMAIL`/`ADMIN_PASSWORD` en Vercel y `.env.local` · migrar `lib/supabase.ts` al cliente SSR ·
+`middleware.ts` para refresh de sesión · sign-in silencioso del admin · políticas RLS (lectura
+libre + escritura sólo `authenticated`) · verificar que las API routes con `service_role` no se
+rompen · testing (Ulises no escribe, admin sí).
+
+### Por qué importa — es el fix de fondo de [A-SEC-01](#a-sec-01)
+A-SEC-01 dice que **`anon` puede borrar todas las tablas**. Este módulo **es** su solución: hoy
+los accesos son "UX + validación de URL" y **no protegen la API**. Está escrito y sin hacer desde
+abril.
+
+**Nota:** las restricciones finas de Ulises son de **visibilidad/UX** y sobreviven igual a RLS —
+son independientes.
+
+---
+
+## <a id="a-doc-10"></a>A-DOC-10 — Otras 19 fugas doc → memoria
+
+**Hallazgo 2026-08-02, corrigiendo una afirmación mía errónea.** Al escribir la regla "la doc no
+cita a la memoria" dije que `B-TEST-10` era la **única** fuga. **No lo era.** El grep sobre las
+dimensiones da **19 citas más**:
+
+| Archivo | Citas | Forma típica |
+|---|---|---|
+| `PENDIENTES.md` | 14 | *"Detalle: `memory/project_xxx.md`"* al pie de un dossier |
+| `RECONSTRUCCION_SUPABASE_2026-01-07.md` | 4 | *"Documentación: `memory/reference_ventas_msa.md`"* |
+| `MODULO_DASHBOARD.md` | 3 | ídem |
+| `KNOWLEDGE.md` | 1 | ídem |
+| `MODULO_REGLAS_BANCARIAS.md` | 1 | ídem |
+
+*(No cuentan las menciones dentro del texto de la propia regla en `CLAUDE.md` / `CLAUDE_BASE.md`,
+ni `CLAUDE_HISTORICO.md`, que es archivo congelado.)*
+
+**Por qué es la misma falla, no una menor.** El patrón es idéntico al de `B-TEST-10`: el dossier
+resume y manda **el detalle** a la memoria. Si la memoria se pierde o envejece, la dimensión queda
+con la mitad de la historia y un puntero muerto — que es exactamente lo que la regla previene.
+
+**Qué hay que hacer:** por cada cita, **absorber lo que sirve** en la dimensión y borrar el
+puntero. No es mecánico: hay que leer cada memoria y decidir qué merece subir (varias son de
+2025-2026 temprano y pueden estar desactualizadas).
+
+**Cuándo:** no urgente. Conviene hacerlo **por tema** — cuando se toque cada dossier, se absorbe
+el suyo. Forzar los 19 de una es releer ~19 memorias sin motivo.
+
+**Chequeo:** `grep -c "memory/" *.md` sobre las dimensiones. Ojo con los falsos positivos: el
+texto de la regla en `CLAUDE.md` menciona `memory/` a propósito.
+
+---
+
+## <a id="c-01"></a>C-01 — Testing ítems 1-28 (absorbidos de la memoria, 2026-08-02)
+
+Lista de funcionalidades sin testear armada entre **abril y mayo de 2026**. Vivía en
+`memory/feedback_testing_pendiente.md`; se transcribe acá para que `PENDIENTES.md` no dependa de
+la memoria de Claude.
+
+> ⚠️ **Estado real desconocido.** Son de mayo o antes y hubo dos meses de desarrollo encima.
+> Varios ya deben estar testeados, y otros pisados por cambios posteriores. **No asumir que están
+> pendientes.** Se auditan junto al resto de la Sección C ([A-OP-04](#a-op-04)).
+
+**Extracto bancario**
+1. Sistema revisión extracto — revisado/notas operador, visual rojo translúcido, marcado masivo
+2. Filtros rápidos — chips con contadores (Pendientes, Auditar, CATEG Inválida, Sin CATEG)
+3. Búsqueda mejorada — 9 columnas
+12. Detalle editable — inline + masivo
+13. Categ propagada — asignación de cuentas propaga categ automáticamente
+18. Columnas Proveedor y Comprobantes — 2 columnas nuevas visibles por defecto
+
+**Dashboard**
+5. Agrupado por templates — agrupa por nombre de template
+6. Expandible sub-categorías — desglose multi-cuenta
+
+**Selectores de cuenta**
+7. Selector sub-categorías extracto — texto libre + existentes + templates + plan de cuentas
+8. Selector sub-categorías cash flow — ídem
+9. `SelectorCuentaContable` unificado — historial proveedor + jerarquía + buscador
+15. `SelectorCuentaContable` jerarquía completa — muestra la ruta entera (RESULTADOS > EGRESOS > …)
+
+**Motor de conciliación**
+10. Re-asignación de movimientos conciliados — cambiar template/factura post-conciliación
+17. Pre-filtro CUIT bancario — si el banco informa CUIT, filtra candidatos antes de comparar montos
+20. Tab Grupo en asignación manual — vincular extracto a grupo de cuotas, desglose expandible
+21. Auditar→conciliado smart — no pide vincular si ya tiene origen asignado
+23. Pre-filtro haberes — "haber" restringe el pool a sueldos
+24. Regla empleado contable/interno — Tipo C en el motor para sueldos
+
+**Pagos / facturas**
+11. Detalle mejorado de facturas — formato FC/ND/NC en el importer (sin código tipo AFIP)
+14. Fecha editable en Vista Pagos — click para cambiar fecha en facturas ARCA y templates
+16. Bloqueo de edición de monto en filas agrupadas de Cash Flow — `toast.error` al intentar editar
+26. Multi-CUIT en agrupación ARCA — alerta al agrupar facturas de distinto CUIT
+27. Cancelación FC/NC en Vista Pagos — escenario A (FC+NC mismo CUIT) y B (NC contra descuentos)
+28. Pago parcial con anticipo + ECHEQ — crear anticipo, vincular a FC, pagar el saldo con un segundo ECHEQ
+
+**Otros**
+4. Búsqueda rápida en templates — nueva, reactiva
+19. BBDD Proveedores — 105 proveedores, auto-poblada desde ARCA + templates
+22. Filtro categ aplica sólo a visibles — búsqueda + Aplicar filtra como Excel
+25. Agrupación de sueldos — agrupar/desagrupar en Vista Pagos; Cash Flow agrupa en fila única
 
 ---
 
@@ -1047,7 +1650,7 @@ El INSERT se escribió **genérico** (todo `cuit_cliente` de `comprobantes_venta
 
 ## <a id="b-feat-presu-ingresos"></a>B-FEAT-PRESU-INGRESOS — Presupuesto de INGRESOS: arrendamientos agrícolas (2026-07-26)
 
-**Diseño completo** (fórmulas, reglas, DDL, UI, fases) → `DISEÑO_PRESUPUESTO.md`
+**Diseño completo** (fórmulas, reglas, DDL, UI, fases) → `MODULO_PRESUPUESTO.md`
 § INGRESOS — Arrendamientos agrícolas. **Origen**: `exports_app/- Desarrollo Presuesto..xlsx`.
 
 **Decisión arquitectural**: el presupuesto de ingresos NO se carga en Presupuesto — se carga como

@@ -1,5 +1,11 @@
 # 🎯 CLAUDE.md - CENTRO DE COMANDO
 
+> ⚠️ **ARCHIVO CONGELADO — 2026-08-02.** Es la dimensión HISTORIAL: se lee, no se actualiza.
+> Los **nombres de archivo citados acá quedaron viejos**: los docs de módulo se renombraron a
+> `MODULO_*.md` el 2026-08-02 (`DISEÑO_TEMPLATES.md` → `MODULO_TEMPLATES.md`, `SICORE.md` →
+> `MODULO_SICORE.md`, `CONCILIACION-CONTABILIDAD.md` → `MODULO_CONCILIACION.md`, etc.).
+> Mapa completo y regla vigente → `CLAUDE.md` § Documentación · `PENDIENTES.md` § A-DOC-02.
+
 > **Este archivo es tu "índice inteligente"**: Información crítica actual + navegación al conocimiento completo.
 
 ---
@@ -2852,3 +2858,116 @@ un cajón "sin clasificar" — **se leería peor que el alfabético actual**.
 **Tipo**: Fix de fondo (clasificación) + ordenamiento de la grilla
 **Resultado**: C-27 ✅ · C-22 paso 1 ✅ · 3 dudas verificadas ✅ · **todo SIN TESTEAR** ⏳
 **Operativo**: MCP quedó en `write` (devolver a read-only, A-OP-01) · merge a `main` pendiente
+
+
+---
+
+# 📥 ABSORBIDO 2026-08-02 — SESION-2025-09-11.md
+
+> Era un `.md` suelto en la raíz, fuera de toda dimensión (A-DOC-05). Se absorbe acá, que es la
+> dimensión HISTORIAL. Contenido original sin modificar.
+
+# 📋 SESIÓN 2025-09-11 - SISTEMA DDJJ IVA FIXES CRÍTICOS
+
+## 🎯 **CONTEXTO SESIÓN:**
+- **Objetivo**: Fix sistema DDJJ IVA formato profesional LIBRO IVA COMPRAS
+- **Problema inicial**: Error "a.includes is not a function" impedía generación archivos
+- **Origen**: Sesión previa implementó sistema completo pero con errores técnicos
+
+---
+
+## 🔧 **PROBLEMAS RESUELTOS:**
+
+### ✅ **1. ERROR CRÍTICO "includes is not a function"**
+- **Root Cause**: Interface `FacturaArca` definía `tipo_comprobante: number` pero código usaba `.includes('C')`
+- **Solución**: Cambiar a `f.tipo_comprobante === 11` (Tipo 11 AFIP = Factura C MONOTRIBUTISTA)
+- **Commit**: `9cc5333` - Fix tipo_comprobante number vs string
+- **Resultado**: ✅ Error completamente eliminado
+
+### ✅ **2. PDF LIMITADO A 30 FACTURAS**
+- **Problema**: PDF mostraba solo primeras 30 facturas vs Excel todas
+- **Solución**: Remover `facturas.slice(0, 30)` → mostrar todas
+- **Plus**: Desglose alícuotas en página separada con header profesional
+- **Commit**: `f01c297` - PDF completo + desglose página separada
+- **Resultado**: ✅ PDF multipágina completo
+
+### ✅ **3. CAMPOS BD INCORRECTOS - IVA Y OTROS TRIBUTOS**
+- **Diagnóstico**: Excel IVA ✅ otros_tributos ❌, PDF ambos ❌
+- **Root Cause**: Mapeo incorrecto campos BD
+  - `f.imp_otros_tributos` → NO EXISTE en BD (campo correcto: `otros_tributos`)
+  - `f.imp_total_iva` → NO EXISTE en BD (campo correcto: `iva`)
+- **Verificación BD**: Query SQL confirmó valores correctos en campo `iva`
+- **Solución**: Corregir todos los mapeos + actualizar interface FacturaArca
+- **Commits**: 
+  - `031baa5` - Fix interface FacturaArca con campos IVA faltantes
+  - `f96fa6c` - Fix mapeo campos BD → Excel/PDF
+- **Resultado esperado**: ⚠️ **PENDIENTE TESTING** - Total IVA + Otros Tributos funcionando
+
+---
+
+## 📊 **ESTRUCTURA FINAL IMPLEMENTADA:**
+
+### **LIBRO IVA COMPRAS - Formato Profesional**
+- **Header**: MARTINEZ SOBRADO AGRO SRL + CUIT + branding
+- **Columnas BD reales**: Neto Gravado, Neto No Gravado, Op. Exentas, Otros Tributos, Total IVA, Imp. Total
+- **IVA Diferencial**: Suma automática alícuotas != 21%
+- **PDF**: Orientación horizontal + multipágina + desglose separado
+- **Persistencia**: localStorage carpeta seleccionada
+
+---
+
+## 🚨 **PENDIENTES CRÍTICOS PRÓXIMA SESIÓN:**
+
+### 🧪 **TESTING INMEDIATO - PRIORIDAD MÁXIMA**
+- **Verificar**: Total IVA muestra valores reales (ej: $3,896.65, $27,608.35)
+- **Verificar**: Otros Tributos muestra valores reales (no ceros)
+- **Testing**: Excel + PDF ambos formatos funcionando
+- **Tiempo estimado**: 2 minutos testing
+
+### 🎯 **MEJORAS DESGLOSE PENDIENTES (si testing OK)**
+1. **Monotributo en desglose**: Mover de totales generales → fila en tabla alícuotas
+2. **Estructura objetivo**:
+   ```
+   Al 0%       | [neto] | 0.00  | [iva]
+   Al 2.5%     | [neto] | 2.50  | [iva]
+   Al 5%       | [neto] | 5.00  | [iva]
+   Al 10.5%    | [neto] | 10.50 | [iva]
+   Al 21%      | [neto] | 21.00 | [iva]
+   Al 27%      | [neto] | 27.00 | [iva]
+   Monotributo | [monto]| ----  | ----
+   -----------+--------+-------+-----
+   TOTALES     | [suma] | ----  | [suma]
+   ```
+3. **Resaltado**: Solo fila TOTALES con formato especial
+4. **Totalización**: Vertical (columnas) + horizontal (filas)
+
+---
+
+## 🏆 **COMMITS APLICADOS 2025-09-11:**
+```
+4becd2e - Fix: Error includes function en generación Excel/PDF  
+9cc5333 - Fix: Error tipo_comprobante number vs string MONOTRIBUTISTA
+f01c297 - Feature: PDF completo + desglose página separada
+55a841c - Fix: Usar campo 'iva' en lugar 'imp_total_iva' inexistente
+031baa5 - Fix: Agregar campos IVA faltantes interface FacturaArca
+f96fa6c - Fix: Corregir mapeo campos BD → Excel/PDF
+```
+
+---
+
+## 📊 **ESTADO FINAL:**
+- **Branch**: `desarrollo` sincronizado
+- **Sistema DDJJ**: 95% funcional
+- **Errores técnicos**: ✅ Completamente resueltos
+- **Formato profesional**: ✅ Implementado
+- **BD mapping**: ✅ Corregido  
+- **Bloqueante**: ⚠️ Requiere testing valores IVA/Otros Tributos
+
+---
+
+## 🎯 **METODOLOGÍA PRÓXIMA SESIÓN:**
+1. **[2min]** Testing inmediato: Generar Excel + PDF → verificar columnas
+2. **[Si OK]** Continuar mejoras desglose según estructura objetivo
+3. **[Si falla]** Debug específico campo por campo con queries BD
+
+**🎯 Usuario debe probar inmediatamente**: Excel + PDF generación para verificar IVA Total y Otros Tributos muestran valores reales vs ceros.

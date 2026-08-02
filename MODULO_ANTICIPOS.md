@@ -113,4 +113,4 @@ function montoPagoEnPesos(f: FacturaArca): number {
 | Tema | Descripción |
 |------|-------------|
 | USD + anticipo | No soportado: la vinculación no convierte moneda entre el anticipo (ARS) y una factura en USD. |
-| Flujo 2-ECHEQ | Probado OK (Arroyo Tala, 2026-05-25): crear anticipo (ECHEQ 1) → marcar ECHEQ en Vista Pagos → vincular → pagar el saldo con ECHEQ 2. Ver `ECHEQ.md`. |
+| Flujo 2-ECHEQ | Probado OK (Arroyo Tala, 2026-05-25): crear anticipo (ECHEQ 1) → marcar ECHEQ en Vista Pagos → vincular → pagar el saldo con ECHEQ 2. Ver `MODULO_ECHEQ.md`. |

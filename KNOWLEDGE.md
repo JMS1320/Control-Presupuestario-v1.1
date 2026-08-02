@@ -1052,3 +1052,19 @@ garantice que la unión de los filtros sea el conjunto entero. Un `filter` por s
 en silencio; un `switch` con `default` obliga a decidir.
 
 **Tags**: `#subtotales` `#no-cierra` `#default-explicito` `#particion-total`
+
+---
+
+## `AutoMejoras/` es un subproyecto aparte — NO tocar `#repo #2026-08-02`
+
+En la raíz del repo hay una carpeta **`AutoMejoras/`** (untracked, may-2026) con su propio índice,
+objetivos y scripts (`automejoras.bat`, `automejoras-pausar.bat`, `automejoras-reanudar.bat`,
+`settings-automejoras.json`, `CONFIG.md`, `OBJETIVOS - primeras ideas.md`, …).
+
+**Qué es (usuario, 2026-08-02):** *"era un programa aparte que trabajé para nosotros, en el
+relevamiento automático mientras no trabajo yo"*. O sea: una herramienta propia que corre sola
+haciendo relevamiento cuando el usuario no está frente a la máquina.
+
+**Regla:** **dejarlo como está.** No moverlo, no `.gitignore`-arlo, no borrarlo, no incluirlo en
+la auditoría de dimensiones de documentación — sus `.md` son del subproyecto, no de este repo.
+Decisión explícita del usuario al ordenar la documentación (`PENDIENTES.md` § A-DOC-05).
