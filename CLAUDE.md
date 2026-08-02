@@ -53,6 +53,32 @@ presentaciones). Cuando se acerca un evento, lo que ese evento necesita **pasa a
 
 ## 🤖 REGLAS AUTOMÁTICAS
 
+### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
+El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
+enganchar algo nuevo con algo hecho hace meses. **Cuanto menos contexto haya, más se aplica.**
+
+1. **Asumir que el tema YA existe.** Ante cualquier pedido, dar por sentado que hay código hecho,
+   una decisión tomada o al menos una intención registrada. **Buscarla.** Recién si no aparece
+   nada, es nuevo de verdad.
+   - ⚠️ **Antes de preguntarle algo al usuario, buscarlo primero.** Si la respuesta está en el
+     repo, la pregunta es pereza. *(Regla agregada 2026-08-02 a pedido del usuario, después de
+     que Claude preguntara qué eran los "períodos de templates" teniendo el generador de campañas
+     y la columna `año` en el repo.)*
+   - Y al buscar, **buscar bien**: buscar `campana` no encuentra `campaña`, y grepear un solo
+     archivo no es haber buscado. Si la evidencia es floja, decirlo — no afirmar que algo no existe.
+2. **Primero las dimensiones, después el código**: `MODULO_<X>.md` (cómo está pensado) →
+   `PENDIENTES.md` (qué se pensó hacer y por qué) → `MANUAL-USO.md` (cómo se usa hoy) →
+   `ARQUITECTURA-BD.md` (dónde vive el dato) → `KNOWLEDGE.md` (qué ya se descartó).
+3. **La documentación manda sobre la memoria** (ver § Documentación, dirección única).
+4. **Todo cuelga del norte** (§ 🧭): lo nuevo se diseña para servir al presupuesto autoalimentado
+   y para encajar con lo que existe, nunca como isla.
+5. **Si lo pedido choca con lo documentado, avisar ANTES de romperlo.** Puede ser un cambio de
+   rumbo (se decide y se documenta con fecha y motivo) o un olvido (se respeta lo viejo). Lo que
+   no se hace es **pisarlo en silencio**.
+
+*Motivo: con 8 dimensiones, 14 módulos y 60+ memorias, el modo de falla real es rehacer algo ya
+resuelto o contradecir una decisión vieja sin enterarse.*
+
 ### 💰 Convención Inputs Monetarios (es-AR) — OBLIGATORIO
 Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
 

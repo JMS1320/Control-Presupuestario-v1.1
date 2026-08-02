@@ -67,12 +67,59 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|--------|------|------|--------------|
 | A-OP-01 | 🔴 | Alta | MCP Supabase quedó en WRITE — revertir a read-only | ✅ `.mcp.json` sin `--read-only` |
 | A-OP-02 | ✅ | Media | Archivo `nul` basura en el repo — BORRADO 2026-06-21 (era el error capturado "dir: cannot access 'vercel.json'"). `git add -A` ya funciona | resuelto |
-| A-OP-03 | 🔴 | Alta | Merge `desarrollo` → `main` (20 commits) | ✅ `git rev-list --count main..desarrollo` = 20 |
+| A-OP-03 | 🔴 | Alta | Merge `desarrollo` → `main` — **son 133 commits, no 20** (re-contado 2026-08-02). La mayoría **sin testear** (todo el presupuesto de julio). `main` = auto-deploy a producción: mergear hoy publica trabajo sin probar | ✅ `git rev-list --count main..desarrollo` = **133** (2026-08-02) |
 | A-OP-04 | ⏸️ | Media | Auditar Secciones C y D junto al usuario | — |
 | A-OP-05 | 🔴 | Baja | Carpeta vacía `arca-poc/` — borrar a mano (Windows handle) | — |
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) |
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) |
 | A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) |
+
+### 💰 PRESUPUESTO — lista del usuario 2026-08-02 (`P-NN`)
+> Batch dictado por el usuario el 2026-08-02. **Prefijo `P-`** = mejoras del módulo Presupuesto
+> (se documenta acá porque rompe el patrón `X-TIPO-NN`: es un lote temático).
+> Estado: 🟢 entendido y accionable · ❓ necesita que el usuario aclare · 🔗 ya existe algo.
+> Detalle y agrupación → [P-LOTE](#p-lote).
+
+| ID | Est | Ítem |
+|----|-----|------|
+| P-01 | 🟢 | Botón para **actualizar el presupuesto** (recalcular a demanda) |
+| P-02 | ❓ | **"Este mes sí/no"** en el mes de arranque: si ya se pagó, no presupuestar; si no, sí. *El usuario avisa que **contradice otras alternativas*** |
+| P-03 | 🟢 | **Edición de sueldos** — poner un sueldo a cada empleado con la info disponible, más allá del histórico |
+| P-04 | ❓ | **¿IPC siempre? ¿Está trabajando bien el IPC?** — auditar el modo |
+| P-05 | 🔗 | **Costos de producción** al presupuesto — ya abierto como C-7 / B-FEAT-COSTOS-PRODUCTIVOS |
+| P-06 | ❓ | **¿Las FC en dólares están bien tomadas** en el presupuesto? — auditar |
+| P-07 | 🔗 | **Alerta presupuestado vs histórico** — `controlarPresupuesto()` ya existe en `modos.ts`; ver qué falta |
+| P-08 | ❓ | **Kg por ha / valor Índice Novillo** como unidad de presupuestación (ej. IATF = tantos kg por cabeza por año) |
+| P-09 | 🟢 | **Monto en un solo mes**, por única vez (override puntual de celda) |
+| P-10 | ❓ | **Anualizado que se engrosa**: si algo se gasta 1 vez al año y se presupuesta como promedio mensual, el no-gasto de cada mes debe acumularse para el mes en que caiga |
+| P-11 | 🟢 | Mostrar **IPC de 12 meses** |
+| P-12 | ❓ | **Ajuste de 2 meses en uno**: si hay 1 FC/mes y un mes viene vacío y otro con 2, poder corregirlo |
+| P-13 | ❓ | **IATF**: cae bien en los meses que ya existen, pero poder aplicarle la fórmula **por cabeza** |
+| P-14 | ❓ | **Por cabeza + IPC deberían ser acumulables** (hoy los modos son excluyentes) |
+| P-15 | 🟢 | **Mostrar el ejemplo de lo que presupuesta**: si elijo "última FC", ver la muestra usada y el resultado |
+| P-16 | 🟢 | 🐞 **Modo "mismo del año pasado" no salta de año** — ej. Seguridad y Alarma de ene-2026 debería aparecer en **ene-2027** y no aparece |
+| P-17 | ❓ | **Presupuesto anual con arrastre**: poner el monto en un mes tentativo y, si no se gasta, que pase al siguiente; si no se cumple en 11 meses queda para el 12°. **+ alerta** "se gastó cero el último año y seguís presupuestando $1.500.000 anual" |
+| P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
+| P-19 | 🟢 | **Períodos contables de templates — YA EXISTEN, hay que USARLOS.** ⚠️ Claude afirmó el 2026-08-02 que "no hay columna de campaña"; **es falso**, lo corrigió el usuario. `egresos_sin_factura` tiene **`año`** (label "26/27"), **`periodicidad`** ('anual'\|'bianual') y **`template_origen_id`** → el template del que se clonó. El generador escribe `año: targetLabel` al renovar. Lo que falta es que el **Presupuesto los lea** |
+| P-20 | ❓ | Repensar el diseño a la luz de los períodos — a ver **con el contexto específico de Templates** (decisión del usuario: no diseñar en abstracto) |
+| P-21 | 🟢 | **Sueldo y SUSS con aguinaldo** |
+| P-22 | 🔗 | **Que templates se muestren como cuentas contables** — se cruza con C-19 / C-24 |
+| P-23 | ❓ | **Cuotas que dicen "templates" pero no autogeneran la próxima campaña** si no está llena |
+| P-24 | 🔗 | **Separar siempre en secciones**: lo que se proyecta, lo que no, y todos — C-22 paso 1 ya hizo EGRESOS/DISTRIBUCIONES |
+| P-25 | ❓ | **Calendario fijo por cuenta**: Ant. Ganancias son 10 cuotas en los mismos meses; Inmobiliario 4 vencimientos fijos. Que la BD sepa el calendario y presupueste eso, dejando de lado las excepciones |
+| P-26 | 🟢 | **Débitos y créditos** = 0,6% de ingresos + 0,6% de egresos, **sin contar FCI** |
+| P-27 | ❓ | **Ver lo que quedó pendiente del mes anterior** (julio, en este caso) |
+| P-28 | ❓ | Alternativa: **último saldo ± movimientos**, y mostrar desde el último saldo |
+| P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
+| P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
+| P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-33 | 🔴 | **Auditar los "no presupuestar" y los estacionales vacíos** — el usuario: *"mucho de lo que puse no proyectar es por algún problema"* y *"muchos de los que puse mismo del año pasado no figura nada presupuestado"*. Cada exclusión es una **pista de bug**; los estacionales vacíos son los **casos de test de [P-16](#p-16)** |
+| P-31 | 🔗 | **Vincular las proyecciones de venta al presupuesto** — se cruza con A-FEAT-10 y con Ingresos/arrendamientos |
+
+### 🐄 MARGEN POR ACTIVIDAD — módulo nuevo (2026-08-02)
+| ID | Est | Ítem |
+|----|-----|------|
+| M-01 | 🟡 | **Módulo Margen por actividad** — Arrend. Rojas · Arrend. Nazarenas (agrícolas) · **Cría** · Recría. Modelo teórico + real por campaña, y de ahí salen los **costos directos** del presupuesto. Fuente: `exports_app/MARGENES - Situacion Actual.xlsx` § MARGEN CRIA | → [M-01](#m-01) |
 
 ### 🏁 Norte — features del resultado final (2026-08-02)
 > Salen de la ampliación del norte (§ [A-DOC-07](#a-doc-07)). Son **objetivos grandes**, no tareas:
@@ -321,6 +368,174 @@ del otro, anotarlo en ambos.
 3. Asegurar que el proceso incluya los **cambios no-backup** documentados en `RECONSTRUCCION_SUPABASE` § CAMBIOS POST-RECONSTRUCCIÓN.
 
 **Relación:** complementa A-SEC-01 (si `anon` puede truncar todo, un restore confiable es la red de seguridad).
+
+---
+
+## <a id="p-lote"></a>P-LOTE — Presupuesto: los 3 conceptos de fondo (2026-08-02)
+
+Tres cosas que el usuario pidió y que **no son features sueltas: son cambios de modelo**. Todo lo
+demás de la lista `P-*` se apoya en esto.
+
+### 1. Los modos tienen que **componerse**, no elegirse
+
+Hoy `ModoPresupuesto` es un enum de 6 valores **excluyentes**: una cuenta tiene *un* modo. El
+usuario necesita combinarlos.
+
+> *"Algo se calcula por cabeza hoy pero además sumarle el IPC del año. Además se pone en un solo
+> mes o se desglosa en el año. Está puesto como uno u otro y ahí falta configuración para poder
+> sacar todo el provecho."*
+>
+> *"Si son 9 kg de carne por cabeza, podemos —si tenemos presupuesto del kg de carne— usarlo; si
+> no, tomar lo pagado el año anterior dividido las cabezas y tenemos lo pagado por cabeza,
+> aplicarle IPC y multiplicarlo por las cabezas nuevas. Lo importante es el concepto de que a
+> veces no es una o la otra sino que son cosas diferentes que interactúan."*
+
+**Lo que se desprende: un modo son 3 decisiones independientes, no una.**
+| Eje | Qué responde | Opciones |
+|-----|--------------|----------|
+| **BASE** | de dónde sale el monto unitario | última FC · promedio N · mismo mes año anterior · **$/cabeza** · **unidad física** (kg novillo, kg carne) · manual |
+| **AJUSTE** | cómo se actualiza al futuro | ninguno · **IPC** · dólar · precio de la unidad física |
+| **DISTRIBUCIÓN** | cuándo cae en el año | mensual · **un solo mes** · calendario fijo (N cuotas en meses dados) · **cupo anual con arrastre** |
+
+Hoy los 6 modos son combinaciones fijas de esos tres ejes. Separarlos es lo que habilita
+[P-13](#p-lote) (IATF por cabeza), [P-14](#p-lote), [P-09](#p-lote), [P-25](#p-lote) y
+[P-10/P-17](#p-lote) **con una sola pieza** en vez de cinco parches.
+
+**El caso del $/cabeza con fallback** (segunda cita) muestra que la BASE puede tener **cascada**:
+si hay precio de la unidad física, usarlo; si no, derivarlo de la historia (pagado ÷ cabezas).
+Es la misma idea de `resolverTipo()` en C-27.
+
+### 2. El presupuesto anual **no se pierde si no se gasta en el mes**
+
+> *"Se compran 7000 lts anuales de gas oil pero 1 o 2 veces por año. ¿Qué pasa si lo pongo en
+> marzo y finalmente lo compro más adelante? Si tengo conciliada la compra no pasa nada porque se
+> va de saldo, pero ¿si aún no concilié? En uno de mis ejemplos, si no concilié, aún figura en el
+> presupuesto, entonces estaría bien según ese formato. **Lo que no puede pasar es que por no
+> hacerlo en el mes se pierda el presupuesto.**"*
+
+El invariante a respetar: **lo presupuestado y no ejecutado se arrastra, no se evapora.** El mes
+asignado es una *estimación de cuándo*, no un vencimiento. Se cierra sólo contra la **realidad**
+(la conciliación), no contra el calendario.
+
+**Solución acordada — "cupo anual con saldo", como VARIANTE, no como regla universal.** El usuario
+(2026-08-02): *"me gusta pero puede que no todos los casos apliquen, entonces sería una variante"*.
+Encaja como una opción del eje **DISTRIBUCIÓN** de arriba, junto a mensual / un solo mes /
+calendario fijo. Cada cuenta elige la suya.
+
+Cómo funciona: la cuenta tiene un **cupo anual** (ej. 7000 lts de gasoil) y un **mes tentativo**.
+Lo ejecutado descuenta del cupo; el saldo se muestra en el mes tentativo y **se corre solo**
+mientras no se ejecute; si llega el mes 12 con saldo, cae todo ahí. **Ventaja sobre el promedio
+mensual:** el número que se ve es siempre *lo que falta gastar*, que es la pregunta real — el
+promedio, a mitad de año, ya no representa nada porque la compra viene entera.
+
+### 3. Los controles son **requisito de cierre**, no un extra
+
+> *"Habrá muchos controles para sentirme seguro. Por empezar es un requisito pasar por esto para
+> considerar terminado el módulo y es uno de los puntos principales."*
+
+→ [P-32](#p-32).
+
+---
+
+## <a id="p-32"></a>P-32 — Batería de controles del Presupuesto (requisito de cierre)
+
+**Lo que hay hoy:** `controlarPresupuesto()` en `lib/presupuesto/modos.ts` — control de cordura
+contra los últimos 6 meses reales, con niveles `alta`/`media`.
+
+**Lo que pidió el usuario:** que sean **muchos** y que **pasar por ellos sea condición para dar el
+módulo por terminado**. Por ahora, sólo anotar ideas.
+
+### Ideas de controles (borrador — falta que el usuario elija y agregue)
+
+**Cordura del monto**
+- Presupuestado vs. histórico del mismo mes: desvío > X% → avisar *(ya existe)*
+- Presupuestado vs. promedio de los últimos 12 meses
+- Cuenta que **saltó de orden de magnitud** respecto de su propia serie
+- Cuenta con historia que quedó en **$0** presupuestada (¿se excluyó sin querer?)
+
+**Cobertura — lo que falta presupuestar**
+- Cuentas con movimiento en los últimos 12 meses y **sin presupuestar** en los próximos 12
+- Templates cuyas **cuotas se terminan** dentro del horizonte y no tienen campaña nueva generada
+  (se cruza con el Generador Renovar Campaña y con [P-23](#p-lote))
+- Cuentas del plan **sin `tipo`** o con `categ` huérfana (C-26)
+- Proveedor recurrente que **dejó de aparecer** (¿se perdió una FC o dejó de operar?)
+
+**Coherencia interna**
+- **Doble conteo**: el mismo concepto entrando por template *y* por cuenta contable (C-24/C-19)
+- Suma de secciones = total (C-22)
+- Lo `financiero` no debe estar en egresos operativos (C-27)
+- Cuentas marcadas `excluida`: listar **con su motivo**, porque muchas esconden un bug ([P-33](#p-lote))
+
+**Contra la realidad**
+- Presupuestado vs. **ejecutado** del mes cerrado, por cuenta (el control que cierra el ciclo)
+- Anual: *"se gastó cero el último año y seguís presupuestando $1.500.000"* — el que pidió
+  explícitamente en [P-17](#p-lote)
+- Presupuesto vs. **saldo bancario proyectado** (¿alcanza la plata?)
+
+**Trazabilidad**
+- Toda celda tiene que poder **explicar de dónde salió** (base, ajuste, muestra usada) —
+  [P-15](#p-lote). Un control que no se puede explicar no sirve para decidir.
+
+---
+
+## <a id="m-01"></a>M-01 — Módulo Margen por actividad (Cría, Recría, Arrendamientos)
+
+**Pedido del usuario 2026-08-02.** Sale del norte: *"resultado por actividad, período por período,
+más la proyección"* ([A-FEAT-12](#a-feat-12)). Actividades por ahora: **Arrendamiento Rojas**,
+**Arrendamiento Nazarenas** (agrícolas), **Cría** y **Recría**.
+
+**Fuente del modelo:** `exports_app/MARGENES - Situacion Actual.xlsx`, pestaña **MARGEN CRIA**
+(la única a mirar por ahora; el libro tiene 15 pestañas, el resto es contexto).
+
+### Lo que hace hoy el Excel (leído 2026-08-02)
+Margen bruto ganadero clásico, **en U$S/ha, sin IVA**, sobre 175 has, TC $1450. Cinco bloques:
+
+1. **Parámetros de producción** → carga (1,37 vacas/ha), receptividad, **% destete 85%**,
+   % reposición vaquillonas 23%, % refugo vacas 20%, toros en servicio 5%, toros refugo 1%.
+   De ahí salen las **cabezas**: 240 vacas, 204 terneros, 55 vaquillonas, 48 refugo, 12 toros.
+2. **Planteo técnico** → % campo natural 91%, % pasturas 9%, % promoción verdeos 65%,
+   tons de silo, rollos/vaca → **hectáreas por recurso forrajero**.
+3. **Precios** (U$S/kg) → ternero/ternera 3,79 · vaca 2,07 · toro venta 2,07 · toro compra 1400 U$S/cab.
+4. **Cotizaciones de insumos y servicios** → sueldos, sanidad vacas/terneros/toros, **IATF**,
+   implantación y mantenimiento de pasturas, promoción rye grass, verdeos, silo, rollos,
+   **% gastos de venta** (3% hacienda liviana / 9% vacas y toros) y **% gastos de compra** (6%).
+5. **Análisis económico**:
+   - `INGRESO NETO` = ventas (terneros + vacas + toros) − gastos de venta − compra de toros
+   - `TOTAL GASTOS DIRECTOS` = sueldos · recompra reposición · sanidad · renovación y
+     mantenimiento de pasturas · promoción y mantenimiento de verdeos · silo · rollos · gas oil
+   - `TOTAL MANTENIMIENTO/MEJORAS/VARIOS` = aguadas · automotores · combustible · instalaciones ·
+     arreglo de maquinarias · materiales · seguros · varios
+   - **`MARGEN BRUTO` = ingreso neto − directos − mantenimiento** (382,88 U$S/ha en el caso base)
+   - Y al final lo compara contra el **alquiler** → *ganancia sobre alquiler* (el costo de
+     oportunidad de no arrendar el campo).
+
+### Para qué lo quiere el usuario
+- Tenerlo en la app para **campañas pasadas con datos reales** y **presupuestado** para la
+  campaña actual y la siguiente.
+- **Conexión con Presupuesto (lo que motiva todo):** *"la cría tiene una serie de costos directos
+  que son los que menos medidos tengo"*. La idea es **poner la teoría** (este modelo), después
+  **colectar factura a factura** los costos reales, **comparar teoría contra realidad**, y que
+  **desde Margen se llenen los costos directos del Presupuesto**.
+
+### Respuestas del usuario (2026-08-02)
+1. **Unidad de campaña: la campaña contable es siempre 1/7 → 30/6**, y **agrupa todas las
+   actividades**. (Coincide con el período "bianual jul-jun" del Generador Renovar Campaña.)
+2. **Imputación de la factura a la actividad** — ideas, sin cerrar: que **las cuentas contables o
+   los templates tengan su actividad**; que ciertas haya que **desglosar** entre actividades; y
+   que ciertas sean **estructura** y se repartan **por hectárea** entre todas.
+3. **Quién manda cuando teoría y realidad difieren** — a definir.
+
+**Ritmo acordado:** el diseño del módulo **espera** a que se terminen las mejoras fáciles y claras
+del Presupuesto (`P-*` marcadas 🟢).
+
+### Estado
+🟡 **Sin diseñar todavía.** El usuario aprobó que sea un módulo propio → `MODULO_MARGEN.md`
+(dimensión MÓDULOS) cuando se arranque el diseño.
+
+**Piezas que ya existen y hay que reusar, no rehacer:** `centros_costo` (tabla maestra +
+`CentroCostoCombobox` en 6 lugares) · el módulo productivo (rodeos, pesadas, órdenes, stock de
+insumos) · el motor de ración `calcular()` en `analisis-productivo.tsx` · las cuentas de
+producción que `esProduccion()` ya excluye del presupuesto por entrar "por Actividades y costos".
 
 ---
 
