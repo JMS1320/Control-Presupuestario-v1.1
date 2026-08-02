@@ -85,12 +85,29 @@ export interface PuntoHistorico {
   proveedores: number
 }
 
+/**
+ * Un dato real de la historia que entró en el cálculo.
+ *
+ * Existe para poder MOSTRAR la muestra, no sólo la fórmula: ver "$1.200.000 ÷ 3" no dice si el
+ * promedio salió de tres meses parecidos o de dos ceros y un mes enorme. Con la muestra a la
+ * vista, el número se puede auditar de un vistazo.
+ */
+export interface PuntoMuestra {
+  /** Mes en formato corto: "mar-26". */
+  etiqueta: string
+  monto: number
+  /** Meses que no facturaron y entran como cero: se marcan para que no parezcan un dato. */
+  cero?: boolean
+}
+
 export interface CeldaPresupuesto {
   mes: string
   monto: number
   /** De dónde salió el número, en castellano. Va al tooltip. */
   explicacion: string
   confianza: 'alta' | 'media' | 'baja'
+  /** Los datos reales que se usaron. Vacío en manual/excluida, que no miran la historia. */
+  muestra?: PuntoMuestra[]
 }
 
 const clave = (a: number, m: number) => `${a}-${String(m).padStart(2, '0')}`
@@ -315,6 +332,7 @@ export function calcularCuenta(
       if (!ultimo) return vacio('No hay ninguna factura para propagar')
       const base = ultimo.monto
       const desde = km(ultimo.anio, ultimo.mes)
+      const muestra: PuntoMuestra[] = [{ etiqueta: etiquetaMes(ultimo.anio, ultimo.mes), monto: base }]
       return ctx.meses.map(m => {
         const n = Math.max(0, km(m.anio, m.mes) - desde)
         const monto = base * factorInflacion(ctx, desde, km(m.anio, m.mes), fija)
@@ -323,6 +341,7 @@ export function calcularCuenta(
           explicacion: `Última factura (${etiquetaMes(ultimo.anio, ultimo.mes)}): ${pesos(base)}`
             + textoInflacion(ctx, fija, n),
           confianza: n <= 6 ? 'alta' as const : 'media' as const,
+          muestra,
         }
       })
     }
@@ -338,6 +357,14 @@ export function calcularCuenta(
       const suma = enVentana.reduce((a, p) => a + p.monto, 0)
       const base = suma / n
       const conFactura = enVentana.filter(p => p.monto !== 0).length
+      // La muestra recorre la ventana MES A MES, no los puntos: así los meses sin factura
+      // aparecen como cero explícito. Son los que hunden el promedio y no se ven en la suma.
+      const muestra: PuntoMuestra[] = []
+      for (let k = ultimoKm - n + 1; k <= ultimoKm; k++) {
+        const a = Math.floor(k / 12), mm = (k % 12) + 1
+        const p = enVentana.find(x => km(x.anio, x.mes) === k)
+        muestra.push({ etiqueta: etiquetaMes(a, mm), monto: p?.monto ?? 0, cero: !p || p.monto === 0 })
+      }
       return ctx.meses.map(m => {
         const k = Math.max(0, km(m.anio, m.mes) - ultimoKm)
         const monto = base * factorInflacion(ctx, ultimoKm, km(m.anio, m.mes), fija)
@@ -347,6 +374,7 @@ export function calcularCuenta(
             + (conFactura < n ? ` · ${n - conFactura} sin factura, cuentan como cero` : '')
             + textoInflacion(ctx, fija, k),
           confianza: conFactura >= Math.ceil(n / 2) ? 'alta' as const : 'media' as const,
+          muestra,
         }
       })
     }
@@ -383,6 +411,9 @@ export function calcularCuenta(
           mes: clave(m.anio, m.mes), monto,
           explicacion: `${etiquetaMes(m.anio - 1, m.mes)}: ${pesos(base)}` + textoInflacion(ctx, fija, 12),
           confianza: 'media' as const,
+          // Cada mes tiene SU muestra: la del año anterior. No es una muestra común como en
+          // el promedio, y por eso se arma acá adentro.
+          muestra: [{ etiqueta: etiquetaMes(m.anio - 1, m.mes), monto: base }],
         }
       })
     }
@@ -399,6 +430,7 @@ export function calcularCuenta(
       const meses = Math.max(1, finPeriodo - km(h[0]!.anio, h[0]!.mes) + 1)
       const total = h.reduce((a, p) => a + p.monto, 0)
       const porCabezaMes = total / meses / ref
+      const muestra: PuntoMuestra[] = h.map(p => ({ etiqueta: etiquetaMes(p.anio, p.mes), monto: p.monto }))
       return ctx.meses.map(m => {
         const k = clave(m.anio, m.mes)
         const cab = ctx.cabezasPorMes?.[k] ?? (Number(cfg.cabezas_proyectadas) || ref)
@@ -407,6 +439,7 @@ export function calcularCuenta(
           mes: k, monto: inflado * cab,
           explicacion: `${pesos(porCabezaMes)}/cabeza/mes (${pesos(total)} ÷ ${meses} meses ÷ ${ref} cab) × ${Math.round(cab)} cabezas`,
           confianza: meses >= 6 ? 'media' as const : 'baja' as const,
+          muestra,
         }
       })
     }

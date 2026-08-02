@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  Loader2, ChevronDown, ChevronRight, AlertTriangle, ShieldCheck, Wand2,
+  Loader2, ChevronDown, ChevronRight, AlertTriangle, ShieldCheck, Wand2, RefreshCw,
 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { SeccionMetodosTemplates } from "@/components/seccion-metodos-templates"
@@ -23,6 +23,7 @@ import {
   calcularCuenta, sugerirModo, controlarPresupuesto, historiaUtil, esProduccion, netearExcluidos,
   ETIQUETA_MODO,
   type ModoPresupuesto, type ConfigCuenta, type PuntoHistorico, type CeldaPresupuesto,
+  type PuntoMuestra,
 } from "@/lib/presupuesto/modos"
 
 const MODOS = Object.keys(ETIQUETA_MODO) as ModoPresupuesto[]
@@ -234,6 +235,17 @@ export function PanelPresupuestoCuentas() {
   const histUtil = historiaUtil(historia)
   const ultimoReal = histUtil[histUtil.length - 1]
 
+  // IPC acumulado de los últimos 12 meses cargados. Es el número con el que el usuario compara
+  // cuando decide si una suba de proveedor es cara o barata: ver "IPC cargado (14 meses)" no
+  // dice nada, ver "últimos 12 meses: 87,4 %" sí.
+  const ipc12 = (() => {
+    if (ipc.length === 0) return null
+    const ord = [...ipc].sort((a, b) => (a.anio * 12 + a.mes) - (b.anio * 12 + b.mes))
+    const ultimos = ord.slice(-12)
+    const factor = ultimos.reduce((f, p) => f * (1 + (p.valor || 0) / 100), 1)
+    return { pct: (factor - 1) * 100, meses: ultimos.length, hasta: ultimos[ultimos.length - 1]! }
+  })()
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -272,6 +284,12 @@ export function PanelPresupuestoCuentas() {
               }} />
             <span className="text-xs text-gray-500">%</span>
             </div>
+            <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
+              onClick={() => cargar()} disabled={cargando}
+              title="Volver a leer la historia, la configuración y el IPC de la base">
+              <RefreshCw className={`h-3 w-3 ${cargando ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
           </div>
         </div>
       </CardHeader>
@@ -283,6 +301,22 @@ export function PanelPresupuestoCuentas() {
             La inflación sale del <strong>IPC cargado</strong> ({ipc.length}{" "}
             {ipc.length === 1 ? "mes" : "meses"}), arrastrando el último valor hacia adelante.
             La tasa fija de arriba sólo se usa donde no hay IPC.
+            {ipc12 && (
+              <>
+                {" · "}
+                <strong className="text-gray-700">
+                  IPC {ipc12.meses === 12 ? "de los últimos 12 meses" : `de ${ipc12.meses} meses`}:{" "}
+                  {fmtNumeroAR(ipc12.pct, 1)} %
+                </strong>{" "}
+                (hasta {MESES_TXT[ipc12.hasta.mes - 1]} {ipc12.hasta.anio})
+              </>
+            )}
+          </p>
+        )}
+        {ipc.length === 0 && (
+          <p className="text-[11px] text-amber-700">
+            ⚠️ No hay IPC cargado: se usa la tasa fija de arriba para todo. El IPC se carga en{" "}
+            <strong>Precios y TC</strong>.
           </p>
         )}
 
@@ -347,6 +381,88 @@ export function PanelPresupuestoCuentas() {
       </CardContent>
     </Card>
   )
+}
+
+/**
+ * La muestra: qué datos reales entraron en el cálculo, y qué dio.
+ *
+ * El pedido del usuario fue literal: *"que muestre el ejemplo de lo que presupuesta; si elijo
+ * del último mes, que me muestre la muestra y el resultado"*. La fórmula sola no alcanza —
+ * "$1.200.000 ÷ 3" no distingue tres meses parecidos de dos ceros y un mes enorme.
+ *
+ * Dos formas según el modo:
+ *  - **Muestra común** (última FC, promedio, por cabeza): los mismos datos alimentan todos los
+ *    meses proyectados → se muestra una sola vez, con el resultado del primer mes.
+ *  - **Muestra por mes** (estacional): cada mes toma SU mes del año anterior → se muestra el
+ *    par origen → proyectado, y sólo los meses que tienen dato.
+ */
+function MuestraDelCalculo({ celdas, modo }: { celdas: CeldaPresupuesto[]; modo: ModoPresupuesto }) {
+  if (modo === "manual" || modo === "excluida") return null
+  const conMuestra = celdas.filter(c => (c.muestra?.length ?? 0) > 0)
+  if (conMuestra.length === 0) {
+    return (
+      <p className="mt-1 text-[10px] text-blue-700">
+        Sin muestra: no hay datos históricos que hayan entrado en este cálculo.
+      </p>
+    )
+  }
+
+  if (modo === "estacional") {
+    return (
+      <div className="mt-1.5 border-t border-blue-200 pt-1.5">
+        <p className="mb-1 text-[10px] font-medium text-blue-900">
+          Muestra — cada mes sale del mismo mes del año anterior:
+        </p>
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {conMuestra.map(c => {
+            const src = c.muestra![0]!
+            return (
+              <span key={c.mes} className="text-[10px] text-blue-800">
+                <span className="text-blue-600">{src.etiqueta}</span> {pesos(src.monto)}
+                {" → "}
+                <strong>{etiquetaClave(c.mes)}</strong> {pesos(c.monto)}
+              </span>
+            )
+          })}
+        </div>
+        {conMuestra.length < celdas.length && (
+          <p className="mt-1 text-[10px] text-blue-600">
+            Los otros {celdas.length - conMuestra.length} meses no tienen dato del año anterior:
+            quedan en cero a propósito. Un gasto anual muestra un solo mes con monto.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  const muestra = conMuestra[0]!.muestra!
+  const suma = muestra.reduce((a, p) => a + p.monto, 0)
+  return (
+    <div className="mt-1.5 border-t border-blue-200 pt-1.5">
+      <p className="mb-1 text-[10px] font-medium text-blue-900">
+        Muestra — los {muestra.length} {muestra.length === 1 ? "dato" : "datos"} que se usaron:
+      </p>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+        {muestra.map((p, i) => (
+          <span key={i} className={`text-[10px] ${p.cero ? "text-blue-400 line-through" : "text-blue-800"}`}
+            title={p.cero ? "Mes sin factura: entra como cero en el promedio" : undefined}>
+            {p.etiqueta} {pesos(p.monto)}
+          </span>
+        ))}
+      </div>
+      <p className="mt-1 text-[10px] text-blue-800">
+        {muestra.length > 1 && <>Suma <strong>{pesos(suma)}</strong> · </>}
+        Resultado {etiquetaClave(conMuestra[0]!.mes)}:{" "}
+        <strong>{pesos(conMuestra[0]!.monto)}</strong>
+      </p>
+    </div>
+  )
+}
+
+/** "2027-01" → "Ene 27". */
+function etiquetaClave(k: string) {
+  const [a, m] = k.split("-")
+  return `${MESES_TXT[Number(m) - 1]} ${a!.slice(-2)}`
 }
 
 /**
@@ -494,6 +610,7 @@ function FilaCuenta({
                     Modo elegido automáticamente — {cfg.motivo}
                   </p>
                 )}
+                <MuestraDelCalculo celdas={celdas} modo={cfg.modo} />
               </div>
 
               {/* Cambiar el modo */}
