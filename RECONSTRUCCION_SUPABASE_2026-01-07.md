@@ -11760,3 +11760,41 @@ CREATE OR REPLACE VIEW public.sueldos_empleados AS
 
 **Lo que NO hizo falta agregar:** `francos_dias_promedio` ya existía en `empleados`, y el
 porcentaje A se deriva del último período real con `monto_a / (monto_a + monto_b)`.
+
+---
+
+## 2026-08-02 — Campos, actividades y hectáreas por campaña (P-41)
+
+**Por qué:** tres conceptos estaban mezclados en `centros_costo`. Para el margen por actividad hace
+falta poder preguntar *"dame las actividades"*, y las hectáreas **no son un atributo fijo**: se
+reasignan entre campañas (has que un año son de recría, al siguiente pasan a cría).
+
+```sql
+-- 1. centros_costo gana `tipo` (actividad | campo | bien | otro)
+ALTER TABLE public.centros_costo ADD COLUMN IF NOT EXISTS tipo text;
+
+-- 2. campos: nombre, zona, empresa_propietaria, has_totales, has_productivas,
+--    aptitud, dominio, provisorio, notas, activo
+-- 3. campo_partidas: campo_id → partidas inmobiliarias, con empresa_titular
+-- 4. campo_campana_actividad: campo_id + campana + centro_costo_id → has_totales, has_netas
+-- 5. VIEW control_has_por_campana: el control de que no quede ninguna hectárea afuera
+```
+*(DDL completo en la migración `presupuesto_campos_actividades_campana`.)*
+
+**Decisiones que conviene no re-discutir:**
+- **`has_productivas` ≠ `has_totales`.** Rojas: 242 productivas sobre 245 totales. **El prorrateo
+  de estructura usa las productivas.**
+- **La campaña es parte de la clave** de la asignación (`campo + campaña + actividad`), no un dato
+  más. Es lo que permite reasignar hectáreas de un año al otro.
+- **`provisorio`** marca los datos a confirmar (recría 60, Lima) para que los controles avisen en
+  vez de dar el número por bueno.
+- **El propietario del campo puede no ser quien hace la actividad**: la cría la hace MSA sobre
+  campo de PAM, pagando arrendamiento. Por eso el titular vive en la **partida**, no en el campo:
+  Nazarenas está repartido entre MSA y PAM.
+
+**Datos cargados** (del usuario, 2026-08-02): 5 campos · 20 partidas sacadas de los templates
+`Inmobiliario Anual *` · asignación de la campaña **26/27**: Nazarenas 175 cría + 60 recría + 150
+agricultura · Rojas 242 agricultura · Lima 86 arrendamiento.
+
+**Estado del control al cargar:** Nazarenas y Rojas `ok` (0 has sin asignar); Lima, Lote Puerto y
+Quinta Rosello marcados `campo sin has cargadas` — es correcto, faltan los datos.

@@ -168,3 +168,10 @@ WHERE table_schema IN ('public','msa','pam','ma','productivo','sueldos')
 GROUP BY table_schema, table_name
 ORDER BY table_schema, table_name;
 ```
+
+### Campos y actividades (2026-08-02, NO en el backup — ver RECONSTRUCCION § P-41)
+- **centros_costo**: `id uuid, nombre, activo, created_at, tipo text` — `tipo` = `actividad` | `campo` | `bien` | `otro`. Sin él no se puede preguntar "dame las actividades": la tabla mezcla actividades (Cria, Recria, Engorde, Arrendamiento, Agricultura, Estructura), lugares (Nazarenas, Rojas, Lima…) y bienes (Gol, Tiguan…).
+- **campos**: `id uuid, nombre text UNIQUE, zona, empresa_propietaria, has_totales numeric, has_productivas numeric, aptitud, dominio, provisorio bool, notas, activo, created_at, updated_at`. ⚠️ `has_productivas` ≠ `has_totales`; el prorrateo usa las **productivas**.
+- **campo_partidas**: `id, campo_id→campos, nombre_partida, nro_partida, empresa_titular, has, notas` · UNIQUE (campo_id, nombre_partida). El **titular vive en la partida**, no en el campo: Nazarenas está repartido entre MSA y PAM.
+- **campo_campana_actividad**: `id, campo_id→campos, campana text, centro_costo_id→centros_costo, has_totales, has_netas, provisorio, notas` · UNIQUE (campo_id, campana, centro_costo_id). **La campaña es parte de la clave**: las has se reasignan de un año al otro.
+- **vista `control_has_por_campana`**: control pedido por el usuario — por campo y campaña, compara lo asignado contra las has productivas y devuelve `ok` / `quedan has sin asignar` / `SOBREASIGNADO` / `campo sin has cargadas`.
