@@ -23,6 +23,7 @@ import { TabPresupuesto } from "./components/tab-presupuesto"
 import { ConfiguradorPreciosTC } from "./components/configurador-precios-tc"
 import { ConfiguradorActividades } from "./components/configurador-actividades"
 import { ConfiguradorCampos } from "./components/configurador-campos"
+import { ConfiguradorVariables } from "./components/configurador-variables"
 import { PanelPresupuestoCuentas } from "./components/panel-presupuesto-cuentas"
 import { PanelControlProveedores } from "./components/panel-control-proveedores"
 
@@ -30,7 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -49,6 +50,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const [showPreciosTC, setShowPreciosTC] = useState(false)
   const [showActividades, setShowActividades] = useState(false)
   const [showCampos, setShowCampos] = useState(false)
+  const [showVariables, setShowVariables] = useState(false)
   const [showCuentas, setShowCuentas] = useState(false)
   /** Sube de a uno cuando el panel de cuentas cambia algo, para que la grilla del presupuesto
    *  vuelva a leer. Son componentes hermanos: sin esto había que salir y entrar a la pestaña. */
@@ -293,6 +295,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
                 <MapPin className="mr-2 h-4 w-4" />
                 {showCampos ? "Ocultar campos" : "Campos y hectáreas"}
               </Button>
+              <Button variant="secondary" className="shrink-0" onClick={() => setShowVariables(!showVariables)}>
+                <Calculator className="mr-2 h-4 w-4" />
+                {showVariables ? "Ocultar variables" : "Variables de costo"}
+              </Button>
               <Button variant="secondary" className="shrink-0" onClick={() => setShowPreciosTC(!showPreciosTC)}>
                 <DollarSign className="mr-2 h-4 w-4" />
                 {showPreciosTC ? "Ocultar precios y TC" : "Precios y TC"}
@@ -302,6 +308,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             {showPreciosTC && <ConfiguradorPreciosTC />}
             {showActividades && <ConfiguradorActividades />}
             {showCampos && <ConfiguradorCampos />}
+            {showVariables && <ConfiguradorVariables />}
             {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}
 
