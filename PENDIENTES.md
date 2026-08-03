@@ -813,13 +813,54 @@ combustible (litros/año × $/litro, cupo anual), semillas (ha × $/ha, desde el
 6. **Válvula de escape**: lo que no entre queda `manual`.
 7. **Ajuste encadenado + fundamento** (ver arriba).
 
+### 🧪 Los costos variables se cargan desde la app, contra INSUMOS (usuario, 2026-08-02)
+
+> *"Sería ideal poder ir creando o configurando los costos variables desde la app, contando con la
+> tabla para que se referencie lo que pongamos. Será necesario el manejo de insumos. Por ej, costos
+> de la cría: yo podría poner que son **tantas dosis o ml de tales insumos por año, en tales
+> meses, que valen tanto a tal fecha**. Y luego, si vemos que se está gastando tanto más con datos
+> del año pasado, se puede saber cuánto más y **decirle al presupuesto que agregue tanto porcentaje
+> de ese extra**."*
+
+Dos cosas, y las dos encajan sin romper nada:
+
+**1. La CANTIDAD puede expresarse en insumos.** `productivo.stock_insumos`,
+`categorias_insumo` (con ámbito agrícola/ganadero) y `movimientos_insumos` **ya existen**. Una
+variable pasa a poder decir *"3 dosis de X por cabeza, en marzo y septiembre"*, y el precio sale
+del insumo a una fecha. La unidad deja de ser un texto suelto y queda **referenciada al maestro**.
+
+**2. Un ajuste nuevo: el desvío contra la realidad.** *"Si se está gastando tanto más… que agregue
+tanto porcentaje de ese extra."* Es un ajuste que compara **lo teórico contra lo realmente
+consumido** el año pasado y suma un % de esa diferencia — el usuario decide cuánto.
+
+→ Es **el mismo bucle teoría↔realidad de [M-01](#m-01)**, pero al nivel del insumo en vez del
+margen. Y es lo que vuelve al presupuesto auto-corrector: si la receta dice 3 dosis y se usaron 4,
+el año que viene arranca sabiéndolo en vez de repetir el error.
+
+**Consecuencia de diseño:** el eje AJUSTE gana un tipo más → `desvio_historico`.
+
 ### ⛔ Bloqueantes de datos (no de desarrollo)
 - Las cuatro tablas de precios tienen entre **3 y 7 filas**. El motor va a andar y a dar números
   pobres. Cargarlas es prerrequisito y es **carga del usuario**, no desarrollo.
 - **Las hectáreas por actividad no están en el sistema** — hoy viven en el Excel (cría: 175 has).
   Sin ese dato el prorrateo del punto 5 no se puede calcular.
-- **La lista canónica de actividades falta confirmar**: el usuario dijo *"Arrendamiento Rojas y
-  Arrendamiento Nazarenas"* (2026-08-02) y más tarde *"San Pedro o Rojas"*. Confirmar cuál es.
+- ✅ **Lista de actividades y hectáreas: RESUELTO** (2026-08-02) → ver [M-01](#m-01).
+
+### ⚠️ Tres consecuencias del dato de actividades que el diseño todavía NO cubre
+
+1. **El prorrateo por hectáreas no llega a Engorde.** Engorde tiene **0 has** (son corrales) pero
+   **sí tiene costos de estructura**. La regla que cerramos —*estructura ÷ has totales*— lo deja
+   afuera por construcción, o peor: le asigna cero y reparte su parte entre las demás. Hace falta
+   una **segunda base de prorrateo** para las actividades sin hectáreas (¿cabezas? ¿un % fijo?
+   ¿ingresos?). **Decisión pendiente del usuario.**
+2. **Las hectáreas son por campaña, no por actividad.** Se reasignan entre cría y recría de un año
+   a otro. La tabla de actividades no puede tener una columna `has`: necesita
+   `(actividad, campaña) → has_productivas`.
+3. **Las actividades cruzan empresas.** Cría y recría son de MSA sobre campo de PAM (después MA);
+   Lima es de MA. Y hay **arrendamientos intercompany**: el mismo contrato es egreso de una e
+   ingreso de otra. El presupuesto hoy filtra por `empresa = 'MSA'` en varios lados
+   (`presupuesto_cuenta_config`, `cargarSueldos`) — hay que definir si el margen por actividad es
+   por empresa o consolidado.
 
 ### ✅ Cerrada — últimas dos respuestas del usuario (2026-08-02)
 
@@ -1038,6 +1079,39 @@ Margen bruto ganadero clásico, **en U$S/ha, sin IVA**, sobre 175 has, TC $1450.
   que son los que menos medidos tengo"*. La idea es **poner la teoría** (este modelo), después
   **colectar factura a factura** los costos reales, **comparar teoría contra realidad**, y que
   **desde Margen se llenen los costos directos del Presupuesto**.
+
+### 🗺️ Las actividades y sus hectáreas (datos del usuario, 2026-08-02)
+
+⚠️ **Área productiva ≠ área total.** El prorrateo usa la productiva; el área total sirve para otra
+cosa (ej. Rojas: 242 productivas sobre 245 totales).
+
+| Actividad | Campo / empresa | Has productivas | Has totales |
+|---|---|---:|---:|
+| **Nazarenas Ganadero de Cría** | San Pedro · MSA | **175** | — |
+| **Nazarenas Ganadero de Recría** | San Pedro · MSA | **60** ⚠️ *a corregir* | — |
+| **Nazarenas Agrícola** | San Pedro · MSA | **150** | — |
+| **Rojas Agrícola** | Rojas · MSA | **242** | 245 |
+| **Engorde** | MSA — **corrales** | **0 (sin has)** | — |
+| **Lima** | MA | *a definir* | 86 |
+
+- *"Nazarenas"* y *"San Pedro"* son lo mismo: San Pedro es el campo, Nazarenas el nombre.
+- **Engorde no tiene hectáreas** (son corrales) **pero sí tiene costos asignados**.
+
+### 🔄 Las hectáreas se reasignan entre campañas
+> *"Una campaña se puede adjudicar has a recría y la campaña siguiente asignaremos menos a recría,
+> pasando las has a cría."*
+
+→ Las hectáreas **no son un atributo fijo de la actividad**: son una asignación **por campaña**
+(1/7 → 30/6). El modelo tiene que guardarlas con la campaña, no como un número suelto.
+
+### 🏢 Arrendamientos internos entre las empresas
+- **MSA le alquila a PAM** el campo donde está la cría — *"y luego será a MA (cambio de
+  titularidad)"*.
+- **MSA tiene un arrendamiento anual a pagar a MA.**
+
+→ Son **intercompany**: el mismo contrato es **egreso de MSA** e **ingreso de PAM/MA**. Es también
+el número contra el que el Excel compara el margen (*"ganancia sobre alquiler"*): el costo de
+oportunidad de no arrendar el campo.
 
 ### Respuestas del usuario (2026-08-02)
 1. **Unidad de campaña: la campaña contable es siempre 1/7 → 30/6**, y **agrupa todas las
