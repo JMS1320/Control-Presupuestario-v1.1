@@ -16,8 +16,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
 import {
-  calcularMargen, pctGastoVentaPorDefecto,
+  calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
+  type InsumoActividadMargen,
 } from "@/lib/presupuesto/margen"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
@@ -44,7 +45,14 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
           .select("categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
-        supabase.schema("productivo").from("actividades").select("nombre, activo"),
+        supabase.schema("productivo").from("actividades").select("id, nombre, activo"),
+      ])
+      const [{ data: insumos }, { data: tcs }, { data: ciclosFull }] = await Promise.all([
+        supabase.schema("productivo").from("actividad_insumos")
+          .select("actividad_id, concepto, modo, valor, unidad, moneda, notas, orden").order("orden"),
+        supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
+        supabase.schema("productivo").from("stock_ciclos")
+          .select("campania, vacas_apertura, vaquillonas_apertura"),
       ])
 
       const actPorId = new Map((acts.data || []).map((a: any) => [a.id, String(a.nombre)]))
@@ -89,21 +97,58 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         anio: Number(p.anio) || 0, mes: Number(p.mes) || 0,
       }))
 
-      // ⚠️ Dos maestros de actividad conviviendo: `centros_costo` (el que usa el presupuesto) y
-      // `productivo.actividades` (el que tiene la ración). Se compara por nombre y se avisa,
-      // en vez de emparejarlos en silencio.
-      const nombresProd = ((actProd.data || []) as any[])
-        .filter(a => a.activo).map(a => String(a.nombre).toLowerCase())
-      setDesalineadas(nombresAct.filter(n => !nombresProd.includes(n.toLowerCase())))
+      // ⚠️ Dos maestros de actividad conviviendo. Se comparan SIN ACENTOS: `centros_costo` dice
+      // "Cria" y `productivo.actividades` dice "Cría", y compararlos en crudo las daba por
+      // distintas — el margen decía que la actividad no existía teniéndola cargada.
+      const actProdActivas = ((actProd.data || []) as any[]).filter(a => a.activo)
+      const idProdPorClave = new Map(actProdActivas.map(a => [claveActividad(String(a.nombre)), a.id]))
+      setDesalineadas(nombresAct.filter(n => !idProdPorClave.has(claveActividad(n))))
 
-      // Fase 0: los costos directos todavía no se resuelven a pesos —hace falta la ración y los
-      // tramos—, así que se listan como faltantes en vez de inventar un monto.
-      const costos: CostoDirecto[] = nombresAct
-        .filter(n => !nombresProd.includes(n.toLowerCase()))
-        .map(n => ({
-          actividad: n, concepto: "Costos directos", monto: null,
-          motivo: `la actividad "${n}" no existe en Productivo, así que no tiene insumos cargados`,
-        }))
+      // Cabezas de la campaña: vacas + vaquillonas de apertura del ciclo.
+      const cicloCamp = ((ciclosFull || []) as any[]).find(c => String(c.campania) === campana)
+      const cabezasCampana = cicloCamp
+        ? (Number(cicloCamp.vacas_apertura) || 0) + (Number(cicloCamp.vaquillonas_apertura) || 0)
+        : 0
+
+      // TC: el real si está, si no el presupuestado. El más reciente cargado.
+      const tcOrdenados = ((tcs || []) as any[])
+        .sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes))
+      const tc = tcOrdenados.length > 0
+        ? Number(tcOrdenados[0].tc_real ?? tcOrdenados[0].tc_presupuestado) || null
+        : null
+
+      // Los costos directos, leídos de verdad de `actividad_insumos`.
+      const insumosPorActividad = new Map<string, InsumoActividadMargen[]>()
+      for (const i of ((insumos || []) as any[])) {
+        const nom = actProdActivas.find(a => a.id === i.actividad_id)?.nombre
+        if (!nom) continue
+        const clave = claveActividad(String(nom))
+        if (!insumosPorActividad.has(clave)) insumosPorActividad.set(clave, [])
+        insumosPorActividad.get(clave)!.push({
+          actividad: String(nom), concepto: String(i.concepto), modo: String(i.modo),
+          valor: Number(i.valor) || 0, unidad: i.unidad, moneda: String(i.moneda ?? "ARS"),
+          notas: i.notas,
+        })
+      }
+
+      const costos: CostoDirecto[] = []
+      for (const n of nombresAct) {
+        const mios = insumosPorActividad.get(claveActividad(n)) ?? []
+        if (mios.length === 0) {
+          costos.push({
+            actividad: n, concepto: "Costos directos", monto: null,
+            motivo: idProdPorClave.has(claveActividad(n))
+              ? `la actividad existe en Productivo pero no tiene insumos cargados`
+              : `la actividad "${n}" no existe en Productivo`,
+          })
+          continue
+        }
+        const ctxCosto = { has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, tc }
+        for (const i of mios) {
+          const r = resolverCostoDirecto(i, ctxCosto)
+          costos.push({ actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo })
+        }
+      }
 
       setDatos({
         campana, hasPorActividad, lotes: lotesOut, costos,

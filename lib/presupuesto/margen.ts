@@ -99,6 +99,73 @@ export interface MargenActividad {
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`
 const num = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
 
+/**
+ * Compara nombres de actividad **sin acentos ni mayúsculas**.
+ *
+ * `centros_costo` dice `Cria` y `productivo.actividades` dice `Cría`: son la misma actividad y
+ * comparar en crudo las daba por distintas, así que el margen decía "la actividad Cría no existe
+ * en Productivo" con la actividad cargada delante. Es el mismo error que ya nos había costado
+ * `No Lleva` / `No lleva`.
+ */
+export const claveActividad = (nombre: string) =>
+  nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+
+/** Modos de `actividad_insumos` que el margen sabe resolver hoy. */
+export interface InsumoActividadMargen {
+  actividad: string
+  concepto: string
+  modo: string
+  valor: number
+  unidad: string | null
+  moneda: string
+  notas: string | null
+}
+
+/**
+ * Resuelve un costo directo a **pesos del período**.
+ *
+ * Sólo dos modos por ahora, que son los que usa la cría: por hectárea y por cabeza. Los de
+ * ración (`pct_racion`, `kg_cabeza_dia`) necesitan la curva de peso y los tramos, así que se
+ * informan como pendientes en vez de aproximarlos — un costo de ración mal estimado mueve el
+ * margen entero.
+ */
+export function resolverCostoDirecto(
+  i: InsumoActividadMargen,
+  ctx: { has: number | null; cabezas: number | null; tc: number | null },
+): { monto: number | null; motivo: string } {
+  const enPesos = (v: number) => {
+    if (i.moneda !== 'USD') return { factor: 1, txt: '' }
+    if (ctx.tc == null) return { factor: null as number | null, txt: '' }
+    return { factor: ctx.tc, txt: ` × TC ${num(ctx.tc)}` }
+  }
+
+  switch (i.modo) {
+    case 'monto_ha': {
+      if (ctx.has == null) return { monto: null, motivo: `${i.concepto}: faltan las hectáreas de la actividad` }
+      const c = enPesos(i.valor)
+      if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
+      return {
+        monto: i.valor * ctx.has * c.factor,
+        motivo: `${num(i.valor)} ${i.unidad ?? 'por ha'} × ${num(ctx.has)} ha${c.txt}`,
+      }
+    }
+    case 'monto_cabeza': {
+      if (ctx.cabezas == null) return { monto: null, motivo: `${i.concepto}: faltan las cabezas de la campaña` }
+      const c = enPesos(i.valor)
+      if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
+      return {
+        monto: i.valor * ctx.cabezas * c.factor,
+        motivo: `${num(i.valor)} ${i.unidad ?? 'por cabeza'} × ${num(ctx.cabezas)} cab${c.txt}`,
+      }
+    }
+    default:
+      return {
+        monto: null,
+        motivo: `${i.concepto}: el modo "${i.modo}" necesita la curva de peso y los tramos — todavía no se resuelve acá`,
+      }
+  }
+}
+
 // ⚠️ La lógica de precio y peso NO vive acá: vive en `lib/ganaderia/calculo.ts` y
 // `lib/ganaderia/ciclo.ts`, que ya la usan Productivo y Presupuesto "para que den lo mismo".
 // Acá se REUSA. Escribir una versión propia fue un error: la de allá tiene cosas que la mía no
