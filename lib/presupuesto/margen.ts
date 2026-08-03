@@ -122,7 +122,38 @@ export interface InsumoActividadMargen {
   has_aplicacion: number | null
   /** En cuántos años se reparte. 4 → 25 % por año. NULL o 1 → entero. */
   amortiza_anios: number | null
+  /** Sobre qué cabezas aplica: `rodeo` (default) · `vacas` · `destetados` · `toritos` · `manual`… */
+  base_cabezas: string | null
+  /** Cantidad fija, cuando `base_cabezas = 'manual'`. */
+  cabezas_aplicacion: number | null
   notas: string | null
+}
+
+/**
+ * Las cabezas del ciclo, por concepto. Es lo que permite que la sanidad de toros no se cobre
+ * sobre las 260 vacas.
+ */
+export interface CabezasDelCiclo {
+  rodeo: number
+  vacas: number
+  vaquillonas: number
+  destetados: number
+  terneros: number
+  terneras: number
+  retenidas: number
+  toritos: number
+}
+
+export const ETIQUETA_BASE_CABEZAS: Record<string, string> = {
+  rodeo: 'rodeo (vacas + vaquillonas)',
+  vacas: 'vacas',
+  vaquillonas: 'vaquillonas',
+  destetados: 'terneros destetados',
+  terneros: 'terneros',
+  terneras: 'terneras',
+  retenidas: 'terneras retenidas',
+  toritos: 'toritos',
+  manual: 'cantidad fija',
 }
 
 /**
@@ -135,7 +166,7 @@ export interface InsumoActividadMargen {
  */
 export function resolverCostoDirecto(
   i: InsumoActividadMargen,
-  ctx: { has: number | null; cabezas: number | null; tc: number | null },
+  ctx: { has: number | null; cabezas: number | null; cabezasCiclo?: CabezasDelCiclo | null; tc: number | null },
 ): { monto: number | null; motivo: string } {
   const enPesos = (v: number) => {
     if (i.moneda !== 'USD') return { factor: 1, txt: '' }
@@ -162,12 +193,19 @@ export function resolverCostoDirecto(
       }
     }
     case 'monto_cabeza': {
-      if (ctx.cabezas == null) return { monto: null, motivo: `${i.concepto}: faltan las cabezas de la campaña` }
+      // Cada costo tiene SU base: la sanidad de toros no va sobre las 260 vacas.
+      const base = i.base_cabezas ?? 'rodeo'
+      const cab = base === 'manual'
+        ? i.cabezas_aplicacion
+        : ctx.cabezasCiclo?.[base as keyof CabezasDelCiclo] ?? ctx.cabezas
+      if (cab == null) {
+        return { monto: null, motivo: `${i.concepto}: faltan las cabezas (${ETIQUETA_BASE_CABEZAS[base] ?? base})` }
+      }
       const c = enPesos(i.valor)
       if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
       return {
-        monto: i.valor * ctx.cabezas * c.factor,
-        motivo: `${num(i.valor)} ${i.unidad ?? 'por cabeza'} × ${num(ctx.cabezas)} cab${c.txt}`,
+        monto: i.valor * cab * c.factor,
+        motivo: `${num(i.valor)} ${i.unidad ?? 'por cabeza'} × ${num(cab)} ${ETIQUETA_BASE_CABEZAS[base] ?? base}${c.txt}`,
       }
     }
     default:

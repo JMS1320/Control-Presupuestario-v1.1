@@ -50,7 +50,7 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
       ])
       const [{ data: insumos }, { data: tcs }, { data: ciclosFull }] = await Promise.all([
         supabase.schema("productivo").from("actividad_insumos")
-          .select("actividad_id, concepto, modo, valor, unidad, moneda, has_aplicacion, amortiza_anios, notas, orden").order("orden"),
+          .select("actividad_id, concepto, modo, valor, unidad, moneda, has_aplicacion, amortiza_anios, base_cabezas, cabezas_aplicacion, notas, orden").order("orden"),
         supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
         supabase.schema("productivo").from("stock_ciclos").select("*"),
       ])
@@ -111,6 +111,12 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
       const linea = calcularLineaTiempo(((ciclosFull || []) as any[]))
       const cicloCamp = linea.find(c => String(c.ciclo.campania) === campana)
       const cabezasCampana = cicloCamp ? cicloCamp.rodeo : 0
+      // Todas las categorías del ciclo, para que cada costo use la suya.
+      const cabezasCiclo = cicloCamp ? {
+        rodeo: cicloCamp.rodeo, vacas: cicloCamp.vacas, vaquillonas: cicloCamp.vaquillonas,
+        destetados: cicloCamp.destetados, terneros: cicloCamp.terneros, terneras: cicloCamp.terneras,
+        retenidas: cicloCamp.retenidas, toritos: cicloCamp.toritos,
+      } : null
 
       // TC: el real si está, si no el presupuestado. El más reciente cargado.
       const tcOrdenados = ((tcs || []) as any[])
@@ -131,6 +137,8 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
           valor: Number(i.valor) || 0, unidad: i.unidad, moneda: String(i.moneda ?? "ARS"),
           has_aplicacion: i.has_aplicacion == null ? null : Number(i.has_aplicacion),
           amortiza_anios: i.amortiza_anios == null ? null : Number(i.amortiza_anios),
+          base_cabezas: i.base_cabezas ?? null,
+          cabezas_aplicacion: i.cabezas_aplicacion == null ? null : Number(i.cabezas_aplicacion),
           notas: i.notas,
         })
       }
@@ -147,7 +155,9 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
           })
           continue
         }
-        const ctxCosto = { has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, tc }
+        const ctxCosto = {
+          has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, cabezasCiclo, tc,
+        }
         for (const i of mios) {
           const r = resolverCostoDirecto(i, ctxCosto)
           costos.push({ actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo })
@@ -272,20 +282,26 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
                   <Bloque titulo="Ingresos" lineas={m.ingresos} total={m.totalIngresos} has={m.has} />
                   <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has} />
 
-                  <div className="flex items-center justify-between rounded border bg-white px-2 py-1.5">
-                    <span className="text-[11px] font-semibold text-gray-800">MARGEN BRUTO</span>
-                    <span className="text-right">
-                      <span className="block text-[11px] font-semibold text-gray-800">{pesos(m.margenBruto)}</span>
-                      {m.margenPorHa != null && (
-                        <span className="block text-[10px] text-gray-500">{pesos(m.margenPorHa)} / ha</span>
-                      )}
+                  <table className="w-full rounded border bg-white text-[11px]">
+                    <tbody>
+                      <tr className="font-semibold text-gray-800">
+                        <td className="px-2 py-1.5">MARGEN BRUTO</td>
+                        <td className="w-28 px-2 py-1.5 text-right">
+                          {m.margenPorHa != null
+                            ? <>{pesos(m.margenPorHa)}<span className="text-[9px] font-normal text-gray-400"> /ha</span></>
+                            : "—"}
+                        </td>
+                        <td className="w-32 px-2 py-1.5 text-right">{pesos(m.margenBruto)}</td>
+                      </tr>
                       {m.cabezas ? (
-                        <span className="block text-[10px] text-gray-500">
-                          {pesos(m.margenBruto / m.cabezas)} / cabeza
-                        </span>
+                        <tr className="border-t text-[10px] text-gray-500">
+                          <td className="px-2 py-1">por cabeza</td>
+                          <td className="px-2 py-1 text-right">{pesos(m.margenBruto / m.cabezas)}</td>
+                          <td className="px-2 py-1 text-right">{numAR(m.cabezas)} cab</td>
+                        </tr>
                       ) : null}
-                    </span>
-                  </div>
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -302,7 +318,13 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
   )
 }
 
-/** Un bloque del margen, con el doble formato: por unidad y total. */
+/**
+ * Un bloque del margen, en DOS COLUMNAS: por unidad y total.
+ *
+ * El usuario lo pidió explícito: *"lo que es por unidad vs total, en 2 columnas siempre, no
+ * debajo uno del otro"*. Y tiene razón — apilados no se pueden comparar de un vistazo, que es
+ * justo para lo que sirve el por-unidad.
+ */
 function Bloque({ titulo, lineas, total, has }: {
   titulo: string; lineas: MargenActividad["ingresos"]; total: number; has: number | null
 }) {
@@ -315,34 +337,46 @@ function Bloque({ titulo, lineas, total, has }: {
     )
   }
   return (
-    <div className="rounded border bg-white px-2 py-1.5">
-      <p className="mb-1 text-[11px] font-medium text-gray-700">{titulo}</p>
-      <div className="space-y-0.5">
-        {lineas.map((l, i) => (
-          <div key={i} className={`flex items-baseline justify-between gap-2 ${l.confiable ? "" : "opacity-60"}`}>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] text-gray-700">
-                {l.concepto}
-                {!l.confiable && <span className="ml-1 text-[9px] text-amber-600">sin calcular</span>}
-              </p>
-              <p className="truncate text-[9px] text-gray-400">{l.detalle}</p>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="block text-[11px] text-gray-800">{pesos(l.total)}</span>
-              {l.porCabeza != null && (
-                <span className="block text-[9px] text-gray-400">{pesos(l.porCabeza)} / cab</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 flex items-center justify-between border-t pt-1">
-        <span className="text-[11px] font-medium text-gray-700">Total {titulo.toLowerCase()}</span>
-        <span className="text-right">
-          <span className="block text-[11px] font-semibold text-gray-800">{pesos(total)}</span>
-          {has ? <span className="block text-[9px] text-gray-500">{pesos(total / has)} / ha</span> : null}
-        </span>
-      </div>
+    <div className="overflow-x-auto rounded border bg-white">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b bg-gray-50 text-[9px] uppercase text-gray-500">
+            <th className="px-2 py-1 text-left font-medium">{titulo}</th>
+            <th className="w-28 px-2 py-1 text-right font-medium">Por unidad</th>
+            <th className="w-32 px-2 py-1 text-right font-medium">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lineas.map((l, i) => (
+            <tr key={i} className={`border-b last:border-0 ${l.confiable ? "" : "opacity-60"}`}>
+              <td className="px-2 py-1">
+                <p className="text-gray-700">
+                  {l.concepto}
+                  {!l.confiable && <span className="ml-1 text-[9px] text-amber-600">sin calcular</span>}
+                </p>
+                <p className="text-[9px] text-gray-400">{l.detalle}</p>
+              </td>
+              <td className="px-2 py-1 text-right text-gray-600">
+                {l.porCabeza != null ? (
+                  <>{pesos(l.porCabeza)}<span className="text-[9px] text-gray-400"> /cab</span></>
+                ) : l.porHa != null ? (
+                  <>{pesos(l.porHa)}<span className="text-[9px] text-gray-400"> /ha</span></>
+                ) : "—"}
+              </td>
+              <td className="px-2 py-1 text-right text-gray-800">{pesos(l.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t bg-gray-50 font-medium">
+            <td className="px-2 py-1 text-gray-700">Total {titulo.toLowerCase()}</td>
+            <td className="px-2 py-1 text-right text-gray-600">
+              {has ? <>{pesos(total / has)}<span className="text-[9px] text-gray-400"> /ha</span></> : "—"}
+            </td>
+            <td className="px-2 py-1 text-right font-semibold text-gray-800">{pesos(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   )
 }
