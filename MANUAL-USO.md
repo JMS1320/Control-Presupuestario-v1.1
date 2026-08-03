@@ -1335,7 +1335,30 @@ y las retenidas pasan a ser las vaquillonas del año siguiente). Por eso `vacas_
 de la segunda campaña en adelante — **no falta el dato: se deriva**.
 Lo cargado a mano gana; si está vacío, se calcula.
 
-### Los costos por hectárea llevan su propia superficie
+### Cada costo lleva su propia base — hectáreas Y cabezas
+Ningún costo aplica sobre "todo". Cada línea, en *Actividades y costos*, declara **sobre qué**:
+
+**Por hectárea** — `has_aplicacion` + `amortiza_anios`
+- Mantenimiento de pasturas → las **15 has de pastura**, no las 175 del campo.
+- Promoción de rye grass → las **113,16 has de verdeo**, y **÷ 4 años** (25 % por año).
+- Sin eso, la implantación de pasturas daba **47 veces** lo que corresponde.
+
+**Por cabeza** — `base_cabezas`
+| Base | Qué toma | Ejemplo |
+|---|---|---|
+| `rodeo` *(default)* | vacas + vaquillonas | sanidad de vacas, IATF, rollos |
+| `destetados` | los terneros destetados | sanidad de terneros |
+| `vacas` · `vaquillonas` · `terneros` · `terneras` · `retenidas` · `toritos` | lo que dice | |
+| `manual` | una cantidad fija | **sanidad de toros** (12) |
+
+Las bases se **derivan del ciclo** (`calcularLineaTiempo`), así que son las mismas categorías que
+muestra *Evolución del rodeo* y **cambian solas con la campaña**.
+
+⚠️ **Los toros van a mano.** El Excel los calcula como 5 % de las vacas en servicio, pero el
+modelo del rodeo **no tiene toros**: no hay de dónde derivarlos. Si algún día se agrega un
+`pct_toros` a `stock_ciclos`, esa línea pasa de manual a derivada sola.
+
+### (detalle) Los costos por hectárea llevan su propia superficie
 Un costo por hectárea **no aplica sobre todo el campo**:
 - Mantenimiento de pasturas → las **15 has de pastura**, no las 175 del campo.
 - Promoción de rye grass → las **113,16 has de verdeo**, y sólo el **25 % por año**.
@@ -1353,6 +1376,10 @@ Donde dice que falta un precio hay un botón **"Cargar precio de Ternero 180/200
 cotiza en `Ternero 180/200`; si se vende más tarde y pesa 210, pasa a `Ternero 200/220`.
 **Las hembras no cotizan por peso**: van por categoría plana.
 
+### Por unidad y total, en dos columnas
+Cada bloque es una tabla de tres columnas: **Concepto · Por unidad · Total**. El por-unidad existe
+para **comparar de un vistazo**, y apilado debajo del total obliga a leer dos veces cada línea.
+
 ### Cuando falta un dato, lo dice — no calcula cero
 Cada actividad lista **qué le falta** para ser confiable, y las líneas incompletas quedan
 atenuadas y marcadas *"sin calcular"*. Un margen redondo sobre datos incompletos es peor que uno
@@ -1364,7 +1391,9 @@ que dice qué le falta — sobre todo si se le presenta a los socios.
 2. Verificar los costos por hectárea contra el Excel:
    `Implantación pasturas ≈ 2.812 U$S` · `Mantenimiento pasturas 300` ·
    `Promoción rye grass 3.960` · `Mantenimiento verdeos 2.398` (× TC).
-3. Los costos por cabeza —sanidad, IATF, **rollos**— tienen que multiplicar por **260**.
+3. Los costos por cabeza tienen que usar **cada uno su base**, no los 260 para todos:
+   `Sanidad Vacas`, `IATF` y `Rollos` → **260** (rodeo) · `Sanidad Terneros` → **los destetados** ·
+   `Sanidad Toros` → **12** (a mano). ⚠️ Si los tres dan lo mismo, la base no se está aplicando.
 4. Las ventas de **Ternero al Pie** deben tomar precio de `Ternero 180/200`; las de **Ternera**
    van a decir que falta el precio → probar el botón que lleva a cargarlo.
 5. Cambiar una hectárea en *Campos y hectáreas* → el margen tiene que reflejarlo.

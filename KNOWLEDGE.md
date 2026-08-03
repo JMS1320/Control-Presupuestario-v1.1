@@ -1188,3 +1188,30 @@ disponibilidad se suma dos veces el engorde que ya está incluido en el peso car
 ⚠️ `valuarLoteConPrecios()` dice en su comentario que *"es la función que usan tanto Productivo
 como Presupuesto, para que den lo mismo"*. **Escribir una versión propia hace que la misma venta
 valga distinto en dos pantallas.**
+
+---
+
+## Un costo nunca aplica sobre "todo": lleva su propia base `#margen #costos #2026-08-03`
+
+Al llevar el margen ganadero del Excel a la app apareció dos veces el mismo error, de los dos
+lados de la misma moneda:
+
+| | Lo que hacía | Lo que corresponde | Error |
+|---|---|---|---|
+| **Por hectárea** | × las 175 has del campo | × las **15** de pastura, **÷ 4** años | **47×** |
+| **Por cabeza** | × las 260 del rodeo | × los **12** toros · × los **destetados** | **>10×** |
+
+Un `monto_ha` o un `monto_cabeza` **sin base declarada asume "todo"**, y "todo" casi nunca es la
+respuesta correcta: el mantenimiento de pasturas no se hace en el campo natural, y la sanidad de
+toros no se le aplica a las vacas.
+
+**La solución que quedó**, y sirve para cualquier costo unitario:
+- **La superficie o la cantidad son un DATO de la línea**, no del contexto (`has_aplicacion`,
+  `base_cabezas`).
+- **La amortización es otro dato** (`amortiza_anios`): una pastura que dura 4 años entra al 25 %
+  por año. Lo formuló el usuario: *"si dura 5, el 20 % cada año"*.
+- **Las bases de cabezas se DERIVAN del ciclo**, no se copian: cambian con la campaña.
+- Lo que el modelo todavía no calcula —los toros— va **a mano y anotado**, no estimado.
+
+**Cómo se detecta:** si dos costos con bases distintas dan el mismo número, la base no se está
+aplicando. Es la prueba más rápida.
