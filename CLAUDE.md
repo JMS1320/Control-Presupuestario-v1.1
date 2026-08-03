@@ -199,6 +199,37 @@ wizard ofrece las categorías de los templates existentes, no las del plan (ver 
   backup entero al usuario (2026-06-26).
 - Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
 
+### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
+*Agregada 2026-08-03, después de que Claude duplicara **tres veces en una sola sesión** algo que
+ya existía. Las tres las detectó el usuario, no Claude.*
+
+La regla de contexto decía *"antes de preguntarle algo al usuario, buscarlo"*. **Faltaba la otra
+mitad, que es la que más cuesta:** antes de **escribir** una tabla, un componente o una función,
+buscar si ya existe.
+
+**Antes de crear cualquier pieza, buscar con el mismo empeño que antes de preguntar:**
+1. `Grep` por el **concepto**, no por el nombre que uno le pondría. Buscar `campana` no encuentra
+   `campaña`; buscar `precio` no encuentra `valuarLote`.
+2. Mirar `lib/` **por dominio** (`ganaderia`, `productivo`, `presupuesto`, `pagos`): la lógica de
+   negocio vive ahí, no en los componentes.
+3. Revisar `ARQUITECTURA-BD.md` y `ESTRUCTURA_BD_COLUMNAS.md` antes de proponer una tabla.
+4. Y si aparece algo parecido: **leerlo entero antes de decidir que no sirve.**
+
+**Los tres casos, para que se entienda el costo:**
+| Lo que escribí | Lo que ya existía | Qué tenía de más lo existente |
+|---|---|---|
+| `presupuesto_variables` | `productivo.actividad_insumos` | 9 modos de escalado, ración, stock, y ya en uso |
+| un `<select>` con 120 cuentas | `SelectorCuentaContable` | buscador, jerarquía, historial por proveedor |
+| `buscarPrecio()` por rango | `categoriaPrecio()` + `resolverPrecioHacienda()` | hembras sin banda, salto a invernada >320 kg, arrastre de precio, peso desde `fecha_peso` |
+
+**El costo real no es el trabajo duplicado: son los números que no coinciden.** La función de
+precios existente dice en su comentario *"es la que usan tanto Productivo como Presupuesto, para
+que den lo mismo"*. Mi versión paralela habría hecho que la misma venta valiera distinto en dos
+pantallas — y eso se descubre tarde y mal.
+
+**Señal de alarma:** si al escribir algo aparece el pensamiento *"esto seguro ya está resuelto en
+algún lado"* — **ese es el momento de buscar**, no de seguir escribiendo.
+
 ### ♻️ Centralizar, no duplicar (REGLA)
 Si algo lo van a usar varias pantallas o modales, va en **un solo lugar**, de modo que tocar
 ese lugar afecte a todo lo que lo usa.
@@ -259,6 +290,10 @@ anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
 - **🧪 Una feature nueva se registra en dos lados** (2026-08-03) — pendiente `TEST` + sección de
   manual con cómo probarla. Ver la § de arriba. Portable a cualquier proyecto: convierte una lista
   de test inservible a los tres días en algo ejecutable sin volver a preguntar.
+- **🔎 Buscar antes de escribir, no sólo antes de preguntar** (2026-08-03) — la mitad que falta de
+  la regla de contexto, y la que más cuesta. Ver la § de arriba. Portable: en cualquier proyecto
+  con algo de historia, el costo de duplicar no es el trabajo repetido sino **los números que no
+  coinciden entre dos pantallas**.
 
 ### 🔧 Git
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
