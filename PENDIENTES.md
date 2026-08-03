@@ -655,28 +655,63 @@ costo de MSA**.
 Mira **sólo `responsable`** y **ignora `responsable_interno`** — que es justamente el campo donde
 vive la excepción que describe el usuario.
 
-### 🔴 Los 4 templates que hoy están mal en el presupuesto de MSA
+### ⚠️ CORRECCIÓN — Claude miró el campo equivocado (2026-08-02)
 
-| Template | responsable | interno | Debería |
+Claude señaló 4 templates usando **`responsable_interno`**. **El usuario corrigió: el Voyage no
+lleva.** Tenía razón — el campo que decide **no es `responsable_interno` sino `codigo_interno`**:
+
+| Template | responsable_interno | **codigo_interno** | ¿Es distribución? |
 |---|---|---|---|
-| Imp Automotores **Gol 2012** Anual | MSA | **JMS** | salir |
-| Imp Automotores **Voyage** Anual | MSA | **JMS** | salir |
-| Imp Automotores **Tiguan 2012** Anual | MSA | **MA** | salir |
-| **Seguro Flota** (12 cuotas) | MSA | **MSA/MA/JMS** | **repartirse** |
+| Imp Automotores **Gol 2012** | JMS | **DIST JMS** | ✅ sí |
+| Imp Automotores **Tiguan 2012** | MA | **DIST MA** | ✅ sí |
+| Imp Automotores **Voyage** | JMS | **No Lleva** | ❌ **no** — es gasto de MSA |
+| Imp Automotores **Toyota 2015** | — | No Lleva | ❌ no |
 
-Los tres primeros **sobran** en el presupuesto de MSA. El cuarto es mixto y hay que decidir si se
-prorratea o se asigna entero.
+**Cómo funciona (explicado por el usuario):** *"MSA es el titular de todos los vehículos, pero
+internamente los paga el interno. Y si los paga MSA, se anota como **distribución por el código
+interno**."*
 
-**Nota:** es el primer hallazgo que va en la dirección contraria a los otros — acá el presupuesto
-de MSA está **sobrestimado**, no corto. Refuerza que el control de cobertura de [P-32](#p-32) tiene
-que avisar **en las dos direcciones**: lo que falta y lo que sobra.
+### 🔑 Y el matiz que cambia el enfoque
+> *"Está bien decir que MSA no tendrá ese gasto, y sí ponerlo en MA por ejemplo en la Tiguan.
+> **Pero sí existen en MSA porque contablemente se toma el gasto.**"*
 
-### Lo que hay que definir
-- El filtro pasa a ser: `responsable` **y** `responsable_interno`. Cuando el interno existe y no es
-  la empresa, **manda el interno**.
-- Qué hacer con los **mixtos** (`MSA/MA/JMS`, `MSA/PAM`): ¿se prorratean? ¿con qué proporción?
-- **`JMS` no es una empresa**, es un socio. Confirmar que un gasto con interno JMS es una
-  distribución y por lo tanto no es costo de MSA (se cruza con `tipo = distribucion` de C-27).
+→ **No es "excluir": es "clasificar como distribución".** El movimiento existe en MSA (la plata
+sale de MSA), pero **no es un costo operativo de MSA**. Es exactamente lo que resuelve
+`tipo = distribucion` de **C-27**, y por qué **C-22** separó la grilla en EGRESOS y DISTRIBUCIONES:
+la distribución suma al total de caja pero no al costo del negocio.
+
+### El mapa real de `codigo_interno` (activos, 2026-08-02)
+| Valor | Templates | Qué son |
+|---|---:|---|
+| `(null)` | 66 | sin código |
+| **`No Lleva`** | 28 | gasto propio |
+| **`No lleva`** ⚠️ | 16 | **el mismo valor con otra grafía** |
+| `DIST MA` | 7 | ABL/AYSA/Expensas/Metrogas Libertad · Tiguan · Retiro MA |
+| `Desglosar` | 3 | marcados para repartir — **acá está Seguro Flota** |
+| `DIST JMS` | 2 | Gol 2012 · Retiro Jose |
+| `DIST MECHI` · `DIST MANU` · `DIST AMS` · `DIST SOLE` | 1 c/u | retiros semestrales |
+
+### 🐞 Bug de datos encontrado al pasar: `No Lleva` vs `No lleva`
+**28 y 16 templates** con el mismo valor escrito distinto. Cualquier filtro por igualdad exacta
+(`= 'No Lleva'`) **pierde 16 templates en silencio**. Hay que normalizar, o comparar siempre con
+`ILIKE`/`lower()`. Es barato y evita un bug futuro difícil de ver.
+
+### ✅ Y `Seguro Flota` ya está resuelto por el usuario
+Está marcado **`Desglosar`**, junto con otros 2. O sea: el concepto de "esto hay que repartirlo"
+**ya existe en los datos**; falta que el presupuesto lo interprete.
+
+### Lo que queda por definir
+- El filtro del presupuesto pasa a mirar **`codigo_interno`**, no sólo `responsable`.
+- Los `DIST *` van a la **sección DISTRIBUCIONES** (no se excluyen).
+- Los `Desglosar` necesitan una **regla de reparto** — hoy no hay proporción cargada en ningún lado.
+
+### 📌 Pregunta abierta que dejó el usuario
+> *"Sería bueno empezar a registrar en **las facturas** contable e interno, y no sólo en los pagos,
+> ya que puede ser que algo se le facture a MSA y sea interno de MA (aunque raro). Registrarlo como
+> una pregunta de si convendría ponerle a las facturas 'interno'. Si funciona para templates…"*
+
+→ Evaluar llevar `codigo_interno` / `codigo_contable` **también a las facturas ARCA**, no sólo a
+los templates. Hoy `comprobantes_arca` no los tiene.
 
 **Estado:** ⏸️ el usuario pidió *"a registrar para afinar después"*. No se tocó nada.
 
