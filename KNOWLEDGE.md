@@ -1145,3 +1145,46 @@ vertical**, así que el encabezado se pega a algo que no se mueve y parece que e
 **Fix:** darle altura máxima al contenedor (`max-h-[70vh] overflow-auto`), así el scroll vertical
 ocurre adentro y el `sticky` tiene contra qué pegarse. Y las celdas del encabezado necesitan
 **fondo propio**: al despegarse del flujo, un fondo transparente deja ver las filas pasando debajo.
+
+---
+
+## El margen ganadero ya estaba en la app, repartido `#margen #productivo #2026-08-03`
+
+Al estudiar el Excel `MARGENES` para llevarlo a la app, el relevamiento mostró que **cinco de las
+siete hojas ya existían** como tablas. El margen no era un módulo nuevo: era **una vista**.
+
+| Hoja del Excel | Dónde estaba |
+|---|---|
+| `has y stock` → hectáreas | `campo_campana_actividad` |
+| `has y stock` → carga y % del rodeo | `productivo.stock_ciclos` |
+| ciclo real (servicio→preñez→destete) | `productivo.ciclos_cria` |
+| ventas | `productivo.stock_lotes` |
+| `Precios` | `precios_hacienda` |
+| `SUELDOS` | `sueldos_empleados` |
+
+Y `stock_ciclos` tiene los `real_*` al lado de los proyectados: **la columna "Hoy" contra "Presup"
+del Excel ya estaba modelada.**
+
+**La lección:** antes de traducir una planilla a la app, mapear hoja por hoja contra lo que existe.
+Lo que parece un módulo grande suele ser una consulta sobre datos que ya se cargan.
+
+---
+
+## Los precios de hacienda van por BANDA de peso, y las hembras no `#hacienda #precios #2026-08-03`
+
+`precios_hacienda` no se busca por el nombre de la categoría del rodeo. La lógica canónica está en
+`lib/ganaderia/calculo.ts` y tiene cuatro sutilezas que no son obvias:
+
+1. **El peso de venta define la banda**, no la categoría. Un "Ternero al Pie" de 191 kg cotiza en
+   `Ternero 180/200`; si se vende más tarde y pesa 210, pasa a `Ternero 200/220` y vale otra cosa.
+2. **Las hembras NO cotizan por peso**: van por categoría plana (`Ternera`, `Vaquillona`,
+   `Vaca CUT/Descarte`). Por eso no existe "Ternera 180/200" y buscar por rango nunca las encuentra.
+3. **Un macho joven que pasa los 320 kg salta a la escalera de invernada.**
+4. **El precio se arrastra** al mes siguiente cargado si el mes pedido no está.
+
+Y el peso se cuenta **desde `fecha_peso`**, no desde `fecha_disponible`: si se cuenta desde la
+disponibilidad se suma dos veces el engorde que ya está incluido en el peso cargado.
+
+⚠️ `valuarLoteConPrecios()` dice en su comentario que *"es la función que usan tanto Productivo
+como Presupuesto, para que den lo mismo"*. **Escribir una versión propia hace que la misma venta
+valga distinto en dos pantallas.**

@@ -9,18 +9,22 @@
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
-> **2026-08-03 — TESTEAR.** El diseño del Presupuesto quedó **cerrado e implementado**: 29 commits
-> desde el tag `punto-seguro-2026-08-02`. Lo que sigue **no es desarrollo**: es probar las
-> **9 pantallas nuevas** (`A-TEST-07` a `A-TEST-15`) y cargar los datos que faltan.
+> **2026-08-03 — TESTEAR + UNA DECISIÓN.** El Presupuesto quedó cerrado e implementado y el
+> **margen por actividad** arrancó. 37 commits desde `punto-seguro-2026-08-02`.
 >
-> **Cada test tiene su receta** en `MANUAL-USO.md`, en el bloque *🧪 Cómo probarlo* de su sección.
-> No hay que reconstruir qué había que mirar.
+> **🔴 La decisión que ordena el resto: dónde viven los costos productivos.** Hay dos lugares y el
+> usuario no distingue su lógica — *"si no se entiende en qué se diferencian, es porque no se
+> diferencian"*. `productivo.actividad_insumos` se queda (9 modos, ración, stock, ya en uso, y con
+> la **cría recién precargada** desde el Excel); `presupuesto_variables` es candidata a retirarse.
+> **Se decide probando**: si el modelo aguanta la cría —que no come ración— se migra la única fila
+> de variables y listo.
 >
-> **Bloqueado por datos del usuario:** los precios (las 4 tablas tienen entre 3 y 7 filas), las has
-> productivas de Lima, y el **OK a la forma de presupuestar del cupo anual** ([P-43](#p-43)).
+> **Testear:** 10 pantallas (`A-TEST-07` a `A-TEST-15`), cada una con su *🧪 Cómo probarlo* en
+> `MANUAL-USO.md`.
 >
-> Alternar según circunstancias sigue siendo normal: si hay que corregir pagos o conciliación en el
-> medio, **eso también es trabajo del norte** (todo alimenta al presupuesto).
+> **Bloqueado por datos del usuario:** precios (se cargan **desde el margen**, con el botón del
+> faltante), has productivas de Lima, el **OK al cupo anual** ([P-43](#p-43)), y **$173 M de ventas
+> sin clasificar** por actividad.
 
 ------|-------|--------|
 | Corte del ejercicio | **30/06/2026** | ✅ pasó |
