@@ -222,6 +222,26 @@ ese lugar afecte a todo lo que lo usa.
 - **Testing**: no dar por terminado lo que no se probó. Decir siempre qué quedó sin testear y
   recordar los pendientes de test en las pausas naturales.
 
+### 🧪 Una feature nueva se registra en DOS lados (REGLA)
+*Propuesta del usuario 2026-08-03: "cuando yo quiera probar la función, primero está en pendientes
+como sin test; segundo, como test está en manual de uso".*
+
+Al terminar de implementar algo, **antes de decir que está hecho**:
+
+1. **`PENDIENTES.md`** → fila `TEST` con su ID y estado **sin testear**. Es el *qué falta probar*.
+2. **`MANUAL-USO.md`** → sección con **cómo se usa y cómo se prueba**, con el título marcado
+   **🟡 (sin testear)**. Es el *cómo se prueba*.
+
+Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se saca el 🟡 del manual.
+
+**Motivo:** hasta ahora la lista de test vivía en el chat. Un ítem que dice *"probar la muestra del
+cálculo"* no sirve tres días después, porque el usuario ya no se acuerda de dónde estaba ni qué
+tenía que ver. El manual convierte el pendiente en algo ejecutable **sin volver a preguntar**.
+
+Y tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se usa lo que se acaba de
+hacer**, que es cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
+pantalla no esté clara.
+
 ### 📦 Para CLAUDE_BASE — cosas que sirven en TODOS los proyectos
 `CLAUDE_BASE.md` es la plantilla portable del usuario y **vive fuera de este repo**. Cuando
 aparece algo que no es propio de este proyecto sino que serviría para arrancar cualquiera, **se
@@ -236,6 +256,9 @@ anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
   ID en `PENDIENTES.md` o descartada con motivo. Y al abrir sesión, si hay notas sin leer, las
   menciona Claude. *Conviene desde el día 1: cuanto antes existe, menos contexto se pierde.*
   → dossier en `PENDIENTES.md` § P-34.
+- **🧪 Una feature nueva se registra en dos lados** (2026-08-03) — pendiente `TEST` + sección de
+  manual con cómo probarla. Ver la § de arriba. Portable a cualquier proyecto: convierte una lista
+  de test inservible a los tres días en algo ejecutable sin volver a preguntar.
 
 ### 🔧 Git
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.

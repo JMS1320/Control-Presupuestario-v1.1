@@ -257,6 +257,11 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 ### Testing pendiente (commits de mayo, sin testear)
 | ID | Estado | Ítem |
 |----|--------|------|
+| A-TEST-07 | 🔴 | **Presupuesto → Campos y hectáreas** (2026-08-02) — cómo probarlo en `MANUAL-USO.md` § Campos y hectáreas |
+| A-TEST-08 | 🔴 | **Presupuesto → Variables de costo** (2026-08-03) — incluye la **regla A** (la cuenta con variable sale del bloque de cuentas). `MANUAL-USO.md` § Variables de costo |
+| A-TEST-09 | 🔴 | **Presupuesto → Inversiones** (2026-08-03) — fuera del TOTAL EGRESOS. `MANUAL-USO.md` § Inversiones |
+| A-TEST-10 | 🔴 | **Presupuesto → Control de cobertura** (2026-08-03) — avisa lo que falta Y lo que se cuenta dos veces. `MANUAL-USO.md` § Control de cobertura |
+| A-TEST-11 | 🔴 | **Panel de cuentas: muestra del cálculo, IPC 12 meses, botón Actualizar y encabezados pegados** (2026-08-02/03) |
 | B-TEST-01 | 🔴 | Centros de costo controlado (99fa03a) — tabla maestra + combobox en 6 lugares |
 | B-TEST-02 | 🔴 | UI Reglas Import ARCA (61ae7f6) — ABM reglas CUIT→cuenta |
 | B-TEST-03 | 🔴 | Estado `cuotas` (805f226) — factura Federación Patronal sale de Cash Flow/Pagos |

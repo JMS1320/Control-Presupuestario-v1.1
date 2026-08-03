@@ -978,3 +978,145 @@ vaquillonas(N+1) = retenidas
 El destete de un período viene del servicio del anterior, así que **el servicio del último
 período nunca desteta** y sus ventas no aparecen. Si querés 2 campañas presupuestadas, cargá
 3 o 4 períodos.
+
+---
+
+## 🗺️ Presupuesto → Campos y hectáreas 🟡 *(nuevo 2026-08-02, sin testear)*
+
+**Para qué es.** Decir cuántas hectáreas de cada campo hace cada actividad **en cada campaña**.
+No es un dato del campo: las has se reasignan de un año al otro (las que un año son de recría al
+siguiente vuelven a cría), y por eso cuelgan de la campaña.
+
+**Dónde está.** Presupuesto → botón **Campos y hectáreas**.
+
+### Cómo se usa
+1. Arriba, elegir la **campaña** (`26/27`). Todo lo de abajo depende de eso.
+2. Abrir un campo (click en la fila).
+3. Cargar **has totales** y **has productivas**. ⚠️ **No son lo mismo**: Rojas tiene 242
+   productivas sobre 245 totales. **El prorrateo de estructura usa las productivas.**
+4. En *Hectáreas por actividad*, poner cuántas hace cada una. **Vacío o cero borra la asignación**,
+   no guarda un cero.
+5. Las **partidas** se muestran abajo con su titular. El titular de la partida es el dueño de esas
+   hectáreas — por eso Nazarenas aparece repartido entre MSA y PAM.
+
+### El control: que no quede ninguna hectárea afuera
+Arriba de todo. Verde si está todo asignado; ámbar listando campo por campo si falta o sobra.
+Estados posibles: `ok` · `quedan has sin asignar` · `SOBREASIGNADO` · `campo sin has cargadas`.
+
+### Datos provisorios
+Los que están a confirmar (hoy: **recría 60** y **Lima**) se avisan aparte aunque los números
+cuadren. Es la diferencia entre *"está bien"* y *"todavía no lo confirmé"*. Se confirman con un
+click desde la misma fila.
+
+### 🧪 Cómo probarlo
+1. Abrir **Nazarenas**: las 3 actividades tienen que sumar **385**.
+2. Cargarle has a **Lima** → el cartel de arriba pasa de ámbar a verde.
+3. **Sobreasignar** a propósito (ej. 300 a cría en Rojas) → tiene que avisar `SOBREASIGNADO`.
+4. Confirmar el provisorio de recría → desaparece de la lista de provisorios.
+
+---
+
+## 🧮 Presupuesto → Variables de costo 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Para qué es.** Armar un costo **sin pedirle código a nadie**. Todo costo se calcula igual:
+
+> **monto = cantidad × precio × (ajuste₁ × ajuste₂ × …)**
+
+Lo que cambia no es la fórmula: es **de dónde sale cada pieza**.
+
+**Dónde está.** Presupuesto → botón **Variables de costo**.
+
+### Cómo se usa
+1. **Nueva variable** → se crea y se abre.
+2. **Concepto**, **unidad** (cabeza, ha, ton, litro, jornal, kg novillo) y **actividad**.
+3. **Cantidad — de dónde sale:** a mano · cabezas del rodeo · hectáreas de la actividad · días ·
+   *derivada de otra cantidad* (× factor).
+4. **Precio — de dónde sale:** a mano · cotización de grano · precio de hacienda ($/kg) · insumo ·
+   historia de la cuenta.
+5. **Ajustes encadenados** — *Agregar paso*, y se aplican en orden: IPC · % a mano (admite signo:
+   +30 o −15) · variación de una magnitud · desvío contra lo realmente gastado.
+6. **Cuándo cae**: todos los meses · un solo mes · meses fijos · cupo anual.
+7. **Fundamento**: por qué se estima así. No es opcional en la práctica — dentro de seis meses un
+   `×30 %` sin el porqué es un número que nadie se anima a tocar ni a defender.
+
+**Ejemplo — IATF (9 kg de novillo por cabeza):** cantidad = *cabezas* con **factor 9**, unidad
+*kg novillo*, precio = *hacienda* con referencia *Novillo*.
+
+### "Alimenta la cuenta" — lo importante
+Si se elige una cuenta contable, **esa cuenta deja de proyectarse por su historia**: pasa a salir
+sólo de la variable. Es lo que evita contar el mismo peso dos veces.
+⚠️ Sólo pasa si la variable está **completa**. Una a medias no tapa la cuenta, a propósito.
+
+### Si falta un dato, dice "sin terminar" — no muestra cero
+Un cero calculado es indistinguible de un cero real. Por eso una variable incompleta no reparte
+cero en los meses: queda vacía y el faltante sube al control de cobertura.
+
+### 🧪 Cómo probarlo
+1. Crear una variable **completa a mano** (cantidad y precio) → el monto aparece arriba a la derecha.
+2. **Agregar un paso** de `+30 %` → el monto sube y el paso aparece en *Cómo se arma*.
+3. Poner **cantidad = cabezas** sin cabezas cargadas → tiene que decir *"faltan las cabezas
+   proyectadas"* y quedar **sin terminar**. ⚠️ Si muestra $0 en vez de avisar, es un bug.
+4. Asignarle una **cuenta** → esa cuenta tiene que **desaparecer** del bloque 📒 Cuentas contables
+   de la grilla. Si aparece en los dos lados, se está contando dos veces.
+5. Dejarla incompleta → aviso **rojo** arriba de la grilla y la cuenta **vuelve** a proyectarse.
+6. Tildar *"la dejo sin terminar a propósito"* → deja de contarse como aviso.
+
+---
+
+## 🏗️ Presupuesto → Inversiones 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Para qué es.** Las inversiones del período, **una por una y a mano**. No se proyectan desde la
+historia: no existe *"la última factura de silos"*.
+
+**Dónde está.** Presupuesto → botón **Inversiones**.
+
+### Cómo se usa
+1. **Nueva inversión**.
+2. **Nombre específico**, no una categoría: *"2 silos de autoconsumo 7 Ton c/u"*.
+3. Centro de costo, **monto**, **mes de arranque** y **plazo en meses** (vacío o 1 = un solo mes).
+4. **Justificación — por qué se invierte en esa área.** Es lo que se le explica a los socios cuando
+   preguntan por qué se puso plata ahí. Si falta, la pantalla lo avisa.
+5. **Estado**: prevista · aprobada · en curso · hecha · descartada.
+
+### Dos criterios
+- El **total excluye las descartadas**: una inversión que se decidió no hacer no es presupuesto.
+- Las descartadas **quedan visibles pero atenuadas**, para que se vea que se evaluó y se dijo que no.
+
+### En la grilla del presupuesto
+Aparecen en su propio bloque naranja **fuera del TOTAL EGRESOS**, a propósito: no son gasto
+operativo. Mezclarlas infla el egreso del año.
+
+### 🧪 Cómo probarlo
+1. Cargar una inversión con monto y mes → aparece en el bloque naranja de la grilla.
+2. Verificar que **NO** cambie el TOTAL EGRESOS.
+3. Dejarla sin justificar → aviso ámbar en la pantalla y en el control de cobertura.
+4. Marcarla **descartada** → sale del total pero sigue visible, atenuada.
+5. Ponerle **plazo 3** → el monto se reparte en 3 meses desde el de arranque.
+
+---
+
+## 🔍 Presupuesto → Control de cobertura 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Para qué es.** *Todo tiene que estar presupuestado en algún lugar. Lo que no está, avisa.*
+
+Aparece **arriba de la grilla** del presupuesto, sin que haya que buscarlo.
+
+### Qué avisa, y en las dos direcciones
+| | Qué significa |
+|---|---|
+| 🔴 | Una variable **sin terminar que es la única fuente de una cuenta** — esa cuenta quedó en cero |
+| 🔴 | **Dos variables apuntando a la misma cuenta** — se está contando dos veces |
+| 🟡 | Variables sin terminar sin cuenta asignada · inversiones sin justificar |
+
+Abajo, en gris, informa cuántas están marcadas **pendientes a propósito**: ésas no cuentan como
+aviso, pero se dicen igual.
+
+**Por qué existe.** Los tres agujeros que aparecieron al auditar el presupuesto eran el mismo caso
+—algo que se excluía *"porque va por otro lado"* y el otro lado nunca se llenó—: los honorarios de
+AMS, las Cargas Sociales agotadas y las cuentas apagadas. Ninguno era difícil de ver: eran
+invisibles **porque nadie preguntaba por los que faltaban**.
+
+### 🧪 Cómo probarlo
+1. Crear dos variables completas apuntando a **la misma cuenta** → aviso rojo de doble conteo.
+2. Dejar una variable con cuenta **sin precio** → aviso rojo diciendo qué cuenta quedó en cero.
+3. Marcarla *pendiente a propósito* → el aviso desaparece y baja al conteo gris.
