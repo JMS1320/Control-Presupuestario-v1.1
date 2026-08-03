@@ -482,6 +482,36 @@ módulo por terminado**. Por ahora, sólo anotar ideas.
 
 ---
 
+### 🔴 EL CONTROL DE CIERRE — cobertura total (pedido del usuario 2026-08-02)
+
+> *"Recordá algún control de ver que todas las variables entren por algún lugar. Si no está
+> automática, y de producción, ni de sueldos, debe estar manual. **Pero todo debe estar en algún
+> lugar. Si no, advertencia.**"*
+
+**Regla:** cada concepto presupuestable tiene que estar cubierto por **exactamente una** fuente —
+proyección automática · variable de producción ([P-37](#p-37)) · sueldos · template · manual. Lo
+que no está en ninguna, **avisa**. Lo que está en dos, también (doble conteo).
+
+**Por qué es el control más importante de todos:** los tres agujeros encontrados el 2026-08-02 son
+el **mismo caso**, y ninguno era difícil de ver — eran invisibles porque *nadie preguntaba por los
+que faltaban*:
+
+| Agujero | Qué pasó |
+|---|---|
+| **HONORARIOS AMS** ([P-03](#p-03)) | excluido de cuentas *"va por Sueldos"*, y en Sueldos vale $0 |
+| **Cargas Sociales** ([P-35](#p-35)) | cuotas agotadas al cerrar la campaña 25/26 → cero desde agosto |
+| **Las 4 de [P-33](#p-33)** | apagadas porque no se podían calcular bien |
+
+En los tres, alguien dijo *"va por otro lado"* y el otro lado nunca se llenó.
+
+**Además es prerrequisito de la regla A de [P-37](#p-37)**: esa regla apaga la proyección histórica
+de las cuentas con variable. Sin este control, una variable a medias deja la cuenta en cero y
+callada — se cambia un agujero por otro.
+
+**Estado:** 🔴 requisito de cierre del módulo. No se implementa la regla A sin esto.
+
+---
+
 ## <a id="p-16"></a>P-16 — 🐞 El modo "mismo del año pasado" nunca funcionó (✅ ARREGLADO 2026-08-02)
 
 **Lo que reportó el usuario:** *"cuando pongo mismo de año pasado, ej. Seguridad y Alarma, me
@@ -677,6 +707,36 @@ DISTRIBUCIÓN**.
 
 Con eso, agregar un costo nuevo es **una fila**, no una tabla ni código.
 
+### ⭐ Refinamiento del usuario (2026-08-02): el ajuste es una CADENA, con fundamento
+
+> *"Muchas veces puedo querer definir un costo como: **gastado campaña × 30% más**. Poder dejar
+> una nota de en qué fundamento mi estimación. Pero también podría ser **campaña ant. × IPC × 15%+**,
+> o **año anterior × IPC × aumento de cabezas × 5%+ / 15%−**."*
+
+Esto no rompe el modelo: lo **precisa**. Cada lado de `CANTIDAD × PRECIO` no es *una fuente*, es
+**una base más una cadena de ajustes**:
+
+```
+valor = BASE  ×  ajuste₁  ×  ajuste₂  ×  …          (+ fundamento en texto)
+```
+
+| Pieza | Opciones |
+|---|---|
+| **BASE** | gastado de la campaña · campaña anterior · año anterior · último valor · a mano |
+| **AJUSTE** (0..n, se encadenan) | **IPC** (con el escalón de N meses) · **% manual** (+30 %) · **variación de una magnitud** (cabezas, hectáreas) |
+| **FUNDAMENTO** | texto libre: *por qué* se estimó así |
+
+Los tres ejemplos del usuario salen sin código especial:
+- `gastado campaña` × `+30 %`
+- `campaña anterior` × `IPC` × `+15 %`
+- `año anterior` × `IPC` × `Δ cabezas` × `+5 % / −15 %`
+
+**El `fundamento` no es decorativo.** Es la aplicación directa de `CLAUDE.md` § *Motivos*: dentro
+de seis meses, *"× 30 %"* sin el porqué es un número que nadie se anima a tocar ni a defender.
+Y es lo que vuelve auditable el presupuesto ante el contador.
+
+**Campaña = 1/7 → 30/6** (ya definido en [M-01](#m-01)), así que *"campaña anterior"* no es ambiguo.
+
 ### Lo honesto: dónde NO va a alcanzar
 Algunos costos van a tener matemática propia de verdad (una curva de peso quebrada por tramos, un
 prorrateo por superposición). Para esos, **una válvula de escape**: modo `manual` o una fórmula
@@ -687,8 +747,35 @@ motor genérico que nadie entiende.
 retorcerlas. Entran — materiales (cantidad a mano × precio+IPC), aguadas (a mano × IPC+%),
 combustible (litros/año × $/litro, cupo anual), semillas (ha × $/ha, desde el margen).
 
-**Estado:** ⏸️ propuesta, sin decidir. **Es la que hay que cerrar antes de escribir código de
-costos productivos** — si no, cada costo nuevo va a pedir su parche.
+### ✅ Decidido con el usuario (2026-08-02)
+1. **La fórmula** `CANTIDAD × PRECIO` — alineados.
+2. **Las fuentes de precio se mapean a tablas que YA EXISTEN**: `precios_granos` (grano, mes,
+   `precio_usd`), `precios_hacienda` (categoría, `precio_pesos_kg`, rango de peso), `tipos_cambio`,
+   `indices_ipc`. No hay que inventar tablas de cotizaciones.
+3. **Cantidad derivada** resuelve el IATF: `cabezas × 9` con unidad *kg novillo* y precio de
+   `precios_hacienda`. La proyección de rodeo ya existe (`cabezasPorMes` en `ContextoCalculo`).
+4. ✅ **Regla A aprobada** — *si una cuenta tiene variable, su proyección por historia se apaga
+   sola*. Evita el doble conteo por construcción y **permite borrar la lista hardcodeada
+   `esProduccion()`** (hoy `421*`, `42305*`, `42312`, `42315`, `42322-24` están escritos en el
+   código). ⚠️ **Va junto con el control de cobertura total de [P-32](#p-32), no antes**: la regla
+   apaga la red histórica, y sin el control una variable a medias deja la cuenta en cero y en
+   silencio.
+5. **Prorrateo de estructura** — confirmado con el ejemplo del usuario: *"costo de estructura del
+   contador = gasto anual ÷ has totales (todas las actividades juntas)"*. Cada actividad tiene sus
+   hectáreas y absorbe según las suyas.
+6. **Válvula de escape**: lo que no entre queda `manual`.
+7. **Ajuste encadenado + fundamento** (ver arriba).
+
+### ⛔ Bloqueantes de datos (no de desarrollo)
+- Las cuatro tablas de precios tienen entre **3 y 7 filas**. El motor va a andar y a dar números
+  pobres. Cargarlas es prerrequisito y es **carga del usuario**, no desarrollo.
+- **Las hectáreas por actividad no están en el sistema** — hoy viven en el Excel (cría: 175 has).
+  Sin ese dato el prorrateo del punto 5 no se puede calcular.
+- **La lista canónica de actividades falta confirmar**: el usuario dijo *"Arrendamiento Rojas y
+  Arrendamiento Nazarenas"* (2026-08-02) y más tarde *"San Pedro o Rojas"*. Confirmar cuál es.
+
+**Estado:** 🟢 **cerrada en lo conceptual.** Queda definir el detalle de escenarios (ver la duda
+abierta) y cargar los datos de arriba.
 
 ---
 
