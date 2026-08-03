@@ -25,6 +25,7 @@ import { ConfiguradorActividades } from "./components/configurador-actividades"
 import { ConfiguradorCampos } from "./components/configurador-campos"
 import { ConfiguradorVariables } from "./components/configurador-variables"
 import { ConfiguradorInversiones } from "./components/configurador-inversiones"
+import { ConfiguradorSueldosPresupuesto } from "./components/configurador-sueldos-presupuesto"
 import { PanelPresupuestoCuentas } from "./components/panel-presupuesto-cuentas"
 import { PanelControlProveedores } from "./components/panel-control-proveedores"
 
@@ -53,6 +54,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const [showCampos, setShowCampos] = useState(false)
   const [showVariables, setShowVariables] = useState(false)
   const [showInversiones, setShowInversiones] = useState(false)
+  const [showSueldosPre, setShowSueldosPre] = useState(false)
   const [showCuentas, setShowCuentas] = useState(false)
   /** Sube de a uno cuando el panel de cuentas cambia algo, para que la grilla del presupuesto
    *  vuelva a leer. Son componentes hermanos: sin esto había que salir y entrar a la pestaña. */
@@ -305,6 +307,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
                 <Hammer className="mr-2 h-4 w-4" />
                 {showInversiones ? "Ocultar inversiones" : "Inversiones"}
               </Button>
+              <Button variant="secondary" className="shrink-0" onClick={() => setShowSueldosPre(!showSueldosPre)}>
+                <Users className="mr-2 h-4 w-4" />
+                {showSueldosPre ? "Ocultar sueldos" : "Sueldos del presupuesto"}
+              </Button>
               <Button variant="secondary" className="shrink-0" onClick={() => setShowPreciosTC(!showPreciosTC)}>
                 <DollarSign className="mr-2 h-4 w-4" />
                 {showPreciosTC ? "Ocultar precios y TC" : "Precios y TC"}
@@ -316,6 +322,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             {showCampos && <ConfiguradorCampos />}
             {showVariables && <ConfiguradorVariables />}
             {showInversiones && <ConfiguradorInversiones />}
+            {showSueldosPre && <ConfiguradorSueldosPresupuesto />}
             {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}
 

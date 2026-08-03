@@ -1120,3 +1120,57 @@ invisibles **porque nadie preguntaba por los que faltaban**.
 1. Crear dos variables completas apuntando a **la misma cuenta** → aviso rojo de doble conteo.
 2. Dejar una variable con cuenta **sin precio** → aviso rojo diciendo qué cuenta quedó en cero.
 3. Marcarla *pendiente a propósito* → el aviso desaparece y baja al conteo gris.
+
+---
+
+## 👷 Presupuesto → Sueldos del presupuesto 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Para qué es.** Poner el sueldo mensual de cada empleado y que el resto salga solo: francos,
+premio anual, aguinaldo y cargas sociales.
+
+**Por qué existe.** El presupuesto tomaba los sueldos de los **períodos de liquidación**. Los
+períodos futuros estaban generados con el monto congelado y **tres empleados en $0**, así que el
+bloque mostraba **la mitad** de lo que cuesta la plantilla. La solución es la que pidió el usuario:
+*"yo pongo cuánto de SUSS y de sueldos presupuestar y listo, doy el punto de arranque"*.
+
+⚠️ **No se liquida con estos números.** Son sólo proyección; la liquidación real sigue igual.
+
+**Dónde está.** Presupuesto → botón **Sueldos del presupuesto**.
+
+### Cómo se usa
+**Arriba, dos parámetros generales:**
+- **Actualizar cada (meses)** — cada cuántos meses suben los sueldos por IPC. Aplica a **toda la
+  plantilla**. Los sueldos no suben todos los meses: suben en **escalones**, como las paritarias.
+- **Cargas sociales — 1er mes** — el monto de arranque, a mano. De ahí sube igual que los sueldos.
+
+**Abajo, la plantilla.** Por empleado:
+| Campo | Qué es |
+|---|---|
+| **Sueldo mensual (A+B)** | el total. Es lo único obligatorio |
+| **Francos (días)** | días por mes. El valor del día = **sueldo ÷ 25** |
+| **Premio: mes** | en qué mes se paga (o ninguno) |
+| **× sueldos** | el múltiplo. Se aplica sobre el sueldo **de ese mes**, así que si hubo aumento, lo toma |
+
+### Lo que sale solo
+- **Aguinaldo** = 50 % del sueldo, en **junio y diciembre**. Sobre el total (A+B).
+- **Cargas sociales** = la base, con el mismo aumento que los sueldos, **+50 % en enero y julio**
+  — un mes *después* del aguinaldo, porque las contribuciones del SAC se pagan al mes siguiente.
+  *(Verificado contra los datos reales: el template Cargas Sociales pasó de $1.763.175 en jun-26 a
+  $2.495.548 en jul-26, +41,5 %.)*
+
+### La cascada
+> **sueldo de presupuesto → período liquidado → nada**
+
+El que tiene sueldo cargado acá **pisa** al período. El que no, sigue saliendo del período
+liquidado como antes: no se pierde nada de lo que ya andaba.
+
+### 🧪 Cómo probarlo
+1. Cargarle sueldo a **AMS, Fabián Vulcano y Elvio Paz** (los tres que estaban en $0) y verificar
+   que el bloque de sueldos de la grilla **suba fuerte** — deberían faltar entre $38 M y $60 M.
+2. Mirar la tabla *Cómo evoluciona*: **junio y diciembre** en negrita (aguinaldo) y **enero y
+   julio** en negrita (cargas +50 %).
+3. Poner **Actualizar cada = 3** y verificar que el sueldo salte cada 3 meses, no todos los meses.
+4. Ponerle a alguien **premio: mes = Ene, × sueldos = 1** → ese mes tiene que sumar un sueldo más.
+5. Cargar la **base de cargas sociales** y ver aparecer la fila *Cargas sociales (SUSS)* en el
+   bloque de sueldos de la grilla.
+6. Borrar el sueldo de uno → tiene que **volver** a salir del período liquidado, no quedar en cero.

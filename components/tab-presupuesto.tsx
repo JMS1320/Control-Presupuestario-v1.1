@@ -52,6 +52,10 @@ import {
   type Variable, type Ajuste, type ContextoVariable,
 } from "@/lib/presupuesto/variables"
 import {
+  proyectarEmpleado, proyectarSuss,
+  type EmpleadoPresupuesto, type ParametrosSueldos,
+} from "@/lib/presupuesto/sueldos"
+import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
   type TemplateInfo, type CuotaMes, type CeldaTemplate, type ConfigTemplate,
@@ -984,9 +988,53 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     })
   }
 
+  /**
+   * Sueldos. Cascada: **sueldo de presupuesto → período liquidado → nada**.
+   *
+   * El sueldo de presupuesto manda porque los períodos futuros venían con el monto congelado y
+   * tres empleados en $0 — el bloque mostraba la mitad de lo que cuesta la plantilla. Lo que el
+   * usuario carga en "Sueldos del presupuesto" pisa a los períodos hacia adelante.
+   *
+   * Los que NO tienen sueldo de presupuesto siguen saliendo del período liquidado, así no se
+   * pierde nada de lo que ya andaba.
+   */
   const cargarSueldos = async () => {
     const primerMes = meses[0]
     const ultimoMes = meses[meses.length - 1]
+
+    // 1) Lo que el usuario presupuestó a mano, más las cargas sociales.
+    const [{ data: emps }, { data: cfgS }] = await Promise.all([
+      supabase.from("sueldos_empleados")
+        .select("id, nombre, empresa, sueldo_presupuesto, francos_dias_promedio, premio_mes, premio_multiplo")
+        .neq("activo", false),
+      supabase.from("presupuesto_config")
+        .select("inflacion_mensual, ipc_escalon_meses, suss_base").eq("empresa", "MSA").maybeSingle(),
+    ])
+    const paramsS: ParametrosSueldos = {
+      ipcEscalonMeses: cfgS?.ipc_escalon_meses ?? null,
+      inflacionMensual: Number(cfgS?.inflacion_mensual) || 0,
+      sussBase: cfgS?.suss_base == null ? null : Number(cfgS.suss_base),
+    }
+    const mm = meses.map(m => ({ anio: m.anio, mes: m.mes }))
+    const presupuestados: Record<string, FilaSueldo> = {}
+    const conSueldoPropio = new Set<string>()
+    for (const e of ((emps || []) as any[])) {
+      const emp: EmpleadoPresupuesto = {
+        id: String(e.id), nombre: String(e.nombre), empresa: e.empresa,
+        sueldo_presupuesto: e.sueldo_presupuesto == null ? null : Number(e.sueldo_presupuesto),
+        francos_dias_promedio: e.francos_dias_promedio == null ? null : Number(e.francos_dias_promedio),
+        premio_mes: e.premio_mes == null ? null : Number(e.premio_mes),
+        premio_multiplo: e.premio_multiplo == null ? null : Number(e.premio_multiplo),
+      }
+      const empresa = String(e.empresa || "")
+      if (!empresa.toLowerCase().includes("msa") && empresa.toLowerCase() !== "ambas") continue
+      const lineas = proyectarEmpleado(emp, mm, paramsS)
+      if (lineas.length === 0) continue          // sin sueldo de presupuesto → cae al período
+      conSueldoPropio.add(emp.nombre)
+      const montos: Record<string, number> = {}
+      for (const l of lineas) montos[l.clave] = l.total
+      presupuestados[emp.nombre] = { id: emp.nombre, nombre: emp.nombre, montos }
+    }
 
     const { data: periodos } = await supabase
       .from("sueldos_periodos")
@@ -996,18 +1044,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       .neq("estado", "historico")
       .order("anio").order("mes")
 
-    if (!periodos) return
-
-    // Agrupar por empleado
+    // 2) Los que NO tienen sueldo de presupuesto: siguen saliendo del período liquidado.
     const mapaEmpleados: Record<string, FilaSueldo> = {}
-    for (const p of periodos) {
+    for (const p of (periodos || [])) {
       const emp = p.empleado as any
       if (!emp) continue
-      // Filtrar solo MSA o ambas
       const empresa: string = emp.empresa || ""
       if (!empresa.toLowerCase().includes("msa") && empresa.toLowerCase() !== "ambas") continue
 
       const nombre: string = emp.nombre
+      if (conSueldoPropio.has(nombre)) continue   // el presupuestado manda
+
       const clave = `${p.anio}-${String(p.mes).padStart(2, "0")}`
       const monto = Number(p.saldo_pendiente ?? p.bruto_calculado ?? 0)
 
@@ -1017,7 +1064,18 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       mapaEmpleados[nombre].montos[clave] = monto
     }
 
-    setSueldoFilas(Object.values(mapaEmpleados))
+    // 3) Cargas sociales: una fila propia. No sale de ningún empleado — es el punto de arranque
+    //    que carga el usuario, con el +50 % de enero y julio.
+    const suss = proyectarSuss(mm, paramsS)
+    const filaSuss: FilaSueldo | null = suss.length > 0
+      ? { id: "__suss__", nombre: "Cargas sociales (SUSS)", montos: Object.fromEntries(suss.map(s => [s.clave, s.monto])) }
+      : null
+
+    setSueldoFilas([
+      ...Object.values(presupuestados),
+      ...Object.values(mapaEmpleados),
+      ...(filaSuss ? [filaSuss] : []),
+    ])
   }
 
   // ── Toggle agrupador ────────────────────────────────────────────────────────
