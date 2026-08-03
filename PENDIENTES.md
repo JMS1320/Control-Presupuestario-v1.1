@@ -113,6 +113,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-42 | ⏸️ | 📍 **Donde se configura determina donde se muestra** (contracara de la regla A) + **las ventas presupuestadas piden actividad** + **no recargar lo que ya esta en Productivo** (venta de agosto, 55 machos) → [P-42](#p-42) |
 | P-41 | ⏸️ | 🗺️ **Campos, actividades y has por campana** — actividades genericas (cria/recria/engorde/arrendamiento/agricultura) en `centros_costo` con columna `tipo`; tabla `campos` nueva; asignacion campo×campana×actividad→has. **Control: que no quede has afuera** → [P-41](#p-41) |
 | P-40 | ⏸️ | 🔴 **El presupuesto se arma por RESPONSABLE, no por quien paga** — hoy el filtro mira solo `responsable` e ignora `responsable_interno`. **4 templates estan de mas en el presupuesto de MSA** (2 con interno JMS, 1 con MA, 1 mixto) → [P-40](#p-40) |
 | P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) |
@@ -638,6 +639,47 @@ falta historia del supuesto.
 
 ---
 
+## <a id="p-42"></a>P-42 — Dónde se configura determina dónde se muestra (y las ventas con actividad)
+
+### La regla, dicha por el usuario (2026-08-02)
+> *"Si activé vía **cuenta contable**, debería visualizarse en el presupuesto **ahí**. Si lo activo
+> vía **costo directo relacionado con alguna actividad**, deberá mostrarse de esa manera **en ese
+> lugar**."*
+
+Es la **contracara de la regla A de [P-37](#p-37)**, y juntas cierran el doble conteo:
+- La regla A dice *dónde NO aparece* (si hay variable, la cuenta no se proyecta por historia).
+- Ésta dice *dónde SÍ aparece*: **en el bloque desde el que se configuró**, y en uno solo.
+
+**Caso que lo disparó (ROLLOS, 2026-08-02):** el usuario lo activó por cuenta contable, puso un
+monto de prueba (**1,23**) y no encontró el renglón. **Estaba** — la grilla filtra
+`.filter(f => f.celdas.some(c => c.monto > 0))` y ordena por total descendente, así que con $1
+quedó **última de la lista**. No era un bug: era el número. Pero deja ver que **una cuenta con
+monto simbólico es indistinguible de una que no está**.
+
+### 🔗 Y las ventas presupuestadas deberían pedir actividad
+> *"En el presupuesto tengo la posibilidad de presupuestar la venta de lo disponible. Si la
+> presupuesto más adelante, creo que la app debería **preguntar si le quiero asignar una
+> actividad**, y ahí yo le pongo recría y le asigno sus variables. **El tiempo lo determina la
+> fecha que pongo de venta.**"*
+
+→ Al presupuestar una venta a futuro, ofrecer asignarle **actividad** (recría, cría, engorde…). Con
+eso la venta y sus costos quedan del mismo lado y el margen por actividad ([M-01](#m-01)) se arma
+solo, sin una carga aparte.
+
+### ♻️ Y sobre todo: NO volver a cargar lo que ya está en Productivo
+> *"En productivo tenemos recría, historial de pesadas, actividades varias proyectadas. Algunas son
+> las que estamos concretando —por ej. la venta de ahora de agosto de 55 machos—, alguna es la del
+> remanente, lo que pensamos hacer. Entonces, **en el afán de no hacer el mismo trabajo, se podrían
+> tomar los datos de ahí directamente**."*
+
+El módulo productivo **ya tiene** las ventas proyectadas y las pesadas. El presupuesto debería
+**leerlas**, no pedir que se recarguen. Es la regla ♻️ de `CLAUDE.md` aplicada a los datos y no
+sólo al código.
+
+**Caso concreto para probar con datos reales:** la venta de **agosto, 55 machos**.
+
+---
+
 ## <a id="p-41"></a>P-41 — Campos, actividades y hectáreas por campaña (plan de tablas)
 
 **Definido por el usuario 2026-08-02.** Tres conceptos que hoy están mezclados en uno solo.
@@ -790,7 +832,31 @@ misma sentencia**, y eran las mismas 35 filas → el segundo reportó **0 filas*
 correrlo aparte. Si no se verificaba el resultado, quedaba la mitad del bug vivo.
 
 **Para que no vuelva:** estos campos son de texto libre y se cargan a mano. O se normaliza en el
-alta, o **todo filtro sobre ellos usa `ILIKE`/`lower()`**, nunca `=`.
+alta, o **todo filtro sobre ellos usa `ILIKE`/`lower()`**, nunca `=`. *(Responsabilidad de Claude
+al escribir código; el usuario no tiene que cambiar cómo carga.)*
+
+### ✅ Y el maestro para el desplegable YA EXISTE — no hay que crear nada
+El usuario preguntó si convenía una lista desplegable en vez de texto libre, y agregó el criterio
+correcto: *"hacer algo nuevo debe ser a conciencia, pero primero mirando que no exista ya"*.
+
+**Existe: `public.distribucion_socios`** (8 filas), y es exactamente este maestro:
+
+| interno | concepto | sección | empresa_destino |
+|---|---|:--:|---|
+| `DIST MA` | Distribución MA | 1 | **MA** |
+| `DIST MANU` | Distribución Manuel (hijo) | 1 | — |
+| `DIST SOLE` | Distribución Soledad | 1 | — |
+| `DIST MECHI` | Distribución Mechi | 1 | — |
+| `DIST AMS` | Distribución Andrés Manuel | 1 | — |
+| `DIST JMS` | Distribución José Manuel | 1 | — |
+| `CTA HIJOS` | Cuenta Hijos | 2 | — |
+| `VER` | A verificar | 2 | — |
+
+→ El desplegable sale de acá + los valores fijos que faltan (`No Lleva`, `Desglosar`, `LIB`,
+`CTA MA`). **Le falta sólo eso**, no una tabla nueva.
+→ Bonus: `empresa_destino` ya resuelve el enganche **intercompany** de [P-40](#p-40).
+
+*(Es la regla de contexto funcionando: el usuario pidió mirar antes de crear, y había que mirar.)*
 
 ### ✅ Y `Seguro Flota` ya está resuelto por el usuario
 Está marcado **`Desglosar`**, junto con otros 2. O sea: el concepto de "esto hay que repartirlo"

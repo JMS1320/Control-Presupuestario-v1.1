@@ -222,6 +222,21 @@ ese lugar afecte a todo lo que lo usa.
 - **Testing**: no dar por terminado lo que no se probó. Decir siempre qué quedó sin testear y
   recordar los pendientes de test en las pausas naturales.
 
+### 📦 Para CLAUDE_BASE — cosas que sirven en TODOS los proyectos
+`CLAUDE_BASE.md` es la plantilla portable del usuario y **vive fuera de este repo**. Cuando
+aparece algo que no es propio de este proyecto sino que serviría para arrancar cualquiera, **se
+anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
+
+**Pendientes de pasar:**
+- **📝 Notas del usuario desde la app** (2026-08-02) — un botón fijo para dejar notas *en el
+  contexto donde se le ocurren*. Lo valioso no es la nota: es el contexto que se captura solo
+  (pantalla, componente, registro abierto, filtros). Una nota es una **grabación de N capturas**
+  con Finalizar, no un evento — eso convierte *"no anda"* en un caso reproducible.
+  **Regla:** la nota **no es un pendiente**, es bandeja de entrada; al leerla termina como ítem con
+  ID en `PENDIENTES.md` o descartada con motivo. Y al abrir sesión, si hay notas sin leer, las
+  menciona Claude. *Conviene desde el día 1: cuanto antes existe, menos contexto se pierde.*
+  → dossier en `PENDIENTES.md` § P-34.
+
 ### 🔧 Git
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
 - Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
