@@ -6,7 +6,7 @@ import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet } from "lucide-react"
+import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -47,6 +47,10 @@ import {
   calcularCuenta, sugerirModo, esProduccion, netearExcluidos,
   type ConfigCuenta, type PuntoHistorico, type PuntoProveedor, type CeldaPresupuesto,
 } from "@/lib/presupuesto/modos"
+import {
+  calcularVariable, repartirEnMeses,
+  type Variable, type Ajuste, type ContextoVariable,
+} from "@/lib/presupuesto/variables"
 import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
@@ -286,6 +290,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
   const [cuentas, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[] }[]>([])
+  /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
+  const [variables, setVariables] = useState<
+    { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
+      faltantes: string[]; pendienteAProposito: boolean }[]>([])
+  /** Inversiones (P-36) — bloque propio: no son gasto operativo. */
+  const [inversiones, setInversiones] = useState<
+    { id: string; nombre: string; montos: Record<string, number>; sinJustificar: boolean }[]>([])
   /** Costo de los tramos de actividad de cada lote, por mes. */
   const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number> }[]>([])
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
@@ -312,9 +323,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // con los porcentajes corruptos (IVA 105%). La fila sigue en la BD sin usarse.
       // El IPC se carga primero: lo usan la proyección de templates y las cuentas contables.
       const ipc = await cargarIpc()
+      // Las variables se leen ANTES que las cuentas: `cargarCuentas` necesita saber cuáles
+      // tienen variable para no proyectarlas también por historia (regla A de P-37).
+      const conVariable = await cargarVariables(ipc)
       await Promise.all([
         cargarTemplates(ipc), cargarSueldos(), cargarIngresos(), cargarHacienda(),
-        cargarConfig(), cargarCuentas(ipc), cargarCostosProduccion(),
+        cargarConfig(), cargarCuentas(ipc, conVariable), cargarCostosProduccion(),
+        cargarInversiones(),
       ])
     } finally {
       setCargando(false)
@@ -334,7 +349,71 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Presupuesto de cuentas contables. El modo de cada cuenta se configura en su panel
    * (botón "Cuentas contables"); acá se lee la configuración y se muestra el resultado.
    */
-  const cargarCuentas = async (ipc: PuntoSerie[]) => {
+  /**
+   * Variables de costo (P-37). Devuelve el set de cuentas que quedan cubiertas por una
+   * variable: ésas NO se proyectan además por historia, o se contarían dos veces.
+   */
+  const cargarVariables = async (ipc: PuntoSerie[]): Promise<Set<string>> => {
+    const [{ data: vs }, { data: ajs }] = await Promise.all([
+      supabase.from("presupuesto_variables").select("*")
+        .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true),
+      supabase.from("presupuesto_variable_ajustes").select("*").order("orden"),
+    ])
+    const porVar: Record<string, Ajuste[]> = {}
+    for (const a of ((ajs || []) as any[])) {
+      (porVar[a.variable_id] ||= []).push({
+        orden: a.orden, tipo: a.tipo, valor: a.valor == null ? null : Number(a.valor),
+        referencia: a.referencia, nota: a.nota,
+      })
+    }
+    // Mismo criterio de IPC que el panel de cuentas: acumulado de los últimos 12 cargados.
+    const serie = [...ipc].sort((x, y) => (x.anio * 12 + x.mes) - (y.anio * 12 + y.mes)).slice(-12)
+    const factor = serie.reduce((f, p) => f * (1 + (Number(p.valor) || 0) / 100), 1)
+    const ctxVar: ContextoVariable = { ipcAcumulado: serie.length > 0 ? factor - 1 : null }
+
+    const mm = meses.map(m => ({ anio: m.anio, mes: m.mes }))
+    const filas = ((vs || []) as any[]).map(v => {
+      const r = calcularVariable(v as Variable, porVar[v.id] ?? [], ctxVar)
+      // Si falta un dato NO se inventa cero: se muestra en 0 pero queda listado en `faltantes`,
+      // que es lo que levanta el control. Un cero silencioso es indistinguible de un cero real.
+      const montos = r.faltantes.length > 0
+        ? {} as Record<string, number>
+        : repartirEnMeses(v as Variable, r.monto, mm)
+      return {
+        id: String(v.id), concepto: String(v.concepto),
+        nroCuenta: v.nro_cuenta ? String(v.nro_cuenta) : null,
+        montos, faltantes: r.faltantes,
+        pendienteAProposito: Boolean(v.pendiente_a_proposito),
+      }
+    })
+    setVariables(filas)
+    return new Set(filas.filter(f => f.nroCuenta && f.faltantes.length === 0).map(f => f.nroCuenta!))
+  }
+
+  /** Inversiones (P-36). Se reparten en su plazo desde el mes de arranque. */
+  const cargarInversiones = async () => {
+    const { data } = await supabase.from("presupuesto_inversiones").select("*")
+      .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true).neq("estado", "descartada")
+    const filas = ((data || []) as any[]).map(i => {
+      const montos: Record<string, number> = {}
+      const total = Number(i.monto) || 0
+      const plazo = Math.max(1, Number(i.plazo_meses) || 1)
+      const arranque = meses.findIndex(m => m.mes === Number(i.mes))
+      const desde = arranque >= 0 ? arranque : 0
+      for (let k = 0; k < plazo; k++) {
+        const m = meses[desde + k]
+        if (!m) break                       // lo que cae fuera del horizonte no se muestra
+        montos[`${m.anio}-${String(m.mes).padStart(2, "0")}`] = total / plazo
+      }
+      return {
+        id: String(i.id), nombre: String(i.nombre), montos,
+        sinJustificar: !String(i.justificacion ?? "").trim(),
+      }
+    })
+    setInversiones(filas)
+  }
+
+  const cargarCuentas = async (ipc: PuntoSerie[], cubiertasPorVariable: Set<string> = new Set()) => {
     const [{ data: hist }, { data: conf }, { data: prov }, { data: cfgGen }] = await Promise.all([
       supabase.from("presupuesto_historia_cuentas")
         .select("nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores"),
@@ -386,6 +465,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       ipc: ipc.length > 0 ? ipc : undefined,
     }
     const filas = nros
+      // ── Regla A (P-37): si una cuenta ya la cubre una variable, NO se proyecta también por
+      // historia. Es el doble conteo evitado por construcción, y reemplaza la lista hardcodeada
+      // de `esProduccion()`: la cuenta queda afuera PORQUE tiene variable, no porque alguien la
+      // escribió en el código. Sólo cuentan las variables completas: una a medias no tapa nada.
+      .filter(nro => !cubiertasPorVariable.has(nro))
       .map(nro => ({ nro, nombre: nombres[nro] || nro, celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
       .filter(f => f.celdas.some(c => c.monto > 0))
       .sort((a, b) => b.celdas.reduce((s, c) => s + c.monto, 0) - a.celdas.reduce((s, c) => s + c.monto, 0))
@@ -977,10 +1061,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // no comparten conceptos, y las cuentas de producción salen `excluida`.
       for (const c of cuentas) suma += c.celdas.find(x => x.mes === clave)?.monto || 0
       for (const c of costoProd) suma += c.montos[clave] || 0
+      // Variables de costo (P-37). No se pisan con las cuentas: la cuenta que tiene variable
+      // quedó afuera de `cuentas` por la regla A, así que cada peso entra una sola vez.
+      for (const v of variables) suma += v.montos[clave] || 0
+      // Las INVERSIONES no entran acá a propósito: no son gasto operativo. Tienen su propio
+      // bloque y su propio total, igual que las distribuciones (C-22).
       totales[clave] = suma
     }
     return totales
-  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, variables, meses])
 
   /**
    * Subtotal por sección (tipo), como en el dashboard.
@@ -1016,10 +1105,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       extra += ventaAnt * ALICUOTA_IIBB_ARRENDAMIENTO
       for (const c of cuentas) extra += c.celdas.find(x => x.mes === clave)?.monto || 0
       for (const c of costoProd) extra += c.montos[clave] || 0
+      for (const v of variables) extra += v.montos[clave] || 0
       out["egreso"]![clave] = (out["egreso"]![clave] || 0) + extra
     }
     return out
-  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, meses])
+  }, [agrupadores, sueldoFilas, ganaderia, hacienda, campos, cuentas, costoProd, variables, meses])
 
   /** Secciones que tienen algo que mostrar, en el orden del dashboard. */
   const seccionesVisibles = useMemo(
@@ -1033,6 +1123,68 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     for (const c of cuentas) for (const x of c.celdas) t[x.mes] = (t[x.mes] || 0) + x.monto
     return t
   }, [cuentas])
+
+  const totalVariablesPorMes = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const v of variables) for (const [k, n] of Object.entries(v.montos)) t[k] = (t[k] || 0) + n
+    return t
+  }, [variables])
+
+  const totalInversionesPorMes = useMemo(() => {
+    const t: Record<string, number> = {}
+    for (const i of inversiones) for (const [k, n] of Object.entries(i.montos)) t[k] = (t[k] || 0) + n
+    return t
+  }, [inversiones])
+
+  /**
+   * Control de cobertura (P-32) — el que pidió el usuario: *"todo debe estar en algún lugar,
+   * si no, advertencia"*.
+   *
+   * Avisa en las DOS direcciones, porque los agujeros aparecieron de los dos lados:
+   *   · lo que no está en ninguna fuente (HONORARIOS AMS, Cargas Sociales, las 4 de P-33)
+   *   · lo que está en dos a la vez (el doble conteo de C-24)
+   *
+   * Es prerrequisito de la regla A: esa regla apaga la proyección histórica de las cuentas con
+   * variable, así que sin este aviso una variable a medias dejaría la cuenta en cero y callada.
+   */
+  const cobertura = useMemo(() => {
+    const avisos: { nivel: "alta" | "media"; texto: string }[] = []
+
+    const incompletas = variables.filter(v => v.faltantes.length > 0 && !v.pendienteAProposito)
+    for (const v of incompletas) {
+      avisos.push({
+        nivel: v.nroCuenta ? "alta" : "media",
+        texto: v.nroCuenta
+          ? `“${v.concepto}” está sin terminar y es la única fuente de la cuenta ${v.nroCuenta}: esa cuenta quedó en cero (${v.faltantes.join(" · ")})`
+          : `“${v.concepto}” está sin terminar (${v.faltantes.join(" · ")})`,
+      })
+    }
+
+    // Doble conteo: dos variables completas apuntando a la misma cuenta.
+    const porCuenta: Record<string, string[]> = {}
+    for (const v of variables) {
+      if (v.nroCuenta && v.faltantes.length === 0) (porCuenta[v.nroCuenta] ||= []).push(v.concepto)
+    }
+    for (const [nro, conceptos] of Object.entries(porCuenta)) {
+      if (conceptos.length > 1) {
+        avisos.push({
+          nivel: "alta",
+          texto: `La cuenta ${nro} la alimentan ${conceptos.length} variables a la vez (${conceptos.join(", ")}): se está contando dos veces`,
+        })
+      }
+    }
+
+    const sinJustificar = inversiones.filter(i => i.sinJustificar).length
+    if (sinJustificar > 0) {
+      avisos.push({
+        nivel: "media",
+        texto: `${sinJustificar} ${sinJustificar === 1 ? "inversión" : "inversiones"} sin justificar`,
+      })
+    }
+
+    const aProposito = variables.filter(v => v.pendienteAProposito).length
+    return { avisos, aProposito }
+  }, [variables, inversiones])
 
   const totalCostoProdPorMes = useMemo(() => {
     const t: Record<string, number> = {}
@@ -1280,6 +1432,34 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
         </div>
       </div>
+
+      {/* ── Control de cobertura (P-32) ──
+          "Todo debe estar en algún lugar, si no, advertencia."
+          Avisa en las dos direcciones —lo que falta y lo que está contado dos veces— porque
+          los agujeros aparecieron de los dos lados. Y es lo que hace segura a la regla A: sin
+          este aviso, una variable a medias dejaría su cuenta en cero y en silencio. */}
+      {cobertura.avisos.length > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50/60 px-3 py-2 text-xs">
+          <p className="font-medium text-amber-900">
+            <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+            Control de cobertura — {cobertura.avisos.length}{" "}
+            {cobertura.avisos.length === 1 ? "aviso" : "avisos"}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {cobertura.avisos.map((a, i) => (
+              <li key={i} className={`text-[11px] ${a.nivel === "alta" ? "text-red-800" : "text-amber-800"}`}>
+                {a.nivel === "alta" ? "🔴" : "🟡"} {a.texto}
+              </li>
+            ))}
+          </ul>
+          {cobertura.aProposito > 0 && (
+            <p className="mt-1 text-[10px] text-gray-500">
+              (Hay {cobertura.aProposito} {cobertura.aProposito === 1 ? "variable marcada" : "variables marcadas"} como
+              pendientes a propósito: no cuentan como aviso.)
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Aviso: hay templates proyectados que el usuario suele cargar a mano.
           El aviso ES el punto: son los que le recuerdan un compromiso de pago
@@ -1686,6 +1866,66 @@ Clic para presupuestar la venta`}
                   )
                 })()}
 
+                {/* ── Variables de costo (P-37) ──
+                    Cantidad × precio × ajustes. La cuenta que alimenta una variable NO está en
+                    el bloque de arriba: la regla A la sacó, así que cada peso entra una vez. */}
+                {variables.length > 0 && (() => {
+                  const abierto = expandidos["__variables__"] ?? false
+                  const conProblema = variables.filter(v => v.faltantes.length > 0 && !v.pendienteAProposito).length
+                  return (
+                    <>
+                      <tr className="border-b bg-violet-50 cursor-pointer hover:bg-violet-100 transition-colors"
+                        onClick={() => toggleAgrupador("__variables__")}>
+                        <td className="sticky left-0 z-10 bg-violet-50 px-4 py-2 font-semibold text-gray-700 flex items-center gap-1">
+                          {abierto
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />}
+                          🧮 Variables de costo
+                          <span className="ml-2 text-xs font-normal text-gray-400">
+                            {variables.length} · cantidad × precio
+                            {conProblema > 0 && (
+                              <span className="ml-1 text-amber-600">· {conProblema} sin terminar</span>
+                            )}
+                          </span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-2 text-right font-semibold text-gray-700 ${
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(totalVariablesPorMes[clave] || 0)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {abierto && variables.map(v => (
+                        <tr key={`var-${v.id}`} className="border-b hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                            {v.concepto}
+                            {v.faltantes.length > 0 && (
+                              <span className={`ml-2 text-[10px] ${v.pendienteAProposito ? "text-blue-500" : "text-amber-600"}`}
+                                title={v.faltantes.join(" · ")}>
+                                {v.pendienteAProposito ? "pendiente a propósito" : "sin terminar"}
+                              </span>
+                            )}
+                          </td>
+                          {meses.map(m => {
+                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            return (
+                              <td key={clave}
+                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                {fmt(v.montos[clave] || 0)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
+
                 {/* ── Costos de producción (derivados de las actividades del lote) ── */}
                 {costoProd.length > 0 && (() => {
                   const abierto = expandidos["__costoprod__"] ?? false
@@ -1836,6 +2076,62 @@ Clic para presupuestar la venta`}
                     </tr>
                   </Fragment>
                 ))}
+
+                {/* ── INVERSIONES (P-36) ──
+                    Fuera del total de egresos a propósito: no son gasto operativo. Se muestran
+                    igual porque la plata sale, pero mezclarlas con el gasto del año infla el
+                    egreso y le saca a la inversión lo único que la hace discutible. */}
+                {inversiones.length > 0 && (() => {
+                  const abierto = expandidos["__inversiones__"] ?? false
+                  const sinJust = inversiones.filter(i => i.sinJustificar).length
+                  return (
+                    <>
+                      <tr className="border-b border-t-2 border-gray-300 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
+                        onClick={() => toggleAgrupador("__inversiones__")}>
+                        <td className="sticky left-0 z-10 bg-orange-50 px-4 py-2 font-semibold text-orange-900 flex items-center gap-1">
+                          {abierto
+                            ? <ChevronDown className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />}
+                          🏗️ INVERSIONES
+                          <span className="ml-2 text-xs font-normal text-orange-700">
+                            {inversiones.length} · fuera del total de egresos
+                            {sinJust > 0 && <span className="ml-1 text-amber-700">· {sinJust} sin justificar</span>}
+                          </span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          return (
+                            <td key={clave}
+                              className={`px-3 py-2 text-right font-semibold text-orange-900 ${
+                                clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(totalInversionesPorMes[clave] || 0)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {abierto && inversiones.map(i => (
+                        <tr key={`inv-${i.id}`} className="border-b hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
+                            {i.nombre}
+                            {i.sinJustificar && (
+                              <span className="ml-2 text-[10px] text-amber-600">sin justificar</span>
+                            )}
+                          </td>
+                          {meses.map(m => {
+                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                            return (
+                              <td key={clave}
+                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
+                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                                {fmt(i.montos[clave] || 0)}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
 
                 {/* ── Total general ──
                     Suma TODAS las secciones. Los retiros van adentro a propósito: el
