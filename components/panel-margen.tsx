@@ -43,7 +43,7 @@ export function PanelMargen() {
         supabase.schema("productivo").from("stock_lotes")
           .select("categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
-        supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, anio, mes"),
+        supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("nombre, activo"),
       ])
 
@@ -79,12 +79,14 @@ export function PanelMargen() {
         actividad: actDeCategoria.get(String(l.categoria)) ?? null,
       }))
 
-      // Precio más reciente por categoría.
-      const preciosPorCategoria: Record<string, number> = {}
-      const km = (p: any) => (Number(p.anio) || 0) * 12 + (Number(p.mes) || 0)
-      for (const p of ((precios.data || []) as any[]).sort((a, b) => km(a) - km(b))) {
-        preciosPorCategoria[String(p.categoria)] = Number(p.precio_pesos_kg) || 0
-      }
+      // Los precios van CRUDOS: la búsqueda es por tipo y rango de peso, no por nombre.
+      const preciosOut = ((precios.data || []) as any[]).map(p => ({
+        categoria: String(p.categoria),
+        peso_desde: p.peso_desde == null ? null : Number(p.peso_desde),
+        peso_hasta: p.peso_hasta == null ? null : Number(p.peso_hasta),
+        precio_pesos_kg: Number(p.precio_pesos_kg) || 0,
+        anio: Number(p.anio) || 0, mes: Number(p.mes) || 0,
+      }))
 
       // ⚠️ Dos maestros de actividad conviviendo: `centros_costo` (el que usa el presupuesto) y
       // `productivo.actividades` (el que tiene la ración). Se compara por nombre y se avisa,
@@ -104,7 +106,7 @@ export function PanelMargen() {
 
       setDatos({
         campana, hasPorActividad, lotes: lotesOut, costos,
-        preciosPorCategoria, pctGastoVenta: pctGastoVentaPorDefecto,
+        precios: preciosOut, pctGastoVenta: pctGastoVentaPorDefecto,
       })
     } finally { setCargando(false) }
   }, [campana])

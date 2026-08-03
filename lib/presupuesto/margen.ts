@@ -50,8 +50,8 @@ export interface DatosMargen {
   hasPorActividad: Record<string, number>
   lotes: LoteVenta[]
   costos: CostoDirecto[]
-  /** $/kg por categoría de hacienda. */
-  preciosPorCategoria: Record<string, number>
+  /** Precios de mercado, por categoría y rango de peso. */
+  precios: PrecioHacienda[]
   /** % de gastos de venta por categoría (3 % liviano, 9 % vaca/toro en el Excel). */
   pctGastoVenta: (categoria: string) => number
 }
@@ -88,6 +88,59 @@ export interface MargenActividad {
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`
 const num = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
+
+/** Un precio de mercado, tal como está cargado: por categoría Y rango de peso. */
+export interface PrecioHacienda {
+  categoria: string
+  peso_desde: number | null
+  peso_hasta: number | null
+  precio_pesos_kg: number
+  anio: number
+  mes: number
+}
+
+/**
+ * El sexo/tipo base de una categoría, para casar el lote con el precio.
+ *
+ * `stock_lotes` dice "Ternero al Pie" y el precio dice "Ternero 180/200": son el mismo animal.
+ * Y macho y hembra van SEPARADOS — un ternero y una ternera del mismo peso no valen lo mismo.
+ */
+export function tipoBase(categoria: string): string {
+  const c = categoria.toLowerCase()
+  if (c.startsWith('ternera')) return 'ternera'
+  if (c.startsWith('ternero')) return 'ternero'
+  if (c.startsWith('novillito')) return 'novillito'
+  if (c.startsWith('novillo')) return 'novillo'
+  if (c.startsWith('vaquillona')) return 'vaquillona'
+  if (c.startsWith('vaca')) return 'vaca'
+  if (c.startsWith('toro') || c.startsWith('torito')) return 'toro'
+  return c.split(' ')[0] ?? c
+}
+
+/**
+ * El precio de un animal: **por su tipo y por el peso al que se vende**.
+ *
+ * Lo explicó el usuario: *"el ternero de 180/200 kg es el ternero al pie que se desteta con la
+ * venta misma. Pero si pesan 220, caerá por rango: finalmente es un ternero de tantos kg"*.
+ * O sea que la categoría del rodeo no manda — manda **el peso de venta**.
+ *
+ * Devuelve `null` si no hay un rango que lo contenga. No se cae al precio más cercano: un
+ * ternero de 260 kg no vale lo que uno de 200, y estirar el rango escondería que falta cargarlo.
+ */
+export function buscarPrecio(
+  categoria: string, pesoKg: number, precios: PrecioHacienda[],
+): { precio: number; segun: string } | null {
+  const tipo = tipoBase(categoria)
+  const candidatos = precios
+    .filter(p => tipoBase(p.categoria) === tipo && p.precio_pesos_kg > 0)
+    .filter(p => (p.peso_desde ?? -Infinity) <= pesoKg && pesoKg <= (p.peso_hasta ?? Infinity))
+    // El más reciente manda.
+    .sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes))
+
+  const p = candidatos[0]
+  if (!p) return null
+  return { precio: p.precio_pesos_kg, segun: `${p.categoria} (${p.mes}/${p.anio})` }
+}
 
 /** Peso de venta: el peso base + lo que gana hasta la fecha de venta, menos el desbaste. */
 export function pesoNetoVenta(l: LoteVenta): number {
@@ -126,11 +179,16 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
 
     for (const l of misLotes) {
       const peso = pesoNetoVenta(l)
-      const precio = l.precio_kg_override ?? d.preciosPorCategoria[l.categoria] ?? null
+      // El override del lote manda; si no, se busca por tipo y peso de venta.
+      const delMercado = buscarPrecio(l.categoria, peso, d.precios)
+      const precio = l.precio_kg_override ?? delMercado?.precio ?? null
+      const segunPrecio = l.precio_kg_override != null
+        ? "precio puesto en el lote"
+        : delMercado?.segun ?? ""
       cabezasTotal += l.cabezas
 
       if (precio == null) {
-        faltantes.push(`falta el precio de ${l.categoria}`)
+        faltantes.push(`falta el precio de ${tipoBase(l.categoria)} para ${num(peso)} kg`)
         ingresos.push({
           concepto: `Venta ${l.categoria}`, unidades: l.cabezas, etiquetaUnidad: 'cab',
           total: 0, porHa: null, porCabeza: null,
@@ -151,7 +209,7 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
         porHa: has ? neto / has : null,
         porCabeza: l.cabezas > 0 ? neto / l.cabezas : null,
         detalle: `${num(l.cabezas)} cab × ${num(peso)} kg × ${pesos(precio)}/kg`
-          + ` − ${pesos(gastoVenta)} de gastos de venta`,
+          + ` − ${pesos(gastoVenta)} de gastos de venta · ${segunPrecio}`,
         confiable: true,
       })
     }
