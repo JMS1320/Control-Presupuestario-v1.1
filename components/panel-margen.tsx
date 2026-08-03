@@ -50,7 +50,7 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
       ])
       const [{ data: insumos }, { data: tcs }, { data: ciclosFull }] = await Promise.all([
         supabase.schema("productivo").from("actividad_insumos")
-          .select("actividad_id, concepto, modo, valor, unidad, moneda, notas, orden").order("orden"),
+          .select("actividad_id, concepto, modo, valor, unidad, moneda, has_aplicacion, amortiza_anios, notas, orden").order("orden"),
         supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
         supabase.schema("productivo").from("stock_ciclos").select("*"),
       ])
@@ -129,6 +129,8 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         insumosPorActividad.get(clave)!.push({
           actividad: String(nom), concepto: String(i.concepto), modo: String(i.modo),
           valor: Number(i.valor) || 0, unidad: i.unidad, moneda: String(i.moneda ?? "ARS"),
+          has_aplicacion: i.has_aplicacion == null ? null : Number(i.has_aplicacion),
+          amortiza_anios: i.amortiza_anios == null ? null : Number(i.amortiza_anios),
           notas: i.notas,
         })
       }

@@ -118,6 +118,10 @@ export interface InsumoActividadMargen {
   valor: number
   unidad: string | null
   moneda: string
+  /** Sobre cuántas hectáreas aplica ESTE costo. NULL = las de la actividad. */
+  has_aplicacion: number | null
+  /** En cuántos años se reparte. 4 → 25 % por año. NULL o 1 → entero. */
+  amortiza_anios: number | null
   notas: string | null
 }
 
@@ -141,12 +145,20 @@ export function resolverCostoDirecto(
 
   switch (i.modo) {
     case 'monto_ha': {
-      if (ctx.has == null) return { monto: null, motivo: `${i.concepto}: faltan las hectáreas de la actividad` }
+      // La superficie del COSTO, no la de la actividad: el mantenimiento de pasturas va sobre
+      // las 15 has de pastura, no sobre las 175 del campo.
+      const has = i.has_aplicacion ?? ctx.has
+      if (has == null) return { monto: null, motivo: `${i.concepto}: faltan las hectáreas` }
       const c = enPesos(i.valor)
       if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
+      // Amortización: una pastura que dura 4 años entra al 25 % por año.
+      const anios = i.amortiza_anios && i.amortiza_anios > 1 ? i.amortiza_anios : 1
+      const txtAmort = anios > 1 ? ` ÷ ${anios} años` : ''
+      const propia = i.has_aplicacion != null && ctx.has != null && i.has_aplicacion !== ctx.has
       return {
-        monto: i.valor * ctx.has * c.factor,
-        motivo: `${num(i.valor)} ${i.unidad ?? 'por ha'} × ${num(ctx.has)} ha${c.txt}`,
+        monto: (i.valor * has * c.factor) / anios,
+        motivo: `${num(i.valor)} ${i.unidad ?? 'por ha'} × ${num(has)} ha`
+          + (propia ? ' (superficie propia del costo)' : '') + txtAmort + c.txt,
       }
     }
     case 'monto_cabeza': {
