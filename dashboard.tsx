@@ -27,6 +27,7 @@ import { ConfiguradorVariables } from "./components/configurador-variables"
 import { ConfiguradorInversiones } from "./components/configurador-inversiones"
 import { ConfiguradorSueldosPresupuesto } from "./components/configurador-sueldos-presupuesto"
 import { ConfiguradorIngresosActividad } from "./components/configurador-ingresos-actividad"
+import { PanelMargen } from "./components/panel-margen"
 import { PanelPresupuestoCuentas } from "./components/panel-presupuesto-cuentas"
 import { PanelControlProveedores } from "./components/panel-control-proveedores"
 
@@ -34,7 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon } from "lucide-react"
+import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -57,6 +58,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const [showInversiones, setShowInversiones] = useState(false)
   const [showSueldosPre, setShowSueldosPre] = useState(false)
   const [showIngresosAct, setShowIngresosAct] = useState(false)
+  const [showMargen, setShowMargen] = useState(false)
   const [showCuentas, setShowCuentas] = useState(false)
   /** Sube de a uno cuando el panel de cuentas cambia algo, para que la grilla del presupuesto
    *  vuelva a leer. Son componentes hermanos: sin esto había que salir y entrar a la pestaña. */
@@ -317,6 +319,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
                 <PieIcon className="mr-2 h-4 w-4" />
                 {showIngresosAct ? "Ocultar ingresos" : "Ingresos por actividad"}
               </Button>
+              <Button variant="secondary" className="shrink-0" onClick={() => setShowMargen(!showMargen)}>
+                <ScaleIcon className="mr-2 h-4 w-4" />
+                {showMargen ? "Ocultar margen" : "Margen por actividad"}
+              </Button>
               <Button variant="secondary" className="shrink-0" onClick={() => setShowPreciosTC(!showPreciosTC)}>
                 <DollarSign className="mr-2 h-4 w-4" />
                 {showPreciosTC ? "Ocultar precios y TC" : "Precios y TC"}
@@ -330,6 +336,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             {showInversiones && <ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showSueldosPre && <ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showIngresosAct && <ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {showMargen && <PanelMargen />}
             {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}
 
