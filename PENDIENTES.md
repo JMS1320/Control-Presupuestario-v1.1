@@ -113,6 +113,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-40 | ⏸️ | 🔴 **El presupuesto se arma por RESPONSABLE, no por quien paga** — hoy el filtro mira solo `responsable` e ignora `responsable_interno`. **4 templates estan de mas en el presupuesto de MSA** (2 con interno JMS, 1 con MA, 1 mixto) → [P-40](#p-40) |
 | P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) |
 | P-39 | ⏸️ | 🔖 **Marcar una variable como "sin terminar a proposito"** — distingue el olvido de la decision; la alerta va en su propio renglon. Complementa el control de cobertura → [P-39](#p-39) |
 | P-36 | ⏸️ | 🏗️ **Bloque INVERSIONES** — lista a mano con nombre especifico ("2 silos de autoconsumo 7 Ton c/u"), centro de costo, **explicacion de por que se invierte**, monto y plazo → [P-36](#p-36) |
@@ -636,6 +637,51 @@ falta historia del supuesto.
 
 ---
 
+## <a id="p-40"></a>P-40 — 🔴 El presupuesto se arma por RESPONSABLE, no por quién paga
+
+**Regla dictada por el usuario (2026-08-02):**
+> *"En los gastos de MSA, si por ejemplo MSA pagó pero responsable MA, **no entra en presupuesto de
+> MSA**. Ni tampoco si es factura a MSA pero interno es **DIST MA**."*
+
+O sea: **quién paga y quién es responsable son cosas distintas**, y el presupuesto sigue al
+**responsable**. Un gasto que MSA adelanta por MA es un movimiento de caja de MSA, pero **no un
+costo de MSA**.
+
+### Cómo está hoy (verificado 2026-08-02)
+`tab-presupuesto.tsx` filtra:
+```ts
+.or("responsable.ilike.%MSA%,responsable.eq.ambas")
+```
+Mira **sólo `responsable`** y **ignora `responsable_interno`** — que es justamente el campo donde
+vive la excepción que describe el usuario.
+
+### 🔴 Los 4 templates que hoy están mal en el presupuesto de MSA
+
+| Template | responsable | interno | Debería |
+|---|---|---|---|
+| Imp Automotores **Gol 2012** Anual | MSA | **JMS** | salir |
+| Imp Automotores **Voyage** Anual | MSA | **JMS** | salir |
+| Imp Automotores **Tiguan 2012** Anual | MSA | **MA** | salir |
+| **Seguro Flota** (12 cuotas) | MSA | **MSA/MA/JMS** | **repartirse** |
+
+Los tres primeros **sobran** en el presupuesto de MSA. El cuarto es mixto y hay que decidir si se
+prorratea o se asigna entero.
+
+**Nota:** es el primer hallazgo que va en la dirección contraria a los otros — acá el presupuesto
+de MSA está **sobrestimado**, no corto. Refuerza que el control de cobertura de [P-32](#p-32) tiene
+que avisar **en las dos direcciones**: lo que falta y lo que sobra.
+
+### Lo que hay que definir
+- El filtro pasa a ser: `responsable` **y** `responsable_interno`. Cuando el interno existe y no es
+  la empresa, **manda el interno**.
+- Qué hacer con los **mixtos** (`MSA/MA/JMS`, `MSA/PAM`): ¿se prorratean? ¿con qué proporción?
+- **`JMS` no es una empresa**, es un socio. Confirmar que un gasto con interno JMS es una
+  distribución y por lo tanto no es costo de MSA (se cruza con `tipo = distribucion` de C-27).
+
+**Estado:** ⏸️ el usuario pidió *"a registrar para afinar después"*. No se tocó nada.
+
+---
+
 ## <a id="p-38"></a>P-38 — Export del presupuesto para presentar a los socios
 
 **Pedido del usuario 2026-08-02.** El presupuesto tiene que poder **descargarse listo para
@@ -839,6 +885,21 @@ el año que viene arranca sabiéndolo en vez de repetir el error.
 
 **Consecuencia de diseño:** el eje AJUSTE gana un tipo más → `desvio_historico`.
 
+### 🎯 El criterio de aceptación de P-37 (lo dijo el usuario, y es la vara)
+
+> *"Cada actividad tendrá esas variables: es por cabeza, por ton, de qué categoría o grano, en qué
+> mes, precio, plazo. Encadenar etapas de la cuenta para la conformación del precio final.
+> **Yo no debería necesariamente contarte cómo hacerlo, sino que esté la matriz para crearlo.**"*
+
+**P-37 está bien resuelta si el usuario puede crear un costo nuevo solo, desde la app, sin pedirle
+código a nadie.** Si para cada costo nuevo hay que escribir una función, el modelo falló — por más
+elegante que sea la abstracción.
+
+De ahí se desprenden dos requisitos que no son negociables:
+- **Alta de variables en el momento**, desde la pantalla donde el usuario está pensando el costo.
+- **Encadenado visible**: que la conformación del precio final se arme por pasos que se ven y se
+  editan, no una fórmula escondida.
+
 ### ⛔ Bloqueantes de datos (no de desarrollo)
 - Las cuatro tablas de precios tienen entre **3 y 7 filas**. El motor va a andar y a dar números
   pobres. Cargarlas es prerrequisito y es **carga del usuario**, no desarrollo.
@@ -846,21 +907,34 @@ el año que viene arranca sabiéndolo en vez de repetir el error.
   Sin ese dato el prorrateo del punto 5 no se puede calcular.
 - ✅ **Lista de actividades y hectáreas: RESUELTO** (2026-08-02) → ver [M-01](#m-01).
 
-### ⚠️ Tres consecuencias del dato de actividades que el diseño todavía NO cubre
+### ✅ Resueltas por el usuario (2026-08-02)
 
-1. **El prorrateo por hectáreas no llega a Engorde.** Engorde tiene **0 has** (son corrales) pero
-   **sí tiene costos de estructura**. La regla que cerramos —*estructura ÷ has totales*— lo deja
-   afuera por construcción, o peor: le asigna cero y reparte su parte entre las demás. Hace falta
-   una **segunda base de prorrateo** para las actividades sin hectáreas (¿cabezas? ¿un % fijo?
-   ¿ingresos?). **Decisión pendiente del usuario.**
-2. **Las hectáreas son por campaña, no por actividad.** Se reasignan entre cría y recría de un año
-   a otro. La tabla de actividades no puede tener una columna `has`: necesita
-   `(actividad, campaña) → has_productivas`.
-3. **Las actividades cruzan empresas.** Cría y recría son de MSA sobre campo de PAM (después MA);
-   Lima es de MA. Y hay **arrendamientos intercompany**: el mismo contrato es egreso de una e
-   ingreso de otra. El presupuesto hoy filtra por `empresa = 'MSA'` en varios lados
-   (`presupuesto_cuenta_config`, `cargarSueldos`) — hay que definir si el margen por actividad es
-   por empresa o consolidado.
+1. **Engorde NO lleva estructura — y es a propósito, no un olvido.**
+   > *"Engorde es el único sin estructura, y es así porque hacerlo o no hacerlo es eventual. Si se
+   > hace es porque suma un margen bruto que es margen total, ya que es sin estructura. El sueldo
+   > es el mismo. Pero hacer la actividad tendría aparejado más arreglos ese año, más jornales
+   > eventuales, más gasoil por ejemplo. Eso sí se contempla para que esa actividad pueda ser bien
+   > medida."*
+
+   Es **lógica de costo marginal**, y es más correcta que prorratear: la pregunta que responde
+   Engorde no es *"cuánto gana"* sino **"¿conviene hacerlo este año?"**. Si se le cargara
+   estructura que se paga igual, la respuesta saldría mal.
+   → Engorde carga **sólo sus costos incrementales**: arreglos extra, jornales eventuales, gasoil
+   de más. **No** lleva sueldos (son los mismos) ni estructura.
+   → **Descartada** la "segunda base de prorrateo" que había propuesto Claude. No hace falta.
+
+2. **Las hectáreas van por campaña** — confirmado: *"sí, las campañas tienen sus has adjudicadas"*.
+
+3. **Las actividades NO cruzan empresas.** El usuario aclara que las mezcló al hablar porque
+   *"funcionamos como un grupo"*, pero cada actividad es de una empresa:
+   - **PAM** (y **MA** en menos de un año) son **propietarios** de las has de cría.
+   - La **actividad** de cría la hace **MSA**, que paga un **arrendamiento** — **no** los impuestos
+     de esa tierra.
+   - Los **impuestos de la tierra** los paga PAM (luego MA), junto con sus otros costos de
+     estructura.
+   - **Habrá un presupuesto para MA y otro para PAM**, además del de MSA.
+   - **Consolidar**: *"veremos si es posible y aporta, pero hoy es más importante poder registrar
+     bien cada cosa con su responsable"*. → ver [P-40](#p-40).
 
 ### ✅ Cerrada — últimas dos respuestas del usuario (2026-08-02)
 
