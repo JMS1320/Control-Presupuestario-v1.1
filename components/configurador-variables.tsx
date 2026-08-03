@@ -24,6 +24,7 @@ import {
   Loader2, Plus, Trash2, ChevronDown, ChevronRight, Calculator, AlertTriangle, Flag,
 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import {
   calcularVariable, ETIQUETA_FUENTE_CANTIDAD, ETIQUETA_FUENTE_PRECIO, ETIQUETA_DISTRIBUCION,
   ETIQUETA_AJUSTE, AVISO_CUPO_ANUAL_SIN_VALIDAR,
@@ -47,7 +48,8 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
   const [vars, setVars] = useState<FilaVariable[]>([])
   const [ajustes, setAjustes] = useState<Record<string, Ajuste[]>>({})
   const [actividades, setActividades] = useState<Actividad[]>([])
-  const [cuentas, setCuentas] = useState<{ nro_cuenta: string; cuenta_contable: string }[]>([])
+  const [cuentas, setCuentas] = useState<{ nro_cuenta: string; cuenta_contable: string; categ: string }[]>([])
+  const [categoriasHacienda, setCategoriasHacienda] = useState<string[]>([])
   const [ctx, setCtx] = useState<ContextoVariable>({})
   const [campana, setCampana] = useState("26/27")
   const [abierta, setAbierta] = useState<string | null>(null)
@@ -60,9 +62,12 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
           .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true).order("concepto"),
         supabase.from("presupuesto_variable_ajustes").select("*").order("orden"),
         supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad").eq("activo", true).order("nombre"),
-        supabase.from("cuentas_contables").select("nro_cuenta, cuenta_contable").not("nro_cuenta", "is", null).order("nro_cuenta"),
+        supabase.from("cuentas_contables").select("nro_cuenta, cuenta_contable, categ").not("nro_cuenta", "is", null).order("nro_cuenta"),
         supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
       ])
+      const { data: cats } = await supabase.schema("productivo")
+        .from("categorias_hacienda").select("nombre").order("nombre")
+      setCategoriasHacienda(((cats || []) as any[]).map(c => String(c.nombre)))
       setVars(((v.data || []) as any[]) as FilaVariable[])
       const porVar: Record<string, Ajuste[]> = {}
       for (const x of ((a.data || []) as any[])) {
@@ -75,6 +80,7 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
       setActividades((act.data || []) as Actividad[])
       setCuentas(((cc.data || []) as any[]).map(r => ({
         nro_cuenta: String(r.nro_cuenta), cuenta_contable: String(r.cuenta_contable ?? ""),
+        categ: String(r.categ ?? ""),
       })))
       // IPC acumulado de los últimos 12 meses cargados — el mismo criterio que el panel de cuentas.
       const serie = ((ipc.data || []) as any[])
@@ -191,8 +197,30 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
           </p>
         )}
 
-        <div className="space-y-1.5">
-          {delCampana.map(v => {
+        {/* Agrupadas por ACTIVIDAD, no en una lista plana. El usuario lo pidió así: un costo
+            directo se piensa como "costos productivos → cría → rollos", no como una cuenta
+            contable suelta. La cuenta que alimenta sigue estando, pero es el destino contable,
+            no la forma de encontrarlo. */}
+        {(() => {
+          const porActividad = new Map<string, typeof delCampana>()
+          for (const v of delCampana) {
+            const act = actividades.find(a => a.id === v.centro_costo_id)?.nombre ?? "Sin actividad"
+            if (!porActividad.has(act)) porActividad.set(act, [])
+            porActividad.get(act)!.push(v)
+          }
+          const orden = Array.from(porActividad.keys()).sort(
+            (a, b) => (a === "Sin actividad" ? 1 : 0) - (b === "Sin actividad" ? 1 : 0) || a.localeCompare(b))
+          return orden.map(act => (
+            <div key={act} className="space-y-1.5">
+              <p className="mt-2 text-[11px] font-medium text-gray-500">
+                {act === "Sin actividad" ? "Sin actividad asignada" : act}
+                <span className="ml-1 font-normal text-gray-400">
+                  {porActividad.get(act)!.length}
+                </span>
+              </p>
+              {(() => {
+                const grupo = porActividad.get(act)!
+                return grupo.map(v => {
             const misAjustes = ajustes[v.id] ?? []
             const r = calcularVariable(v, misAjustes, ctx)
             const open = abierta === v.id
@@ -239,18 +267,16 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
                           {actividades.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                         </select>
                       </Campo>
-                      <Campo label="Alimenta la cuenta" ancho="w-56"
+                      {/* Buscador con jerarquía, reusando el selector estándar del proyecto en
+                          vez de un <select> con 120 cuentas, que era imposible de usar. */}
+                      <Campo label="Alimenta la cuenta" ancho="w-64"
                         ayuda="Si se elige una cuenta, esa cuenta deja de proyectarse por historia: así no se cuenta dos veces.">
-                        <select className="h-7 w-full rounded border px-1 text-xs"
-                          defaultValue={v.nro_cuenta ?? ""}
-                          onChange={e => guardar(v.id, { nro_cuenta: e.target.value || null })}>
-                          <option value="">— ninguna —</option>
-                          {cuentas.map(c => (
-                            <option key={c.nro_cuenta} value={c.nro_cuenta}>
-                              {c.nro_cuenta} · {c.cuenta_contable}
-                            </option>
-                          ))}
-                        </select>
+                        <SelectorCuentaContable
+                          value={cuentas.find(c => c.nro_cuenta === v.nro_cuenta)?.categ ?? null}
+                          placeholder="Buscar cuenta…"
+                          autoFocus={false}
+                          onSelect={cta => guardar(v.id, { nro_cuenta: (cta as any)?.nro_cuenta ?? null })}
+                        />
                       </Campo>
                     </div>
 
@@ -275,12 +301,25 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
                                 onBlur={e => guardar(v.id, { cantidad: parseNumeroAR(e.target.value) })} />
                             </Campo>
                           ) : (
+                            <>
+                            {v.fuente_cantidad === "cabezas" && (
+                              <Campo label="¿De qué categoría?" ancho="w-44"
+                                ayuda="Sin categoría suma TODO el rodeo. Un costo por vaca no lo consumen los terneros al pie.">
+                                <select className="h-7 w-full rounded border px-1 text-xs"
+                                  defaultValue={v.categoria_hacienda ?? ""}
+                                  onChange={e => guardar(v.id, { categoria_hacienda: e.target.value || null })}>
+                                  <option value="">todo el rodeo</option>
+                                  {categoriasHacienda.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </Campo>
+                            )}
                             <Campo label="× factor" ancho="w-24"
-                              ayuda="Ej.: 9 kg de novillo por cabeza → factor 9.">
+                              ayuda="Ej.: 1 rollo por vaca → factor 1. 9 kg de novillo por cabeza → factor 9.">
                               <Input className="h-7 text-right text-xs"
                                 defaultValue={v.factor != null ? fmtNumeroAR(v.factor, 2) : ""}
                                 onBlur={e => guardar(v.id, { factor: parseNumeroAR(e.target.value) || null })} />
                             </Campo>
+                            </>
                           )}
                         </div>
                       </div>
@@ -438,9 +477,12 @@ export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = 
                   </div>
                 )}
               </div>
-            )
-          })}
-        </div>
+                )
+                })
+              })()}
+            </div>
+          ))
+        })()}
       </CardContent>
     </Card>
   )

@@ -87,6 +87,8 @@ export interface Variable {
   unidad?: string | null
   cantidad: number | null
   fuente_cantidad: FuenteCantidad
+  /** Por cabeza DE QUÉ. NULL = todo el rodeo. "1 rollo por vaca" → `Vaca`. */
+  categoria_hacienda?: string | null
   factor?: number | null
   precio: number | null
   fuente_precio: FuentePrecio
@@ -99,8 +101,11 @@ export interface Variable {
 
 /** Lo que el cálculo necesita saber del mundo para resolver las fuentes externas. */
 export interface ContextoVariable {
-  /** Cabezas proyectadas del rodeo. */
+  /** Cabezas proyectadas del rodeo, en total. */
   cabezas?: number | null
+  /** Cabezas por categoría ("Vaca", "Ternero al Pie"…). Manda sobre `cabezas` si la variable
+   *  eligió una categoría: un costo por vaca no lo consumen los terneros al pie. */
+  cabezasPorCategoria?: Record<string, number>
   /** Hectáreas de la actividad en la campaña. */
   hectareas?: number | null
   /** Inflación acumulada a aplicar cuando el ajuste es IPC (ej. 0.87 = 87 %). */
@@ -139,12 +144,18 @@ const num = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 
 function resolverCantidad(v: Variable, ctx: ContextoVariable): { valor: number | null; detalle: string } {
   switch (v.fuente_cantidad) {
     case 'cabezas': {
-      const c = ctx.cabezas
-      if (c == null) return { valor: null, detalle: 'faltan las cabezas proyectadas' }
+      const cat = v.categoria_hacienda
+      // Con categoría elegida NO se cae al total del rodeo: si falta ese dato, falta. Caer al
+      // total inflaría el costo con animales que no lo consumen, y en silencio.
+      const c = cat ? ctx.cabezasPorCategoria?.[cat] ?? null : ctx.cabezas
+      if (c == null) {
+        return { valor: null, detalle: cat ? `faltan las cabezas de ${cat}` : 'faltan las cabezas proyectadas' }
+      }
+      const etiqueta = cat ? `${num(c)} ${cat}` : `${num(c)} cabezas`
       const f = v.factor ?? 1
       return f === 1
-        ? { valor: c, detalle: `${num(c)} cabezas` }
-        : { valor: c * f, detalle: `${num(c)} cabezas × ${num(f)}` }
+        ? { valor: c, detalle: etiqueta }
+        : { valor: c * f, detalle: `${etiqueta} × ${num(f)}` }
     }
     case 'hectareas': {
       const h = ctx.hectareas
