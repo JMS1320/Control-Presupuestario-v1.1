@@ -48,6 +48,9 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const [showPreciosTC, setShowPreciosTC] = useState(false)
   const [showActividades, setShowActividades] = useState(false)
   const [showCuentas, setShowCuentas] = useState(false)
+  /** Sube de a uno cuando el panel de cuentas cambia algo, para que la grilla del presupuesto
+   *  vuelva a leer. Son componentes hermanos: sin esto había que salir y entrar a la pestaña. */
+  const [tokenPresupuesto, setTokenPresupuesto] = useState(0)
   const [showProveedores, setShowProveedores] = useState(false)
 
   const { resumen, loading } = useFinancialData(año, semestre)
@@ -292,10 +295,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
 
             {showPreciosTC && <ConfiguradorPreciosTC />}
             {showActividades && <ConfiguradorActividades />}
-            {showCuentas && <PanelPresupuestoCuentas />}
+            {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}
 
-            <TabPresupuesto />
+            <TabPresupuesto recargarToken={tokenPresupuesto} />
           </TabsContent>
 
           {/* IMPORTAR */}

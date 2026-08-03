@@ -230,7 +230,14 @@ function subAgrupa(ag: Agrupador): boolean {
 
 // -- Componente principal ------------------------------------------------------
 
-export function TabPresupuesto() {
+/**
+ * `recargarToken` — cualquier cambio de este número vuelve a leer todo.
+ *
+ * El panel de Cuentas contables es un componente HERMANO (los monta `dashboard.tsx` uno al lado
+ * del otro), así que no tenía forma de avisar acá cuando el usuario cambiaba el modo o el monto
+ * de una cuenta: había que salir de la pestaña y volver a entrar. El token es el aviso.
+ */
+export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number } = {}) {
   const [cargando, setCargando] = useState(true)
   const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
@@ -294,7 +301,7 @@ export function TabPresupuesto() {
 
   useEffect(() => {
     cargarDatos()
-  }, [])
+  }, [recargarToken])
 
   const cargarDatos = async () => {
     setCargando(true)
@@ -1296,7 +1303,12 @@ export function TabPresupuesto() {
       {/* Tabla */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* `sticky top-0` se pega al CONTENEDOR DE SCROLL más cercano, no a la ventana. Y
+              `overflow-x-auto` crea contenedor en los DOS ejes (si un eje deja de ser `visible`,
+              el otro pasa a `auto`). Como este div crecía con el contenido, nunca scrolleaba
+              vertical y el encabezado parecía no pegarse. Con `max-h` el scroll vertical pasa a
+              ocurrir acá adentro y el `sticky` funciona. */}
+          <div className="max-h-[70vh] overflow-auto">
             <table className="w-full text-sm">
               {/* Encabezado pegado arriba: la grilla es larga (templates + sueldos + cuentas +
                   costos) y al scrollear se perdía contra qué mes se está mirando el número.

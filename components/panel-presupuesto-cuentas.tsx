@@ -44,7 +44,14 @@ function mesesDesdeHoy(cantidad: number) {
   })
 }
 
-export function PanelPresupuestoCuentas() {
+/**
+ * `onCambio` — se dispara cuando cambió algo que el PRESUPUESTO tiene que volver a leer.
+ *
+ * Este panel y la grilla del presupuesto son componentes hermanos, así que un cambio acá no
+ * llegaba allá: había que salir de la pestaña y volver. Se avisa al guardar una cuenta, al
+ * volver a la sugerencia y al tocar Actualizar.
+ */
+export function PanelPresupuestoCuentas({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [historia, setHistoria] = useState<PuntoHistorico[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
@@ -209,12 +216,14 @@ export function PanelPresupuestoCuentas() {
       notas: v.notas ?? null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "empresa,nro_cuenta" })
-    if (error) { alert("Error: " + error.message); await cargar() }
+    if (error) { alert("Error: " + error.message); await cargar(); return }
+    onCambio?.()
   }
 
   const volverASugerido = async (nro: string) => {
     setCfgs(prev => { const n = { ...prev }; delete n[nro]; return n })
     await supabase.from("presupuesto_cuenta_config").delete().eq("empresa", "MSA").eq("nro_cuenta", nro)
+    onCambio?.()
   }
 
   const guardarInflacion = async (v: number) => {
@@ -285,8 +294,8 @@ export function PanelPresupuestoCuentas() {
             <span className="text-xs text-gray-500">%</span>
             </div>
             <Button variant="outline" size="sm" className="h-7 gap-1 text-xs"
-              onClick={() => cargar()} disabled={cargando}
-              title="Volver a leer la historia, la configuración y el IPC de la base">
+              onClick={async () => { await cargar(); onCambio?.() }} disabled={cargando}
+              title="Volver a leer la historia, la configuración y el IPC — y refrescar también la grilla del presupuesto">
               <RefreshCw className={`h-3 w-3 ${cargando ? "animate-spin" : ""}`} />
               Actualizar
             </Button>
@@ -324,7 +333,10 @@ export function PanelPresupuestoCuentas() {
         <ControlPanel control={control} />
 
         {/* ── Tabla ── */}
-        <div className="overflow-x-auto">
+        {/* Ver la nota del mismo caso en tab-presupuesto: `sticky top-0` necesita que el scroll
+            vertical ocurra DENTRO de este contenedor, y con `overflow-x-auto` solo el div crecía
+            con el contenido y nunca scrolleaba vertical. */}
+        <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-xs">
             <thead>
               {/* Encabezado pegado arriba: con 12 meses y decenas de cuentas, al scrollear se
