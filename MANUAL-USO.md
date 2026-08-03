@@ -1250,3 +1250,47 @@ me parece bueno tenerlo y testearlo, pero no olvidar"*.
   deseable.
 
 El aviso se saca cuando el usuario dé el OK a la forma de presupuestar, no antes.
+
+---
+
+## 📊 Presupuesto → Descargar para los socios 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Dónde está.** Arriba a la derecha de la grilla del presupuesto: botones **Excel** y **PDF**.
+
+**Para qué es.** Presentar el presupuesto a alguien que **no tiene la app al lado**. No es un
+volcado de la grilla.
+
+### Los dos niveles
+| | Qué trae | Para quién |
+|---|---|---|
+| **Resumen** | ingresos, egresos por bloque, inversiones, resultado del mes y saldo acumulado | el que quiere el número |
+| **Detalle** | una hoja por bloque con las filas que forman cada subtotal | el que pregunta *"¿y esto de dónde sale?"* |
+
+- **Excel** trae los dos: hoja *Resumen* + una hoja por bloque.
+- **PDF** trae **sólo el resumen**, apaisado. Un PDF de 40 páginas no lo abre nadie; el detalle se
+  audita en el Excel.
+
+### Lo que siempre viaja con el documento
+- **De dónde salió el saldo de arranque** — *declarado a mano* o *último conciliado al 18/06*. Sin
+  eso, el lector no sabe qué está mirando.
+- **Las advertencias del control de cobertura**, dentro del documento. Esconderlas sería maquillar
+  el número que se presenta.
+- La fecha de generación.
+
+### Un criterio que importa
+El export se arma desde **los mismos datos que pinta la pantalla**, no desde una consulta aparte.
+Si el documento que ven los socios pudiera diferir de lo que ve el usuario en la app, dejaría de
+ser confiable.
+
+⚠️ **Regla al agregar cosas al presupuesto:** si se suma un bloque o un campo nuevo a la grilla,
+**hay que sumarlo también acá**. Lo que se ve en pantalla y lo que se descarga no se desfasan.
+
+### 🧪 Cómo probarlo
+1. **Excel** → abrir y verificar que la hoja *Resumen* tenga TOTAL INGRESOS, TOTAL EGRESOS,
+   INVERSIONES aparte, RESULTADO DEL MES y SALDO ACUMULADO.
+2. Verificar que el **SALDO ACUMULADO del Excel coincida con el de la pantalla**. Si no coincide,
+   es un bug y es el más importante de todos.
+3. Comprobar que hay **una hoja por bloque** (templates, sueldos, cuentas, variables, inversiones)
+   y que cada TOTAL de hoja coincida con la fila del resumen.
+4. **PDF** → una sola tabla, apaisada, con las filas fuertes resaltadas y las advertencias abajo.
+5. Confirmar que arriba diga **de dónde salió el saldo de arranque**.

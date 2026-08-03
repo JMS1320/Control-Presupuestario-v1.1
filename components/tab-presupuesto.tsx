@@ -6,7 +6,7 @@ import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle } from "lucide-react"
+import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle, Download, FileText } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -55,6 +55,10 @@ import {
   proyectarEmpleado, proyectarSuss,
   type EmpleadoPresupuesto, type ParametrosSueldos,
 } from "@/lib/presupuesto/sueldos"
+import {
+  exportarExcel, exportarPDF,
+  type DatosExport, type BloqueExport, type FilaExport,
+} from "@/lib/presupuesto/export"
 import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
@@ -1271,6 +1275,62 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Es prerrequisito de la regla A: esa regla apaga la proyección histórica de las cuentas con
    * variable, así que sin este aviso una variable a medias dejaría la cuenta en cero y callada.
    */
+  /**
+   * Los datos del export (P-38). Se arman desde los MISMOS estados que pinta la grilla, no desde
+   * una consulta aparte: si el documento que se le presenta a los socios pudiera diferir de lo que
+   * el usuario ve en pantalla, el export dejaría de ser confiable.
+   */
+  const datosExport = (): DatosExport => {
+    const mm = meses.map(m => ({ anio: m.anio, mes: m.mes, label: m.label }))
+    const bloque = (titulo: string, filas: FilaExport[], sumaAlTotal = true): BloqueExport =>
+      ({ titulo, filas, sumaAlTotal })
+
+    const egresos: BloqueExport[] = []
+    for (const ag of agrupadores) {
+      egresos.push(bloque(ag.nombre, ag.templates.map(t => ({ concepto: t.nombre, montos: t.montos }))))
+    }
+    if (sueldoFilas.length > 0) {
+      egresos.push(bloque("Sueldos", sueldoFilas.map(s => ({ concepto: s.nombre, montos: s.montos }))))
+    }
+    if (cuentas.length > 0) {
+      egresos.push(bloque("Cuentas contables", cuentas.map(c => ({
+        concepto: c.nombre,
+        montos: Object.fromEntries(c.celdas.map(x => [x.mes, x.monto])),
+      }))))
+    }
+    if (variables.length > 0) {
+      egresos.push(bloque("Variables de costo", variables.map(v => ({ concepto: v.concepto, montos: v.montos }))))
+    }
+    if (costoProd.length > 0) {
+      egresos.push(bloque("Costos de producción", costoProd.map(c => ({ concepto: c.nombre, montos: c.montos }))))
+    }
+
+    const ingresos: BloqueExport[] = []
+    if (totalIngresosPorMes && Object.keys(totalIngresosPorMes).length > 0) {
+      ingresos.push(bloque("Ingresos", [{ concepto: "Total de ingresos", montos: totalIngresosPorMes }]))
+    }
+
+    return {
+      empresa: "MSA",
+      campana: null,
+      meses: mm,
+      ingresos,
+      egresos,
+      inversiones: inversiones.length > 0
+        ? { titulo: "Inversiones", sumaAlTotal: false,
+            filas: inversiones.map(i => ({ concepto: i.nombre, montos: i.montos })) }
+        : null,
+      saldoInicial,
+      origenSaldo: arranqueModo === "ultimo_conciliado"
+        ? `último conciliado${arranqueFecha ? ` al ${new Date(arranqueFecha + "T00:00:00").toLocaleDateString("es-AR")}` : ""}`
+        : "declarado a mano",
+      advertencias: cobertura.avisos.map(a => a.texto),
+    }
+  }
+
+  const nombreArchivoExport = () =>
+    `Presupuesto_MSA_${new Date().toISOString().slice(0, 10)}`
+
   const cobertura = useMemo(() => {
     const avisos: { nivel: "alta" | "media"; texto: string }[] = []
 
@@ -1561,6 +1621,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => toggleTodos(true)}>Expandir todo</Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
+          <Button variant="outline" size="sm" className="gap-1"
+            onClick={() => exportarExcel(datosExport(), nombreArchivoExport())}
+            title="Resumen + una hoja por bloque, con el detalle de cada subtotal">
+            <Download className="h-3.5 w-3.5" /> Excel
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1"
+            onClick={() => exportarPDF(datosExport(), nombreArchivoExport())}
+            title="Sólo el resumen, para presentar">
+            <FileText className="h-3.5 w-3.5" /> PDF
+          </Button>
         </div>
       </div>
 
