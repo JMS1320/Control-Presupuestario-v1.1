@@ -1298,9 +1298,12 @@ export function TabPresupuesto() {
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
+              {/* Encabezado pegado arriba: la grilla es larga (templates + sueldos + cuentas +
+                  costos) y al scrollear se perdía contra qué mes se está mirando el número.
+                  La esquina (Concepto) se pega arriba Y a la izquierda, por eso lleva z mayor. */}
               <thead>
                 <tr className="border-b bg-gray-50">
-                  <th className="sticky left-0 z-10 bg-gray-50 px-4 py-2 text-left font-semibold text-gray-700 min-w-[220px]">
+                  <th className="sticky left-0 top-0 z-30 bg-gray-50 px-4 py-2 text-left font-semibold text-gray-700 min-w-[220px]">
                     Concepto
                   </th>
                   {meses.map(m => {
@@ -1309,8 +1312,8 @@ export function TabPresupuesto() {
                     return (
                       <th
                         key={clave}
-                        className={`px-3 py-2 text-right font-medium text-xs whitespace-nowrap min-w-[90px] ${
-                          esActual ? "bg-blue-50 text-blue-700 border-l-2 border-blue-300" : "text-gray-500"
+                        className={`sticky top-0 z-20 px-3 py-2 text-right font-medium text-xs whitespace-nowrap min-w-[90px] ${
+                          esActual ? "bg-blue-50 text-blue-700 border-l-2 border-blue-300" : "bg-gray-50 text-gray-500"
                         }`}
                       >
                         {m.label}

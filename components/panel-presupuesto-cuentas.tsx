@@ -327,10 +327,13 @@ export function PanelPresupuestoCuentas() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
+              {/* Encabezado pegado arriba: con 12 meses y decenas de cuentas, al scrollear se
+                  perdía contra qué mes se está mirando el número. La esquina (Cuenta) queda
+                  pegada arriba Y a la izquierda, por eso necesita el z mayor. */}
               <tr className="border-b bg-gray-50 text-[10px] text-gray-500">
-                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-1.5 text-left font-medium">Cuenta</th>
+                <th className="sticky left-0 top-0 z-30 bg-gray-50 px-2 py-1.5 text-left font-medium">Cuenta</th>
                 {meses.map(m => (
-                  <th key={`${m.anio}-${m.mes}`} className="px-2 py-1.5 text-right font-medium">{m.label}</th>
+                  <th key={`${m.anio}-${m.mes}`} className="sticky top-0 z-20 bg-gray-50 px-2 py-1.5 text-right font-medium">{m.label}</th>
                 ))}
               </tr>
             </thead>
