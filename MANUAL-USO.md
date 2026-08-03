@@ -1303,3 +1303,76 @@ ser confiable.
    después **una página por bloque** con su detalle y su TOTAL. Numeración x/total al pie.
 5. **sólo resumen** → un PDF de una sola página.
 6. Confirmar que arriba diga **de dónde salió el saldo de arranque**.
+
+---
+
+## ⚖️ Presupuesto → Margen por actividad 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Para qué es.** El margen de cada actividad —cría, recría, engorde, arrendamiento— siguiendo la
+lógica del Excel `MARGENES`, **en pesos** y con el doble formato: **por hectárea, por cabeza y
+total**.
+
+**Dónde está.** Presupuesto → botón **Margen por actividad**.
+
+### Lo que hay que entender: es una VISTA, no un módulo
+No tiene tablas propias. Lee de donde el dato ya vive:
+
+| Qué | De dónde |
+|---|---|
+| Hectáreas | `campo_campana_actividad` (Campos y hectáreas) |
+| **Cabezas** | **se CALCULAN** con `calcularLineaTiempo()` — la misma que usa *Productivo → Evolución del rodeo* |
+| Ventas | `stock_lotes` (Productivo) |
+| Precios | `precios_hacienda` |
+| Costos directos | `actividad_insumos` (Actividades y costos) |
+| Tipo de cambio | `tipos_cambio` |
+
+**Consecuencia:** el margen no se "carga". Se corrige **donde vive cada dato**, y el margen se
+actualiza solo. Si un número está mal, el margen dice de dónde salió.
+
+### Las cabezas se calculan, no se leen
+El rodeo **rueda**: cada campaña abre con el cierre de la anterior (vacas + vaquillonas − descarte,
+y las retenidas pasan a ser las vaquillonas del año siguiente). Por eso `vacas_apertura` está vacía
+de la segunda campaña en adelante — **no falta el dato: se deriva**.
+Lo cargado a mano gana; si está vacío, se calcula.
+
+### Los costos por hectárea llevan su propia superficie
+Un costo por hectárea **no aplica sobre todo el campo**:
+- Mantenimiento de pasturas → las **15 has de pastura**, no las 175 del campo.
+- Promoción de rye grass → las **113,16 has de verdeo**, y sólo el **25 % por año**.
+
+Eso se configura en *Actividades y costos*, en cada línea: **sobre cuántas hectáreas** aplica y
+**en cuántos años se amortiza** (4 años → 25 % por año; una pastura dura 4 años).
+
+Sin eso la implantación de pasturas daba **47 veces** lo que corresponde.
+
+### Los precios se cargan DESDE el margen
+Donde dice que falta un precio hay un botón **"Cargar precio de Ternero 180/200 →"** que abre
+*Precios y TC*. **No hay que ir a buscar nada.**
+
+⚠️ El precio va por **banda de peso**, no por categoría del rodeo: un ternero al pie de 191 kg
+cotiza en `Ternero 180/200`; si se vende más tarde y pesa 210, pasa a `Ternero 200/220`.
+**Las hembras no cotizan por peso**: van por categoría plana.
+
+### Cuando falta un dato, lo dice — no calcula cero
+Cada actividad lista **qué le falta** para ser confiable, y las líneas incompletas quedan
+atenuadas y marcadas *"sin calcular"*. Un margen redondo sobre datos incompletos es peor que uno
+que dice qué le falta — sobre todo si se le presenta a los socios.
+
+### 🧪 Cómo probarlo
+1. Abrir **Cría** en la campaña 26/27 → tiene que mostrar **175 ha** y **260 cabezas**.
+   *(260 = 200 vacas + 60 vaquillonas, calculado desde el cierre de 25/26.)*
+2. Verificar los costos por hectárea contra el Excel:
+   `Implantación pasturas ≈ 2.812 U$S` · `Mantenimiento pasturas 300` ·
+   `Promoción rye grass 3.960` · `Mantenimiento verdeos 2.398` (× TC).
+3. Los costos por cabeza —sanidad, IATF, **rollos**— tienen que multiplicar por **260**.
+4. Las ventas de **Ternero al Pie** deben tomar precio de `Ternero 180/200`; las de **Ternera**
+   van a decir que falta el precio → probar el botón que lleva a cargarlo.
+5. Cambiar una hectárea en *Campos y hectáreas* → el margen tiene que reflejarlo.
+
+### ⚠️ Lo que se sabe que está mal (2026-08-03)
+- **El silo de maíz** se calcula por **tonelada** (136,41 ton/año) y quedó cargado como `monto_ha`.
+  No existe un modo por tonelada.
+- **Siembra de verdeos** y **Gas Oil** están en **0**: la primera la pidió el usuario y no está en
+  el Excel como línea propia; la segunda está vacía en el propio Excel.
+- Los **modos de ración** (`pct_racion`, `kg_cabeza_dia`) —los que usan recría y engorde— todavía
+  **no se resuelven** acá: necesitan la curva de peso y los tramos. Se informan como pendientes.
