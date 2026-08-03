@@ -1081,6 +1081,12 @@ campaña en curso (1/7 → 30/6). Por eso el cupo anual **necesita** tener una c
    de la grilla. Si aparece en los dos lados, se está contando dos veces.
 5. Dejarla incompleta → aviso **rojo** arriba de la grilla y la cuenta **vuelve** a proyectarse.
 6. Tildar *"la dejo sin terminar a propósito"* → deja de contarse como aviso.
+7. **Cupo anual:** poner distribución *Cupo anual* y asignarle una cuenta que **ya tenga facturas**
+   en la campaña. El monto que muestra tiene que ser **el saldo** (cupo − gastado), no el cupo
+   entero. Si lo gastado supera el cupo, la variable **desaparece** de la grilla y sale el aviso
+   *"el cupo quedó corto"*.
+8. Poner un cupo en un **mes que ya pasó** → el saldo tiene que aparecer igual, en el primer mes
+   disponible. Eso es el arrastre: el presupuesto no se pierde por no haberlo gastado a tiempo.
 
 ---
 

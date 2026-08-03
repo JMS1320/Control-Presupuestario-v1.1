@@ -261,6 +261,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-08 | 🔴 | **Presupuesto → Variables de costo** (2026-08-03) — incluye la **regla A** (la cuenta con variable sale del bloque de cuentas). `MANUAL-USO.md` § Variables de costo |
 | A-TEST-09 | 🔴 | **Presupuesto → Inversiones** (2026-08-03) — fuera del TOTAL EGRESOS. `MANUAL-USO.md` § Inversiones |
 | A-TEST-10 | 🔴 | **Presupuesto → Control de cobertura** (2026-08-03) — avisa lo que falta Y lo que se cuenta dos veces. `MANUAL-USO.md` § Control de cobertura |
+| A-TEST-13 | 🔴 | **Cupo anual con arrastre** (2026-08-03) — muestra el SALDO (cupo − ejecutado), se corre solo si no se gasta, y desaparece si ya se gastó todo. + los 2 avisos. `MANUAL-USO.md` § Variables de costo, pasos 7-8 |
 | A-TEST-12 | 🔴 | **Presupuesto → Sueldos del presupuesto** (2026-08-03) — sueldo por empleado, francos, premio anual, aguinaldo jun/dic y SUSS con +50% en ene/jul. Cascada presupuesto→periodo. `MANUAL-USO.md` § Sueldos del presupuesto |
 | A-TEST-11 | 🔴 | **Panel de cuentas: muestra del cálculo, IPC 12 meses, botón Actualizar y encabezados pegados** (2026-08-02/03) |
 | B-TEST-01 | 🔴 | Centros de costo controlado (99fa03a) — tabla maestra + combobox en 6 lugares |
