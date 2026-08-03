@@ -113,6 +113,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) |
+| P-39 | ⏸️ | 🔖 **Marcar una variable como "sin terminar a proposito"** — distingue el olvido de la decision; la alerta va en su propio renglon. Complementa el control de cobertura → [P-39](#p-39) |
 | P-36 | ⏸️ | 🏗️ **Bloque INVERSIONES** — lista a mano con nombre especifico ("2 silos de autoconsumo 7 Ton c/u"), centro de costo, **explicacion de por que se invierte**, monto y plazo → [P-36](#p-36) |
 | P-37 | ⏸️ | ⭐ **Como se modelan las variables especificas** — el usuario: *"no quisiera armar 100 tablas pero tampoco se si se puede unificar"*. Respuesta: **CANTIDAD × PRECIO**, una sola tabla; lo que cambia es de donde sale cada uno. **Hay que cerrarla ANTES de escribir codigo de costos productivos** → [P-37](#p-37) |
 | P-34 | ⏸️ | 📝 **Notas para Claude desde la app** — botón que captura el contexto solo (pantalla, componente, registro). Una nota es una **grabación de N capturas** con Finalizar, no un evento. Regla: la nota NO es un pendiente, es bandeja de entrada → [P-34](#p-34) |
@@ -634,6 +636,51 @@ falta historia del supuesto.
 
 ---
 
+## <a id="p-38"></a>P-38 — Export del presupuesto para presentar a los socios
+
+**Pedido del usuario 2026-08-02.** El presupuesto tiene que poder **descargarse listo para
+presentar**, no como un volcado de la grilla.
+
+- **Varias hojas** (Excel) y **PDF**.
+- **Presentable**: *"debe reunir muchas condiciones, incluso la estética"*. Es un documento que ven
+  los socios, no un export técnico.
+- **Reportes sintéticos con desglose por capas**: para AMS y los socios menos interesados en el
+  detalle, un resumen que se pueda abrir hacia abajo sólo si se quiere.
+
+**Piezas que ya existen y hay que reusar** (regla ♻️ de `CLAUDE.md`): los exports Excel/PDF del
+análisis de engorde (resumen + hoja por segmento), el PDF declarativo de detalle de pago, y la
+estructura por capas del dashboard (`tabla-resumen-financiero.tsx`), que ya define títulos y
+colores por tipo.
+
+⚠️ **Regla que aplica sí o sí:** al agregar campos al presupuesto **hay que actualizar este
+export**. Es literal el feedback del usuario sobre las descargas: lo que se ve en pantalla y lo
+que se descarga no se desfasan.
+
+**Estado:** ⏸️ sin diseñar. Conviene hacerlo **después** de cerrar la estructura del presupuesto
+(P-37, P-35, P-36): exportar algo que todavía cambia de forma es trabajo doble.
+
+---
+
+## <a id="p-39"></a>P-39 — Marcar una variable como "la dejé sin terminar a propósito"
+
+**Idea del usuario 2026-08-02**, como complemento del control de cobertura:
+> *"Si yo olvido algo ya sería un tema mío. Si dejo algo a propósito sin terminar, puede ser una
+> columna de variables destinada a que, si la marco, me recuerde algo con alerta, y se mostraría
+> en su renglón ya que va asignada."*
+
+Distingue dos cosas que hoy se ven igual: **el olvido** y **la decisión de dejarlo pendiente**.
+
+- Una marca (`pendiente_a_proposito` + nota) en la variable o la cuenta.
+- La alerta aparece **en su propio renglón**, no en un listado aparte — está asignada, así que se
+  muestra donde vive.
+- **Complementa al control de cobertura de [P-32](#p-32):** ese avisa de lo que falta; éste
+  permite decir *"ya sé, lo dejé así, recordámelo"* sin que se confunda con un agujero.
+
+Es el mismo espíritu que `ERRORES_CONOCIDOS.md`: lo conocido y aceptado se anota para que deje de
+ser ruido, y lo que aparece fuera del registro sí es señal.
+
+---
+
 ## <a id="p-36"></a>P-36 — Bloque INVERSIONES en el presupuesto
 
 **Pedido del usuario 2026-08-02.** Un bloque nuevo, aparte de gastos y costos: las **inversiones**
@@ -774,8 +821,22 @@ combustible (litros/año × $/litro, cupo anual), semillas (ha × $/ha, desde el
 - **La lista canónica de actividades falta confirmar**: el usuario dijo *"Arrendamiento Rojas y
   Arrendamiento Nazarenas"* (2026-08-02) y más tarde *"San Pedro o Rojas"*. Confirmar cuál es.
 
-**Estado:** 🟢 **cerrada en lo conceptual.** Queda definir el detalle de escenarios (ver la duda
-abierta) y cargar los datos de arriba.
+### ✅ Cerrada — últimas dos respuestas del usuario (2026-08-02)
+
+8. **El `5%+ / 15%−` era una sola cosa:** *"te quise decir que puedo querer poner cualquiera de
+   las dos"*. O sea: el ajuste **`% manual` admite signo** (+30 %, −15 %). No hay rangos ni
+   escenarios escondidos acá. Ya estaba contemplado.
+9. **Escenarios: SÍ, pero después.** *"Sería muy interesante poder tener el presupuesto y, al
+   terminarlo, hacer la opción B donde modifico precios u otra cosa y regenera el mismo. Como algo
+   lindo para dejar abierto a que pueda suceder."*
+   → **No se construye ahora, pero se deja posible.** La decisión barata que lo habilita: que la
+   configuración del presupuesto (variables, modos, precios) se guarde **con una clave de
+   escenario** desde el arranque, aunque hoy exista uno solo (`base`). Duplicar un escenario pasa
+   a ser copiar filas; sin esa clave, agregarlo después obliga a migrar todo.
+   *(Hay precedente en el proyecto: el análisis de engorde ya tiene "escenario B" y sensibilidad.)*
+
+**Estado:** ✅ **CERRADA en lo conceptual.** Lo que falta no es diseño: son **datos** (abajo) y la
+implementación, que va junto con el control de cobertura de [P-32](#p-32).
 
 ---
 
