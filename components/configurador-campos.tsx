@@ -70,7 +70,7 @@ interface Control {
 const has = (n: number | null | undefined) =>
   n == null ? "—" : `${fmtNumeroAR(n, n % 1 === 0 ? 0 : 1)} ha`
 
-export function ConfiguradorCampos() {
+export function ConfiguradorCampos({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [campos, setCampos] = useState<Campo[]>([])
   const [partidas, setPartidas] = useState<Partida[]>([])
@@ -133,16 +133,25 @@ export function ConfiguradorCampos() {
                   has_netas: hasNetas, has_totales: hasNetas })
     }
     await cargar()
+    onCambio?.()
+  }
+
+  const guardarPartida = async (id: string, cambios: Partial<Partida>) => {
+    setPartidas(prev => prev.map(p => (p.id === id ? { ...p, ...cambios } : p)))
+    const { error } = await supabase.from("campo_partidas").update(cambios).eq("id", id)
+    if (error) { alert("Error: " + error.message); await cargar() }
   }
 
   const borrarAsignacion = async (id: string) => {
     await supabase.from("campo_campana_actividad").delete().eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   const marcarConfirmado = async (id: string, tabla: "campos" | "campo_campana_actividad") => {
     await supabase.from(tabla).update({ provisorio: false }).eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   if (cargando) {
@@ -232,9 +241,26 @@ export function ConfiguradorCampos() {
                         : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />}
                   <span className="text-sm font-medium text-gray-800">{campo.nombre}</span>
                   {campo.zona && <span className="text-[11px] text-gray-400">{campo.zona}</span>}
-                  {campo.empresa_propietaria && (
-                    <Badge variant="outline" className="text-[9px]">{campo.empresa_propietaria}</Badge>
-                  )}
+                  {/* Cuánto es de cada empresa, sin tener que abrir. Un campo compartido no se
+                      entiende con una sola etiqueta: Nazarenas es de MSA Y de PAM. */}
+                  {(() => {
+                    const porTit = new Map<string, number>()
+                    for (const p of misPartidas) {
+                      const t = p.empresa_titular || "—"
+                      porTit.set(t, (porTit.get(t) ?? 0) + (p.has ?? 0))
+                    }
+                    if (porTit.size === 0) {
+                      return campo.empresa_propietaria
+                        ? <Badge variant="outline" className="text-[9px]">{campo.empresa_propietaria}</Badge>
+                        : null
+                    }
+                    return Array.from(porTit.entries()).map(([t, h]) => (
+                      <Badge key={t} variant="outline" className="text-[9px]"
+                        title={`${t}: ${h > 0 ? has(h) : "sin hectáreas cargadas"}`}>
+                        {t}{h > 0 ? ` ${fmtNumeroAR(h, 0)}` : ""}
+                      </Badge>
+                    ))
+                  })()}
                   {campo.provisorio && (
                     <Badge variant="outline" className="border-amber-300 text-[9px] text-amber-700">provisorio</Badge>
                   )}
@@ -312,7 +338,11 @@ export function ConfiguradorCampos() {
                       )}
                     </div>
 
-                    {/* Partidas */}
+                    {/* Partidas — agrupadas por TITULAR.
+                        Un campo puede estar repartido entre empresas (Nazarenas: MSA y PAM), y
+                        verlo todo junto esconde de quién es cada hectárea. Eso importa porque el
+                        dueño de la tierra puede no ser el que hace la actividad: la cría la hace
+                        MSA sobre campo de PAM, pagando arrendamiento. */}
                     <div>
                       <p className="mb-1 text-[11px] font-medium text-gray-700">
                         Partidas inmobiliarias ({misPartidas.length})
@@ -320,20 +350,79 @@ export function ConfiguradorCampos() {
                           — el titular de la partida es el dueño de esas hectáreas
                         </span>
                       </p>
-                      <div className="flex flex-wrap gap-1">
-                        {misPartidas.map(p => (
-                          <span key={p.id}
-                            className="rounded border bg-white px-1.5 py-0.5 text-[10px] text-gray-600">
-                            {p.nombre_partida}
-                            {p.empresa_titular && (
-                              <strong className="ml-1 text-gray-800">{p.empresa_titular}</strong>
+
+                      {(() => {
+                        const porTitular = new Map<string, Partida[]>()
+                        for (const p of misPartidas) {
+                          const t = p.empresa_titular || "(sin titular)"
+                          if (!porTitular.has(t)) porTitular.set(t, [])
+                          porTitular.get(t)!.push(p)
+                        }
+                        const totalCargado = misPartidas.reduce((s, p) => s + (p.has ?? 0), 0)
+                        const sinHas = misPartidas.filter(p => p.has == null).length
+
+                        return (
+                          <div className="space-y-2">
+                            {Array.from(porTitular.entries()).map(([titular, lista]) => {
+                              const suma = lista.reduce((s, p) => s + (p.has ?? 0), 0)
+                              return (
+                                <div key={titular} className="rounded border bg-white px-2 py-1.5">
+                                  <div className="mb-1 flex items-center justify-between">
+                                    <span className="text-[11px] font-medium text-gray-800">
+                                      {titular}
+                                      <span className="ml-1 font-normal text-gray-400">
+                                        {lista.length} {lista.length === 1 ? "partida" : "partidas"}
+                                      </span>
+                                    </span>
+                                    <span className="text-[11px] font-semibold text-gray-700">
+                                      {suma > 0 ? has(suma) : "sin has cargadas"}
+                                    </span>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    {lista.map(p => (
+                                      <div key={p.id} className="flex items-center gap-2">
+                                        <span className="flex-1 text-[10px] text-gray-600">{p.nombre_partida}</span>
+                                        <Input className="h-6 w-20 text-right text-[10px]" placeholder="—"
+                                          defaultValue={p.has != null ? fmtNumeroAR(p.has, 0) : ""}
+                                          onBlur={e => guardarPartida(p.id, {
+                                            has: e.target.value.trim() === "" ? null : parseNumeroAR(e.target.value),
+                                          })} />
+                                        <span className="text-[9px] text-gray-400">ha</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })}
+
+                            {misPartidas.length === 0 && (
+                              <span className="text-[10px] text-gray-400">sin partidas cargadas</span>
                             )}
-                          </span>
-                        ))}
-                        {misPartidas.length === 0 && (
-                          <span className="text-[10px] text-gray-400">sin partidas cargadas</span>
-                        )}
-                      </div>
+
+                            {/* Control: lo de las partidas contra el total del campo. Es otra
+                                forma de que no quede ninguna hectárea afuera. */}
+                            {misPartidas.length > 0 && (
+                              <p className="text-[10px] text-gray-500">
+                                Suma de partidas: <strong>{has(totalCargado)}</strong>
+                                {campo.has_totales != null && (
+                                  <> · total del campo: {has(campo.has_totales)}
+                                    {Math.abs(totalCargado - campo.has_totales) > 0.5 && totalCargado > 0 && (
+                                      <span className="ml-1 text-amber-600">
+                                        · no coinciden ({has(Math.abs(totalCargado - campo.has_totales))} de diferencia)
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                                {sinHas > 0 && (
+                                  <span className="ml-1 text-amber-600">
+                                    · {sinHas} {sinHas === 1 ? "partida" : "partidas"} sin hectáreas
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}

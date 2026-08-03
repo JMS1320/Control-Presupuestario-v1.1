@@ -42,7 +42,7 @@ const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 interface FilaVariable extends Variable { id: string; campana: string | null }
 interface Actividad { id: string; nombre: string }
 
-export function ConfiguradorVariables() {
+export function ConfiguradorVariables({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [vars, setVars] = useState<FilaVariable[]>([])
   const [ajustes, setAjustes] = useState<Record<string, Ajuste[]>>({})
@@ -107,6 +107,7 @@ export function ConfiguradorVariables() {
     if (!confirm("¿Borrar esta variable? Se van también sus ajustes.")) return
     await supabase.from("presupuesto_variables").delete().eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   const agregarAjuste = async (variableId: string) => {
@@ -114,16 +115,19 @@ export function ConfiguradorVariables() {
     await supabase.from("presupuesto_variable_ajustes")
       .insert({ variable_id: variableId, orden, tipo: "porcentaje", valor: 0 })
     await cargar()
+    onCambio?.()
   }
 
   const guardarAjuste = async (id: string, cambios: Partial<Ajuste>) => {
     await supabase.from("presupuesto_variable_ajustes").update(cambios).eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   const borrarAjuste = async (id: string) => {
     await supabase.from("presupuesto_variable_ajustes").delete().eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   const delCampana = useMemo(

@@ -319,10 +319,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
 
             {showPreciosTC && <ConfiguradorPreciosTC />}
             {showActividades && <ConfiguradorActividades />}
-            {showCampos && <ConfiguradorCampos />}
-            {showVariables && <ConfiguradorVariables />}
-            {showInversiones && <ConfiguradorInversiones />}
-            {showSueldosPre && <ConfiguradorSueldosPresupuesto />}
+            {showCampos && <ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {showVariables && <ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {showInversiones && <ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {showSueldosPre && <ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}
 

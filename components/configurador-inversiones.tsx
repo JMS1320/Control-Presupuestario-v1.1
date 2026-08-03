@@ -42,7 +42,7 @@ interface Inversion {
 }
 interface CentroCosto { id: string; nombre: string; tipo: string | null }
 
-export function ConfiguradorInversiones() {
+export function ConfiguradorInversiones({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [items, setItems] = useState<Inversion[]>([])
   const [centros, setCentros] = useState<CentroCosto[]>([])
@@ -102,6 +102,7 @@ export function ConfiguradorInversiones() {
     if (!confirm("¿Borrar esta inversión?")) return
     await supabase.from("presupuesto_inversiones").delete().eq("id", id)
     await cargar()
+    onCambio?.()
   }
 
   if (cargando) {

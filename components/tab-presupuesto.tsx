@@ -6,7 +6,7 @@ import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle, Download, FileText } from "lucide-react"
+import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle, Download, FileText, RefreshCw } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -1619,6 +1619,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => cargarDatos()} disabled={cargando}
+            title="Volver a leer todo: templates, sueldos, cuentas, variables e inversiones">
+            <RefreshCw className={`h-3.5 w-3.5 ${cargando ? "animate-spin" : ""}`} /> Actualizar
+          </Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(true)}>Expandir todo</Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
           <Button variant="outline" size="sm" className="gap-1"
@@ -2300,7 +2304,7 @@ Clic para presupuestar la venta`}
                     Fuera del total de egresos a propósito: no son gasto operativo. Se muestran
                     igual porque la plata sale, pero mezclarlas con el gasto del año infla el
                     egreso y le saca a la inversión lo único que la hace discutible. */}
-                {inversiones.length > 0 && (() => {
+                {(() => {
                   const abierto = expandidos["__inversiones__"] ?? false
                   const sinJust = inversiones.filter(i => i.sinJustificar).length
                   return (
@@ -2313,7 +2317,9 @@ Clic para presupuestar la venta`}
                             : <ChevronRight className="h-3.5 w-3.5 text-gray-500 shrink-0" />}
                           🏗️ INVERSIONES
                           <span className="ml-2 text-xs font-normal text-orange-700">
-                            {inversiones.length} · fuera del total de egresos
+                            {inversiones.length === 0
+                              ? "sin inversiones cargadas — se cargan en el botón «Inversiones»"
+                              : `${inversiones.length} · fuera del total de egresos`}
                             {sinJust > 0 && <span className="ml-1 text-amber-700">· {sinJust} sin justificar</span>}
                           </span>
                         </td>

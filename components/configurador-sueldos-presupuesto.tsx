@@ -37,7 +37,7 @@ function mesesDesdeHoy(cantidad = 12) {
   })
 }
 
-export function ConfiguradorSueldosPresupuesto() {
+export function ConfiguradorSueldosPresupuesto({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [empleados, setEmpleados] = useState<EmpleadoPresupuesto[]>([])
   const [params, setParams] = useState<ParametrosSueldos>({
@@ -83,6 +83,7 @@ export function ConfiguradorSueldosPresupuesto() {
       .upsert({ empresa: "MSA", ...cambios, updated_at: new Date().toISOString() }, { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message) }
     await cargar()
+    onCambio?.()
   }
 
   const proyeccion = useMemo(() => {
