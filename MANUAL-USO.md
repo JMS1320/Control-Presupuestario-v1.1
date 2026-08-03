@@ -1051,6 +1051,27 @@ sólo de la variable. Es lo que evita contar el mismo peso dos veces.
 Un cero calculado es indistinguible de un cero real. Por eso una variable incompleta no reparte
 cero en los meses: queda vacía y el faltante sube al control de cobertura.
 
+### El cupo anual: lo presupuestado no se pierde si no se gasta en el mes
+
+Es el modo para lo que se compra **1 o 2 veces al año** — el gas oil es el caso testigo. El
+invariante lo puso el usuario:
+
+> *"¿Qué pasa si lo pongo en marzo y finalmente lo compro más adelante? **Lo que no puede pasar es
+> que por no hacerlo en el mes se pierda el presupuesto**."*
+
+Entonces el mes elegido es una **estimación de cuándo**, no un vencimiento:
+- Lo que se muestra es **el saldo**: cupo − lo ya gastado en la campaña.
+- Mientras no se ejecute, ese saldo **se corre solo** al primer mes disponible. No hay que hacer nada.
+- Si ya se gastó todo el cupo, **deja de figurar** — aunque el mes elegido esté por venir. Se
+  cierra contra la realidad, no contra el calendario.
+
+Lo ejecutado sale de las **facturas reales de la cuenta** que la variable alimenta, dentro de la
+campaña en curso (1/7 → 30/6). Por eso el cupo anual **necesita** tener una cuenta asignada.
+
+**Dos avisos automáticos** aparecen en el control de cobertura:
+- *"se presupuestan $X al año y en el período no se gastó nada. ¿Sigue vigente?"*
+- *"ya se gastó $X contra un cupo de $Y (130 %). El cupo quedó corto."*
+
 ### 🧪 Cómo probarlo
 1. Crear una variable **completa a mano** (cantidad y precio) → el monto aparece arriba a la derecha.
 2. **Agregar un paso** de `+30 %` → el monto sube y el paso aparece en *Cómo se arma*.

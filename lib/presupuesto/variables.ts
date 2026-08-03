@@ -230,18 +230,33 @@ export function calcularVariable(
   return { monto: acum, cantidad, precio, pasos, faltantes }
 }
 
+/** Lo necesario para resolver el arrastre del cupo anual. */
+export interface ContextoReparto {
+  /** Cuánto de este concepto YA se gastó en la campaña. */
+  ejecutado?: number
+}
+
 /**
  * En qué meses cae el monto anual.
  *
- * `cupo_anual` devuelve el total en el primer mes elegido a propósito: el arrastre real
- * (que lo no ejecutado se corra al mes siguiente en vez de evaporarse) necesita saber lo
- * ejecutado, y eso todavía no está — ver P-10/P-17. Mientras tanto no se reparte en doce,
- * porque eso mostraría un gasto mensual que no existe.
+ * El caso interesante es `cupo_anual`, y el invariante lo puso el usuario:
+ *
+ *   > "Se compran 7000 lts anuales de gas oil pero 1 o 2 veces por año. ¿Qué pasa si lo pongo en
+ *   > marzo y finalmente lo compro más adelante? **Lo que no puede pasar es que por no hacerlo en
+ *   > el mes se pierda el presupuesto.**"
+ *
+ * Entonces el mes elegido es una **estimación de cuándo**, no un vencimiento. Lo que se muestra
+ * es siempre **el saldo**: cupo − ejecutado. Y mientras no se ejecute, ese saldo **se corre solo**
+ * al primer mes disponible en vez de evaporarse.
+ *
+ * Se cierra contra la REALIDAD (lo ejecutado), no contra el calendario. Si ya se gastó todo, no
+ * queda nada por presupuestar aunque el mes elegido esté por venir.
  */
 export function repartirEnMeses(
   v: Variable,
   montoAnual: number,
   meses: { anio: number; mes: number }[],
+  ctx: ContextoReparto = {},
 ): Record<string, number> {
   const clave = (a: number, m: number) => `${a}-${String(m).padStart(2, '0')}`
   const out: Record<string, number> = {}
@@ -261,8 +276,18 @@ export function repartirEnMeses(
       for (const m of meses) if (elegidos.includes(m.mes)) out[clave(m.anio, m.mes)] = porMes
       return out
     }
+    case 'cupo_anual': {
+      const saldo = montoAnual - (ctx.ejecutado ?? 0)
+      // Si ya se gastó el cupo, no queda nada que presupuestar: la realidad cerró el concepto.
+      if (saldo <= 0) return out
+      // El mes elegido si todavía está por venir; si ya pasó, el primero disponible. Eso ES el
+      // arrastre: sin hacer nada, el saldo aparece siempre en el próximo mes posible.
+      const elegido = (v.meses ?? [])[0]
+      const destino = meses.find(m => m.mes === elegido) ?? meses[0]!
+      out[clave(destino.anio, destino.mes)] = saldo
+      return out
+    }
     case 'un_mes':
-    case 'cupo_anual':
     default: {
       const elegido = (v.meses ?? [])[0]
       const destino = meses.find(m => m.mes === elegido) ?? meses[0]!
@@ -270,4 +295,28 @@ export function repartirEnMeses(
       return out
     }
   }
+}
+
+/**
+ * El aviso que pidió el usuario para los cupos anuales:
+ *
+ *   > "Ahí se puede agregar una alerta: en el último año se gastó cero y seguís presupuestando
+ *   > $1.500.000 anual."
+ *
+ * Devuelve `null` cuando no hay nada que decir.
+ */
+export function avisoCupoAnual(
+  concepto: string,
+  montoAnual: number,
+  ejecutado: number,
+): string | null {
+  if (montoAnual <= 0) return null
+  if (ejecutado === 0) {
+    return `“${concepto}”: se presupuestan ${pesos(montoAnual)} al año y en el período no se gastó nada. ¿Sigue vigente?`
+  }
+  const usado = ejecutado / montoAnual
+  if (usado > 1.15) {
+    return `“${concepto}”: ya se gastó ${pesos(ejecutado)} contra un cupo de ${pesos(montoAnual)} (${Math.round(usado * 100)} %). El cupo quedó corto.`
+  }
+  return null
 }

@@ -48,7 +48,7 @@ import {
   type ConfigCuenta, type PuntoHistorico, type PuntoProveedor, type CeldaPresupuesto,
 } from "@/lib/presupuesto/modos"
 import {
-  calcularVariable, repartirEnMeses,
+  calcularVariable, repartirEnMeses, avisoCupoAnual,
   type Variable, type Ajuste, type ContextoVariable,
 } from "@/lib/presupuesto/variables"
 import {
@@ -297,7 +297,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
   const [variables, setVariables] = useState<
     { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
-      faltantes: string[]; pendienteAProposito: boolean }[]>([])
+      faltantes: string[]; pendienteAProposito: boolean; aviso: string | null; ejecutado: number }[]>([])
   /** Inversiones (P-36) — bloque propio: no son gasto operativo. */
   const [inversiones, setInversiones] = useState<
     { id: string; nombre: string; montos: Record<string, number>; sinJustificar: boolean }[]>([])
@@ -358,11 +358,26 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * variable: ésas NO se proyectan además por historia, o se contarían dos veces.
    */
   const cargarVariables = async (ipc: PuntoSerie[]): Promise<Set<string>> => {
-    const [{ data: vs }, { data: ajs }] = await Promise.all([
+    const [{ data: vs }, { data: ajs }, { data: hist }] = await Promise.all([
       supabase.from("presupuesto_variables").select("*")
         .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true),
       supabase.from("presupuesto_variable_ajustes").select("*").order("orden"),
+      supabase.from("presupuesto_historia_cuentas").select("nro_cuenta, anio, mes, monto"),
     ])
+
+    // Lo EJECUTADO de cada cuenta en la campaña en curso (1/7 → 30/6). Es lo que permite que el
+    // cupo anual se cierre contra la realidad y no contra el calendario: si ya se compró el
+    // gasoil, deja de figurar aunque el mes elegido esté por venir.
+    const hoy = new Date()
+    const anioCampana = hoy.getMonth() + 1 >= 7 ? hoy.getFullYear() : hoy.getFullYear() - 1
+    const desde = anioCampana * 12 + 6          // julio del año de la campaña
+    const ejecutadoPorCuenta: Record<string, number> = {}
+    for (const h of ((hist || []) as any[])) {
+      const km = Number(h.anio) * 12 + (Number(h.mes) - 1)
+      if (km < desde) continue
+      const nro = String(h.nro_cuenta)
+      ejecutadoPorCuenta[nro] = (ejecutadoPorCuenta[nro] || 0) + (Number(h.monto) || 0)
+    }
     const porVar: Record<string, Ajuste[]> = {}
     for (const a of ((ajs || []) as any[])) {
       (porVar[a.variable_id] ||= []).push({
@@ -378,16 +393,23 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const mm = meses.map(m => ({ anio: m.anio, mes: m.mes }))
     const filas = ((vs || []) as any[]).map(v => {
       const r = calcularVariable(v as Variable, porVar[v.id] ?? [], ctxVar)
+      const nro = v.nro_cuenta ? String(v.nro_cuenta) : null
+      const ejecutado = nro ? (ejecutadoPorCuenta[nro] ?? 0) : 0
       // Si falta un dato NO se inventa cero: se muestra en 0 pero queda listado en `faltantes`,
       // que es lo que levanta el control. Un cero silencioso es indistinguible de un cero real.
       const montos = r.faltantes.length > 0
         ? {} as Record<string, number>
-        : repartirEnMeses(v as Variable, r.monto, mm)
+        : repartirEnMeses(v as Variable, r.monto, mm, { ejecutado })
       return {
         id: String(v.id), concepto: String(v.concepto),
-        nroCuenta: v.nro_cuenta ? String(v.nro_cuenta) : null,
+        nroCuenta: nro,
         montos, faltantes: r.faltantes,
         pendienteAProposito: Boolean(v.pendiente_a_proposito),
+        // Sólo tiene sentido avisar sobre cupos: en los otros modos "lo ejecutado" no cierra nada.
+        aviso: v.distribucion === "cupo_anual" && r.faltantes.length === 0
+          ? avisoCupoAnual(String(v.concepto), r.monto, ejecutado)
+          : null,
+        ejecutado,
       }
     })
     setVariables(filas)
@@ -1230,6 +1252,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           texto: `La cuenta ${nro} la alimentan ${conceptos.length} variables a la vez (${conceptos.join(", ")}): se está contando dos veces`,
         })
       }
+    }
+
+    // Avisos de cupo anual: "se gastó cero y seguís presupuestando", o el cupo quedó corto.
+    for (const v of variables) {
+      if (v.aviso) avisos.push({ nivel: "media", texto: v.aviso })
     }
 
     const sinJustificar = inversiones.filter(i => i.sinJustificar).length
