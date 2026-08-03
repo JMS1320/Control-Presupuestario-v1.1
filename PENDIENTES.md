@@ -84,7 +84,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|-----|------|
 | P-01 | ✅ | Botón **Actualizar** en el header del panel de cuentas (relee historia, config e IPC). 2026-08-02, sin testear |
 | P-02 | ❓ | **"Este mes sí/no"** en el mes de arranque: si ya se pagó, no presupuestar; si no, sí. *El usuario avisa que **contradice otras alternativas*** |
-| P-03 | 🟢 | **Edición de sueldos** — poner un sueldo a cada empleado con la info disponible, más allá del histórico |
+| P-03 | ⏸️ | **Sueldo mensual de presupuesto por empleado.** ⚠️ Auditado 2026-08-02: **3 empleados en $0** (AMS, Vulcano, Paz) → faltan ~$38-60 M en 11 meses, y **HONORARIOS AMS no está presupuestado en ningún lado** (excluido de cuentas "va por sueldos", y en sueldos vale cero). **Espera decisión: toca la BD** → [P-03](#p-03) |
 | P-04 | ❓ | **¿IPC siempre? ¿Está trabajando bien el IPC?** — auditar el modo |
 | P-05 | 🔗 | **Costos de producción** al presupuesto — ya abierto como C-7 / B-FEAT-COSTOS-PRODUCTIVOS |
 | P-06 | ❓ | **¿Las FC en dólares están bien tomadas** en el presupuesto? — auditar |
@@ -102,7 +102,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
 | P-19 | 🟢 | **Períodos contables de templates — YA EXISTEN, hay que USARLOS.** ⚠️ Claude afirmó el 2026-08-02 que "no hay columna de campaña"; **es falso**, lo corrigió el usuario. `egresos_sin_factura` tiene **`año`** (label "26/27"), **`periodicidad`** ('anual'\|'bianual') y **`template_origen_id`** → el template del que se clonó. El generador escribe `año: targetLabel` al renovar. Lo que falta es que el **Presupuesto los lea** |
 | P-20 | ❓ | Repensar el diseño a la luz de los períodos — a ver **con el contexto específico de Templates** (decisión del usuario: no diseñar en abstracto) |
-| P-21 | 🟢 | **Sueldo y SUSS con aguinaldo** |
+| P-21 | ⏸️ | **Sueldo y SUSS con aguinaldo** — hoy los 11 meses futuros tienen el mismo monto congelado y **dic-26 y jun-27 no tienen SAC** (~$6 M cada uno). Va junto con P-03 → [P-03](#p-03) |
 | P-22 | 🔗 | **Que templates se muestren como cuentas contables** — se cruza con C-19 / C-24 |
 | P-23 | ❓ | **Cuotas que dicen "templates" pero no autogeneran la próxima campaña** si no está llena |
 | P-24 | 🔗 | **Separar siempre en secciones**: lo que se proyecta, lo que no, y todos — C-22 paso 1 ya hizo EGRESOS/DISTRIBUCIONES |
@@ -528,6 +528,75 @@ eso el bug pasó desapercibido: nadie lo activaba automáticamente. Y explica po
 cuentas que el usuario configuró a mano son las que quedaron en cero.
 
 **Type-check:** 121 errores, idéntico al baseline. 0 en `lib/presupuesto`.
+
+---
+
+## <a id="p-03"></a>P-03 / P-21 — Sueldos en el presupuesto: 3 empleados en $0 y sin aguinaldo
+
+**Lo que pidió el usuario (2026-08-02):** *"yo pensaba sólo poner el monto mensual de cada uno
+para el presupuesto, más allá de los datos históricos"*. Simple: un sueldo mensual por empleado
+que el presupuesto use hacia adelante.
+
+### Cómo funciona hoy
+`tab-presupuesto.tsx` → `cargarSueldos()` lee **`sueldos_periodos`** (los períodos de liquidación
+reales) y toma `saldo_pendiente ?? bruto_calculado`. Sólo entran empleados **MSA o "ambas"**.
+
+Hay períodos generados hasta **jun-2027**, así que la fila no está vacía. El problema es **qué
+tienen adentro**.
+
+### 🔴 Lo que se encontró (consultado a la BD el 2026-08-02)
+
+| Empleado | Empresa | Presupuestado/mes | Bruto real (prom · máx) |
+|---|---|---:|---|
+| JMS | ambas | 3.550.887 | — |
+| Ruben Sigot | MSA | 1.670.000 | — |
+| Wilson Barreto | MSA | 1.300.000 | — |
+| **AMS** | ambas | **$0** | 1.654.418 · **2.774.530** |
+| **Fabian Vulcano** | MSA | **$0** | 1.141.429 · **1.760.000** |
+| **Elvio Paz** | MSA | **$0** | 677.143 · **960.000** |
+
+Los tres tienen **7 períodos reales** hasta jul-2026 y quedan en **cero** en los 11 meses
+siguientes. El bloque de sueldos muestra **$6.520.887/mes** cuando debería rondar los **$12 M**.
+
+**Faltan del orden de $38 M (a promedio) a $60 M (a último valor) en 11 meses.** El presupuesto de
+sueldos está mostrando aproximadamente **la mitad**.
+
+### 🔴🔴 Y hay un agujero peor, que cruza con [P-33](#p-33)
+
+`422136 HONORARIOS AMS` está **excluida** de cuentas contables con el motivo *"Va por Sueldos"*.
+Pero en Sueldos, **AMS está en $0**.
+
+→ **Los honorarios de AMS no están presupuestados en ningún lado.** La exclusión era correcta en
+su lógica, pero el otro lado nunca se llenó. (JMS sí está: 3.550.887.)
+
+Es exactamente el control de **cobertura** que pide [P-32](#p-32): *"conceptos que se excluyen de
+un lado porque «van por otro» y en el otro no aparecen"*. Sin ese control, un cero se disfraza de
+decisión.
+
+### 🧊 Además: el monto está congelado y no hay aguinaldo
+- Los 11 meses futuros tienen **exactamente el mismo número** — sin paritarias, sin ajuste por IPC.
+- **Diciembre y junio no tienen SAC.** El aguinaldo es medio sueldo en cada uno: con ~$12 M/mes
+  son ~$6 M extra en dic-2026 y otros ~$6 M en jun-2027 que hoy no están.
+- Las **cargas sociales (SUSS)** tampoco se ven proyectadas junto al bruto.
+
+### ⏸️ Propuesta — necesita decisión del usuario (toca la BD)
+Que cada empleado tenga un **sueldo mensual de presupuesto**, y que el presupuesto lo use hacia
+adelante en cascada (igual que `resolverTipo()` en C-27):
+
+> **sueldo de presupuesto del empleado** → si no hay, **el período liquidado** → si no hay, cero.
+
+**Dónde guardarlo — tres opciones:**
+| | Cómo | Pros / contras |
+|---|---|---|
+| **A** | Columna `sueldo_presupuesto` en `sueldos_empleados` | Simple, un valor por empleado. No guarda historia del supuesto |
+| **B** | Tabla nueva `presupuesto_sueldos` (empleado, monto, vigencia desde) | Permite cambiar el supuesto en el tiempo y auditar. Más piezas |
+| **C** | Editar `sueldos_periodos` de los meses futuros | ⛔ **No recomendado**: son datos reales de liquidación y mezclaría presupuesto con liquidación. Además exige permiso explícito para tocar datos |
+
+**Recomendación: A.** Es literal lo que pidió el usuario y se puede migrar a B si después hace
+falta historia del supuesto.
+
+⚠️ **Nada de esto se hizo:** es cambio de estructura de BD y se acuerda antes
+(`CLAUDE.md` § Datos).
 
 ---
 
