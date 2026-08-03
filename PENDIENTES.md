@@ -852,11 +852,23 @@ correcto: *"hacer algo nuevo debe ser a conciencia, pero primero mirando que no 
 | `CTA HIJOS` | Cuenta Hijos | 2 | — |
 | `VER` | A verificar | 2 | — |
 
-→ El desplegable sale de acá + los valores fijos que faltan (`No Lleva`, `Desglosar`, `LIB`,
-`CTA MA`). **Le falta sólo eso**, no una tabla nueva.
-→ Bonus: `empresa_destino` ya resuelve el enganche **intercompany** de [P-40](#p-40).
+### ⚠️ Precisión del usuario (2026-08-02) — para qué es realmente esa tabla
+> *"`distribucion_socios` son **los templates de cada socio**. Lo llenaré en los templates y así
+> aparecerá. **Por ahora sólo eso para lo que es distribución.**"*
 
-*(Es la regla de contexto funcionando: el usuario pidió mirar antes de crear, y había que mirar.)*
+→ No es un maestro de códigos para un desplegable: es **la configuración de la sección
+Distribución** (qué socio, con qué concepto, en qué sección y orden). **Los montos viven en los
+templates** (`Retiro X semestral/mensual`), que el usuario carga a mano.
+
+→ **Decisión: la distribución queda así y no se toca.** No se hace el desplegable de códigos por
+ahora. Claude había propuesto usar esta tabla como origen de la lista — **descartado**: sirve a
+otro propósito.
+
+→ Lo que sí queda en pie de la exploración: `empresa_destino` (= `MA` en `DIST MA`) es el enganche
+**intercompany** para cuando se aborde [P-40](#p-40).
+
+*(La regla de contexto funcionó a medias: buscar antes de crear evitó una tabla nueva, pero
+encontrar una tabla no es lo mismo que entender para qué existe. Lo aclaró el usuario.)*
 
 ### ✅ Y `Seguro Flota` ya está resuelto por el usuario
 Está marcado **`Desglosar`**, junto con otros 2. O sea: el concepto de "esto hay que repartirlo"
