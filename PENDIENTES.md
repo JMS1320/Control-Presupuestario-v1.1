@@ -113,6 +113,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-36 | ⏸️ | 🏗️ **Bloque INVERSIONES** — lista a mano con nombre especifico ("2 silos de autoconsumo 7 Ton c/u"), centro de costo, **explicacion de por que se invierte**, monto y plazo → [P-36](#p-36) |
+| P-37 | ⏸️ | ⭐ **Como se modelan las variables especificas** — el usuario: *"no quisiera armar 100 tablas pero tampoco se si se puede unificar"*. Respuesta: **CANTIDAD × PRECIO**, una sola tabla; lo que cambia es de donde sale cada uno. **Hay que cerrarla ANTES de escribir codigo de costos productivos** → [P-37](#p-37) |
 | P-34 | ⏸️ | 📝 **Notas para Claude desde la app** — botón que captura el contexto solo (pantalla, componente, registro). Una nota es una **grabación de N capturas** con Finalizar, no un evento. Regla: la nota NO es un pendiente, es bandeja de entrada → [P-34](#p-34) |
 | P-35 | ⏸️ | 👷 **Modelo de sueldos para presupuesto** — dictado completo por el usuario: plantilla fija, aguinaldo 50% en jun/dic, francos aparte, extra anual, jornales, IPC en escalones, SUSS +50% en ene/jul. 🔴 **Cargas Sociales está en \$0 desde agosto** → [P-35](#p-35) |
 | P-33 | 🟡 | **Auditado 2026-08-02** → [P-33](#p-33). De las 9 cuentas excluidas, **sólo 4 lo están por diseño**: 4 son **features faltantes** disfrazadas de exclusión (IPC+%, elegir mes, cupo anual, costos directos) y 1 es un gasto dado de baja. **El presupuesto está subestimado en esas 4.** Falta implementarlas |
@@ -602,6 +604,94 @@ falta historia del supuesto.
 
 ---
 
+## <a id="p-36"></a>P-36 — Bloque INVERSIONES en el presupuesto
+
+**Pedido del usuario 2026-08-02.** Un bloque nuevo, aparte de gastos y costos: las **inversiones**
+del período, listadas una por una y **cargadas a mano**.
+
+Cada inversión lleva:
+- **Nombre específico** — no una categoría: *"2 silos de autoconsumo 7 Ton c/u"*
+- **Centro de costo**
+- **Explicación de por qué se invierte en esa área** ← el campo que la distingue de un gasto
+  común: una inversión se justifica, no sólo se registra
+- **Monto** y **plazo**, a mano
+
+**Por qué merece bloque propio:** una inversión no se proyecta desde la historia (no hay "última
+factura de silos"), no se ajusta por IPC como un gasto corriente y **no debería mezclarse con el
+egreso operativo** — es la misma razón por la que C-27 separó lo `financiero`.
+
+Reusar `CentroCostoCombobox` (ya está en 6 lugares) y la convención de montos es-AR.
+
+**Estado:** ⏸️ sin diseñar. Tabla propia, se acuerda antes.
+
+---
+
+## <a id="p-37"></a>P-37 — ⭐ Cómo se modelan las variables específicas (la pregunta de fondo)
+
+**El usuario lo planteó así (2026-08-02):**
+> *"Las variables del presupuesto empiezan a ser específicas. Acá es donde yo no sé cómo haremos
+> esto. **No quisiera armar 100 tablas pero tampoco sé si se puede unificar.** Finalmente, para
+> unos casos será pesos por kg, para otros será kg por año por cotización de tal grano. No sé bien
+> cómo hacer. **Cada costo directo productivo tendrá su tipo de matemática.**"*
+
+Es la decisión arquitectural más importante que queda abierta en Presupuesto, y condiciona a
+[M-01](#m-01) (margen por actividad), a [P-LOTE](#p-lote) y a los costos productivos (C-7).
+
+### La respuesta corta: **sí se puede unificar, y no hacen falta 100 tablas**
+
+Porque **todas esas matemáticas distintas son la misma**:
+
+```
+monto del mes  =  CANTIDAD  ×  PRECIO
+```
+
+Lo que cambia no es la fórmula: es **de dónde sale cada uno de los dos**.
+
+| Caso del usuario | CANTIDAD | PRECIO |
+|---|---|---|
+| Sanidad por cabeza | cabezas del rodeo | $/cabeza a mano + IPC |
+| Maíz | toneladas | cotización del maíz |
+| **IATF** ("9 kg de novillo por cabeza") | cabezas × 9 kg | cotización del novillo |
+| Arrendamiento agrícola | hectáreas × kg soja/ha | cotización de la soja |
+| Jornales a contratar | días por mes | valor del jornal |
+| Sueldo | 1 | sueldo mensual |
+| Combustible | litros al año | $/litro |
+
+Los tres ejes de [P-LOTE](#p-lote) (BASE × AJUSTE × DISTRIBUCIÓN) son **el mismo patrón** visto
+desde la cuenta contable. Acá se ve desde el costo productivo: **CANTIDAD × PRECIO ×
+DISTRIBUCIÓN**.
+
+### Forma propuesta: UNA tabla de variables, no cien
+
+`presupuesto_variables` — una fila por concepto presupuestable:
+
+| Campo | Qué guarda |
+|---|---|
+| `concepto` | nombre legible ("Sanidad vacas", "IATF") |
+| `destino` | a qué cuenta contable o template alimenta |
+| `actividad` | cría · recría · arrend. Rojas · Nazarenas · estructura → **engancha con [M-01](#m-01)** |
+| `unidad` | cabeza · ha · ton · litro · jornal · kg novillo · mes |
+| `cantidad` + `fuente_cantidad` | a mano · cabezas del rodeo · hectáreas · días |
+| `precio` + `fuente_precio` | a mano · cotización (grano/novillo/dólar) · última compra · + IPC |
+| `distribucion` | mensual · un solo mes · calendario fijo · cupo anual con arrastre |
+
+Con eso, agregar un costo nuevo es **una fila**, no una tabla ni código.
+
+### Lo honesto: dónde NO va a alcanzar
+Algunos costos van a tener matemática propia de verdad (una curva de peso quebrada por tramos, un
+prorrateo por superposición). Para esos, **una válvula de escape**: modo `manual` o una fórmula
+puntual. La unificación sirve si cubre el 80-90%; forzar el 100% es lo que termina pariendo un
+motor genérico que nadie entiende.
+
+**La prueba de que el modelo sirve:** que las 4 exclusiones de [P-33](#p-33) entren sin
+retorcerlas. Entran — materiales (cantidad a mano × precio+IPC), aguadas (a mano × IPC+%),
+combustible (litros/año × $/litro, cupo anual), semillas (ha × $/ha, desde el margen).
+
+**Estado:** ⏸️ propuesta, sin decidir. **Es la que hay que cerrar antes de escribir código de
+costos productivos** — si no, cada costo nuevo va a pedir su parche.
+
+---
+
 ## <a id="p-34"></a>P-34 — Notas para Claude desde la app (idea del usuario, 2026-08-02)
 
 **La idea:** un botón 📝 en toda la app para dejarle notas a Claude **en el momento y en el
@@ -690,10 +780,30 @@ quedarse en cero*.
 `horas_promedio` ya están en `sueldos_empleados` · `sueldo_presupuesto` y `premio_presupuesto`
 agregadas el 2026-08-02.
 
-### ⏸️ Falta acordar (campos nuevos)
-`extra_anual_multiplo` + `extra_anual_mes` por empleado · dónde viven los **jornales extra**
-(no son de un empleado: es mano de obra a contratar) · el **escalón de IPC** (cada cuántos meses)
-· el **monto base de cargas sociales** y su mes de referencia.
+### ✅ Respondido por el usuario (2026-08-02) — el modelo queda cerrado
+
+1. **El agujero se salda solo:** *"yo pongo cuánto de SUSS y de sueldos presupuestar y listo. Doy
+   el punto de arranque."* No hay que derivar nada de la historia: el usuario carga el punto de
+   partida y el sistema lo evoluciona.
+2. **El "extra anual" ES el premio anual.** El usuario elige **en qué mes se paga** y carga el
+   **múltiplo** (que es lo variable); se multiplica por **el sueldo de ese mes**.
+   ⚠️ **A reconciliar:** la columna `premio_presupuesto` que se agregó el 2026-08-02 se pensó como
+   premio *mensual*. Con esta definición sobra: hay que reemplazarla por **`premio_mes` (int)** +
+   **`premio_multiplo` (numeric)**. *"Esto sería muy común ahora."*
+3. **Francos:** a cada empleado se le asignan **tantos días por mes** (ya existe
+   `francos_dias_promedio`).
+4. **Jornales a contratar:** por ejemplo un **reemplazo por vacaciones** — se cargan *tantos
+   meses, tantos días, a tal precio*. **Default sugerido: el valor de jornal de Elvio.** Y a
+   Elvio mismo se le puede poner *tantos días por mes a tanto valor por día*.
+5. **IPC:** el usuario define **cada cuántos meses se actualiza** y aplica a **toda la plantilla**
+   (2, 3, 4, 5…). *"A más IPC, más cortos los períodos: es gestión real que cambia de año a año."*
+   → el escalón es **configurable**, no una constante.
+6. **Cargas sociales:** el monto base **lo pone a mano**, con la opción de **tomar un mes de
+   referencia**.
+
+**Nota de diseño:** los jornales a contratar **no son un empleado** — son mano de obra eventual.
+Encajan naturalmente como una fila de [P-37](#p-37) (`unidad = jornal`, cantidad = días/mes,
+precio = valor del jornal), en vez de forzarlos dentro de la plantilla.
 
 ---
 
