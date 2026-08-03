@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
+import { calcularLineaTiempo } from "@/lib/ganaderia/ciclo"
 import {
   calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
@@ -51,8 +52,7 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         supabase.schema("productivo").from("actividad_insumos")
           .select("actividad_id, concepto, modo, valor, unidad, moneda, notas, orden").order("orden"),
         supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
-        supabase.schema("productivo").from("stock_ciclos")
-          .select("campania, vacas_apertura, vaquillonas_apertura"),
+        supabase.schema("productivo").from("stock_ciclos").select("*"),
       ])
 
       const actPorId = new Map((acts.data || []).map((a: any) => [a.id, String(a.nombre)]))
@@ -104,11 +104,13 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
       const idProdPorClave = new Map(actProdActivas.map(a => [claveActividad(String(a.nombre)), a.id]))
       setDesalineadas(nombresAct.filter(n => !idProdPorClave.has(claveActividad(n))))
 
-      // Cabezas de la campaña: vacas + vaquillonas de apertura del ciclo.
-      const cicloCamp = ((ciclosFull || []) as any[]).find(c => String(c.campania) === campana)
-      const cabezasCampana = cicloCamp
-        ? (Number(cicloCamp.vacas_apertura) || 0) + (Number(cicloCamp.vaquillonas_apertura) || 0)
-        : 0
+      // Cabezas de la campaña: NO se leen, se CALCULAN. El rodeo rueda año a año —cada campaña
+      // abre con el cierre de la anterior— y por eso `vacas_apertura` está en NULL de la segunda
+      // campaña en adelante. `calcularLineaTiempo()` es la función que lo resuelve, y es la misma
+      // que usa Productivo → Evolución del rodeo, así que dan el mismo número.
+      const linea = calcularLineaTiempo(((ciclosFull || []) as any[]))
+      const cicloCamp = linea.find(c => String(c.ciclo.campania) === campana)
+      const cabezasCampana = cicloCamp ? cicloCamp.rodeo : 0
 
       // TC: el real si está, si no el presupuestado. El más reciente cargado.
       const tcOrdenados = ((tcs || []) as any[])
