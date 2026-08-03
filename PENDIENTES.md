@@ -113,6 +113,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-41 | ⏸️ | 🗺️ **Campos, actividades y has por campana** — actividades genericas (cria/recria/engorde/arrendamiento/agricultura) en `centros_costo` con columna `tipo`; tabla `campos` nueva; asignacion campo×campana×actividad→has. **Control: que no quede has afuera** → [P-41](#p-41) |
 | P-40 | ⏸️ | 🔴 **El presupuesto se arma por RESPONSABLE, no por quien paga** — hoy el filtro mira solo `responsable` e ignora `responsable_interno`. **4 templates estan de mas en el presupuesto de MSA** (2 con interno JMS, 1 con MA, 1 mixto) → [P-40](#p-40) |
 | P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) |
 | P-39 | ⏸️ | 🔖 **Marcar una variable como "sin terminar a proposito"** — distingue el olvido de la decision; la alerta va en su propio renglon. Complementa el control de cobertura → [P-39](#p-39) |
@@ -637,6 +638,63 @@ falta historia del supuesto.
 
 ---
 
+## <a id="p-41"></a>P-41 — Campos, actividades y hectáreas por campaña (plan de tablas)
+
+**Definido por el usuario 2026-08-02.** Tres conceptos que hoy están mezclados en uno solo.
+
+### Las actividades son genéricas, no por campo
+> *"En realidad las actividades son **cría, recría, engorde, arrendamiento, agricultura** (sin
+> cultivos). Luego los campos —Nazarenas, Rojas, Lima— son los que determinan las has para empezar
+> las actividades según las campañas."*
+
+Corrige lo anotado antes ("Nazarenas Agrícola", "Rojas Agrícola" como actividades): eso es
+**campo × actividad**, no una actividad.
+
+### ¿Las actividades pueden vivir en `centros_costo`?
+El usuario propone reusarla. **Se puede, pero hay que ordenarla:** hoy `centros_costo` mezcla
+**tres cosas distintas** en una lista de 16:
+
+| Qué es | Valores actuales |
+|---|---|
+| **Actividad** | Cria · Estructura |
+| **Campo / lugar** | Nazarenas · Rojas · Lima · Libertad · Lote Puerto · Quinta Rosello · Cochera Posadas |
+| **Bien** | Gol · Tiguan · Toyota · Voyage · Caballos |
+| **Otro** | RET 1 · Otros |
+
+**Recomendación:** agregar una columna **`tipo`** (`actividad` \| `campo` \| `bien` \| `otro`) y
+sumar las actividades que faltan (recría, engorde, arrendamiento, agricultura). Es el cambio más
+chico: `CentroCostoCombobox` ya está en 6 pantallas y no hay que migrar nada.
+*(La alternativa —tabla `actividades` aparte— duplica un maestro que ya se usa en todos lados.)*
+
+### Tabla nueva: `campos`
+> *"Los campos con sus **partidas, has totales, netas, aptitudes, datos de dominio** sería una
+> tabla nueva."*
+
+Nazarenas (San Pedro) · Rojas · Lima (MA). Con partida inmobiliaria, has totales, has netas,
+aptitud y datos de dominio.
+
+### Tabla nueva: asignación por campaña
+> *"Actividades-campaña sí, y se pondría que son **las has de tal campo, totales y netas,
+> destinadas a tal centro de costo en tal campaña**."*
+
+`campo_campana_actividad`: campo + campaña + centro de costo (actividad) + has totales + has netas.
+Es lo que permite que las has se reasignen entre cría y recría de un año al otro.
+
+### 🔍 Control pedido por el usuario
+> *"Controles de que **no quede has afuera** en lo global."*
+
+Por campo y campaña: **suma de has asignadas = has del campo**. Lo que quede sin asignar, avisa.
+Va a la batería de [P-32](#p-32).
+
+### Datos confirmados
+- **Campaña a presupuestar: 26/27.**
+- **Campaña histórica cerrándose: 25/26** — es la del balance de MSA, *"que debería salir también
+  con los datos productivos e internos para la familia"* → se cruza con
+  [A-FEAT-09](#a-feat-09) (papeles de trabajo).
+- **Lima:** has productivas todavía sin definir → *"de momento todo se calcula con las totales"*.
+
+---
+
 ## <a id="p-40"></a>P-40 — 🔴 El presupuesto se arma por RESPONSABLE, no por quién paga
 
 **Regla dictada por el usuario (2026-08-02):**
@@ -671,7 +729,34 @@ lleva.** Tenía razón — el campo que decide **no es `responsable_interno` sin
 internamente los paga el interno. Y si los paga MSA, se anota como **distribución por el código
 interno**."*
 
-### 🔑 Y el matiz que cambia el enfoque
+### ⚠️⚠️ SEGUNDA CORRECCIÓN — tampoco es "clasificar como distribución" (usuario, 2026-08-02)
+
+> *"No es que se deba asignar lo gastado en el Gol como distribución, sino que **la distribución se
+> pone: cuánto destinado a cada uno**. El pago lo hace JMS de sus impuestos del Gol, pero si lo
+> llegara a pagar MSA **se anota como a cuenta**. En el ciclo se habrá pagado exactamente lo
+> adjudicado total a cada uno. De esa manera **las cuentas chicas no entran a presupuesto**, sino
+> en el momento de calcular el pago de saldos de distribución a cada uno."*
+
+**El modelo correcto:**
+- El presupuesto tiene **una línea por socio**: *"Distribución JMS = $X en el ciclo"*. Ese es el
+  monto adjudicado, y es lo único que se presupuesta.
+- Si MSA paga el impuesto del Gol de JMS, eso es un **pago a cuenta** de esa distribución — **no
+  una línea nueva** de ningún tipo.
+- Al cierre del ciclo, el **saldo** de cada socio = adjudicado − lo pagado a cuenta. Eso es lo que
+  se termina girando.
+
+→ Los templates `DIST *` de gastos chicos (Gol, Tiguan, ABL, AYSA, Metrogas, Expensas…) **no van
+al presupuesto ni como gasto ni como distribución**: son ejecución de un total ya presupuestado.
+Sumarlos sería **contar dos veces** la misma plata — el mismo error de fondo que C-24.
+
+Los que **sí** son línea de presupuesto son los **`Retiro X semestral/mensual`** (Jose, Mechi,
+Manu, Andrés, Sole, MA): esos representan el adjudicado.
+
+**Consecuencia:** el filtro no es sólo "por responsable". Hay que distinguir **adjudicación**
+(entra) de **ejecución a cuenta** (no entra). Y es otro caso para el control de doble conteo de
+[P-32](#p-32).
+
+### 🔑 El matiz previo (que sigue valiendo para lo contable)
 > *"Está bien decir que MSA no tendrá ese gasto, y sí ponerlo en MA por ejemplo en la Tiguan.
 > **Pero sí existen en MSA porque contablemente se toma el gasto.**"*
 
@@ -691,10 +776,21 @@ la distribución suma al total de caja pero no al costo del negocio.
 | `DIST JMS` | 2 | Gol 2012 · Retiro Jose |
 | `DIST MECHI` · `DIST MANU` · `DIST AMS` · `DIST SOLE` | 1 c/u | retiros semestrales |
 
-### 🐞 Bug de datos encontrado al pasar: `No Lleva` vs `No lleva`
-**28 y 16 templates** con el mismo valor escrito distinto. Cualquier filtro por igualdad exacta
-(`= 'No Lleva'`) **pierde 16 templates en silencio**. Hay que normalizar, o comparar siempre con
-`ILIKE`/`lower()`. Es barato y evita un bug futuro difícil de ver.
+### ✅ Bug de datos `No Lleva` vs `No lleva` — RESUELTO 2026-08-02
+Afectaba a **los dos campos**, no a uno: `codigo_interno` (47 vs 35) y `codigo_contable` (52 vs
+35). Cualquier filtro por igualdad exacta perdía 35 templates **en silencio**.
+
+**Corregido con autorización explícita del usuario** (*"el bug de no lleva resuélvelo"*):
+`UPDATE` normalizando a **`No Lleva`** (la grafía mayoritaria en ambos). **35 filas por campo.**
+Verificado: quedan 82 en `codigo_interno` y 87 en `codigo_contable`, con **una sola grafía**.
+
+⚠️ **Detalle técnico que casi hace fallar el fix en silencio:** los dos `UPDATE` se habían escrito
+como CTEs en una sola sentencia. Postgres **no permite actualizar la misma fila dos veces en la
+misma sentencia**, y eran las mismas 35 filas → el segundo reportó **0 filas** sin error. Hubo que
+correrlo aparte. Si no se verificaba el resultado, quedaba la mitad del bug vivo.
+
+**Para que no vuelva:** estos campos son de texto libre y se cargan a mano. O se normaliza en el
+alta, o **todo filtro sobre ellos usa `ILIKE`/`lower()`**, nunca `=`.
 
 ### ✅ Y `Seguro Flota` ya está resuelto por el usuario
 Está marcado **`Desglosar`**, junto con otros 2. O sea: el concepto de "esto hay que repartirlo"
