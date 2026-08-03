@@ -24,7 +24,7 @@ const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const numAR = (n: number, dec = 0) =>
   n.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
-export function PanelMargen() {
+export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: string) => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [campana, setCampana] = useState("26/27")
   const [campanas, setCampanas] = useState<string[]>([])
@@ -41,7 +41,7 @@ export function PanelMargen() {
         supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
         supabase.schema("productivo").from("stock_ciclos").select("id, campania, vacas_apertura"),
         supabase.schema("productivo").from("stock_lotes")
-          .select("categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
+          .select("categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("nombre, activo"),
@@ -72,7 +72,8 @@ export function PanelMargen() {
         cabezas: Number(l.cantidad_calculada ?? l.cantidad) || 0,
         peso_base_kg: Number(l.peso_base_kg) || 0,
         ganancia_diaria_kg: Number(l.ganancia_diaria_kg) || 0,
-        fecha_disponible: l.fecha_disponible, fecha_venta_estimada: l.fecha_venta_estimada,
+        fecha_disponible: l.fecha_disponible, fecha_peso: l.fecha_peso,
+        fecha_venta_estimada: l.fecha_venta_estimada,
         precio_kg_override: l.precio_kg_override == null ? null : Number(l.precio_kg_override),
         pct_desbaste: Number(l.pct_desbaste) || 0,
         campania: campDeCiclo.get(l.ciclo_id) ?? null,
@@ -203,6 +204,19 @@ export function PanelMargen() {
                       <ul className="mt-0.5 space-y-0.5 text-[10px] text-amber-800">
                         {m.faltantes.map((f, i) => <li key={i}>· {f}</li>)}
                       </ul>
+                      {/* No mandar a buscar: el faltante ES el acceso. Lo pidio el usuario —
+                          "desde margen o desde presupuesto me debe llevar a la edicion". */}
+                      {m.faltaPrecio.length > 0 && onCargarPrecio && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {m.faltaPrecio.map((f, i) => (
+                            <button key={i} type="button"
+                              onClick={() => onCargarPrecio(f.banda)}
+                              className="rounded border border-amber-400 bg-white px-1.5 py-0.5 text-[10px] text-amber-800 hover:bg-amber-100">
+                              Cargar precio de {f.banda} →
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

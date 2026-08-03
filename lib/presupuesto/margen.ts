@@ -19,6 +19,11 @@
 // vista aparte, con TC promedio. Convertir de entrada obligaría a elegir un TC antes de tener
 // el número, que es al revés de como se decide.
 
+import { categoriaPrecio, resolverPrecioHacienda, type PrecioHacienda } from '../ganaderia/calculo'
+import { pesoEstimado, diasEntre } from '../ganaderia/ciclo'
+
+export type { PrecioHacienda }
+
 export interface ActividadRef { id: string; nombre: string }
 
 export interface LoteVenta {
@@ -28,6 +33,9 @@ export interface LoteVenta {
   peso_base_kg: number
   ganancia_diaria_kg: number
   fecha_disponible: string | null
+  /** Desde acá se cuenta la ganancia diaria. Si se cuenta desde la disponibilidad se suma dos
+   *  veces el engorde que ya está incluido en el peso cargado. */
+  fecha_peso: string | null
   fecha_venta_estimada: string | null
   precio_kg_override: number | null
   pct_desbaste: number
@@ -84,75 +92,19 @@ export interface MargenActividad {
   margenPorHa: number | null
   /** Lo que falta para que el margen sea confiable. Vacío = está completo. */
   faltantes: string[]
+  /** Las bandas sin precio cargado, para poder ir a cargarlas desde acá. */
+  faltaPrecio: { banda: string; categoria: string; peso: number }[]
 }
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`
 const num = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
 
-/** Un precio de mercado, tal como está cargado: por categoría Y rango de peso. */
-export interface PrecioHacienda {
-  categoria: string
-  peso_desde: number | null
-  peso_hasta: number | null
-  precio_pesos_kg: number
-  anio: number
-  mes: number
-}
-
-/**
- * El sexo/tipo base de una categoría, para casar el lote con el precio.
- *
- * `stock_lotes` dice "Ternero al Pie" y el precio dice "Ternero 180/200": son el mismo animal.
- * Y macho y hembra van SEPARADOS — un ternero y una ternera del mismo peso no valen lo mismo.
- */
-export function tipoBase(categoria: string): string {
-  const c = categoria.toLowerCase()
-  if (c.startsWith('ternera')) return 'ternera'
-  if (c.startsWith('ternero')) return 'ternero'
-  if (c.startsWith('novillito')) return 'novillito'
-  if (c.startsWith('novillo')) return 'novillo'
-  if (c.startsWith('vaquillona')) return 'vaquillona'
-  if (c.startsWith('vaca')) return 'vaca'
-  if (c.startsWith('toro') || c.startsWith('torito')) return 'toro'
-  return c.split(' ')[0] ?? c
-}
-
-/**
- * El precio de un animal: **por su tipo y por el peso al que se vende**.
- *
- * Lo explicó el usuario: *"el ternero de 180/200 kg es el ternero al pie que se desteta con la
- * venta misma. Pero si pesan 220, caerá por rango: finalmente es un ternero de tantos kg"*.
- * O sea que la categoría del rodeo no manda — manda **el peso de venta**.
- *
- * Devuelve `null` si no hay un rango que lo contenga. No se cae al precio más cercano: un
- * ternero de 260 kg no vale lo que uno de 200, y estirar el rango escondería que falta cargarlo.
- */
-export function buscarPrecio(
-  categoria: string, pesoKg: number, precios: PrecioHacienda[],
-): { precio: number; segun: string } | null {
-  const tipo = tipoBase(categoria)
-  const candidatos = precios
-    .filter(p => tipoBase(p.categoria) === tipo && p.precio_pesos_kg > 0)
-    .filter(p => (p.peso_desde ?? -Infinity) <= pesoKg && pesoKg <= (p.peso_hasta ?? Infinity))
-    // El más reciente manda.
-    .sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes))
-
-  const p = candidatos[0]
-  if (!p) return null
-  return { precio: p.precio_pesos_kg, segun: `${p.categoria} (${p.mes}/${p.anio})` }
-}
-
-/** Peso de venta: el peso base + lo que gana hasta la fecha de venta, menos el desbaste. */
-export function pesoNetoVenta(l: LoteVenta): number {
-  let peso = l.peso_base_kg
-  if (l.fecha_disponible && l.fecha_venta_estimada && l.ganancia_diaria_kg > 0) {
-    const dias = Math.max(0, Math.round(
-      (new Date(l.fecha_venta_estimada).getTime() - new Date(l.fecha_disponible).getTime()) / 86400000))
-    peso += dias * l.ganancia_diaria_kg
-  }
-  // El desbaste es la merma de báscula: se vende menos kilos de los que pesa en el campo.
-  return peso * (1 - (l.pct_desbaste || 0))
-}
+// ⚠️ La lógica de precio y peso NO vive acá: vive en `lib/ganaderia/calculo.ts` y
+// `lib/ganaderia/ciclo.ts`, que ya la usan Productivo y Presupuesto "para que den lo mismo".
+// Acá se REUSA. Escribir una versión propia fue un error: la de allá tiene cosas que la mía no
+// —las hembras no cotizan por peso, un macho joven que pasa 320 kg salta a invernada, el precio
+// se arrastra al mes siguiente cargado, y el peso se cuenta desde `fecha_peso` y no desde la
+// fecha de disponibilidad— y tener dos habría hecho que el margen y Productivo dieran distinto.
 
 /**
  * El margen de cada actividad.
@@ -175,20 +127,35 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     const faltantes: string[] = []
 
     const ingresos: LineaMargen[] = []
+    const faltaPrecio: { banda: string; categoria: string; peso: number }[] = []
     let cabezasTotal = 0
 
     for (const l of misLotes) {
-      const peso = pesoNetoVenta(l)
-      // El override del lote manda; si no, se busca por tipo y peso de venta.
-      const delMercado = buscarPrecio(l.categoria, peso, d.precios)
-      const precio = l.precio_kg_override ?? delMercado?.precio ?? null
-      const segunPrecio = l.precio_kg_override != null
-        ? "precio puesto en el lote"
-        : delMercado?.segun ?? ""
+      // Peso a la fecha de venta (desde `fecha_peso`, no desde la disponibilidad) menos desbaste.
+      const bruto = l.fecha_venta_estimada
+        ? pesoEstimado({
+            fecha_disponible: l.fecha_disponible ?? '', fecha_peso: l.fecha_peso,
+            peso_base_kg: l.peso_base_kg, ganancia_diaria_kg: l.ganancia_diaria_kg,
+          } as any, l.fecha_venta_estimada)
+        : l.peso_base_kg
+      const peso = bruto * (1 - (l.pct_desbaste || 0))
+
+      // La BANDA sale del peso; la banda + el mes dan el precio, con arrastre.
+      const banda = categoriaPrecio(l.categoria, bruto)
+      const f = l.fecha_venta_estimada ? new Date(l.fecha_venta_estimada + 'T00:00:00') : null
+      const r = resolverPrecioHacienda(
+        d.precios, banda,
+        f ? f.getFullYear() : new Date().getFullYear(),
+        f ? f.getMonth() + 1 : new Date().getMonth() + 1,
+        l.precio_kg_override)
+      const precio = r.precio_pesos_kg > 0 ? r.precio_pesos_kg : null
+      const segunPrecio = r.manual ? 'precio puesto en el lote'
+        : r.arrastrado ? `${banda} (arrastrado)` : banda
       cabezasTotal += l.cabezas
 
       if (precio == null) {
-        faltantes.push(`falta el precio de ${tipoBase(l.categoria)} para ${num(peso)} kg`)
+        faltantes.push(`falta el precio de ${banda}`)
+        faltaPrecio.push({ banda, categoria: l.categoria, peso: bruto })
         ingresos.push({
           concepto: `Venta ${l.categoria}`, unidades: l.cabezas, etiquetaUnidad: 'cab',
           total: 0, porHa: null, porCabeza: null,
@@ -198,9 +165,9 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
         continue
       }
 
-      const bruto = l.cabezas * peso * precio
-      const gastoVenta = bruto * d.pctGastoVenta(l.categoria)
-      const neto = bruto - gastoVenta
+      const ventaBruta = l.cabezas * peso * precio
+      const gastoVenta = ventaBruta * d.pctGastoVenta(l.categoria)
+      const neto = ventaBruta - gastoVenta
 
       ingresos.push({
         concepto: `Venta ${l.categoria}`,
@@ -244,7 +211,7 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       ingresos, costos,
       totalIngresos, totalCostos, margenBruto,
       margenPorHa: has ? margenBruto / has : null,
-      faltantes,
+      faltantes, faltaPrecio,
     }
   })
 }
