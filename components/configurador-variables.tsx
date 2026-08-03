@@ -26,7 +26,7 @@ import {
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
   calcularVariable, ETIQUETA_FUENTE_CANTIDAD, ETIQUETA_FUENTE_PRECIO, ETIQUETA_DISTRIBUCION,
-  ETIQUETA_AJUSTE,
+  ETIQUETA_AJUSTE, AVISO_CUPO_ANUAL_SIN_VALIDAR,
   type Variable, type Ajuste, type FuenteCantidad, type FuentePrecio, type Distribucion,
   type TipoAjuste, type ContextoVariable,
 } from "@/lib/presupuesto/variables"
@@ -165,6 +165,12 @@ export function ConfiguradorVariables() {
         {ctx.ipcAcumulado == null && (
           <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
             ⚠️ No hay IPC cargado: los ajustes por IPC no se pueden calcular. Se carga en <strong>Precios y TC</strong>.
+          </p>
+        )}
+        {delCampana.some(v => v.distribucion === "cupo_anual") && (
+          <p className="rounded border border-orange-300 bg-orange-50 px-3 py-1.5 text-[11px] text-orange-900">
+            ⚠️ <strong>Cupo anual — forma de presupuestar sin validar.</strong>{" "}
+            {AVISO_CUPO_ANUAL_SIN_VALIDAR}
           </p>
         )}
         {incompletas > 0 && (

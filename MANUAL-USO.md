@@ -1201,3 +1201,52 @@ liquidado como antes: no se pierde nada de lo que ya andaba.
 5. Cargar la **base de cargas sociales** y ver aparecer la fila *Cargas sociales (SUSS)* en el
    bloque de sueldos de la grilla.
 6. Borrar el sueldo de uno → tiene que **volver** a salir del período liquidado, no quedar en cero.
+
+---
+
+## 💰 Presupuesto → De dónde arranca el saldo 🟡 *(nuevo 2026-08-03, sin testear)*
+
+**Dónde está.** En la fila **SALDO ACUMULADO**, abajo de todo en la grilla del presupuesto.
+
+Hay **dos modos**, y se **eligen** con los botoncitos. No se adivina a propósito: un saldo viejo
+presentado como actual es más peligroso que uno declarado a mano, porque **parece confiable**.
+
+### Saldo a mano
+El usuario declara el saldo y desde qué mes corre. Es la **válvula para cuando la conciliación
+está atrasada**. Click en el monto para editarlo.
+
+### Último conciliado
+Toma el saldo del **último movimiento conciliado del extracto**. Es un número **verificable contra
+el banco**, y es el que contesta *"¿me alcanza la plata?"*.
+
+Muestra la **fecha** de ese movimiento. Y si el extracto tiene **más de 40 días de atraso**, lo
+avisa en ámbar: el saldo es real, pero de hace rato, y todo lo posterior es proyección pura.
+
+Si no hay ningún movimiento conciliado, lo dice y se cae al saldo a mano — **no inventa un número**.
+
+> 📌 **Al 2026-08-03** el extracto llegaba al **18/06**, mes y medio atrás. Con esa foto, el modo
+> correcto es **a mano**. El modo *último conciliado* gana sentido cuando la conciliación esté al día.
+
+### 🧪 Cómo probarlo
+1. En **Saldo a mano**: click en el monto, cambiarlo, OK → el SALDO ACUMULADO se recalcula.
+2. Pasar a **Último conciliado** → tiene que mostrar el saldo del 18/06 y el aviso ámbar de atraso.
+3. Volver a **Saldo a mano** → recupera el número declarado, sin pisarlo.
+
+---
+
+## ⚠️ Cupo anual — forma de presupuestar SIN VALIDAR
+
+**No es un bug: es un recordatorio a propósito.** Aparece en naranja en la pantalla de Variables y
+arriba de la grilla del presupuesto, cada vez que hay alguna variable con distribución *Cupo anual*.
+
+Lo pidió el usuario (2026-08-03): *"quiero que dejemos una alerta a esta manera de presupuestar…
+me parece bueno tenerlo y testearlo, pero no olvidar"*.
+
+**Lo que está sin resolver:**
+- El monto anual queda **fijo** y no se puede corregir a mitad de camino sin rehacer la variable.
+- No está probado que el **arrastre** sea el comportamiento correcto para **todos** los conceptos:
+  puede haber cupos que sí deban vencer al terminar el mes.
+- Ante un **sobregasto** la variable desaparece de la grilla, y todavía no se decidió si eso es lo
+  deseable.
+
+El aviso se saca cuando el usuario dé el OK a la forma de presupuestar, no antes.

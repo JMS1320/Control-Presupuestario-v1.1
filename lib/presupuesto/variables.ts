@@ -39,8 +39,29 @@ export const ETIQUETA_DISTRIBUCION: Record<Distribucion, string> = {
   mensual: 'Todos los meses',
   un_mes: 'Un solo mes',
   calendario: 'Meses fijos',
-  cupo_anual: 'Cupo anual (se arrastra)',
+  cupo_anual: 'Cupo anual (se arrastra) ⚠️ a validar',
 }
+
+/**
+ * ⚠️ El cupo anual está IMPLEMENTADO pero NO VALIDADO.
+ *
+ * El usuario lo pidió explícito (2026-08-03): *"quiero que dejemos una alerta a esta manera de
+ * presupuestar, de que quede asignado monto anual y no se pueda modificar — o no sabemos si es
+ * lógica correcta para todos los campos. Me parece bueno tenerlo y testearlo, pero no olvidar"*.
+ *
+ * Lo que está sin resolver:
+ *   · el monto anual queda fijo y no se puede corregir a mitad de camino sin rehacer la variable;
+ *   · no está probado que el arrastre sea el comportamiento correcto para TODOS los conceptos —
+ *     puede haber cupos que sí deban vencer al terminar el mes;
+ *   · ante un sobregasto la variable desaparece, y todavía no se decidió si eso es lo deseable.
+ *
+ * Se muestra en pantalla a propósito, y no como comentario en el código: una decisión pendiente
+ * que sólo vive en un comentario es una decisión que se olvida.
+ */
+export const AVISO_CUPO_ANUAL_SIN_VALIDAR =
+  'El cupo anual todavía NO está validado como forma de presupuestar: el monto queda fijo para el ' +
+  'año y no está decidido si el arrastre corresponde a todos los conceptos. Usalo y probalo, pero ' +
+  'no lo des por cerrado.'
 
 export const ETIQUETA_AJUSTE: Record<TipoAjuste, string> = {
   ipc: 'IPC',

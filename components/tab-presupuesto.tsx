@@ -48,7 +48,7 @@ import {
   type ConfigCuenta, type PuntoHistorico, type PuntoProveedor, type CeldaPresupuesto,
 } from "@/lib/presupuesto/modos"
 import {
-  calcularVariable, repartirEnMeses, avisoCupoAnual,
+  calcularVariable, repartirEnMeses, avisoCupoAnual, AVISO_CUPO_ANUAL_SIN_VALIDAR,
   type Variable, type Ajuste, type ContextoVariable,
 } from "@/lib/presupuesto/variables"
 import {
@@ -289,6 +289,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * buenos no es lo mismo que el mismo mes con la caja en cero.
    */
   const [saldoInicial, setSaldoInicial] = useState(0)
+  const [arranqueModo, setArranqueModo] = useState<"manual" | "ultimo_conciliado">("manual")
+  /** Fecha del movimiento del que salió el saldo, cuando el modo es `ultimo_conciliado`. */
+  const [arranqueFecha, setArranqueFecha] = useState<string | null>(null)
   const [mesInicial, setMesInicial] = useState<string | null>(null)
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
@@ -297,7 +300,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
   const [variables, setVariables] = useState<
     { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
-      faltantes: string[]; pendienteAProposito: boolean; aviso: string | null; ejecutado: number }[]>([])
+      faltantes: string[]; pendienteAProposito: boolean; aviso: string | null; ejecutado: number;
+      esCupoAnual: boolean }[]>([])
   /** Inversiones (P-36) — bloque propio: no son gasto operativo. */
   const [inversiones, setInversiones] = useState<
     { id: string; nombre: string; montos: Record<string, number>; sinJustificar: boolean }[]>([])
@@ -410,6 +414,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           ? avisoCupoAnual(String(v.concepto), r.monto, ejecutado)
           : null,
         ejecutado,
+        esCupoAnual: v.distribucion === "cupo_anual",
       }
     })
     setVariables(filas)
@@ -542,11 +547,50 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         - Object.values(a.montos).reduce((x, y) => x + y, 0)))
   }
 
+  /**
+   * De dónde arranca el saldo del presupuesto. Dos modos, y los dos hacen falta:
+   *
+   *  · `ultimo_conciliado` — el saldo del último movimiento **conciliado** del extracto. Es un
+   *    número verificable contra el banco, y es el que contesta "¿me alcanza la plata?".
+   *  · `manual` — el usuario declara el saldo de hoy. Es la válvula para cuando la conciliación
+   *    está atrasada (el 2026-08-03 el extracto llegaba al 18/06, mes y medio atrás).
+   *
+   * El modo se elige, no se adivina: un saldo viejo presentado como actual es más peligroso que
+   * uno declarado a mano, porque parece confiable.
+   */
   const cargarConfig = async () => {
     const { data } = await supabase.from("presupuesto_config")
-      .select("saldo_inicial, mes_inicial").eq("empresa", "MSA").maybeSingle()
+      .select("saldo_inicial, mes_inicial, arranque_modo").eq("empresa", "MSA").maybeSingle()
+    const modo = (data?.arranque_modo ?? "manual") as "manual" | "ultimo_conciliado"
+    setArranqueModo(modo)
+
+    if (modo === "ultimo_conciliado") {
+      const { data: ult } = await supabase.from("msa_galicia")
+        .select("fecha, saldo")
+        .eq("estado", "conciliado").not("saldo", "is", null)
+        .order("fecha", { ascending: false }).order("orden", { ascending: false })
+        .limit(1).maybeSingle()
+      if (ult?.saldo != null) {
+        const f = new Date(String(ult.fecha) + "T00:00:00")
+        setSaldoInicial(Number(ult.saldo))
+        setMesInicial(`${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}`)
+        setArranqueFecha(String(ult.fecha))
+        return
+      }
+      // Sin extracto conciliado no se inventa nada: se avisa y se cae al manual.
+      setArranqueFecha(null)
+    }
     setSaldoInicial(Number(data?.saldo_inicial) || 0)
     setMesInicial(data?.mes_inicial ?? null)
+  }
+
+  const guardarArranqueModo = async (modo: "manual" | "ultimo_conciliado") => {
+    const { error } = await supabase.from("presupuesto_config")
+      .upsert({ empresa: "MSA", arranque_modo: modo, updated_at: new Date().toISOString() },
+        { onConflict: "empresa" })
+    if (error) { alert("Error: " + error.message); return }
+    setArranqueModo(modo)
+    await cargarConfig()
   }
 
   const guardarSaldoInicial = async (monto: number, mes: string) => {
@@ -1268,7 +1312,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     }
 
     const aProposito = variables.filter(v => v.pendienteAProposito).length
-    return { avisos, aProposito }
+    // ⚠️ No es un error: es un recordatorio de que esa forma de presupuestar sigue a prueba.
+    const hayCupos = variables.some(v => v.esCupoAnual)
+    return { avisos, aProposito, hayCupos }
   }, [variables, inversiones])
 
   const totalCostoProdPorMes = useMemo(() => {
@@ -1543,6 +1589,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
               pendientes a propósito: no cuentan como aviso.)
             </p>
           )}
+        </div>
+      )}
+
+      {/* ⚠️ El cupo anual está implementado pero NO validado como forma de presupuestar.
+          El usuario pidió que quede a la vista y no como comentario: una decisión pendiente que
+          sólo vive en el código es una decisión que se olvida. */}
+      {cobertura.hayCupos && (
+        <div className="rounded border border-orange-300 bg-orange-50 px-3 py-2 text-xs text-orange-900">
+          ⚠️ <strong>Cupo anual — forma de presupuestar sin validar.</strong>{" "}
+          {AVISO_CUPO_ANUAL_SIN_VALIDAR}
         </div>
       )}
 
@@ -2297,12 +2353,52 @@ Clic para presupuestar la venta`}
                             onClick={() => setEditandoSaldo(false)}>cancelar</button>
                         </div>
                       ) : (
-                        <button type="button"
-                          className="mt-0.5 block text-[10px] font-normal text-gray-400 underline hover:text-gray-200"
-                          onClick={() => { setSaldoTxt(fmtNumeroAR(saldoInicial)); setEditandoSaldo(true) }}>
-                          arranca en ${Math.round(saldoInicial).toLocaleString("es-AR")}
-                          {mesInicial ? ` (${mesInicial})` : ""} — editar
-                        </button>
+                        <>
+                          {/* De dónde sale el saldo de arranque. Se ELIGE, no se adivina: un saldo
+                              viejo presentado como actual es más peligroso que uno declarado a
+                              mano, porque parece confiable. */}
+                          <div className="mt-1 flex items-center gap-1">
+                            {([
+                              ["manual", "Saldo a mano"],
+                              ["ultimo_conciliado", "Último conciliado"],
+                            ] as const).map(([modo, txt]) => (
+                              <button key={modo} type="button"
+                                onClick={() => guardarArranqueModo(modo)}
+                                className={`rounded border px-1.5 py-0.5 text-[9px] font-normal transition-colors ${
+                                  arranqueModo === modo
+                                    ? "border-gray-300 bg-white text-gray-800"
+                                    : "border-gray-600 text-gray-400 hover:text-gray-200"}`}>
+                                {txt}
+                              </button>
+                            ))}
+                          </div>
+                          {arranqueModo === "manual" ? (
+                            <button type="button"
+                              className="mt-0.5 block text-[10px] font-normal text-gray-400 underline hover:text-gray-200"
+                              onClick={() => { setSaldoTxt(fmtNumeroAR(saldoInicial)); setEditandoSaldo(true) }}>
+                              arranca en ${Math.round(saldoInicial).toLocaleString("es-AR")}
+                              {mesInicial ? ` (${mesInicial})` : ""} — editar
+                            </button>
+                          ) : arranqueFecha ? (
+                            <span className="mt-0.5 block text-[10px] font-normal text-gray-400">
+                              ${Math.round(saldoInicial).toLocaleString("es-AR")} al{" "}
+                              {new Date(arranqueFecha + "T00:00:00").toLocaleDateString("es-AR")}
+                              {(() => {
+                                // Si el extracto está atrasado hay que decirlo: el saldo es real,
+                                // pero de hace rato, y todo lo posterior es proyección pura.
+                                const dias = Math.floor(
+                                  (Date.now() - new Date(arranqueFecha + "T00:00:00").getTime()) / 86400000)
+                                return dias > 40
+                                  ? <span className="text-amber-400"> · extracto atrasado {dias} días</span>
+                                  : null
+                              })()}
+                            </span>
+                          ) : (
+                            <span className="mt-0.5 block text-[10px] font-normal text-amber-400">
+                              no hay extracto conciliado — se usa el saldo a mano
+                            </span>
+                          )}
+                        </>
                       )}
                     </td>
                     {meses.map(m => {
