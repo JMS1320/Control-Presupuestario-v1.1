@@ -113,6 +113,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
 | P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
+| P-34 | ⏸️ | 📝 **Notas para Claude desde la app** — botón que captura el contexto solo (pantalla, componente, registro). Una nota es una **grabación de N capturas** con Finalizar, no un evento. Regla: la nota NO es un pendiente, es bandeja de entrada → [P-34](#p-34) |
+| P-35 | ⏸️ | 👷 **Modelo de sueldos para presupuesto** — dictado completo por el usuario: plantilla fija, aguinaldo 50% en jun/dic, francos aparte, extra anual, jornales, IPC en escalones, SUSS +50% en ene/jul. 🔴 **Cargas Sociales está en \$0 desde agosto** → [P-35](#p-35) |
 | P-33 | 🟡 | **Auditado 2026-08-02** → [P-33](#p-33). De las 9 cuentas excluidas, **sólo 4 lo están por diseño**: 4 son **features faltantes** disfrazadas de exclusión (IPC+%, elegir mes, cupo anual, costos directos) y 1 es un gasto dado de baja. **El presupuesto está subestimado en esas 4.** Falta implementarlas |
 | P-31 | 🔗 | **Vincular las proyecciones de venta al presupuesto** — se cruza con A-FEAT-10 y con Ingresos/arrendamientos |
 
@@ -597,6 +599,101 @@ falta historia del supuesto.
 
 ⚠️ **Nada de esto se hizo:** es cambio de estructura de BD y se acuerda antes
 (`CLAUDE.md` § Datos).
+
+---
+
+## <a id="p-34"></a>P-34 — Notas para Claude desde la app (idea del usuario, 2026-08-02)
+
+**La idea:** un botón 📝 en toda la app para dejarle notas a Claude **en el momento y en el
+contexto** en que se le ocurren al usuario. *"Pago sueldos y tengo la idea de automatizar ciertos
+cálculos para la próxima; te lo dejo anotado."*
+
+**Lo que la vuelve valiosa no es la nota: es el contexto que se captura gratis.** Hoy el usuario
+dicta listas de memoria (los 33 de `P-*` salieron de WhatsApp) y llegan sin el momento en que se
+le ocurrieron. Tres semanas después, *"ajuste de 2 meses en un solo"* no se entiende solo.
+
+### Una nota es una GRABACIÓN, no un evento (refinamiento del usuario)
+> *"Puede haber alguna nota que precise más de una captura. Ej: un proceso sale mal, lo reseteo y
+> empiezo de nuevo, marco nota, digo lo que voy a hacer, lo hago, 2da captura con el resultado. Y
+> podría haber más capturas si fuera un proceso de varios clicks. La app no sabe cuántas capturas
+> serán: yo le doy finalizar cuando termine."*
+
+Eso la convierte en un **caso reproducible** en vez de un comentario suelto: pasos numerados, cada
+uno con su pantalla y su registro real. Es la diferencia entre *"no anda"* y un bug con receta.
+
+### Qué captura la app sola (el "código específico" que pidió el usuario)
+En cada captura, sin que el usuario escriba nada: módulo y pantalla · **archivo y componente**
+(`components/tab-sueldos.tsx`) · el **registro abierto** (empleado, período, factura) · filtros y
+estado de la vista · timestamp. El usuario escribe **sólo la idea**.
+
+### Forma
+- **Cabecera** `notas_para_claude`: título, estado, inicio, fin.
+- **Detalle** `notas_capturas`: orden, texto, módulo, pantalla, componente, registro, filtros, ts.
+- **UI**: 📝 arranca la grabación → barra flotante *"Grabando · 2 capturas · [+ Capturar]
+  [Finalizar]"*.
+- Sin screenshots por ahora: texto + contexto alcanza y no pesa.
+
+### 🔒 La regla que evita que se vuelva un tacho (crítica)
+**Una nota NO es un pendiente: es una bandeja de entrada.** Al leerla, cada nota **termina como
+ítem con ID en `PENDIENTES.md` o descartada con motivo**, y se marca. Si no, en dos meses hay 80
+notas que nadie mira y volvimos al problema que resolvimos con [A-DOC-08](#a-doc-08): información
+viva fuera de la fuente única.
+
+Y **al abrir sesión, si hay notas sin leer, las menciona Claude** — no depende de que el usuario
+se acuerde de pedirlo.
+
+**Estado:** ⏸️ aprobada como idea, sin diseñar. Requiere 2 tablas nuevas → se acuerda antes.
+
+---
+
+## <a id="p-35"></a>P-35 — Modelo de sueldos para presupuesto (dictado por el usuario 2026-08-02)
+
+**Premisa que ordena todo:** *"el presupuesto siempre representará la plantilla completa"*. No se
+ajusta por altas y bajas — por eso las cargas sociales **no** pueden ser un % del bruto real, que
+sube y baja con la dotación.
+
+### Lo que el usuario carga y lo que el sistema calcula
+
+| Carga el usuario | El sistema calcula |
+|---|---|
+| **Sueldo total mensual** (A+B) por empleado | el sueldo de cada mes |
+| — | **Aguinaldo = 50% del sueldo**, en **jun y dic** *(corregido: es sobre A+B, no sobre %A)* |
+| **Francos promedio** (días/mes) | los francos **aparte**, no dentro del sueldo |
+| **Sueldo anual extra**: mes + múltiplo del sueldo (ej. `× 2`) | ese pago en el mes indicado |
+| **Jornales extra a contratar**: en qué meses, monto del jornal, días por mes | el costo de esos jornales |
+| **Horas promedio/mes + valor hora** (caso Andrés) | sueldo por hora × horas |
+| **Cargas sociales del 1er mes** (a mano, o tomando un mes de referencia) | los meses siguientes |
+
+### Las dos reglas de evolución
+1. **Sueldos**: se actualizan **por IPC cada 3 o 4 meses** (en escalones, no todos los meses).
+2. **Cargas sociales / SUSS**: *"guarda la misma relación"* — sube con **el mismo aumento que los
+   sueldos**, y lleva **+50% en enero y julio**, que es **un mes después del aguinaldo** (jun→jul,
+   dic→ene).
+
+### ✅ Verificado en los datos (2026-08-02)
+El salto de SUSS existe y se ve: template `Cargas Sociales`, **jul-26 = $2.495.548** contra
+**jun-26 = $1.763.175** → **+41,5%**. La regla del usuario (+50%) es correcta, apenas más gruesa
+que la realidad.
+
+### 🔴 Y el agujero que apareció buscando esto
+El template `Cargas Sociales` (campaña **25/26**, cerrada el 30/06) tiene **6 cuotas en $0 y sin
+fecha**: está presupuestado en **cero de agosto en adelante**.
+
+Sumado a los 3 empleados en $0 de [P-03](#p-03), **el bloque laboral del presupuesto está corto
+entre $60 M y $85 M**. Es el mismo patrón de [P-23](#p-lote) y justifica el control de cobertura
+de [P-32](#p-32): *un template cuyas cuotas se agotan dentro del horizonte tiene que gritar, no
+quedarse en cero*.
+
+### Lo que ya existe y hay que reusar
+`calcularBruto()` en `tab-sueldos.tsx` (4 tipos: `ab_francos`, `por_dia`, `por_hora_ipc`,
+`plano_ipc`) · `valor_franco = (A+B)/25` · `francos_dias_promedio`, `dias_promedio` y
+`horas_promedio` ya están en `sueldos_empleados` · `sueldo_presupuesto` y `premio_presupuesto`
+agregadas el 2026-08-02.
+
+### ⏸️ Falta acordar (campos nuevos)
+`extra_anual_multiplo` + `extra_anual_mes` por empleado · dónde viven los **jornales extra**
+(no son de un empleado: es mano de obra a contratar) · el **escalón de IPC** (cada cuántos meses)
+· el **monto base de cargas sociales** y su mes de referencia.
 
 ---
 
