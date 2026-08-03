@@ -11722,3 +11722,41 @@ lado.
 **Se cargaron también los inactivos** (50), para que reactivar uno no reabra el hueco.
 
 Ver `PENDIENTES.md` § **C-27**.
+
+---
+
+## 2026-08-02 — `sueldo_presupuesto` y `premio_presupuesto` en empleados (P-03/P-21)
+
+**Por qué:** el presupuesto tomaba los sueldos de `sueldos_periodos` (períodos de liquidación).
+Los períodos futuros estaban generados con el monto congelado y **tres empleados en $0**, así que
+el bloque de sueldos mostraba ~la mitad. El usuario pidió *"sólo poner el monto mensual de cada
+uno para el presupuesto, más allá de los datos históricos"*.
+
+**Decisión:** una columna por empleado (opción A de las tres evaluadas en `PENDIENTES.md` § P-03).
+NO se tocan los `sueldos_periodos`: son datos de liquidación y mezclarlos con la proyección
+ensucia las dos cosas.
+
+```sql
+ALTER TABLE sueldos.empleados
+  ADD COLUMN IF NOT EXISTS sueldo_presupuesto numeric,
+  ADD COLUMN IF NOT EXISTS premio_presupuesto numeric;
+
+-- ⚠️ IMPRESCINDIBLE: public.sueldos_empleados es una VISTA ESPEJO de sueldos.empleados.
+-- Sin recrearla, la columna existe pero el código (que lee la vista) NO la ve.
+CREATE OR REPLACE VIEW public.sueldos_empleados AS
+ SELECT id, nombre, tipo_empleado, empresa, cuit_empleado,
+        francos_dias_promedio, dias_promedio, horas_promedio,
+        activo, created_at, fecha_ingreso, fecha_egreso,
+        sueldo_presupuesto, premio_presupuesto
+   FROM sueldos.empleados;
+```
+
+**Semántica:**
+- `sueldo_presupuesto` = **total mensual (A + B)** que el usuario carga a mano. `NULL` → el
+  presupuesto cae al período liquidado (cascada `sueldo_presupuesto → período → cero`).
+- `premio_presupuesto` = premio mensual estimado; se suma como extra, igual que `premio` en
+  `sueldos_periodos`.
+- **Ninguna de las dos se usa para liquidar.** Son sólo proyección.
+
+**Lo que NO hizo falta agregar:** `francos_dias_promedio` ya existía en `empleados`, y el
+porcentaje A se deriva del último período real con `monto_a / (monto_a + monto_b)`.
