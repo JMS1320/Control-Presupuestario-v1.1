@@ -9,16 +9,20 @@
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
-> **2026-08 — Presupuesto.** Probar lo desarrollado (C-22 secciones por tipo, C-27 `tipo` en
-> templates) y seguir con C-24 fases 1-4 (plan de cuentas texto → número).
+> **2026-08-03 — TESTEAR.** El diseño del Presupuesto quedó **cerrado e implementado**: 29 commits
+> desde el tag `punto-seguro-2026-08-02`. Lo que sigue **no es desarrollo**: es probar las
+> **9 pantallas nuevas** (`A-TEST-07` a `A-TEST-15`) y cargar los datos que faltan.
 >
-> Alternar según circunstancias es normal: si hay que corregir pagos o conciliación en el medio,
-> **eso también es trabajo del norte** (todo alimenta al presupuesto). Actualizar esta línea
-> cuando cambie el foco, con fecha.
+> **Cada test tiene su receta** en `MANUAL-USO.md`, en el bloque *🧪 Cómo probarlo* de su sección.
+> No hay que reconstruir qué había que mirar.
+>
+> **Bloqueado por datos del usuario:** los precios (las 4 tablas tienen entre 3 y 7 filas), las has
+> productivas de Lima, y el **OK a la forma de presupuestar del cupo anual** ([P-43](#p-43)).
+>
+> Alternar según circunstancias sigue siendo normal: si hay que corregir pagos o conciliación en el
+> medio, **eso también es trabajo del norte** (todo alimenta al presupuesto).
 
-### ⏳ Evento con fecha — balance 25/26
-| Hito | Fecha | Estado |
-|------|-------|--------|
+------|-------|--------|
 | Corte del ejercicio | **30/06/2026** | ✅ pasó |
 | Papeles de trabajo → **al contador** | **01/10/2026** | 🔴 ~2 meses |
 | Presentación a **ARCA** | **01/11/2026** | 🔴 ~3 meses |

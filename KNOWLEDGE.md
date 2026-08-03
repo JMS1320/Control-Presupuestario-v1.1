@@ -1068,3 +1068,80 @@ haciendo relevamiento cuando el usuario no está frente a la máquina.
 **Regla:** **dejarlo como está.** No moverlo, no `.gitignore`-arlo, no borrarlo, no incluirlo en
 la auditoría de dimensiones de documentación — sus `.md` son del subproyecto, no de este repo.
 Decisión explícita del usuario al ordenar la documentación (`PENDIENTES.md` § A-DOC-05).
+
+---
+
+## Un cero calculado es indistinguible de un cero real `#presupuesto #bugs #2026-08-03`
+
+El patrón detrás de **casi todos** los agujeros que aparecieron al auditar el Presupuesto
+(2026-08-02/03). En todos los casos la pantalla mostraba un número tranquilizador:
+
+| Caso | Qué mostraba | Qué pasaba |
+|---|---|---|
+| Modo "mismo del año pasado" | $0 en 7 de 8 cuentas | exigía 12 puntos de historia y un gasto anual tiene 1 |
+| 3 empleados de sueldos | $0 | los períodos futuros se generaron vacíos |
+| Cargas Sociales | $0 desde agosto | las cuotas se agotaron al cerrar la campaña |
+| HONORARIOS AMS | nada, en ningún lado | excluido de cuentas *"porque va por sueldos"*, y en sueldos valía cero |
+| 4 cuentas del plan | $0 | el usuario las apagó porque no se podían calcular bien |
+| ROLLOS | $1 | era el monto de prueba, pero parecía un bug |
+
+**La regla que salió de acá, y que se aplicó en todo el código nuevo:**
+cuando falta un dato, **no se calcula cero: se marca "falta"**. `calcularVariable` devuelve
+`faltantes[]`, `proyectarEmpleado` devuelve lista vacía en vez de ceros, y el control de cobertura
+levanta esos faltantes. Un cero que se muestra igual que cualquier otro cero **no se puede
+distinguir de una decisión**, y por eso nadie lo revisa.
+
+**El corolario, que fue el pedido del usuario:** el control tiene que avisar **en las dos
+direcciones** — lo que falta *y* lo que se cuenta dos veces. Los agujeros aparecieron de los dos
+lados: cuatro templates estaban **de más** en el presupuesto de MSA.
+
+---
+
+## Al recrear una vista se pierden los GRANTs `#supabase #bd #2026-08-03`
+
+`CREATE OR REPLACE VIEW` **no puede sacar columnas**: si la vista cambia de forma hay que
+`DROP` + `CREATE`. Y ahí **se pierden todos los permisos**.
+
+Pasó con `public.sueldos_empleados`, que es una vista espejo de `sueldos.empleados` y tenía
+`GRANT ALL` a `anon`, `authenticated` y `service_role`. Sin restaurarlos, la app deja de leer
+sueldos **sin que nada avise** hasta que alguien abre la pantalla.
+
+**Antes de dropear una vista:**
+```sql
+SELECT grantee, privilege_type FROM information_schema.role_table_grants
+WHERE table_schema='public' AND table_name='<la vista>';
+```
+y devolver exactamente eso después del `CREATE`.
+
+⚠️ **Y ojo con el otro lado**: al hacerlo quedó a la vista que `anon` tiene `DELETE` y `TRUNCATE`
+sobre esa vista. Es [A-SEC-01](PENDIENTES.md#a-sec-01) — restaurar lo que había era lo correcto en
+ese momento, pero refuerza que el módulo Usuarios (A-SEC-03) vale la pena.
+
+---
+
+## Postgres no actualiza la misma fila dos veces en una sentencia `#sql #2026-08-03`
+
+Dos `UPDATE` escritos como CTEs en una sola sentencia, apuntando a **las mismas filas**: el segundo
+reporta **0 filas y ningún error**.
+
+Pasó normalizando `'No lleva'` → `'No Lleva'` en `codigo_interno` y `codigo_contable` de
+`egresos_sin_factura`: eran las mismas 35 filas, el primer UPDATE las tomó y el segundo no pudo.
+Si no se verificaba el resultado, **quedaba la mitad del bug vivo**.
+
+**Regla:** cuando dos escrituras pueden tocar la misma fila, van en **sentencias separadas**. Y
+siempre verificar el resultado contra la base, no contra el "success" de la herramienta.
+
+---
+
+## `sticky top-0` necesita un contenedor que scrollee `#ui #css #2026-08-03`
+
+`sticky` se pega al **contenedor de scroll más cercano**, no a la ventana. Y `overflow-x-auto`
+crea contenedor de scroll en **los dos ejes** (por CSS, si un eje deja de ser `visible`, el otro
+pasa a `auto`).
+
+Resultado: un `<div className="overflow-x-auto">` que crece con el contenido **nunca scrollea
+vertical**, así que el encabezado se pega a algo que no se mueve y parece que el `sticky` no anda.
+
+**Fix:** darle altura máxima al contenedor (`max-h-[70vh] overflow-auto`), así el scroll vertical
+ocurre adentro y el `sticky` tiene contra qué pegarse. Y las celdas del encabezado necesitan
+**fondo propio**: al despegarse del flujo, un fondo transparente deja ver las filas pasando debajo.
