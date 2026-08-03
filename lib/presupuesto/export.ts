@@ -167,24 +167,41 @@ export function exportarExcel(d: DatosExport, nombreArchivo: string) {
   descargar(new Blob([out], { type: 'application/octet-stream' }), `${nombreArchivo}.xlsx`)
 }
 
-/** PDF: sólo el resumen, en horizontal. Un PDF de 40 páginas no lo abre nadie. */
-export function exportarPDF(d: DatosExport, nombreArchivo: string) {
+/**
+ * PDF: resumen **y detalle**, apaisado.
+ *
+ * El PDF es el documento de la reunión — es lo que se imprime y se muestra, y va junto con el
+ * Excel, que es el que usan los socios para controlar. Por eso lleva el detalle completo: si en
+ * la reunión alguien pregunta de dónde sale un número, la respuesta tiene que estar ahí y no en
+ * otro archivo.
+ *
+ * El orden resuelve las dos audiencias sin partir el documento: **el resumen es la primera
+ * página**, así el que no quiere el detalle no pasa de ahí; el que sí, sigue leyendo.
+ *
+ * `soloResumen` existe para el caso en que alcance con la síntesis.
+ */
+export function exportarPDF(d: DatosExport, nombreArchivo: string, soloResumen = false) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
   const ancho = doc.internal.pageSize.getWidth()
 
-  doc.setFontSize(15)
-  doc.text(`Presupuesto ${d.empresa}`, 40, 40)
-  doc.setFontSize(9)
-  doc.setTextColor(110)
-  doc.text(
-    [
-      d.campana ? `Campaña ${d.campana}` : '',
-      `${d.meses[0]?.label ?? ''} – ${d.meses[d.meses.length - 1]?.label ?? ''}`,
-      `Saldo de arranque ${d.saldoInicial.toLocaleString('es-AR')} (${d.origenSaldo})`,
-    ].filter(Boolean).join('  ·  '),
-    40, 56)
-  doc.text(`Generado el ${new Date().toLocaleDateString('es-AR')}`, ancho - 40, 56, { align: 'right' })
+  const encabezado = (titulo: string, subtitulo?: string) => {
+    doc.setFontSize(15)
+    doc.setTextColor(31, 41, 55)
+    doc.text(titulo, 40, 40)
+    doc.setFontSize(9)
+    doc.setTextColor(110)
+    if (subtitulo) doc.text(subtitulo, 40, 56)
+    doc.text(`Generado el ${new Date().toLocaleDateString('es-AR')}`, ancho - 40, 56, { align: 'right' })
+  }
 
+  const subtitulo = [
+    d.campana ? `Campaña ${d.campana}` : '',
+    `${d.meses[0]?.label ?? ''} – ${d.meses[d.meses.length - 1]?.label ?? ''}`,
+    `Saldo de arranque ${d.saldoInicial.toLocaleString('es-AR')} (${d.origenSaldo})`,
+  ].filter(Boolean).join('  ·  ')
+
+  // ── Página 1: el resumen ──
+  encabezado(`Presupuesto ${d.empresa}`, subtitulo)
   const resumen = armarResumen(d)
   autoTable(doc, {
     startY: 74,
@@ -215,6 +232,55 @@ export function exportarPDF(d: DatosExport, nombreArchivo: string) {
     d.advertencias.slice(0, 8).forEach((a, i) => {
       doc.text(`· ${a}`, 40, y + 34 + i * 11, { maxWidth: ancho - 80 })
     })
+  }
+
+  // ── El detalle: una página por bloque ──
+  if (!soloResumen) {
+    const bloques = [...d.ingresos, ...d.egresos, ...(d.inversiones ? [d.inversiones] : [])]
+      .filter(b => b.filas.length > 0)
+
+    for (const b of bloques) {
+      doc.addPage()
+      encabezado(b.titulo, `Presupuesto ${d.empresa}${d.campana ? ` · campaña ${d.campana}` : ''}`)
+
+      const t = totalBloque(b, d.meses)
+      const cuerpo = b.filas.map(f => [
+        ('    '.repeat(f.nivel ?? 0)) + f.concepto,
+        ...d.meses.map(m => redondear(f.montos[clave(m)] || 0).toLocaleString('es-AR')),
+      ])
+      cuerpo.push([
+        'TOTAL',
+        ...d.meses.map(m => redondear(t[clave(m)] || 0).toLocaleString('es-AR')),
+      ])
+
+      autoTable(doc, {
+        startY: 74,
+        head: [['Concepto', ...d.meses.map(m => m.label)]],
+        body: cuerpo,
+        styles: { fontSize: 6.5, cellPadding: 2.5 },
+        headStyles: { fillColor: [55, 65, 81], fontSize: 6.5 },
+        columnStyles: { 0: { cellWidth: 140, halign: 'left' } },
+        bodyStyles: { halign: 'right' },
+        didParseCell: (data) => {
+          if (data.section !== 'body') return
+          if (data.row.index === cuerpo.length - 1) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.fillColor = [243, 244, 246]
+          }
+          if (data.column.index === 0) data.cell.styles.halign = 'left'
+        },
+      })
+    }
+  }
+
+  // Numeración: en un documento que se imprime y circula, saber cuántas páginas son evita que se
+  // presente uno incompleto sin que nadie lo note.
+  const total = doc.getNumberOfPages()
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i)
+    doc.setFontSize(7)
+    doc.setTextColor(150)
+    doc.text(`${i} / ${total}`, ancho - 40, doc.internal.pageSize.getHeight() - 20, { align: 'right' })
   }
 
   doc.save(`${nombreArchivo}.pdf`)

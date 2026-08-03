@@ -1266,9 +1266,16 @@ volcado de la grilla.
 | **Resumen** | ingresos, egresos por bloque, inversiones, resultado del mes y saldo acumulado | el que quiere el número |
 | **Detalle** | una hoja por bloque con las filas que forman cada subtotal | el que pregunta *"¿y esto de dónde sale?"* |
 
-- **Excel** trae los dos: hoja *Resumen* + una hoja por bloque.
-- **PDF** trae **sólo el resumen**, apaisado. Un PDF de 40 páginas no lo abre nadie; el detalle se
-  audita en el Excel.
+- **Excel** trae los dos: hoja *Resumen* + una hoja por bloque. Es el que usan los socios para
+  **controlar**.
+- **PDF** trae los dos también: **el resumen es la página 1** y después va **una página por
+  bloque** con el detalle. Es el documento de la **reunión**: se imprime y se muestra, así que si
+  ahí preguntan de dónde sale un número, la respuesta está en el mismo archivo.
+- Botón **sólo resumen** (gris, al lado) para cuando alcanza con la primera página.
+
+El orden resuelve las dos audiencias sin partir el documento: el que no quiere el detalle no pasa
+de la página 1; el que sí, sigue leyendo. Todas las páginas van numeradas **x / total**, para que
+no circule un documento incompleto sin que nadie lo note.
 
 ### Lo que siempre viaja con el documento
 - **De dónde salió el saldo de arranque** — *declarado a mano* o *último conciliado al 18/06*. Sin
@@ -1292,5 +1299,7 @@ ser confiable.
    es un bug y es el más importante de todos.
 3. Comprobar que hay **una hoja por bloque** (templates, sueldos, cuentas, variables, inversiones)
    y que cada TOTAL de hoja coincida con la fila del resumen.
-4. **PDF** → una sola tabla, apaisada, con las filas fuertes resaltadas y las advertencias abajo.
-5. Confirmar que arriba diga **de dónde salió el saldo de arranque**.
+4. **PDF** → página 1 el resumen con las filas fuertes resaltadas y las advertencias abajo;
+   después **una página por bloque** con su detalle y su TOTAL. Numeración x/total al pie.
+5. **sólo resumen** → un PDF de una sola página.
+6. Confirmar que arriba diga **de dónde salió el saldo de arranque**.

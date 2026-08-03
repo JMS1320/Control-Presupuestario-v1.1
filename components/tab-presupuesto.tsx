@@ -1626,10 +1626,18 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
             title="Resumen + una hoja por bloque, con el detalle de cada subtotal">
             <Download className="h-3.5 w-3.5" /> Excel
           </Button>
+          {/* El PDF es el documento de la REUNIÓN: se imprime y se muestra. Por eso el completo
+              es el botón principal — si en la reunión preguntan de dónde sale un número, la
+              respuesta tiene que estar ahí y no en otro archivo. */}
           <Button variant="outline" size="sm" className="gap-1"
             onClick={() => exportarPDF(datosExport(), nombreArchivoExport())}
-            title="Sólo el resumen, para presentar">
+            title="Resumen + el detalle de cada bloque, una página por bloque. Para imprimir y presentar">
             <FileText className="h-3.5 w-3.5" /> PDF
+          </Button>
+          <Button variant="ghost" size="sm" className="gap-1 text-xs text-gray-500"
+            onClick={() => exportarPDF(datosExport(), `${nombreArchivoExport()}_resumen`, true)}
+            title="Sólo la primera página, cuando alcanza con la síntesis">
+            sólo resumen
           </Button>
         </div>
       </div>
