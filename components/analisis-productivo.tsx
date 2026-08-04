@@ -19,7 +19,7 @@ import { toast } from "sonner"
 import type { FilaMercado } from "@/app/api/precios-mercado/route"
 import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 // Qué se vende y a quién: completa el desbaste y la CZ desde las normas de comercialización.
-import { SelectorComercializacion, useNormasComercializacion } from "./selector-comercializacion"
+import { SelectorComercializacion, useNormasComercializacion, parametrosDe } from "./selector-comercializacion"
 import type { SexoLote } from "@/lib/ganaderia/comercializacion"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
@@ -712,7 +712,16 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
                     seleccion={comercial}
                     lote={{ cabezas: c.cant, pesoVivo: c.pFin, precioVenta: num(precioVenta) }}
                     onCambio={s => setComercial({ ...comercial, ...s })}
-                    onTipo={t => setComercial({ ...comercial, tipo: t })}
+                    onTipo={t => {
+                      setComercial({ ...comercial, tipo: t })
+                      // La ración por tipo de etapa ya vivía en `productivo.actividades`:
+                      // 3 % del PV en engorde, 1,5 % en recría. Se aplica al cambiar el tipo y
+                      // después se puede pisar.
+                      const p = parametrosDe(normasCom, t)
+                      if (p && p.racion_pct_pv > 0) {
+                        setRacionPV((p.racion_pct_pv * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 }))
+                      }
+                    }}
                     onCalculado={aplicarComercial}
                   />
                 </td>
