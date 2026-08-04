@@ -35,6 +35,53 @@ export interface TarifaFlete {
   seguro: number
   por_km: number
   capacidad_kg: number | null
+  /** Precio del gasoil cuando la tarifa era válida. Ver `proyectarTarifa()`. */
+  precio_gasoil_ref?: number | null
+  /** Qué fracción sigue al gasoil. El resto va por IPC. */
+  pct_atado_gasoil?: number | null
+}
+
+/**
+ * La tarifa de flete proyectada a futuro, **sin saber cuánto va a cobrar el transportista**.
+ *
+ * El usuario lo pidió así: *"debemos tener una relación del costo del flete contra otros insumos
+ * como el gas oil para poder presupuestar más adelante aunque no sepamos cuánto cobra
+ * exactamente"*.
+ *
+ * La tarifa de hoy vale contra el gasoil de hoy, así que queda expresada implícitamente en litros
+ * y mañana se revalúa sola. No hay que preguntarle el consumo a nadie: se deduce de lo que cobra.
+ *
+ * ⚠️ Sólo una PARTE sigue al gasoil (`pct_atado_gasoil`, 35 % por defecto): el flete también es
+ * chofer, peajes, cubiertas y amortización. Suponer el 100 % atado sobreestimaría la suba cada vez
+ * que salta el combustible — y el número se usa para decidir a quién venderle.
+ *
+ * Devuelve `null` cuando falta el precio de referencia: sin él no hay relación que aplicar, y
+ * proyectar con la tarifa vieja sin avisar la haría envejecer en silencio.
+ */
+export function proyectarTarifa(
+  t: TarifaFlete,
+  precioGasoilHoy: number | null,
+  inflacionAcumulada = 0,
+): { tarifa: TarifaFlete; motivo: string } | null {
+  if (precioGasoilHoy == null || !t.precio_gasoil_ref || t.precio_gasoil_ref <= 0) return null
+
+  const atado = Number(t.pct_atado_gasoil ?? 0.35)
+  const factorGasoil = precioGasoilHoy / Number(t.precio_gasoil_ref)
+  const factorResto = 1 + inflacionAcumulada
+  // La parte atada sigue al combustible; la otra, a la inflación general.
+  const f = atado * factorGasoil + (1 - atado) * factorResto
+
+  const n1 = (x: number) => x.toLocaleString('es-AR', { maximumFractionDigits: 1 })
+  return {
+    tarifa: {
+      ...t,
+      arranque: t.arranque * f,
+      seguro: t.seguro * f,
+      por_km: t.por_km * f,
+    },
+    motivo: `${(atado * 100).toFixed(0)} % sigue al gasoil (× ${n1(factorGasoil)})`
+      + ` y ${((1 - atado) * 100).toFixed(0)} % al IPC (× ${n1(factorResto)}) → × ${n1(f)}`,
+  }
 }
 
 export interface DestinoVenta {
