@@ -68,6 +68,14 @@ export type ModoCosto =
   | 'monto_cabeza'
   /** Monto por hectárea: el verdeo. NO escala con cabezas. → según `momento` */
   | 'monto_ha'
+  /**
+   * Cantidad física fija × precio: 136,41 ton de silo, 7000 lts de gasoil al año. No escala
+   * con nada — la cantidad la pone el usuario en `cantidad_aplicacion`.
+   *
+   * Existe porque forzar estos costos a "por hectárea" los multiplicaba por una superficie
+   * que no tenía nada que ver: el silo se calcula por TONELADA.
+   */
+  | 'monto_unidad'
   /** Monto fijo por mes (alquiler de campo, personal afectado). → mensual */
   | 'monto_mes'
   /**
@@ -100,6 +108,30 @@ export interface InsumoActividad {
   categoria_insumo_id: string | null
   producto: string | null
   notas: string | null
+
+  // ── La base propia del costo ────────────────────────────────────────────────
+  // Un costo no se aplica sobre "lo que haya": se aplica sobre LO SUYO. El mantenimiento de
+  // pasturas va sobre las 15 has de pastura, no sobre las 175 del campo; la sanidad de toros
+  // sobre 12 toros, no sobre las 260 vacas. Sin esto, la implantación de pasturas daba 47 veces
+  // lo que corresponde.
+  /** Hectáreas de ESTE costo. NULL = las de la actividad. */
+  has_aplicacion?: number | null
+  /** Sobre qué cabezas: `rodeo` · `vacas` · `destetados` · `manual`… NULL = las del tramo. */
+  base_cabezas?: string | null
+  /** Cabezas fijas cuando `base_cabezas = 'manual'`. */
+  cabezas_aplicacion?: number | null
+  /** Cantidad fija del modo `monto_unidad`: toneladas, litros, rollos. */
+  cantidad_aplicacion?: number | null
+  /**
+   * En cuántos años se reparte el costo. 4 → 25 % por año.
+   *
+   * ⚠️ **Es del MARGEN, no del presupuesto.** El presupuesto es caja: el año que se siembra la
+   * pastura paga el 100 % de las 50 has y los 4 siguientes cero. El margen es resultado: reparte
+   * 10 has por año. Por eso este campo NO se aplica acá — sólo en `lib/presupuesto/margen.ts`.
+   */
+  amortiza_anios?: number | null
+  /** Por qué se estima así. Lo escribe el usuario y se ve en el margen. */
+  fundamento?: string | null
 }
 
 /** El momento natural de cada modo, si el usuario no dice otra cosa. */
@@ -111,6 +143,7 @@ export const MOMENTO_POR_DEFECTO: Record<ModoCosto, MomentoCosto> = {
   dosis_cada_kg: 'inicio',
   monto_cabeza: 'inicio',
   monto_ha: 'ciclo',
+  monto_unidad: 'ciclo',
   monto_mes: 'mensual',
   pct_produccion: 'fin',
 }
@@ -123,6 +156,7 @@ export const ETIQUETA_MODO: Record<ModoCosto, string> = {
   dosis_cada_kg: 'dosis cada N kg de peso',
   monto_cabeza: '$ / cabeza',
   monto_ha: 'por hectárea',
+  monto_unidad: 'cantidad fija × precio (ton, lts, rollos)',
   monto_mes: 'por mes',
   pct_produccion: '% de lo producido',
 }
@@ -130,7 +164,7 @@ export const ETIQUETA_MODO: Record<ModoCosto, string> = {
 /** true si el modo se expresa directamente en pesos (no en cantidad × precio). */
 export function esMontoDirecto(modo: ModoCosto): boolean {
   return modo === 'monto_cabeza' || modo === 'monto_ha' || modo === 'monto_mes'
-    || modo === 'pct_produccion'
+    || modo === 'monto_unidad' || modo === 'pct_produccion'
 }
 
 export const ETIQUETA_MOMENTO: Record<MomentoCosto, string> = {
@@ -319,10 +353,19 @@ function cantidadDelItem(ins: InsumoActividad, c: ContextoItem): { cantidad: num
     case 'dosis_cada_kg':
       // "1 dosis cada 50 kg" → valor = 50
       return { cantidad: ins.valor > 0 ? (c.pesoProm / ins.valor) * c.cabezas : 0, aplica: true }
-    case 'monto_cabeza':
-      return { cantidad: ins.valor * c.cabezas * escalaMomento, aplica: true }
+    case 'monto_cabeza': {
+      // La base propia del costo manda sobre las cabezas del tramo. Las bases derivadas del
+      // ciclo (`destetados`, `vacas`…) las resuelve el margen, que tiene la línea de tiempo del
+      // rodeo; acá sólo se distingue la cantidad fija, que es la que se puede saber sin ella.
+      const cab = ins.base_cabezas === 'manual' ? (ins.cabezas_aplicacion ?? 0) : c.cabezas
+      return { cantidad: ins.valor * cab * escalaMomento, aplica: true }
+    }
     case 'monto_ha':
-      return { cantidad: ins.valor * c.hectareas * escalaMomento, aplica: true }
+      // Las hectáreas DEL COSTO, no las de la actividad. Sin amortizar: el presupuesto es caja
+      // y el año que se siembra paga el 100 %.
+      return { cantidad: ins.valor * (ins.has_aplicacion ?? c.hectareas) * escalaMomento, aplica: true }
+    case 'monto_unidad':
+      return { cantidad: ins.valor * (ins.cantidad_aplicacion ?? 0) * escalaMomento, aplica: true }
     case 'monto_mes':
       return { cantidad: ins.valor * proporcionMes, aplica: true }
     case 'pct_produccion':

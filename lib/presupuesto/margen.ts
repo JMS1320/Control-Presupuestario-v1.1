@@ -21,8 +21,12 @@
 
 import { categoriaPrecio, resolverPrecioHacienda, type PrecioHacienda } from '../ganaderia/calculo'
 import { pesoEstimado, diasEntre } from '../ganaderia/ciclo'
+// La cadena de ajustes es la MISMA que la del presupuesto. Una sola implementación, o el margen
+// y el presupuesto terminan dando distinto sobre el mismo costo.
+import { aplicarAjustes, type Ajuste, type Paso } from './variables'
 
 export type { PrecioHacienda }
+export type { Ajuste, Paso }
 
 export interface ActividadRef { id: string; nombre: string }
 
@@ -50,6 +54,12 @@ export interface CostoDirecto {
   /** Ya resuelto a pesos del período por quien llama. `null` = no se pudo calcular. */
   monto: number | null
   motivo: string
+  /** El insumo del que salió, para poder editarlo desde la fila del margen. */
+  insumoId?: string
+  /** Cómo se llegó al número, paso a paso. Es lo que se ve al desplegar la fila. */
+  pasos?: Paso[]
+  /** Lo que escribió el usuario sobre por qué estima así. */
+  fundamento?: string | null
 }
 
 export interface DatosMargen {
@@ -78,6 +88,11 @@ export interface LineaMargen {
   detalle: string
   /** `false` cuando el número está incompleto y no hay que confiar en él. */
   confiable: boolean
+  /** El insumo del que salió la línea, cuando es un costo editable desde el margen. */
+  insumoId?: string
+  /** La conformación del número, para desplegar debajo de la fila. */
+  pasos?: Paso[]
+  fundamento?: string | null
 }
 
 export interface MargenActividad {
@@ -112,6 +127,7 @@ export const claveActividad = (nombre: string) =>
 
 /** Modos de `actividad_insumos` que el margen sabe resolver hoy. */
 export interface InsumoActividadMargen {
+  id?: string
   actividad: string
   concepto: string
   modo: string
@@ -126,6 +142,12 @@ export interface InsumoActividadMargen {
   base_cabezas: string | null
   /** Cantidad fija, cuando `base_cabezas = 'manual'`. */
   cabezas_aplicacion: number | null
+  /** Cantidad fija del modo `monto_unidad`: 136,41 ton de silo, 7000 lts de gas oil. */
+  cantidad_aplicacion: number | null
+  /** La cadena: `base × IPC × +30 %`. Vacía = el valor se toma tal cual. */
+  ajustes?: Ajuste[]
+  /** Por qué se estima así. Lo escribe el usuario. */
+  fundamento: string | null
   notas: string | null
 }
 
@@ -157,21 +179,42 @@ export const ETIQUETA_BASE_CABEZAS: Record<string, string> = {
 }
 
 /**
- * Resuelve un costo directo a **pesos del período**.
+ * Resuelve un costo directo a **pesos del período**, con su cadena a la vista.
  *
- * Sólo dos modos por ahora, que son los que usa la cría: por hectárea y por cabeza. Los de
- * ración (`pct_racion`, `kg_cabeza_dia`) necesitan la curva de peso y los tramos, así que se
- * informan como pendientes en vez de aproximarlos — un costo de ración mal estimado mueve el
- * margen entero.
+ * Tres modos, que son los que usa la cría: por hectárea, por cabeza y por unidad (toneladas de
+ * silo, litros de gasoil). Los de ración (`pct_racion`, `kg_cabeza_dia`) necesitan la curva de
+ * peso y los tramos, así que se informan como pendientes en vez de aproximarlos — un costo de
+ * ración mal estimado mueve el margen entero.
+ *
+ * Sobre la base se aplica la **cadena de ajustes**, que es lo que permite decir *"lo de los
+ * últimos 12 meses × IPC × el aumento de cabezas"* en vez de un número fijo. Los `pasos` no son
+ * decoración: son lo que se despliega en la fila del margen para poder discutir el número.
  */
 export function resolverCostoDirecto(
   i: InsumoActividadMargen,
-  ctx: { has: number | null; cabezas: number | null; cabezasCiclo?: CabezasDelCiclo | null; tc: number | null },
-): { monto: number | null; motivo: string } {
-  const enPesos = (v: number) => {
+  ctx: {
+    has: number | null; cabezas: number | null
+    cabezasCiclo?: CabezasDelCiclo | null; tc: number | null
+    /** Para el ajuste por IPC. 0.87 = 87 %. */
+    ipcAcumulado?: number | null
+  },
+): { monto: number | null; motivo: string; pasos: Paso[] } {
+  const enPesos = () => {
     if (i.moneda !== 'USD') return { factor: 1, txt: '' }
     if (ctx.tc == null) return { factor: null as number | null, txt: '' }
     return { factor: ctx.tc, txt: ` × TC ${num(ctx.tc)}` }
+  }
+  const falta = (motivo: string) => ({ monto: null, motivo: `${i.concepto}: ${motivo}`, pasos: [] as Paso[] })
+
+  /** La base ya en pesos, más la cadena encima. Una sola salida para los tres modos. */
+  const conAjustes = (base: number, motivoBase: string): { monto: number; motivo: string; pasos: Paso[] } => {
+    const pasos: Paso[] = [{ etiqueta: 'Base', detalle: motivoBase, acumulado: base }]
+    const aj = aplicarAjustes(base, i.ajustes ?? [], { ipcAcumulado: ctx.ipcAcumulado })
+    pasos.push(...aj.pasos)
+    const motivo = aj.pasos.length === 0
+      ? motivoBase
+      : `${motivoBase} ${aj.pasos.map(p => `× ${p.detalle}`).join(' ')}`
+    return { monto: aj.valor, motivo, pasos }
   }
 
   switch (i.modo) {
@@ -179,18 +222,20 @@ export function resolverCostoDirecto(
       // La superficie del COSTO, no la de la actividad: el mantenimiento de pasturas va sobre
       // las 15 has de pastura, no sobre las 175 del campo.
       const has = i.has_aplicacion ?? ctx.has
-      if (has == null) return { monto: null, motivo: `${i.concepto}: faltan las hectáreas` }
-      const c = enPesos(i.valor)
-      if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
+      if (has == null) return falta('faltan las hectáreas')
+      const c = enPesos()
+      if (c.factor == null) return falta('está en U$S y falta el tipo de cambio')
       // Amortización: una pastura que dura 4 años entra al 25 % por año.
+      // ⚠️ Esto es del MARGEN. El presupuesto es caja y no amortiza: el año que se siembra
+      // paga el 100 % y los siguientes cero.
       const anios = i.amortiza_anios && i.amortiza_anios > 1 ? i.amortiza_anios : 1
       const txtAmort = anios > 1 ? ` ÷ ${anios} años` : ''
       const propia = i.has_aplicacion != null && ctx.has != null && i.has_aplicacion !== ctx.has
-      return {
-        monto: (i.valor * has * c.factor) / anios,
-        motivo: `${num(i.valor)} ${i.unidad ?? 'por ha'} × ${num(has)} ha`
+      return conAjustes(
+        (i.valor * has * c.factor) / anios,
+        `${num(i.valor)} ${i.unidad ?? 'por ha'} × ${num(has)} ha`
           + (propia ? ' (superficie propia del costo)' : '') + txtAmort + c.txt,
-      }
+      )
     }
     case 'monto_cabeza': {
       // Cada costo tiene SU base: la sanidad de toros no va sobre las 260 vacas.
@@ -198,19 +243,32 @@ export function resolverCostoDirecto(
       const cab = base === 'manual'
         ? i.cabezas_aplicacion
         : ctx.cabezasCiclo?.[base as keyof CabezasDelCiclo] ?? ctx.cabezas
-      if (cab == null) {
-        return { monto: null, motivo: `${i.concepto}: faltan las cabezas (${ETIQUETA_BASE_CABEZAS[base] ?? base})` }
-      }
-      const c = enPesos(i.valor)
-      if (c.factor == null) return { monto: null, motivo: `${i.concepto}: está en U$S y falta el tipo de cambio` }
-      return {
-        monto: i.valor * cab * c.factor,
-        motivo: `${num(i.valor)} ${i.unidad ?? 'por cabeza'} × ${num(cab)} ${ETIQUETA_BASE_CABEZAS[base] ?? base}${c.txt}`,
-      }
+      if (cab == null) return falta(`faltan las cabezas (${ETIQUETA_BASE_CABEZAS[base] ?? base})`)
+      const c = enPesos()
+      if (c.factor == null) return falta('está en U$S y falta el tipo de cambio')
+      return conAjustes(
+        i.valor * cab * c.factor,
+        `${num(i.valor)} ${i.unidad ?? 'por cabeza'} × ${num(cab)} ${ETIQUETA_BASE_CABEZAS[base] ?? base}${c.txt}`,
+      )
+    }
+    case 'monto_unidad': {
+      // Cantidad física por su precio: 136,41 ton de silo, 7000 lts de gasoil al año. No todo
+      // costo se deja expresar por cabeza o por hectárea, y forzarlo fue lo que puso el silo
+      // como `monto_ha` multiplicando por una superficie que no tenía nada que ver.
+      const q = i.cantidad_aplicacion
+      if (q == null) return falta(`falta la cantidad (${i.unidad ?? 'unidades'})`)
+      const c = enPesos()
+      if (c.factor == null) return falta('está en U$S y falta el tipo de cambio')
+      const anios = i.amortiza_anios && i.amortiza_anios > 1 ? i.amortiza_anios : 1
+      const txtAmort = anios > 1 ? ` ÷ ${anios} años` : ''
+      return conAjustes(
+        (q * i.valor * c.factor) / anios,
+        `${num(q)} ${i.unidad ?? 'unidades'} × ${num(i.valor)}${c.txt}${txtAmort}`,
+      )
     }
     default:
       return {
-        monto: null,
+        monto: null, pasos: [],
         motivo: `${i.concepto}: el modo "${i.modo}" necesita la curva de peso y los tramos — todavía no se resuelve acá`,
       }
   }
@@ -299,11 +357,13 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     }
 
     const costos: LineaMargen[] = misCostos.map(c => {
+      const comun = { insumoId: c.insumoId, pasos: c.pasos, fundamento: c.fundamento }
       if (c.monto == null) {
         faltantes.push(`${c.concepto}: ${c.motivo}`)
         return {
           concepto: c.concepto, unidades: null, etiquetaUnidad: '',
           total: 0, porHa: null, porCabeza: null, detalle: c.motivo, confiable: false,
+          ...comun,
         }
       }
       return {
@@ -312,6 +372,7 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
         porHa: has ? c.monto / has : null,
         porCabeza: cabezasTotal > 0 ? c.monto / cabezasTotal : null,
         detalle: c.motivo, confiable: true,
+        ...comun,
       }
     })
 

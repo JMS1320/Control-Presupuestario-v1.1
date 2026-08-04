@@ -220,11 +220,39 @@ export function calcularVariable(
 
   const cantidad = c.valor ?? 0
   const precio = p.valor ?? 0
-  let acum = cantidad * precio
+  const base = cantidad * precio
 
   pasos.push({ etiqueta: 'Cantidad', detalle: c.detalle, acumulado: cantidad })
   pasos.push({ etiqueta: 'Precio', detalle: p.detalle, acumulado: precio })
-  pasos.push({ etiqueta: 'Base', detalle: `${c.detalle} × ${p.detalle}`, acumulado: acum })
+  pasos.push({ etiqueta: 'Base', detalle: `${c.detalle} × ${p.detalle}`, acumulado: base })
+
+  const aj = aplicarAjustes(base, ajustes, ctx)
+  pasos.push(...aj.pasos)
+  faltantes.push(...aj.faltantes)
+
+  return { monto: aj.valor, cantidad, precio, pasos, faltantes }
+}
+
+/**
+ * Aplica la cadena de ajustes sobre un monto base.
+ *
+ *     base × ajuste₁ × ajuste₂ × …
+ *
+ * Vive acá y no en cada pantalla porque la usan DOS: las variables del presupuesto y los costos
+ * directos de las actividades (`productivo.actividad_insumos`). Son la misma cuenta —
+ * *"últimos 12 meses × IPC × aumento de cabezas"*— y si hubiera dos implementaciones el margen y
+ * el presupuesto darían distinto sobre el mismo costo, que es exactamente lo que hay que evitar.
+ *
+ * Sin ajustes devuelve el base sin tocar: la cadena vacía es la identidad.
+ */
+export function aplicarAjustes(
+  base: number,
+  ajustes: Ajuste[],
+  ctx: ContextoVariable = {},
+): { valor: number; pasos: Paso[]; faltantes: string[] } {
+  const pasos: Paso[] = []
+  const faltantes: string[] = []
+  let acum = base
 
   for (const a of [...ajustes].sort((x, y) => x.orden - y.orden)) {
     let factor = 1
@@ -256,10 +284,14 @@ export function calcularVariable(
       }
     }
     acum = acum * factor
-    pasos.push({ etiqueta: ETIQUETA_AJUSTE[a.tipo], detalle, acumulado: acum })
+    pasos.push({
+      etiqueta: ETIQUETA_AJUSTE[a.tipo],
+      detalle: a.nota ? `${detalle} — ${a.nota}` : detalle,
+      acumulado: acum,
+    })
   }
 
-  return { monto: acum, cantidad, precio, pasos, faltantes }
+  return { valor: acum, pasos, faltantes }
 }
 
 /** Lo necesario para resolver el arrastre del cupo anual. */

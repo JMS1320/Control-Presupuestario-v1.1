@@ -1,25 +1,34 @@
 "use client"
 
-// Presupuesto → Margen por actividad. **Fase 0: lee, no duplica.**
+// Presupuesto → Margen por actividad.
 //
 // Esta pantalla no tiene tablas propias. Arma el margen leyendo de donde el dato ya vive:
 // hectáreas de `campo_campana_actividad`, cabezas y % del rodeo de `stock_ciclos`, ventas de
 // `stock_lotes`, precios de `precios_hacienda` y costos de `actividad_insumos`.
 //
-// El objetivo de la fase no es que el margen esté completo: es **ver qué falta**. Por eso cada
-// actividad muestra sus faltantes en vez de rellenar con ceros — un margen redondo sobre datos
-// incompletos es peor que uno que dice qué le falta, sobre todo si se le presenta a los socios.
+// No sólo muestra: **también es donde se trabajan los costos de producción**. Cada costo se
+// despliega, se ve cómo se llegó al número y se edita ahí mismo. Lo pidió así el usuario, y el
+// motivo es que tener los costos en dos pantallas distintas no se entendía: *"ni siquiera
+// entiendo la lógica de en qué se diferencia una solapa de la otra"*.
+//
+// Lo que NO se edita acá es el planteo productivo —ganancia diaria, % de ración, tramos—, que es
+// de la actividad y el margen consume igual que consume las hectáreas.
+//
+// Cuando falta un dato **no se rellena con cero**: la línea queda marcada. Un margen redondo
+// sobre datos incompletos es peor que uno que dice qué le falta, sobre todo si se le presenta a
+// los socios.
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight, Pencil } from "lucide-react"
 import { calcularLineaTiempo } from "@/lib/ganaderia/ciclo"
+import { EditorCostoActividad, type CostoEditable } from "@/components/editor-costo-actividad"
 import {
   calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
-  type InsumoActividadMargen,
+  type InsumoActividadMargen, type Ajuste,
 } from "@/lib/presupuesto/margen"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
@@ -34,6 +43,9 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
   const [abierta, setAbierta] = useState<string | null>(null)
   /** Actividades de `centros_costo` que no tienen par en `productivo.actividades`. */
   const [desalineadas, setDesalineadas] = useState<string[]>([])
+  /** Los costos que se pueden editar desde acá, por id de insumo. */
+  const [editables, setEditables] = useState<Record<string, CostoEditable>>({})
+  const [sinIPC, setSinIPC] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -48,12 +60,35 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("id, nombre, activo"),
       ])
-      const [{ data: insumos }, { data: tcs }, { data: ciclosFull }] = await Promise.all([
-        supabase.schema("productivo").from("actividad_insumos")
-          .select("actividad_id, concepto, modo, valor, unidad, moneda, has_aplicacion, amortiza_anios, base_cabezas, cabezas_aplicacion, notas, orden").order("orden"),
-        supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
-        supabase.schema("productivo").from("stock_ciclos").select("*"),
-      ])
+      const [{ data: insumos }, { data: tcs }, { data: ciclosFull }, { data: ajustesRaw }, { data: ipcRaw }] =
+        await Promise.all([
+          supabase.schema("productivo").from("actividad_insumos")
+            .select("id, actividad_id, concepto, modo, valor, unidad, moneda, momento, has_aplicacion, amortiza_anios, base_cabezas, cabezas_aplicacion, cantidad_aplicacion, fundamento, notas, orden")
+            .order("orden"),
+          supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
+          supabase.schema("productivo").from("stock_ciclos").select("*"),
+          supabase.schema("productivo").from("actividad_insumo_ajustes").select("*").order("orden"),
+          supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
+        ])
+
+      // La cadena de cada costo.
+      const ajustesPorInsumo: Record<string, Ajuste[]> = {}
+      for (const a of ((ajustesRaw || []) as any[])) {
+        (ajustesPorInsumo[a.insumo_id] ||= []).push({
+          id: a.id, orden: Number(a.orden) || 0, tipo: a.tipo,
+          valor: a.valor == null ? null : Number(a.valor),
+          referencia: a.referencia, nota: a.nota,
+        })
+      }
+
+      // IPC acumulado de los últimos 12 meses cargados — el mismo criterio que las variables y
+      // que el panel de cuentas, para que un ajuste "por IPC" signifique lo mismo en las tres.
+      const serieIpc = ((ipcRaw || []) as any[])
+        .sort((x, y) => (x.anio * 12 + x.mes) - (y.anio * 12 + y.mes)).slice(-12)
+      const ipcAcumulado = serieIpc.length > 0
+        ? serieIpc.reduce((f, p) => f * (1 + (Number(p.valor_ipc) || 0) / 100), 1) - 1
+        : null
+      setSinIPC(ipcAcumulado == null)
 
       const actPorId = new Map((acts.data || []).map((a: any) => [a.id, String(a.nombre)]))
       const nombresAct = Array.from(actPorId.values())
@@ -127,21 +162,36 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
 
       // Los costos directos, leídos de verdad de `actividad_insumos`.
       const insumosPorActividad = new Map<string, InsumoActividadMargen[]>()
+      const editablesOut: Record<string, CostoEditable> = {}
       for (const i of ((insumos || []) as any[])) {
         const nom = actProdActivas.find(a => a.id === i.actividad_id)?.nombre
         if (!nom) continue
         const clave = claveActividad(String(nom))
-        if (!insumosPorActividad.has(clave)) insumosPorActividad.set(clave, [])
-        insumosPorActividad.get(clave)!.push({
+        const fila: InsumoActividadMargen = {
+          id: String(i.id),
           actividad: String(nom), concepto: String(i.concepto), modo: String(i.modo),
           valor: Number(i.valor) || 0, unidad: i.unidad, moneda: String(i.moneda ?? "ARS"),
           has_aplicacion: i.has_aplicacion == null ? null : Number(i.has_aplicacion),
           amortiza_anios: i.amortiza_anios == null ? null : Number(i.amortiza_anios),
           base_cabezas: i.base_cabezas ?? null,
           cabezas_aplicacion: i.cabezas_aplicacion == null ? null : Number(i.cabezas_aplicacion),
+          cantidad_aplicacion: i.cantidad_aplicacion == null ? null : Number(i.cantidad_aplicacion),
+          ajustes: ajustesPorInsumo[i.id] ?? [],
+          fundamento: i.fundamento ?? null,
           notas: i.notas,
-        })
+        }
+        if (!insumosPorActividad.has(clave)) insumosPorActividad.set(clave, [])
+        insumosPorActividad.get(clave)!.push(fila)
+        editablesOut[String(i.id)] = {
+          id: String(i.id), concepto: fila.concepto, modo: fila.modo, valor: fila.valor,
+          unidad: fila.unidad, moneda: fila.moneda, momento: String(i.momento ?? "ciclo"),
+          has_aplicacion: fila.has_aplicacion, amortiza_anios: fila.amortiza_anios,
+          base_cabezas: fila.base_cabezas, cabezas_aplicacion: fila.cabezas_aplicacion,
+          cantidad_aplicacion: fila.cantidad_aplicacion,
+          fundamento: fila.fundamento, notas: fila.notas, ajustes: fila.ajustes ?? [],
+        }
       }
+      setEditables(editablesOut)
 
       const costos: CostoDirecto[] = []
       for (const n of nombresAct) {
@@ -157,10 +207,14 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         }
         const ctxCosto = {
           has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, cabezasCiclo, tc,
+          ipcAcumulado,
         }
         for (const i of mios) {
           const r = resolverCostoDirecto(i, ctxCosto)
-          costos.push({ actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo })
+          costos.push({
+            actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo,
+            insumoId: i.id, pasos: r.pasos, fundamento: i.fundamento,
+          })
         }
       }
 
@@ -191,13 +245,11 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Scale className="h-4 w-4" /> Margen por actividad
-              <Badge variant="outline" className="border-orange-300 text-[9px] text-orange-700">
-                Fase 0 — lee, no duplica
-              </Badge>
             </CardTitle>
             <p className="mt-1 text-xs text-gray-500">
               Sin tablas propias: lee hectáreas, rodeo, ventas, precios y costos de donde ya viven.
-              <strong> En pesos</strong>, por unidad y en total.
+              <strong> En pesos</strong>, por unidad y en total.{" "}
+              <strong>Cada costo se despliega</strong> para ver cómo se llegó al número y editarlo.
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -214,6 +266,12 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {sinIPC && (
+          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+            ⚠️ No hay IPC cargado: los costos que se ajustan por IPC no se pueden calcular.
+            Se carga en <strong>Precios y TC</strong>.
+          </p>
+        )}
         {desalineadas.length > 0 && (
           <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
             <AlertTriangle className="mr-1 inline h-3 w-3" />
@@ -280,7 +338,8 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
                   )}
 
                   <Bloque titulo="Ingresos" lineas={m.ingresos} total={m.totalIngresos} has={m.has} />
-                  <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has} />
+                  <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has}
+                    editables={editables} onGuardado={cargar} />
 
                   <table className="w-full rounded border bg-white text-[11px]">
                     <tbody>
@@ -324,10 +383,16 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
  * El usuario lo pidió explícito: *"lo que es por unidad vs total, en 2 columnas siempre, no
  * debajo uno del otro"*. Y tiene razón — apilados no se pueden comparar de un vistazo, que es
  * justo para lo que sirve el por-unidad.
+ *
+ * Las líneas que vienen de un insumo se **despliegan**: colapsadas muestran el número final,
+ * abiertas muestran cómo se llegó a él y dejan editarlo.
  */
-function Bloque({ titulo, lineas, total, has }: {
+function Bloque({ titulo, lineas, total, has, editables, onGuardado }: {
   titulo: string; lineas: MargenActividad["ingresos"]; total: number; has: number | null
+  editables?: Record<string, CostoEditable>; onGuardado?: () => void
 }) {
+  const [abierto, setAbierto] = useState<string | null>(null)
+
   if (lineas.length === 0) {
     return (
       <div className="rounded border bg-white px-2 py-1.5">
@@ -347,25 +412,49 @@ function Bloque({ titulo, lineas, total, has }: {
           </tr>
         </thead>
         <tbody>
-          {lineas.map((l, i) => (
-            <tr key={i} className={`border-b last:border-0 ${l.confiable ? "" : "opacity-60"}`}>
-              <td className="px-2 py-1">
-                <p className="text-gray-700">
-                  {l.concepto}
-                  {!l.confiable && <span className="ml-1 text-[9px] text-amber-600">sin calcular</span>}
-                </p>
-                <p className="text-[9px] text-gray-400">{l.detalle}</p>
-              </td>
-              <td className="px-2 py-1 text-right text-gray-600">
-                {l.porCabeza != null ? (
-                  <>{pesos(l.porCabeza)}<span className="text-[9px] text-gray-400"> /cab</span></>
-                ) : l.porHa != null ? (
-                  <>{pesos(l.porHa)}<span className="text-[9px] text-gray-400"> /ha</span></>
-                ) : "—"}
-              </td>
-              <td className="px-2 py-1 text-right text-gray-800">{pesos(l.total)}</td>
-            </tr>
-          ))}
+          {lineas.map((l, i) => {
+            const editable = l.insumoId ? editables?.[l.insumoId] : undefined
+            const open = !!l.insumoId && abierto === l.insumoId
+            return (
+              <Fragment key={i}>
+                <tr
+                  className={`border-b last:border-0 ${l.confiable ? "" : "opacity-60"} ${
+                    editable ? "cursor-pointer hover:bg-slate-50" : ""} ${open ? "bg-slate-50" : ""}`}
+                  onClick={editable ? () => setAbierto(open ? null : l.insumoId!) : undefined}>
+                  <td className="px-2 py-1">
+                    <p className="flex items-center gap-1 text-gray-700">
+                      {editable && (open
+                        ? <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
+                        : <ChevronRight className="h-3 w-3 shrink-0 text-gray-300" />)}
+                      {l.concepto}
+                      {!l.confiable && <span className="text-[9px] text-amber-600">sin calcular</span>}
+                      {editable && !open && <Pencil className="h-2.5 w-2.5 text-gray-300" />}
+                    </p>
+                    <p className="pl-4 text-[9px] text-gray-400">{l.detalle}</p>
+                    {l.fundamento && (
+                      <p className="pl-4 text-[9px] italic text-gray-400">“{l.fundamento}”</p>
+                    )}
+                  </td>
+                  <td className="px-2 py-1 text-right text-gray-600">
+                    {l.porCabeza != null ? (
+                      <>{pesos(l.porCabeza)}<span className="text-[9px] text-gray-400"> /cab</span></>
+                    ) : l.porHa != null ? (
+                      <>{pesos(l.porHa)}<span className="text-[9px] text-gray-400"> /ha</span></>
+                    ) : "—"}
+                  </td>
+                  <td className="px-2 py-1 text-right text-gray-800">{pesos(l.total)}</td>
+                </tr>
+                {open && editable && (
+                  <tr>
+                    <td colSpan={3} className="p-0">
+                      <EditorCostoActividad costo={editable} pasos={l.pasos}
+                        onGuardado={() => onGuardado?.()} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
         </tbody>
         <tfoot>
           <tr className="border-t bg-gray-50 font-medium">
