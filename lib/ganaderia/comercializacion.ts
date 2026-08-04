@@ -100,6 +100,7 @@ export interface DestinoVenta {
 }
 
 export interface RutaDestino {
+  id?: string
   destino_id: string
   descripcion: string
   km: number
@@ -361,6 +362,57 @@ export function evaluarOpcion(
     ventaBruta, comision, gastoDestino, flete, viajes,
     detalle, faltantes,
   }
+}
+
+export interface ItemCZ {
+  concepto: string
+  monto: number
+  /** Sobre la venta bruta. */
+  pct: number
+  nota?: string
+}
+
+/**
+ * El desglose de la CZ: **cada ítem en pesos con su % parcial, y el total**.
+ *
+ * Lo pidió así el usuario (2026-08-04): *"en vez de ponerse CZ tanto % y muestre los pesos, sería
+ * que muestre los pesos de cada ítem de la CZ y muestre el % parcial y el total de CZ"*.
+ *
+ * Y resuelve el problema del flete, que es un monto absoluto y no un porcentaje: acá el % **se
+ * deriva** de los pesos en vez de ser un dato de entrada. Así el flete convive con la comisión en
+ * la misma unidad —el % de CZ total, que es lo comparable entre destinos— sin dejar de ser lo que
+ * realmente es: un costo del viaje que no cambia si sube el precio de la hacienda.
+ *
+ * ⚠️ Justamente por eso el % del flete **baja cuando sube el precio**: los mismos $960.000 pesan
+ * menos sobre una venta mayor. Es correcto, y es parte de lo que hay que ver al decidir.
+ */
+export function desgloseCZ(r: ResultadoOpcion): { items: ItemCZ[]; total: ItemCZ } {
+  const base = r.ventaBruta
+  const pct = (m: number) => (base > 0 ? m / base : 0)
+  const items: ItemCZ[] = []
+
+  if (r.comision > 0) {
+    items.push({
+      concepto: `Comisión${r.intermediario ? ' ' + r.intermediario : ''}`,
+      monto: r.comision, pct: pct(r.comision),
+    })
+  }
+  if (r.gastoDestino > 0) {
+    items.push({
+      concepto: `Gasto ${r.destino}`,
+      monto: r.gastoDestino, pct: pct(r.gastoDestino),
+    })
+  }
+  if (r.flete > 0) {
+    items.push({
+      concepto: 'Flete',
+      monto: r.flete, pct: pct(r.flete),
+      nota: r.viajes > 1 ? `${r.viajes} viajes` : undefined,
+    })
+  }
+
+  const suma = items.reduce((s, i) => s + i.monto, 0)
+  return { items, total: { concepto: 'CZ total', monto: suma, pct: pct(suma) } }
 }
 
 /**
