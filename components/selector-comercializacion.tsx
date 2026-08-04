@@ -110,6 +110,11 @@ export interface SeleccionComercial {
    *  que corresponde. */
   vehiculo: string
   /**
+   * Sólo cuando el sexo NO se pudo deducir de la etiqueta del segmento. De él sale la categoría
+   * y de la categoría el rinde, así que sin esto una venta a la res no se puede calcular.
+   */
+  sexoManual?: string
+  /**
    * $/kg de RES, cuando el destino compra a la res.
    *
    * Es un precio **aparte** del de venta: el de venta está en $/kg vivo y es el que usa todo el
@@ -151,6 +156,7 @@ export function SelectorComercializacion({
     ?? (rutas.length === 1 ? rutas[0]! : null)
   const faltaElegirRuta = !!destino && destino.requiere_flete && rutas.length > 1 && !ruta
   const intermediario = normas.intermediarios.find(i => i.id === seleccion.intermediarioId) ?? null
+  const compraEnRes = destino?.compra_en === "res"
 
   // ── El vehículo: se deduce de los kilos, pero se puede cambiar ─────────────
   // Es SI ENTRA O NO ENTRA: chasis cuando hay poco, y si no entra va jaula completa. No se elige
@@ -161,15 +167,20 @@ export function SelectorComercializacion({
     ? normas.tarifas.find(t => t.vehiculo === seleccion.vehiculo) ?? veh.sugerido
     : veh.sugerido
 
-  // La categoría se DERIVA del sexo (viene de la segmentación) y del tipo. Ya no se pide.
-  const categoria = categoriaDeRinde(sexo, tipo) ?? ""
+  // La categoría se DERIVA del sexo (viene de la segmentación) y del tipo.
+  //
+  // ⚠️ Pero el sexo sale de la ETIQUETA de la sección elegida ("A·Machos: …"), y si el segmento
+  // se llama de otra forma no se puede deducir. Ahí se pide — no se adivina ni se sigue sin él,
+  // porque de la categoría depende el rinde y del rinde el precio entero.
+  const sexoEfectivo = sexo ?? (seleccion.sexoManual || null) as "macho" | "hembra" | null
+  const categoria = categoriaDeRinde(sexoEfectivo, tipo) ?? ""
   const rinde = categoria ? rindeDe(normas.rinde, categoria) : null
+  const faltaSexo = compraEnRes && !sexoEfectivo
 
   // ── El precio ──────────────────────────────────────────────────────────────
   // Cuando el destino compra a la RES, el precio que se tipea es $/kg de carne y NO se puede
   // multiplicar por los kilos vivos: hay que pasarlo por el rinde. Ese era el bug que reportó el
   // usuario — un novillo "a $5.172" daba 72 % de más.
-  const compraEnRes = destino?.compra_en === "res"
   const precioResNum = parseNumeroAR(seleccion.precioRes)
   /** El precio de la res llevado a $/kg vivo. Es lo que consume el análisis. */
   const precioVivoEquivalente = compraEnRes && rinde != null && precioResNum > 0
@@ -212,7 +223,12 @@ export function SelectorComercializacion({
    *
    * Es el mismo criterio que en todo el resto: cuando falta un dato se dice, no se calcula cero.
    */
-  const czListo = !!res && res.ventaBruta > 0
+  //
+   // Y tampoco si falta CUALQUIER otra cosa. El caso que lo obligó: sin rinde, la venta bruta se
+   // calculaba multiplicando el precio de la CARNE por kilos VIVOS —inflada ~72 %— y la CZ salía
+   // 0,86 % en vez de ~1,5 %. El número aparecía completo con un cartel de faltante al lado, y el
+   // cartel se ignora mientras el número se usa.
+  const czListo = !!res && res.ventaBruta > 0 && res.faltantes.length === 0
 
   // Avisar hacia arriba. Se hace en efecto y no en el render para no escribir en el padre
   // durante el propio render de React.
@@ -272,6 +288,23 @@ export function SelectorComercializacion({
             <input type="text" className="h-6 w-20 rounded border px-1 text-right text-[11px]"
               value={seleccion.precioRes} placeholder="0,00"
               onChange={e => onCambio({ ...seleccion, precioRes: e.target.value })} />
+          </label>
+        )}
+
+        {/* Sólo aparece si el sexo no se pudo deducir del nombre del segmento. Sin él no hay
+            categoría, sin categoría no hay rinde, y sin rinde el precio de la carne no se puede
+            pasar a peso vivo. */}
+        {compraEnRes && !sexo && (
+          <label className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">Es</span>
+            <select className={`h-6 rounded border px-1 text-[11px] ${
+              faltaSexo ? "border-amber-400 bg-amber-50" : ""}`}
+              value={seleccion.sexoManual ?? ""}
+              onChange={e => onCambio({ ...seleccion, sexoManual: e.target.value })}>
+              <option value="">— macho o hembra —</option>
+              <option value="macho">macho (novillo)</option>
+              <option value="hembra">hembra (vaquillona)</option>
+            </select>
           </label>
         )}
 
@@ -387,7 +420,11 @@ export function SelectorComercializacion({
       )}
 
       {res && res.faltantes.length > 0 && (
-        <p className="mt-1 text-[10px] text-amber-700">⚠️ {res.faltantes.join(" · ")}</p>
+        <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+          ⚠️ {res.faltantes.join(" · ")}.
+          {" "}<strong>La CZ de la etapa no se toca</strong> hasta resolverlo — con esto sin
+          definir el número saldría mal, no incompleto.
+        </p>
       )}
 
       {destino && !destino.requiere_flete && (

@@ -90,6 +90,8 @@ export interface ComercialEtapa {
   vehiculo: string
   /** $/kg de RES, cuando el destino compra a la res. Se convierte a vivo por el rinde. */
   precioRes: string
+  /** Sólo si el sexo no se pudo deducir de la etiqueta del segmento. */
+  sexoManual?: string
 }
 
 export const COMERCIAL_VACIO: ComercialEtapa = {

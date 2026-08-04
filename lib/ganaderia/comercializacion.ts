@@ -349,7 +349,16 @@ export function evaluarOpcion(
   if (op.destino?.compra_en === 'res') {
     rinde = rindeDe(normas.rinde, lote.categoria)
     if (rinde == null) {
-      faltantes.push(`falta el rinde de ${lote.categoria}: sin eso no se puede comparar contra una venta a peso vivo`)
+      // ⚠️ Sin rinde NO se puede seguir. El precio está en $/kg de CARNE y los kilos son de peso
+      // VIVO: multiplicarlos es sumar peras con manzanas. Antes se seguía igual usando los kilos
+      // vivos, y el resultado era una venta bruta inflada ~72 % que además hacía parecer la CZ
+      // mucho más barata de lo que es. Un número mal calculado con un cartel al lado es peor que
+      // no tener número: el cartel se ignora y el número se usa.
+      faltantes.push(
+        lote.categoria
+          ? `falta el rinde de ${lote.categoria}: el precio es por kg de carne y no se puede pasar a peso vivo`
+          : 'no se sabe qué categoría es (macho o hembra), y sin eso no hay rinde para pasar el precio de la carne a peso vivo',
+      )
     } else {
       kgRes = kgNetos * rinde
       kgQueSePagan = kgRes
