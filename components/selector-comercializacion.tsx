@@ -26,9 +26,9 @@ import { supabase } from "@/lib/supabase"
 import { parseNumeroAR } from "@/lib/format/numero"
 import {
   desbasteDe, evaluarOpcion, desgloseCZ, precioDerivado, rindeDe, sugerirVehiculo,
-  categoriaDeRinde,
+  categoriaDeRinde, rindeDeLoteMixto,
   type TipoHacienda, type DestinoVenta, type RutaDestino, type IntermediarioVenta,
-  type TarifaFlete, type NormaDesbaste, type NormaRinde, type OpcionVenta,
+  type TarifaFlete, type NormaDesbaste, type NormaRinde, type OpcionVenta, type SexoLote,
 } from "@/lib/ganaderia/comercializacion"
 
 export interface NormasComercializacion {
@@ -134,8 +134,11 @@ export function SelectorComercializacion({
   normas: NormasComercializacion
   /** Lo pone el usuario en la etapa: recría → invernada, engorde → gordo. */
   tipo: TipoHacienda
-  /** De la segmentación. Con el tipo alcanza para saber la categoría a efectos del rinde. */
-  sexo: "macho" | "hembra" | null
+  /**
+   * De la segmentación. Con el tipo alcanza para saber la categoría a efectos del rinde.
+   * `"mixto"` = machos y hembras juntos, que es un dato, no un faltante.
+   */
+  sexo: SexoLote
   seleccion: SeleccionComercial
   /** Lo que se va a vender, ya calculado por la etapa. `precioVenta` en $/kg VIVO. */
   lote: { cabezas: number; pesoVivo: number; precioVenta: number }
@@ -172,9 +175,17 @@ export function SelectorComercializacion({
   // ⚠️ Pero el sexo sale de la ETIQUETA de la sección elegida ("A·Machos: …"), y si el segmento
   // se llama de otra forma no se puede deducir. Ahí se pide — no se adivina ni se sigue sin él,
   // porque de la categoría depende el rinde y del rinde el precio entero.
-  const sexoEfectivo = sexo ?? (seleccion.sexoManual || null) as "macho" | "hembra" | null
+  const sexoEfectivo: SexoLote = sexo ?? ((seleccion.sexoManual || null) as SexoLote)
   const categoria = categoriaDeRinde(sexoEfectivo, tipo) ?? ""
-  const rinde = categoria ? rindeDe(normas.rinde, categoria) : null
+
+  // Un lote MIXTO no tiene una categoría: tiene dos. Pero si las dos rinden lo mismo —hoy novillo
+  // y vaquillona gorda rinden 58 %— no hay nada que preguntar. Preguntarlo sería pedir un dato
+  // que no cambia el resultado.
+  const mixto = sexoEfectivo === "mixto"
+  const rindeMix = mixto && tipo === "gordo" ? rindeDeLoteMixto(normas.rinde, tipo) : null
+  const rinde = mixto ? rindeMix?.pct ?? null : (categoria ? rindeDe(normas.rinde, categoria) : null)
+
+  // Sólo se pide el sexo si no se pudo deducir NI es mixto: un mixto es un dato, no un faltante.
   const faltaSexo = compraEnRes && !sexoEfectivo
 
   // ── El precio ──────────────────────────────────────────────────────────────
@@ -195,7 +206,8 @@ export function SelectorComercializacion({
     else if (compraEnRes) {
       notaPrecio = rinde == null
         ? `${destino.nombre} compra a la RES y falta el rinde${categoria ? " de " + categoria : ""}`
-        : `${destino.nombre} compra a la RES · ${categoria} rinde ${(rinde * 100).toFixed(0)} %`
+        : `${destino.nombre} compra a la RES · `
+          + (mixto ? rindeMix!.motivo : `${categoria} rinde ${(rinde * 100).toFixed(0)} %`)
     }
   }
 
@@ -204,7 +216,11 @@ export function SelectorComercializacion({
     : null
   const res = op
     ? evaluarOpcion(
-        { tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo },
+        {
+          tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo,
+          // En un lote mixto el rinde no sale de la categoría: se resuelve aparte.
+          rindeForzado: mixto ? rindeMix?.pct ?? null : null,
+        },
         op, { desbaste: normas.desbaste, rinde: normas.rinde })
     : null
   const cz = res ? desgloseCZ(res) : null

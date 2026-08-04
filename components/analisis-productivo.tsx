@@ -20,6 +20,7 @@ import type { FilaMercado } from "@/app/api/precios-mercado/route"
 import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 // Qué se vende y a quién: completa el desbaste y la CZ desde las normas de comercialización.
 import { SelectorComercializacion, useNormasComercializacion } from "./selector-comercializacion"
+import type { SexoLote } from "@/lib/ganaderia/comercializacion"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
@@ -581,6 +582,23 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
 
   // Precio de mercado: sexo derivado de la Fuente (label "A·Machos: …" / "A·Hembras: …")
   const sexoSeg: "macho" | "hembra" | null = /achos|orito/i.test(fuente) ? "macho" : /embra|ernera/i.test(fuente) ? "hembra" : null
+
+  /**
+   * El sexo PARA COMERCIALIZAR, que admite un tercer valor: **mixto**.
+   *
+   * `sexoSeg` (el del precio de mercado) prueba machos primero, así que una sección
+   * `"Machos + Hembras"` le da `"macho"` — para el mercado alcanza, pero para el rinde no: sería
+   * tratar un lote mixto como si fuera todo novillo.
+   *
+   * Un mixto **no es un faltante**: es un dato. Si novillo y vaquillona rinden igual —hoy 58 %
+   * los dos— no hay nada que preguntar.
+   */
+  const sexoComercial: SexoLote = (() => {
+    const m = /achos|orito/i.test(fuente)
+    const h = /embra|ernera/i.test(fuente)
+    if (/todos/i.test(fuente) || (m && h)) return "mixto"
+    return m ? "macho" : h ? "hembra" : null
+  })()
   const puedeMercado = !!(mercado && sexoSeg)
   const fmtNum = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 0 })
   // Se busca por kg NETOS (post-desbaste), que es el peso al que cotiza el mercado.
@@ -690,7 +708,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
                   <SelectorComercializacion
                     normas={normasCom}
                     tipo={comercial.tipo}
-                    sexo={sexoSeg}
+                    sexo={sexoComercial}
                     seleccion={comercial}
                     lote={{ cabezas: c.cant, pesoVivo: c.pFin, precioVenta: num(precioVenta) }}
                     onCambio={s => setComercial({ ...comercial, ...s })}

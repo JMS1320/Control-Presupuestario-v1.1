@@ -135,6 +135,8 @@ export function desbasteDe(
   return Number(abierta?.pct ?? conTecho[conTecho.length - 1]?.pct ?? 0)
 }
 
+export type SexoLote = 'macho' | 'hembra' | 'mixto' | null
+
 /**
  * La categoría a efectos del RINDE, derivada del sexo y del tipo.
  *
@@ -143,13 +145,41 @@ export function desbasteDe(
  *
  * La invernada devuelve `null` a propósito: **no se vende a la res**, así que no necesita rinde.
  */
-export function categoriaDeRinde(
-  sexo: 'macho' | 'hembra' | null, tipo: TipoHacienda,
-): string | null {
+export function categoriaDeRinde(sexo: SexoLote, tipo: TipoHacienda): string | null {
   if (tipo !== 'gordo') return null
   if (sexo === 'hembra') return 'Vaquillona Gorda'
   if (sexo === 'macho') return 'Novillo Gordo'
   return null
+}
+
+/**
+ * El rinde de un lote **MIXTO** (machos y hembras juntos).
+ *
+ * Un lote mixto no tiene una categoría: tiene dos. Pero si las dos rinden lo mismo —hoy novillo
+ * y vaquillona gorda rinden 58 %— **no hay nada que preguntar**, y preguntarlo sería pedir un
+ * dato que no cambia el resultado.
+ *
+ * Si algún día difieren, ahí sí importa: el lote habría que partirlo o elegir, y devolver un
+ * promedio sin saber la proporción sería inventar. Por eso devuelve `null` con el motivo.
+ */
+export function rindeDeLoteMixto(
+  normas: NormaRinde[], tipo: TipoHacienda,
+): { pct: number | null; motivo: string } {
+  if (tipo !== 'gordo') return { pct: null, motivo: 'la invernada no se vende a la res' }
+
+  const m = rindeDe(normas, 'Novillo Gordo')
+  const h = rindeDe(normas, 'Vaquillona Gorda')
+  if (m == null || h == null) {
+    return { pct: null, motivo: 'falta cargar el rinde de novillo o de vaquillona gorda' }
+  }
+  if (Math.abs(m - h) < 1e-9) {
+    return { pct: m, motivo: `lote mixto, pero novillo y vaquillona rinden igual (${(m * 100).toFixed(0)} %)` }
+  }
+  return {
+    pct: null,
+    motivo: `lote mixto y los rindes difieren (novillo ${(m * 100).toFixed(0)} %, `
+      + `vaquillona ${(h * 100).toFixed(0)} %): hay que separarlo o elegir cuál aplica`,
+  }
 }
 
 /** El rinde de una categoría. `null` = no está cargado, y eso NO es cero. */
@@ -290,6 +320,11 @@ export interface DatosLote {
   cabezas: number
   /** Peso vivo promedio por cabeza, antes del desbaste. */
   pesoVivo: number
+  /**
+   * Rinde ya resuelto, para los casos que no salen de `categoria` — un lote mixto, por ejemplo.
+   * Si viene, manda sobre la tabla.
+   */
+  rindeForzado?: number | null
 }
 
 export interface ResultadoOpcion {
@@ -347,7 +382,7 @@ export function evaluarOpcion(
   let kgQueSePagan = kgNetos
 
   if (op.destino?.compra_en === 'res') {
-    rinde = rindeDe(normas.rinde, lote.categoria)
+    rinde = lote.rindeForzado ?? rindeDe(normas.rinde, lote.categoria)
     if (rinde == null) {
       // ⚠️ Sin rinde NO se puede seguir. El precio está en $/kg de CARNE y los kilos son de peso
       // VIVO: multiplicarlos es sumar peras con manzanas. Antes se seguía igual usando los kilos
