@@ -237,6 +237,9 @@
 Endpoint `app/api/import-pesadas/route.ts` (2 acciones: `?accion=analizar` y `?accion=confirmar`). Modal en `tab-terneros.tsx`.
 
 - **Una fecha por archivo.** Si el Excel tiene fechas distintas → lo **rechaza** (separar en un archivo por fecha).
+- 🔴 **La fecha se CONFIRMA, no se detecta** (2026-08-03). Es editable en el paso 1 y, si el serial
+  y el texto de la celda no coinciden, aparece un aviso con las dos opciones. Motivo: un `3/8` mandó
+  176 pesadas a marzo en silencio → ver § *Fechas de Excel* en Troubleshooting.
 - **IDV → caravana_oficial** vía `idvACaravana` (padStart 15, espacio tras pos 3). Match contra `productivo.terneros` activos.
 - **Clasificación:** `ok` (1 match) · `duplicadas` (>1 match → el usuario elige ternero) · `no_encontradas` (caravana en Excel pero no en BD → "sin vincular" con `ternero_id=null` + `caravana_idv`, o "crear nuevo" ternero) · **`sin_idv`** (fila con peso pero SIN caravana legible → hoy **solo se cuenta y se DESCARTA**, no se guarda). Ver pendiente B-FEAT-15.
 - **Columnas del historial = por FECHA.** Importar más pesadas con la **misma fecha** → van a la **misma columna** (no crea columna nueva). Fecha distinta → columna nueva.
@@ -549,6 +552,41 @@ Grep "#descartado" KNOWLEDGE.md     # Métodos NO usar
 ---
 
 # 🚨 **TROUBLESHOOTING ÚNICO** `#error #solucion`
+
+## Fechas de Excel: un "3/8" NO se puede resolver con certeza `#import #excel #fechas #2026-08-03`
+
+**Aplica a cualquier importador que lea fechas de una planilla.** No es un problema de pesadas.
+
+**Síntoma**: el usuario carga **3/8 (agosto)** y entran **176 pesadas con fecha 8 de marzo**, en
+silencio. Nadie se entera hasta que el peso promedio del rodeo hace un pico y vuelve a bajar.
+
+**Causa**: hay **dos fuentes** de la fecha y pueden contradecirse.
+
+| Fuente | Qué es | Cuándo miente |
+|---|---|---|
+| **El serial** (el número que guardó Excel) | fecha absoluta, sin ambigüedad | si la planilla estaba en locale **US**, Excel interpretó mal lo que el usuario tipeó |
+| **El texto mostrado** (`.w`) | conserva el orden de dígitos | ese orden lo pone el **formato de la celda**, que puede ser `m/d` aunque el dato esté bien |
+
+**Ya falló en las dos direcciones, y ése es el punto:**
+- **2026-07** — US Excel guardó `05/06` (5 de junio) como *May 6*: **el serial mentía**. Se
+  "arregló" priorizando el texto.
+- **2026-08-03** — el serial decía *Aug 3* y el formato lo mostraba `8/3`: **el texto mentía**.
+  Leerlo como dd/mm lo mandó a marzo.
+
+⚠️ **La lección**: no hay heurística que gane siempre. Cambiar de bando **mueve** el bug, no lo
+saca. El primer fix fue exactamente eso y por eso volvió dos semanas después con el signo cambiado.
+
+**Solución**: dejar de adivinar. Se calculan **las dos lecturas**, se propone el serial, y si
+difieren la otra viaja como alternativa con los dos botones a la vista. Y sobre todo: **la fecha
+es EDITABLE antes de confirmar**, validada también en el endpoint. Una fecha mal leída se
+multiplica por todas las filas del archivo en silencio; el arreglo de fondo es que **haya que
+confirmarla**, no acertarle.
+
+**Regla general**: si un dato del archivo se aplica a **todas** las filas, tiene que pasar por una
+confirmación humana antes de grabarse.
+
+**Dónde**: `app/api/import-pesadas/route.ts` (`parseFecha`) + `components/tab-terneros.tsx`.
+Los demás importadores leen el serial (`cellDates:false`) y **no** hacen el truco del texto.
 
 ## SICORE — TXT no importa en ARCA "debería ser Numérico Positivo" `#sicore #arca #retenciones #2026-07-13`
 **Contexto**: El TXT de retenciones que exporta la app (Formato Estándar Retenciones **v9.0**) se sube a ARCA/SICORE. Mayo 2026 (2 quincenas) subió OK; **junio no** → error en cada renglón.

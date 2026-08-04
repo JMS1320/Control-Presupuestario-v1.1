@@ -183,6 +183,33 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
   - **Caravana** (opcional, nueva) → caravana **no oficial** (CUT/Descarte, toros): texto tal cual (ej. `B079`). Matchea **texto exacto** contra `caravana_oficial` o `caravana_interna`. Si esta columna tiene valor, se usa en vez de IDV. Resuelve que antes estos animales caían en "sin IDV" y no se podían pesar por import.
 - El análisis clasifica en **OK / no encontradas / duplicadas**; para las no encontradas elegís *sin vincular / crear nuevo / ignorar* (amortiguador ante errores). El código de matcheo vive en `app/api/import-pesadas/route.ts`.
 
+#### 🔴 La fecha se CONFIRMA, no se detecta 🟡 *(2026-08-03, sin testear)*
+En el **paso 1** la fecha es un **campo editable**. La app propone la que leyó del archivo, pero
+**la que se graba es la que quede ahí**.
+
+Si el archivo es **ambiguo** —el número que guardó Excel y el texto que muestra la celda no
+coinciden— el recuadro se pone **ámbar** y ofrece **las dos opciones en botones**, con el texto de
+la celda a la vista:
+
+> ⚠️ La celda muestra **8/3/2026**, pero Excel la guardó como **03/08/2026**. Confirmá cuál es.
+
+**Por qué existe esto.** Un `3/8` en una planilla **no se puede resolver con certeza**: depende del
+formato de la celda, no de lo que se tipeó. El 2026-08-03 entraron **176 pesadas de agosto con
+fecha de marzo**, en silencio, y sólo se notó porque el peso promedio del rodeo hacía un pico y
+volvía a bajar. Detalle → `KNOWLEDGE.md` § *Fechas de Excel*.
+
+##### 🧪 Cómo probarlo
+1. Importar un archivo de pesadas → en el paso 1 tiene que aparecer **la fecha en un campo `date`**,
+   con la fecha en letras al lado.
+2. **Cambiarla a mano** y confirmar → las pesadas tienen que quedar con **la fecha tipeada**, no con
+   la detectada. *(Verificable en el historial: la columna nueva lleva esa fecha.)*
+3. Dejar el campo **vacío** → el botón *Importar pesadas* queda **deshabilitado**.
+4. Si tenés a mano un archivo con la fecha en formato `m/d`: tiene que salir el **recuadro ámbar**
+   con los dos botones, y elegir uno tiene que cambiar el campo.
+5. **Control de sanidad después de importar**: el peso promedio de la columna nueva tiene que ser
+   **mayor que el de la columna anterior**. Si baja, la fecha probablemente quedó en el lugar
+   equivocado de la línea de tiempo.
+
 ### Segmentadores (multi) 🟡
 - **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
 - El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").
