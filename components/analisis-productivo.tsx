@@ -85,12 +85,16 @@ export interface ComercialEtapa {
   destinoId: string
   intermediarioId: string
   rutaId: string
+  /** Se deriva del sexo y el tipo; queda por compatibilidad con estudios guardados. */
   categoria: string
   vehiculo: string
+  /** $/kg de RES, cuando el destino compra a la res. Se convierte a vivo por el rinde. */
+  precioRes: string
 }
 
 export const COMERCIAL_VACIO: ComercialEtapa = {
-  tipo: "gordo", destinoId: "", intermediarioId: "", rutaId: "", categoria: "", vehiculo: "",
+  tipo: "gordo", destinoId: "", intermediarioId: "", rutaId: "", categoria: "",
+  vehiculo: "", precioRes: "",
 }
 
 interface SegProps extends Props {
@@ -217,12 +221,18 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
    * **No pisa lo tipeado a mano**: el usuario pidió poder corregir después de elegir. Sólo
    * escribe cuando el valor cambió de verdad.
    */
-  const aplicarComercial = (v: { desbastePct: number; czPct: number }) => {
+  const aplicarComercial = (v: { desbastePct: number; czPct: number; precioVivo?: number }) => {
     const f = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 2 })
     const d = f(v.desbastePct * 100)
     const z = f(v.czPct * 100)
     setDesbSal(prev => (prev === d ? prev : d))
     setCzSal(prev => (prev === z ? prev : z))
+    // Cuando el destino compra a la RES, el precio de venta del análisis pasa a ser el
+    // EQUIVALENTE en $/kg vivo. Todo el resto del cálculo trabaja en peso vivo.
+    if (v.precioVivo != null && v.precioVivo > 0) {
+      const p = f(v.precioVivo)
+      setPrecioVenta(prev => (prev === p ? prev : p))
+    }
   }
 
   // Ración
@@ -671,8 +681,9 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
                   <SelectorComercializacion
                     normas={normasCom}
                     tipo={comercial.tipo}
+                    sexo={sexoSeg}
                     seleccion={comercial}
-                    lote={{ cabezas: c.cant, pesoVivo: c.pFin, precioVenta: num(precioVenta), categoria: comercial.categoria }}
+                    lote={{ cabezas: c.cant, pesoVivo: c.pFin, precioVenta: num(precioVenta) }}
                     onCambio={s => setComercial({ ...comercial, ...s })}
                     onTipo={t => setComercial({ ...comercial, tipo: t })}
                     onCalculado={aplicarComercial}

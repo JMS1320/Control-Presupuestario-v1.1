@@ -135,6 +135,23 @@ export function desbasteDe(
   return Number(abierta?.pct ?? conTecho[conTecho.length - 1]?.pct ?? 0)
 }
 
+/**
+ * La categoría a efectos del RINDE, derivada del sexo y del tipo.
+ *
+ * No es un dato que haya que pedir: el sexo viene de la segmentación (machos / hembras) y el
+ * tipo lo pone la etapa. Pedirlo aparte era un campo de más — lo marcó el usuario (2026-08-04).
+ *
+ * La invernada devuelve `null` a propósito: **no se vende a la res**, así que no necesita rinde.
+ */
+export function categoriaDeRinde(
+  sexo: 'macho' | 'hembra' | null, tipo: TipoHacienda,
+): string | null {
+  if (tipo !== 'gordo') return null
+  if (sexo === 'hembra') return 'Vaquillona Gorda'
+  if (sexo === 'macho') return 'Novillo Gordo'
+  return null
+}
+
 /** El rinde de una categoría. `null` = no está cargado, y eso NO es cero. */
 export function rindeDe(normas: NormaRinde[], categoria: string): number | null {
   const c = categoria.trim().toLowerCase()
@@ -252,7 +269,14 @@ export function sugerirVehiculo(
 }
 
 export interface OpcionVenta {
-  destino: DestinoVenta
+  /**
+   * `null` = **no hay destino**, y eso es un caso legítimo, no un dato faltante.
+   *
+   * La invernada no tiene destino: *"es muy cambiante según comprador"*. Lo único que se sabe es
+   * quién comercializa. Sin destino no hay flete ni gasto de frigorífico — sólo la comisión del
+   * intermediario.
+   */
+  destino: DestinoVenta | null
   intermediario: IntermediarioVenta | null
   ruta: RutaDestino | null
   tarifa: TarifaFlete | null
@@ -322,7 +346,7 @@ export function evaluarOpcion(
   let kgRes: number | null = null
   let kgQueSePagan = kgNetos
 
-  if (op.destino.compra_en === 'res') {
+  if (op.destino?.compra_en === 'res') {
     rinde = rindeDe(normas.rinde, lote.categoria)
     if (rinde == null) {
       faltantes.push(`falta el rinde de ${lote.categoria}: sin eso no se puede comparar contra una venta a peso vivo`)
@@ -333,12 +357,12 @@ export function evaluarOpcion(
     }
   }
 
-  if (op.precio == null) faltantes.push(`falta el precio de ${op.destino.nombre}`)
+  if (op.precio == null) faltantes.push(`falta el precio${op.destino ? ' de ' + op.destino.nombre : ''}`)
   const precio = op.precio ?? 0
   const ventaBruta = kgQueSePagan * precio
   detalle.push({
     concepto: 'Venta bruta', monto: ventaBruta,
-    nota: `${Math.round(kgQueSePagan).toLocaleString('es-AR')} kg ${op.destino.compra_en === 'res' ? 'res' : 'vivo'} × $${precio}`,
+    nota: `${Math.round(kgQueSePagan).toLocaleString('es-AR')} kg ${op.destino?.compra_en === 'res' ? 'res' : 'vivo'} × $${precio}`,
   })
 
   // ── Comisión del intermediario ────────────────────────────────────────────
@@ -358,19 +382,19 @@ export function evaluarOpcion(
   }
 
   // ── Gasto propio del destino (Cañuelas 0,75 %) ────────────────────────────
-  const gastoDestino = ventaBruta * Number(op.destino.pct_gasto || 0)
+  const gastoDestino = ventaBruta * Number(op.destino?.pct_gasto || 0)
   if (gastoDestino > 0) {
     detalle.push({
-      concepto: `Gasto ${op.destino.nombre} ${(Number(op.destino.pct_gasto) * 100).toFixed(2)} %`,
+      concepto: `Gasto ${op.destino!.nombre} ${(Number(op.destino!.pct_gasto) * 100).toFixed(2)} %`,
       monto: -gastoDestino,
     })
   }
 
   // ── Flete ─────────────────────────────────────────────────────────────────
-  // La invernada NO paga flete de venta.
+  // La invernada NO paga flete de venta. Sin destino tampoco hay flete: no hay adónde llevarlo.
   let flete = 0
   let viajes = 0
-  if (op.destino.requiere_flete) {
+  if (op.destino?.requiere_flete) {
     if (!op.tarifa) faltantes.push(`falta la tarifa de flete (${op.destino.vehiculo ?? 'vehículo'})`)
     else if (!op.ruta) faltantes.push(`falta la distancia a ${op.destino.nombre}`)
     else {
@@ -379,14 +403,17 @@ export function evaluarOpcion(
       detalle.push({ concepto: `Flete · ${op.ruta.descripcion}`, monto: -flete, nota: f.detalle })
     }
   } else {
-    detalle.push({ concepto: 'Flete', monto: 0, nota: 'la invernada no paga flete de venta' })
+    detalle.push({
+      concepto: 'Flete', monto: 0,
+      nota: op.destino ? 'el destino retira' : 'la invernada no paga flete de venta',
+    })
   }
 
   const ingresa = ventaBruta - comision - gastoDestino - flete
   detalle.push({ concepto: 'INGRESA', monto: ingresa })
 
   return {
-    destino: op.destino.nombre,
+    destino: op.destino?.nombre ?? 'sin destino',
     intermediario: op.intermediario?.nombre ?? null,
     ingresa,
     ingresaPorCabeza: lote.cabezas > 0 ? ingresa / lote.cabezas : 0,

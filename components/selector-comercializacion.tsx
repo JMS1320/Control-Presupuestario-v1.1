@@ -23,8 +23,10 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { parseNumeroAR } from "@/lib/format/numero"
 import {
   desbasteDe, evaluarOpcion, desgloseCZ, precioDerivado, rindeDe, sugerirVehiculo,
+  categoriaDeRinde,
   type TipoHacienda, type DestinoVenta, type RutaDestino, type IntermediarioVenta,
   type TarifaFlete, type NormaDesbaste, type NormaRinde, type OpcionVenta,
 } from "@/lib/ganaderia/comercializacion"
@@ -100,13 +102,21 @@ export interface SeleccionComercial {
    */
   rutaId: string
   /**
-   * La categoría que se vende. **De ella depende el rinde**, no del destino: un novillo gordo
-   * rinde 58 % y una vaca conserva 45 %, le vendan a quien le vendan.
+   * ⚠️ La categoría **se deriva** del sexo (viene de la segmentación) y del tipo. Ya no se elige:
+   * era un campo de más. Se conserva en el estado sólo por compatibilidad con estudios guardados.
    */
   categoria: string
   /** Vacío = el que sugiere la app por los kilos. Editable: a veces el camión que hay no es el
-   *  que conviene. */
+   *  que corresponde. */
   vehiculo: string
+  /**
+   * $/kg de RES, cuando el destino compra a la res.
+   *
+   * Es un precio **aparte** del de venta: el de venta está en $/kg vivo y es el que usa todo el
+   * análisis. Sin esto, el precio de la carne se multiplicaba por los kilos vivos — un novillo
+   * "a $5.172" daba 72 % de más.
+   */
+  precioRes: string
 }
 
 /**
@@ -114,18 +124,23 @@ export interface SeleccionComercial {
  * para que la etapa los use. El usuario los puede pisar después.
  */
 export function SelectorComercializacion({
-  normas, tipo, seleccion, lote, onCambio, onTipo, onCalculado,
+  normas, tipo, sexo, seleccion, lote, onCambio, onTipo, onCalculado,
 }: {
   normas: NormasComercializacion
   /** Lo pone el usuario en la etapa: recría → invernada, engorde → gordo. */
   tipo: TipoHacienda
+  /** De la segmentación. Con el tipo alcanza para saber la categoría a efectos del rinde. */
+  sexo: "macho" | "hembra" | null
   seleccion: SeleccionComercial
-  /** Lo que se va a vender, ya calculado por la etapa. */
-  lote: { cabezas: number; pesoVivo: number; precioVenta: number; categoria: string }
+  /** Lo que se va a vender, ya calculado por la etapa. `precioVenta` en $/kg VIVO. */
+  lote: { cabezas: number; pesoVivo: number; precioVenta: number }
   onCambio: (s: SeleccionComercial) => void
   onTipo?: (t: TipoHacienda) => void
-  /** Los dos porcentajes que la etapa necesita, ya resueltos. */
-  onCalculado?: (v: { desbastePct: number; czPct: number }) => void
+  /**
+   * Lo que la etapa necesita, ya resuelto. `precioVivo` sólo viene cuando el destino compra a la
+   * res: es el precio de la carne **ya convertido** a $/kg vivo por el rinde.
+   */
+  onCalculado?: (v: { desbastePct: number; czPct: number; precioVivo?: number }) => void
 }) {
   const destinos = normas.destinos.filter(d => d.aplica_a === "ambos" || d.aplica_a === tipo)
   const destino = destinos.find(d => d.id === seleccion.destinoId) ?? null
@@ -146,25 +161,34 @@ export function SelectorComercializacion({
     ? normas.tarifas.find(t => t.vehiculo === seleccion.vehiculo) ?? veh.sugerido
     : veh.sugerido
 
-  // La categoría vendida: de ella sale el rinde. Si no se eligió, se usa la que traiga la etapa.
-  const categoria = seleccion.categoria || lote.categoria
-  const rinde = rindeDe(normas.rinde, categoria)
+  // La categoría se DERIVA del sexo (viene de la segmentación) y del tipo. Ya no se pide.
+  const categoria = categoriaDeRinde(sexo, tipo) ?? ""
+  const rinde = categoria ? rindeDe(normas.rinde, categoria) : null
 
-  // El precio: si el destino deriva el suyo de otro (el matarife), se resuelve; si compra a la
-  // res, el precio de lista es por kg de RES y hay que llevarlo con el rinde.
-  let precio: number | null = lote.precioVenta
+  // ── El precio ──────────────────────────────────────────────────────────────
+  // Cuando el destino compra a la RES, el precio que se tipea es $/kg de carne y NO se puede
+  // multiplicar por los kilos vivos: hay que pasarlo por el rinde. Ese era el bug que reportó el
+  // usuario — un novillo "a $5.172" daba 72 % de más.
+  const compraEnRes = destino?.compra_en === "res"
+  const precioResNum = parseNumeroAR(seleccion.precioRes)
+  /** El precio de la res llevado a $/kg vivo. Es lo que consume el análisis. */
+  const precioVivoEquivalente = compraEnRes && rinde != null && precioResNum > 0
+    ? precioResNum * rinde
+    : null
+
+  let precio: number | null = compraEnRes ? precioResNum || null : lote.precioVenta
   let notaPrecio: string | null = null
   if (destino) {
     const der = precioDerivado(destino, normas.destinos, { [destino.precio_ref_destino_id ?? ""]: lote.precioVenta })
     if (der) { precio = der.precio; notaPrecio = der.motivo }
-    else if (destino.compra_en === "res") {
+    else if (compraEnRes) {
       notaPrecio = rinde == null
-        ? `falta el rinde de ${categoria}`
-        : `precio por kg de RES · rinde ${(rinde * 100).toFixed(0)} % (${categoria})`
+        ? `${destino.nombre} compra a la RES y falta el rinde${categoria ? " de " + categoria : ""}`
+        : `${destino.nombre} compra a la RES · ${categoria} rinde ${(rinde * 100).toFixed(0)} %`
     }
   }
 
-  const op: OpcionVenta | null = destino && !faltaElegirRuta
+  const op: OpcionVenta | null = !faltaElegirRuta
     ? { destino, intermediario, ruta, tarifa, precio }
     : null
   const res = op
@@ -174,16 +198,24 @@ export function SelectorComercializacion({
     : null
   const cz = res ? desgloseCZ(res) : null
 
-  // Avisar hacia arriba los dos porcentajes. Se hace en efecto y no en el render para no
-  // escribir en el padre durante el propio render de React.
+  // El desbaste que corresponde. ⚠️ Se aplica SIEMPRE, con destino o sin él: es del animal, no
+  // del comprador. Antes sólo se calculaba si había un destino elegido, y por eso al pasar de
+  // gordo a invernada el desbaste se quedaba clavado en 8 % — el bug que reportó el usuario.
+  const desbastePct = normas.desbaste.length > 0
+    ? desbasteDe(normas.desbaste, tipo, lote.pesoVivo)
+    : null
+
+  // Avisar hacia arriba. Se hace en efecto y no en el render para no escribir en el padre
+  // durante el propio render de React.
   useEffect(() => {
-    if (!res || !cz) return
+    if (desbastePct == null) return
     onCalculado?.({
-      desbastePct: desbasteDe(normas.desbaste, tipo, lote.pesoVivo),
-      czPct: cz.total.pct,
+      desbastePct,
+      czPct: cz?.total.pct ?? 0,
+      precioVivo: precioVivoEquivalente ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [res?.ingresa, cz?.total.pct, tipo, lote.pesoVivo])
+  }, [desbastePct, cz?.total.pct, precioVivoEquivalente])
 
   return (
     <div className="rounded border bg-slate-50 px-2 py-1.5 text-xs">
@@ -199,15 +231,19 @@ export function SelectorComercializacion({
           </select>
         </label>
 
-        <label className="flex items-center gap-1">
-          <span className="text-[10px] text-gray-500">Destino</span>
-          <select className="h-6 rounded border px-1 text-[11px]"
-            value={seleccion.destinoId}
-            onChange={e => onCambio({ ...seleccion, destinoId: e.target.value, rutaId: "" })}>
-            <option value="">— a mano —</option>
-            {destinos.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
-          </select>
-        </label>
+        {/* La invernada no tiene destino: el comprador es cambiante y sólo se sabe quién
+            comercializa. Por eso el selector aparece sólo para gordo. */}
+        {tipo === "gordo" && (
+          <label className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">Destino</span>
+            <select className="h-6 rounded border px-1 text-[11px]"
+              value={seleccion.destinoId}
+              onChange={e => onCambio({ ...seleccion, destinoId: e.target.value, rutaId: "", vehiculo: "" })}>
+              <option value="">— sin destino —</option>
+              {destinos.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+            </select>
+          </label>
+        )}
 
         <label className="flex items-center gap-1">
           <span className="text-[10px] text-gray-500">Intermediario</span>
@@ -219,22 +255,14 @@ export function SelectorComercializacion({
           </select>
         </label>
 
-        {/* La categoría vendida: de ella depende el RINDE, no del destino. Un novillo gordo
-            rinde 58 % y una vaca conserva 45 %, le venda a quien le venda. */}
-        {normas.rinde.length > 0 && (
+        {/* El precio de la RES va aparte del de venta: el de venta es $/kg vivo y lo usa todo el
+            análisis. Multiplicar el de la carne por los kilos vivos daba 72 % de más. */}
+        {compraEnRes && (
           <label className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-500">Categoría</span>
-            <select className={`h-6 rounded border px-1 text-[11px] ${
-              destino?.compra_en === "res" && rinde == null ? "border-amber-400 bg-amber-50" : ""}`}
-              value={categoria}
-              onChange={e => onCambio({ ...seleccion, categoria: e.target.value })}>
-              <option value="">— elegir —</option>
-              {normas.rinde.map(r => (
-                <option key={r.categoria} value={r.categoria}>
-                  {r.categoria} · rinde {(r.pct * 100).toFixed(0)} %
-                </option>
-              ))}
-            </select>
+            <span className="text-[10px] text-gray-500">$/kg res</span>
+            <input type="text" className="h-6 w-20 rounded border px-1 text-right text-[11px]"
+              value={seleccion.precioRes} placeholder="0,00"
+              onChange={e => onCambio({ ...seleccion, precioRes: e.target.value })} />
           </label>
         )}
 
@@ -299,7 +327,20 @@ export function SelectorComercializacion({
       )}
 
       {notaPrecio && (
-        <p className="mt-1 text-[10px] text-blue-700">ℹ️ {notaPrecio}</p>
+        <p className="mt-1 text-[10px] text-blue-700">
+          ℹ️ {notaPrecio}
+          {precioVivoEquivalente != null && (
+            <> → equivale a <strong>{pesos(precioVivoEquivalente)}/kg vivo</strong>,
+              que es lo que usa el análisis</>
+          )}
+        </p>
+      )}
+
+      {tipo === "invernada" && (
+        <p className="mt-1 text-[10px] text-gray-500">
+          La invernada <strong>no tiene destino</strong>: el comprador es cambiante. Lo que define
+          la CZ es el intermediario, y no hay flete de venta.
+        </p>
       )}
 
       {/* ── El desglose de la CZ: pesos, % parcial y total ─────────────────── */}
