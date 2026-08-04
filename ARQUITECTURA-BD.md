@@ -220,7 +220,8 @@ mes corresponde el saldo; los meses anteriores no se acumulan.
 | Tabla | Propósito |
 |-------|-----------|
 | `actividades` | Parámetros de una actividad (recría, engorde, …): **el rinde** (`ganancia_diaria_kg`), la ración como % del peso vivo y la mortandad. Asignar la actividad define el ingreso **y** el costo de una sola vez, porque la curva de peso con que se factura la venta sale del mismo número que los kilos de maíz que se compran. |
-| `actividad_insumos` | Los costos directos de esa actividad, **uno por fila**. Es tabla hija y no columnas fijas a propósito: cada actividad tiene sus propios insumos, y una nueva no debe exigir migrar la tabla. |
+| `actividad_insumos` | Los costos directos de esa actividad, **uno por fila**. Es tabla hija y no columnas fijas a propósito: cada actividad tiene sus propios insumos, y una nueva no debe exigir migrar la tabla. Cada línea lleva **su propia base**: `has_aplicacion` (las 15 has de pastura, no las 175 del campo), `base_cabezas` + `cabezas_aplicacion` (12 toros, no 260 vacas), `cantidad_aplicacion` (136,41 ton de silo). |
+| `actividad_insumo_ajustes` (2026-08-03) | La **cadena** de un costo: `base × IPC × +30 %`. Espejo de `public.presupuesto_variable_ajustes`, y es lo que permite retirar `presupuesto_variables` sin perder nada. El cálculo lo hace `aplicarAjustes()` en `lib/presupuesto/variables.ts` — **una sola implementación para las dos**, o el margen y el presupuesto darían distinto sobre el mismo costo. |
 | `lote_tramos` | La actividad aplicada a un lote entre dos fechas, encadenables (recría y después engorde). `actividad_id` con `ON DELETE RESTRICT`: borrar una actividad en uso tiene que fallar fuerte. |
 
 El costo directo **no se registra en ningún lado** — no es template ni factura esperada. Es una
@@ -230,7 +231,13 @@ arrendamiento. Decisión del usuario, 2026-07-30.
 `actividad_insumos.modo` decide el **cuánto y el cuándo**, y con eso las familias de costo
 (por cabeza-día · por cabeza-evento · por hectárea · por valor producido) entran en un solo
 mecanismo: `pct_racion` · `kg_cabeza_dia` · `unid_cabeza_mes` · `unid_cabeza_evento` ·
-`dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_mes` · `pct_produccion`.
+`dosis_cada_kg` · `monto_cabeza` · `monto_ha` · `monto_unidad` · `monto_mes` · `pct_produccion`.
+`monto_unidad` (2026-08-03) es **cantidad fija × precio** — el silo se calcula por tonelada y el
+gasoil por litro; forzarlos a `monto_ha` los multiplicaba por una superficie ajena.
+
+⚠️ **`amortiza_anios` lo aplica el MARGEN, no el presupuesto.** El presupuesto es caja (la pastura
+se paga entera el año que se siembra); el margen es resultado (se reparte en su vida útil). Que
+den distinto es correcto.
 `momento` (`diario`/`mensual`/`inicio`/`fin`/`ciclo`) ubica el gasto en el tramo; `ciclo` es
 "tantos USD por hectárea en el cultivo entero" y hoy se prorratea por días (provisorio, ver
 FASE C · C-9).

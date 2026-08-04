@@ -9,18 +9,22 @@
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
-> **2026-08-03 — TESTEAR + UNA DECISIÓN.** El Presupuesto quedó cerrado e implementado y el
-> **margen por actividad** arrancó. 37 commits desde `punto-seguro-2026-08-02`.
+> **2026-08-03 — TESTEAR LA CRÍA DESDE EL MARGEN.** El Presupuesto quedó cerrado e implementado y
+> el **margen por actividad** pasó de ser un reporte a ser **la pantalla donde se trabajan los
+> costos de producción**. 45 commits desde `punto-seguro-2026-08-02`.
 >
-> **🔴 La decisión que ordena el resto: dónde viven los costos productivos.** Hay dos lugares y el
-> usuario no distingue su lógica — *"si no se entiende en qué se diferencian, es porque no se
-> diferencian"*. `productivo.actividad_insumos` se queda (9 modos, ración, stock, ya en uso, y con
-> la **cría recién precargada** desde el Excel); `presupuesto_variables` es candidata a retirarse.
-> **Se decide probando**: si el modelo aguanta la cría —que no come ración— se migra la única fila
-> de variables y listo.
+> **La decisión de dónde viven los costos productivos quedó tomada: en el margen.** Cada costo se
+> despliega, muestra cómo se llegó al número y se edita ahí mismo. `actividad_insumos` absorbió lo
+> único que `presupuesto_variables` tenía y ella no —la **cadena de ajustes**—, así que retirarla
+> ya no pierde nada (`M-03`). Lo que **no** se edita en el margen es el **planteo productivo**
+> —ganancia diaria, % de ración, tramos—, que sigue siendo de la actividad.
 >
-> **Testear:** 10 pantallas (`A-TEST-07` a `A-TEST-15`), cada una con su *🧪 Cómo probarlo* en
-> `MANUAL-USO.md`.
+> **Lo próximo, cuando el testeo de cría cierre:** que el margen resuelva los **modos de ración**
+> (`M-04`), que es lo único que separa a recría y engorde de trabajarse igual.
+>
+> **Testear:** 12 pantallas (`A-TEST-07` a `A-TEST-17`), cada una con su *🧪 Cómo probarlo* en
+> `MANUAL-USO.md`. **Empezar por `A-TEST-17`** (la cría desde el margen): es lo que valida la
+> decisión de arriba.
 >
 > **Bloqueado por datos del usuario:** precios (se cargan **desde el margen**, con el botón del
 > faltante), has productivas de Lima, el **OK al cupo anual** ([P-43](#p-43)), y **$173 M de ventas
@@ -270,7 +274,10 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-09 | 🔴 | **Presupuesto → Inversiones** (2026-08-03) — fuera del TOTAL EGRESOS. `MANUAL-USO.md` § Inversiones |
 | A-TEST-10 | 🔴 | **Presupuesto → Control de cobertura** (2026-08-03) — avisa lo que falta Y lo que se cuenta dos veces. `MANUAL-USO.md` § Control de cobertura |
 | A-TEST-16 | 🔴 | **Presupuesto → Margen por actividad** (2026-08-03) — es una VISTA sobre datos existentes. Cria 26/27 debe dar **175 ha y 260 cabezas**, y los 4 costos por ha deben cerrar contra el Excel. `MANUAL-USO.md` § Margen por actividad |
-| M-02 | 🟡 | **Cría precargada en Productivo** (2026-08-03) — 12 costos del Excel, editables, cada uno con **su superficie** (`has_aplicacion` + `amortiza_anios`) y **su base de cabezas** (`base_cabezas`). ⚠️ **El silo va por TONELADA y quedó como `monto_ha`**; siembra de verdeos y gas oil en 0; **los toros van a mano (12)** porque el rodeo no los modela. Es el experimento que decide si `presupuesto_variables` se retira |
+| A-TEST-17 | 🔴 | **Margen → costos directos editables + cadena de ajustes** (2026-08-03) — cada costo se despliega, muestra *cómo se arma* y se edita ahí mismo; ajustes `× IPC × +30 %`; modo nuevo **cantidad × precio**; `fundamento`. `MANUAL-USO.md` § Margen por actividad, pasos 6-11 |
+| M-02 | 🟡 | **Cría precargada en Productivo** (2026-08-03) — 12 costos del Excel, editables, cada uno con **su superficie** (`has_aplicacion` + `amortiza_anios`) y **su base de cabezas** (`base_cabezas`). ⚠️ **El silo va por TONELADA y quedó como `monto_ha`** — el modo `monto_unidad` ya existe, falta que el usuario lo cambie (es un dato); siembra de verdeos y gas oil en 0; **los toros van a mano (12)** porque el rodeo no los modela |
+| M-03 | 🟡 | **Retirar `public.presupuesto_variables`** — ya no tiene nada que `actividad_insumos` no tenga: la cadena de ajustes se replicó en `productivo.actividad_insumo_ajustes` (2026-08-03). Falta migrar su **única fila** (Rollos, que además ya está cargada en cría) y sacar el botón *Variables de costo*. **Hacerlo recién después de testear el margen** — es lo que decide |
+| M-04 | 🟡 | **El margen no resuelve los modos de ración** (`pct_racion`, `kg_cabeza_dia`) — es lo único que separa a **recría/engorde** de poder trabajarse enteras desde el margen. No es un problema de pantalla sino de función: falta que el margen sepa integrar la curva de peso × los días del tramo. ⚠️ Bloqueado además por **`lote_tramos` = 0 filas** |
 | A-TEST-15 | 🔴 | **Presupuesto → Descargar Excel y PDF para los socios** (2026-08-03) — resumen + detalle por bloque; el saldo del export tiene que coincidir con el de la pantalla. `MANUAL-USO.md` § Descargar para los socios |
 | A-TEST-14 | 🔴 | **Arranque del saldo: dos modos** (2026-08-03) — a mano / último conciliado, con aviso si el extracto está atrasado. `MANUAL-USO.md` § De dónde arranca el saldo |
 | P-43 | ⚠️ | **El cupo anual NO está validado como forma de presupuestar** — aviso naranja visible en pantalla, a pedido del usuario. Falta decidir: si el monto anual puede corregirse a mitad de camino, si el arrastre corresponde a TODOS los conceptos, y qué hacer ante sobregasto (hoy la variable desaparece). **No sacar el aviso hasta que el usuario dé el OK** |

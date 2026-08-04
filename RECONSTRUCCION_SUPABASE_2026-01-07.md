@@ -11798,3 +11798,51 @@ agricultura · Rojas 242 agricultura · Lima 86 arrendamiento.
 
 **Estado del control al cargar:** Nazarenas y Rojas `ok` (0 has sin asignar); Lima, Lote Puerto y
 Quinta Rosello marcados `campo sin has cargadas` — es correcto, faltan los datos.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-03 · Costos de actividad: cadena de ajustes
+
+**Por qué.** El costo de una actividad era **un número fijo**. El usuario lo quiere como cuenta:
+*"en vez de 30 dólares por ha, poner costo de los últimos 12 meses × IPC × aumento de cabezas"*.
+Eso ya existía en `public.presupuesto_variables` — la tabla que se retira (`PENDIENTES.md` § M-03) —
+así que acá se trae **lo único que aquélla tenía y ésta no**, para que retirarla no pierda nada.
+
+Todo **aditivo**: las 12 líneas de cría ya cargadas siguen valiendo igual, porque una cadena vacía
+es la identidad. **NO están en el backup original.**
+
+```sql
+-- Los pasos de la cadena. Espejo exacto de public.presupuesto_variable_ajustes.
+CREATE TABLE IF NOT EXISTS productivo.actividad_insumo_ajustes (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  insumo_id  uuid NOT NULL REFERENCES productivo.actividad_insumos(id) ON DELETE CASCADE,
+  orden      integer NOT NULL DEFAULT 0,
+  tipo       text NOT NULL,   -- ipc | porcentaje | variacion | desvio_historico
+  valor      numeric,
+  referencia text,            -- sobre qué se mide una "variacion" (cabezas, hectáreas)
+  nota       text,            -- el porqué; se muestra en el margen
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS actividad_insumo_ajustes_insumo_idx
+  ON productivo.actividad_insumo_ajustes (insumo_id, orden);
+ALTER TABLE productivo.actividad_insumo_ajustes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY actividad_insumo_ajustes_all
+  ON productivo.actividad_insumo_ajustes FOR ALL USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON productivo.actividad_insumo_ajustes
+  TO anon, authenticated, service_role;
+
+-- Cantidad fija del modo monto_unidad: 136,41 ton de silo, 7.000 lts de gasoil.
+ALTER TABLE productivo.actividad_insumos ADD COLUMN IF NOT EXISTS cantidad_aplicacion numeric;
+-- "En qué fundamento mi estimación". `notas` quedó con el ORIGEN del dato (la celda del Excel).
+ALTER TABLE productivo.actividad_insumos ADD COLUMN IF NOT EXISTS fundamento text;
+```
+
+**Modo nuevo `monto_unidad`** (cantidad × precio). No hay CHECK sobre `modo`, así que es sólo
+código: `lib/productivo/actividades.ts`. Existe porque forzar el silo a `monto_ha` lo multiplicaba
+por una superficie que no tenía nada que ver — en el Excel se calcula **por tonelada**.
+
+⚠️ **`amortiza_anios` es del MARGEN, no del presupuesto.** El presupuesto es **caja**: el año que
+se siembra la pastura paga el 100 % de las 50 has y los 4 siguientes cero. El margen es
+**resultado**: reparte 10 has por año. No es una divergencia a corregir — son dos lecturas
+legítimas del mismo dato. Por eso `consumoMensual()` aplica `has_aplicacion` y la base de cabezas
+pero **NO** `amortiza_anios`, que sólo lo aplica `lib/presupuesto/margen.ts`.

@@ -1326,8 +1326,40 @@ No tiene tablas propias. Lee de donde el dato ya vive:
 | Costos directos | `actividad_insumos` (Actividades y costos) |
 | Tipo de cambio | `tipos_cambio` |
 
-**Consecuencia:** el margen no se "carga". Se corrige **donde vive cada dato**, y el margen se
-actualiza solo. Si un número está mal, el margen dice de dónde salió.
+**Consecuencia:** el margen no duplica ningún dato. Si un número está mal, el margen dice de dónde
+salió.
+
+### Los costos directos SÍ se editan acá *(2026-08-03)*
+Cada costo directo es una fila **desplegable**:
+- **Colapsada** → el número final, por unidad y total.
+- **Desplegada** → *cómo se arma* paso a paso, y los campos para editarlo **sin salir del margen**.
+
+Esto es lo que hace que *Variables de costo* sobre: los costos de producción se trabajan **en un
+solo lugar**. Lo que **no** se edita acá es el **planteo productivo** —ganancia diaria, % de
+ración, tramos—, que es de la actividad y el margen consume igual que consume las hectáreas.
+
+**Un costo puede ser un número o una cuenta.** Abajo de cada fila hay una cadena de **ajustes**:
+
+> `30 U$S por vaca × 260 cabezas` **× IPC × +30 %**
+
+Con eso se puede decir *"lo de los últimos 12 meses × IPC × el aumento de cabezas"* en vez de tipear
+un número fijo. Cada paso lleva su **nota**, y la fila lleva un **fundamento** —*"en qué fundamento
+mi estimación"*— que se ve en el margen debajo del concepto.
+
+⚠️ El ajuste **por IPC** usa el acumulado de los **últimos 12 meses cargados**, el mismo criterio
+que las variables y el panel de cuentas. Si no hay IPC cargado, el margen avisa arriba.
+
+### La amortización es del MARGEN, no del presupuesto
+No dan lo mismo **a propósito**:
+
+| Pastura: 50 has, dura 5 años | Presupuesto *(caja)* | Margen *(resultado)* |
+|---|---|---|
+| El año que se siembra | **las 50 has, 100 %** | 10 has |
+| Los 4 años siguientes | **cero** | 10 has por año |
+
+El presupuesto pregunta *"¿cuánta plata sale este año?"*; el margen, *"¿cuánto costó producir
+esto?"*. Por eso `amortiza_anios` **sólo lo aplica el margen**. Con el silo de sorgo es igual: se
+paga la siembra y el silaje de las 20 has el año que se hace, y se consume a lo largo de 3.
 
 ### Las cabezas se calculan, no se leen
 El rodeo **rueda**: cada campaña abre con el cierre de la anterior (vacas + vaquillonas − descarte,
@@ -1398,10 +1430,27 @@ que dice qué le falta — sobre todo si se le presenta a los socios.
    van a decir que falta el precio → probar el botón que lleva a cargarlo.
 5. Cambiar una hectárea en *Campos y hectáreas* → el margen tiene que reflejarlo.
 
+### 🧪 Cómo probar la edición desde el margen *(2026-08-03)*
+6. **Clic en una fila de costo** (ej. `Sanidad Vacas`) → se abre debajo.
+   Arriba tiene que aparecer **Cómo se arma**: `Base — 30 U$S/vaca × 260 rodeo × TC …`
+7. Cambiar el **valor** a `35` y **Guardar** → el total sube ~17 % y **el margen bruto baja**.
+   *(Volver a 30 después.)*
+8. **Agregar un paso** de ajuste: `% a mano` = `30`, nota *"suba del combustible"* →
+   el número tiene que subir **exactamente un 30 %**, y en *Cómo se arma* aparece una línea nueva
+   con el acumulado. Quitarlo con el tacho y verificar que vuelve al original.
+9. Poner un **fundamento** y confirmar que se ve **en la fila colapsada**, en cursiva.
+10. En `Sanidad Toros`, cambiar *Sobre qué cabezas* de **cantidad fija** a **rodeo** → tiene que
+    pasar de 12 a 260 cabezas. ⚠️ **Dejarlo de nuevo en cantidad fija = 12**, que es lo correcto.
+11. **Amortización**: poner `4` años en un costo por hectárea → el **margen** lo divide por 4;
+    el **presupuesto NO** (sigue mostrando el 100 %). Que difieran es lo correcto.
+
 ### ⚠️ Lo que se sabe que está mal (2026-08-03)
-- **El silo de maíz** se calcula por **tonelada** (136,41 ton/año) y quedó cargado como `monto_ha`.
-  No existe un modo por tonelada.
+- **El silo de maíz** se calcula por **tonelada** (136,41 ton/año) y sigue cargado como `monto_ha`.
+  Ya existe el modo **cantidad × precio**: hay que abrir la fila en el margen, cambiarle el modo y
+  poner `136,41` en *Cantidad al año*. **Es un cambio de dato — lo hace el usuario.**
 - **Siembra de verdeos** y **Gas Oil** están en **0**: la primera la pidió el usuario y no está en
-  el Excel como línea propia; la segunda está vacía en el propio Excel.
+  el Excel como línea propia; la segunda está vacía en el propio Excel. El gasoil son ~7.000 lts
+  al año → también **cantidad × precio**.
 - Los **modos de ración** (`pct_racion`, `kg_cabeza_dia`) —los que usan recría y engorde— todavía
-  **no se resuelven** acá: necesitan la curva de peso y los tramos. Se informan como pendientes.
+  **no se resuelven** acá: necesitan la curva de peso y los tramos. Se informan como pendientes, y
+  su fila se despliega pero el modo no se puede cambiar desde el margen.
