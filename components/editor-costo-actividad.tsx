@@ -18,7 +18,7 @@
 // cálculo lo hace `aplicarAjustes()`, la MISMA función que usa el presupuesto — si hubiera dos,
 // el margen y el presupuesto darían distinto sobre el mismo costo.
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Plus, Trash2, Loader2 } from "lucide-react"
@@ -67,6 +67,10 @@ export function EditorCostoActividad({ costo, pasos, onGuardado }: {
   const [guardando, setGuardando] = useState(false)
   const [borrador, setBorrador] = useState<CostoEditable>(costo)
   const sucio = JSON.stringify(borrador) !== JSON.stringify(costo)
+
+  // Al recargar el margen llega un `costo` nuevo (mismo dato, otro objeto). Sin esto el borrador
+  // se quedaba con el estado viejo y la fila mostraba "hay cambios sin guardar" recién guardada.
+  useEffect(() => { setBorrador(costo) }, [JSON.stringify(costo)])
 
   const set = <K extends keyof CostoEditable>(k: K, v: CostoEditable[K]) =>
     setBorrador(b => ({ ...b, [k]: v }))

@@ -53,7 +53,14 @@ function mesesDesde(anioInicio: number, cantidad: number): { anio: number; mes: 
   return out
 }
 
-export function ConfiguradorPreciosTC() {
+/**
+ * `onCambio` — avisa a los paneles HERMANOS que una serie cambió.
+ *
+ * El margen manda acá con el botón "Cargar precio de Ternera →", pero al volver seguía diciendo
+ * que faltaba el precio: son componentes hermanos y nadie le avisaba. Lo reportó el usuario
+ * (2026-08-03): *"veo que no se actualiza el margen cuando actualizo el precio"*.
+ */
+export function ConfiguradorPreciosTC({ onCambio }: { onCambio?: () => void } = {}) {
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState<string | null>(null)
   const [grano, setGrano] = useState("soja")
@@ -152,7 +159,7 @@ export function ConfiguradorPreciosTC() {
           updated_at: new Date().toISOString(),
         }, { onConflict: "categoria,anio,mes" })
       }
-    } finally { setGuardando(null) }
+    } finally { setGuardando(null); onCambio?.() }
   }
 
   // Guarda al salir del input (upsert por la unique key)
@@ -173,7 +180,7 @@ export function ConfiguradorPreciosTC() {
         }, { onConflict: "grano,anio,mes" })
       }
     } finally {
-      setGuardando(null)
+      setGuardando(null); onCambio?.()
     }
   }
 
@@ -192,7 +199,7 @@ export function ConfiguradorPreciosTC() {
           updated_at: new Date().toISOString(),
         }, { onConflict: "anio,mes" })
       }
-    } finally { setGuardando(null) }
+    } finally { setGuardando(null); onCambio?.() }
   }
 
   /** Rellena la columna Ternera aplicando el % sobre la banda de ternero elegida. */
@@ -246,7 +253,7 @@ export function ConfiguradorPreciosTC() {
         }, { onConflict: "anio,mes" })
       }
     } finally {
-      setGuardando(null)
+      setGuardando(null); onCambio?.()
     }
   }
 

@@ -35,7 +35,15 @@ const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const numAR = (n: number, dec = 0) =>
   n.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
-export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: string) => void } = {}) {
+/**
+ * `recargarToken` — cualquier cambio de este número vuelve a leer todo.
+ *
+ * *Precios y TC* es un panel HERMANO: el margen manda ahí con el botón "Cargar precio de X →",
+ * pero al volver seguía diciendo que faltaba. Lo reportó el usuario (2026-08-03).
+ */
+export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
+  onCargarPrecio?: (banda: string) => void; recargarToken?: number
+} = {}) {
   const [cargando, setCargando] = useState(true)
   const [campana, setCampana] = useState("26/27")
   const [campanas, setCampanas] = useState<string[]>([])
@@ -223,14 +231,20 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
         precios: preciosOut, pctGastoVenta: pctGastoVentaPorDefecto,
       })
     } finally { setCargando(false) }
-  }, [campana])
+  }, [campana, recargarToken])
 
   useEffect(() => { cargar() }, [cargar])
 
   const margenes: MargenActividad[] = useMemo(
     () => (datos ? calcularMargen(datos) : []), [datos])
 
-  if (cargando || !datos) {
+  // ⚠️ El spinner sólo en la PRIMERA carga (`!datos`), no en cada recarga.
+  //
+  // Antes se mostraba también al refrescar, y eso desmontaba la tabla entera: al guardar un costo
+  // se cerraba la actividad y la fila que estabas editando, y había que volver a abrir todo. Lo
+  // reportó el usuario: *"algunos lugares donde apreto me resetean la vista, debo abrir de vuelta
+  // insumos vet"*. Manteniendo el árbol montado, el estado de lo abierto sobrevive.
+  if (!datos) {
     return (
       <Card><CardContent className="flex items-center justify-center py-10 text-gray-400">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Armando el margen…
@@ -245,6 +259,11 @@ export function PanelMargen({ onCargarPrecio }: { onCargarPrecio?: (banda: strin
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Scale className="h-4 w-4" /> Margen por actividad
+              {cargando && (
+                <span className="flex items-center gap-1 text-[10px] font-normal text-gray-400">
+                  <Loader2 className="h-3 w-3 animate-spin" /> actualizando
+                </span>
+              )}
             </CardTitle>
             <p className="mt-1 text-xs text-gray-500">
               Sin tablas propias: lee hectáreas, rodeo, ventas, precios y costos de donde ya viven.

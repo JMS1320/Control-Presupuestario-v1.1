@@ -80,13 +80,15 @@ function parseFecha(val: any, texto?: string): FechaDetectada | null {
     if (date) porSerial = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
   }
 
+  // ⚠️ El DEFAULT es día/mes/año — lo fijó el usuario (2026-08-03): *"para el tema de pesadas por
+  // default es día mes año"*. Así que cuando las dos fuentes difieren se propone la lectura dd/mm
+  // y el serial queda como alternativa, no al revés. Es una regla del negocio, no una heurística:
+  // las planillas de pesada las arma él y las escribe en es-AR.
+  if (porTexto && porSerial && porTexto !== porSerial) {
+    return { fecha: porTexto, alternativa: porSerial, origen: 'texto', texto: t || null }
+  }
   if (porSerial) {
-    return {
-      fecha: porSerial,
-      alternativa: porTexto && porTexto !== porSerial ? porTexto : null,
-      origen: 'serial',
-      texto: t || null,
-    }
+    return { fecha: porSerial, alternativa: null, origen: 'serial', texto: t || null }
   }
   if (porTexto) {
     // Sin serial: la otra lectura es la inversa (m/d), si es posible.

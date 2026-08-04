@@ -329,7 +329,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               </Button>
             </div>
 
-            {showPreciosTC && <ConfiguradorPreciosTC />}
+            {showPreciosTC && <ConfiguradorPreciosTC onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showActividades && <ConfiguradorActividades />}
             {showCampos && <ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showVariables && <ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} />}
@@ -337,7 +337,8 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             {showSueldosPre && <ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showIngresosAct && <ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showMargen && (
-              <PanelMargen onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
+              <PanelMargen recargarToken={tokenPresupuesto}
+                onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
             )}
             {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
             {showProveedores && <PanelControlProveedores />}

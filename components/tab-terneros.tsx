@@ -1507,9 +1507,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <div className="mt-2 text-xs text-amber-900">
                         <p>
                           ⚠️ <strong>La fecha del archivo es ambigua.</strong> La celda muestra{" "}
-                          <strong>{analisis.fecha_texto}</strong>, pero Excel la guardó como{" "}
-                          <strong>{formatFecha(analisis.fecha)}</strong>.{" "}
-                          <strong>Confirmá cuál es.</strong>
+                          <strong>{analisis.fecha_texto}</strong> y Excel la guardó distinto.
+                          Se propone <strong>día/mes/año</strong>, que es como cargás las pesadas —
+                          <strong> confirmá que sea correcta.</strong>
                         </p>
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                           <button type="button" onClick={() => setFechaPesadas(analisis.fecha)}
@@ -1517,14 +1517,20 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                               fechaPesadas === analisis.fecha
                                 ? "border-amber-600 bg-amber-600 text-white"
                                 : "border-amber-400 bg-white hover:bg-amber-100"}`}>
-                            {formatFecha(analisis.fecha)} <span className="opacity-70">(lo que guardó Excel)</span>
+                            {formatFecha(analisis.fecha)}{" "}
+                            <span className="opacity-70">
+                              ({analisis.fecha_origen === "texto" ? "día/mes — el default" : "lo que guardó Excel"})
+                            </span>
                           </button>
                           <button type="button" onClick={() => setFechaPesadas(analisis.fecha_alternativa!)}
                             className={`rounded border px-2 py-0.5 ${
                               fechaPesadas === analisis.fecha_alternativa
                                 ? "border-amber-600 bg-amber-600 text-white"
                                 : "border-amber-400 bg-white hover:bg-amber-100"}`}>
-                            {formatFecha(analisis.fecha_alternativa)} <span className="opacity-70">(leyendo día/mes)</span>
+                            {formatFecha(analisis.fecha_alternativa)}{" "}
+                            <span className="opacity-70">
+                              ({analisis.fecha_origen === "texto" ? "lo que guardó Excel" : "leyendo día/mes"})
+                            </span>
                           </button>
                         </div>
                       </div>
