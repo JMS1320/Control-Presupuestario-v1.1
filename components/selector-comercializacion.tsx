@@ -140,7 +140,7 @@ export function SelectorComercializacion({
    * Lo que la etapa necesita, ya resuelto. `precioVivo` sólo viene cuando el destino compra a la
    * res: es el precio de la carne **ya convertido** a $/kg vivo por el rinde.
    */
-  onCalculado?: (v: { desbastePct: number; czPct: number; precioVivo?: number }) => void
+  onCalculado?: (v: { desbastePct: number; czPct?: number; precioVivo?: number }) => void
 }) {
   const destinos = normas.destinos.filter(d => d.aplica_a === "ambos" || d.aplica_a === tipo)
   const destino = destinos.find(d => d.id === seleccion.destinoId) ?? null
@@ -205,17 +205,26 @@ export function SelectorComercializacion({
     ? desbasteDe(normas.desbaste, tipo, lote.pesoVivo)
     : null
 
+  /**
+   * ⚠️ La CZ sólo se manda cuando hay **venta bruta**, porque el % del flete se calcula sobre
+   * ella. Sin precio cargado, `flete ÷ 0` daba **0 %** y ese cero viajaba a la etapa como si la
+   * comercialización fuera gratis — justo al revés de lo que pasa.
+   *
+   * Es el mismo criterio que en todo el resto: cuando falta un dato se dice, no se calcula cero.
+   */
+  const czListo = !!res && res.ventaBruta > 0
+
   // Avisar hacia arriba. Se hace en efecto y no en el render para no escribir en el padre
   // durante el propio render de React.
   useEffect(() => {
     if (desbastePct == null) return
     onCalculado?.({
       desbastePct,
-      czPct: cz?.total.pct ?? 0,
+      czPct: czListo ? cz!.total.pct : undefined,
       precioVivo: precioVivoEquivalente ?? undefined,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desbastePct, cz?.total.pct, precioVivoEquivalente])
+  }, [desbastePct, czListo, cz?.total.pct, precioVivoEquivalente])
 
   return (
     <div className="rounded border bg-slate-50 px-2 py-1.5 text-xs">
@@ -343,8 +352,19 @@ export function SelectorComercializacion({
         </p>
       )}
 
+      {/* Sin precio no hay venta bruta, y sin venta bruta el flete no se puede expresar como %.
+          Se dice, en vez de mandar un 0 que haría parecer gratis la comercialización. */}
+      {res && !czListo && res.flete > 0 && (
+        <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+          Flete <strong>{pesos(res.flete)}</strong>
+          {res.viajes > 1 ? ` (${res.viajes} viajes)` : ""}, pero falta el precio
+          {compraEnRes ? " por kg de res" : ""} para poder expresarlo como % de CZ.
+          <strong> La CZ de la etapa no se toca hasta entonces.</strong>
+        </p>
+      )}
+
       {/* ── El desglose de la CZ: pesos, % parcial y total ─────────────────── */}
-      {cz && cz.items.length > 0 && (
+      {czListo && cz && cz.items.length > 0 && (
         <table className="mt-1.5 w-full text-[11px]">
           <tbody>
             {cz.items.map((it, k) => (

@@ -204,7 +204,10 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
   // Desbaste / CZ (inputs %)
   const [desbEnt, setDesbEnt] = useState(g("desbEnt", "3"))
   const [desbSal, setDesbSal] = useState(g("desbSal", "5"))
-  const [czEnt, setCzEnt] = useState(g("czEnt", "4"))
+  // ⚠️ La ENTRADA siempre es invernada: lo que se compra para engordar se compra como invernada,
+  // aunque después se venda gordo. Por eso su CZ no la toca el selector —que es de la venta— y
+  // arranca en el 3,5 % de Sáenz Valiente, editable. Dato del usuario 2026-08-04.
+  const [czEnt, setCzEnt] = useState(g("czEnt", "3,5"))
   const [czSal, setCzSal] = useState(g("czSal", "4"))
 
   // ── Comercialización (etapa 1) ───────────────────────────────────────────
@@ -221,12 +224,16 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
    * **No pisa lo tipeado a mano**: el usuario pidió poder corregir después de elegir. Sólo
    * escribe cuando el valor cambió de verdad.
    */
-  const aplicarComercial = (v: { desbastePct: number; czPct: number; precioVivo?: number }) => {
+  const aplicarComercial = (v: { desbastePct: number; czPct?: number; precioVivo?: number }) => {
     const f = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 2 })
     const d = f(v.desbastePct * 100)
-    const z = f(v.czPct * 100)
     setDesbSal(prev => (prev === d ? prev : d))
-    setCzSal(prev => (prev === z ? prev : z))
+    // Sin `czPct` no se toca lo que haya: es que falta el precio y todavía no se puede calcular.
+    // Escribir un 0 ahí haría parecer que la comercialización es gratis.
+    if (v.czPct != null) {
+      const z = f(v.czPct * 100)
+      setCzSal(prev => (prev === z ? prev : z))
+    }
     // Cuando el destino compra a la RES, el precio de venta del análisis pasa a ser el
     // EQUIVALENTE en $/kg vivo. Todo el resto del cálculo trabaja en peso vivo.
     if (v.precioVivo != null && v.precioVivo > 0) {
