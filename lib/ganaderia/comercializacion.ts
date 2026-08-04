@@ -46,6 +46,10 @@ export interface DestinoVenta {
   requiere_flete: boolean
   vehiculo: string | null
   plazo_dias: number | null
+  /** De qué destino sale el precio, cuando no tiene uno propio. */
+  precio_ref_destino_id?: string | null
+  /** Ajuste sobre ese precio. `-0.105` = "el de Cañuelas menos el 10,5 %". */
+  precio_ajuste_pct?: number | null
 }
 
 export interface RutaDestino {
@@ -120,6 +124,46 @@ export function costoFlete(
       + ` + $${Math.round(t.seguro).toLocaleString('es-AR')} seguro`
       + ` + ${km} km × $${Math.round(t.por_km).toLocaleString('es-AR')}`
       + (viajes > 1 ? ` × ${viajes} viajes` : ''),
+  }
+}
+
+/**
+ * Resuelve el precio de un destino que **deriva** el suyo de otro.
+ *
+ * El caso: *"el matarife zonal paga siempre el máximo de Cañuelas menos el 10,5 %"*. Sin esto
+ * habría que recargarlo a mano cada vez que se mueve el de Cañuelas, y en cuanto uno se olvida
+ * la comparación miente.
+ *
+ * ⚠️ Si el destino de referencia compra en otra base que el derivado (uno a la res y el otro a
+ * peso vivo), el precio NO se puede arrastrar tal cual: son dos unidades distintas. En ese caso
+ * devuelve `null` con el motivo en vez de dar un número que parece bueno.
+ */
+export function precioDerivado(
+  destino: DestinoVenta,
+  destinos: DestinoVenta[],
+  preciosCargados: Record<string, number | null | undefined>,
+): { precio: number | null; motivo: string } | null {
+  if (!destino.precio_ref_destino_id) return null
+  const ref = destinos.find(d => d.id === destino.precio_ref_destino_id)
+  if (!ref) return { precio: null, motivo: 'el destino de referencia ya no existe' }
+
+  const base = preciosCargados[ref.id]
+  if (base == null) return { precio: null, motivo: `falta el precio de ${ref.nombre}, del que se deriva` }
+
+  if (ref.compra_en !== destino.compra_en) {
+    return {
+      precio: null,
+      motivo: `${ref.nombre} compra ${ref.compra_en === 'res' ? 'a la res' : 'a peso vivo'}`
+        + ` y ${destino.nombre} ${destino.compra_en === 'res' ? 'a la res' : 'a peso vivo'}:`
+        + ' hay que pasar por el rinde antes de derivar el precio',
+    }
+  }
+
+  const ajuste = Number(destino.precio_ajuste_pct ?? 0)
+  const pct = Math.abs(ajuste * 100).toFixed(1).replace('.', ',')
+  return {
+    precio: base * (1 + ajuste),
+    motivo: `${ref.nombre} ${ajuste < 0 ? 'menos' : 'más'} ${pct} %`,
   }
 }
 
