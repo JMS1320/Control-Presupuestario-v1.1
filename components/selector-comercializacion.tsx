@@ -138,8 +138,8 @@ export function SelectorComercializacion({
   const intermediario = normas.intermediarios.find(i => i.id === seleccion.intermediarioId) ?? null
 
   // ── El vehículo: se deduce de los kilos, pero se puede cambiar ─────────────
-  // No por capacidad sino por COSTO: el arranque y el seguro se pagan por viaje, así que partir
-  // la carga en dos chasis puede salir más caro que una jaula sola.
+  // Es SI ENTRA O NO ENTRA: chasis cuando hay poco, y si no entra va jaula completa. No se elige
+  // por precio — la flota es la que es.
   const kgTotales = lote.cabezas * lote.pesoVivo
   const veh = sugerirVehiculo(normas.tarifas, ruta?.km ?? 0, kgTotales)
   const tarifa = seleccion.vehiculo
@@ -263,11 +263,13 @@ export function SelectorComercializacion({
             <select className="h-6 rounded border px-1 text-[11px]"
               value={seleccion.vehiculo || (veh.sugerido?.vehiculo ?? "")}
               onChange={e => onCambio({ ...seleccion, vehiculo: e.target.value })}>
-              {veh.opciones.map((o, k) => (
+              {veh.opciones.map(o => (
                 <option key={o.tarifa.vehiculo} value={o.tarifa.vehiculo}>
                   {o.tarifa.vehiculo}
                   {o.viajes > 1 ? ` ×${o.viajes}` : ""} · {pesos(o.total)}
-                  {k === 0 ? "  ← más barato" : ""}
+                  {o.tarifa.capacidad_kg
+                    ? `  (hasta ${Math.round(Number(o.tarifa.capacidad_kg)).toLocaleString("es-AR")} kg)`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -275,17 +277,16 @@ export function SelectorComercializacion({
         )}
       </div>
 
-      {/* Por qué se sugiere ese camión. Con 8.000 kg entran dos chasis, pero una jaula sola sale
-          menos: el arranque y el seguro se pagan por viaje. */}
-      {destino?.requiere_flete && ruta && veh.opciones.length > 1 && !seleccion.vehiculo && (
+      {/* Por qué ese camión: entra o no entra. */}
+      {destino?.requiere_flete && ruta && veh.sugerido && !seleccion.vehiculo && (
         <p className="mt-1 text-[10px] text-gray-500">
           {Math.round(kgTotales).toLocaleString("es-AR")} kg →{" "}
-          <strong>{veh.opciones[0]!.tarifa.vehiculo}</strong>
-          {veh.opciones[0]!.viajes > 1 ? ` ×${veh.opciones[0]!.viajes}` : ""}{" "}
-          ({pesos(veh.opciones[0]!.total)}) contra{" "}
-          {veh.opciones[1]!.tarifa.vehiculo}
-          {veh.opciones[1]!.viajes > 1 ? ` ×${veh.opciones[1]!.viajes}` : ""}{" "}
-          ({pesos(veh.opciones[1]!.total)}). Se puede cambiar.
+          <strong>{veh.sugerido.vehiculo}</strong>
+          {veh.sugerido.capacidad_kg
+            ? kgTotales <= Number(veh.sugerido.capacidad_kg)
+              ? ` (entra: hasta ${Math.round(Number(veh.sugerido.capacidad_kg)).toLocaleString("es-AR")} kg)`
+              : ` (no entra en ninguno de un viaje — van ${Math.ceil(kgTotales / Number(veh.sugerido.capacidad_kg))} viajes)`
+            : ""}. Se puede cambiar.
         </p>
       )}
 

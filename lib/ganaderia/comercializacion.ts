@@ -216,15 +216,21 @@ export function precioDerivado(
 }
 
 /**
- * Qué vehículo conviene para estos kilos: **el más barato, no el más chico**.
+ * Qué vehículo va para estos kilos. **Es si entra o no entra, no qué conviene.**
  *
- * La capacidad sola no alcanza. Con 8.000 kg a 200 km entra un chasis y medio, así que por
- * capacidad irían dos chasis ($1.460.000); pero una jaula sola cuesta $960.000. El arranque y el
- * seguro se pagan por viaje, y por eso partir la carga es caro.
+ * Lo corrigió el usuario (2026-08-04): *"chasis es cuando hay poco que vender, pero cuando lo que
+ * se vende no entra en chasis va jaula completa. No es según convenga, es si entra o no entra"*.
  *
- * Devuelve todas las opciones costeadas para poder mostrar la de al lado: el usuario tiene que
- * poder ver por qué se sugiere una y cambiarla, porque a veces el camión que hay no es el que
- * conviene.
+ * Entonces: el vehículo **más chico en el que la carga entra de un viaje**. Si no entra en
+ * ninguno, va el más grande y se hacen los viajes que hagan falta.
+ *
+ * ⚠️ No es una optimización de costo. Yo lo había hecho eligiendo el más barato y **estaba mal**:
+ * daba la misma respuesta en los casos que probé —porque el que entra suele ser el más barato—
+ * pero por el motivo equivocado, y se habría separado en cuanto un chasis fuera más caro que una
+ * jaula. La flota disponible no se elige por precio.
+ *
+ * Devuelve igual todas las opciones costeadas, para poder mostrar la alternativa: el usuario
+ * puede cambiarla porque a veces el camión que hay no es el que corresponde.
  */
 export function sugerirVehiculo(
   tarifas: TarifaFlete[], km: number, kgTotales: number,
@@ -234,8 +240,15 @@ export function sugerirVehiculo(
       const f = costoFlete(t, km, kgTotales)
       return { tarifa: t, total: f.total, viajes: f.viajes }
     })
-    .sort((a, b) => a.total - b.total)
-  return { sugerido: opciones[0]?.tarifa ?? null, opciones }
+    // De menor a mayor capacidad: el orden en que se prueba si entra.
+    .sort((a, b) => (Number(a.tarifa.capacidad_kg) || 0) - (Number(b.tarifa.capacidad_kg) || 0))
+
+  // El primero donde entra de un solo viaje; si en ninguno entra, el más grande.
+  const entra = opciones.find(o => o.viajes <= 1)
+  return {
+    sugerido: (entra ?? opciones[opciones.length - 1])?.tarifa ?? null,
+    opciones,
+  }
 }
 
 export interface OpcionVenta {
