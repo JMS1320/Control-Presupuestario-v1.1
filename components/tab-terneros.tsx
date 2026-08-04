@@ -109,6 +109,11 @@ interface ResultadoImportTerneros {
 
 interface AnalisisPesadas {
   fecha: string
+  /** La otra lectura posible cuando el serial y el texto de la celda no coinciden. */
+  fecha_alternativa?: string | null
+  fecha_origen?: 'serial' | 'texto' | null
+  /** El texto tal como lo mostraba la celda ("8/3/2026"). */
+  fecha_texto?: string | null
   sin_idv: number
   total_con_idv: number
   ok: Array<{ idv: string; caravana_oficial: string; ternero_id: string; peso: number }>
@@ -245,6 +250,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [modalPesadas, setModalPesadas] = useState(false)
   const [pasoPesadas, setPasoPesadas] = useState<1 | 2 | 3>(1)
   const [analisis, setAnalisis] = useState<AnalisisPesadas | null>(null)
+  /** La fecha que se va a grabar. Arranca en la detectada y el usuario la puede corregir:
+   *  una fecha mal leída se multiplica por todas las filas del archivo en silencio. */
+  const [fechaPesadas, setFechaPesadas] = useState("")
   const [tipoNoEncontradas, setTipoNoEncontradas] = useState<'sin_vincular' | 'crear_nuevo'>('sin_vincular')
   const [creacionesSeleccionadas, setCreacionesSeleccionadas] = useState<Set<string>>(new Set())
   const [decisionesDuplicadas, setDecisionesDuplicadas] = useState<Record<string, string>>({})
@@ -622,6 +630,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       if (!res.ok) throw new Error(data.error ?? 'Error al analizar archivo')
 
       setAnalisis(data)
+      setFechaPesadas(data.fecha ?? "")
       setPasoPesadas(1)
       setTipoNoEncontradas('sin_vincular')
       setCreacionesSeleccionadas(new Set(data.no_encontradas.map((r: any) => r.idv)))
@@ -638,6 +647,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   const confirmarPesadas = async () => {
     if (!analisis) return
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaPesadas)) {
+      toast.error('Falta confirmar la fecha de pesada.')
+      return
+    }
     setImportandoPesadas(true)
     try {
       // Construir decisiones no encontradas
@@ -660,7 +673,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
         }))
 
       const body = {
-        fecha: analisis.fecha,
+        // La fecha CONFIRMADA por el usuario, no la detectada.
+        fecha: fechaPesadas,
         rows_ok: analisis.ok,
         no_encontradas_decisiones: noEncontradasDecisiones,
         duplicadas_decisiones: duplicadasDecisiones,
@@ -1469,14 +1483,57 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               {/* ── PASO 1: Resumen análisis ── */}
               {pasoPesadas === 1 && (
                 <>
-                  {/* Fecha detectada */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm font-medium text-blue-800">
-                      Fecha de pesada detectada: <span className="font-bold">{formatFecha(analisis.fecha)}</span>
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Todos los registros de este archivo se importarán con esta fecha como encabezado de columna.
-                    </p>
+                  {/* ── Fecha: se CONFIRMA, no se da por buena ──────────────────
+                      Un "3/8" en una planilla no se puede resolver con certeza: depende de si
+                      se lee el número que guardó Excel o el texto que muestra el formato de la
+                      celda. Ya falló en las dos direcciones — la última vez 176 pesadas de
+                      AGOSTO entraron como MARZO, en silencio. Por eso ahora es editable. */}
+                  <div className={`rounded-lg border p-3 ${
+                    analisis.fecha_alternativa ? "border-amber-300 bg-amber-50" : "border-blue-200 bg-blue-50"}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className={`text-sm font-medium ${
+                        analisis.fecha_alternativa ? "text-amber-900" : "text-blue-800"}`}>
+                        Fecha de pesada
+                      </label>
+                      <input type="date" value={fechaPesadas}
+                        onChange={e => setFechaPesadas(e.target.value)}
+                        className="h-8 rounded border border-gray-300 px-2 text-sm" />
+                      <span className="text-sm font-bold text-gray-700">
+                        {fechaPesadas ? formatFecha(fechaPesadas) : "—"}
+                      </span>
+                    </div>
+
+                    {analisis.fecha_alternativa ? (
+                      <div className="mt-2 text-xs text-amber-900">
+                        <p>
+                          ⚠️ <strong>La fecha del archivo es ambigua.</strong> La celda muestra{" "}
+                          <strong>{analisis.fecha_texto}</strong>, pero Excel la guardó como{" "}
+                          <strong>{formatFecha(analisis.fecha)}</strong>.{" "}
+                          <strong>Confirmá cuál es.</strong>
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <button type="button" onClick={() => setFechaPesadas(analisis.fecha)}
+                            className={`rounded border px-2 py-0.5 ${
+                              fechaPesadas === analisis.fecha
+                                ? "border-amber-600 bg-amber-600 text-white"
+                                : "border-amber-400 bg-white hover:bg-amber-100"}`}>
+                            {formatFecha(analisis.fecha)} <span className="opacity-70">(lo que guardó Excel)</span>
+                          </button>
+                          <button type="button" onClick={() => setFechaPesadas(analisis.fecha_alternativa!)}
+                            className={`rounded border px-2 py-0.5 ${
+                              fechaPesadas === analisis.fecha_alternativa
+                                ? "border-amber-600 bg-amber-600 text-white"
+                                : "border-amber-400 bg-white hover:bg-amber-100"}`}>
+                            {formatFecha(analisis.fecha_alternativa)} <span className="opacity-70">(leyendo día/mes)</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-blue-600">
+                        Detectada del archivo. <strong>Todas</strong> las filas se importan con esta
+                        fecha — si no es la correcta, cambiala acá antes de confirmar.
+                      </p>
+                    )}
                   </div>
 
                   {/* Contadores */}
@@ -1719,7 +1776,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     </Button>
                     <Button
                       onClick={confirmarPesadas}
-                      disabled={importandoPesadas}
+                      disabled={importandoPesadas || !fechaPesadas}
                       className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
                     >
                       {importandoPesadas

@@ -20,35 +20,81 @@ function idvACaravana(idv: any): string | null {
 }
 
 // ─── Detección de fecha desde valor Excel ────────────────────────────────────
-// PROBLEMA: si la celda es una fecha de Excel guardada con formato US (m/d), un
-// "05/06" (5 de junio en es-AR) se guarda como May 6 y se leía mal. FIX: se prioriza
-// el TEXTO MOSTRADO de la celda (arg `texto` = `.w`) y se interpreta SIEMPRE como
-// dd/mm (es-AR); solo si el mes es imposible (>12) se asume que venía m/d y se da vuelta.
-// El texto mostrado conserva el mismo orden de dígitos que el usuario tipeó, así que
-// leerlo como dd/mm recupera su intención tanto en Excel argentino como US.
-// Fallback: si solo hay serial numérico sin texto, se usa la fecha absoluta del serial.
-function parseFecha(val: any, texto?: string): string | null {
+//
+// ⚠️ Un "3/8" en una planilla NO SE PUEDE resolver con certeza. Hay dos fuentes y pueden
+// contradecirse:
+//
+//   · el SERIAL (el número que Excel guardó): fecha absoluta, sin ambigüedad — pero es lo que
+//     Excel *interpretó* al tipear, que puede no ser lo que el usuario quiso si la planilla
+//     estaba en locale US;
+//   · el TEXTO MOSTRADO (`.w`): conserva el orden de dígitos, pero ese orden depende del
+//     FORMATO de la celda, que puede ser m/d aunque el dato esté bien.
+//
+// Las dos fallas ya pasaron, y en direcciones opuestas:
+//   · 2026-07: US Excel guardó "05/06" (5 de junio) como May 6 → el serial mentía.
+//   · 2026-08-03: el usuario cargó 3/8 (agosto), el serial decía Aug 3 y el formato lo mostraba
+//     "8/3" → leerlo como dd/mm lo mandó a MARZO. **176 pesadas entraron con fecha equivocada.**
+//
+// Por eso ya no se adivina: se calculan **las dos lecturas**, se propone el serial (que es la
+// fecha absoluta) y, **si difieren, la otra viaja como alternativa** para que el usuario elija.
+// Y en cualquier caso la fecha es EDITABLE antes de confirmar — una fecha mal detectada se
+// multiplica por 176 filas en silencio, y eso no lo arregla ninguna heurística.
+
+interface FechaDetectada {
+  fecha: string
+  /** La otra lectura posible, cuando las dos fuentes no coinciden. */
+  alternativa: string | null
+  /** De dónde salió la propuesta, para poder mostrarlo. */
+  origen: 'serial' | 'texto'
+  /** El texto tal como lo mostraba la celda. */
+  texto: string | null
+}
+
+/** El texto de la celda leído como dd/mm (es-AR). Si el mes es imposible (>12), se da vuelta. */
+function fechaDesdeTexto(texto: string): string | null {
+  const m = texto.trim().match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
+  if (!m) return null
+  let d = parseInt(m[1], 10)
+  let mo = parseInt(m[2], 10)
+  let y = parseInt(m[3], 10)
+  if (y < 100) y += 2000
+  if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp }
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+function parseFecha(val: any, texto?: string): FechaDetectada | null {
   const t = (texto ?? (typeof val === 'string' ? val : '')).trim()
-  const m = t.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/)
-  if (m) {
-    let d = parseInt(m[1], 10)
-    let mo = parseInt(m[2], 10)
-    let y = parseInt(m[3], 10)
-    if (y < 100) y += 2000
-    // es-AR: default día/mes. Si el mes es imposible (>12) y el día sí podría ser mes, venía m/d → dar vuelta.
-    if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp }
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-      return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    }
+
+  // YYYY-MM-DD no tiene ambigüedad posible.
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return { fecha: val, alternativa: null, origen: 'texto', texto: val }
   }
-  // YYYY-MM-DD directo
-  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
-  // Fallback: serial de Excel (fecha absoluta, sin ambigüedad d/m)
+
+  const porTexto = t ? fechaDesdeTexto(t) : null
+
+  // El serial es la fecha ABSOLUTA que guardó Excel: manda sobre cómo la muestra el formato.
+  let porSerial: string | null = null
   if (typeof val === 'number') {
     const date = XLSX.SSF.parse_date_code(val)
-    if (date) {
-      return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
+    if (date) porSerial = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`
+  }
+
+  if (porSerial) {
+    return {
+      fecha: porSerial,
+      alternativa: porTexto && porTexto !== porSerial ? porTexto : null,
+      origen: 'serial',
+      texto: t || null,
     }
+  }
+  if (porTexto) {
+    // Sin serial: la otra lectura es la inversa (m/d), si es posible.
+    const [y, mo, d] = porTexto.split('-').map(Number)
+    const inversa = d <= 12 && mo !== d
+      ? `${y}-${String(d).padStart(2, '0')}-${String(mo).padStart(2, '0')}`
+      : null
+    return { fecha: porTexto, alternativa: inversa, origen: 'texto', texto: t || null }
   }
   return null
 }
@@ -87,13 +133,14 @@ async function handleAnalizar(request: Request) {
 
     // Detectar fechas: debe haber UNA sola por archivo. Si hay distintas, rechazar.
     const fechasUnicas = new Set<string>()
+    let deteccion: FechaDetectada | null = null
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
       const rowFmt = rowsFmt[i] ?? {}
       const rawVal = row['Fecha'] ?? row['fecha'] ?? row['FECHA']
       const txtVal = rowFmt['Fecha'] ?? rowFmt['fecha'] ?? rowFmt['FECHA']
       const f = parseFecha(rawVal, typeof txtVal === 'string' ? txtVal : undefined)
-      if (f) fechasUnicas.add(f)
+      if (f) { fechasUnicas.add(f.fecha); deteccion ??= f }
     }
     if (fechasUnicas.size === 0) {
       return NextResponse.json({ error: 'No se pudo detectar la fecha de pesada. Verificá que exista una columna "Fecha".' }, { status: 400 })
@@ -191,6 +238,12 @@ async function handleAnalizar(request: Request) {
 
     return NextResponse.json({
       fecha: fechaDetectada,
+      // La otra lectura posible y de dónde salió la propuesta. La UI las muestra para que la
+      // fecha se confirme a ojo en vez de darse por buena: es el dato que se multiplica por
+      // todas las filas del archivo.
+      fecha_alternativa: deteccion?.alternativa ?? null,
+      fecha_origen: deteccion?.origen ?? null,
+      fecha_texto: deteccion?.texto ?? null,
       sin_idv: sinId.length,
       total_con_idv: items.length,
       ok,
@@ -220,6 +273,12 @@ async function handleConfirmar(request: Request) {
   try {
     const body = await request.json()
     const { fecha, rows_ok, no_encontradas_decisiones, duplicadas_decisiones } = body
+
+    // La fecha se graba en TODAS las filas del archivo: si viene mal, el error se multiplica en
+    // silencio. Se valida acá también y no sólo en la UI, que es la que se puede saltear.
+    if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return NextResponse.json({ error: 'Falta la fecha de pesada o tiene un formato inválido.' }, { status: 400 })
+    }
 
     let insertadas = 0
     const errores: string[] = []
