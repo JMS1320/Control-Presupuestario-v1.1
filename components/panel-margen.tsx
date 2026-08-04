@@ -26,10 +26,29 @@ import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight, Pencil } from
 import { calcularLineaTiempo } from "@/lib/ganaderia/ciclo"
 import { EditorCostoActividad, type CostoEditable } from "@/components/editor-costo-actividad"
 import {
-  calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto,
+  calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto, claveMes,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
-  type InsumoActividadMargen, type Ajuste,
+  type InsumoActividadMargen, type Ajuste, type MesPeriodo, type ContextoCosto,
 } from "@/lib/presupuesto/margen"
+import { calcularCuenta, type PuntoHistorico } from "@/lib/presupuesto/modos"
+import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
+
+/**
+ * Los 12 meses de la campaña: jul → jun. `"26/27"` → jul-2026 … jun-2027.
+ *
+ * Hace falta porque el costo ahora dice **en qué meses cae y con qué %**, y porque el dólar no
+ * vale lo mismo en cada uno.
+ */
+function mesesDeCampana(campana: string): MesPeriodo[] {
+  const m = campana.match(/^(\d{2})\/(\d{2})$/)
+  const anio = m ? 2000 + parseInt(m[1], 10) : new Date().getFullYear()
+  const out: MesPeriodo[] = []
+  for (let k = 0; k < 12; k++) {
+    const mes = ((6 + k) % 12) + 1
+    out.push({ anio: anio + (6 + k >= 12 ? 1 : 0), mes })
+  }
+  return out
+}
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const numAR = (n: number, dec = 0) =>
@@ -54,6 +73,8 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
   /** Los costos que se pueden editar desde acá, por id de insumo. */
   const [editables, setEditables] = useState<Record<string, CostoEditable>>({})
   const [sinIPC, setSinIPC] = useState(false)
+  /** Las cuentas contables con historia, para elegir en qué basarse. */
+  const [cuentasConHistoria, setCuentasConHistoria] = useState<{ nro: string; nombre: string }[]>([])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -71,13 +92,26 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
       const [{ data: insumos }, { data: tcs }, { data: ciclosFull }, { data: ajustesRaw }, { data: ipcRaw }] =
         await Promise.all([
           supabase.schema("productivo").from("actividad_insumos")
-            .select("id, actividad_id, concepto, modo, valor, unidad, moneda, momento, has_aplicacion, amortiza_anios, base_cabezas, cabezas_aplicacion, cantidad_aplicacion, fundamento, notas, orden")
+            .select("id, actividad_id, concepto, modo, valor, unidad, moneda, momento, has_aplicacion, amortiza_anios, base_cabezas, cabezas_aplicacion, cantidad_aplicacion, fundamento, notas, orden, cantidad, cantidad_unidad, precio_fuente, precio_referencia, base_tipo, base_categorias, base_manual, historico_modo, historico_meses, nro_cuentas, distribucion, meses_pct")
             .order("orden"),
           supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
           supabase.schema("productivo").from("stock_ciclos").select("*"),
           supabase.schema("productivo").from("actividad_insumo_ajustes").select("*").order("orden"),
           supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
         ])
+
+      // La historia de las cuentas contables: es el arranque cuando el costo se basa en lo ya
+      // gastado. Misma vista que usa el panel de cuentas, para que den lo mismo.
+      const { data: histRaw } = await supabase.from("presupuesto_historia_cuentas")
+        .select("nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores")
+      const historia: PuntoHistorico[] = ((histRaw || []) as any[]).map(h => ({
+        nro_cuenta: String(h.nro_cuenta), anio: Number(h.anio), mes: Number(h.mes),
+        monto: Number(h.monto) || 0,
+        facturas: Number(h.facturas) || 0, proveedores: Number(h.proveedores) || 0,
+      }))
+      setCuentasConHistoria(Array.from(new Map(((histRaw || []) as any[])
+        .map(h => [String(h.nro_cuenta), String(h.cuenta_contable ?? "")])).entries())
+        .map(([nro, nombre]) => ({ nro, nombre })).sort((a, b) => a.nro.localeCompare(b.nro)))
 
       // La cadena de cada costo.
       const ajustesPorInsumo: Record<string, Ajuste[]> = {}
@@ -161,12 +195,27 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         retenidas: cicloCamp.retenidas, toritos: cicloCamp.toritos,
       } : null
 
-      // TC: el real si está, si no el presupuestado. El más reciente cargado.
+      // ── TC: uno POR MES, no uno solo ──────────────────────────────────────
+      // El dólar no vale lo mismo en marzo que en octubre. Antes el margen usaba el TC más
+      // reciente para todo el año, que es el `1.450` fijo del Excel con otro nombre. Lo marcó
+      // el usuario. Se arrastra hacia adelante: alcanza con cargar los meses donde cambia.
       const tcOrdenados = ((tcs || []) as any[])
-        .sort((a, b) => (b.anio * 12 + b.mes) - (a.anio * 12 + a.mes))
-      const tc = tcOrdenados.length > 0
-        ? Number(tcOrdenados[0].tc_real ?? tcOrdenados[0].tc_presupuestado) || null
-        : null
+        .sort((a, b) => (a.anio * 12 + a.mes) - (b.anio * 12 + b.mes))
+      const tcPorMes: Record<string, number> = {}
+      let ultimoTc: number | null = null
+      for (const t of tcOrdenados) {
+        const v = Number(t.tc_real ?? t.tc_presupuestado) || null
+        if (v != null) { ultimoTc = v; tcPorMes[claveMes(Number(t.anio), Number(t.mes))] = v }
+      }
+      const mesesCampana = mesesDeCampana(campana)
+      // Arrastre: un mes sin TC hereda el último cargado antes de él.
+      let arrastre: number | null = null
+      for (const m of mesesCampana) {
+        const k = claveMes(m.anio, m.mes)
+        if (tcPorMes[k] != null) arrastre = tcPorMes[k]
+        else if (arrastre != null) tcPorMes[k] = arrastre
+      }
+      const tc = ultimoTc
 
       // Los costos directos, leídos de verdad de `actividad_insumos`.
       const insumosPorActividad = new Map<string, InsumoActividadMargen[]>()
@@ -187,6 +236,19 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           ajustes: ajustesPorInsumo[i.id] ?? [],
           fundamento: i.fundamento ?? null,
           notas: i.notas,
+          // El modelo de 3 ranuras. `base_tipo` presente = la fila lo usa.
+          cantidad: i.cantidad == null ? null : Number(i.cantidad),
+          cantidad_unidad: i.cantidad_unidad ?? null,
+          precio_fuente: i.precio_fuente ?? null,
+          precio_referencia: i.precio_referencia ?? null,
+          base_tipo: i.base_tipo ?? null,
+          base_categorias: i.base_categorias ?? null,
+          base_manual: i.base_manual == null ? null : Number(i.base_manual),
+          historico_modo: i.historico_modo ?? null,
+          historico_meses: i.historico_meses == null ? null : Number(i.historico_meses),
+          nro_cuentas: i.nro_cuentas ?? null,
+          distribucion: i.distribucion ?? null,
+          meses_pct: i.meses_pct ?? null,
         }
         if (!insumosPorActividad.has(clave)) insumosPorActividad.set(clave, [])
         insumosPorActividad.get(clave)!.push(fila)
@@ -197,6 +259,17 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           base_cabezas: fila.base_cabezas, cabezas_aplicacion: fila.cabezas_aplicacion,
           cantidad_aplicacion: fila.cantidad_aplicacion,
           fundamento: fila.fundamento, notas: fila.notas, ajustes: fila.ajustes ?? [],
+          cantidad: fila.cantidad ?? null, cantidad_unidad: fila.cantidad_unidad ?? null,
+          precio_fuente: fila.precio_fuente ?? null,
+          precio_referencia: fila.precio_referencia ?? null,
+          base_tipo: fila.base_tipo ?? null,
+          base_categorias: fila.base_categorias ?? null,
+          base_manual: fila.base_manual ?? null,
+          historico_modo: fila.historico_modo ?? null,
+          historico_meses: fila.historico_meses ?? null,
+          nro_cuentas: fila.nro_cuentas ?? null,
+          distribucion: fila.distribucion ?? null,
+          meses_pct: fila.meses_pct ?? null,
         }
       }
       setEditables(editablesOut)
@@ -213,9 +286,51 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           })
           continue
         }
-        const ctxCosto = {
-          has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, cabezasCiclo, tc,
-          ipcAcumulado,
+        const ctxCosto: ContextoCosto = {
+          has: hasPorActividad[n] ?? null, cabezas: cabezasCampana || null, cabezasCiclo,
+          tc, tcPorMes, meses: mesesCampana, ipcAcumulado,
+
+          // El precio de una referencia EN UN MES. Para hacienda usa la función canónica, con
+          // banda de peso y arrastre — la misma que Productivo, para que den lo mismo.
+          precioDe: (fuente, referencia, anio, mes) => {
+            if (fuente !== "hacienda") return null
+            const r = resolverPrecioHacienda(preciosOut, referencia, anio, mes, null)
+            return r.precio_pesos_kg > 0 ? r.precio_pesos_kg : null
+          },
+
+          // El arranque HISTÓRICO: lo ya gastado en una o varias cuentas contables.
+          //
+          // Reusa `calcularCuenta()` de `lib/presupuesto/modos.ts`, que es la que ya proyecta el
+          // panel de cuentas. Las cuentas elegidas se funden en una sola serie sintética: sumar
+          // primero y proyectar después es lo mismo que proyectar cada una y sumar, y así el modo
+          // (promedio, estacional, última FC) se aplica una sola vez.
+          historicoDe: (cuentas, modo, nMeses) => {
+            if (cuentas.length === 0) return null
+            const porMes = new Map<string, PuntoHistorico>()
+            for (const p of historia) {
+              if (!cuentas.includes(p.nro_cuenta)) continue
+              const k = claveMes(p.anio, p.mes)
+              const prev = porMes.get(k)
+              if (prev) { prev.monto += p.monto; prev.facturas += p.facturas }
+              else porMes.set(k, { ...p, nro_cuenta: "__margen__" })
+            }
+            if (porMes.size === 0) return null
+            const celdas = calcularCuenta(
+              {
+                nro_cuenta: "__margen__",
+                modo: modo as any,
+                meses_promedio: nMeses,
+                cabezas_referencia: cabezasCampana || null,
+                cabezas_proyectadas: cabezasCampana || null,
+              },
+              Array.from(porMes.values()),
+              { meses: mesesCampana, inflacionMensual: 0, ipc: serieIpc as any },
+            )
+            const total = celdas.reduce((s, c) => s + c.monto, 0)
+            if (total <= 0) return null
+            const etiqueta = cuentas.length === 1 ? `la cuenta ${cuentas[0]}` : `${cuentas.length} cuentas`
+            return { monto: total, motivo: `${celdas[0]?.explicacion ?? "histórico"} · ${etiqueta}` }
+          },
         }
         for (const i of mios) {
           const r = resolverCostoDirecto(i, ctxCosto)
@@ -358,7 +473,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
 
                   <Bloque titulo="Ingresos" lineas={m.ingresos} total={m.totalIngresos} has={m.has} />
                   <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has}
-                    editables={editables} onGuardado={cargar} />
+                    editables={editables} cuentas={cuentasConHistoria} onGuardado={cargar} />
 
                   <table className="w-full rounded border bg-white text-[11px]">
                     <tbody>
@@ -406,9 +521,11 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
  * Las líneas que vienen de un insumo se **despliegan**: colapsadas muestran el número final,
  * abiertas muestran cómo se llegó a él y dejan editarlo.
  */
-function Bloque({ titulo, lineas, total, has, editables, onGuardado }: {
+function Bloque({ titulo, lineas, total, has, editables, cuentas, onGuardado }: {
   titulo: string; lineas: MargenActividad["ingresos"]; total: number; has: number | null
-  editables?: Record<string, CostoEditable>; onGuardado?: () => void
+  editables?: Record<string, CostoEditable>
+  cuentas?: { nro: string; nombre: string }[]
+  onGuardado?: () => void
 }) {
   const [abierto, setAbierto] = useState<string | null>(null)
 
@@ -466,7 +583,7 @@ function Bloque({ titulo, lineas, total, has, editables, onGuardado }: {
                 {open && editable && (
                   <tr>
                     <td colSpan={3} className="p-0">
-                      <EditorCostoActividad costo={editable} pasos={l.pasos}
+                      <EditorCostoActividad costo={editable} pasos={l.pasos} cuentas={cuentas}
                         onGuardado={() => onGuardado?.()} />
                     </td>
                   </tr>

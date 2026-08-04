@@ -56,21 +56,68 @@ export interface CostoEditable {
   fundamento: string | null
   notas: string | null
   ajustes: Ajuste[]
+
+  // ── El modelo de 3 ranuras ──────────────────────────────────────────────────
+  cantidad: number | null
+  cantidad_unidad: string | null
+  precio_fuente: string | null
+  precio_referencia: string | null
+  base_tipo: string | null
+  base_categorias: string[] | null
+  base_manual: number | null
+  historico_modo: string | null
+  historico_meses: number | null
+  nro_cuentas: string[] | null
+  distribucion: string | null
+  meses_pct: Record<string, number> | null
 }
 
-export function EditorCostoActividad({ costo, pasos, onGuardado }: {
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+/** Las categorías del rodeo que se pueden tildar. La suma sin operador. */
+const CATEGORIAS_BASE = ['vacas', 'vaquillonas', 'toritos', 'destetados', 'terneros', 'terneras', 'retenidas']
+
+const BASES: { valor: string; etiqueta: string }[] = [
+  { valor: 'cabezas', etiqueta: 'Cabezas del rodeo' },
+  { valor: 'hectareas', etiqueta: 'Hectáreas' },
+  { valor: 'cantidad', etiqueta: 'Una cantidad fija (ton, lts, rollos)' },
+  { valor: 'ninguna', etiqueta: 'Nada — el precio ya es el total' },
+]
+
+const FUENTES_PRECIO: { valor: string; etiqueta: string }[] = [
+  { valor: 'manual', etiqueta: 'Un número que pongo yo' },
+  { valor: 'hacienda', etiqueta: 'Precio de hacienda ($/kg)' },
+  { valor: 'historico', etiqueta: 'Lo ya gastado (histórico)' },
+]
+
+const MODOS_HISTORICO: { valor: string; etiqueta: string }[] = [
+  { valor: 'promedio_n', etiqueta: 'Promedio de los últimos N meses' },
+  { valor: 'estacional', etiqueta: 'Mismo mes del año anterior' },
+  { valor: 'ultima_fc', etiqueta: 'Propagar la última factura' },
+  { valor: 'por_cabeza', etiqueta: '$/cabeza histórico × cabezas proyectadas' },
+]
+
+export function EditorCostoActividad({ costo, pasos, cuentas = [], onGuardado }: {
   costo: CostoEditable
   /** Cómo se llegó al número, ya calculado por el margen. */
   pasos?: Paso[]
+  /** Las cuentas contables con historia, para elegir en cuáles basarse. */
+  cuentas?: { nro: string; nombre: string }[]
   onGuardado: () => void
 }) {
   const [guardando, setGuardando] = useState(false)
-  const [borrador, setBorrador] = useState<CostoEditable>(costo)
+  const [borrador, setBorrador] = useState<CostoEditable>(() => conTresRanuras(costo))
   const sucio = JSON.stringify(borrador) !== JSON.stringify(costo)
 
   // Al recargar el margen llega un `costo` nuevo (mismo dato, otro objeto). Sin esto el borrador
   // se quedaba con el estado viejo y la fila mostraba "hay cambios sin guardar" recién guardada.
-  useEffect(() => { setBorrador(costo) }, [JSON.stringify(costo)])
+  useEffect(() => { setBorrador(conTresRanuras(costo)) }, [JSON.stringify(costo)])
+
+  /** Los de ración no se editan acá: dependen de la curva de peso y los tramos. */
+  const enModoRacion = !borrador.base_tipo
+    && ['pct_racion', 'kg_cabeza_dia', 'unid_cabeza_mes', 'dosis_cada_kg'].includes(borrador.modo)
+
+  const sumaPct = Object.values(borrador.meses_pct ?? {}).reduce((s, v) => s + (Number(v) || 0), 0)
 
   const set = <K extends keyof CostoEditable>(k: K, v: CostoEditable[K]) =>
     setBorrador(b => ({ ...b, [k]: v }))
@@ -93,6 +140,19 @@ export function EditorCostoActividad({ costo, pasos, onGuardado }: {
         cabezas_aplicacion: borrador.cabezas_aplicacion,
         cantidad_aplicacion: borrador.cantidad_aplicacion,
         fundamento: borrador.fundamento,
+        // El modelo de 3 ranuras
+        cantidad: borrador.cantidad,
+        cantidad_unidad: borrador.cantidad_unidad,
+        precio_fuente: borrador.precio_fuente,
+        precio_referencia: borrador.precio_referencia,
+        base_tipo: borrador.base_tipo,
+        base_categorias: borrador.base_categorias,
+        base_manual: borrador.base_manual,
+        historico_modo: borrador.historico_modo,
+        historico_meses: borrador.historico_meses,
+        nro_cuentas: borrador.nro_cuentas,
+        distribucion: borrador.distribucion,
+        meses_pct: borrador.meses_pct,
         updated_at: new Date().toISOString(),
       }).eq("id", costo.id)
       if (error) { alert("Error al guardar: " + error.message); return }
@@ -146,101 +206,212 @@ export function EditorCostoActividad({ costo, pasos, onGuardado }: {
         </div>
       )}
 
-      {/* ── La base del costo ────────────────────────────────────────────── */}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Campo etiqueta="Cómo escala">
-          <select className="h-6 w-full rounded border px-1 text-[10px]"
-            value={borrador.modo} onChange={e => set("modo", e.target.value)}>
-            {MODOS_DEL_MARGEN.map(m => <option key={m.valor} value={m.valor}>{m.etiqueta}</option>)}
-            {/* Los modos de ración se muestran pero no se editan acá: dependen de la curva de
-                peso y de los tramos, que son de la actividad. */}
-            {!MODOS_DEL_MARGEN.some(m => m.valor === borrador.modo) && (
-              <option value={borrador.modo}>{borrador.modo} (se edita en la actividad)</option>
-            )}
-          </select>
-        </Campo>
+      {/* ══ LAS TRES RANURAS ══════════════════════════════════════════════════
+          CUÁNTO × A CUÁNTO × SOBRE QUÉ. La forma es fija; lo que se elige es de dónde sale
+          cada pieza. Ver el encabezado del archivo para por qué no es un constructor libre. */}
+      {!enModoRacion ? (
+        <div className="space-y-2">
+          <div className="grid gap-2 lg:grid-cols-3">
 
-        <Campo etiqueta="Valor">
-          <div className="flex gap-1">
-            <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
-              defaultValue={fmtNumeroAR(borrador.valor)} placeholder="0,00"
-              onBlur={e => set("valor", parseNumeroAR(e.target.value))} />
-            <select className="h-6 w-14 rounded border px-0.5 text-[10px]"
-              value={borrador.moneda} onChange={e => set("moneda", e.target.value)}>
-              <option value="ARS">$</option>
-              <option value="USD">U$S</option>
-            </select>
-          </div>
-        </Campo>
-
-        <Campo etiqueta="Unidad">
-          <input type="text" className="h-6 w-full rounded border px-1 text-[10px]"
-            defaultValue={borrador.unidad ?? ""} placeholder="U$S/ha · U$S/vaca · U$S/ton"
-            onBlur={e => set("unidad", e.target.value || null)} />
-        </Campo>
-
-        <Campo etiqueta="Cuándo cae">
-          <select className="h-6 w-full rounded border px-1 text-[10px]"
-            value={borrador.momento} onChange={e => set("momento", e.target.value)}>
-            {MOMENTOS.map(m => <option key={m.valor} value={m.valor}>{m.etiqueta}</option>)}
-          </select>
-        </Campo>
-
-        {/* Sobre qué se aplica — cambia según el modo. Es lo que evita que la sanidad de toros
-            se cobre sobre las 260 vacas, y que la implantación de pasturas se multiplique por
-            las 175 has del campo en vez de por las 15 de pastura. */}
-        {borrador.modo === "monto_ha" && (
-          <Campo etiqueta="Hectáreas de este costo" ayuda="Vacío = las de la actividad">
-            <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
-              defaultValue={borrador.has_aplicacion == null ? "" : fmtNumeroAR(borrador.has_aplicacion)}
-              placeholder="las de la actividad"
-              onBlur={e => set("has_aplicacion", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
-          </Campo>
-        )}
-
-        {borrador.modo === "monto_cabeza" && (
-          <>
-            <Campo etiqueta="Sobre qué cabezas">
-              <select className="h-6 w-full rounded border px-1 text-[10px]"
-                value={borrador.base_cabezas ?? "rodeo"}
-                onChange={e => set("base_cabezas", e.target.value)}>
-                {Object.entries(ETIQUETA_BASE_CABEZAS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-            </Campo>
-            {borrador.base_cabezas === "manual" && (
-              <Campo etiqueta="Cantidad fija">
+            {/* ── 1 · CUÁNTO ─────────────────────────────────────────────── */}
+            <Ranura n={1} titulo="CUÁNTO" ayuda="IATF: 9 kg de novillo por vaca. Sanidad: 1.">
+              <div className="flex gap-1">
                 <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
-                  defaultValue={borrador.cabezas_aplicacion == null ? "" : fmtNumeroAR(borrador.cabezas_aplicacion, 0)}
-                  placeholder="0"
-                  onBlur={e => set("cabezas_aplicacion", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
-              </Campo>
+                  defaultValue={borrador.cantidad == null ? "" : fmtNumeroAR(borrador.cantidad)}
+                  placeholder="1,00"
+                  onBlur={e => set("cantidad", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
+                <input type="text" className="h-6 w-20 rounded border px-1 text-[10px]"
+                  defaultValue={borrador.cantidad_unidad ?? ""} placeholder="kg · dosis"
+                  onBlur={e => set("cantidad_unidad", e.target.value || null)} />
+              </div>
+            </Ranura>
+
+            {/* ── 2 · A CUÁNTO ───────────────────────────────────────────── */}
+            <Ranura n={2} titulo="A CUÁNTO" ayuda="El punto de arranque. No viene dado: se elige.">
+              <select className="h-6 w-full rounded border px-1 text-[10px]"
+                value={borrador.precio_fuente ?? "manual"}
+                onChange={e => set("precio_fuente", e.target.value)}>
+                {FUENTES_PRECIO.map(f => <option key={f.valor} value={f.valor}>{f.etiqueta}</option>)}
+              </select>
+
+              {(borrador.precio_fuente ?? "manual") === "manual" && (
+                <div className="mt-1 flex gap-1">
+                  <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
+                    defaultValue={fmtNumeroAR(borrador.valor)} placeholder="0,00"
+                    onBlur={e => set("valor", parseNumeroAR(e.target.value))} />
+                  <select className="h-6 w-14 rounded border px-0.5 text-[10px]"
+                    value={borrador.moneda} onChange={e => set("moneda", e.target.value)}>
+                    <option value="ARS">$</option>
+                    <option value="USD">U$S</option>
+                  </select>
+                </div>
+              )}
+
+              {borrador.precio_fuente === "hacienda" && (
+                <input type="text" className="mt-1 h-6 w-full rounded border px-1 text-[10px]"
+                  defaultValue={borrador.precio_referencia ?? ""}
+                  placeholder="Novillo · Ternero 180/200"
+                  onBlur={e => set("precio_referencia", e.target.value || null)} />
+              )}
+
+              {borrador.precio_fuente === "historico" && (
+                <div className="mt-1 space-y-1">
+                  <select className="h-6 w-full rounded border px-1 text-[10px]"
+                    value={borrador.historico_modo ?? "promedio_n"}
+                    onChange={e => set("historico_modo", e.target.value)}>
+                    {MODOS_HISTORICO.map(m => <option key={m.valor} value={m.valor}>{m.etiqueta}</option>)}
+                  </select>
+                  {borrador.historico_modo === "promedio_n" && (
+                    <div className="flex items-center gap-1">
+                      <input type="text" className="h-6 w-14 rounded border px-1 text-right text-[10px]"
+                        defaultValue={String(borrador.historico_meses ?? 12)}
+                        onBlur={e => set("historico_meses", Math.round(parseNumeroAR(e.target.value)) || 12)} />
+                      <span className="text-[9px] text-gray-400">meses</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Ranura>
+
+            {/* ── 3 · SOBRE QUÉ ──────────────────────────────────────────── */}
+            <Ranura n={3} titulo="SOBRE QUÉ"
+              ayuda="La suma sin operador: “vaca + vaquillona” son dos tildes, no un +.">
+              <select className="h-6 w-full rounded border px-1 text-[10px]"
+                value={borrador.base_tipo ?? "cabezas"}
+                onChange={e => set("base_tipo", e.target.value)}>
+                {BASES.map(b => <option key={b.valor} value={b.valor}>{b.etiqueta}</option>)}
+              </select>
+
+              {(borrador.base_tipo ?? "cabezas") === "cabezas" && (
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5">
+                  {CATEGORIAS_BASE.map(c => (
+                    <label key={c} className="flex items-center gap-0.5 text-[9px] text-gray-600">
+                      <input type="checkbox"
+                        checked={(borrador.base_categorias ?? []).includes(c)}
+                        onChange={e => {
+                          const act = new Set(borrador.base_categorias ?? [])
+                          if (e.target.checked) act.add(c); else act.delete(c)
+                          set("base_categorias", Array.from(act))
+                        }} />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {borrador.base_tipo === "hectareas" && (
+                <input type="text" className="mt-1 h-6 w-full rounded border px-1 text-right text-[10px]"
+                  defaultValue={borrador.has_aplicacion == null ? "" : fmtNumeroAR(borrador.has_aplicacion)}
+                  placeholder="las de la actividad"
+                  onBlur={e => set("has_aplicacion", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
+              )}
+
+              {borrador.base_tipo === "cantidad" && (
+                <input type="text" className="mt-1 h-6 w-full rounded border px-1 text-right text-[10px]"
+                  defaultValue={borrador.cantidad_aplicacion == null ? "" : fmtNumeroAR(borrador.cantidad_aplicacion)}
+                  placeholder="136,41 ton · 7.000 lts"
+                  onBlur={e => set("cantidad_aplicacion", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
+              )}
+
+              {/* El override: IATF va sobre 240 porque no se inseminan todas. */}
+              <div className="mt-1 flex items-center gap-1">
+                <span className="text-[9px] text-gray-400">o a mano</span>
+                <input type="text" className="h-6 w-20 rounded border px-1 text-right text-[10px]"
+                  defaultValue={borrador.base_manual == null ? "" : fmtNumeroAR(borrador.base_manual, 0)}
+                  placeholder="—"
+                  onBlur={e => set("base_manual", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
+              </div>
+            </Ranura>
+          </div>
+
+          {/* ── Las cuentas contables en las que basarse ───────────────────── */}
+          {borrador.precio_fuente === "historico" && (
+            <div className="rounded border bg-slate-50 px-2 py-1.5">
+              <p className="mb-1 text-[9px] uppercase tracking-wide text-gray-500">
+                ¿En qué cuentas contables basarse?
+                <span className="ml-1 normal-case text-gray-400">— podés tildar varias, se suman</span>
+              </p>
+              <div className="max-h-28 space-y-0.5 overflow-y-auto">
+                {cuentas.map(c => (
+                  <label key={c.nro} className="flex items-center gap-1 text-[10px] text-gray-600">
+                    <input type="checkbox"
+                      checked={(borrador.nro_cuentas ?? []).includes(c.nro)}
+                      onChange={e => {
+                        const act = new Set(borrador.nro_cuentas ?? [])
+                        if (e.target.checked) act.add(c.nro); else act.delete(c.nro)
+                        set("nro_cuentas", Array.from(act))
+                      }} />
+                    <span className="font-mono text-gray-400">{c.nro}</span> {c.nombre}
+                  </label>
+                ))}
+                {cuentas.length === 0 && (
+                  <p className="text-[10px] text-gray-400">No hay cuentas con historia cargada.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── CAE EN: meses + % ──────────────────────────────────────────── */}
+          <div className="rounded border bg-slate-50 px-2 py-1.5">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
+              <p className="text-[9px] uppercase tracking-wide text-gray-500">
+                Cae en
+                <span className="ml-1 normal-case text-gray-400">
+                  — tildá los meses y poné el % de cada uno. Sin % se reparte parejo.
+                </span>
+              </p>
+              <span className={`text-[10px] ${
+                sumaPct === 0 ? "text-gray-400" : sumaPct === 100 ? "text-green-700" : "text-amber-600"}`}>
+                {sumaPct === 0 ? "todos los meses, parejo" : `suma ${fmtNumeroAR(sumaPct, 0)} %`}
+              </span>
+            </div>
+            <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
+              {MESES_CORTOS.map((etq, idx) => {
+                const mes = idx + 1
+                const val = borrador.meses_pct?.[String(mes)]
+                return (
+                  <div key={mes} className="text-center">
+                    <label className="block text-[9px] text-gray-500">{etq}</label>
+                    <input type="text"
+                      className={`h-6 w-full rounded border px-0.5 text-center text-[10px] ${
+                        val ? "border-blue-400 bg-blue-50" : ""}`}
+                      defaultValue={val == null ? "" : fmtNumeroAR(val, 0)} placeholder="—"
+                      onBlur={e => {
+                        const m = { ...(borrador.meses_pct ?? {}) }
+                        const v = e.target.value.trim()
+                        if (v) m[String(mes)] = parseNumeroAR(v); else delete m[String(mes)]
+                        set("meses_pct", Object.keys(m).length ? m : null)
+                      }} />
+                  </div>
+                )
+              })}
+            </div>
+            {sumaPct > 0 && sumaPct !== 100 && (
+              <p className="mt-1 text-[9px] text-amber-700">
+                No suma 100: se normaliza igual (40/60 y 4/6 dan lo mismo), pero conviene revisarlo.
+              </p>
             )}
-          </>
-        )}
+          </div>
 
-        {borrador.modo === "monto_unidad" && (
-          <Campo etiqueta="Cantidad al año" ayuda="136,41 ton de silo · 7.000 lts de gasoil">
-            <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
-              defaultValue={borrador.cantidad_aplicacion == null ? "" : fmtNumeroAR(borrador.cantidad_aplicacion)}
-              placeholder="0,00"
-              onBlur={e => set("cantidad_aplicacion", e.target.value.trim() ? parseNumeroAR(e.target.value) : null)} />
-          </Campo>
-        )}
-
-        {/* La amortización es DEL MARGEN. El presupuesto es caja: el año que se siembra paga
-            el 100 % y los siguientes cero. Se aclara acá para que no se lea como un descuento. */}
-        <Campo etiqueta="Se amortiza en" ayuda="Sólo en el margen — el presupuesto paga el 100 % el año que se hace">
-          <div className="flex items-center gap-1">
-            <input type="text" className="h-6 w-full rounded border px-1 text-right text-[10px]"
+          {/* La amortización es DEL MARGEN. El presupuesto es caja. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[9px] uppercase tracking-wide text-gray-500">Se amortiza en</span>
+            <input type="text" className="h-6 w-16 rounded border px-1 text-right text-[10px]"
               defaultValue={borrador.amortiza_anios == null ? "" : String(borrador.amortiza_anios)}
               placeholder="—"
               onBlur={e => set("amortiza_anios", e.target.value.trim() ? Math.round(parseNumeroAR(e.target.value)) : null)} />
-            <span className="text-[9px] text-gray-400">años</span>
+            <span className="text-[9px] text-gray-400">
+              años — <strong>sólo en el margen</strong>: el presupuesto paga el 100 % el año que se hace
+            </span>
           </div>
-        </Campo>
-      </div>
+        </div>
+      ) : (
+        <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-800">
+          Este costo va por <strong>ración</strong> (<code>{borrador.modo}</code>): depende de la curva
+          de peso y de los tramos del lote, que son del <strong>planteo productivo</strong>. Se edita
+          en <em>Actividades y costos</em> hasta que el margen sepa resolverlo (M-04).
+        </p>
+      )}
 
       {/* ── La cadena de ajustes ─────────────────────────────────────────── */}
       <div className="rounded border bg-slate-50 px-2 py-1.5">
@@ -317,16 +488,53 @@ export function EditorCostoActividad({ costo, pasos, onGuardado }: {
   )
 }
 
-function Campo({ etiqueta, ayuda, children }: {
-  etiqueta: string; ayuda?: string; children: React.ReactNode
+/**
+ * Traduce una fila del modelo VIEJO (`modo` + sus campos sueltos) a las tres ranuras.
+ *
+ * No toca la base: es lo que se MUESTRA al abrir. Sin esto, una fila vieja mostraba los selects
+ * en su default y al guardar se grababa otra cosa — lo que se ve tiene que ser lo que se guarda.
+ * La conversión real ocurre recién cuando el usuario aprieta Guardar.
+ *
+ * Da **exactamente el mismo número** que el camino viejo: `modo_cabeza` con base `rodeo` son
+ * vacas + vaquillonas, que es la definición de `rodeo` en `calcularLineaTiempo()`.
+ */
+function conTresRanuras(c: CostoEditable): CostoEditable {
+  if (c.base_tipo) return c
+  const base: Partial<CostoEditable> = { cantidad: c.cantidad ?? 1, precio_fuente: c.precio_fuente ?? 'manual' }
+
+  switch (c.modo) {
+    case 'monto_cabeza': {
+      const b = c.base_cabezas ?? 'rodeo'
+      return {
+        ...c, ...base, base_tipo: 'cabezas',
+        base_categorias: c.base_categorias
+          ?? (b === 'rodeo' ? ['vacas', 'vaquillonas'] : b === 'manual' ? [] : [b]),
+        base_manual: c.base_manual ?? (b === 'manual' ? c.cabezas_aplicacion : null),
+      }
+    }
+    case 'monto_ha':
+      return { ...c, ...base, base_tipo: 'hectareas' }
+    case 'monto_unidad':
+      return { ...c, ...base, base_tipo: 'cantidad' }
+    default:
+      return { ...c, ...base }
+  }
+}
+
+/** Una de las tres ranuras, numerada — el orden es la cuenta y se lee de izquierda a derecha. */
+function Ranura({ n, titulo, ayuda, children }: {
+  n: number; titulo: string; ayuda?: string; children: React.ReactNode
 }) {
   return (
-    <div>
-      <label className="block text-[9px] uppercase tracking-wide text-gray-500" title={ayuda}>
-        {etiqueta}
-      </label>
-      <div className="mt-0.5">{children}</div>
-      {ayuda && <p className="mt-0.5 text-[9px] leading-tight text-gray-400">{ayuda}</p>}
+    <div className="rounded border bg-white px-2 py-1.5">
+      <p className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-gray-600">
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-gray-200 text-[8px] text-gray-600">
+          {n}
+        </span>
+        {titulo}
+      </p>
+      <div className="mt-1">{children}</div>
+      {ayuda && <p className="mt-1 text-[9px] leading-tight text-gray-400">{ayuda}</p>}
     </div>
   )
 }

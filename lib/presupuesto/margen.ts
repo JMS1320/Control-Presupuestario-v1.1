@@ -125,6 +125,31 @@ const num = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 
 export const claveActividad = (nombre: string) =>
   nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
 
+// ── El modelo de TRES RANURAS ────────────────────────────────────────────────
+//
+//     CUÁNTO  ×  A CUÁNTO  ×  SOBRE QUÉ   →  ajustes  →  dónde cae
+//
+// Decidido con el usuario 2026-08-03 contra un constructor libre de fórmula (pasos con + − × ÷).
+// La FORMA es fija; lo que se elige es **de dónde sale cada pieza**. Motivo: el constructor libre
+// da versatilidad total y practicidad cero — es Excel adentro de la app.
+//
+// Los dos operadores que parecen faltar, no faltan:
+//   · la SUMA ya existe → son dos filas, y el margen suma las filas;
+//   · "vaca + vaquillona" no es una suma → es una BASE CON NOMBRE (`base_categorias`).
+
+/** Sobre qué se aplica el costo. */
+export type BaseTipo = 'cabezas' | 'hectareas' | 'cantidad' | 'ninguna'
+
+/** De dónde sale el precio unitario. */
+export type PrecioFuente = 'manual' | 'hacienda' | 'grano' | 'insumo' | 'historico'
+
+export type DistribucionCosto = 'mensual' | 'un_mes' | 'calendario' | 'cupo_anual'
+
+/** Un mes del período presupuestado. */
+export interface MesPeriodo { anio: number; mes: number }
+
+export const claveMes = (anio: number, mes: number) => `${anio}-${String(mes).padStart(2, '0')}`
+
 /** Modos de `actividad_insumos` que el margen sabe resolver hoy. */
 export interface InsumoActividadMargen {
   id?: string
@@ -149,6 +174,29 @@ export interface InsumoActividadMargen {
   /** Por qué se estima así. Lo escribe el usuario. */
   fundamento: string | null
   notas: string | null
+
+  // ── El modelo de 3 ranuras. `base_tipo` presente = esta fila lo usa. ────────
+  /** CUÁNTO: unidades por unidad de base. IATF: 9 kg de novillo por vaca. */
+  cantidad?: number | null
+  cantidad_unidad?: string | null
+  /** A CUÁNTO: de dónde sale el precio unitario. */
+  precio_fuente?: PrecioFuente | null
+  /** La banda de hacienda ("Novillo") o el grano del que sale el precio. */
+  precio_referencia?: string | null
+  /** SOBRE QUÉ. */
+  base_tipo?: BaseTipo | null
+  /** Las categorías del rodeo que SUMAN. La suma sin operador. */
+  base_categorias?: string[] | null
+  /** El override a mano: IATF va sobre 240, porque no se inseminan todas. */
+  base_manual?: number | null
+  /** El arranque histórico, con los modos del panel de cuentas. */
+  historico_modo?: string | null
+  historico_meses?: number | null
+  nro_cuentas?: string[] | null
+  /** Dónde cae. */
+  distribucion?: DistribucionCosto | null
+  /** % del total por mes: `{ 3: 40, 4: 60 }`. */
+  meses_pct?: Record<string, number> | null
 }
 
 /**
@@ -178,6 +226,201 @@ export const ETIQUETA_BASE_CABEZAS: Record<string, string> = {
   manual: 'cantidad fija',
 }
 
+/** Lo que el resolvedor necesita saber del mundo. */
+export interface ContextoCosto {
+  has: number | null
+  cabezas: number | null
+  cabezasCiclo?: CabezasDelCiclo | null
+  /** ⚠️ TC de **cada mes**, con arrastre. No uno solo: ver `resolverCostoDirecto`. */
+  tcPorMes?: Record<string, number>
+  /** El TC de referencia, sólo para las filas viejas que todavía no dicen en qué meses caen. */
+  tc: number | null
+  /** Los meses del período, en orden. */
+  meses?: MesPeriodo[]
+  /** Para el ajuste por IPC. 0.87 = 87 %. */
+  ipcAcumulado?: number | null
+  /** El precio de una referencia ("Novillo") en un mes. Lo resuelve quien llama. */
+  precioDe?: (fuente: PrecioFuente, referencia: string, anio: number, mes: number) => number | null
+  /** El arranque histórico: lo gastado en esas cuentas, ya resuelto. */
+  historicoDe?: (cuentas: string[], modo: string, meses: number)
+    => { monto: number; motivo: string } | null
+}
+
+/**
+ * En qué meses cae el costo y con qué porcentaje.
+ *
+ * El usuario lo pidió explícito: *"debo poder seleccionar meses en los que cae y % del total de
+ * costo a cada mes"*. El reparto parejo es el caso particular en que todos los % son iguales.
+ */
+export function repartoDelCosto(
+  i: InsumoActividadMargen,
+  meses: MesPeriodo[],
+): { mes: MesPeriodo; pct: number }[] {
+  if (meses.length === 0) return []
+
+  // % explícito por mes: es el que manda.
+  const pct = i.meses_pct ?? null
+  if (pct && Object.keys(pct).length > 0) {
+    const elegidos = meses
+      .map(m => ({ mes: m, pct: Number(pct[String(m.mes)] ?? 0) }))
+      .filter(x => x.pct > 0)
+    const suma = elegidos.reduce((s, x) => s + x.pct, 0)
+    // Se normaliza: si el usuario cargó 40/60 da igual que si cargó 4/6, y si suma 90 no se
+    // pierde el 10 % restante en silencio.
+    if (suma > 0) return elegidos.map(x => ({ mes: x.mes, pct: x.pct / suma }))
+  }
+
+  switch (i.distribucion) {
+    case 'un_mes':
+    case 'cupo_anual':
+      return [{ mes: meses[0]!, pct: 1 }]
+    case 'mensual':
+    default:
+      return meses.map(m => ({ mes: m, pct: 1 / meses.length }))
+  }
+}
+
+/**
+ * El costo por el modelo de **tres ranuras**: CUÁNTO × A CUÁNTO × SOBRE QUÉ.
+ *
+ * Devuelve el total del período **y el desglose por mes**, porque el dólar no vale lo mismo en
+ * marzo que en octubre: cada mes usa **su** TC de la tabla. Antes el margen usaba un TC único
+ * —el más reciente— para todo el año, que es exactamente el `1.450` fijo del Excel con otro
+ * nombre. Lo marcó el usuario: *"cuando algo es en dólares se debe multiplicar por el TC de la
+ * tabla, no 1.450 que estaba fijo en Excel"*.
+ */
+function resolverTresRanuras(
+  i: InsumoActividadMargen,
+  ctx: ContextoCosto,
+): { monto: number | null; motivo: string; pasos: Paso[]; porMes: Record<string, number> } {
+  const pasos: Paso[] = []
+  const falta = (m: string) => ({ monto: null, motivo: `${i.concepto}: ${m}`, pasos: [], porMes: {} })
+
+  // ── SOBRE QUÉ ──────────────────────────────────────────────────────────────
+  let base: number
+  let baseTxt: string
+  if (i.base_manual != null) {
+    base = i.base_manual
+    baseTxt = `${num(base)} (a mano)`
+  } else {
+    switch (i.base_tipo) {
+      case 'cabezas': {
+        const cats = i.base_categorias ?? ['rodeo']
+        const c = ctx.cabezasCiclo
+        if (!c) return falta('faltan las cabezas del ciclo')
+        // La SUMA de las categorías tildadas. Es "vaca + vaquillona" sin un operador a la vista.
+        base = cats.reduce((s, k) => s + (c[k as keyof CabezasDelCiclo] ?? 0), 0)
+        baseTxt = `${num(base)} (${cats.map(k => ETIQUETA_BASE_CABEZAS[k] ?? k).join(' + ')})`
+        break
+      }
+      case 'hectareas': {
+        const h = i.has_aplicacion ?? ctx.has
+        if (h == null) return falta('faltan las hectáreas')
+        base = h; baseTxt = `${num(h)} ha`
+        break
+      }
+      case 'cantidad': {
+        if (i.cantidad_aplicacion == null) return falta(`falta la cantidad (${i.unidad ?? 'unidades'})`)
+        base = i.cantidad_aplicacion
+        baseTxt = `${num(base)} ${i.unidad ?? 'unidades'}`
+        break
+      }
+      default:
+        base = 1; baseTxt = ''
+    }
+  }
+
+  // ── CUÁNTO ─────────────────────────────────────────────────────────────────
+  const cuanto = i.cantidad ?? 1
+  const cuantoTxt = cuanto === 1 ? '' : `${num(cuanto)}${i.cantidad_unidad ? ' ' + i.cantidad_unidad : ''}`
+
+  // ── A CUÁNTO ───────────────────────────────────────────────────────────────
+  // El arranque histórico no es un precio unitario: es el monto del período, ya resuelto. Por eso
+  // sale por un camino aparte y el CUÁNTO × SOBRE QUÉ no lo multiplica.
+  if (i.precio_fuente === 'historico') {
+    const cuentas = i.nro_cuentas ?? []
+    if (cuentas.length === 0) return falta('falta elegir en qué cuentas contables basarse')
+    const h = ctx.historicoDe?.(cuentas, i.historico_modo ?? 'promedio_n', i.historico_meses ?? 12)
+    if (!h) return falta('no hay historia en esas cuentas para calcularlo')
+    pasos.push({ etiqueta: 'Base (histórico)', detalle: h.motivo, acumulado: h.monto })
+    const aj = aplicarAjustes(h.monto, i.ajustes ?? [], { ipcAcumulado: ctx.ipcAcumulado })
+    pasos.push(...aj.pasos)
+    return {
+      monto: aj.valor,
+      motivo: `${h.motivo}${aj.pasos.map(p => ` × ${p.detalle}`).join('')}`,
+      pasos,
+      porMes: repartirPorMes(i, aj.valor, ctx),
+    }
+  }
+
+  const meses = ctx.meses ?? []
+  const reparto = repartoDelCosto(i, meses)
+
+  // El precio, mes a mes: una referencia de hacienda puede cambiar dentro del período.
+  const precioEnMes = (m: MesPeriodo): number | null => {
+    if (i.precio_fuente && i.precio_fuente !== 'manual' && i.precio_referencia) {
+      return ctx.precioDe?.(i.precio_fuente, i.precio_referencia, m.anio, m.mes) ?? null
+    }
+    return i.valor
+  }
+
+  const anios = i.amortiza_anios && i.amortiza_anios > 1 ? i.amortiza_anios : 1
+  const porMes: Record<string, number> = {}
+  let total = 0
+  let faltaPrecio = false
+  let faltaTc = false
+
+  for (const r of reparto) {
+    const p = precioEnMes(r.mes)
+    if (p == null) { faltaPrecio = true; continue }
+    // ⚠️ El TC DE ESE MES, no uno solo para todo el año.
+    let tc = 1
+    if (i.moneda === 'USD') {
+      const t = ctx.tcPorMes?.[claveMes(r.mes.anio, r.mes.mes)] ?? ctx.tc
+      if (t == null) { faltaTc = true; continue }
+      tc = t
+    }
+    const monto = (cuanto * p * base * tc * r.pct) / anios
+    porMes[claveMes(r.mes.anio, r.mes.mes)] = monto
+    total += monto
+  }
+
+  if (faltaPrecio) return falta(`falta el precio de ${i.precio_referencia ?? 'la referencia'}`)
+  if (faltaTc) return falta('está en U$S y falta el tipo de cambio de algún mes')
+  if (reparto.length === 0) return falta('no tiene meses asignados')
+
+  const tcTxt = i.moneda === 'USD' ? ' × TC del mes' : ''
+  const amortTxt = anios > 1 ? ` ÷ ${anios} años` : ''
+  const partes = [cuantoTxt, `${num(i.valor)}${i.unidad ? ' ' + i.unidad : ''}`, baseTxt].filter(Boolean)
+  const motivoBase = partes.join(' × ') + tcTxt + amortTxt
+
+  pasos.push({ etiqueta: 'Base', detalle: motivoBase, acumulado: total })
+  const aj = aplicarAjustes(total, i.ajustes ?? [], { ipcAcumulado: ctx.ipcAcumulado })
+  pasos.push(...aj.pasos)
+  if (aj.pasos.length > 0) {
+    const f = total > 0 ? aj.valor / total : 1
+    for (const k of Object.keys(porMes)) porMes[k] *= f
+  }
+
+  return {
+    monto: aj.valor,
+    motivo: motivoBase + aj.pasos.map(p => ` × ${p.detalle}`).join(''),
+    pasos,
+    porMes,
+  }
+}
+
+/** Reparte un monto anual ya resuelto en los meses que le tocan. */
+function repartirPorMes(
+  i: InsumoActividadMargen, monto: number, ctx: ContextoCosto,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const r of repartoDelCosto(i, ctx.meses ?? [])) {
+    out[claveMes(r.mes.anio, r.mes.mes)] = monto * r.pct
+  }
+  return out
+}
+
 /**
  * Resuelve un costo directo a **pesos del período**, con su cadena a la vista.
  *
@@ -192,13 +435,12 @@ export const ETIQUETA_BASE_CABEZAS: Record<string, string> = {
  */
 export function resolverCostoDirecto(
   i: InsumoActividadMargen,
-  ctx: {
-    has: number | null; cabezas: number | null
-    cabezasCiclo?: CabezasDelCiclo | null; tc: number | null
-    /** Para el ajuste por IPC. 0.87 = 87 %. */
-    ipcAcumulado?: number | null
-  },
-): { monto: number | null; motivo: string; pasos: Paso[] } {
+  ctx: ContextoCosto,
+): { monto: number | null; motivo: string; pasos: Paso[]; porMes?: Record<string, number> } {
+  // El modelo de 3 ranuras manda cuando la fila lo declara. Las que no lo tienen —recría y
+  // engorde, que van por ración— siguen por el camino de siempre.
+  if (i.base_tipo) return resolverTresRanuras(i, ctx)
+
   const enPesos = () => {
     if (i.moneda !== 'USD') return { factor: 1, txt: '' }
     if (ctx.tc == null) return { factor: null as number | null, txt: '' }
