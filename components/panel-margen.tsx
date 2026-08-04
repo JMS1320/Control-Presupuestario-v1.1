@@ -329,7 +329,8 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
             const total = celdas.reduce((s, c) => s + c.monto, 0)
             if (total <= 0) return null
             const etiqueta = cuentas.length === 1 ? `la cuenta ${cuentas[0]}` : `${cuentas.length} cuentas`
-            return { monto: total, motivo: `${celdas[0]?.explicacion ?? "histórico"} · ${etiqueta}` }
+            // Las celdas viajan para poder mostrar LA MUESTRA: qué facturas reales entraron.
+            return { monto: total, motivo: `${celdas[0]?.explicacion ?? "histórico"} · ${etiqueta}`, celdas }
           },
         }
         for (const i of mios) {
@@ -337,6 +338,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           costos.push({
             actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo,
             insumoId: i.id, pasos: r.pasos, fundamento: i.fundamento,
+            celdas: r.celdas, historicoModo: i.historico_modo ?? null,
           })
         }
       }
@@ -352,6 +354,11 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
 
   const margenes: MargenActividad[] = useMemo(
     () => (datos ? calcularMargen(datos) : []), [datos])
+
+  /** Las bandas que SÍ tienen precio cargado. El selector marca las otras en vez de dejar
+   *  que se elija una vacía y el margen sólo diga que falta. */
+  const bandasConPrecio = useMemo(
+    () => Array.from(new Set((datos?.precios ?? []).map(p => p.categoria))), [datos])
 
   // ⚠️ El spinner sólo en la PRIMERA carga (`!datos`), no en cada recarga.
   //
@@ -473,7 +480,9 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
 
                   <Bloque titulo="Ingresos" lineas={m.ingresos} total={m.totalIngresos} has={m.has} />
                   <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has}
-                    editables={editables} cuentas={cuentasConHistoria} onGuardado={cargar} />
+                    editables={editables} cuentas={cuentasConHistoria}
+                    bandasConPrecio={bandasConPrecio} onCargarPrecio={onCargarPrecio}
+                    onGuardado={cargar} />
 
                   <table className="w-full rounded border bg-white text-[11px]">
                     <tbody>
@@ -521,10 +530,14 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
  * Las líneas que vienen de un insumo se **despliegan**: colapsadas muestran el número final,
  * abiertas muestran cómo se llegó a él y dejan editarlo.
  */
-function Bloque({ titulo, lineas, total, has, editables, cuentas, onGuardado }: {
+function Bloque({
+  titulo, lineas, total, has, editables, cuentas, bandasConPrecio, onCargarPrecio, onGuardado,
+}: {
   titulo: string; lineas: MargenActividad["ingresos"]; total: number; has: number | null
   editables?: Record<string, CostoEditable>
   cuentas?: { nro: string; nombre: string }[]
+  bandasConPrecio?: string[]
+  onCargarPrecio?: (banda: string) => void
   onGuardado?: () => void
 }) {
   const [abierto, setAbierto] = useState<string | null>(null)
@@ -584,6 +597,8 @@ function Bloque({ titulo, lineas, total, has, editables, cuentas, onGuardado }: 
                   <tr>
                     <td colSpan={3} className="p-0">
                       <EditorCostoActividad costo={editable} pasos={l.pasos} cuentas={cuentas}
+                        bandasConPrecio={bandasConPrecio} celdas={l.celdas}
+                        onCargarPrecio={onCargarPrecio}
                         onGuardado={() => onGuardado?.()} />
                     </td>
                   </tr>

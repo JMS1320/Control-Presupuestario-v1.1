@@ -24,9 +24,10 @@ import { pesoEstimado, diasEntre } from '../ganaderia/ciclo'
 // La cadena de ajustes es la MISMA que la del presupuesto. Una sola implementación, o el margen
 // y el presupuesto terminan dando distinto sobre el mismo costo.
 import { aplicarAjustes, type Ajuste, type Paso } from './variables'
+import type { CeldaPresupuesto } from './modos'
 
 export type { PrecioHacienda }
-export type { Ajuste, Paso }
+export type { Ajuste, Paso, CeldaPresupuesto }
 
 export interface ActividadRef { id: string; nombre: string }
 
@@ -60,6 +61,9 @@ export interface CostoDirecto {
   pasos?: Paso[]
   /** Lo que escribió el usuario sobre por qué estima así. */
   fundamento?: string | null
+  /** Las facturas reales que entraron, cuando el arranque es histórico. */
+  celdas?: CeldaPresupuesto[]
+  historicoModo?: string | null
 }
 
 export interface DatosMargen {
@@ -93,6 +97,9 @@ export interface LineaMargen {
   /** La conformación del número, para desplegar debajo de la fila. */
   pasos?: Paso[]
   fundamento?: string | null
+  /** Las facturas reales que entraron, cuando el arranque es histórico. */
+  celdas?: CeldaPresupuesto[]
+  historicoModo?: string | null
 }
 
 export interface MargenActividad {
@@ -241,9 +248,14 @@ export interface ContextoCosto {
   ipcAcumulado?: number | null
   /** El precio de una referencia ("Novillo") en un mes. Lo resuelve quien llama. */
   precioDe?: (fuente: PrecioFuente, referencia: string, anio: number, mes: number) => number | null
-  /** El arranque histórico: lo gastado en esas cuentas, ya resuelto. */
+  /**
+   * El arranque histórico: lo gastado en esas cuentas, ya resuelto.
+   *
+   * Devuelve también las `celdas` para poder mostrar **la muestra** —qué facturas reales
+   * entraron—, que es lo que el usuario ya tiene en cuentas contables y pidió acá.
+   */
   historicoDe?: (cuentas: string[], modo: string, meses: number)
-    => { monto: number; motivo: string } | null
+    => { monto: number; motivo: string; celdas?: CeldaPresupuesto[] } | null
 }
 
 /**
@@ -292,7 +304,12 @@ export function repartoDelCosto(
 function resolverTresRanuras(
   i: InsumoActividadMargen,
   ctx: ContextoCosto,
-): { monto: number | null; motivo: string; pasos: Paso[]; porMes: Record<string, number> } {
+): {
+  monto: number | null; motivo: string; pasos: Paso[]
+  porMes: Record<string, number>
+  /** Las facturas reales que entraron, cuando el arranque es histórico. */
+  celdas?: CeldaPresupuesto[]
+} {
   const pasos: Paso[] = []
   const falta = (m: string) => ({ monto: null, motivo: `${i.concepto}: ${m}`, pasos: [], porMes: {} })
 
@@ -350,6 +367,7 @@ function resolverTresRanuras(
       motivo: `${h.motivo}${aj.pasos.map(p => ` × ${p.detalle}`).join('')}`,
       pasos,
       porMes: repartirPorMes(i, aj.valor, ctx),
+      celdas: h.celdas,
     }
   }
 
@@ -436,7 +454,10 @@ function repartirPorMes(
 export function resolverCostoDirecto(
   i: InsumoActividadMargen,
   ctx: ContextoCosto,
-): { monto: number | null; motivo: string; pasos: Paso[]; porMes?: Record<string, number> } {
+): {
+  monto: number | null; motivo: string; pasos: Paso[]
+  porMes?: Record<string, number>; celdas?: CeldaPresupuesto[]
+} {
   // El modelo de 3 ranuras manda cuando la fila lo declara. Las que no lo tienen —recría y
   // engorde, que van por ración— siguen por el camino de siempre.
   if (i.base_tipo) return resolverTresRanuras(i, ctx)
@@ -599,7 +620,10 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     }
 
     const costos: LineaMargen[] = misCostos.map(c => {
-      const comun = { insumoId: c.insumoId, pasos: c.pasos, fundamento: c.fundamento }
+      const comun = {
+        insumoId: c.insumoId, pasos: c.pasos, fundamento: c.fundamento,
+        celdas: c.celdas, historicoModo: c.historicoModo,
+      }
       if (c.monto == null) {
         faltantes.push(`${c.concepto}: ${c.motivo}`)
         return {

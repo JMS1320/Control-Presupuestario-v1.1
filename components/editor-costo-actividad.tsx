@@ -24,7 +24,11 @@ import { Button } from "@/components/ui/button"
 import { Plus, Trash2, Loader2 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { ETIQUETA_AJUSTE, type Ajuste, type TipoAjuste, type Paso } from "@/lib/presupuesto/variables"
-import { ETIQUETA_BASE_CABEZAS } from "@/lib/presupuesto/margen"
+import { ETIQUETA_BASE_CABEZAS, type CeldaPresupuesto } from "@/lib/presupuesto/margen"
+import { BANDAS_HACIENDA } from "@/lib/ganaderia/calculo"
+// La muestra es la MISMA que la de cuentas contables — el usuario la pidió acá también.
+import { MuestraDelCalculo } from "@/components/muestra-del-calculo"
+import type { ModoPresupuesto } from "@/lib/presupuesto/modos"
 
 /** Los modos que el margen sabe resolver. Los de ración se editan en la actividad. */
 const MODOS_DEL_MARGEN: { valor: string; etiqueta: string }[] = [
@@ -97,12 +101,19 @@ const MODOS_HISTORICO: { valor: string; etiqueta: string }[] = [
   { valor: 'por_cabeza', etiqueta: '$/cabeza histórico × cabezas proyectadas' },
 ]
 
-export function EditorCostoActividad({ costo, pasos, cuentas = [], onGuardado }: {
+export function EditorCostoActividad({
+  costo, pasos, cuentas = [], bandasConPrecio = [], celdas, onCargarPrecio, onGuardado,
+}: {
   costo: CostoEditable
   /** Cómo se llegó al número, ya calculado por el margen. */
   pasos?: Paso[]
   /** Las cuentas contables con historia, para elegir en cuáles basarse. */
   cuentas?: { nro: string; nombre: string }[]
+  /** Qué bandas de hacienda tienen precio cargado, para no ofrecer las vacías en silencio. */
+  bandasConPrecio?: string[]
+  /** Las facturas reales que entraron, cuando el arranque es histórico. */
+  celdas?: CeldaPresupuesto[]
+  onCargarPrecio?: (banda: string) => void
   onGuardado: () => void
 }) {
   const [guardando, setGuardando] = useState(false)
@@ -203,6 +214,15 @@ export function EditorCostoActividad({ costo, pasos, cuentas = [], onGuardado }:
               ))}
             </tbody>
           </table>
+
+          {/* Las facturas reales que entraron. Es lo mismo que muestra el panel de cuentas:
+              la fórmula sola no distingue tres meses parecidos de dos ceros y un mes enorme. */}
+          {celdas && celdas.length > 0 && (
+            <div className="mt-1 rounded border border-blue-200 bg-blue-50/60 px-2 py-1">
+              <MuestraDelCalculo celdas={celdas}
+                modo={(borrador.historico_modo ?? "promedio_n") as ModoPresupuesto} />
+            </div>
+          )}
         </div>
       )}
 
@@ -247,11 +267,30 @@ export function EditorCostoActividad({ costo, pasos, cuentas = [], onGuardado }:
                 </div>
               )}
 
+              {/* Se SELECCIONA de la lista, no se tipea. Tipear "Novillo" no daba precio porque
+                  esa banda no existe, y el margen sólo decía que faltaba. Las que no tienen
+                  precio cargado se marcan, y el faltante ES el acceso: botón para ir a cargarlo. */}
               {borrador.precio_fuente === "hacienda" && (
-                <input type="text" className="mt-1 h-6 w-full rounded border px-1 text-[10px]"
-                  defaultValue={borrador.precio_referencia ?? ""}
-                  placeholder="Novillo · Ternero 180/200"
-                  onBlur={e => set("precio_referencia", e.target.value || null)} />
+                <div className="mt-1 space-y-1">
+                  <select className="h-6 w-full rounded border px-1 text-[10px]"
+                    value={borrador.precio_referencia ?? ""}
+                    onChange={e => set("precio_referencia", e.target.value || null)}>
+                    <option value="">— elegir precio —</option>
+                    {BANDAS_HACIENDA.map(b => (
+                      <option key={b.nombre} value={b.nombre}>
+                        {b.nombre}{bandasConPrecio.includes(b.nombre) ? "" : "  (sin precio cargado)"}
+                      </option>
+                    ))}
+                  </select>
+                  {borrador.precio_referencia
+                    && !bandasConPrecio.includes(borrador.precio_referencia) && (
+                    <button type="button"
+                      onClick={() => onCargarPrecio?.(borrador.precio_referencia!)}
+                      className="w-full rounded border border-amber-400 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800 hover:bg-amber-100">
+                      ⚠️ {borrador.precio_referencia} no tiene precio — cargarlo →
+                    </button>
+                  )}
+                </div>
               )}
 
               {borrador.precio_fuente === "historico" && (
