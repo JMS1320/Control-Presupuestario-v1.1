@@ -24,7 +24,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import {
-  desbasteDe, evaluarOpcion, desgloseCZ, precioDerivado, rindeDe,
+  desbasteDe, evaluarOpcion, desgloseCZ, precioDerivado, rindeDe, sugerirVehiculo,
   type TipoHacienda, type DestinoVenta, type RutaDestino, type IntermediarioVenta,
   type TarifaFlete, type NormaDesbaste, type NormaRinde, type OpcionVenta,
 } from "@/lib/ganaderia/comercializacion"
@@ -104,6 +104,9 @@ export interface SeleccionComercial {
    * rinde 58 % y una vaca conserva 45 %, le vendan a quien le vendan.
    */
   categoria: string
+  /** Vacío = el que sugiere la app por los kilos. Editable: a veces el camión que hay no es el
+   *  que conviene. */
+  vehiculo: string
 }
 
 /**
@@ -111,15 +114,16 @@ export interface SeleccionComercial {
  * para que la etapa los use. El usuario los puede pisar después.
  */
 export function SelectorComercializacion({
-  normas, tipo, seleccion, lote, onCambio, onCalculado,
+  normas, tipo, seleccion, lote, onCambio, onTipo, onCalculado,
 }: {
   normas: NormasComercializacion
-  /** Lo dice la etapa: recría → invernada, engorde → gordo. */
+  /** Lo pone el usuario en la etapa: recría → invernada, engorde → gordo. */
   tipo: TipoHacienda
   seleccion: SeleccionComercial
   /** Lo que se va a vender, ya calculado por la etapa. */
   lote: { cabezas: number; pesoVivo: number; precioVenta: number; categoria: string }
   onCambio: (s: SeleccionComercial) => void
+  onTipo?: (t: TipoHacienda) => void
   /** Los dos porcentajes que la etapa necesita, ya resueltos. */
   onCalculado?: (v: { desbastePct: number; czPct: number }) => void
 }) {
@@ -132,7 +136,15 @@ export function SelectorComercializacion({
     ?? (rutas.length === 1 ? rutas[0]! : null)
   const faltaElegirRuta = !!destino && destino.requiere_flete && rutas.length > 1 && !ruta
   const intermediario = normas.intermediarios.find(i => i.id === seleccion.intermediarioId) ?? null
-  const tarifa = normas.tarifas.find(t => t.vehiculo === destino?.vehiculo) ?? null
+
+  // ── El vehículo: se deduce de los kilos, pero se puede cambiar ─────────────
+  // No por capacidad sino por COSTO: el arranque y el seguro se pagan por viaje, así que partir
+  // la carga en dos chasis puede salir más caro que una jaula sola.
+  const kgTotales = lote.cabezas * lote.pesoVivo
+  const veh = sugerirVehiculo(normas.tarifas, ruta?.km ?? 0, kgTotales)
+  const tarifa = seleccion.vehiculo
+    ? normas.tarifas.find(t => t.vehiculo === seleccion.vehiculo) ?? veh.sugerido
+    : veh.sugerido
 
   // La categoría vendida: de ella sale el rinde. Si no se eligió, se usa la que traiga la etapa.
   const categoria = seleccion.categoria || lote.categoria
@@ -176,10 +188,16 @@ export function SelectorComercializacion({
   return (
     <div className="rounded border bg-slate-50 px-2 py-1.5 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wide text-gray-500">
-          Vende como <strong className="text-gray-700">{tipo}</strong>
-          <span className="ml-1 normal-case text-gray-400">(lo dice la etapa)</span>
-        </span>
+        {/* El tipo es de la ETAPA y de él cuelga todo: qué destinos se ofrecen, qué desbaste
+            corresponde y si hay flete. La invernada no paga flete de venta. */}
+        <label className="flex items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-gray-500">Vende como</span>
+          <select className="h-6 rounded border px-1 text-[11px] font-medium"
+            value={tipo} onChange={e => onTipo?.(e.target.value as TipoHacienda)}>
+            <option value="invernada">invernada</option>
+            <option value="gordo">gordo</option>
+          </select>
+        </label>
 
         <label className="flex items-center gap-1">
           <span className="text-[10px] text-gray-500">Destino</span>
@@ -236,7 +254,40 @@ export function SelectorComercializacion({
             </select>
           </label>
         )}
+
+        {/* El vehículo: sugerido por costo, editable. Se muestra lo que costaría cada uno para
+            que la sugerencia se pueda discutir en vez de aceptarse a ciegas. */}
+        {destino?.requiere_flete && ruta && veh.opciones.length > 0 && (
+          <label className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">Camión</span>
+            <select className="h-6 rounded border px-1 text-[11px]"
+              value={seleccion.vehiculo || (veh.sugerido?.vehiculo ?? "")}
+              onChange={e => onCambio({ ...seleccion, vehiculo: e.target.value })}>
+              {veh.opciones.map((o, k) => (
+                <option key={o.tarifa.vehiculo} value={o.tarifa.vehiculo}>
+                  {o.tarifa.vehiculo}
+                  {o.viajes > 1 ? ` ×${o.viajes}` : ""} · {pesos(o.total)}
+                  {k === 0 ? "  ← más barato" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
+
+      {/* Por qué se sugiere ese camión. Con 8.000 kg entran dos chasis, pero una jaula sola sale
+          menos: el arranque y el seguro se pagan por viaje. */}
+      {destino?.requiere_flete && ruta && veh.opciones.length > 1 && !seleccion.vehiculo && (
+        <p className="mt-1 text-[10px] text-gray-500">
+          {Math.round(kgTotales).toLocaleString("es-AR")} kg →{" "}
+          <strong>{veh.opciones[0]!.tarifa.vehiculo}</strong>
+          {veh.opciones[0]!.viajes > 1 ? ` ×${veh.opciones[0]!.viajes}` : ""}{" "}
+          ({pesos(veh.opciones[0]!.total)}) contra{" "}
+          {veh.opciones[1]!.tarifa.vehiculo}
+          {veh.opciones[1]!.viajes > 1 ? ` ×${veh.opciones[1]!.viajes}` : ""}{" "}
+          ({pesos(veh.opciones[1]!.total)}). Se puede cambiar.
+        </p>
+      )}
 
       {faltaElegirRuta && (
         <p className="mt-1 text-[10px] text-amber-700">

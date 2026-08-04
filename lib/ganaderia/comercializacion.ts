@@ -215,6 +215,29 @@ export function precioDerivado(
   }
 }
 
+/**
+ * Qué vehículo conviene para estos kilos: **el más barato, no el más chico**.
+ *
+ * La capacidad sola no alcanza. Con 8.000 kg a 200 km entra un chasis y medio, así que por
+ * capacidad irían dos chasis ($1.460.000); pero una jaula sola cuesta $960.000. El arranque y el
+ * seguro se pagan por viaje, y por eso partir la carga es caro.
+ *
+ * Devuelve todas las opciones costeadas para poder mostrar la de al lado: el usuario tiene que
+ * poder ver por qué se sugiere una y cambiarla, porque a veces el camión que hay no es el que
+ * conviene.
+ */
+export function sugerirVehiculo(
+  tarifas: TarifaFlete[], km: number, kgTotales: number,
+): { sugerido: TarifaFlete | null; opciones: { tarifa: TarifaFlete; total: number; viajes: number }[] } {
+  const opciones = tarifas
+    .map(t => {
+      const f = costoFlete(t, km, kgTotales)
+      return { tarifa: t, total: f.total, viajes: f.viajes }
+    })
+    .sort((a, b) => a.total - b.total)
+  return { sugerido: opciones[0]?.tarifa ?? null, opciones }
+}
+
 export interface OpcionVenta {
   destino: DestinoVenta
   intermediario: IntermediarioVenta | null

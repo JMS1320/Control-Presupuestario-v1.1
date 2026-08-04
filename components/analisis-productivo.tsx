@@ -18,6 +18,8 @@ import autoTable from "jspdf-autotable"
 import { toast } from "sonner"
 import type { FilaMercado } from "@/app/api/precios-mercado/route"
 import { calcular, type CalcInputs } from "@/lib/productivo/racion"
+// Qué se vende y a quién: completa el desbaste y la CZ desde las normas de comercialización.
+import { SelectorComercializacion, useNormasComercializacion } from "./selector-comercializacion"
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
@@ -67,6 +69,28 @@ interface SegState {
   etapas: StageForm[]
   incluido: boolean        // cuenta en la ganancia combinada (el "no elegido" queda pero suma 0)
   salidaEtapa: number      // hasta qué etapa se vende (índice en cadena.pasos; -1 = última/punta a punta)
+  /** A quién se le vende al final de la etapa 1. Opcional: sin esto, desbaste y CZ se tipean
+   *  a mano como siempre, y los estudios viejos abren igual. */
+  comercial?: ComercialEtapa
+}
+
+/**
+ * Qué se vende y a quién, al final de una etapa.
+ *
+ * `tipo` lo pone el usuario en la etapa —*"ahí debo poner que es etapa de invernada"*— y de él
+ * cuelga todo lo demás: qué destinos se ofrecen, qué desbaste corresponde y si hay flete.
+ */
+export interface ComercialEtapa {
+  tipo: "invernada" | "gordo"
+  destinoId: string
+  intermediarioId: string
+  rutaId: string
+  categoria: string
+  vehiculo: string
+}
+
+export const COMERCIAL_VACIO: ComercialEtapa = {
+  tipo: "gordo", destinoId: "", intermediarioId: "", rutaId: "", categoria: "", vehiculo: "",
 }
 
 interface SegProps extends Props {
@@ -141,6 +165,8 @@ interface StageForm {
   precioVenta: string; maizPrecio: string; concPrecio: string
   desbSal: string; czSal: string; mort: string
   racionPV: string; maizPct: string; concPct: string
+  /** A quién se le vende al final de ESTA etapa. Cada una puede ir a otro lado. */
+  comercial?: ComercialEtapa
 }
 
 function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, onRegisterExport, mercado }: SegProps) {
@@ -176,6 +202,28 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
   const [desbSal, setDesbSal] = useState(g("desbSal", "5"))
   const [czEnt, setCzEnt] = useState(g("czEnt", "4"))
   const [czSal, setCzSal] = useState(g("czSal", "4"))
+
+  // ── Comercialización (etapa 1) ───────────────────────────────────────────
+  // Las normas se leen una vez para toda la pantalla (hay un selector por etapa y por segmento).
+  const normasCom = useNormasComercializacion()
+  const [comercial, setComercial] = useState<ComercialEtapa>(g("comercial", COMERCIAL_VACIO)!)
+
+  /**
+   * Vuelca el desbaste y la CZ que salen de las normas a los inputs de la etapa.
+   *
+   * Se compara antes de escribir para no entrar en bucle: la CZ depende de la venta, la venta
+   * del desbaste, y el desbaste es justamente lo que estamos por escribir.
+   *
+   * **No pisa lo tipeado a mano**: el usuario pidió poder corregir después de elegir. Sólo
+   * escribe cuando el valor cambió de verdad.
+   */
+  const aplicarComercial = (v: { desbastePct: number; czPct: number }) => {
+    const f = (n: number) => n.toLocaleString("es-AR", { maximumFractionDigits: 2 })
+    const d = f(v.desbastePct * 100)
+    const z = f(v.czPct * 100)
+    setDesbSal(prev => (prev === d ? prev : d))
+    setCzSal(prev => (prev === z ? prev : z))
+  }
 
   // Ración
   const [racionPV, setRacionPV] = useState(g("racionPV", "1,5"))
@@ -311,7 +359,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
   const snapshot: SegState = {
     fase, notas, fuente, cantidad, pesoInicio, maizPrecio, concPrecio, tc, precioCompra, precioVenta,
     fechaInicio, fechaFin, dias, conversion, mortandad, desbEnt, desbSal, czEnt, czSal,
-    racionPV, maizPct, concPct, bOv, verB, etapas, incluido, salidaEtapa,
+    racionPV, maizPct, concPct, bOv, verB, etapas, incluido, salidaEtapa, comercial,
   }
   const snapKey = JSON.stringify(snapshot)
   useEffect(() => { onState?.(snapshot) }, [snapKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -615,6 +663,21 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
                 <td className="pr-4 pl-2 text-xs">merma kg</td>
                 <td className="text-right px-3 text-gray-300">—</td>
                 <td className="text-right px-3">−{kg(c.mermaKgMort)}</td>
+              </tr>
+              {/* Qué se vende y a quién. Al elegir, el Desbaste % y la CZ % de SALIDA se
+                  completan desde las normas — y se siguen pudiendo pisar a mano. */}
+              <tr>
+                <td colSpan={3} className="pt-1 pb-1.5">
+                  <SelectorComercializacion
+                    normas={normasCom}
+                    tipo={comercial.tipo}
+                    seleccion={comercial}
+                    lote={{ cabezas: c.cant, pesoVivo: c.pFin, precioVenta: num(precioVenta), categoria: comercial.categoria }}
+                    onCambio={s => setComercial({ ...comercial, ...s })}
+                    onTipo={t => setComercial({ ...comercial, tipo: t })}
+                    onCalculado={aplicarComercial}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className={`${lbl} pr-4`}>Desbaste %</td>
