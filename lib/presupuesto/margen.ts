@@ -242,8 +242,10 @@ export interface ContextoCosto {
   tcPorMes?: Record<string, number>
   /** El TC de referencia, sólo para las filas viejas que todavía no dicen en qué meses caen. */
   tc: number | null
-  /** Los meses del período, en orden. */
+  /** Los meses del período, en orden de CAMPAÑA (jul → jun). */
   meses?: MesPeriodo[]
+  /** Para saber qué meses ya pasaron. Inyectable para poder testear. */
+  hoy?: Date
   /** Para el ajuste por IPC. 0.87 = 87 %. */
   ipcAcumulado?: number | null
   /** El precio de una referencia ("Novillo") en un mes. Lo resuelve quien llama. */
@@ -267,28 +269,48 @@ export interface ContextoCosto {
 export function repartoDelCosto(
   i: InsumoActividadMargen,
   meses: MesPeriodo[],
+  hoy?: Date,
 ): { mes: MesPeriodo; pct: number }[] {
   if (meses.length === 0) return []
+
+  /**
+   * Un mes YA PASADO no se presupuesta: lo que se gastó, se gastó, y está en la contabilidad.
+   *
+   * El usuario lo planteó así: *"yo pondría que el 30 % se gasta en julio pero ya pasó, así que
+   * no tiene dónde ponerlo (esto estaría ok), pero llena de agosto en adelante"*. Entonces ese
+   * 30 % **no se redistribuye**: simplemente no se proyecta, y del costo anual queda el 70 %.
+   * Repartirlo entre los meses que quedan sería inventar un gasto que ya no va a ocurrir.
+   */
+  const ref = hoy ?? new Date()
+  const km = (m: MesPeriodo) => m.anio * 12 + (m.mes - 1)
+  const kmHoy = ref.getFullYear() * 12 + ref.getMonth()
+  const vigente = (m: MesPeriodo) => km(m) >= kmHoy
 
   // % explícito por mes: es el que manda.
   const pct = i.meses_pct ?? null
   if (pct && Object.keys(pct).length > 0) {
-    const elegidos = meses
+    const todos = meses
       .map(m => ({ mes: m, pct: Number(pct[String(m.mes)] ?? 0) }))
       .filter(x => x.pct > 0)
-    const suma = elegidos.reduce((s, x) => s + x.pct, 0)
-    // Se normaliza: si el usuario cargó 40/60 da igual que si cargó 4/6, y si suma 90 no se
-    // pierde el 10 % restante en silencio.
-    if (suma > 0) return elegidos.map(x => ({ mes: x.mes, pct: x.pct / suma }))
+    // ⚠️ La normalización usa el total de TODOS los meses cargados, incluidos los que ya pasaron.
+    // Así 40/60 y 4/6 dan lo mismo, y si julio ya pasó su parte se pierde en vez de engordar a
+    // los que quedan.
+    const suma = todos.reduce((s, x) => s + x.pct, 0)
+    if (suma > 0) {
+      return todos.filter(x => vigente(x.mes)).map(x => ({ mes: x.mes, pct: x.pct / suma }))
+    }
   }
 
   switch (i.distribucion) {
     case 'un_mes':
-    case 'cupo_anual':
-      return [{ mes: meses[0]!, pct: 1 }]
+    case 'cupo_anual': {
+      const m = meses.find(vigente) ?? meses[meses.length - 1]!
+      return [{ mes: m, pct: 1 }]
+    }
     case 'mensual':
     default:
-      return meses.map(m => ({ mes: m, pct: 1 / meses.length }))
+      // Mismo criterio: cada mes vale 1/12 del año y los que pasaron no se proyectan.
+      return meses.filter(vigente).map(m => ({ mes: m, pct: 1 / meses.length }))
   }
 }
 
@@ -372,7 +394,7 @@ function resolverTresRanuras(
   }
 
   const meses = ctx.meses ?? []
-  const reparto = repartoDelCosto(i, meses)
+  const reparto = repartoDelCosto(i, meses, ctx.hoy)
 
   // El precio, mes a mes: una referencia de hacienda puede cambiar dentro del período.
   const precioEnMes = (m: MesPeriodo): number | null => {
@@ -433,7 +455,7 @@ function repartirPorMes(
   i: InsumoActividadMargen, monto: number, ctx: ContextoCosto,
 ): Record<string, number> {
   const out: Record<string, number> = {}
-  for (const r of repartoDelCosto(i, ctx.meses ?? [])) {
+  for (const r of repartoDelCosto(i, ctx.meses ?? [], ctx.hoy)) {
     out[claveMes(r.mes.anio, r.mes.mes)] = monto * r.pct
   }
   return out

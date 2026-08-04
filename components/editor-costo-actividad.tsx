@@ -78,6 +78,14 @@ export interface CostoEditable {
 
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
+/**
+ * Los meses en orden de CAMPAÑA: jul → jun.
+ *
+ * Lo pidió el usuario y tiene razón: la campaña va de julio a junio, así que mostrarlos de enero
+ * a diciembre obliga a leer la grilla salteado para entender cuándo cae un gasto.
+ */
+const MESES_CAMPANA = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]
+
 /** Las categorías del rodeo que se pueden tildar. La suma sin operador. */
 const CATEGORIAS_BASE = ['vacas', 'vaquillonas', 'toritos', 'destetados', 'terneros', 'terneras', 'retenidas']
 
@@ -102,9 +110,12 @@ const MODOS_HISTORICO: { valor: string; etiqueta: string }[] = [
 ]
 
 export function EditorCostoActividad({
-  costo, pasos, cuentas = [], bandasConPrecio = [], celdas, onCargarPrecio, onGuardado,
+  costo, pasos, cuentas = [], bandasConPrecio = [], celdas, mesesPeriodo = [],
+  onCargarPrecio, onGuardado,
 }: {
   costo: CostoEditable
+  /** Los meses de la campaña, en orden jul → jun, con su año. */
+  mesesPeriodo?: { anio: number; mes: number }[]
   /** Cómo se llegó al número, ya calculado por el margen. */
   pasos?: Paso[]
   /** Las cuentas contables con historia, para elegir en cuáles basarse. */
@@ -129,6 +140,14 @@ export function EditorCostoActividad({
     && ['pct_racion', 'kg_cabeza_dia', 'unid_cabeza_mes', 'dosis_cada_kg'].includes(borrador.modo)
 
   const sumaPct = Object.values(borrador.meses_pct ?? {}).reduce((s, v) => s + (Number(v) || 0), 0)
+
+  const kmHoy = new Date().getFullYear() * 12 + new Date().getMonth()
+  /** Qué % del costo cae en meses que ya pasaron: eso NO se proyecta. */
+  const pctPasado = sumaPct > 0
+    ? mesesPeriodo
+        .filter(p => (p.anio * 12 + p.mes - 1) < kmHoy)
+        .reduce((s, p) => s + (Number(borrador.meses_pct?.[String(p.mes)]) || 0), 0) / sumaPct * 100
+    : 0
 
   const set = <K extends keyof CostoEditable>(k: K, v: CostoEditable[K]) =>
     setBorrador(b => ({ ...b, [k]: v }))
@@ -404,16 +423,24 @@ export function EditorCostoActividad({
                 {sumaPct === 0 ? "todos los meses, parejo" : `suma ${fmtNumeroAR(sumaPct, 0)} %`}
               </span>
             </div>
+            {/* En orden de CAMPAÑA (jul → jun), con el año de cada mes y los que ya pasaron
+                atenuados: un % puesto ahí no se proyecta — lo gastado ya está en la contabilidad. */}
             <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
-              {MESES_CORTOS.map((etq, idx) => {
-                const mes = idx + 1
+              {MESES_CAMPANA.map(mes => {
                 const val = borrador.meses_pct?.[String(mes)]
+                const p = mesesPeriodo.find(x => x.mes === mes)
+                const pasado = p ? (p.anio * 12 + p.mes - 1) < kmHoy : false
                 return (
                   <div key={mes} className="text-center">
-                    <label className="block text-[9px] text-gray-500">{etq}</label>
+                    <label className={`block text-[9px] ${pasado ? "text-gray-300" : "text-gray-500"}`}>
+                      {MESES_CORTOS[mes - 1]}
+                      {p && <span className="ml-0.5 text-[8px] opacity-60">{String(p.anio).slice(-2)}</span>}
+                    </label>
                     <input type="text"
+                      title={pasado ? "Ya pasó: lo que se puso acá no se proyecta" : undefined}
                       className={`h-6 w-full rounded border px-0.5 text-center text-[10px] ${
-                        val ? "border-blue-400 bg-blue-50" : ""}`}
+                        pasado ? "border-dashed bg-gray-50 text-gray-400"
+                          : val ? "border-blue-400 bg-blue-50" : ""}`}
                       defaultValue={val == null ? "" : fmtNumeroAR(val, 0)} placeholder="—"
                       onBlur={e => {
                         const m = { ...(borrador.meses_pct ?? {}) }
@@ -425,6 +452,13 @@ export function EditorCostoActividad({
                 )
               })}
             </div>
+            {pctPasado > 0 && (
+              <p className="mt-1 text-[9px] text-gray-500">
+                <strong>{fmtNumeroAR(pctPasado, 0)} %</strong> cae en meses que ya pasaron:
+                no se proyecta — ese gasto ya está (o no) en la contabilidad. Se presupuesta el{" "}
+                <strong>{fmtNumeroAR(100 - pctPasado, 0)} %</strong> restante.
+              </p>
+            )}
             {sumaPct > 0 && sumaPct !== 100 && (
               <p className="mt-1 text-[9px] text-amber-700">
                 No suma 100: se normaliza igual (40/60 y 4/6 dan lo mismo), pero conviene revisarlo.

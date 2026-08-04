@@ -39,6 +39,21 @@ import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
  * Hace falta porque el costo ahora dice **en qué meses cae y con qué %**, y porque el dólar no
  * vale lo mismo en cada uno.
  */
+/** La campaña en curso según la fecha: de julio en adelante ya es la que arranca. */
+function campanaActual(hoy = new Date()): string {
+  const y = hoy.getFullYear() % 100
+  const ini = hoy.getMonth() + 1 >= 7 ? y : y - 1
+  return `${String(ini).padStart(2, "0")}/${String(ini + 1).padStart(2, "0")}`
+}
+
+/** `"26/27"` → `"27/28"`. */
+function campanaSiguiente(c: string): string {
+  const m = c.match(/^(\d{2})\/(\d{2})$/)
+  if (!m) return c
+  const a = parseInt(m[1], 10) + 1
+  return `${String(a).padStart(2, "0")}/${String(a + 1).padStart(2, "0")}`
+}
+
 function mesesDeCampana(campana: string): MesPeriodo[] {
   const m = campana.match(/^(\d{2})\/(\d{2})$/)
   const anio = m ? 2000 + parseInt(m[1], 10) : new Date().getFullYear()
@@ -64,7 +79,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
   onCargarPrecio?: (banda: string) => void; recargarToken?: number
 } = {}) {
   const [cargando, setCargando] = useState(true)
-  const [campana, setCampana] = useState("26/27")
+  const [campana, setCampana] = useState(() => campanaActual())
   const [campanas, setCampanas] = useState<string[]>([])
   const [datos, setDatos] = useState<DatosMargen | null>(null)
   const [abierta, setAbierta] = useState<string | null>(null)
@@ -145,6 +160,15 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         if (!n) continue
         hasPorActividad[n] = (hasPorActividad[n] ?? 0) + (Number(a.has_netas) || 0)
       }
+      // ⚠️ La campaña EN CURSO y la SIGUIENTE siempre están, tengan o no hectáreas cargadas.
+      //
+      // Antes la lista salía sólo de `campo_campana_actividad`, así que la campaña que viene no
+      // aparecía hasta tener algo cargado — y el usuario necesita entrar ahí justamente PARA
+      // cargarla. Lo marcó: *"para cargar la campaña siguiente hay que hacerlo desde márgenes,
+      // pero debo poder seleccionar la campaña siguiente"*. El norte pide presupuesto a 2 años.
+      const actual = campanaActual()
+      setCamp.add(actual)
+      setCamp.add(campanaSiguiente(actual))
       setCampanas(Array.from(setCamp).sort())
 
       // La categoría dice a qué actividad va cada lote.
@@ -360,6 +384,10 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
   const bandasConPrecio = useMemo(
     () => Array.from(new Set((datos?.precios ?? []).map(p => p.categoria))), [datos])
 
+  /** Los 12 meses de la campaña elegida, jul → jun. El editor los usa para etiquetar y para
+   *  marcar los que ya pasaron. */
+  const mesesPeriodo = useMemo(() => mesesDeCampana(campana), [campana])
+
   // ⚠️ El spinner sólo en la PRIMERA carga (`!datos`), no en cada recarga.
   //
   // Antes se mostraba también al refrescar, y eso desmontaba la tabla entera: al guardar un costo
@@ -481,7 +509,8 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
                   <Bloque titulo="Ingresos" lineas={m.ingresos} total={m.totalIngresos} has={m.has} />
                   <Bloque titulo="Costos directos" lineas={m.costos} total={m.totalCostos} has={m.has}
                     editables={editables} cuentas={cuentasConHistoria}
-                    bandasConPrecio={bandasConPrecio} onCargarPrecio={onCargarPrecio}
+                    bandasConPrecio={bandasConPrecio} mesesPeriodo={mesesPeriodo}
+                    onCargarPrecio={onCargarPrecio}
                     onGuardado={cargar} />
 
                   <table className="w-full rounded border bg-white text-[11px]">
@@ -531,12 +560,14 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
  * abiertas muestran cómo se llegó a él y dejan editarlo.
  */
 function Bloque({
-  titulo, lineas, total, has, editables, cuentas, bandasConPrecio, onCargarPrecio, onGuardado,
+  titulo, lineas, total, has, editables, cuentas, bandasConPrecio, mesesPeriodo,
+  onCargarPrecio, onGuardado,
 }: {
   titulo: string; lineas: MargenActividad["ingresos"]; total: number; has: number | null
   editables?: Record<string, CostoEditable>
   cuentas?: { nro: string; nombre: string }[]
   bandasConPrecio?: string[]
+  mesesPeriodo?: { anio: number; mes: number }[]
   onCargarPrecio?: (banda: string) => void
   onGuardado?: () => void
 }) {
@@ -598,7 +629,7 @@ function Bloque({
                     <td colSpan={3} className="p-0">
                       <EditorCostoActividad costo={editable} pasos={l.pasos} cuentas={cuentas}
                         bandasConPrecio={bandasConPrecio} celdas={l.celdas}
-                        onCargarPrecio={onCargarPrecio}
+                        mesesPeriodo={mesesPeriodo} onCargarPrecio={onCargarPrecio}
                         onGuardado={() => onGuardado?.()} />
                     </td>
                   </tr>
