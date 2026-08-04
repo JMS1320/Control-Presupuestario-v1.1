@@ -91,7 +91,19 @@ const pc = (n: number) => `${(n * 100).toLocaleString("es-AR", { maximumFraction
 export interface SeleccionComercial {
   destinoId: string
   intermediarioId: string
+  /**
+   * ⚠️ La ruta NO se elige sola. Es la **distancia pactada con el transportista**, no la más
+   * corta del mapa: el usuario lo marcó (2026-08-04) — *"para Arrebeef deberemos elegir la
+   * distancia pactada con el transportista, así que deberé elegirla en la app"*. Arrebeef tiene
+   * tres caminos y *"no siempre se pueden usar los mismos"*, así que elegir por él pondría un
+   * flete que nadie acordó.
+   */
   rutaId: string
+  /**
+   * La categoría que se vende. **De ella depende el rinde**, no del destino: un novillo gordo
+   * rinde 58 % y una vaca conserva 45 %, le vendan a quien le vendan.
+   */
+  categoria: string
 }
 
 /**
@@ -114,10 +126,17 @@ export function SelectorComercializacion({
   const destinos = normas.destinos.filter(d => d.aplica_a === "ambos" || d.aplica_a === tipo)
   const destino = destinos.find(d => d.id === seleccion.destinoId) ?? null
   const rutas = normas.rutas.filter(r => r.destino_id === destino?.id)
+  // Con un solo camino se toma ese; con varios hay que ELEGIR. No se pone el más corto por
+  // defecto: la distancia es la pactada con el transportista, no la del mapa.
   const ruta = rutas.find(r => r.id === seleccion.rutaId)
-    ?? rutas.find(r => r.por_defecto) ?? rutas[0] ?? null
+    ?? (rutas.length === 1 ? rutas[0]! : null)
+  const faltaElegirRuta = !!destino && destino.requiere_flete && rutas.length > 1 && !ruta
   const intermediario = normas.intermediarios.find(i => i.id === seleccion.intermediarioId) ?? null
   const tarifa = normas.tarifas.find(t => t.vehiculo === destino?.vehiculo) ?? null
+
+  // La categoría vendida: de ella sale el rinde. Si no se eligió, se usa la que traiga la etapa.
+  const categoria = seleccion.categoria || lote.categoria
+  const rinde = rindeDe(normas.rinde, categoria)
 
   // El precio: si el destino deriva el suyo de otro (el matarife), se resuelve; si compra a la
   // res, el precio de lista es por kg de RES y hay que llevarlo con el rinde.
@@ -127,19 +146,18 @@ export function SelectorComercializacion({
     const der = precioDerivado(destino, normas.destinos, { [destino.precio_ref_destino_id ?? ""]: lote.precioVenta })
     if (der) { precio = der.precio; notaPrecio = der.motivo }
     else if (destino.compra_en === "res") {
-      const r = rindeDe(normas.rinde, lote.categoria)
-      notaPrecio = r == null
-        ? `falta el rinde de ${lote.categoria}`
-        : `precio por kg de RES · rinde ${(r * 100).toFixed(0)} %`
+      notaPrecio = rinde == null
+        ? `falta el rinde de ${categoria}`
+        : `precio por kg de RES · rinde ${(rinde * 100).toFixed(0)} % (${categoria})`
     }
   }
 
-  const op: OpcionVenta | null = destino
+  const op: OpcionVenta | null = destino && !faltaElegirRuta
     ? { destino, intermediario, ruta, tarifa, precio }
     : null
   const res = op
     ? evaluarOpcion(
-        { tipo, categoria: lote.categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo },
+        { tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo },
         op, { desbaste: normas.desbaste, rinde: normas.rinde })
     : null
   const cz = res ? desgloseCZ(res) : null
@@ -183,12 +201,35 @@ export function SelectorComercializacion({
           </select>
         </label>
 
+        {/* La categoría vendida: de ella depende el RINDE, no del destino. Un novillo gordo
+            rinde 58 % y una vaca conserva 45 %, le venda a quien le venda. */}
+        {normas.rinde.length > 0 && (
+          <label className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">Categoría</span>
+            <select className={`h-6 rounded border px-1 text-[11px] ${
+              destino?.compra_en === "res" && rinde == null ? "border-amber-400 bg-amber-50" : ""}`}
+              value={categoria}
+              onChange={e => onCambio({ ...seleccion, categoria: e.target.value })}>
+              <option value="">— elegir —</option>
+              {normas.rinde.map(r => (
+                <option key={r.categoria} value={r.categoria}>
+                  {r.categoria} · rinde {(r.pct * 100).toFixed(0)} %
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {/* Con varios caminos hay que ELEGIR: es la distancia pactada con el transportista,
+            no la más corta. Arrebeef tiene tres y no siempre se puede usar el mismo. */}
         {rutas.length > 1 && (
           <label className="flex items-center gap-1">
             <span className="text-[10px] text-gray-500">Camino</span>
-            <select className="h-6 rounded border px-1 text-[11px]"
+            <select className={`h-6 rounded border px-1 text-[11px] ${
+              faltaElegirRuta ? "border-amber-400 bg-amber-50" : ""}`}
               value={ruta?.id ?? ""}
               onChange={e => onCambio({ ...seleccion, rutaId: e.target.value })}>
+              <option value="">— elegir el pactado —</option>
               {rutas.map(r => (
                 <option key={r.id} value={r.id}>{r.km} km · {r.descripcion}</option>
               ))}
@@ -196,6 +237,14 @@ export function SelectorComercializacion({
           </label>
         )}
       </div>
+
+      {faltaElegirRuta && (
+        <p className="mt-1 text-[10px] text-amber-700">
+          ⚠️ <strong>{destino!.nombre}</strong> tiene {rutas.length} caminos
+          ({rutas.map(r => `${r.km} km`).join(" · ")}). Elegí el <strong>pactado con el
+          transportista</strong> — poner el más corto por defecto sería un flete que nadie acordó.
+        </p>
+      )}
 
       {notaPrecio && (
         <p className="mt-1 text-[10px] text-blue-700">ℹ️ {notaPrecio}</p>
