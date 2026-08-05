@@ -133,9 +133,18 @@ export function SeccionVentasPorLote() {
    */
   const [confirmadas, setConfirmadas] = useState<VentaConfirmada[]>([])
   const [aEditar, setAEditar] = useState<VentaAEditar | null>(null)
+  /**
+   * ⚠️ Si la carga falla, hay que DECIRLO.
+   *
+   * Un error acá dejaba todos los estados vacíos y la sección devolvía `null`: la pantalla
+   * quedaba en blanco, sin un cartel, sin nada. Es indistinguible de "no hay ventas" — y el
+   * usuario lo vio justo después de confirmar una de $91,7 M.
+   */
+  const [error, setError] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
+    setError(null)
     try {
       const p = supabase.schema("productivo")
       const [{ data: lotes }, { data: precios }, { data: tra }, { data: acts },
@@ -161,8 +170,8 @@ export function SeccionVentasPorLote() {
 
       const listaVentas = (vs || []) as VentaStock[]
 
-      // ── Las ventas ya confirmadas ──────────────────────────────────────────
-      // `ventas_unificadas` trae lo facturado, así que se ve si todavía espera la liquidación.
+      // Las ventas ya confirmadas y cuánto de cada una está facturado. Se leen acá pero se
+      // mapean MÁS ABAJO: necesitan `actividadDe` y `campaniaDe`, que todavía no existen.
       const [{ data: svs }, { data: unif }] = await Promise.all([
         ids.length
           ? p.from("stock_ventas")
@@ -171,29 +180,7 @@ export function SeccionVentasPorLote() {
           : Promise.resolve({ data: [] as any[] }),
         supabase.from("ventas_unificadas").select("venta_id, facturado").eq("venta_tipo", "ganaderia"),
       ])
-      const factPorVenta = new Map(((unif || []) as any[]).map(u => [u.venta_id, Number(u.facturado) || 0]))
-      const lotePorId = new Map(listaLotes.map(l => [l.id, l]))
-      setConfirmadas(((svs || []) as any[]).map(s => {
-        const l = lotePorId.get(s.lote_id) as any
-        return {
-          id: s.id,
-          actividad: l ? actividadDe(String(l.categoria)) : SIN_ACTIVIDAD,
-          campania: l ? campaniaDe(l) : SIN_CAMPANA,
-          categoria: l ? String(l.categoria) : "—",
-          cabezas: Number(s.cantidad) || 0,
-          kgTotales: Number(s.kg_totales) || 0,
-          precio: Number(s.precio_kg) || 0,
-          neto: Number(s.monto_neto) || 0,
-          fechaVenta: s.fecha_venta,
-          plazo: s.plazo_cobro,
-          facturado: factPorVenta.get(s.id) ?? 0,
-          notas: s.notas,
-          pctDesbaste: Number(s.pct_desbaste) || 0,
-          pctCz: Number(s.pct_cz) || 0,
-          flete: s.flete == null ? null : Number(s.flete),
-          cliente: s.cliente_nombre ?? null,
-        }
-      }))
+
       const listaPrecios = (precios || []) as PrecioHacienda[]
       const listaTramos = (tra || []) as TramoLote[]
       const listaActs = (acts || []) as Actividad[]
@@ -213,6 +200,33 @@ export function SeccionVentasPorLote() {
         (l.ciclo_id ? campCriaPorId.get(l.ciclo_id) : null)
         ?? (l.ciclo_recria_id ? cicloPorId.get(l.ciclo_recria_id) : null)
         ?? SIN_CAMPANA
+
+      // ── Las ventas ya confirmadas ──────────────────────────────────────────
+      // El stock ya bajó y están en el Cash Flow; `facturado` dice si todavía esperan la
+      // liquidación. Sin esta tabla, confirmar una venta la hacía DESAPARECER de la pantalla.
+      const factPorVenta = new Map(((unif || []) as any[]).map(u => [u.venta_id, Number(u.facturado) || 0]))
+      const lotePorId = new Map(listaLotes.map(l => [l.id, l as any]))
+      setConfirmadas(((svs || []) as any[]).map(s => {
+        const l = lotePorId.get(s.lote_id)
+        return {
+          id: s.id,
+          actividad: l ? actividadDe(String(l.categoria)) : SIN_ACTIVIDAD,
+          campania: l ? campaniaDe(l) : SIN_CAMPANA,
+          categoria: l ? String(l.categoria) : "—",
+          cabezas: Number(s.cantidad) || 0,
+          kgTotales: Number(s.kg_totales) || 0,
+          precio: Number(s.precio_kg) || 0,
+          neto: Number(s.monto_neto) || 0,
+          fechaVenta: s.fecha_venta,
+          plazo: s.plazo_cobro,
+          facturado: factPorVenta.get(s.id) ?? 0,
+          notas: s.notas,
+          pctDesbaste: Number(s.pct_desbaste) || 0,
+          pctCz: Number(s.pct_cz) || 0,
+          flete: s.flete == null ? null : Number(s.flete),
+          cliente: s.cliente_nombre ?? null,
+        }
+      }))
 
       // ── Capa 1: las presupuestadas, valuadas con la MISMA función del presupuesto ──
       const filas: FilaVenta[] = []
@@ -255,6 +269,7 @@ export function SeccionVentasPorLote() {
         fechaUltima ? `pesada del ${fecha(fechaUltima)}` : undefined)
       const disp = disponiblePorDiferencia(exist, listaLotes, listaVentas)
       setDisponibles(disp.map(d => ({ ...d, actividad: actividadDe(d.categoria) })))
+      // (el desglose por campaña se arma abajo)
 
       // ── El desglose del destete, campaña por campaña ──────────────────────
       // `calcularLineaTiempo()` es la MISMA que usa Evolución del rodeo y el margen: el rodeo
@@ -274,6 +289,8 @@ export function SeccionVentasPorLote() {
           presupuestado,
         }
       }))
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
     } finally { setCargando(false) }
   }, [])
 
@@ -312,7 +329,28 @@ export function SeccionVentasPorLote() {
     )
   }
 
-  if (porActividad.length === 0) return null
+  if (error) {
+    return (
+      <Card><CardContent className="py-6">
+        <p className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
+          <strong>No se pudieron leer las ventas.</strong> {error}
+        </p>
+      </CardContent></Card>
+    )
+  }
+
+  // Nunca devolver `null` en silencio: una pantalla en blanco es indistinguible de un error.
+  if (porActividad.length === 0) {
+    return (
+      <Card><CardContent className="py-8 text-center text-sm text-gray-400">
+        No hay ventas de hacienda cargadas.
+        <span className="mt-1 block text-xs">
+          Se cargan en <strong>Sector Productivo → Evolución Rodeo</strong>, en el panel de lotes.
+        </span>
+      </CardContent></Card>
+    )
+  }
 
   return (
     <div className="space-y-3">
