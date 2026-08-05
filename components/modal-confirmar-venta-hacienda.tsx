@@ -36,6 +36,24 @@ import {
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 
+/**
+ * La ficha productiva de un animal, para revisarla ANTES de confirmar.
+ *
+ * Lo pidió el usuario (2026-08-05): *"que me haga un preview de las cabezas con sus datos
+ * productivos… eso me dará la certeza de que no haya error antes de confirmar"*. Y tiene un
+ * efecto que va más allá de mirar: **cruza dos números que hoy nadie compara** — el peso promedio
+ * de las últimas pesadas individuales contra los kg totales tipeados de la balanza.
+ */
+interface FichaAnimal {
+  id: string
+  caravana: string
+  sexo: string | null
+  pelo: string | null
+  categoria: string | null
+  primera: { fecha: string; peso: number } | null
+  ultima: { fecha: string; peso: number } | null
+}
+
 export interface LoteAConfirmar {
   id: string
   categoria: string
@@ -61,6 +79,8 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
   const [terneros, setTerneros] = useState<TerneroRef[]>([])
   const [pesadas, setPesadas] = useState<{ fecha: string; prom: number } | null>(null)
   const [categoriaId, setCategoriaId] = useState<string | null>(null)
+  /** Ficha productiva de cada animal, para el preview previo a confirmar. */
+  const [fichas, setFichas] = useState<Record<string, FichaAnimal>>({})
 
   // Datos reales de la venta
   const [fechaVenta, setFechaVenta] = useState("")
@@ -94,14 +114,36 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
     if (!lote) return
     const p = supabase.schema("productivo")
     const [{ data: ts }, { data: ps }, { data: cats }] = await Promise.all([
-      p.from("terneros").select("id, caravana_oficial, caravana_interna, sexo, activo"),
-      p.from("pesadas_terneros").select("fecha, peso_kg"),
+      p.from("terneros")
+        .select("id, caravana_oficial, caravana_interna, sexo, pelo, activo, categoria_id"),
+      p.from("pesadas_terneros").select("ternero_id, fecha, peso_kg"),
       p.from("categorias_hacienda").select("id, nombre"),
     ])
     setTerneros((ts || []) as TerneroRef[])
+    const catPorId = new Map(((cats || []) as any[]).map(c => [c.id, String(c.nombre)]))
     setCategoriaId(((cats || []) as any[]).find(c => c.nombre === lote.categoria)?.id ?? null)
 
-    // La última pesada, para poder mostrar la ganancia real del grupo.
+    // Primera y última pesada de cada animal: es la ficha que se revisa antes de confirmar.
+    const porAnimal: Record<string, { fecha: string; peso: number }[]> = {}
+    for (const r of ((ps || []) as any[])) {
+      if (!r.ternero_id) continue
+      ;(porAnimal[r.ternero_id] ||= []).push({ fecha: r.fecha, peso: Number(r.peso_kg) })
+    }
+    const fs: Record<string, FichaAnimal> = {}
+    for (const t of ((ts || []) as any[])) {
+      const ps2 = (porAnimal[t.id] ?? []).sort((a, b) => a.fecha.localeCompare(b.fecha))
+      fs[t.id] = {
+        id: t.id,
+        caravana: t.caravana_oficial || t.caravana_interna || "—",
+        sexo: t.sexo, pelo: t.pelo,
+        categoria: t.categoria_id ? catPorId.get(t.categoria_id) ?? null : null,
+        primera: ps2[0] ?? null,
+        ultima: ps2[ps2.length - 1] ?? null,
+      }
+    }
+    setFichas(fs)
+
+    // La última pesada del rodeo, para la ganancia real del grupo.
     const filas = ((ps || []) as any[])
     const ultima = filas.map(f => f.fecha).sort().slice(-1)[0]
     if (ultima) {
@@ -144,6 +186,30 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
 
   /** ⚠️ Las caravanas y las cabezas tienen que coincidir: si no, uno de los dos está mal. */
   const desfase = entradas.length > 0 ? ok.length - nCab : 0
+
+  // ── El preview de la tropa elegida ─────────────────────────────────────────
+  //
+  // El promedio se calcula sobre las ÚLTIMAS pesadas individuales de los animales elegidos —no
+  // sobre el promedio general del rodeo—, así que es el peso de *esta* tropa. Comparado con los
+  // kg de balanza que se tipean arriba, delata el error antes de confirmar: si el promedio de
+  // balanza queda por debajo del de la pesada, o los animales adelgazaron o la tropa no es ésta.
+  const tropa = useMemo(() => {
+    const fs = ok.map(m => fichas[m.ternero!.id]).filter(Boolean) as FichaAnimal[]
+    const conPeso = fs.filter(f => f.ultima)
+    if (conPeso.length === 0) return null
+    const brutoProm = conPeso.reduce((s, f) => s + f.ultima!.peso, 0) / conPeso.length
+    return {
+      fichas: fs,
+      conPeso: conPeso.length,
+      sinPeso: fs.length - conPeso.length,
+      brutoProm,
+      netoProm: brutoProm * (1 - (lote?.pctDesbaste ?? 0)),
+      fechaUltima: conPeso.map(f => f.ultima!.fecha).sort().slice(-1)[0]!,
+    }
+  }, [ok, fichas, lote?.pctDesbaste])
+
+  /** El peso promedio que sale de la balanza de venta, para contrastar con la pesada. */
+  const promBalanza = nCab > 0 && nKg > 0 ? nKg / nCab : null
 
   const puedeConfirmar =
     !!lote && nCab > 0 && nKg > 0 && nPrecio > 0 && !!fechaVenta
@@ -367,6 +433,99 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
               </p>
             )}
           </div>
+
+          {/* ── PREVIEW: la tropa que se va, animal por animal ────────────────
+              Antes de confirmar hay que poder mirar qué son. El promedio sale de las últimas
+              pesadas de ESTOS animales, no del rodeo entero, así que es el peso de esta tropa. */}
+          {tropa && (
+            <div className="rounded border px-2 py-1.5">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500">
+                  La tropa que se va — {tropa.fichas.length} animales
+                </p>
+                <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                  <span className="text-gray-600">
+                    Promedio bruto <strong className="text-gray-800">{tropa.brutoProm.toFixed(1)} kg</strong>
+                    <span className="ml-1 text-[9px] text-gray-400">
+                      (última pesada {tropa.fechaUltima.split("-").reverse().join("/")})
+                    </span>
+                  </span>
+                  <span className="text-gray-600">
+                    Neto −{((lote.pctDesbaste) * 100).toFixed(0)} %{" "}
+                    <strong className="text-gray-800">{tropa.netoProm.toFixed(1)} kg</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* El cruce que da la certeza: balanza de venta contra última pesada. */}
+              {promBalanza != null && (
+                <p className={`mb-1 rounded px-2 py-1 text-[10px] ${
+                  promBalanza < tropa.brutoProm
+                    ? "border border-amber-300 bg-amber-50 text-amber-900"
+                    : "bg-slate-50 text-gray-600"}`}>
+                  Balanza de venta: <strong>{promBalanza.toFixed(1)} kg</strong> por cabeza ·
+                  última pesada: <strong>{tropa.brutoProm.toFixed(1)} kg</strong> ·
+                  diferencia <strong>{(promBalanza - tropa.brutoProm).toFixed(1)} kg</strong>
+                  {promBalanza < tropa.brutoProm && (
+                    <> — <strong>la venta pesa MENOS que la última pesada.</strong> O los animales
+                    perdieron peso, o la tropa elegida no es ésta.</>
+                  )}
+                </p>
+              )}
+
+              {tropa.sinPeso > 0 && (
+                <p className="mb-1 text-[10px] text-amber-700">
+                  ⚠️ {tropa.sinPeso} sin ninguna pesada: no entran en el promedio.
+                </p>
+              )}
+
+              <div className="max-h-48 overflow-auto rounded border">
+                <table className="w-full text-[10px]">
+                  <thead className="sticky top-0 bg-gray-50">
+                    <tr className="border-b text-[9px] uppercase text-gray-500">
+                      <th className="px-2 py-1 text-left font-medium">Caravana</th>
+                      <th className="px-2 py-1 text-left font-medium">Qué es</th>
+                      <th className="px-2 py-1 text-center font-medium">Sexo</th>
+                      <th className="px-2 py-1 text-left font-medium">Pelo</th>
+                      <th className="px-2 py-1 text-right font-medium">1ª pesada</th>
+                      <th className="px-2 py-1 text-right font-medium">Última</th>
+                      <th className="px-2 py-1 text-right font-medium">Ganó</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tropa.fichas.map(f => (
+                      <tr key={f.id} className="border-b last:border-0">
+                        <td className="px-2 py-0.5 font-mono text-gray-700">{f.caravana}</td>
+                        <td className="px-2 py-0.5 text-gray-600">{f.categoria ?? "—"}</td>
+                        <td className="px-2 py-0.5 text-center">
+                          {f.sexo === "Macho" ? "♂" : f.sexo === "Hembra" ? "♀" : "—"}
+                        </td>
+                        <td className="px-2 py-0.5 text-gray-500">{f.pelo ?? "—"}</td>
+                        <td className="px-2 py-0.5 text-right text-gray-500">
+                          {f.primera
+                            ? `${f.primera.peso.toFixed(0)} kg`
+                            : <span className="text-amber-600">sin pesada</span>}
+                          {f.primera && (
+                            <span className="ml-1 text-[8px] text-gray-400">
+                              {f.primera.fecha.slice(5).split("-").reverse().join("/")}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-0.5 text-right font-medium text-gray-800">
+                          {f.ultima ? `${f.ultima.peso.toFixed(0)} kg` : "—"}
+                        </td>
+                        <td className="px-2 py-0.5 text-right text-emerald-700">
+                          {f.primera && f.ultima && f.primera.fecha !== f.ultima.fecha
+                            ? `+${(f.ultima.peso - f.primera.peso).toFixed(0)}`
+                            : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-2">
