@@ -23,7 +23,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
-import { parseNumeroAR } from "@/lib/format/numero"
+import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
   desbasteDe, evaluarOpcion, desgloseCZ, precioDerivado, rindeDe, sugerirVehiculo,
   categoriaDeRinde, rindeDeLoteMixto, compararOpciones, precioResEquivalente,
@@ -217,6 +217,41 @@ export function SelectorComercializacion({
   const intermediario = normas.intermediarios.find(i => i.id === seleccion.intermediarioId) ?? null
   const compraEnRes = destino?.compra_en === "res"
 
+  // ── Los precios, uno por destino ────────────────────────────────────────────
+  const preciosDest = seleccion.preciosPorDestino ?? {}
+
+  const setPrecioDe = (id: string, v: string) =>
+    onCambio({ ...seleccion, preciosPorDestino: { ...preciosDest, [id]: v } })
+
+  /**
+   * El precio de un destino: **lo puesto a mano gana sobre lo derivado**.
+   *
+   * El caso que lo obliga (usuario, 2026-08-04): *"si mando a Cañuelas no necesariamente tendré
+   * el máximo, pero si el matarife paga máximo menos 10,5 %, entonces los precios deben poder
+   * ponerse a mano también"*.
+   *
+   * O sea: la referencia del matarife es el **máximo** de Cañuelas, que no es el precio que uno
+   * realmente va a conseguir ahí. Derivarlo del precio proyectado daría un matarife más barato de
+   * lo que paga. La derivación sirve para **arrancar**, no para quedar atado.
+   */
+  const resolverPrecio = (d: DestinoVenta): { valor: number | null; derivado: string | null } => {
+    const aMano = parseNumeroAR(preciosDest[d.id] ?? "") || null
+    const refTxt = preciosDest[d.precio_ref_destino_id ?? ""] ?? ""
+    const der = precioDerivado(d, normas.destinos, {
+      [d.precio_ref_destino_id ?? ""]: parseNumeroAR(refTxt) || null,
+    })
+    return { valor: aMano ?? der?.precio ?? null, derivado: der?.precio != null ? der.motivo : null }
+  }
+
+  /** Sólo el valor derivado, para mostrarlo como sugerencia en el input vacío. */
+  const precioSugerido = (d?: DestinoVenta): number | null => {
+    if (!d?.precio_ref_destino_id) return null
+    const refTxt = preciosDest[d.precio_ref_destino_id] ?? ""
+    return precioDerivado(d, normas.destinos, {
+      [d.precio_ref_destino_id]: parseNumeroAR(refTxt) || null,
+    })?.precio ?? null
+  }
+
   // ── El vehículo: se deduce de los kilos, pero se puede cambiar ─────────────
   // Es SI ENTRA O NO ENTRA: chasis cuando hay poco, y si no entra va jaula completa. No se elige
   // por precio — la flota es la que es.
@@ -258,7 +293,10 @@ export function SelectorComercializacion({
   // Cuando el destino compra a la RES, el precio que se tipea es $/kg de carne y NO se puede
   // multiplicar por los kilos vivos: hay que pasarlo por el rinde. Ese era el bug que reportó el
   // usuario — un novillo "a $5.172" daba 72 % de más.
-  const precioResNum = parseNumeroAR(seleccion.precioRes)
+  // El precio de la res del destino elegido. Se guarda en `preciosPorDestino` —una sola fuente,
+  // compartida con la comparación— y `precioRes` queda de respaldo para estudios ya guardados.
+  const precioResTxt = (destino ? preciosDest[destino.id] : "") || seleccion.precioRes || ""
+  const precioResNum = parseNumeroAR(precioResTxt)
   /** El precio de la res llevado a $/kg vivo. Es lo que consume el análisis. */
   const precioVivoEquivalente = compraEnRes && rinde != null && precioResNum > 0
     ? precioResNum * rinde
@@ -267,8 +305,14 @@ export function SelectorComercializacion({
   let precio: number | null = compraEnRes ? precioResNum || null : lote.precioVenta
   let notaPrecio: string | null = null
   if (destino) {
-    const der = precioDerivado(destino, normas.destinos, { [destino.precio_ref_destino_id ?? ""]: lote.precioVenta })
-    if (der) { precio = der.precio; notaPrecio = der.motivo }
+    // Lo puesto a mano gana; lo derivado sólo si no hay nada tipeado.
+    const r = resolverPrecio(destino)
+    if (r.derivado) {
+      precio = r.valor
+      notaPrecio = parseNumeroAR(preciosDest[destino.id] ?? "") > 0
+        ? `precio puesto a mano (sugerido: ${r.derivado})`
+        : `${r.derivado} — se puede pisar`
+    }
     else if (compraEnRes) {
       notaPrecio = rinde == null
         ? `${destino.nombre} compra a la RES y falta el rinde${categoria ? " de " + categoria : ""}`
@@ -325,10 +369,6 @@ export function SelectorComercializacion({
   //
   // El precio del que deriva (el matarife) sí se calcula solo, porque ESA es su condición.
   const [comparando, setComparando] = useState(false)
-  const preciosDest = seleccion.preciosPorDestino ?? {}
-
-  const setPrecioDe = (id: string, v: string) =>
-    onCambio({ ...seleccion, preciosPorDestino: { ...preciosDest, [id]: v } })
 
   const comparacion = useMemo(() => {
     if (!comparando) return []
@@ -342,17 +382,12 @@ export function SelectorComercializacion({
         const kg = lote.cabezas * lote.pesoVivo
         const v = sugerirVehiculo(normas.tarifas, rt?.km ?? 0, kg)
 
-        // El precio de ESTE destino, en SU unidad. El del que deriva se resuelve solo.
-        const refPrecio = preciosDest[d.precio_ref_destino_id ?? ""] ?? ""
-        const der = precioDerivado(d, normas.destinos, {
-          [d.precio_ref_destino_id ?? ""]: parseNumeroAR(refPrecio) || null,
-        })
-        const propio = parseNumeroAR(preciosDest[d.id] ?? "") || null
         return {
           destino: d,
           intermediario: d.id === destino?.id ? intermediario : null,
           ruta: rt, tarifa: v.sugerido,
-          precio: der ? der.precio : propio,
+          // Lo puesto a mano gana sobre lo derivado.
+          precio: resolverPrecio(d).valor,
         }
       }),
       { desbaste: normas.desbaste, rinde: normas.rinde },
@@ -413,12 +448,25 @@ export function SelectorComercializacion({
 
         {/* El precio de la RES va aparte del de venta: el de venta es $/kg vivo y lo usa todo el
             análisis. Multiplicar el de la carne por los kilos vivos daba 72 % de más. */}
-        {compraEnRes && (
+        {compraEnRes && destino && (
           <label className="flex items-center gap-1">
             <span className="text-[10px] text-gray-500">$/kg res</span>
             <input type="text" className="h-6 w-20 rounded border px-1 text-right text-[11px]"
-              value={seleccion.precioRes} placeholder="0,00"
-              onChange={e => onCambio({ ...seleccion, precioRes: e.target.value })} />
+              value={precioResTxt} placeholder="0,00"
+              onChange={e => setPrecioDe(destino.id, e.target.value)} />
+          </label>
+        )}
+
+        {/* Los destinos que derivan su precio también se pueden pisar. */}
+        {destino && !compraEnRes && destino.precio_ref_destino_id && (
+          <label className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">$/kg vivo</span>
+            <input type="text"
+              className={`h-6 w-20 rounded border px-1 text-right text-[11px] ${
+                !preciosDest[destino.id] ? "border-dashed text-gray-500" : ""}`}
+              value={preciosDest[destino.id] ?? ""}
+              placeholder={precioSugerido(destino) != null ? fmtNumeroAR(precioSugerido(destino)!, 0) : "0,00"}
+              onChange={e => setPrecioDe(destino.id, e.target.value)} />
           </label>
         )}
 
@@ -582,27 +630,24 @@ export function SelectorComercializacion({
                             <span className="ml-1 text-[9px] text-gray-400">{r.intermediario}</span>
                           )}
                         </td>
-                        {/* Cada destino paga LO SUYO, en SU unidad. El que deriva no se tipea. */}
+                        {/* Cada destino paga LO SUYO, en SU unidad. Lo derivado se PRECARGA
+                            como placeholder pero se puede pisar: la referencia del matarife es
+                            el MÁXIMO de Cañuelas, que no es el precio que uno va a conseguir. */}
                         <td className="px-2 py-1 text-right">
-                          {derivado ? (
-                            <span className="text-gray-500" title="Se deriva del precio del otro destino">
-                              {r.ventaBruta > 0 && r.kgNetos > 0
-                                ? pesos(r.ventaBruta / (r.kgRes ?? r.kgNetos))
-                                : "—"}
-                              <span className="ml-0.5 text-[9px] text-gray-400">deriv.</span>
+                          <span className="inline-flex items-center gap-0.5">
+                            <input type="text"
+                              className={`h-5 w-20 rounded border px-1 text-right text-[10px] ${
+                                derivado && !preciosDest[d?.id ?? ""] ? "border-dashed text-gray-500" : ""}`}
+                              value={preciosDest[d?.id ?? ""] ?? ""}
+                              placeholder={derivado && precioSugerido(d) != null
+                                ? fmtNumeroAR(precioSugerido(d)!, 0)
+                                : "0,00"}
+                              title={derivado ? `Sugerido: ${d ? resolverPrecio(d).derivado ?? "" : ""}` : undefined}
+                              onChange={e => d && setPrecioDe(d.id, e.target.value)} />
+                            <span className="text-[8px] text-gray-400">
+                              {d?.compra_en === "res" ? "res" : "vivo"}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5">
-                              <input type="text"
-                                className="h-5 w-20 rounded border px-1 text-right text-[10px]"
-                                value={preciosDest[d?.id ?? ""] ?? ""}
-                                placeholder="0,00"
-                                onChange={e => d && setPrecioDe(d.id, e.target.value)} />
-                              <span className="text-[8px] text-gray-400">
-                                {d?.compra_en === "res" ? "res" : "vivo"}
-                              </span>
-                            </span>
-                          )}
+                          </span>
                         </td>
                         <td className="px-2 py-1 text-right text-gray-600">
                           {r.ventaBruta > 0
@@ -622,9 +667,12 @@ export function SelectorComercializacion({
               </table>
               <p className="px-2 py-1 text-[9px] leading-tight text-gray-500">
                 <strong>Cada destino paga lo suyo</strong>, en su unidad: $/kg de res los que
-                compran a la res, $/kg vivo los demás. La columna <strong>$/kg vivo</strong> es
-                la comparable — ahí ya están descontados flete, comisión y gastos, y el rinde
-                pasado a peso vivo. Las filas incompletas nunca ganan.
+                compran a la res, $/kg vivo los demás. Los que derivan su precio lo traen{" "}
+                <span className="text-gray-400">en gris</span> como sugerencia y{" "}
+                <strong>se pueden pisar</strong> — la referencia del matarife es el <em>máximo</em>{" "}
+                de Cañuelas, que no es el precio que uno realmente va a conseguir ahí.
+                La columna <strong>$/kg vivo</strong> es la comparable: ya tiene descontados flete,
+                comisión y gastos, y el rinde pasado a peso vivo. Las filas incompletas nunca ganan.
               </p>
             </div>
           )}
