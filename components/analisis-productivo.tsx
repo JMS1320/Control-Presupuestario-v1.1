@@ -714,12 +714,19 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
                     onCambio={s => setComercial({ ...comercial, ...s })}
                     onTipo={t => {
                       setComercial({ ...comercial, tipo: t })
-                      // La ración por tipo de etapa ya vivía en `productivo.actividades`:
-                      // 3 % del PV en engorde, 1,5 % en recría. Se aplica al cambiar el tipo y
-                      // después se puede pisar.
+                      // Los parámetros del tipo de etapa ya vivían en `productivo.actividades`.
+                      // Recría: ración 1,5 % del PV y 0,700 kg/día. Engorde: 3 % y 1,200.
+                      // Se aplican al cambiar el tipo y después se pueden pisar.
                       const p = parametrosDe(normasCom, t)
-                      if (p && p.racion_pct_pv > 0) {
-                        setRacionPV((p.racion_pct_pv * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 }))
+                      if (p) {
+                        const n = (x: number, d = 2) =>
+                          x.toLocaleString("es-AR", { maximumFractionDigits: d })
+                        if (p.racion_pct_pv > 0) setRacionPV(n(p.racion_pct_pv * 100))
+                        if (p.ganancia_diaria_kg > 0) setConversion(n(p.ganancia_diaria_kg, 3))
+                        // ⚠️ La mortandad NO se toma de la tabla: va en CERO por decisión del
+                        // usuario (2026-08-04). La actividad tiene 1 % cargado, pero acá se
+                        // analiza sin mortandad y se pone a mano si el caso la tiene.
+                        setMortandad("0")
                       }
                     }}
                     onCalculado={aplicarComercial}

@@ -159,6 +159,18 @@ export interface SeleccionComercial {
   /** Rinde puesto a mano, en %. Pisa al de la tabla — el rinde real varía con la terminación. */
   rindeManual?: string
   /**
+   * El precio de CADA destino, por id.
+   *
+   * ⚠️ No hay un "precio de lista" común: **cada uno paga lo suyo y con otras condiciones**. Lo
+   * corrigió el usuario (2026-08-04). Comparar a un precio único mostraba sólo la diferencia de
+   * comercialización, que es una parte del problema y no la decisión: un frigorífico más caro
+   * puede convenir aunque cobre más flete.
+   *
+   * El precio está en la unidad de cada destino: $/kg de res para los que compran a la res,
+   * $/kg vivo para los demás.
+   */
+  preciosPorDestino?: Record<string, string>
+  /**
    * $/kg de RES, cuando el destino compra a la res.
    *
    * Es un precio **aparte** del de venta: el de venta está en $/kg vivo y es el que usa todo el
@@ -305,17 +317,23 @@ export function SelectorComercializacion({
   // Lo pidió el usuario: *"al mismo lote, en vez de elegir, tener la posibilidad de comparar;
   // podrían mostrarse los 3 finales alternativos"*.
   //
-  // Todos se evalúan al MISMO precio de lista: los que compran a la res, al equivalente
-  // (precio vivo ÷ rinde). Así lo que se ve es sólo la diferencia de **comercialización** —flete,
-  // comisión, gastos— y no cuánto paga cada uno, que es otra negociación.
+  // ⚠️ **Cada destino paga SU precio.** Yo los había comparado todos a un precio de lista común,
+  // y estaba mal: *"no se comparan a mismo precio, cada cual paga un precio y tienen distintas
+  // condiciones"*. Con un precio único la tabla mostraba sólo la diferencia de comercialización
+  // —que es una parte del problema, no la decisión—: un frigorífico que paga más puede convenir
+  // aunque cobre más flete, y eso no se veía.
+  //
+  // El precio del que deriva (el matarife) sí se calcula solo, porque ESA es su condición.
   const [comparando, setComparando] = useState(false)
+  const preciosDest = seleccion.preciosPorDestino ?? {}
+
+  const setPrecioDe = (id: string, v: string) =>
+    onCambio({ ...seleccion, preciosPorDestino: { ...preciosDest, [id]: v } })
+
   const comparacion = useMemo(() => {
     if (!comparando) return []
     return compararOpciones(
-      {
-        tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo,
-        rindeForzado: rinde,
-      },
+      { tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo, rindeForzado: rinde },
       destinos.map(d => {
         const rs = normas.rutas.filter(r => r.destino_id === d.id)
         const rt = d.id === destino?.id
@@ -323,23 +341,25 @@ export function SelectorComercializacion({
           : rs.find(r => r.por_defecto) ?? (rs.length === 1 ? rs[0]! : null)
         const kg = lote.cabezas * lote.pesoVivo
         const v = sugerirVehiculo(normas.tarifas, rt?.km ?? 0, kg)
-        // El precio: a la res se compara al equivalente del mismo precio vivo.
-        const der = precioDerivado(d, normas.destinos, { [d.precio_ref_destino_id ?? ""]: lote.precioVenta })
-        const p = der ? der.precio
-          : d.compra_en === "res"
-            ? (rinde ? precioResEquivalente(lote.precioVenta, rinde) : null)
-            : lote.precioVenta
+
+        // El precio de ESTE destino, en SU unidad. El del que deriva se resuelve solo.
+        const refPrecio = preciosDest[d.precio_ref_destino_id ?? ""] ?? ""
+        const der = precioDerivado(d, normas.destinos, {
+          [d.precio_ref_destino_id ?? ""]: parseNumeroAR(refPrecio) || null,
+        })
+        const propio = parseNumeroAR(preciosDest[d.id] ?? "") || null
         return {
           destino: d,
           intermediario: d.id === destino?.id ? intermediario : null,
-          ruta: rt, tarifa: v.sugerido, precio: p,
+          ruta: rt, tarifa: v.sugerido,
+          precio: der ? der.precio : propio,
         }
       }),
       { desbaste: normas.desbaste, rinde: normas.rinde },
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comparando, tipo, categoria, rinde, lote.cabezas, lote.pesoVivo, lote.precioVenta,
-      destino?.id, ruta?.id, intermediario?.id, normas])
+  }, [comparando, tipo, categoria, rinde, lote.cabezas, lote.pesoVivo,
+      destino?.id, ruta?.id, intermediario?.id, normas, JSON.stringify(preciosDest)])
 
   // Avisar hacia arriba. Se hace en efecto y no en el render para no escribir en el padre
   // durante el propio render de React.
@@ -547,41 +567,64 @@ export function SelectorComercializacion({
                   </tr>
                 </thead>
                 <tbody>
-                  {comparacion.map((r, k) => (
-                    <tr key={r.destino} className={`border-b last:border-0 ${
-                      k === 0 && r.faltantes.length === 0 ? "bg-emerald-50/60" : ""}`}>
-                      <td className="px-2 py-1 text-gray-700">
-                        {r.destino}
-                        {k === 0 && r.faltantes.length === 0 && (
-                          <span className="ml-1 text-[9px] text-emerald-700">← conviene</span>
-                        )}
-                        {r.intermediario && (
-                          <span className="ml-1 text-[9px] text-gray-400">{r.intermediario}</span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 text-right text-gray-500">
-                        {r.rinde != null ? `${pesos(r.ventaBruta / (r.kgRes || 1))} /kg res` : "—"}
-                      </td>
-                      <td className="px-2 py-1 text-right text-gray-600">
-                        {r.ventaBruta > 0
-                          ? pc((r.comision + r.gastoDestino + r.flete) / r.ventaBruta)
-                          : "—"}
-                      </td>
-                      <td className="px-2 py-1 text-right text-gray-800">
-                        {r.faltantes.length === 0 ? pesos(r.ingresa) : "—"}
-                      </td>
-                      <td className="px-2 py-1 text-right font-medium text-gray-800">
-                        {r.equivalenteVivo != null ? pesos(r.equivalenteVivo) : "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {comparacion.map((r, k) => {
+                    const d = destinos.find(x => x.nombre === r.destino)
+                    const derivado = !!d?.precio_ref_destino_id
+                    return (
+                      <tr key={r.destino} className={`border-b last:border-0 ${
+                        k === 0 && r.faltantes.length === 0 ? "bg-emerald-50/60" : ""}`}>
+                        <td className="px-2 py-1 text-gray-700">
+                          {r.destino}
+                          {k === 0 && r.faltantes.length === 0 && (
+                            <span className="ml-1 text-[9px] text-emerald-700">← conviene</span>
+                          )}
+                          {r.intermediario && (
+                            <span className="ml-1 text-[9px] text-gray-400">{r.intermediario}</span>
+                          )}
+                        </td>
+                        {/* Cada destino paga LO SUYO, en SU unidad. El que deriva no se tipea. */}
+                        <td className="px-2 py-1 text-right">
+                          {derivado ? (
+                            <span className="text-gray-500" title="Se deriva del precio del otro destino">
+                              {r.ventaBruta > 0 && r.kgNetos > 0
+                                ? pesos(r.ventaBruta / (r.kgRes ?? r.kgNetos))
+                                : "—"}
+                              <span className="ml-0.5 text-[9px] text-gray-400">deriv.</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5">
+                              <input type="text"
+                                className="h-5 w-20 rounded border px-1 text-right text-[10px]"
+                                value={preciosDest[d?.id ?? ""] ?? ""}
+                                placeholder="0,00"
+                                onChange={e => d && setPrecioDe(d.id, e.target.value)} />
+                              <span className="text-[8px] text-gray-400">
+                                {d?.compra_en === "res" ? "res" : "vivo"}
+                              </span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 text-right text-gray-600">
+                          {r.ventaBruta > 0
+                            ? pc((r.comision + r.gastoDestino + r.flete) / r.ventaBruta)
+                            : "—"}
+                        </td>
+                        <td className="px-2 py-1 text-right text-gray-800">
+                          {r.faltantes.length === 0 ? pesos(r.ingresa) : "—"}
+                        </td>
+                        <td className="px-2 py-1 text-right font-medium text-gray-800">
+                          {r.equivalenteVivo != null ? pesos(r.equivalenteVivo) : "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
               <p className="px-2 py-1 text-[9px] leading-tight text-gray-500">
-                Todos al <strong>mismo precio de lista</strong>: los que compran a la res se
-                comparan al equivalente ({pesos(lote.precioVenta)}/kg vivo ÷ rinde), así la
-                diferencia que se ve es <strong>sólo de comercialización</strong> y no de qué
-                paga cada uno. Las filas incompletas nunca ganan.
+                <strong>Cada destino paga lo suyo</strong>, en su unidad: $/kg de res los que
+                compran a la res, $/kg vivo los demás. La columna <strong>$/kg vivo</strong> es
+                la comparable — ahí ya están descontados flete, comisión y gastos, y el rinde
+                pasado a peso vivo. Las filas incompletas nunca ganan.
               </p>
             </div>
           )}
