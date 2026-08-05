@@ -236,11 +236,21 @@ export function SelectorComercializacion({
    */
   const resolverPrecio = (d: DestinoVenta): { valor: number | null; derivado: string | null } => {
     const aMano = parseNumeroAR(preciosDest[d.id] ?? "") || null
+    // ⚠️ El destino YA ELEGIDO hereda el precio de venta del análisis. Sin esto, elegir Cañuelas
+    // arriba y abrir la comparación te lo volvía a pedir, teniéndolo tipeado a dos centímetros.
+    // Lo reportó el usuario. Sólo aplica a los que compran a peso vivo: el precio del análisis
+    // está en $/kg vivo y para uno que compra a la res sería otra unidad.
+    const heredado = d.id === destino?.id && d.compra_en === "vivo" && lote.precioVenta > 0
+      ? lote.precioVenta
+      : null
     const refTxt = preciosDest[d.precio_ref_destino_id ?? ""] ?? ""
     const der = precioDerivado(d, normas.destinos, {
-      [d.precio_ref_destino_id ?? ""]: parseNumeroAR(refTxt) || null,
+      [d.precio_ref_destino_id ?? ""]: parseNumeroAR(refTxt) || heredado,
     })
-    return { valor: aMano ?? der?.precio ?? null, derivado: der?.precio != null ? der.motivo : null }
+    return {
+      valor: aMano ?? der?.precio ?? heredado,
+      derivado: der?.precio != null ? der.motivo : null,
+    }
   }
 
   /** Sólo el valor derivado, para mostrarlo como sugerencia en el input vacío. */
@@ -369,6 +379,9 @@ export function SelectorComercializacion({
   //
   // El precio del que deriva (el matarife) sí se calcula solo, porque ESA es su condición.
   const [comparando, setComparando] = useState(false)
+  /** El camino elegido para cada destino DENTRO de la comparación. Es de la sesión: cambiar de
+   *  camino ahí es explorar, no decidir — lo que se guarda es el del destino elegido arriba. */
+  const [rutasComparacion, setRutasComparacion] = useState<Record<string, string>>({})
 
   const comparacion = useMemo(() => {
     if (!comparando) return []
@@ -376,9 +389,12 @@ export function SelectorComercializacion({
       { tipo, categoria, cabezas: lote.cabezas, pesoVivo: lote.pesoVivo, rindeForzado: rinde },
       destinos.map(d => {
         const rs = normas.rutas.filter(r => r.destino_id === d.id)
-        const rt = d.id === destino?.id
-          ? ruta
-          : rs.find(r => r.por_defecto) ?? (rs.length === 1 ? rs[0]! : null)
+        // El camino elegido en la comparación gana; después el del destino ya seleccionado
+        // arriba; recién al final el marcado por defecto.
+        const rt = rs.find(r => r.id === rutasComparacion[d.id])
+          ?? (d.id === destino?.id ? ruta : null)
+          ?? rs.find(r => r.por_defecto)
+          ?? (rs.length === 1 ? rs[0]! : null)
         const kg = lote.cabezas * lote.pesoVivo
         const v = sugerirVehiculo(normas.tarifas, rt?.km ?? 0, kg)
 
@@ -393,8 +409,9 @@ export function SelectorComercializacion({
       { desbaste: normas.desbaste, rinde: normas.rinde },
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comparando, tipo, categoria, rinde, lote.cabezas, lote.pesoVivo,
-      destino?.id, ruta?.id, intermediario?.id, normas, JSON.stringify(preciosDest)])
+  }, [comparando, tipo, categoria, rinde, lote.cabezas, lote.pesoVivo, lote.precioVenta,
+      destino?.id, ruta?.id, intermediario?.id, normas,
+      JSON.stringify(preciosDest), JSON.stringify(rutasComparacion)])
 
   // Avisar hacia arriba. Se hace en efecto y no en el render para no escribir en el padre
   // durante el propio render de React.
@@ -474,7 +491,11 @@ export function SelectorComercializacion({
             La VACA no se deduce del sexo —es hembra, pero no una vaquillona— y tiene su propio
             rinde (55 % gorda, 45 % conserva). Y el rinde real varía con la terminación, así que
             se puede pisar a mano. */}
-        {compraEnRes && (
+        {/* ⚠️ Aparece cuando el destino compra a la res **o cuando no hay segmento**.
+            Sin segmento se está haciendo un hipotético —"¿y si fueran vacas?"— y ahí la categoría
+            es lo primero que hay que poder decir. Antes sólo salía con destino a la res, así que
+            un ejercicio suelto no tenía dónde elegir. Lo pidió el usuario (2026-08-05). */}
+        {(compraEnRes || !sexo) && (
           <>
             <label className="flex items-center gap-1">
               <span className="text-[10px] text-gray-500">Categoría</span>
@@ -609,6 +630,7 @@ export function SelectorComercializacion({
                   <tr className="border-b bg-gray-50 text-[9px] uppercase text-gray-500">
                     <th className="px-2 py-1 text-left font-medium">Destino</th>
                     <th className="px-2 py-1 text-right font-medium">Precio</th>
+                    <th className="px-2 py-1 text-left font-medium">Camino</th>
                     <th className="px-2 py-1 text-right font-medium">CZ</th>
                     <th className="px-2 py-1 text-right font-medium">Ingresa</th>
                     <th className="px-2 py-1 text-right font-medium">$/kg vivo</th>
@@ -648,6 +670,27 @@ export function SelectorComercializacion({
                               {d?.compra_en === "res" ? "res" : "vivo"}
                             </span>
                           </span>
+                        </td>
+                        {/* El camino que USÓ esta fila. Antes tomaba el `por_defecto` en
+                            silencio, que contradice la regla: la distancia es la pactada con el
+                            transportista, no la del mapa. Ahora se ve y se cambia acá mismo. */}
+                        <td className="px-2 py-1">
+                          {!d?.requiere_flete ? (
+                            <span className="text-[9px] text-gray-400">sin flete</span>
+                          ) : (() => {
+                            const rs = normas.rutas.filter(x => x.destino_id === d.id)
+                            if (rs.length === 0) return <span className="text-[9px] text-amber-600">sin ruta</span>
+                            if (rs.length === 1) return <span className="text-[9px] text-gray-500">{rs[0]!.km} km</span>
+                            return (
+                              <select className="h-5 rounded border px-0.5 text-[9px]"
+                                value={rutasComparacion[d.id] ?? (rs.find(x => x.por_defecto)?.id ?? "")}
+                                onChange={e => setRutasComparacion(p => ({ ...p, [d.id]: e.target.value }))}>
+                                {rs.map(x => (
+                                  <option key={x.id} value={x.id}>{x.km} km · {x.descripcion.slice(0, 22)}</option>
+                                ))}
+                              </select>
+                            )
+                          })()}
                         </td>
                         <td className="px-2 py-1 text-right text-gray-600">
                           {r.ventaBruta > 0

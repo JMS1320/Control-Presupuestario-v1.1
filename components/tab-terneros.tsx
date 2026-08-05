@@ -1966,7 +1966,28 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </DialogTitle>
           </DialogHeader>
 
+          {/* ── Barra de salto entre secciones ─────────────────────────────────
+              El modal es largo: segmentadores + análisis + la tabla de caravanas. El usuario
+              reportó (2026-08-05) que **no podía llegar al listado de caravanas**: los segmentos,
+              aun colapsados, le ocupaban toda la pantalla y scrollear a mano no alcanzaba.
+              Con esto se salta directo, sin rediseñar nada de lo que ya funciona. */}
+          <div className="sticky top-0 z-20 -mt-1 flex flex-wrap items-center gap-1 border-b bg-white/95 px-1 py-1.5 backdrop-blur">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400">Ir a</span>
+            {[
+              ["seg-hist", "Segmentadores"],
+              ["ana-hist", "Análisis"],
+              ["car-hist", `Caravanas${terneros.length ? ` (${terneros.filter(t => t.pesadas_terneros.length > 0).length})` : ""}`],
+            ].map(([id, txt]) => (
+              <button key={id} type="button"
+                onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="rounded border bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:bg-gray-50">
+                {txt}
+              </button>
+            ))}
+          </div>
+
           {/* ── Segmentadores (uno por población; ej. Machos y Hembras a la vez) ── */}
+          <div id="seg-hist" className="scroll-mt-10" />
           {segmentadorIds.map((id, i) => (
             <Segmentador
               key={id}
@@ -1987,6 +2008,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           </button>
 
           {/* ── Bloque de análisis productivo-económico (recibe secciones de todos los segmentadores) ── */}
+          <div id="ana-hist" className="scroll-mt-10" />
           <AnalisisProductivo
             secciones={seccionesCombinadas}
             total={null}
@@ -1994,6 +2016,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             onRestoreSegConfigs={restaurarSegmentadores}
           />
 
+          <div id="car-hist" className="scroll-mt-10" />
           {todasFechas.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
           ) : (
