@@ -40,7 +40,7 @@ import {
   type DisponibleCategoria,
 } from "@/lib/ganaderia/disponibilidad"
 import {
-  ModalConfirmarVentaHacienda, type LoteAConfirmar,
+  ModalConfirmarVentaHacienda, type LoteAConfirmar, type VentaAEditar,
 } from "@/components/modal-confirmar-venta-hacienda"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
@@ -92,6 +92,28 @@ interface DesgloseCampania {
 
 const SIN_CAMPANA = "sin campaña"
 
+/** Una venta ya cerrada. El stock ya bajó y está esperando la liquidación. */
+interface VentaConfirmada {
+  id: string
+  actividad: string
+  campania: string
+  categoria: string
+  cabezas: number
+  kgTotales: number
+  precio: number
+  neto: number
+  fechaVenta: string
+  plazo: string | null
+  /** Cuánto de la venta ya está facturado. Si es 0, todavía espera la liquidación. */
+  facturado: number
+  notas: string | null
+  // Condiciones, para poder corregirlas sin volver a cargar nada.
+  pctDesbaste: number
+  pctCz: number
+  flete: number | null
+  cliente: string | null
+}
+
 /** Sin actividad asignada no se inventa: se agrupa aparte y se dice. */
 const SIN_ACTIVIDAD = "— sin actividad —"
 
@@ -101,6 +123,16 @@ export function SeccionVentasPorLote() {
   const [disponibles, setDisponibles] = useState<(DisponibleCategoria & { actividad: string })[]>([])
   const [desgloses, setDesgloses] = useState<DesgloseCampania[]>([])
   const [aConfirmar, setAConfirmar] = useState<LoteAConfirmar | null>(null)
+  /**
+   * Las ventas YA CONFIRMADAS.
+   *
+   * ⚠️ Sin esto la confirmación era invisible: el lote quedaba con 0 disponible, su fila
+   * desaparecía de las presupuestadas, y no aparecía en ningún otro lado. El usuario confirmó una
+   * venta de $91,7 M y creyó que **no se había guardado**. Guardar bien y borrar de la pantalla es
+   * la peor combinación posible.
+   */
+  const [confirmadas, setConfirmadas] = useState<VentaConfirmada[]>([])
+  const [aEditar, setAEditar] = useState<VentaAEditar | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -128,6 +160,40 @@ export function SeccionVentasPorLote() {
         : { data: [] as any[] }
 
       const listaVentas = (vs || []) as VentaStock[]
+
+      // ── Las ventas ya confirmadas ──────────────────────────────────────────
+      // `ventas_unificadas` trae lo facturado, así que se ve si todavía espera la liquidación.
+      const [{ data: svs }, { data: unif }] = await Promise.all([
+        ids.length
+          ? p.from("stock_ventas")
+              .select("id, lote_id, fecha_venta, cantidad, kg_totales, precio_kg, monto_neto, plazo_cobro, notas, pct_desbaste, pct_cz, flete, cliente_nombre")
+              .in("lote_id", ids)
+          : Promise.resolve({ data: [] as any[] }),
+        supabase.from("ventas_unificadas").select("venta_id, facturado").eq("venta_tipo", "ganaderia"),
+      ])
+      const factPorVenta = new Map(((unif || []) as any[]).map(u => [u.venta_id, Number(u.facturado) || 0]))
+      const lotePorId = new Map(listaLotes.map(l => [l.id, l]))
+      setConfirmadas(((svs || []) as any[]).map(s => {
+        const l = lotePorId.get(s.lote_id) as any
+        return {
+          id: s.id,
+          actividad: l ? actividadDe(String(l.categoria)) : SIN_ACTIVIDAD,
+          campania: l ? campaniaDe(l) : SIN_CAMPANA,
+          categoria: l ? String(l.categoria) : "—",
+          cabezas: Number(s.cantidad) || 0,
+          kgTotales: Number(s.kg_totales) || 0,
+          precio: Number(s.precio_kg) || 0,
+          neto: Number(s.monto_neto) || 0,
+          fechaVenta: s.fecha_venta,
+          plazo: s.plazo_cobro,
+          facturado: factPorVenta.get(s.id) ?? 0,
+          notas: s.notas,
+          pctDesbaste: Number(s.pct_desbaste) || 0,
+          pctCz: Number(s.pct_cz) || 0,
+          flete: s.flete == null ? null : Number(s.flete),
+          cliente: s.cliente_nombre ?? null,
+        }
+      }))
       const listaPrecios = (precios || []) as PrecioHacienda[]
       const listaTramos = (tra || []) as TramoLote[]
       const listaActs = (acts || []) as Actividad[]
@@ -217,6 +283,7 @@ export function SeccionVentasPorLote() {
   const porActividad = useMemo(() => {
     const nombres = Array.from(new Set([
       ...ventas.map(v => v.actividad),
+      ...confirmadas.map(v => v.actividad),
       ...disponibles.map(d => d.actividad),
     ])).sort((a, b) => (a === SIN_ACTIVIDAD ? 1 : b === SIN_ACTIVIDAD ? -1 : a.localeCompare(b)))
     return nombres.map(n => {
@@ -232,9 +299,10 @@ export function SeccionVentasPorLote() {
           desglose: desgloses.find(d => d.campania === c) ?? null,
         })),
         disponibles: disponibles.filter(d => d.actividad === n),
+        confirmadas: confirmadas.filter(v => v.actividad === n),
       }
     })
-  }, [ventas, disponibles, desgloses])
+  }, [ventas, disponibles, desgloses, confirmadas])
 
   if (cargando) {
     return (
@@ -269,6 +337,11 @@ export function SeccionVentasPorLote() {
                   {totalCab > 0 && (
                     <Badge variant="outline" className="border-blue-300 text-[10px] text-blue-700">
                       {totalCab} cab presupuestadas
+                    </Badge>
+                  )}
+                  {g.confirmadas.length > 0 && (
+                    <Badge variant="outline" className="border-emerald-400 text-[10px] text-emerald-700">
+                      {g.confirmadas.reduce((s, v) => s + v.cabezas, 0)} cab vendidas
                     </Badge>
                   )}
                   {sinVender > 0 && (
@@ -413,6 +486,78 @@ export function SeccionVentasPorLote() {
                 </div>
               ))}
 
+              {/* ── Las CONFIRMADAS: el stock ya bajó ───────────────────────── */}
+              {g.confirmadas.length > 0 && (
+                <div className="overflow-x-auto rounded border border-emerald-200 bg-emerald-50/40">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="border-b border-emerald-200 bg-emerald-50 text-[9px] uppercase text-emerald-800">
+                        <th className="px-2 py-1 text-left font-medium">Confirmadas</th>
+                        <th className="px-2 py-1 text-right font-medium">Cab</th>
+                        <th className="px-2 py-1 text-right font-medium">Kg</th>
+                        <th className="px-2 py-1 text-right font-medium">$/kg</th>
+                        <th className="px-2 py-1 text-right font-medium">Neto</th>
+                        <th className="px-2 py-1 text-left font-medium">Venta</th>
+                        <th className="px-2 py-1 text-left font-medium">Plazo</th>
+                        <th className="px-2 py-1 text-left font-medium">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.confirmadas.map(v => {
+                        const pendiente = v.neto - v.facturado
+                        return (
+                          <tr key={v.id} className="border-b border-emerald-100 last:border-0">
+                            <td className="px-2 py-1 text-gray-700">
+                              {v.categoria}
+                              <span className="ml-1 text-[9px] text-gray-400">{v.campania}</span>
+                            </td>
+                            <td className="px-2 py-1 text-right text-gray-800">{v.cabezas}</td>
+                            <td className="px-2 py-1 text-right text-gray-600">{kg(v.kgTotales)}</td>
+                            <td className="px-2 py-1 text-right text-gray-600">{pesos(v.precio)}</td>
+                            <td className="px-2 py-1 text-right font-medium text-gray-800">{pesos(v.neto)}</td>
+                            <td className="px-2 py-1 text-gray-600">{fecha(v.fechaVenta)}</td>
+                            <td className="px-2 py-1 text-gray-500">{v.plazo || "—"}</td>
+                            <td className="px-2 py-1">
+                              {/* El gradiente termina acá: confirmada → fijada cuando llega la FC. */}
+                              {pendiente <= 0.01 ? (
+                                <Badge variant="outline" className="border-emerald-500 text-[9px] text-emerald-800">
+                                  fijada · facturada
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="border-emerald-400 text-[9px] text-emerald-700">
+                                  confirmada · espera liquidación
+                                </Badge>
+                              )}
+                              {v.facturado > 0 && pendiente > 0.01 && (
+                                <span className="ml-1 text-[9px] text-gray-500">
+                                  parcial: falta {pesos(pendiente)}
+                                </span>
+                              )}
+                              <button type="button"
+                                onClick={() => setAEditar({
+                                  id: v.id, categoria: v.categoria, cabezas: v.cabezas,
+                                  kgTotales: v.kgTotales, precioKg: v.precio,
+                                  pctDesbaste: v.pctDesbaste, pctCz: v.pctCz, flete: v.flete,
+                                  plazoCobro: v.plazo, fechaVenta: v.fechaVenta,
+                                  clienteNombre: v.cliente, notas: v.notas,
+                                })}
+                                className="ml-1 rounded border bg-white px-1.5 py-0.5 text-[9px] text-gray-600 hover:bg-gray-50">
+                                Editar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="px-2 py-1 text-[9px] text-emerald-800">
+                    El stock ya bajó y estas ventas están en el <strong>Cash Flow</strong> como
+                    ingreso comprometido. Cuando llegue la liquidación se vinculan solas desde{" "}
+                    <strong>Ventas</strong>.
+                  </p>
+                </div>
+              )}
+
               {/* ── Capa 2: existe y nadie decidió cuándo venderlo ──────────── */}
               {g.disponibles.length > 0 && (
                 <div className="rounded border bg-slate-50 px-2 py-1.5">
@@ -438,7 +583,8 @@ export function SeccionVentasPorLote() {
                 </div>
               )}
 
-              {g.campanias.length === 0 && g.disponibles.length === 0 && (
+              {g.campanias.length === 0 && g.disponibles.length === 0
+                && g.confirmadas.length === 0 && (
                 <p className="py-2 text-center text-[11px] text-gray-400">Sin movimientos.</p>
               )}
             </CardContent>
@@ -456,7 +602,8 @@ export function SeccionVentasPorLote() {
 
       <ModalConfirmarVentaHacienda
         lote={aConfirmar}
-        onCerrar={() => setAConfirmar(null)}
+        editar={aEditar}
+        onCerrar={() => { setAConfirmar(null); setAEditar(null) }}
         onConfirmado={cargar}
       />
 

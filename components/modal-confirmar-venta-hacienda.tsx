@@ -54,6 +54,29 @@ interface FichaAnimal {
   ultima: { fecha: string; peso: number } | null
 }
 
+/**
+ * Una venta YA confirmada, para corregirle las condiciones.
+ *
+ * ⚠️ **Sólo se editan las condiciones COMERCIALES** —desbaste, CZ, flete, precio, plazo, cliente,
+ * notas—, que no tocan el stock. Las **cabezas y las caravanas NO**: cambiarlas exigiría revertir
+ * la baja de los animales y rehacer el movimiento de hacienda, y hacerlo a medias dejaría el stock
+ * mintiendo. Para eso hay que anular la venta y rehacerla — todavía no está.
+ */
+export interface VentaAEditar {
+  id: string
+  categoria: string
+  cabezas: number
+  kgTotales: number
+  precioKg: number
+  pctDesbaste: number
+  pctCz: number
+  flete: number | null
+  plazoCobro: string | null
+  fechaVenta: string
+  clienteNombre: string | null
+  notas: string | null
+}
+
 export interface LoteAConfirmar {
   id: string
   categoria: string
@@ -69,11 +92,14 @@ export interface LoteAConfirmar {
   esGordo: boolean
 }
 
-export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
+export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirmado }: {
   lote: LoteAConfirmar | null
+  /** Cuando viene, el modal edita esa venta en vez de crear una nueva. */
+  editar?: VentaAEditar | null
   onCerrar: () => void
   onConfirmado: () => void
 }) {
+  const modoEdicion = !!editar
   const normas = useNormasComercializacion()
   const [guardando, setGuardando] = useState(false)
   const [terneros, setTerneros] = useState<TerneroRef[]>([])
@@ -88,9 +114,11 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
   const [kgTotales, setKgTotales] = useState("")
   const [precioKg, setPrecioKg] = useState("")
   const [pctCz, setPctCz] = useState("")
+  const [pctDesbaste, setPctDesbaste] = useState("")
   const [flete, setFlete] = useState("")
   const [plazo, setPlazo] = useState("")
   const [cliente, setCliente] = useState("")
+  const [notas, setNotas] = useState("")
   const [comercial, setComercial] = useState<SeleccionComercial>({
     destinoId: "", intermediarioId: "", rutaId: "", categoria: "", vehiculo: "", precioRes: "",
   })
@@ -100,15 +128,33 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
   const [entradas, setEntradas] = useState<{ original: string; peso?: number | null }[]>([])
 
   useEffect(() => {
+    // Editando: se abre con lo que se guardó, no con la proyección.
+    if (editar) {
+      setFechaVenta(editar.fechaVenta)
+      setCabezas(String(Math.round(editar.cabezas)))
+      setKgTotales(fmtNumeroAR(editar.kgTotales, 0))
+      setPrecioKg(fmtNumeroAR(editar.precioKg, 0))
+      setPctCz(fmtNumeroAR(editar.pctCz * 100, 2))
+      setPctDesbaste(fmtNumeroAR(editar.pctDesbaste * 100, 2))
+      setFlete(editar.flete ? fmtNumeroAR(editar.flete, 0) : "")
+      setPlazo(editar.plazoCobro ?? "")
+      setCliente(editar.clienteNombre ?? "")
+      setNotas(editar.notas ?? "")
+      setPegado(""); setEntradas([])
+      return
+    }
     if (!lote) return
     setFechaVenta(lote.fechaVentaEstimada ?? new Date().toISOString().slice(0, 10))
     setCabezas(String(Math.round(lote.cabezas)))
     setKgTotales(fmtNumeroAR(lote.cabezas * lote.pesoProyectado, 0))
     setPrecioKg(lote.precioProyectado > 0 ? fmtNumeroAR(lote.precioProyectado, 0) : "")
     setPctCz(fmtNumeroAR(lote.pctCz * 100, 2))
-    setPlazo(lote.plazoCobro ?? "")
-    setFlete(""); setCliente(""); setPegado(""); setEntradas([])
-  }, [lote?.id])
+    // ⚠️ El desbaste se PRECARGA pero se muestra editable. Antes ni siquiera se pedía: se usaba
+    // el del lote en silencio. El usuario lo marcó — *"me lo debería pedir por las dudas"*—, y
+    // tiene razón: es lo que decide sobre cuántos kilos se cobra.
+    setPctDesbaste(fmtNumeroAR(lote.pctDesbaste * 100, 2))
+    setFlete(""); setCliente(""); setNotas(""); setPegado(""); setEntradas([])
+  }, [lote?.id, editar?.id])
 
   const cargar = useCallback(async () => {
     if (!lote) return
@@ -169,8 +215,15 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
   const nKg = parseNumeroAR(kgTotales)
   const nPrecio = parseNumeroAR(precioKg)
   const nCz = parseNumeroAR(pctCz) / 100
+  const nDesb = parseNumeroAR(pctDesbaste) / 100
   const nFlete = parseNumeroAR(flete)
-  const cuenta = netoDeVenta(nKg, nPrecio, nCz, nFlete)
+
+  // ── Los kg sobre los que se COBRA ──────────────────────────────────────────
+  // Los kg de balanza son brutos; el desbaste es la merma que descuenta el comprador. El precio
+  // se aplica sobre los NETOS, así que ése es el número que hay que ver antes de confirmar —
+  // antes se calculaba sobre los brutos y la venta salía ~3 % más alta.
+  const kgNetos = nKg * (1 - nDesb)
+  const cuenta = netoDeVenta(kgNetos, nPrecio, nCz, nFlete)
   const ganancia = gananciaRealDelGrupo(
     nKg, nCab, pesadas?.prom ?? null, pesadas?.fecha ?? null, fechaVenta || null)
 
@@ -203,18 +256,51 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
       conPeso: conPeso.length,
       sinPeso: fs.length - conPeso.length,
       brutoProm,
-      netoProm: brutoProm * (1 - (lote?.pctDesbaste ?? 0)),
+      netoProm: brutoProm * (1 - nDesb),
       fechaUltima: conPeso.map(f => f.ultima!.fecha).sort().slice(-1)[0]!,
     }
-  }, [ok, fichas, lote?.pctDesbaste])
+  }, [ok, fichas, nDesb])
 
   /** El peso promedio que sale de la balanza de venta, para contrastar con la pesada. */
   const promBalanza = nCab > 0 && nKg > 0 ? nKg / nCab : null
 
-  const puedeConfirmar =
-    !!lote && nCab > 0 && nKg > 0 && nPrecio > 0 && !!fechaVenta
-    && duplicadas.length === 0 && yaVendidas.length === 0 && desfase === 0
-    && !guardando
+  const puedeConfirmar = modoEdicion
+    ? (nKg > 0 && nPrecio > 0 && !!fechaVenta && !guardando)
+    : (!!lote && nCab > 0 && nKg > 0 && nPrecio > 0 && !!fechaVenta
+       && duplicadas.length === 0 && yaVendidas.length === 0 && desfase === 0
+       && !guardando)
+
+  /** Corrige las condiciones comerciales. NO toca cabezas, caravanas ni stock. */
+  const guardarEdicion = async () => {
+    if (!editar) return
+    setGuardando(true)
+    try {
+      const p = supabase.schema("productivo")
+      const { error } = await p.from("stock_ventas").update({
+        fecha_venta: fechaVenta,
+        kg_totales: nKg,
+        peso_kg: editar.cabezas > 0 ? nKg / editar.cabezas : 0,
+        precio_kg: nPrecio,
+        monto_neto: cuenta.neto,
+        pct_desbaste: nDesb,
+        pct_cz: nCz,
+        flete: nFlete || null,
+        plazo_cobro: plazo || null,
+        cliente_nombre: cliente || null,
+        notas: notas || null,
+      }).eq("id", editar.id)
+      if (error) { alert("Error al guardar: " + error.message); return }
+
+      // El movimiento de stock refleja el monto: si la venta cambia, tiene que cambiar con ella.
+      await p.from("movimientos_hacienda").update({
+        fecha: fechaVenta, peso_total_kg: nKg,
+        precio_por_kg: nPrecio, monto_total: cuenta.neto,
+        proveedor_cliente: cliente || null,
+      }).eq("stock_venta_id", editar.id)
+
+      onConfirmado(); onCerrar()
+    } finally { setGuardando(false) }
+  }
 
   const confirmar = async () => {
     if (!lote) return
@@ -231,7 +317,7 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
         kg_totales: nKg,
         precio_kg: nPrecio,
         monto_neto: cuenta.neto,
-        pct_desbaste: lote.pctDesbaste,
+        pct_desbaste: nDesb,
         pct_cz: nCz,
         flete: nFlete || null,
         plazo_cobro: plazo || null,
@@ -239,7 +325,10 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
         intermediario_id: comercial.intermediarioId || null,
         cliente_nombre: cliente || null,
         empresa: lote.empresa,
-        notas: `Confirmada desde Ingresos → Ganadería. ${ok.length} caravanas adjudicadas.`,
+        notas: [
+          notas.trim(),
+          `Confirmada desde Ingresos → Ganadería · ${ok.length} caravanas adjudicadas.`,
+        ].filter(Boolean).join(" — "),
       }).select("id").single()
       if (e1 || !venta) { alert("Error al registrar la venta: " + (e1?.message ?? "")); return }
 
@@ -273,25 +362,38 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
     } finally { setGuardando(false) }
   }
 
-  if (!lote) return null
+  if (!lote && !editar) return null
   const inp = "h-7 rounded border px-1 text-right text-[11px]"
+  const titulo = editar ? editar.categoria : lote!.categoria
+  const cabTitulo = editar ? editar.cabezas : lote!.cabezas
 
   return (
     <Dialog open onOpenChange={o => { if (!o && !guardando) onCerrar() }}>
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
-            Confirmar venta — {lote.categoria}
-            <Badge variant="outline" className="text-[10px]">{Math.round(lote.cabezas)} cab presupuestadas</Badge>
+            {modoEdicion ? "Editar venta" : "Confirmar venta"} — {titulo}
+            <Badge variant="outline" className="text-[10px]">
+              {Math.round(cabTitulo)} cab {modoEdicion ? "vendidas" : "presupuestadas"}
+            </Badge>
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
-          <p className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900">
-            Un solo paso: al confirmar se registra la venta, <strong>baja el stock</strong> en
-            Productivo y la venta queda firme en <strong>Presupuesto y Cash Flow</strong> con su
-            fecha de cobro. La liquidación se vincula después, cuando llegue.
-          </p>
+          {modoEdicion ? (
+            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+              Se corrigen las <strong>condiciones comerciales</strong>: desbaste, CZ, flete,
+              precio, plazo, cliente y notas. <strong>Las cabezas y las caravanas no se tocan</strong> —
+              cambiarlas exigiría revertir la baja de los animales, y hacerlo a medias dejaría el
+              stock mintiendo.
+            </p>
+          ) : (
+            <p className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900">
+              Un solo paso: al confirmar se registra la venta, <strong>baja el stock</strong> en
+              Productivo y la venta queda firme en <strong>Presupuesto y Cash Flow</strong> con su
+              fecha de cobro. La liquidación se vincula después, cuando llegue.
+            </p>
+          )}
 
           {/* ── Los datos reales ───────────────────────────────────────────── */}
           <div className="grid gap-2 sm:grid-cols-3">
@@ -299,15 +401,20 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
               <input type="date" className="h-7 rounded border px-1 text-[11px]"
                 value={fechaVenta} onChange={e => setFechaVenta(e.target.value)} />
             </Campo>
-            <Campo label="Cabezas">
-              <input type="text" className={`${inp} w-20`} value={cabezas}
+            <Campo label="Cabezas" ayuda={modoEdicion ? "No se edita: ya bajó el stock" : undefined}>
+              <input type="text" className={`${inp} w-20 ${modoEdicion ? "bg-gray-100 text-gray-500" : ""}`}
+                value={cabezas} disabled={modoEdicion}
                 onChange={e => setCabezas(e.target.value)} />
             </Campo>
             <Campo label="Kg totales" ayuda="De la pesada de venta (grupal)">
               <input type="text" className={`${inp} w-28`} value={kgTotales}
                 onChange={e => setKgTotales(e.target.value)} />
             </Campo>
-            <Campo label="$/kg">
+            <Campo label="Desbaste %" ayuda="La merma que descuenta el comprador">
+              <input type="text" className={`${inp} w-16`} value={pctDesbaste}
+                onChange={e => setPctDesbaste(e.target.value)} />
+            </Campo>
+            <Campo label="$/kg" ayuda="Sobre los kg NETOS">
               <input type="text" className={`${inp} w-24`} value={precioKg}
                 onChange={e => setPrecioKg(e.target.value)} />
             </Campo>
@@ -329,8 +436,17 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
             </Campo>
           </div>
 
+          {/* Siempre tiene que haber dónde escribir: lo que no entra en un campo es justo lo que
+              después nadie recuerda. */}
+          <div>
+            <label className="text-[10px] text-gray-500">Notas</label>
+            <textarea className="mt-0.5 h-12 w-full rounded border px-1 py-1 text-[11px]"
+              value={notas} onChange={e => setNotas(e.target.value)}
+              placeholder="Lo que haga falta recordar de esta venta: condiciones, quién la cerró, algo raro…" />
+          </div>
+
           {/* El destino trae la CZ y el flete desde las normas. */}
-          {lote.esGordo && (
+          {!modoEdicion && lote!.esGordo && (
             <SelectorComercializacion
               normas={normas} tipo="gordo" sexo={null} seleccion={comercial}
               lote={{ cabezas: nCab, pesoVivo: nCab > 0 ? nKg / nCab : 0, precioVenta: nPrecio }}
@@ -341,10 +457,34 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
             />
           )}
 
-          {/* ── La cuenta ──────────────────────────────────────────────────── */}
+          {/* ── La cuenta, con los KG NETOS a la vista ─────────────────────── */}
           <div className="rounded border bg-slate-50 px-2 py-1.5 text-[11px]">
+            {/* Es el número sobre el que se cobra, y hasta ahora no se veía. */}
+            <div className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 border-b pb-1">
+              <span className="text-gray-600">
+                Brutos <strong className="text-gray-800">{fmtNumeroAR(nKg, 0)} kg</strong>
+                {nCab > 0 && (
+                  <span className="ml-1 text-[10px] text-gray-400">
+                    ({(nKg / nCab).toFixed(1)} /cab)
+                  </span>
+                )}
+              </span>
+              <span className="text-amber-700">
+                − desbaste {fmtNumeroAR(nDesb * 100, 2)} % = {fmtNumeroAR(nKg - kgNetos, 0)} kg
+              </span>
+              <span className="text-gray-800">
+                <strong>NETOS {fmtNumeroAR(kgNetos, 0)} kg</strong>
+                {nCab > 0 && (
+                  <span className="ml-1 text-[10px] text-gray-500">
+                    ({(kgNetos / nCab).toFixed(1)} /cab)
+                  </span>
+                )}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span>Bruto <strong>{pesos(cuenta.bruto)}</strong></span>
+              <span>Bruto <strong>{pesos(cuenta.bruto)}</strong>
+                <span className="ml-1 text-[10px] text-gray-400">netos × $/kg</span>
+              </span>
               <span className="text-red-600">− CZ {pesos(cuenta.cz)}</span>
               {cuenta.flete > 0 && <span className="text-red-600">− flete {pesos(cuenta.flete)}</span>}
               <span className="text-emerald-800">INGRESA <strong>{pesos(cuenta.neto)}</strong></span>
@@ -363,6 +503,7 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
           </div>
 
           {/* ── Las caravanas ──────────────────────────────────────────────── */}
+          {!modoEdicion && (
           <div className="rounded border px-2 py-1.5">
             <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">
               Caravanas que se van
@@ -433,6 +574,7 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
               </p>
             )}
           </div>
+          )}
 
           {/* ── PREVIEW: la tropa que se va, animal por animal ────────────────
               Antes de confirmar hay que poder mirar qué son. El promedio sale de las últimas
@@ -451,7 +593,7 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
                     </span>
                   </span>
                   <span className="text-gray-600">
-                    Neto −{((lote.pctDesbaste) * 100).toFixed(0)} %{" "}
+                    Neto −{(nDesb * 100).toFixed(0)} %{" "}
                     <strong className="text-gray-800">{tropa.netoProm.toFixed(1)} kg</strong>
                   </span>
                 </div>
@@ -531,9 +673,9 @@ export function ModalConfirmarVentaHacienda({ lote, onCerrar, onConfirmado }: {
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={onCerrar} disabled={guardando}>Cancelar</Button>
           <Button size="sm" className="bg-emerald-700 hover:bg-emerald-800"
-            disabled={!puedeConfirmar} onClick={confirmar}>
+            disabled={!puedeConfirmar} onClick={modoEdicion ? guardarEdicion : confirmar}>
             {guardando && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-            Confirmar venta
+            {modoEdicion ? "Guardar cambios" : "Confirmar venta"}
           </Button>
         </div>
       </DialogContent>
