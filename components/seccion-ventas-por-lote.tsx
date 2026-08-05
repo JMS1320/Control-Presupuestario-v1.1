@@ -42,6 +42,9 @@ import {
 import {
   ModalConfirmarVentaHacienda, type LoteAConfirmar, type VentaAEditar,
 } from "@/components/modal-confirmar-venta-hacienda"
+import {
+  ModalPresupuestarLote, type DisponibleAPresupuestar,
+} from "@/components/modal-presupuestar-lote"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const kg = (n: number) => `${n.toLocaleString("es-AR", { maximumFractionDigits: 1 })} kg`
@@ -141,6 +144,16 @@ export function SeccionVentasPorLote() {
    * usuario lo vio justo después de confirmar una de $91,7 M.
    */
   const [error, setError] = useState<string | null>(null)
+  const [aPresupuestar, setAPresupuestar] = useState<DisponibleAPresupuestar | null>(null)
+  /**
+   * De qué ciclo cuelga cada categoría. Sin ciclo el lote no tiene campaña y el presupuesto no
+   * sabe a qué año imputarlo — por eso se resuelve acá y no se deja en NULL.
+   */
+  const [ciclosPorCategoria, setCiclosPorCategoria] =
+    useState<Record<string, { cicloId: string | null; cicloRecriaId: string | null }>>({})
+
+  const cicloDeCategoria = (categoria: string) =>
+    ciclosPorCategoria[categoria] ?? { cicloId: null, cicloRecriaId: null }
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -269,7 +282,26 @@ export function SeccionVentasPorLote() {
         fechaUltima ? `pesada del ${fecha(fechaUltima)}` : undefined)
       const disp = disponiblePorDiferencia(exist, listaLotes, listaVentas)
       setDisponibles(disp.map(d => ({ ...d, actividad: actividadDe(d.categoria) })))
-      // (el desglose por campaña se arma abajo)
+
+      // De qué ciclo cuelga cada categoría: se deduce de los lotes que ya existen de esa
+      // categoría. Si nunca se vendió una, queda sin ciclo y el modal lo va a pedir.
+      const porCat: Record<string, { cicloId: string | null; cicloRecriaId: string | null }> = {}
+      for (const l of listaLotes as any[]) {
+        const c = String(l.categoria)
+        if (porCat[c]) continue
+        if (l.ciclo_id || l.ciclo_recria_id) {
+          porCat[c] = { cicloId: l.ciclo_id ?? null, cicloRecriaId: l.ciclo_recria_id ?? null }
+        }
+      }
+      // La recría que no tiene lote previo cuelga del ciclo de recría vigente.
+      const recriaVigente = ((crs || []) as any[]).slice(-1)[0]
+      for (const d of disp) {
+        if (porCat[d.categoria]) continue
+        porCat[d.categoria] = /recria/i.test(d.categoria) && recriaVigente
+          ? { cicloId: null, cicloRecriaId: recriaVigente.id }
+          : { cicloId: null, cicloRecriaId: null }
+      }
+      setCiclosPorCategoria(porCat)
 
       // ── El desglose del destete, campaña por campaña ──────────────────────
       // `calcularLineaTiempo()` es la MISMA que usa Evolución del rodeo y el margen: el rodeo
@@ -615,6 +647,17 @@ export function SeccionVentasPorLote() {
                           {d.existentes} existentes − {d.comprometidas} con venta
                           {d.detalle ? ` · ${d.detalle}` : ""}
                         </span>
+                        {/* Decidir la venta acá mismo, que es donde se ve que falta decidirla. */}
+                        <button type="button"
+                          onClick={() => setAPresupuestar({
+                            categoria: d.categoria, cabezas: d.cabezas,
+                            pesoProm: d.peso_prom, mes: d.mes, detalle: d.detalle,
+                            empresa: "MSA",
+                            ...cicloDeCategoria(d.categoria),
+                          })}
+                          className="rounded border border-blue-400 bg-blue-50 px-1.5 py-0.5 text-[9px] text-blue-800 hover:bg-blue-100">
+                          Presupuestar venta →
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -643,6 +686,12 @@ export function SeccionVentasPorLote() {
         editar={aEditar}
         onCerrar={() => { setAConfirmar(null); setAEditar(null) }}
         onConfirmado={cargar}
+      />
+
+      <ModalPresupuestarLote
+        disponible={aPresupuestar}
+        onCerrar={() => setAPresupuestar(null)}
+        onCreado={cargar}
       />
 
       {porActividad.some(g => g.actividad === SIN_ACTIVIDAD) && (
