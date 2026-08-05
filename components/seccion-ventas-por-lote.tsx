@@ -30,7 +30,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Package, AlertTriangle } from "lucide-react"
 import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
 import {
-  valuarLoteConPrecios, cantidadDisponible,
+  valuarLoteConPrecios, calcularLineaTiempo,
   type LoteStock, type VentaStock,
 } from "@/lib/ganaderia/ciclo"
 import type { PrecioHacienda } from "@/lib/ganaderia/calculo"
@@ -47,6 +47,8 @@ const fecha = (f: string | null) => (f ? f.split("-").reverse().join("/") : "—
 interface FilaVenta {
   id: string
   actividad: string
+  /** La campaña del ciclo del que sale el lote. La cría se lee campaña por campaña. */
+  campania: string
   categoria: string
   cabezas: number
   peso: number
@@ -60,6 +62,30 @@ interface FilaVenta {
   estimado: boolean
 }
 
+/**
+ * El desglose del destete de una campaña de cría: cuántos salen, cuántos se guardan y cuántos
+ * quedan para vender.
+ *
+ * Lo pidió el usuario (2026-08-05) y es informativo, pero cierra una cuenta que hoy no se ve:
+ * **destetados − reposición = saldo a vender**. Sin eso, ver 120 cabezas presupuestadas no dice
+ * si falta vender o si el resto se guarda a propósito.
+ */
+interface DesgloseCampania {
+  campania: string
+  terneros: number
+  terneras: number
+  destetados: number
+  /** Se guardan: terneras de reposición + toritos. NO se venden. */
+  retenidas: number
+  toritos: number
+  /** destetados − retenidas − toritos */
+  aVender: number
+  /** Lo que ya tiene venta presupuestada en esta campaña. */
+  presupuestado: number
+}
+
+const SIN_CAMPANA = "sin campaña"
+
 /** Sin actividad asignada no se inventa: se agrupa aparte y se dice. */
 const SIN_ACTIVIDAD = "— sin actividad —"
 
@@ -67,13 +93,14 @@ export function SeccionVentasPorLote() {
   const [cargando, setCargando] = useState(true)
   const [ventas, setVentas] = useState<FilaVenta[]>([])
   const [disponibles, setDisponibles] = useState<(DisponibleCategoria & { actividad: string })[]>([])
+  const [desgloses, setDesgloses] = useState<DesgloseCampania[]>([])
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
       const p = supabase.schema("productivo")
       const [{ data: lotes }, { data: precios }, { data: tra }, { data: acts },
-             { data: pes }, { data: crs }, { data: cats }] = await Promise.all([
+             { data: pes }, { data: crs }, { data: cats }, { data: ciclosCria }] = await Promise.all([
         p.from("stock_lotes").select("*").eq("empresa", "MSA"),
         supabase.from("precios_hacienda")
           .select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
@@ -83,6 +110,7 @@ export function SeccionVentasPorLote() {
           .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)"),
         p.from("ciclos_recria").select("id, campania"),
         p.from("categorias_hacienda").select("nombre, centro_costo_id"),
+        p.from("stock_ciclos").select("*"),
       ])
       const { data: ccs } = await supabase.from("centros_costo").select("id, nombre")
 
@@ -106,6 +134,12 @@ export function SeccionVentasPorLote() {
         c => [String(c.nombre), c.centro_costo_id ? ccPorId.get(c.centro_costo_id) ?? null : null]))
       const actividadDe = (categoria: string) => actPorCat.get(categoria) ?? SIN_ACTIVIDAD
       const cicloPorId = new Map(((crs || []) as any[]).map(c => [c.id, String(c.campania)]))
+      // La campaña del lote sale de SU ciclo: el de cría o el de recría, según de dónde cuelgue.
+      const campCriaPorId = new Map(((ciclosCria || []) as any[]).map(c => [c.id, String(c.campania)]))
+      const campaniaDe = (l: any): string =>
+        (l.ciclo_id ? campCriaPorId.get(l.ciclo_id) : null)
+        ?? (l.ciclo_recria_id ? cicloPorId.get(l.ciclo_recria_id) : null)
+        ?? SIN_CAMPANA
 
       // ── Capa 1: las presupuestadas, valuadas con la MISMA función del presupuesto ──
       const filas: FilaVenta[] = []
@@ -116,6 +150,7 @@ export function SeccionVentasPorLote() {
         filas.push({
           id: l.id,
           actividad: actividadDe(String(l.categoria)),
+          campania: campaniaDe(l),
           categoria: String(l.categoria),
           cabezas: v.cabezas, peso: v.peso_unitario,
           kgNetos: v.kg_netos, precio: v.precio_kg,
@@ -145,6 +180,25 @@ export function SeccionVentasPorLote() {
         fechaUltima ? `pesada del ${fecha(fechaUltima)}` : undefined)
       const disp = disponiblePorDiferencia(exist, listaLotes, listaVentas)
       setDisponibles(disp.map(d => ({ ...d, actividad: actividadDe(d.categoria) })))
+
+      // ── El desglose del destete, campaña por campaña ──────────────────────
+      // `calcularLineaTiempo()` es la MISMA que usa Evolución del rodeo y el margen: el rodeo
+      // rueda año a año y cada campaña abre con el cierre de la anterior.
+      const linea = calcularLineaTiempo(((ciclosCria || []) as any[]))
+      setDesgloses(linea.map(c => {
+        const camp = String(c.ciclo.campania)
+        const presupuestado = filas
+          .filter(f => f.campania === camp && f.actividad === "Cria")
+          .reduce((s, f) => s + f.cabezas, 0)
+        return {
+          campania: camp,
+          terneros: c.terneros, terneras: c.terneras, destetados: c.destetados,
+          retenidas: c.retenidas, toritos: c.toritos,
+          // Lo que efectivamente queda para vender: lo destetado menos lo que se guarda.
+          aVender: c.destetados - c.retenidas - c.toritos,
+          presupuestado,
+        }
+      }))
     } finally { setCargando(false) }
   }, [])
 
@@ -156,12 +210,22 @@ export function SeccionVentasPorLote() {
       ...ventas.map(v => v.actividad),
       ...disponibles.map(d => d.actividad),
     ])).sort((a, b) => (a === SIN_ACTIVIDAD ? 1 : b === SIN_ACTIVIDAD ? -1 : a.localeCompare(b)))
-    return nombres.map(n => ({
-      actividad: n,
-      ventas: ventas.filter(v => v.actividad === n),
-      disponibles: disponibles.filter(d => d.actividad === n),
-    }))
-  }, [ventas, disponibles])
+    return nombres.map(n => {
+      const mias = ventas.filter(v => v.actividad === n)
+      // Dentro de cada actividad, POR CAMPAÑA. La cría vende un destete por año y mezclarlos
+      // hacía que 2027 y 2028 se leyeran como un solo bloque de 309 cabezas.
+      const camps = Array.from(new Set(mias.map(v => v.campania))).sort()
+      return {
+        actividad: n,
+        campanias: camps.map(c => ({
+          campania: c,
+          ventas: mias.filter(v => v.campania === c),
+          desglose: desgloses.find(d => d.campania === c) ?? null,
+        })),
+        disponibles: disponibles.filter(d => d.actividad === n),
+      }
+    })
+  }, [ventas, disponibles, desgloses])
 
   if (cargando) {
     return (
@@ -176,8 +240,9 @@ export function SeccionVentasPorLote() {
   return (
     <div className="space-y-3">
       {porActividad.map(g => {
-        const totalNeto = g.ventas.reduce((s, v) => s + v.neto, 0)
-        const totalCab = g.ventas.reduce((s, v) => s + v.cabezas, 0)
+        const todas = g.campanias.flatMap(c => c.ventas)
+        const totalNeto = todas.reduce((s, v) => s + v.neto, 0)
+        const totalCab = todas.reduce((s, v) => s + v.cabezas, 0)
         const sinVender = g.disponibles.reduce((s, d) => s + d.cabezas, 0)
 
         return (
@@ -206,9 +271,59 @@ export function SeccionVentasPorLote() {
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-2">
-              {/* ── Capa 1: presupuestadas ─────────────────────────────────── */}
-              {g.ventas.length > 0 && (
+            <CardContent className="space-y-3">
+              {/* ── Capa 1: presupuestadas, UNA TABLA POR CAMPAÑA ──────────── */}
+              {g.campanias.map(c => (
+                <div key={c.campania} className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="border-gray-400 text-[10px] font-medium">
+                      Campaña {c.campania}
+                    </Badge>
+                    {c.desglose && (
+                      <span className="text-[10px] text-gray-500">
+                        destete {c.desglose.destetados} cab
+                      </span>
+                    )}
+                  </div>
+
+                  {/* El desglose del destete: qué sale, qué se guarda y qué queda para vender.
+                      Sin esto, "120 presupuestadas" no dice si falta vender o si el resto se
+                      guarda a propósito. */}
+                  {c.desglose && (
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border bg-slate-50 px-2 py-1.5 text-[11px]">
+                      <span className="text-gray-600">
+                        ♂ <strong className="text-gray-800">{c.desglose.terneros}</strong> terneros
+                      </span>
+                      <span className="text-gray-600">
+                        ♀ <strong className="text-gray-800">{c.desglose.terneras}</strong> terneras
+                      </span>
+                      <span className="text-gray-400">=</span>
+                      <span className="text-gray-700">
+                        <strong>{c.desglose.destetados}</strong> destetados
+                      </span>
+                      <span className="text-gray-400">−</span>
+                      <span className="text-amber-700">
+                        <strong>{c.desglose.retenidas + c.desglose.toritos}</strong> se guardan
+                        <span className="ml-1 text-[9px] text-amber-600">
+                          ({c.desglose.retenidas} ♀ rep · {c.desglose.toritos} toritos)
+                        </span>
+                      </span>
+                      <span className="text-gray-400">=</span>
+                      <span className="text-emerald-800">
+                        <strong>{c.desglose.aVender}</strong> a vender
+                      </span>
+                      {/* Si lo presupuestado no llega al saldo, falta decidir el resto. */}
+                      {Math.abs(c.desglose.aVender - c.desglose.presupuestado) > 0.5 && (
+                        <span className={c.desglose.presupuestado < c.desglose.aVender
+                          ? "text-amber-700" : "text-red-600"}>
+                          · {c.desglose.presupuestado < c.desglose.aVender
+                            ? `faltan ${Math.round(c.desglose.aVender - c.desglose.presupuestado)} por presupuestar`
+                            : `hay ${Math.round(c.desglose.presupuestado - c.desglose.aVender)} presupuestadas de más`}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                 <div className="overflow-x-auto rounded border bg-white">
                   <table className="w-full text-[11px]">
                     <thead>
@@ -225,7 +340,7 @@ export function SeccionVentasPorLote() {
                       </tr>
                     </thead>
                     <tbody>
-                      {g.ventas.map(v => (
+                      {c.ventas.map(v => (
                         <tr key={v.id} className="border-b last:border-0">
                           <td className="px-2 py-1 text-gray-700">{v.categoria}</td>
                           <td className="px-2 py-1 text-right text-gray-800">{v.cabezas}</td>
@@ -256,16 +371,21 @@ export function SeccionVentasPorLote() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t bg-gray-50 font-medium">
-                        <td className="px-2 py-1 text-gray-700">Total</td>
-                        <td className="px-2 py-1 text-right text-gray-800">{totalCab}</td>
+                        <td className="px-2 py-1 text-gray-700">Total {c.campania}</td>
+                        <td className="px-2 py-1 text-right text-gray-800">
+                          {c.ventas.reduce((s, v) => s + v.cabezas, 0)}
+                        </td>
                         <td colSpan={3} />
-                        <td className="px-2 py-1 text-right text-gray-800">{pesos(totalNeto)}</td>
+                        <td className="px-2 py-1 text-right text-gray-800">
+                          {pesos(c.ventas.reduce((s, v) => s + v.neto, 0))}
+                        </td>
                         <td colSpan={3} />
                       </tr>
                     </tfoot>
                   </table>
                 </div>
-              )}
+                </div>
+              ))}
 
               {/* ── Capa 2: existe y nadie decidió cuándo venderlo ──────────── */}
               {g.disponibles.length > 0 && (
@@ -292,7 +412,7 @@ export function SeccionVentasPorLote() {
                 </div>
               )}
 
-              {g.ventas.length === 0 && g.disponibles.length === 0 && (
+              {g.campanias.length === 0 && g.disponibles.length === 0 && (
                 <p className="py-2 text-center text-[11px] text-gray-400">Sin movimientos.</p>
               )}
             </CardContent>
