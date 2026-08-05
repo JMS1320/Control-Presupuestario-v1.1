@@ -11955,3 +11955,75 @@ que llevar todo a **$/kg vivo**, tal como lo planteó el usuario:
 > mismo precio."*
 
 Código: `lib/ganaderia/comercializacion.ts` · UI: `components/selector-comercializacion.tsx`.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-05 · Ciclo de RECRÍA
+
+**El eslabón que faltaba.** Estaba previsto y nunca se creó, y su ausencia tenía una consecuencia
+cara: **sin ciclo, los animales entraban a recría a costo cero** y su margen habría dado ganancia
+de más. El destete salía de cría y no entraba a ningún lado.
+
+### La regla que lo define (usuario, 2026-08-05)
+> *"El comienzo de recría es el fin de cría. El fin de cría es el destete. O se vende a terceros o
+> se vende a recría. **Ahí se define el resultado de cría** con la venta a recría."*
+
+El destete deja de ser un final y pasa a ser una **transferencia con precio**: cierra el resultado
+de la cría y abre el costo de entrada de la recría.
+
+### De dónde salen los números
+De la **pesada del destete**: da las cabezas y el peso **bruto**. Al bruto se le aplica el **3 % de
+desbaste** para el **neto**, que es lo que efectivamente se vende. Por eso el neto es **columna
+generada**: no se carga, se deriva, y no puede quedar desincronizado.
+
+```sql
+CREATE TABLE productivo.ciclos_recria (
+  id uuid PK, empresa text DEFAULT 'MSA',
+  campania text NOT NULL,              -- ⚠️ AÑO ("2026"), no la campaña jul-jun de cría
+  orden integer, ciclo_cria_id uuid REFERENCES productivo.stock_ciclos(id),
+  fecha_inicio date,                   -- = fecha de destete de la cría
+  fecha_fin_estimada date,             -- suele ser antes de diciembre
+  cabezas_machos numeric, cabezas_hembras numeric,
+  peso_bruto_macho_kg numeric, peso_bruto_hembra_kg numeric,
+  pct_desbaste numeric NOT NULL DEFAULT 0.03,
+  peso_neto_macho_kg  numeric GENERATED ALWAYS AS (peso_bruto_macho_kg  * (1 - pct_desbaste)) STORED,
+  peso_neto_hembra_kg numeric GENERATED ALWAYS AS (peso_bruto_hembra_kg * (1 - pct_desbaste)) STORED,
+  precio_kg_entrada numeric,           -- lo que cría le cobra a recría; NULL = falta definirlo
+  ganancia_diaria_kg numeric, pct_mortandad numeric DEFAULT 0,
+  notas text, activo boolean, created_at, updated_at,
+  UNIQUE (empresa, campania) );
+
+ALTER TABLE productivo.stock_lotes ADD COLUMN ciclo_recria_id uuid
+  REFERENCES productivo.ciclos_recria(id);   -- el NULL que quedaba suelto
+```
+RLS `ciclos_recria_all` + GRANTs a `anon, authenticated, service_role`.
+
+### ⚠️ El ciclo de recría NO es la campaña de cría
+La cría va **julio→junio**. La recría **arranca con el destete (feb/mar) y cierra antes de
+diciembre** — vende a engorde, vende como recría, o termina gordos en la propia recría. Cabe casi
+entero en un año calendario, y por eso se nombra por **año**.
+
+El **corte contable al 30/06 atraviesa** el ciclo, no lo limita: el export de *stock al 30/06* es
+una foto en el medio, y la venta cae en el ejercicio que corresponda. **Dos ejes distintos que no
+hay que forzar a coincidir.**
+
+### ⚠️ Todo lo destetado entra a recría
+Incluidas las **vaquillonas de reposición**: se recrían en las hectáreas de recría. Lo que cría se
+queda **se lo compra a recría** — venta entre actividades, no una exclusión de la apertura.
+
+Si la reposición no entrara, recría estaría criando 60 vaquillonas **gratis** y su costo por cabeza
+saldría inflado. *(El usuario lo dio como principio, no certeza: "no lo tengo claro pero en
+principio sería así". A revisar.)*
+
+### 🔎 Hallazgo: `es_torito` no marca toritos
+Marca **"retenido para reposición"**, en los **dos sexos**:
+
+| `es_torito` | Sexo | Cabezas | Qué es |
+|---|---|---|---|
+| ✓ | Hembra | 60 | vaquillonas de reposición — **coincide con `real_retenidas`** |
+| ✓ | Macho | 17 | toritos |
+| — | Macho | 95 | machos de venta |
+| — | Hembra | 29 | hembras de venta |
+
+Por eso el segmentador tiene *Toritos* y *Terneras rep* separados. ⚠️ **`stock_ciclos.toritos_retenidos`
+está en 0** y los toritos reales son 17: dato desincronizado, pendiente de revisar con el usuario.
