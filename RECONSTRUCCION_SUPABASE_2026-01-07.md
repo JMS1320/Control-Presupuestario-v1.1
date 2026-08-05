@@ -12027,3 +12027,75 @@ Marca **"retenido para reposición"**, en los **dos sexos**:
 
 Por eso el segmentador tiene *Toritos* y *Terneras rep* separados. ⚠️ **`stock_ciclos.toritos_retenidos`
 está en 0** y los toritos reales son 17: dato desincronizado, pendiente de revisar con el usuario.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-05 · Venta de hacienda CONFIRMADA
+
+**Cierra el circuito**: presupuestada → confirmada → fijada. Antes terminaba en la proyección y
+nada registraba que los animales se habían ido.
+
+### ⚠️ El patrón ya existía, en arrendamientos
+```
+cuotas_arrendamiento → ventas_arrendamiento → ventas_unificadas → ventas_facturas
+stock_lotes          → stock_ventas         → ventas_unificadas → ventas_facturas
+```
+`stock_ventas` es a `stock_lotes` lo que `ventas_arrendamiento` es a `cuotas_arrendamiento`.
+**Se creó en julio y quedó sin usar.** Y `ventas_facturas.venta_tipo` **ya aceptaba `'ganaderia'`**
+en su CHECK desde el día uno. No se inventó ningún lugar: se completó el que estaba elegido.
+
+```sql
+-- Condiciones reales de la venta + el vínculo con la liquidación.
+ALTER TABLE productivo.stock_ventas
+  ADD COLUMN comprobante_id uuid,
+  ADD COLUMN destino_id uuid REFERENCES productivo.destinos_venta(id),
+  ADD COLUMN intermediario_id uuid REFERENCES productivo.intermediarios_venta(id),
+  ADD COLUMN pct_desbaste numeric, ADD COLUMN pct_cz numeric,
+  ADD COLUMN flete numeric,              -- MONTO, no %: no entra en la CZ porcentual
+  ADD COLUMN plazo_cobro text, ADD COLUMN fecha_cobro date,
+  ADD COLUMN alicuota_iva numeric, ADD COLUMN alicuota_iibb numeric,
+  ADD COLUMN kg_totales numeric,         -- de la pesada de venta, que es GRUPAL
+  ADD COLUMN empresa text DEFAULT 'MSA', ADD COLUMN centro_costo text,
+  ADD COLUMN cliente_cuit text, ADD COLUMN cliente_nombre text,
+  ADD COLUMN cuenta_contable text, ADD COLUMN created_by text;
+
+-- Qué venta bajó qué cabezas, y qué caravanas se fueron en cuál.
+ALTER TABLE productivo.movimientos_hacienda ADD COLUMN stock_venta_id uuid
+  REFERENCES productivo.stock_ventas(id);
+ALTER TABLE productivo.terneros ADD COLUMN stock_venta_id uuid
+  REFERENCES productivo.stock_ventas(id);
+```
+
+⚠️ **`kg_totales` NO se prorratea a los individuos.** La pesada de venta es grupal; repartirla
+supondría que todos ganaron lo mismo por día —lo que el segmentador existe para desmentir— y ese
+peso inventado quedaría en `pesadas_terneros` **indistinguible de uno medido**. Lo que sí se
+calcula es la **ganancia diaria real del grupo** entre la última pesada y la venta.
+
+⚠️ **`stock_ventas` y `movimientos_hacienda` no compiten.** La primera es la venta COMERCIAL (va
+al Cash Flow); la segunda es el efecto FÍSICO sobre el stock. El movimiento se **genera** desde la
+venta, no se tipea: cargarlo a mano daría dos fuentes de verdad sobre la misma salida.
+
+### `ventas_unificadas` suma el brazo de ganadería
+La vista ya estaba pensada para esto — el cash flow la consume con el comentario *"ventas SIN
+factura todavía (arrendamiento y, **cuando existan, granos/ganadería**)"*.
+
+Se hizo **DROP + CREATE** (no `OR REPLACE`): los `varchar(n)` de arrendamiento tenían que
+ampliarse a `text` para aceptar los campos de hacienda, y `CREATE OR REPLACE VIEW` no permite
+cambiar el tipo de una columna. Los tipos se castean explícitos para que las dos ramas coincidan.
+
+La rama de hacienda sale de `stock_ventas` + `stock_lotes`, con la campaña de `stock_ciclos` o
+`ciclos_recria` según de cuál cuelgue, la actividad de `categorias_hacienda → centros_costo`, y
+`facturado` desde `ventas_facturas` con `venta_tipo = 'ganaderia'`.
+
+**Efecto:** la venta confirmada aparece en el Cash Flow como ingreso comprometido apenas se
+cierra, sin esperar la liquidación. Cuando la FC se vincula el remanente baja solo; si es parcial
+sigue el resto. Todo eso **ya funcionaba** para arrendamiento.
+
+### 🐛 El bug que destapó la primera venta real
+**La existencia de hacienda no descontaba los animales dados de baja.** Un animal vendido o muerto
+**sigue teniendo pesadas**, y los **cinco** lugares que leían `pesadas_terneros` contaban esas
+pesadas. Tras vender 55 terneros, el presupuesto seguía proyectando la venta de animales que ya no
+estaban: **59 cabezas de más**.
+
+Fix: `activo` pasó a ser **obligatorio** en `existenciasDePesada()` — no opcional, para que el
+compilador obligue a cada pantalla a decidirlo.

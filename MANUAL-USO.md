@@ -293,6 +293,79 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
 
+## 🐄 Ventas de hacienda — el circuito completo 🟡 *(nuevo 2026-08-05, sin testear)*
+
+**Dónde:** Ingresos → **Ganadería**. Separado por **actividad** y por **campaña**.
+
+### El circuito, y qué pasa en cada paso
+```
+existe y no se decidió    [Presupuestar venta →]
+        ↓
+PRESUPUESTADA             entra al Presupuesto y al margen
+        ↓                 [Confirmar venta →]  ← un solo paso, con las caravanas
+CONFIRMADA                baja el stock · va al Cash Flow como ingreso comprometido
+        ↓                 llega la liquidación
+FIJADA                    se vincula desde Ventas; si es parcial, sigue el remanente
+```
+
+### 1 · Presupuestar
+En *sin venta presupuestada*, botón **Presupuestar venta →**. El **desbaste** viene de las normas
+según categoría y peso (no del 5 % fijo viejo) y es editable. El **precio se puede dejar vacío**:
+lo toma de *Precios y TC* por banda de peso, que es lo habitual.
+
+⚠️ **No deja guardar sin ciclo.** Sin ciclo el lote no tiene campaña y el presupuesto no sabe a
+qué año imputarlo.
+
+### 2 · Confirmar — un solo paso
+Corregís los datos reales, pegás o subís las caravanas, y **un botón** hace tres cosas:
+la venta queda registrada, **baja el stock**, y las caravanas quedan adjudicadas.
+
+**Antes de confirmar** se ve la tropa animal por animal —qué es, sexo, pelo, primera y última
+pesada— y el cruce que da la certeza:
+
+> Balanza de venta **276,0 kg**/cab · última pesada **278,6 kg** · diferencia **−2,6 kg**
+> — *la venta pesa MENOS que la última pesada. O perdieron peso, o la tropa no es ésta.*
+
+**Los kg NO se reparten entre los animales.** La pesada de venta es grupal; prorratearla supondría
+que todos ganaron lo mismo por día. Lo que sí se calcula es la **ganancia diaria real del grupo**.
+
+**Dos cosas no dejan confirmar:** una caravana **ya dada de baja** (venderla dos veces no es un
+típeo) y que **las caravanas no coincidan con las cabezas**.
+
+### 3 · Editar una confirmada
+Botón **Editar** en la fila verde. Se corrigen **sólo las condiciones comerciales** —desbaste, CZ,
+flete, precio, plazo, cliente, notas—. **Cabezas y caravanas no**: cambiarlas exigiría revertir la
+baja de los animales, y hacerlo a medias dejaría el stock mintiendo.
+
+### 🧪 Cómo probarlo
+1. **Presupuestar** desde un disponible → tiene que aparecer como **presupuestada** en su campaña.
+2. **Confirmar** con menos caravanas que cabezas → **no debe dejar**, y decir cuántas faltan.
+3. Confirmar bien → la fila pasa a **confirmada** en verde, y en *Sector Productivo → Recría* las
+   cabezas activas bajan en esa cantidad.
+4. ⚠️ **El control que caza el error más caro**: después de confirmar, el **disponible tiene que
+   bajar**. Si sigue ofreciendo las mismas cabezas, la existencia no está descontando las bajas.
+5. En *Evolución Rodeo*, el lote vendido **no** debe marcarse «desactualizado» (saldo 0).
+6. Verificar que la venta aparece en el **Cash Flow** como ingreso comprometido.
+
+### ⚠️ Lo que falta
+- El panel *"Cabezas disponibles para vender"* de Evolución Rodeo **muestra lotes, no disponibles**:
+  lo que no tiene lote no aparece (`G-04`).
+- Hay **dos editores de venta** con capacidades distintas: el de Evolución Rodeo deja elegir *los N
+  más pesados* y saca el promedio de ese subconjunto; el de Ingresos no (`G-01`).
+
+### 🐄 Ciclo de recría 🟡 *(nuevo 2026-08-05, sin testear)*
+**Dónde:** Sector Productivo → **Recría / Engorde**, arriba de los terneros.
+
+Abre con la **pesada del destete**: cabezas y peso bruto, y el **neto lo calcula la base**
+(`bruto × (1 − desbaste)`) — no se carga a mano. El promedio ♂+♀ es **kg totales ÷ cabezas
+totales**, ponderado por cantidad.
+
+⚠️ **Sin `$/kg de entrada` el margen de recría no cierra**: los animales entran a costo cero y la
+ganancia sale de más. Ese monto es **ingreso de cría y costo de recría a la vez**.
+
+⚠️ El ciclo se nombra por **año** (`2026`), no por campaña jul-jun: arranca con el destete
+(feb/mar) y cierra antes de diciembre. El corte contable al 30/06 lo **atraviesa**, no lo limita.
+
 ### 🐂 La marca de reposición y la categoría 🟡 *(nuevo 2026-08-05, sin testear)*
 
 **Dónde:** Sector Productivo → Terneros, arriba de la tabla.
