@@ -180,12 +180,24 @@ export function disponiblePorDiferencia(
  * se venden, así que no son existencia vendible.
  */
 export function existenciasDePesada(
-  filas: { peso_kg: number | string; sexo: string; es_torito: boolean }[],
+  /**
+   * ⚠️ `activo` es OBLIGATORIO a propósito.
+   *
+   * Un animal muerto o vendido **sigue teniendo pesadas**, así que contar las pesadas sin mirar
+   * si el animal existe hoy inflaba la existencia. Pasó de verdad (2026-08-05): tras vender 55
+   * terneros, la pantalla seguía ofreciendo 43 disponibles cuando quedaban 40 — y el presupuesto
+   * proyectaba la venta de animales que ya no estaban.
+   *
+   * Se pide obligatorio y no opcional para que **el compilador obligue a cada pantalla a
+   * decidirlo**: eran cinco los lugares que leían las pesadas y ninguno filtraba.
+   */
+  filas: { peso_kg: number | string; sexo: string; es_torito: boolean; activo: boolean }[],
   mes: string,
   detalle?: string,
 ): ExistenciaHacienda[] {
   const acc: Record<string, { cabezas: number; kg: number }> = {}
   for (const f of filas) {
+    if (!f.activo) continue          // vendido o muerto: ya no es existencia
     // La categoría sale de `lib/productivo/caravanas.ts`, que es el único lugar donde se
     // interpreta `es_torito` — el flag significa cosas distintas según el sexo (torito en
     // un macho, ternera retenida en una hembra) y tenerlo escrito dos veces ya causó un bug.

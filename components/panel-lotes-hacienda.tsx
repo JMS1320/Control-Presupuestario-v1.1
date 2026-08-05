@@ -111,11 +111,13 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       // Foto viva de las pesadas, para detectar lotes desactualizados
       const { data: pes } = await supabase.schema("productivo")
         .from("pesadas_terneros")
-        .select("fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)")
+        .select("fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)")
       const acc: Record<string, { n: number; kg: number }> = {}
       for (const r of (pes || []) as any[]) {
         const t = r.ternero
-        if (!t) continue
+        // Un animal vendido o muerto sigue teniendo pesadas: si no se lo saca, la foto del
+        // stock queda inflada y los lotes parecen desactualizados cuando no lo están.
+        if (!t || t.activo === false) continue
         const esMacho = /macho/i.test(String(t.sexo ?? ""))
         const categoria = esMacho
           ? (t.es_torito ? "Torito" : "Ternero Recria")
@@ -886,12 +888,13 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
       try {
         const q = supabase.schema("productivo")
           .from("pesadas_terneros")
-          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)")
+          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)")
         const { data, error } = modo === "fecha" ? await q.eq("fecha", fecha) : await q
         if (error) { console.error(error); return }
 
-        // Modo "ultima": una sola pesada por animal, la más reciente
-        let filas = (data || []) as any[]
+        // ⚠️ Fuera los dados de baja. Sus pesadas siguen existiendo, así que sin este filtro un
+        // animal ya vendido se volvía a ofrecer para presupuestar su venta.
+        let filas = ((data || []) as any[]).filter(r => r.ternero?.activo !== false)
         if (modo === "ultima") {
           const ultima = new Map<string, any>()
           for (const r of filas) {

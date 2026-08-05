@@ -966,7 +966,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // Pesada viva: es la fuente real de cuántas cabezas hay hoy. El lote es un recorte
       // de esto, no el total — por eso lo disponible se calcula por diferencia.
       supabase.schema("productivo").from("pesadas_terneros")
-        .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)"),
+        .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)"),
     ])
 
     const listaLotes = ((lotes || []) as LoteStock[])
@@ -1023,6 +1023,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         peso_kg: r.peso_kg,
         sexo: String(r.ternero.sexo ?? ""),
         es_torito: Boolean(r.ternero.es_torito),
+        // ⚠️ Sin esto el presupuesto proyectaba la venta de animales YA VENDIDOS o muertos:
+        // las pesadas de un animal no desaparecen cuando se lo da de baja.
+        activo: r.ternero.activo !== false,
       }))
 
     // Destetes que todavía no ocurrieron: los pasados ya están en la pesada

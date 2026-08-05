@@ -72,11 +72,12 @@ export function TabEvolucionRodeo() {
       // Hembras marcadas (es_torito en hembra = reposición) por fecha de pesada
       const { data: pes } = await supabase.schema("productivo")
         .from("pesadas_terneros")
-        .select("fecha, ternero:terneros!inner(sexo, es_torito)")
+        // `activo`: una ternera vendida o muerta no sigue siendo reposición marcada.
+        .select("fecha, ternero:terneros!inner(sexo, es_torito, activo)")
       const marc: Record<string, number> = {}
       for (const r of (pes || []) as any[]) {
         const t = r.ternero
-        if (!t) continue
+        if (!t || t.activo === false) continue
         if (/hembra/i.test(String(t.sexo ?? "")) && t.es_torito) {
           marc[r.fecha] = (marc[r.fecha] ?? 0) + 1
         }

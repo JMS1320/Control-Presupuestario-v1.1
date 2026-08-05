@@ -10,10 +10,12 @@ const chk = (t: string, real: number, esp: number, tol = 0.05) => {
 // ── Datos reales de la BD ────────────────────────────────────────────────────
 // 98 machos, promedio 245,54 · 64 hembras. Lote de los 55 más pesados a 275 kg.
 const machos = Array.from({ length: 98 }, (_, i) => ({
-  peso_kg: 245.54 + (i < 55 ? 29.68 : -37.96), sexo: "Macho", es_torito: false,
+  peso_kg: 245.54 + (i < 55 ? 29.68 : -37.96), sexo: "Macho", es_torito: false, activo: true,
 }))
 const pesada = existenciasDePesada(
-  [...machos, ...Array.from({ length: 64 }, () => ({ peso_kg: 192, sexo: "Hembra", es_torito: false }))],
+  [...machos, ...Array.from({ length: 64 }, () => ({
+    peso_kg: 192, sexo: "Hembra", es_torito: false, activo: true,
+  }))],
   "2026-07", "stock de hoy",
 )
 

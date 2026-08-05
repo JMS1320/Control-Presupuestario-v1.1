@@ -168,7 +168,9 @@ export function SeccionVentasPorLote() {
         p.from("lote_tramos").select("*").order("orden"),
         p.from("actividades").select("*"),
         p.from("pesadas_terneros")
-          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito)"),
+          // `activo` es imprescindible: un animal vendido o muerto sigue teniendo pesadas, y sin
+          // esto seguía figurando como existencia disponible.
+          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)"),
         p.from("ciclos_recria").select("id, campania"),
         p.from("categorias_hacienda").select("nombre, centro_costo_id"),
         p.from("stock_ciclos").select("*"),
@@ -273,6 +275,7 @@ export function SeccionVentasPorLote() {
       }
       const filasPesada = Object.values(ultima).map((r: any) => ({
         peso_kg: r.peso_kg, sexo: r.ternero?.sexo ?? "", es_torito: !!r.ternero?.es_torito,
+        activo: r.ternero?.activo !== false,
       }))
       const fechaUltima = Object.values(ultima)
         .map((r: any) => r.fecha).sort().slice(-1)[0] as string | undefined
