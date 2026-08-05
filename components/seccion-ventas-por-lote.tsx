@@ -39,6 +39,9 @@ import {
   existenciasDePesada, disponiblePorDiferencia,
   type DisponibleCategoria,
 } from "@/lib/ganaderia/disponibilidad"
+import {
+  ModalConfirmarVentaHacienda, type LoteAConfirmar,
+} from "@/components/modal-confirmar-venta-hacienda"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const kg = (n: number) => `${n.toLocaleString("es-AR", { maximumFractionDigits: 1 })} kg`
@@ -60,6 +63,9 @@ interface FilaVenta {
   ciclo: string | null
   /** El precio se arrastró de otro mes o no existe: el número no es firme. */
   estimado: boolean
+  /** Condiciones proyectadas: son el punto de partida al confirmar. */
+  pctDesbaste: number
+  pctCz: number
 }
 
 /**
@@ -94,6 +100,7 @@ export function SeccionVentasPorLote() {
   const [ventas, setVentas] = useState<FilaVenta[]>([])
   const [disponibles, setDisponibles] = useState<(DisponibleCategoria & { actividad: string })[]>([])
   const [desgloses, setDesgloses] = useState<DesgloseCampania[]>([])
+  const [aConfirmar, setAConfirmar] = useState<LoteAConfirmar | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -159,6 +166,8 @@ export function SeccionVentasPorLote() {
           plazo: (l as any).plazo_cobro ?? null,
           ciclo: (l as any).ciclo_recria_id ? cicloPorId.get((l as any).ciclo_recria_id) ?? null : null,
           estimado: v.estimado,
+          pctDesbaste: Number((l as any).pct_desbaste) || 0,
+          pctCz: Number((l as any).pct_cz) || 0,
         })
       }
       setVentas(filas.sort((a, b) => (a.fechaVenta ?? "").localeCompare(b.fechaVenta ?? "")))
@@ -359,12 +368,29 @@ export function SeccionVentasPorLote() {
                           <td className="px-2 py-1 text-gray-600">{fecha(v.fechaVenta)}</td>
                           <td className="px-2 py-1 text-gray-500">{v.plazo || "—"}</td>
                           <td className="px-2 py-1">
-                            <Badge variant="outline" className="border-blue-300 text-[9px] text-blue-700">
-                              presupuestada
-                            </Badge>
-                            {v.ciclo && (
-                              <span className="ml-1 text-[9px] text-gray-400">ciclo {v.ciclo}</span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Badge variant="outline" className="border-blue-300 text-[9px] text-blue-700">
+                                presupuestada
+                              </Badge>
+                              {v.ciclo && (
+                                <span className="text-[9px] text-gray-400">ciclo {v.ciclo}</span>
+                              )}
+                              {/* Confirmar donde se ve la proyección: confirmar es CERRAR esa
+                                  proyección, no crear una venta nueva. */}
+                              <button type="button"
+                                onClick={() => setAConfirmar({
+                                  id: v.id, categoria: v.categoria,
+                                  cabezas: v.cabezas, pesoProyectado: v.peso,
+                                  precioProyectado: v.precio,
+                                  pctDesbaste: v.pctDesbaste, pctCz: v.pctCz,
+                                  plazoCobro: v.plazo, fechaVentaEstimada: v.fechaVenta,
+                                  empresa: "MSA",
+                                  esGordo: /gordo|novillo|vaquillona engorde/i.test(v.categoria),
+                                })}
+                                className="rounded border border-emerald-400 bg-emerald-50 px-1.5 py-0.5 text-[9px] text-emerald-800 hover:bg-emerald-100">
+                                Confirmar venta →
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -427,6 +453,12 @@ export function SeccionVentasPorLote() {
         Un <strong className="text-amber-600">~</strong> en el precio significa que se arrastró de
         otro mes o que falta cargarlo.
       </p>
+
+      <ModalConfirmarVentaHacienda
+        lote={aConfirmar}
+        onCerrar={() => setAConfirmar(null)}
+        onConfirmado={cargar}
+      />
 
       {porActividad.some(g => g.actividad === SIN_ACTIVIDAD) && (
         <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
