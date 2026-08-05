@@ -277,9 +277,18 @@ export function PanelLotesHacienda({ linea, onCambio }: {
     notas: "Stock inicial — retenido para recría",
   })
 
-  /** Un lote de stock inicial está desactualizado si la pesada hoy dice otra cosa. */
+  /**
+   * Un lote de stock inicial está desactualizado si la pesada hoy dice otra cosa.
+   *
+   * ⚠️ **Un lote ya VENDIDO no se compara.** Con saldo 0 la comparación no significa nada: los
+   * animales que quedan en la pesada son justamente **los que NO se vendieron**, así que el lote
+   * siempre iba a "diferir". Y el aviso invitaba a correr «Desde pesada», que **reescribiría una
+   * venta ya hecha** — el caso real: 55 terneros vendidos por $91,7 M y el panel ofreciendo
+   * actualizarlos a 40 cabezas de 227,7 kg.
+   */
   const desactualizado = (l: LoteStock) => {
     if (l.origen !== "stock_inicial") return null
+    if (cantidadDisponible(l, ventasDe(l.id)) <= 0.01) return null
     const f = fotoPesada[`${l.fecha_disponible}|${l.categoria}`]
     if (!f) return null
     const difCab = Math.abs(f.cabezas - Number(l.cantidad)) > 0.01
