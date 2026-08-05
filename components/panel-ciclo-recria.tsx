@@ -125,6 +125,8 @@ export function PanelCicloRecria() {
       {ciclos.map(c => {
         const cabezas = (c.cabezas_machos ?? 0) + (c.cabezas_hembras ?? 0)
         // El valor de entrada es lo que cría le cobra a recría: cierra un resultado y abre el otro.
+        const kgBrutos = (c.cabezas_machos ?? 0) * (c.peso_bruto_macho_kg ?? 0)
+          + (c.cabezas_hembras ?? 0) * (c.peso_bruto_hembra_kg ?? 0)
         const kgNetos = (c.cabezas_machos ?? 0) * (c.peso_neto_macho_kg ?? 0)
           + (c.cabezas_hembras ?? 0) * (c.peso_neto_hembra_kg ?? 0)
         const valorEntrada = c.precio_kg_entrada != null ? kgNetos * c.precio_kg_entrada : null
@@ -182,11 +184,26 @@ export function PanelCicloRecria() {
                         </td>
                       </tr>
                     ))}
+                    {/* El promedio del lote entero: kg totales ÷ cabezas totales.
+                        NO es el promedio de los dos promedios — pesa a cada sexo por su cantidad,
+                        que es lo que corresponde cuando hay 103 machos y 82 hembras. */}
                     <tr className="border-t bg-gray-50 font-medium">
-                      <td className="px-2 py-1 text-gray-700">Total</td>
+                      <td className="px-2 py-1 text-gray-700">Promedio ♂+♀</td>
                       <td className="px-2 py-1 text-right text-gray-800">{cabezas}</td>
-                      <td colSpan={2} />
-                      <td className="px-2 py-1 text-right text-gray-800">{kg(kgNetos)}</td>
+                      <td className="px-2 py-1 text-right text-gray-600">
+                        {cabezas > 0 ? kg(kgBrutos / cabezas) : "—"}
+                      </td>
+                      <td className="px-2 py-1 text-right text-gray-800">
+                        {cabezas > 0 ? kg(kgNetos / cabezas) : "—"}
+                      </td>
+                      <td className="px-2 py-1 text-right text-gray-600">{kg(kgNetos)}</td>
+                    </tr>
+                    <tr className="border-t text-[10px] text-gray-500">
+                      <td className="px-2 py-1">Kg totales</td>
+                      <td />
+                      <td className="px-2 py-1 text-right">{kg(kgBrutos)}</td>
+                      <td className="px-2 py-1 text-right">{kg(kgNetos)}</td>
+                      <td />
                     </tr>
                   </tbody>
                 </table>

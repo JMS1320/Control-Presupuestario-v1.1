@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
+import { SeccionVentasPorLote } from "@/components/seccion-ventas-por-lote"
 import { Loader2, Plus, Trash2, Beef, Info } from "lucide-react"
 import { parseNumeroAR, parsePorcentajeAR } from "@/lib/format/numero"
 import {
@@ -244,6 +245,12 @@ export function VistaGanaderia() {
           </Card>
         )
       })}
+
+      {/* Las ventas POR LOTE (recría / engorde). No se unifican con la de destete a propósito:
+          la cría se proyecta por porcentajes porque sus terneros todavía no existen, y la recría
+          por lote porque los animales ya están y tienen caravana. Acá no se crea nada — se LEE
+          lo que ya está en `stock_lotes`. */}
+      <SeccionVentasPorLote />
 
       <ModalGanaderia datos={modal} referencia={ref} onCerrar={() => setModal(null)} onGuardar={guardar} />
     </div>
