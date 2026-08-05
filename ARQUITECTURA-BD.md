@@ -119,6 +119,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
 | **Evolución del rodeo** (2026-07-29) | `stock_ciclos`, `stock_lotes`, `stock_ventas` |
 | **Actividades y costos** (2026-07-30) | `actividades`, `actividad_insumos`, `lote_tramos` |
+| **Comercialización** (2026-08-04) | `destinos_venta`, `destino_rutas`, `intermediarios_venta`, `tarifas_flete`, `normas_desbaste`, `normas_rinde` |
 
 **Evolución del rodeo** — línea de tiempo proyectada del stock de cría (modelo de la solapa
 "ciclo ganadero" del Excel). **No están en el backup.**
@@ -238,6 +239,29 @@ gasoil por litro; forzarlos a `monto_ha` los multiplicaba por una superficie aje
 ⚠️ **`amortiza_anios` lo aplica el MARGEN, no el presupuesto.** El presupuesto es caja (la pastura
 se paga entera el año que se siembra); el margen es resultado (se reparte en su vida útil). Que
 den distinto es correcto.
+
+⚠️ **`actividades` ya guarda los parámetros productivos por tipo** — `racion_pct_pv` (engorde 3 %,
+recría 1,5 %), `ganancia_diaria_kg` (1,200 / 0,700) y `pct_mortandad`. Antes de crear una tabla de
+"normas de ración", buscar acá: ya está.
+
+**Normas de comercialización** (2026-08-04) — **No están en el backup.** Detalle completo y
+precarga → `RECONSTRUCCION_SUPABASE_2026-01-07.md` § 2026-08-04.
+
+> **CZ = comercialización = comisión + flete + otros.** No es sinónimo de comisión: eso fue lo que
+> dejó **dos tablas hardcodeadas que no coincidían** (`pctCz` 3/6 % contra `pctGastoVentaPorDefecto`
+> 3/9 %). `CZ = comisión del intermediario + gasto del destino + flete`.
+
+| Tabla | Propósito |
+|-------|-----------|
+| `destinos_venta` | Adónde va el animal. `compra_en` (`res`/`vivo`) decide si hace falta el **rinde**; `requiere_flete` es false para la invernada, que no paga flete de venta. `precio_ref_destino_id` + `precio_ajuste_pct` permiten un precio **derivado** de otro destino (el matarife paga el de Cañuelas menos 10,5 %) — que se **precarga y se puede pisar**, porque la referencia es el *máximo* y no lo que uno consigue. |
+| `destino_rutas` | Un destino puede tener varios caminos: Arrebeef tiene tres y *"no siempre se pueden usar los mismos"*. Por eso la distancia no es columna del destino: es la **pactada con el transportista**, se elige cada vez y no se auto-completa. |
+| `intermediarios_venta` | Quién comercializa. Eje **distinto** del destino: en *gordo a Cañuelas 3,5 % + 0,75 %*, el 3,5 % es de Sáenz Valiente y el 0,75 % del frigorífico. `precio_libre` = el precio ya viene neto (campo a campo). |
+| `tarifas_flete` | `arranque + seguro + km × $/km`, cada componente se **suma**. `capacidad_kg` decide el vehículo: es **si entra o no entra**, no cuál conviene. `precio_gasoil_ref` + `pct_atado_gasoil` permiten proyectar la tarifa sin conocer la futura. |
+| `normas_desbaste` | Por tipo y banda: invernada 300/360/400 → 3/4/5 %; gordo siempre 8 %. **Corrige** el `pctDesbaste()` viejo, que usaba 280/330/380. |
+| `normas_rinde` | Sólo hace falta cuando el destino compra a la **res**. Se deriva del sexo + tipo, pero la **vaca** no se deduce del sexo y tiene el suyo (55 gorda / 45 conserva). |
+
+Lo que hace comparables a los destinos es llevar todo a **$/kg vivo**: unos compran a peso vivo y
+otros a la res, así que los precios de lista no se pueden mirar en fila.
 `momento` (`diario`/`mensual`/`inicio`/`fin`/`ciclo`) ubica el gasto en el tramo; `ciclo` es
 "tantos USD por hectárea en el cultivo entero" y hoy se prorratea por días (provisorio, ver
 FASE C · C-9).

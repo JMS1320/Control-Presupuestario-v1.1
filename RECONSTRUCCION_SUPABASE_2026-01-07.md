@@ -11846,3 +11846,112 @@ se siembra la pastura paga el 100 % de las 50 has y los 4 siguientes cero. El ma
 **resultado**: reparte 10 has por año. No es una divergencia a corregir — son dos lecturas
 legítimas del mismo dato. Por eso `consumoMensual()` aplica `has_aplicacion` y la base de cabezas
 pero **NO** `amortiza_anios`, que sólo lo aplica `lib/presupuesto/margen.ts`.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-04 · Normas de comercialización de hacienda
+
+**Para qué.** Decidir **a quién conviene venderle**. Todo esto vivía disperso y hardcodeado
+(`pctDesbaste`, `pctCz`, `pctGastoVentaPorDefecto`), con **dos tablas de comisión que ni siquiera
+coincidían entre sí** (3/6 % contra 3/9 %). El usuario lo pidió explícito: *"esta info debería ir
+en alguna tabla de normas de comercialización; unificar si hay información dispersa"*.
+
+### La definición que ordena todo
+**CZ = comercialización = comisión + flete + otros.** NO es sinónimo de comisión — el código la
+usaba así y por eso había dos tablas en desacuerdo.
+
+```
+CZ  =  comisión del intermediario  +  gasto del destino  +  flete
+```
+
+Son **tres cobros de tres actores distintos**, y por eso DESTINO e INTERMEDIARIO son ejes
+separados. Lo muestra el caso real: *"gordo a Cañuelas es 3,5 % más 0,75 %"* — el 3,5 % es de
+Sáenz Valiente y el 0,75 % del frigorífico. Arrebeef no tiene ninguno de los dos: sólo flete.
+
+**6 tablas nuevas en `productivo`. NO están en el backup original.**
+
+```sql
+-- Flete: la fórmula es arranque + seguro + km × $/km. Cada componente SE SUMA.
+CREATE TABLE productivo.tarifas_flete (
+  id uuid PK, vehiculo text UNIQUE,           -- jaula | chasis
+  arranque numeric, seguro numeric, por_km numeric,
+  capacidad_kg numeric,                        -- decide cuántos viajes
+  notas text, activo boolean DEFAULT true, updated_at timestamptz,
+  -- Atado al gasoil, para presupuestar sin saber la tarifa futura:
+  precio_gasoil_ref numeric,                   -- precio del litro cuando la tarifa era válida
+  pct_atado_gasoil  numeric DEFAULT 0.35,      -- qué parte sigue al combustible; el resto por IPC
+  vigente_desde date DEFAULT current_date );
+
+-- Destinos: adónde va el animal.
+CREATE TABLE productivo.destinos_venta (
+  id uuid PK, nombre text UNIQUE,
+  tipo text DEFAULT 'frigorifico',             -- frigorifico | matarife | campo | consignataria
+  compra_en text DEFAULT 'vivo',               -- 'res' (necesita RINDE) | 'vivo'
+  aplica_a text DEFAULT 'ambos',               -- invernada | gordo | ambos
+  pct_gasto numeric DEFAULT 0,                 -- gasto propio del destino (Cañuelas 0,75 %)
+  requiere_flete boolean DEFAULT true,         -- la INVERNADA no paga flete de venta
+  vehiculo text, plazo_dias integer, notas text, activo boolean,
+  -- Precio DERIVADO de otro destino (el matarife: máximo de Cañuelas menos 10,5 %):
+  precio_ref_destino_id uuid REFERENCES productivo.destinos_venta(id),
+  precio_ajuste_pct numeric );                 -- -0.105 = menos el 10,5 %
+
+-- Rutas: un destino puede tener varios caminos. Arrebeef tiene TRES y
+-- "no siempre se pueden usar los mismos", así que la distancia no es del destino:
+-- es una elección del momento (la PACTADA con el transportista, no la del mapa).
+CREATE TABLE productivo.destino_rutas (
+  id uuid PK, destino_id uuid REFERENCES productivo.destinos_venta(id) ON DELETE CASCADE,
+  descripcion text, km numeric, por_defecto boolean, activo boolean );
+
+-- Intermediarios: quién comercializa.
+CREATE TABLE productivo.intermediarios_venta (
+  id uuid PK, nombre text UNIQUE,
+  pct_invernada numeric, pct_gordo numeric,
+  precio_libre boolean DEFAULT false,          -- "precio libre de comisión": el precio YA viene neto
+  notas text, activo boolean );
+
+-- Desbaste, por tipo y banda de peso.
+CREATE TABLE productivo.normas_desbaste (
+  id uuid PK, tipo text, peso_hasta numeric, pct numeric, UNIQUE (tipo, peso_hasta) );
+
+-- Rinde: sólo hace falta cuando el destino compra a la RES.
+CREATE TABLE productivo.normas_rinde (
+  id uuid PK, categoria text UNIQUE, pct numeric, notas text );
+```
+
+RLS `*_all` (`using true / with check true`) + `GRANT SELECT,INSERT,UPDATE,DELETE` a
+`anon, authenticated, service_role` en las 6, igual que el resto de `productivo`.
+
+### Precarga (datos del usuario, 2026-08-04)
+
+| | |
+|---|---|
+| **Jaula** | arranque 160.000 · seguro 100.000 · 3.500/km · ~15.500 kg (55 novillos de 280) |
+| **Chasis** | arranque 120.000 · seguro 60.000 · 2.750/km · ~5.500 kg (12 vacas de 450) |
+| **Cañuelas** | vivo · gordo · 0,75 % propio · 200 km |
+| **Arrebeef** | **res** · gordo · sin comisión ni gastos, sólo flete · 53 / 63 / 88 km |
+| **Matarife zonal** | vivo · gordo · **sin flete ni comisión** · paga Cañuelas −10,5 % |
+| **Sáenz Valiente** | 3,5 % invernada · 3,5 % gordo |
+| **Pedro Genta y Cía (campo a campo)** | precio libre de comisión |
+| **Desbaste invernada** | ≤300 → 3 % · ≤360 → 4 % · ≤400 → 5 % |
+| **Desbaste gordo** | siempre 8 % |
+| **Rinde** | Novillo Gordo 58 · Vaquillona Gorda 58 · Vaca Gorda 55 · Vaca Conserva 45 |
+
+⚠️ El desbaste de invernada **CORRIGE** lo que estaba hardcodeado en `pctDesbaste()`, que usaba
+280/330/380 y estaba mal.
+
+⚠️ **"Campo a campo" se cargó primero como destino y es un INTERMEDIARIO** (es Pedro Genta). Se
+borró de `destinos_venta`. La invernada **no tiene destino**: el comprador es muy cambiante y lo
+único que se sabe es quién comercializa.
+
+⚠️ El **10,5 %** del matarife coincide con la alícuota de IVA de la hacienda, pero se cargó como
+**descuento de precio**, no como impuesto: paga menos y a cambio no cobra flete ni comisión. Si
+fuera IVA iría en otro renglón del cálculo.
+
+### Lo que hace comparables a los destinos
+Unos compran a **peso vivo** y otros **a la res**: los precios de lista no se pueden comparar. Hay
+que llevar todo a **$/kg vivo**, tal como lo planteó el usuario:
+
+> *"Si Cañuelas me paga 5.000 un novillo, Arrebeef me tiene que pagar 5.000 / rinde para ser el
+> mismo precio."*
+
+Código: `lib/ganaderia/comercializacion.ts` · UI: `components/selector-comercializacion.tsx`.

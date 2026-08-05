@@ -210,6 +210,89 @@ volvía a bajar. Detalle → `KNOWLEDGE.md` § *Fechas de Excel*.
    **mayor que el de la columna anterior**. Si baja, la fecha probablemente quedó en el lugar
    equivocado de la línea de tiempo.
 
+### 🐂 Comercialización — a quién conviene venderle 🟡 *(nuevo 2026-08-04, sin testear)*
+
+**Dónde está.** Dentro del **Análisis productivo**, en el bloque de entrada/salida de la **etapa 1**.
+*(Las etapas 2+ todavía no lo tienen.)*
+
+**Lo primero que hay que entender:**
+
+> **CZ = comercialización = comisión + flete + otros.** No es sinónimo de comisión.
+> `CZ = comisión del intermediario + gasto del destino + flete`
+
+Son **tres cobros de tres actores distintos**. Por eso el destino y el intermediario son cosas
+separadas: *gordo a Cañuelas* paga 3,5 % a Sáenz Valiente **más** 0,75 % del frigorífico.
+
+#### Cómo se usa
+```
+Vende como [gordo ▾]  Destino [Arrebeef ▾]  Intermediario [— ninguno ▾]
+$/kg res [5.400]  Categoría [Novillo Gordo ▾]  Rinde [58] %
+Camino [53 km · Ruta 9 ▾]  Camión [jaula · $445.500 (hasta 15.500 kg) ▾]
+
+  Flete                          $445.500    1,05 %
+  ──────────────────────────────────────────────────
+  CZ total                       $445.500    1,05 %
+```
+Al elegir se completan **Desbaste %** y **CZ %** de salida, y **se siguen pudiendo pisar**.
+
+| Se completa solo | De dónde sale |
+|---|---|
+| **Ración % PV** y **ganancia kg/día** | `productivo.actividades` según el tipo: recría 1,5 % y 0,700 · engorde 3 % y 1,200 |
+| **Desbaste** | invernada por peso (≤300 → 3 %, ≤360 → 4 %, ≤400 → 5 %) · gordo siempre 8 % |
+| **Comisión** | del intermediario, según invernada o gordo |
+| **Flete** | `arranque + seguro + km × $/km`, por la cantidad de viajes |
+| **Categoría y rinde** | del sexo del segmento + el tipo |
+| **Precio del matarife** | el de Cañuelas menos 10,5 % |
+
+**La mortandad va en CERO** al cambiar el tipo, a propósito. La actividad tiene 1 % cargado pero
+el análisis arranca sin mortandad; se pone a mano si el caso la tiene.
+
+#### Lo que NO se elige solo, y por qué
+- **El camino.** Arrebeef tiene tres (53 / 63 / 88 km) y *"no siempre se pueden usar los mismos"*:
+  es la distancia **pactada con el transportista**, no la más corta. Hasta que lo elijas, **no
+  calcula**.
+- **El camión.** Se sugiere por **si entra o no entra** —chasis cuando hay poco, jaula si no
+  entra—, **no** por cuál sale más barato. Se puede cambiar.
+- **El precio.** Cada destino paga **lo suyo**, en su unidad. Los derivados vienen **en gris** como
+  sugerencia y se pisan: la referencia del matarife es el *máximo* de Cañuelas, que no es lo que
+  vas a conseguir ahí.
+
+#### Ventas a la RES
+Arrebeef compra **a la carne**, así que el precio va en un campo aparte (`$/kg res`) y se convierte:
+
+```
+$/kg vivo = $/kg res × rinde        (5.172 × 0,58 = 3.000)
+```
+
+Todo el análisis trabaja en **peso vivo**. ⚠️ **Sin rinde no calcula nada** — antes multiplicaba el
+precio de la carne por los kilos vivos y daba **72 % de más**.
+
+#### Comparar en vez de elegir
+Botón **"Comparar los destinos"**: la misma tropa contra los tres, cada uno con su precio editable.
+La columna **$/kg vivo** es la comparable — ya tiene descontados flete, comisión y gastos, y el
+rinde pasado a vivo. Las filas incompletas **nunca ganan**.
+
+#### 🧪 Cómo probarlo
+1. Elegir **gordo** → el desbaste tiene que ir a **8 %** y la ración a **3 %**, la ganancia a **1,200**.
+   Cambiar a **invernada** → desbaste según el peso (**4 %** a 320 kg), ración **1,5 %**, ganancia **0,700**.
+   ⚠️ **Si el desbaste no se mueve, la derivación no está corriendo.**
+2. Con **invernada**: no tiene que aparecer selector de destino, y el flete tiene que ser **0**.
+3. Con **Cañuelas + Sáenz Valiente**: la CZ tiene que desglosarse en **3,50 % + 0,75 % + flete**.
+4. Con **Arrebeef**: elegir el camino (si no, avisa y no calcula). Poner `$/kg res` y verificar que
+   **el precio de venta del análisis quede en ~58 % de ese número**. Si se parecen, la conversión
+   no corre.
+5. **Comparar los destinos** → poner un precio distinto a cada uno y confirmar que el orden cambia.
+6. Borrar el precio de la res → tiene que decir el **monto** del flete y avisar que **la CZ no se
+   toca**; el CZ % de la etapa debe quedar como estaba, **no en 0**.
+7. La **CZ de entrada** arranca en **3,5 %** y el selector no la toca (la entrada siempre es
+   invernada).
+
+#### ⚠️ Lo que falta
+- Las **etapas 2+** de la cadena todavía no tienen el selector.
+- **Km del matarife** sin cargar (no cobra flete, pero queda para el registro).
+- **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
+- **Plazos de pago**: se ponen al vender, no son estándar por destino.
+
 ### Segmentadores (multi) 🟡
 - **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
 - El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").

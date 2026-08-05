@@ -553,6 +553,33 @@ Grep "#descartado" KNOWLEDGE.md     # Métodos NO usar
 
 # 🚨 **TROUBLESHOOTING ÚNICO** `#error #solucion`
 
+## Que la función esté probada no significa que la pantalla la use `#leccion #testing #2026-08-04`
+
+**Aplica a cualquier feature que se construya como lib + UI.**
+
+**Qué pasó.** Se construyó `lib/ganaderia/comercializacion.ts` y se **verificó con datos reales**
+—se corrió un script, se mostraron los números, cerraban—. Después se enchufó en la pantalla. De
+los 5 bugs que encontró el usuario probando, **dos eran de conexión**: la conversión res→vivo y el
+desbaste estaban **correctos en la lib** pero **nunca llegaban a la pantalla**.
+
+- El desbaste no se aplicaba sin destino elegido (el efecto arrancaba con `if (!res) return`).
+- La conversión por el rinde se calculaba en la lib, pero al análisis sólo se le devolvían dos
+  porcentajes: el precio de la carne terminaba multiplicado por kilos vivos, **72 % de más**.
+
+**La lección.** Verificar el módulo aislado prueba el módulo, no el sistema. **El test que vale es
+el de punta a punta**, con la pantalla abierta y un número que se pueda contrastar contra algo
+conocido.
+
+**Cómo se caza barato.** Para cada dato derivado, un chequeo de una línea con un valor esperado:
+*"el $/kg vivo tiene que ser ~58 % del precio de la carne"*, *"si el desbaste no cambia al pasar de
+gordo a invernada, la derivación no corre"*. Van en el `🧪 Cómo probarlo` del manual.
+
+**Corolario, y es el peor de los dos:** un número mal calculado **con un aviso de faltante al
+lado** es peor que no tener número. El aviso se ignora y el número se usa. Cuando falta un dato
+que cambia el resultado, hay que **negarse a calcular**, no calcular y avisar. Ver
+`evaluarOpcion()` y el guard `czListo`.
+
+
 ## Fechas de Excel: un "3/8" NO se puede resolver con certeza `#import #excel #fechas #2026-08-03`
 
 **Aplica a cualquier importador que lea fechas de una planilla.** No es un problema de pesadas.
