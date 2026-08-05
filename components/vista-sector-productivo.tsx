@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
+import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
@@ -955,6 +956,11 @@ export function VistaSectorProductivo() {
               <CiclosCriaPanel />
             </TabsContent>
             <TabsContent value="recria">
+              {/* El ciclo va ARRIBA de los terneros: primero de dónde viene el rodeo y a qué
+                  costo entró, después el detalle animal por animal. */}
+              <div className="mb-4">
+                <PanelCicloRecria />
+              </div>
               <TabTerneros />
             </TabsContent>
             <TabsContent value="insumos">
