@@ -293,6 +293,34 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
 
+### 🐂 La marca de reposición y la categoría 🟡 *(nuevo 2026-08-05, sin testear)*
+
+**Dónde:** Sector Productivo → Terneros, arriba de la tabla.
+
+**La regla, y la diferencia que importa:**
+
+| | Qué es la marca | ¿Puede diferir de la categoría? |
+|---|---|---|
+| **Torito** | un **hecho**: no está capado | **NO** — se avisa como error |
+| **Ternera de reposición** | un **plan** hasta que se insemina (octubre) | **SÍ** — y esa diferencia *es* el dato |
+
+Por eso el control corre **sólo en machos**. Si corriera en los dos, marcaría como error las 60
+vaquillonas, que están bien.
+
+**Si la app avisa** *"9 marcados vs 7 con categoría Torito"*, hay **dos salidas** y elegís vos:
+
+1. **Sacar las marcas de más** — botón *Reposición*, si en realidad no son toritos.
+2. **Recategorizarlos** a Torito en Sector Productivo — si sí lo son. Eso **mueve el stock**.
+
+⚠️ **El stock va por CATEGORÍA, no por la marca.** Marcar solo no alcanza para que aparezcan ahí.
+Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
+
+#### 🧪 Cómo probarlo
+1. Marcar un macho como reposición sin cambiarle la categoría → tiene que aparecer el aviso
+   ámbar con los dos números y las dos salidas.
+2. Marcar una **hembra** → **no** tiene que avisar nada. La reposición femenina es un estimado.
+3. Recategorizar ese macho a Torito → el aviso desaparece solo.
+
 ### Segmentadores (multi) 🟡
 - **Uno o varios** (botón "＋ Segmentador"). Cada uno tiene su **población** (chips Machos/Hembras/Toritos/Terneras rep) + sus cortes.
 - El **sexo arrastra su reposición**: sacar ♂ Machos saca 🐂 Toritos; sacar ♀ Hembras saca ♀ Terneras rep. La reposición se puede togglear sola (Machos sin toritos = "Machos venta").
