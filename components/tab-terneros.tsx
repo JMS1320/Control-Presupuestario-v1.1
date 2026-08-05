@@ -719,6 +719,26 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const hembras = ternerosActivos.filter(t => t.sexo === 'Hembra')
   const toritos = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Macho')
   const ternerasRep = ternerosActivos.filter(t => t.es_torito && t.sexo === 'Hembra')
+
+  // ── Control: la bandera de TORITO tiene que coincidir con la categoría ──────
+  //
+  // ⚠️ En los machos, y sólo en los machos. Lo explicó el usuario (2026-08-05):
+  //
+  //   > "La diferencia con las de reposición es que los toritos SÍ son objetivamente toritos:
+  //   >  no están capados vs el resto."
+  //
+  // O sea que ser torito es un HECHO FÍSICO, no un plan — y entonces bandera y categoría no
+  // pueden discrepar. En las hembras sí: la reposición es un estimado que se confirma recién al
+  // inseminarse, en octubre, y esa diferencia **es el dato**, no un error.
+  //
+  // El caso real que lo originó: 9 banderas contra 7 con categoría Torito. Los 2 marcados de más
+  // no llegaban al stock, que va por categoría.
+  //
+  // No se corrige solo a propósito: hay dos salidas legítimas —sacar banderas o recategorizar— y
+  // cuál corresponde lo sabe el usuario. Recategorizar además mueve el stock.
+  const toritosConCategoria = ternerosActivos.filter(
+    t => t.sexo === 'Macho' && (t.categorias_hacienda?.nombre ?? '').toLowerCase() === 'torito')
+  const desfaseToritos = toritos.length - toritosConCategoria.length
   const conPesadas = ternerosActivos.filter(t => t.pesadas_terneros.length > 0)
 
   // Conteo por sub-tab para badges
@@ -903,6 +923,16 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
               <Scale className="h-3 w-3 mr-1" />
               {conPesadas.length} con pesada
+            </Badge>
+          )}
+          {/* La bandera de torito y la categoría no pueden discrepar: un torito no está capado,
+              es un hecho, no un plan. (En las hembras sí pueden: la reposición se confirma en
+              octubre.) No se corrige solo — las dos salidas son legítimas y la elección es del
+              usuario, más aún porque recategorizar mueve el stock. */}
+          {desfaseToritos !== 0 && (
+            <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-800"
+              title="La bandera marca la intención; la categoría es lo que ve el stock.">
+              ⚠️ {toritos.length} marcados vs {toritosConCategoria.length} con categoría Torito
             </Badge>
           )}
           {ternerosInactivos.length > 0 && (
@@ -1171,6 +1201,44 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {/* ── Bandera de torito ≠ categoría Torito ────────────────────────
+                  Un torito **no está capado**: es un hecho, no un plan. Así que acá la bandera y
+                  la categoría tienen que coincidir. (En las hembras no: la reposición se confirma
+                  recién al inseminarse, en octubre, y esa diferencia es el dato.)
+
+                  Sólo avisa. Las dos salidas son legítimas y cuál corresponde lo sabe el usuario
+                  — y recategorizar además mueve el stock, así que no es algo para hacer solo. */}
+              {desfaseToritos !== 0 && (
+                <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm">
+                  <p className="font-semibold text-amber-900">
+                    ⚠️ Hay {toritos.length} machos marcados como reposición pero{" "}
+                    {toritosConCategoria.length} con categoría <strong>Torito</strong>
+                    {desfaseToritos > 0
+                      ? ` — sobran ${desfaseToritos} bandera${desfaseToritos > 1 ? "s" : ""}.`
+                      : ` — faltan ${-desfaseToritos} bandera${-desfaseToritos > 1 ? "s" : ""}.`}
+                  </p>
+                  <p className="mt-0.5 text-amber-800">
+                    A diferencia de las terneras de reposición —que son un estimado hasta que se
+                    inseminan— <strong>un torito no está capado</strong>: es un hecho, así que la
+                    marca y la categoría tienen que decir lo mismo. Hay dos formas de resolverlo:
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-amber-800">
+                    <li>
+                      · <strong>Sacar {Math.abs(desfaseToritos)} marca{Math.abs(desfaseToritos) > 1 ? "s" : ""}</strong>{" "}
+                      — con el botón <em>Reposición</em>, si en realidad no son toritos.
+                    </li>
+                    <li>
+                      · <strong>Recategorizarlos</strong> a Torito en Sector Productivo — si sí lo son.
+                      Eso <strong>mueve el stock</strong>, que es lo que hace que se vean ahí.
+                    </li>
+                  </ul>
+                  <p className="mt-1 text-xs text-amber-700">
+                    El stock va por <strong>categoría</strong>, no por la marca: por eso marcar
+                    solo no alcanza para que aparezcan.
+                  </p>
+                </div>
+              )}
+
               {modoReposicion && (
                 <div className="flex flex-wrap items-center gap-2 mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-sm">
                   <span className="font-semibold text-amber-800">🐂 Reposición</span>
