@@ -18,7 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ChevronDown, ChevronRight, Download, FileText, TrendingUp } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Download, FileText, TrendingUp, Building2 } from "lucide-react"
+import { ModalFichaProveedor } from "@/components/proveedores/modal-ficha-proveedor"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
   analizarProveedores, resumenCartera, ETIQUETA_SEMAFORO,
@@ -43,6 +44,8 @@ export function PanelControlProveedores() {
   const [ventana, setVentana] = useState("12")
   const [abierto, setAbierto] = useState<string | null>(null)
   const [soloPrecio, setSoloPrecio] = useState(true)
+  /** CUIT cuya ficha se está mirando (null = modal cerrado) */
+  const [fichaCuit, setFichaCuit] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -279,7 +282,8 @@ export function PanelControlProveedores() {
                   const ab = abierto === a.cuit
                   return (
                     <FilaProveedor key={a.cuit} a={a} abierto={ab}
-                      onToggle={() => setAbierto(ab ? null : a.cuit)} />
+                      onToggle={() => setAbierto(ab ? null : a.cuit)}
+                      onFicha={() => setFichaCuit(a.cuit)} />
                   )
                 })}
               </tbody>
@@ -295,12 +299,18 @@ export function PanelControlProveedores() {
           número no habla de un aumento.
         </p>
       </CardContent>
+
+      <ModalFichaProveedor
+        open={fichaCuit !== null}
+        cuitInicial={fichaCuit}
+        onClose={() => setFichaCuit(null)}
+      />
     </Card>
   )
 }
 
-function FilaProveedor({ a, abierto, onToggle }: {
-  a: AnalisisProveedor; abierto: boolean; onToggle: () => void
+function FilaProveedor({ a, abierto, onToggle, onFicha }: {
+  a: AnalisisProveedor; abierto: boolean; onToggle: () => void; onFicha: () => void
 }) {
   return (
     <>
@@ -309,6 +319,13 @@ function FilaProveedor({ a, abierto, onToggle }: {
           <div className="flex items-center gap-1">
             {abierto ? <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" /> : <ChevronRight className="h-3 w-3 shrink-0 text-gray-400" />}
             <span className="text-gray-700">{a.proveedor}</span>
+            <button
+              className="shrink-0 text-gray-300 hover:text-gray-600"
+              title="Ver ficha del proveedor"
+              onClick={e => { e.stopPropagation(); onFicha() }}
+            >
+              <Building2 className="h-3 w-3" />
+            </button>
             <Badge variant="outline" className={`ml-1 text-[9px] ${COLOR[a.semaforo]}`}>
               {ETIQUETA_SEMAFORO[a.semaforo]}
             </Badge>

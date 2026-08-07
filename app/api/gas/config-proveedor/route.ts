@@ -1,11 +1,11 @@
 /**
  * GET  /api/gas/config-proveedor?cuit=... — devuelve proveedor + estadísticas FC
  * GET  /api/gas/config-proveedor — devuelve lista de todos los proveedores con sus FCs
- * PATCH /api/gas/config-proveedor — actualiza campos GAS de un proveedor
+ * PATCH /api/gas/config-proveedor — actualiza un proveedor
  *
- * Campos editables vía PATCH:
- *   fc_modo, email_facturacion, patron_asunto, dias_busqueda,
- *   carpeta_drive_id, gas_habilitado
+ * El nombre quedó de cuando sólo servía a la búsqueda de PDFs, pero el PATCH es
+ * hoy la única vía de escritura del maestro `proveedores` (ver CAMPOS_PERMITIDOS).
+ * La ficha de proveedor lee por GET /api/proveedores/ficha y escribe por acá.
  */
 
 import { NextResponse } from 'next/server'
@@ -13,11 +13,20 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 
+// Ésta es la ÚNICA vía de escritura del maestro `proveedores`: la usan Config PDFs,
+// el bucle de Lotes Galicia y la ficha de proveedor. Si hay que poder editar un campo
+// nuevo desde algún lado, se agrega acá y no se abre un segundo camino.
 const CAMPOS_PERMITIDOS = [
   'fc_modo', 'email_facturacion', 'patron_asunto',
   'dias_busqueda', 'carpeta_drive_id', 'gas_habilitado',
   // Para módulo lotes Galicia
   'email_pagos', 'cbu', 'alias_cbu',
+  // Identidad y contacto — editables desde la ficha de proveedor
+  'razon_social', 'nombre_fantasia', 'telefono', 'contacto_nombre',
+  'notas', 'tags', 'empresa_principal', 'activo',
+  'es_proveedor', 'es_cliente',
+  // Resto de los datos bancarios (CBU y alias ya estaban arriba)
+  'banco', 'tipo_cuenta', 'moneda_cuenta', 'mensaje_transferencia',
 ]
 
 export async function GET(request: Request) {

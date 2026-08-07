@@ -281,6 +281,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-22 | 🔴 | **Panel del ciclo de recría** (2026-08-05) — apertura desde la pesada del destete, neto como columna generada, promedio ponderado, y la transferencia cría→recría. `MANUAL-USO.md` § Ciclo de recría |
 | A-TEST-23 | 🔴 | **Ingresos → Ganadería: cría y recría separadas** (2026-08-05) — por actividad y por campaña, con el desglose *destetados − se guardan = a vender*, las confirmadas y el disponible. Usa la **misma valuación que el Presupuesto**: si los números difieren entre las dos pantallas, hay un bug |
 | A-TEST-20 | 🔴 | **Aviso: marca de reposición ≠ categoría Torito** (2026-08-05) — sólo en machos, porque *un torito no está capado: es un hecho, no un plan*. Dice las dos salidas (sacar marcas / recategorizar). 3 pasos en `MANUAL-USO.md` § La marca de reposición. ⚠️ El paso 2 es el que valida el criterio: marcar una **hembra** NO debe avisar |
+| A-TEST-24 | 🔴 | **Ficha de proveedor** (2026-08-07) — modal de consulta desde *Principal → Proveedores* y desde el ícono 🏢 del control de subas. Datos del maestro + últimas facturas + últimos pagos + anticipos. `MANUAL-USO.md` § Ficha de proveedor, 6 pasos. ⚠️ **Lo no testeado de verdad es el botón Editar**: la lectura se verificó contra la BD, pero **el guardado no se probó** (no se tocan datos reales sin permiso) y el PATCH ahora acepta 14 campos que antes no eran editables por ninguna pantalla. Probar primero con un campo inocuo (`notas`). Dossier → [A-TEST-24](#a-test-24) |
 | G-03 | ✅ | **~~Un lote 100 % vendido se marca como «desactualizado»~~** — RESUELTO 2026-08-05: `desactualizado()` no compara cuando el saldo es 0. Con saldo 0 los animales que quedan en la pesada son **los que NO se vendieron**, así que el lote siempre iba a diferir, y el aviso invitaba a correr «Desde pesada» — que **reescribiría una venta ya hecha**. Ver abajo el detalle original |
 | ~~G-03~~ | 📎 | *(detalle)* **Un lote 100 % vendido se marcaba como «desactualizado»** — *Productivo → Evolución Rodeo → Cabezas disponibles*. El lote de 55 terneros tiene `vendidas 55 · quedan 0` y el panel igual avisa *"corré «Desde pesada» para traer los números nuevos"*. ⚠️ **Es una invitación a reescribir una venta ya hecha**: los 40 que quedan NO son de ese lote, son los que *no* se vendieron. La comparación lote↔pesada sólo tiene sentido mientras el lote tenga saldo. Los números en sí están bien (55→40 y 275→227,7 kg son correctos: los vendidos eran los más pesados) |
 | G-04 | 🟡 | **El título «Cabezas disponibles para vender» miente: muestra LOTES** — lo que no tiene lote no aparece. Hoy quedan **40 terneros** y **21 terneras** de recría sin lote y son invisibles ahí; el badge dice **309**, que son sólo los 4 lotes de destete. El disponible-por-diferencia sí existe pero vive en *Presupuesto* y en *Ingresos → Ganadería*. O el panel muestra también el disponible, o el título dice «Lotes de venta» |
@@ -2790,6 +2791,65 @@ El INSERT se escribió **genérico** (todo `cuit_cliente` de `comprobantes_venta
 > validación de dígito verificador** (le correspondería terminar en 5). El usuario confirmó que
 > *"las facturas tienen los datos reales"*, así que los contratos se alinearon a la factura.
 > Queda anotado por si algún día ARCA lo rechaza.
+
+---
+
+## <a id="a-test-24"></a>A-TEST-24 — Ficha de proveedor (2026-08-07)
+
+**Qué es.** El acceso que faltaba a `public.proveedores`: un modal de **consulta** con los datos
+del maestro, sus últimas facturas, sus últimos pagos y sus anticipos. Se entra desde
+**Principal → Proveedores** (buscador) o desde el ícono 🏢 de cada fila del **control de subas**
+(abre directo en ese CUIT).
+
+**Por qué modal y no solapa** (decidido con el usuario): la consulta es puntual y en medio de otra
+cosa, así que tiene que devolver a donde estabas. Una solapa 13ª además rompía el `grid-cols-12`
+del `TabsList`, y ningún otro maestro (cuentas contables, actividades, campos) tiene solapa propia.
+Editar existe pero es la excepción → vive detrás de un botón **Editar**, se entra en lectura.
+
+**Archivos:**
+| Archivo | Qué hace |
+|---|---|
+| `app/api/proveedores/ficha/route.ts` | **nuevo** — GET lista / GET `?cuit=` arma la ficha |
+| `components/proveedores/modal-ficha-proveedor.tsx` | **nuevo** — buscador + ficha + edición |
+| `app/api/gas/config-proveedor/route.ts` | `CAMPOS_PERMITIDOS` pasa de 9 a **23** campos |
+| `components/vista-principal.tsx` | botón *Proveedores* + render del modal |
+| `components/panel-control-proveedores.tsx` | ícono 🏢 por fila → ficha de ese CUIT |
+
+**Una sola vía de escritura.** La ficha **lee** por `/api/proveedores/ficha` y **escribe** por el
+`PATCH` de `/api/gas/config-proveedor`, que ya era por donde escribían Config PDFs y el bucle de
+Lotes Galicia. Se amplió su whitelist en vez de abrir un cuarto camino — que es exactamente el
+problema que arrastra **B-FEAT-UNIFICAR-PORTAL**.
+
+### 🔎 Hallazgo que obligó a cambiar el diseño: `fecha_pago` está casi vacía
+
+Medido el 2026-08-07 sobre la BD viva:
+
+| Tabla | Filas | Con `fecha_pago` |
+|---|---|---|
+| `msa.comprobantes_arca` | 384 | **12** |
+| `cuotas_egresos_sin_factura` | 935 | **8** |
+
+El pago real no queda en `fecha_pago`: queda cuando **se concilia el movimiento del extracto**.
+En `msa_galicia` hay **469** movimientos con `template_cuota_id` y **108** con `comprobante_arca_id`.
+Por eso los pagos de la ficha se leen del extracto siguiendo los tres vínculos que escribe el motor
+(`comprobante_arca_id`, `template_cuota_id`, `anticipo_id`) más un repaso por `proveedor_nombre`,
+y **cada pago dice por qué vínculo entró** — los que sólo coinciden por nombre se marcan como tales
+en vez de presentarse como certeza. Es coherente con que la **Fase ARCA** de
+[A-TEST-06](#a-test-06) (el refactor de `fecha_pago`) siga sin hacerse.
+
+### ⚠️ Qué NO ve la ficha (dicho en pantalla, no en silencio)
+- **Pagos por caja, cheque o tarjeta** — sólo se leen los 3 extractos Galicia.
+- **Cobros de una venta** — el extracto no tiene columna que vincule un movimiento a
+  `msa.comprobantes_venta`, así que de una venta se ve su `estado`, no su cobro. **Hueco real**,
+  no un no-problema: hoy no hay forma de saber desde el sistema qué venta se cobró y cuándo.
+
+### Estado de test
+- ✅ **Lectura verificada** contra la BD (3 CUITs): SMART FARMING 8 facturas / 5 pagos por factura ·
+  FEDERACIÓN PATRONAL 12 facturas / 9 pagos por template · Sanpa Semillas (cliente puro) 1 venta
+  de $95,7 M. Type-check y build limpios.
+- 🔴 **Guardado sin probar.** No se tocaron datos reales sin permiso. Y es lo más delicado del
+  cambio: el PATCH acepta ahora 14 campos que ninguna pantalla editaba antes, entre ellos
+  `razon_social` (el maestro del que salen los nombres aguas abajo) y `activo`.
 
 ---
 

@@ -751,6 +751,61 @@ de declarar.
 
 ---
 
+## 🏢 Ficha de proveedor 🟡 *(nuevo 2026-08-07, sin testear)*
+
+> Botón **"Proveedores"** en la solapa **Principal**, al lado del de IPC. También se abre desde el
+> ícono 🏢 de cada fila en *Presupuesto → Subas de proveedores*, y ahí entra **directo a esa ficha**.
+
+Es la pantalla para **mirar** un proveedor: quién es, cómo se le paga, qué facturó y qué se le pagó.
+Es un modal a propósito — la consulta suele ser en medio de otra cosa y te devuelve donde estabas.
+
+### Qué muestra
+- **Cuatro números arriba**: compras, ventas, pagos y anticipos sin aplicar.
+- **Los datos del maestro**, en cuatro bloques: *Identidad* (razón social, nombre conocido, si es
+  proveedor y/o cliente), *Datos bancarios* (CBU, alias, banco, mensaje de transferencia),
+  *Contacto* (los dos mails, teléfono, tags, notas) y *Búsqueda de PDFs* (lo mismo que Config PDFs).
+- **Últimas facturas** — compras de MSA, PAM y MA, y las ventas de MSA con etiqueta verde `venta`.
+- **Últimos pagos** — movimientos del extracto, con **cómo se supo que son de este proveedor**.
+- **Anticipos**, si tiene.
+
+### Cómo leer la columna "Vínculo" de los pagos
+Cada pago dice por dónde se lo relacionó: *por factura*, *por template*, *por anticipo* o
+**sólo por nombre**. Los tres primeros son un vínculo real escrito por la conciliación. El cuarto
+es un movimiento que tiene el nombre del proveedor cargado pero **ningún comprobante vinculado**:
+está para que lo veas, no como certeza.
+
+### Lo que la ficha todavía NO ve
+Los pagos salen de los **extractos bancarios** (Galicia MSA y PAM), porque el pago queda registrado
+recién al conciliar el movimiento — la fecha de pago de la factura casi nunca está cargada
+(12 de 384). Entonces **no** aparecen los pagos por **caja, cheque o tarjeta**, ni los **cobros**
+de una venta (de una venta se ve su estado, no cuándo se cobró).
+
+### Editar
+Se entra en **lectura**. El botón **Editar** convierte los cuatro bloques en campos; **Guardar**
+escribe. Los tags van separados por coma. Se puede editar todo el maestro, incluida la razón social
+y el activo/inactivo.
+
+### 🧪 Cómo probarlo
+1. **Principal → Proveedores.** Tiene que abrir el buscador con los 154 proveedores. Escribí
+   `federacion` sin tilde: **tiene que encontrar** «FEDERACIÓN PATRONAL» (el buscador ignora tildes).
+2. **Entrá a FEDERACIÓN PATRONAL SEGUROS.** Esperado: **12 facturas** de compra y **9 pagos**, todos
+   marcados *por template* — a este proveedor se le paga por template, no contra factura.
+3. **Volvé con "Todos" y entrá a SMART FARMING.** Esperado: **8 facturas** y **5 pagos**, marcados
+   *por factura*. El primer pago (09/06/2026, $25.161,95) debe decir que paga la **FC 1190**.
+4. **Buscá Sanpa Semillas** (es cliente puro). Esperado: badge `cliente`, **una venta** de
+   $95.715.830,32 con etiqueta verde, **0 compras** y **0 pagos** — los cobros todavía no se ven,
+   y el aviso ámbar debajo de los pagos tiene que estar diciéndolo.
+5. **Desde el otro acceso:** *Presupuesto → Subas de proveedores* → ícono 🏢 en una fila. Tiene que
+   abrir **esa** ficha directamente, y **no** debe desplegar la serie mes a mes de la fila (el clic
+   no se propaga).
+6. **Editar (lo único sin probar).** Entrá a un proveedor, **Editar**, escribí algo en **Notas**,
+   **Guardar**. Cerrá y volvé a abrir: la nota tiene que seguir ahí. Recién si eso anda, probá un
+   campo que importe. ⚠️ Empezá por `notas` a propósito: el guardado nunca se ejecutó, y ahora se
+   pueden editar campos que ninguna pantalla tocaba antes — `razon_social` es el nombre del que
+   dependen los pagos y los mails aguas abajo.
+
+---
+
 ## 📈 Presupuesto → Subas de proveedores 🟡 *(nuevo 2026-07-30, sin testear)*
 
 > Botón **"Subas de proveedores"** arriba a la derecha del Presupuesto. Exporta **Excel** y **PDF**.
