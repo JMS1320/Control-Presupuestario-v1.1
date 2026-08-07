@@ -753,11 +753,25 @@ de declarar.
 
 ## 🏢 Ficha de proveedor 🟡 *(nuevo 2026-08-07, sin testear)*
 
-> Botón **"Proveedores"** en la solapa **Principal**, al lado del de IPC. También se abre desde el
-> ícono 🏢 de cada fila en *Presupuesto → Subas de proveedores*, y ahí entra **directo a esa ficha**.
+> Diseño completo del maestro de proveedores → **`MODULO_PROVEEDORES.md`**
 
 Es la pantalla para **mirar** un proveedor: quién es, cómo se le paga, qué facturó y qué se le pagó.
 Es un modal a propósito — la consulta suele ser en medio de otra cosa y te devuelve donde estabas.
+
+### Los dos accesos
+1. **Principal → botón "Proveedores"**, al lado del de IPC. Abre el buscador con los 154. Es el
+   acceso general, el que vas a usar casi siempre.
+2. **Presupuesto → "Subas de proveedores" → ícono 🏢 en una fila.** Abre **directo** la ficha de
+   *ese* proveedor, sin pasar por el buscador.
+
+   *Por qué ahí*: "Subas de proveedores" es el panel que responde **quién nos está aumentando por
+   encima del IPC** (botón arriba a la derecha de la solapa Presupuesto, ver su sección más abajo).
+   Cuando uno salta en rojo, la pregunta que sigue es siempre *"¿y quién es este, qué le compramos,
+   qué le pagamos?"*. El ícono 🏢 —que está pegadito al nombre del proveedor, entre el nombre y la
+   etiqueta de color— contesta eso sin sacarte del análisis.
+
+   Ojo con la diferencia: **clic en la fila** despliega la serie mes a mes de ese proveedor;
+   **clic en el 🏢** abre la ficha. Son dos cosas distintas sobre la misma fila.
 
 ### Qué muestra
 - **Cuatro números arriba**: compras, ventas, pagos y anticipos sin aplicar.
@@ -787,7 +801,9 @@ y el activo/inactivo.
 
 ### 🧪 Cómo probarlo
 1. **Principal → Proveedores.** Tiene que abrir el buscador con los 154 proveedores. Escribí
-   `federacion` sin tilde: **tiene que encontrar** «FEDERACIÓN PATRONAL» (el buscador ignora tildes).
+   `federacion` sin tilde: **tiene que quedar sólo** «FEDERACIÓN PATRONAL» (el buscador ignora
+   tildes). Probá también `337`: filtra por CUIT. *(Acá hubo un bug — el buscador no filtraba
+   nada — corregido el 2026-08-07, ver el dossier.)*
 2. **Entrá a FEDERACIÓN PATRONAL SEGUROS.** Esperado: **12 facturas** de compra y **9 pagos**, todos
    marcados *por template* — a este proveedor se le paga por template, no contra factura.
 3. **Volvé con "Todos" y entrá a SMART FARMING.** Esperado: **8 facturas** y **5 pagos**, marcados

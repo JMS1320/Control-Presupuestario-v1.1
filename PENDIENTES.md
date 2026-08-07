@@ -2806,6 +2806,9 @@ cosa, así que tiene que devolver a donde estabas. Una solapa 13ª además romp�
 del `TabsList`, y ningún otro maestro (cuentas contables, actividades, campos) tiene solapa propia.
 Editar existe pero es la excepción → vive detrás de un botón **Editar**, se entra en lectura.
 
+**Diseño completo del maestro** (qué guarda, quién lo escribe, quién lo lee, los 7 huecos abiertos)
+→ **`MODULO_PROVEEDORES.md`**, creado 2026-08-07.
+
 **Archivos:**
 | Archivo | Qué hace |
 |---|---|
@@ -2842,6 +2845,16 @@ en vez de presentarse como certeza. Es coherente con que la **Fase ARCA** de
 - **Cobros de una venta** — el extracto no tiene columna que vincule un movimiento a
   `msa.comprobantes_venta`, así que de una venta se ve su `estado`, no su cobro. **Hueco real**,
   no un no-problema: hoy no hay forma de saber desde el sistema qué venta se cobró y cuándo.
+
+### 🐛 Bug del buscador — detectado por el usuario y corregido (2026-08-07)
+**Síntoma:** el buscador de la ficha no filtraba nada mientras se escribía.
+**Causa:** el filtro probaba también por CUIT con `(p.cuit || '').includes(q.replace(/\D/g, ''))`.
+Cuando lo tipeado es texto, esa expresión da `''`, y **`''` está contenido en todos los strings**
+→ la condición era siempre verdadera y no se descartaba ninguna fila. **Fix:** buscar por dígitos
+sólo si el usuario tipeó alguno. Verificado con las 3 filas de la BD (`fede` → 1, `337` → 2,
+`30710` → 1, `zzz` → 0).
+**Lección:** el `.includes('')` que siempre da `true` es un falso positivo silencioso — la pantalla
+"anda", sólo que muestra todo. Buscar el mismo patrón si aparece otro filtro que no filtra.
 
 ### Estado de test
 - ✅ **Lectura verificada** contra la BD (3 CUITs): SMART FARMING 8 facturas / 5 pagos por factura ·

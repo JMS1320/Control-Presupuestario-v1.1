@@ -167,10 +167,13 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
   const filtrados = useMemo(() => {
     const q = normalizarBusqueda(busqueda)
     if (!q) return lista
+    // Los dígitos sólo se buscan si el usuario tipeó alguno: si no, `''` está
+    // contenido en TODOS los CUITs y el filtro no filtraba nada.
+    const digitos = q.replace(/\D/g, '')
     return lista.filter(p =>
       normalizarBusqueda(p.razon_social).includes(q)
       || normalizarBusqueda(p.nombre_fantasia).includes(q)
-      || (p.cuit || '').includes(q.replace(/\D/g, '')))
+      || (digitos !== '' && (p.cuit || '').includes(digitos)))
   }, [lista, busqueda])
 
   const valor = (campo: string) =>
