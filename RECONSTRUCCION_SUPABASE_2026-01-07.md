@@ -12104,8 +12104,22 @@ compilador obligue a cada pantalla a decidirlo.
 
 ## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-07 · Cash Flow multiempresa (A-FEAT-13, paso 1)
 
-> ⏳ **PENDIENTE DE EJECUTAR.** Requiere DDL: el MCP de Supabase estaba caído y PostgREST no
-> ejecuta DDL, así que este bloque hay que correrlo desde el **SQL Editor de Supabase**.
+> ⏳ **PENDIENTE DE EJECUTAR** (al 2026-08-08). Requiere DDL, y **PostgREST no ejecuta DDL**:
+> `supabase-js` con el service role escribe filas pero no hace `ALTER TABLE`. Por eso los cambios
+> de datos de esta tanda sí se aplicaron y los de estructura no.
+>
+> **Tres formas de correrlo**, en orden de preferencia:
+> 1. **MCP de Supabase** — estaba en `failed`; reiniciar Claude Code suele destrabarlo. Después
+>    conviene devolverlo a `--read-only` (ver A-OP-01).
+> 2. **SQL Editor de Supabase** — pegar los bloques de abajo tal cual.
+> 3. **API de administración** — `POST https://api.supabase.com/v1/projects/lyojiaglcictmboqwxfm/database/query`
+>    con el `SUPABASE_ACCESS_TOKEN` de `.mcp.json` (verificado válido el 2026-08-08).
+>    ⚠️ **El usuario autorizó los cambios, NO este mecanismo. Preguntar antes de usarlo.**
+>
+> **Verificar después de correr**: `SELECT nombre, empresa FROM sueldos.empleados` → Alondra en
+> `MA`, AMS y JMS en `MSA/PAM/MA`, ninguno en `ambas`. Y que `anticipos_proveedores` tenga
+> `empresa` con los 33 en `MSA`.
+>
 > Contexto y motivo → `PENDIENTES.md` § [A-FEAT-13](PENDIENTES.md#a-feat-13).
 
 Habilitan que el Cash Flow muestre y pueda pagar facturas de **PAM y MA**, no sólo de MSA.

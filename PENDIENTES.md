@@ -2921,6 +2921,39 @@ productivo — queda como red para todo el desarrollo siguiente.
 | `grupos_pago` | ❌ | ❌ | Sólo si se quiere agrupar FC en una OP |
 | `cheques` | ❌ | ❌ | Sólo si se paga con echeq |
 
+### 🔴 EMPEZAR ACÁ si se retoma en otra sesión (estado al 2026-08-08)
+
+**Lo que falta, en orden:**
+
+1. **Correr el SQL** de `RECONSTRUCCION_SUPABASE_2026-01-07.md` § *2026-08-07 · Cash Flow
+   multiempresa*. Son 3 bloques. **Nada está bloqueado por esto**, pero hasta que se corra:
+   Alondra Olivo figura en PAM en vez de MA (conviene correrlo **antes de testear sueldos**), y
+   los anticipos se muestran todos como MSA (que es lo que son los 33 de hoy).
+2. **Testear** → `A-TEST-25`, 7 pasos en `MANUAL-USO.md` § *Cash Flow multiempresa*.
+3. **Terminar el paso 6**: la conciliación **manual** del extracto sigue ofreciendo candidatos
+   sólo de MSA (~10 `.schema('msa')` en `vista-extracto-bancario.tsx`).
+
+**⚠️ Decisión abierta — cómo correr el SQL.** El MCP de Supabase estaba en **`failed`**
+(2026-08-08). Diagnosticado: **no es la config ni el token**. Verificado ese día:
+- el binario `@supabase/mcp-server-supabase` levanta bien a mano;
+- el `SUPABASE_ACCESS_TOKEN` de `.mcp.json` es **válido** → `GET /v1/projects/{ref}` devuelve
+  `HTTP 200`, proyecto `ACTIVE_HEALTHY`;
+- `.mcp.json` está bien y **sin `--read-only`** (modo write).
+
+O sea que era un problema de arranque del server dentro de Claude Code (wrapper `cmd /c npx` en
+Windows). **El plan acordado con el usuario fue reiniciar Claude Code** y reintentar por el MCP.
+
+> **Hay una segunda vía si el MCP sigue fallando**: la **API de administración de Supabase**
+> (`POST /v1/projects/{ref}/database/query`) **sí ejecuta SQL crudo**, con ese mismo token.
+> ⚠️ **El usuario NO autorizó todavía ese mecanismo** — sí autorizó los cambios en sí (los 4 de
+> abajo), no la vía. **Preguntar antes de usarla.** Si se usa: un bloque por vez, mostrando el
+> antes y el después, empezando por el de sueldos (es el que tiene el `DROP CONSTRAINT`).
+
+**Recordatorio**: PostgREST (`supabase-js` + service role) **escribe filas pero no ejecuta DDL**.
+Por eso los cambios de datos sí se pudieron hacer y los de estructura no.
+
+**Commits de esta tanda**: `4209572` (plan) · `b444c6a` (paso 0) · `82741f1` (pasos 1-5).
+
 ### 🚧 Bloqueantes abiertos (esperan definición del usuario)
 1. **`sueldos.empleados.empresa` tiene un CHECK que rechaza `MA`.** Verificado 2026-08-07: el
    `UPDATE` de Alondra Olivo (PAM → MA, autorizado por el usuario) falló con
@@ -2950,6 +2983,20 @@ productivo — queda como red para todo el desarrollo siguiente.
 texto y las facturas no tienen `responsable_interno`. Con `empresa` en la fila, la adjudicación
 pasa a ser **derivable sola** (si el movimiento sale de una cuenta MSA y la FC es de PAM, la
 conclusión es automática) en vez de requerir una regla por caso.
+
+### 📌 Decisiones ya tomadas — no volver a discutirlas
+Salieron de una ronda larga con el usuario (2026-08-07/08). Están cerradas:
+
+| Decisión | Cómo quedó |
+|---|---|
+| ¿Un Cash Flow por empresa? | **No.** Uno solo, multiempresa. Ya lo era para templates |
+| ¿`responsable` y `empresa` son lo mismo? | **Sí** a nivel conceptual. **Una sola columna.** Los 5 valores-persona del selector nunca se usaron. Las personas viven en `responsable_interno`, que es otro eje |
+| ¿Multivalor? | **Sí.** `MSA/PAM` aparece al filtrar MSA **y** PAM; con sólo MA, no. `Duhau` se muestra, no filtra |
+| ¿Un filtro o dos? | **Dos**, porque los defaults difieren: FC de MA apagadas, templates todos |
+| ¿SICORE en PAM/MA? | **Nunca.** No es configuración: la condición pregunta *"¿es MSA?"*, así que cualquier empresa nueva queda afuera sola |
+| ¿Registrar desde qué cuenta se pagó? | **No**, eso se define en la conciliación. Se mantiene así |
+| Saldo acumulado | **Postergado**: el usuario dijo que hoy no está operativo para que sirva |
+| Responsables compartidos | Se muestran tal cual. El caso ya está en los datos 3 veces (`MSA/PAM`, `ambas`, `MSA/MA/JMS`) |
 
 ---
 
