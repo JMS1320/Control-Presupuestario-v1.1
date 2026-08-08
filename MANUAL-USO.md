@@ -794,9 +794,15 @@ perder el dato pero no filtra por él.
    aparece la pantalla de SICORE, y avisa *"Factura de PAM marcada para pagar (sin SICORE)"*.
    **Después recargá la pantalla y verificá que siguió en `pagar`.** Si volvió a `pendiente`, la
    escritura fue al schema equivocado — es el error que este cambio vino a arreglar.
-5. **Probá los bloqueos.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que avisar que
-   es sólo de MSA. Intentá **agrupar** dos FC de PAM: mismo aviso. Ninguna de las dos debe cambiar
-   nada.
+5. **Probá el bloqueo de ECHEQ.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que
+   avisar que es sólo de MSA y **no cambiar nada**.
+5b. **Agrupar las 2 de Allende** (el caso real: las pagaste juntas en un solo pago). Seleccioná
+   las dos FC de ALLENDE y agrupá. Esperado: quedan como **una sola fila** con los dos
+   comprobantes en el detalle y el total sumado. Después marcala como pagada: tiene que
+   escribirse en **las dos facturas de PAM**. Probá también **deshacer el grupo** y que vuelvan a
+   ser dos filas.
+5c. **Que no se puedan mezclar empresas.** Seleccioná una FC de PAM y una de MSA e intentá
+   agrupar: tiene que avisar que un grupo de pago vive en una sola empresa.
 6. **Que MSA no se haya roto.** Pagá una FC de **MSA** como siempre: la pantalla de SICORE tiene
    que aparecer igual que antes, y seguir exigiendo la Fecha de Pago.
 7. **Multiempresa.** En Templates dejá tildado sólo **MSA**: el template *Retiro MA mensual*
@@ -807,6 +813,14 @@ perder el dato pero no filtra por él.
 9. **Anticipo sin empresa.** Cargá un anticipo sin elegir empresa: tiene que avisar y pedirte
    confirmación. Guardalo así y verificá que en el Cash Flow aparece con `—` y **se ve con
    cualquier filtro de empresa**.
+
+### Agrupar pagos
+Ya funciona en las tres empresas. La única restricción es que **un grupo no puede mezclar
+empresas**: el grupo y sus facturas viven en la misma, así que juntar una FC de PAM con una de MSA
+se rechaza con un aviso.
+
+Los **templates** son la excepción a tener en cuenta: aunque el template sea de PAM, su grupo se
+guarda siempre del lado de MSA. Es una cuestión interna y no cambia nada de lo que ves.
 
 ### Anticipos: de qué empresa salen
 Al cargar un anticipo ahora elegís la **empresa**. Arranca **sin elegir a propósito** — no se
@@ -821,8 +835,6 @@ Hoy hay **15 anticipos así** (los que nunca se vincularon).
 - **La conciliación manual desde el extracto** sigue ofreciendo sólo facturas de MSA: si tenés que
   vincular a mano un movimiento de PAM con su factura, no la vas a encontrar. La conciliación
   **automática** (el motor) sí funciona.
-- **Agrupar pagos de PAM y MA** está bloqueado (avisa que es sólo de MSA). Falta crear
-  `grupos_pago` en esos schemas — ver `PENDIENTES.md` § A-FEAT-13-B.
 - **Los honorarios de JMS y AMS** (2 de las 4 facturas de PAM, $22,7 M y $25,5 M) van a quedar
   eternamente pendientes en el Cash Flow: son facturas de cuenta corriente que se cancelan contra
   muchos pagos, no algo a pagar de una vez. Sin resolver — ver § A-FEAT-13-C.

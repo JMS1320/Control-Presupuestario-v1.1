@@ -7,7 +7,15 @@ import { supabase } from "@/lib/supabase"
 export type OrigenAgrupable = 'ARCA' | 'TEMPLATE'
 
 export interface AgruparInput {
-  schema: string          // 'msa' | 'pam' | 'ma' — schema donde vive grupos_pago
+  /**
+   * Schema donde vive el `grupos_pago` a usar.
+   * - **ARCA**: el de la empresa de las facturas (`msa` | `pam` | `ma`), porque el grupo y las
+   *   facturas tienen que estar en el mismo schema (hay FK).
+   * - **TEMPLATE**: siempre `'msa'`. `public.cuotas_egresos_sin_factura.grupo_pago_id` tiene FK
+   *   a `msa.grupos_pago`, así que un grupo de templates en otro schema fallaría. Lo mismo vale
+   *   para `sueldos.pagos`.
+   */
+  schema: string
   origen: OrigenAgrupable
   ids: string[]
   cuit: string | null

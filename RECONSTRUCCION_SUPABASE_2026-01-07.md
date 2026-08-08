@@ -12206,3 +12206,48 @@ viola el CHECK). Eso es lo que permite el "no se sabe" sin desactivar la validac
 
 **Motivo**: un valor plausible pero falso no se revisa nunca; un vacío sí se ve. El alta de
 anticipos ahora pide elegir empresa y, si se deja vacía, confirma explícitamente.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-08 · `grupos_pago` en PAM y MA (A-FEAT-13-B)
+
+✅ **APLICADO** (migración `grupos_pago_en_pam_y_ma`).
+
+**Caso real que lo motivó**: el usuario pagó las **2 facturas de Allende (PAM) juntas, en un solo
+pago**, y no podía reflejarlo. Agrupar estaba bloqueado para PAM/MA porque `grupos_pago` existía
+**sólo en `msa`**; en `pam`/`ma` la columna `grupo_pago_id` estaba pero **sin FK**: un uuid suelto
+apuntando al vacío.
+
+Espejo exacto de `msa.grupos_pago` (7 columnas, mismo CHECK de estado), en los dos schemas, con
+las FK que faltaban y los grants de PostgREST:
+
+```sql
+CREATE TABLE IF NOT EXISTS pam.grupos_pago (   -- idem ma.grupos_pago
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  cuit varchar(20) NOT NULL, proveedor varchar(200), monto_total numeric,
+  estado varchar(20) DEFAULT 'pagar', observaciones text, created_at timestamptz DEFAULT now(),
+  CONSTRAINT grupos_pago_estado_check CHECK (estado IN
+    ('pendiente','pagar','preparado','programado','pagado','conciliado'))
+);
+
+ALTER TABLE pam.comprobantes_arca ADD CONSTRAINT comprobantes_arca_grupo_pago_id_fkey
+  FOREIGN KEY (grupo_pago_id) REFERENCES pam.grupos_pago(id) ON DELETE SET NULL;
+-- idem ma.comprobantes_arca → ma.grupos_pago
+
+GRANT ALL ON pam.grupos_pago TO anon, authenticated, service_role;
+GRANT ALL ON ma.grupos_pago  TO anon, authenticated, service_role;
+```
+
+⚠️ **Los grants no son opcional**: sin ellos PostgREST no ve la tabla y el agrupar falla desde la
+app aunque el SQL esté bien. Verificado después de aplicar: los tres `grupos_pago` responden con
+la **anon key**, así que no hizo falta esperar refresco de caché de PostgREST.
+
+### 🔑 Quién agrupa dónde — no es uniforme, y hay que respetarlo
+| Origen | Grupo va a | Por qué |
+|---|---|---|
+| **FC (ARCA)** | `{empresa}.grupos_pago` | El grupo y las facturas comparten schema: hay FK |
+| **Templates** | **siempre `msa.grupos_pago`** | `public.cuotas_egresos_sin_factura.grupo_pago_id` tiene FK a **msa** |
+| **Sueldos** | **siempre `msa.grupos_pago`** | Idem: `sueldos.pagos.grupo_pago_id` → **msa** |
+
+Por eso el código pasa `schema` según el origen, no según la empresa de la fila. Y por la FK,
+**un grupo no puede mezclar empresas**: agrupar FC de PAM con FC de MSA se rechaza con un aviso.

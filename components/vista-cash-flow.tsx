@@ -1181,9 +1181,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const origen = filas[0].origen
     if (origen !== 'ARCA' && origen !== 'TEMPLATE') { toast.error('Agrupar disponible para FC (ARCA) y templates'); return }
     if (filas.some(f => f.grupo_pago_id)) { toast.error('Alguna fila ya pertenece a un grupo (desagrupá primero desde el Modal)'); return }
-    // `grupos_pago` sólo existe en `msa` — agrupar FC de PAM/MA rompería contra una tabla inexistente
-    if (origen === 'ARCA' && filas.some(f => !esFilaMsa(f))) {
-      toast.error('Agrupar pagos está disponible sólo para facturas de MSA')
+    // El grupo y las facturas tienen que vivir en el MISMO schema (hay FK), así que no se pueden
+    // mezclar empresas en un grupo. Desde 2026-08-08 existe `grupos_pago` en pam y ma (A-FEAT-13-B).
+    if (origen === 'ARCA' && new Set(filas.map(f => schemaDeFila(f))).size > 1) {
+      toast.error('No se pueden agrupar facturas de empresas distintas: un grupo de pago vive en una sola empresa')
       return
     }
     const cuits = new Set(filas.map(f => f.cuit_proveedor || ''))
@@ -1203,7 +1204,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const monto_total = filas.reduce((s, f) => s + (f.debitos || 0) * (origen === 'ARCA' ? (f.tc_pago ?? f.tipo_cambio ?? 1) : 1), 0)
     try {
       await agruparPagos({
-        schema: 'msa',
+        // ARCA: el schema de la empresa de las facturas. TEMPLATE: siempre msa, porque el
+        // grupo_pago_id de las cuotas tiene FK a msa.grupos_pago.
+        schema: origen === 'ARCA' ? schemaDeFila(filas[0]) : 'msa',
         origen: origen as 'ARCA' | 'TEMPLATE',
         ids: filas.map(f => f.id),
         cuit: filas[0].cuit_proveedor || null,
@@ -1226,7 +1229,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const origen = fila.origen === 'ARCA' ? 'ARCA' : 'TEMPLATE'
     if (!window.confirm(`¿Deshacer el grupo (${fila.facturas_agrupadas} comprobantes)? Vuelven a ser individuales.`)) return
     try {
-      await desagruparPago('msa', origen, fila.grupo_pago_id)
+      // Mismo criterio que al agrupar: ARCA en el schema de su empresa, templates siempre en msa.
+      // La fila de grupo trae `origen_tabla = '{schema}.grupos_pago'`, así que sale de ahí.
+      await desagruparPago(origen === 'ARCA' ? schemaDeFila(fila) : 'msa', origen, fila.grupo_pago_id)
       toast.success('Grupo deshecho')
       setFilasSeleccionadas(new Set())
       await cargarDatos()

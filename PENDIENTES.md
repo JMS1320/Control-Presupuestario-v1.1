@@ -2942,22 +2942,25 @@ tuvieron que esperar al MCP. Cuando el MCP falla, la alternativa es el **SQL Edi
 **Commits de esta tanda**: `4209572` (plan) · `b444c6a` (paso 0) · `82741f1` (pasos 1-5) ·
 `7f2d2a8` (handoff).
 
-### 🔴 A-FEAT-13-B — Agrupar pagos de PAM y MA (bloquea un caso real, 2026-08-08)
-El usuario **pagó las 2 facturas de Allende (PAM) juntas, en un solo pago**, y quiere reflejarlo
-agrupándolas. **Hoy no se puede**: agrupar está bloqueado para PAM/MA (paso 5) porque
-`grupos_pago` **existe sólo en `msa`** — verificado:
-- `msa.comprobantes_arca.grupo_pago_id` → FK a `msa.grupos_pago`;
-- `pam.comprobantes_arca.grupo_pago_id` y `ma.…` **existen como columna pero sin FK**: apuntan al vacío.
+### ✅ A-FEAT-13-B — Agrupar pagos de PAM y MA (HECHO 2026-08-08)
+**Caso real que lo motivó**: el usuario pagó las **2 facturas de Allende (PAM) juntas, en un solo
+pago**, y no podía reflejarlo. Agrupar estaba bloqueado (paso 5) porque `grupos_pago` existía
+**sólo en `msa`**; en pam/ma la columna `grupo_pago_id` estaba pero **sin FK**.
 
-**Lo que falta es chico**, porque `lib/pagos/agrupar.ts` ya recibe `schema` como parámetro:
-1. Crear `pam.grupos_pago` y `ma.grupos_pago` con la misma estructura que la de MSA
-   (`id, cuit, proveedor, monto_total, estado, observaciones, created_at`).
-2. Agregar la FK `grupo_pago_id → {schema}.grupos_pago ON DELETE SET NULL` en las dos.
-3. Sacar el bloqueo de `agruparSeleccionados` y el de `desagruparFilaGrupo` en `vista-cash-flow.tsx`.
-4. Que `mapearFacturasArca` ya arma `origen_tabla = '{schema}.grupos_pago'` — eso ya está.
+**Hecho:** `pam.grupos_pago` y `ma.grupos_pago` creadas como espejo de la de MSA, con las FK y los
+grants (migración `grupos_pago_en_pam_y_ma`, detalle en `RECONSTRUCCION_*`). El código casi no
+cambió: `lib/pagos/agrupar.ts` y `desagrupar.ts` ya recibían `schema`.
 
-⚠️ **Ojo**: el `estado` que `agruparPagos` pone al grupo ARCA es `'pagar'`. Para PAM/MA eso está
-bien (no hay SICORE de por medio), pero hay que verificar que no dispare nada de MSA.
+**Lo que sí cambió el criterio del bloqueo** — antes decía *"agrupar es sólo de MSA"*; ahora dice
+**"un grupo no puede mezclar empresas"**, que es la restricción real (el grupo y las facturas
+comparten schema por la FK). Agrupar FC de PAM con FC de MSA se rechaza con ese aviso.
+
+⚠️ **Templates y sueldos siguen agrupando SIEMPRE en `msa.grupos_pago`**, aunque el template sea de
+PAM: sus `grupo_pago_id` tienen FK a **msa**. Por eso el código elige el schema **por origen**, no
+por la empresa de la fila. Está comentado en `agrupar.ts` para que no se "corrija" por error.
+
+**Verificado**: los tres `grupos_pago` responden con la **anon key** — PostgREST los ve sin esperar
+refresco de caché, así que el agrupar funciona desde la app.
 
 ### 🔴 A-FEAT-13-C — Honorarios de JMS y AMS: no deberían estar en el Cash Flow (2026-08-08)
 **Planteo del usuario**: JMS y AMS **facturan en bloque** — una sola factura puede cubrir medio año
