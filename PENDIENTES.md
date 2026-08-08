@@ -3030,6 +3030,24 @@ templates agrupados**, que tenían el mismo agujero.
 > también tiene `estado: 'pagar'` fijo y no devuelve `fecha_pago`. No se tocó — es otro módulo y
 > no estaba en prueba —, pero es exactamente el mismo patrón.
 
+### 🔎 Dos hallazgos al verificar el pago del grupo (2026-08-08) — preexistentes, sin urgencia
+Salieron de revisar en la BD el pago real del grupo de Allende. **Ninguno es del cambio de esta
+tanda** y ninguno rompe nada; se anotan para que no se descubran de nuevo desde cero.
+
+1. **`grupos_pago.estado` nunca se sincroniza.** El grupo de Allende quedó en `pagar` con sus 2
+   facturas en `pagado`; en MSA pasa en **todos** los grupos (varios dicen `pagar` con las
+   facturas ya `conciliado`). **Es inocuo**: el único lugar que lee `grupos_pago` es
+   `lib/lotes-galicia/preview-core.ts` y pide `id, cuit, proveedor, monto_total` — **no `estado`**.
+   Y desde 2026-08-08 la grilla deriva el estado de los miembros, así que en pantalla se ve bien.
+   Es un campo **vestigial**: o se sincroniza, o se saca.
+2. **~25 grupos de MSA sin ningún miembro** (ARBA, Municipalidad SP, Consorcio Libertad…):
+   quedaron huérfanos cuando sus facturas se desvincularon por otra vía que no fue "desagrupar".
+   Basura acumulada. Vale un `DELETE FROM msa.grupos_pago WHERE id NOT IN (…)` cuando se limpie.
+
+> ✅ Lo que **sí** se verificó y quedó bien en el pago real de PAM: las 2 FC en `pagado`, con
+> `fecha_pago` y `fecha_estimada` al 07/08, `monto_a_abonar` = total, y **`sicore`, `monto_sicore`
+> y `tipo_sicore` en `null`** — el blindaje de SICORE funcionó sobre datos reales.
+
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el
    módulo de sueldos nunca contempló MA**. Se descubrió porque el `UPDATE` de Alondra (autorizado)
