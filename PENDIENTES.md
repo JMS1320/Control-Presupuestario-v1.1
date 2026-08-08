@@ -3010,9 +3010,25 @@ después de recargar. **Fix**: el estado sale de los miembros — si todos coinc
 difieren, **el menos avanzado**, porque un grupo con una factura sin pagar no puede figurar como
 pagado.
 
+**3. La `fecha_pago` cargada en el grupo "desaparecía".** El usuario la puso y al recargar no
+estaba. **El dato SÍ se guardaba** (verificado: las 2 FC de Allende quedaron con
+`fecha_pago = 2026-08-07`): lo que faltaba era que **la fila-grupo devolviera el campo**.
+`mapearFacturasArca` no incluía `fecha_pago` en el objeto del grupo, así que la celda salía vacía.
+
+**Fix**: la fila-grupo devuelve `fecha_pago` (la última de sus miembros, porque un grupo se paga
+junto), más `medio_pago` y `nro_cuenta`, que faltaban por el mismo motivo — sin ellos el grupo caía
+al medio "banco" por defecto y perdía la cuenta contable al conciliar. **Lo mismo se aplicó a los
+templates agrupados**, que tenían el mismo agujero.
+
+> 🧭 **El patrón detrás de los tres bugs, para no repetirlo**: una **fila-grupo es una fila
+> sintética** que el hook arma juntando varias. Cada campo que no se copie explícitamente **sale
+> vacío o inventado**, y el síntoma no es un error sino un dato que "se pierde". Al tocar
+> `mapearFacturasArca` / `mapearTemplatesEgresos`, la pregunta es siempre: *¿esta fila devuelve
+> todo lo que la grilla muestra y todo lo que el motor lee?*
+
 > 🔎 **Queda igual, anotado**: la fila-grupo de **sueldos** (`useMultiCashFlowData`, ~l.761)
-> también tiene `estado: 'pagar'` fijo. No se tocó por ahora — es otro módulo y no estaba en
-> prueba —, pero es el mismo patrón.
+> también tiene `estado: 'pagar'` fijo y no devuelve `fecha_pago`. No se tocó — es otro módulo y
+> no estaba en prueba —, pero es exactamente el mismo patrón.
 
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el

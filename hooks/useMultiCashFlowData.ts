@@ -250,6 +250,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         empresas,
         fecha_estimada: fechaMax,
         fecha_vencimiento: fechaVencMax,
+        // La fila-grupo tiene que devolver TODO lo que muestra la grilla. Faltaba `fecha_pago`:
+        // se guardaba bien en las facturas pero la celda del grupo salía vacía, y parecía que el
+        // dato se perdía. Un grupo se paga junto, así que si difieren se toma la última.
+        fecha_pago: fs.map(f => f.fecha_pago).filter(Boolean).sort().at(-1) ?? null,
+        // Mismo motivo: sin esto el grupo cae al medio 'banco' por defecto y se pierde el nro_cuenta
+        medio_pago: primera.medio_pago || 'banco',
+        nro_cuenta: primera.nro_cuenta || null,
         categ: primera.cuenta_contable || 'SIN_CATEG',
         centro_costo: primera.centro_costo || 'SIN_CC',
         cuit_proveedor: primera.cuit || '',
@@ -371,7 +378,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
-        estado: primera.estado || 'pendiente',
+        // Mismo criterio que en las FC agrupadas: el estado sale de los miembros (el menos
+        // avanzado si difieren) y la fila-grupo devuelve `fecha_pago`, que antes faltaba y hacía
+        // que la fecha cargada en el grupo se viera desaparecer.
+        estado: estadoDeGrupo(cs.map(c => c.estado)),
+        fecha_pago: cs.map(c => c.fecha_pago).filter(Boolean).sort().at(-1) ?? null,
+        medio_pago: primera.medio_pago || 'banco',
         comprobante_display: [...new Set(cs.map(c => c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: cs.length,
