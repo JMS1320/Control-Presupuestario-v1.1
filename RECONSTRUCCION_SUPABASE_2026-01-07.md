@@ -12104,23 +12104,17 @@ compilador obligue a cada pantalla a decidirlo.
 
 ## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-07 · Cash Flow multiempresa (A-FEAT-13, paso 1)
 
-> ⏳ **PENDIENTE DE EJECUTAR** (al 2026-08-08). Requiere DDL, y **PostgREST no ejecuta DDL**:
-> `supabase-js` con el service role escribe filas pero no hace `ALTER TABLE`. Por eso los cambios
-> de datos de esta tanda sí se aplicaron y los de estructura no.
+> ✅ **APLICADO el 2026-08-08** por MCP (`apply_migration`), en dos migraciones:
+> `cash_flow_multiempresa_sueldos_empresa` y `cash_flow_multiempresa_anticipos_empresa`.
+> Verificado antes y después de cada una. Contexto → `PENDIENTES.md` § [A-FEAT-13](PENDIENTES.md#a-feat-13).
 >
-> **Tres formas de correrlo**, en orden de preferencia:
-> 1. **MCP de Supabase** — estaba en `failed`; reiniciar Claude Code suele destrabarlo. Después
->    conviene devolverlo a `--read-only` (ver A-OP-01).
-> 2. **SQL Editor de Supabase** — pegar los bloques de abajo tal cual.
-> 3. **API de administración** — `POST https://api.supabase.com/v1/projects/lyojiaglcictmboqwxfm/database/query`
->    con el `SUPABASE_ACCESS_TOKEN` de `.mcp.json` (verificado válido el 2026-08-08).
->    ⚠️ **El usuario autorizó los cambios, NO este mecanismo. Preguntar antes de usarlo.**
+> **Estado verificado al aplicar:** Alondra Olivo `PAM → MA` · AMS y JMS `ambas → MSA/PAM/MA` ·
+> ninguno quedó en `ambas` · `anticipos_proveedores.empresa` creada con los **33 en `MSA`** ·
+> el template de la cochera en `PAM/MA/Duhau`.
 >
-> **Verificar después de correr**: `SELECT nombre, empresa FROM sueldos.empleados` → Alondra en
-> `MA`, AMS y JMS en `MSA/PAM/MA`, ninguno en `ambas`. Y que `anticipos_proveedores` tenga
-> `empresa` con los 33 en `MSA`.
->
-> Contexto y motivo → `PENDIENTES.md` § [A-FEAT-13](PENDIENTES.md#a-feat-13).
+> ℹ️ **Nota para reconstrucción**: hizo falta DDL porque **PostgREST no lo ejecuta** —
+> `supabase-js` con el service role escribe filas pero no hace `ALTER TABLE`. Si el MCP no está
+> disponible, esto se pega en el **SQL Editor de Supabase**.
 
 Habilitan que el Cash Flow muestre y pueda pagar facturas de **PAM y MA**, no sólo de MSA.
 
@@ -12166,6 +12160,11 @@ ALTER TABLE public.anticipos_proveedores
 -- Backfill: hoy los 33 son de MSA (los 18 vinculados apuntan a msa.comprobantes_arca).
 -- ⚠️ Es una ASUNCIÓN sobre los 15 sin vincular; se corrige desde la pantalla si alguno no lo es.
 UPDATE public.anticipos_proveedores SET empresa = 'MSA' WHERE empresa IS NULL;
+
+-- Mismo patrón que sueldos: que la convención la sostenga la base, no sólo el código
+ALTER TABLE public.anticipos_proveedores
+  ADD CONSTRAINT anticipos_proveedores_empresa_check
+  CHECK (empresa ~ '^(MSA|PAM|MA)(/(MSA|PAM|MA))*$');
 ```
 
 ### 3. Sin cambio de estructura — dato corregido el 2026-08-07 (ya aplicado)

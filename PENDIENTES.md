@@ -2866,7 +2866,7 @@ tildada"*; los valores que no son MSA/PAM/MA (`Duhau`) **se muestran pero no fil
 | # | Qué | Estado |
 |---|---|---|
 | **0** | **Que el guardado avise cuando no matcheó ninguna fila** (`useInlineEditor`) | ✅ 2026-08-07 (`b444c6a`) |
-| **1** | `empresas` (lista) en `CashFlowRow` + columna `empresa` en `anticipos_proveedores` | ✅ código · ⏳ la columna espera el SQL |
+| **1** | `empresas` (lista) en `CashFlowRow` + columna `empresa` en `anticipos_proveedores` | ✅ 2026-08-08 (código + SQL) |
 | **2+3** | Leer los 3 schemas **y** escribir en el schema correcto | ✅ 2026-08-08 |
 | **4** | Columna Empresa a la izquierda + los dos filtros | ✅ 2026-08-08 |
 | **5** | **SICORE, echeq y agrupar sólo MSA** | ✅ 2026-08-08 |
@@ -2925,48 +2925,34 @@ productivo — queda como red para todo el desarrollo siguiente.
 
 **Lo que falta, en orden:**
 
-1. **Correr el SQL** de `RECONSTRUCCION_SUPABASE_2026-01-07.md` § *2026-08-07 · Cash Flow
-   multiempresa*. Son 3 bloques. **Nada está bloqueado por esto**, pero hasta que se corra:
-   Alondra Olivo figura en PAM en vez de MA (conviene correrlo **antes de testear sueldos**), y
-   los anticipos se muestran todos como MSA (que es lo que son los 33 de hoy).
-2. **Testear** → `A-TEST-25`, 7 pasos en `MANUAL-USO.md` § *Cash Flow multiempresa*.
-3. **Terminar el paso 6**: la conciliación **manual** del extracto sigue ofreciendo candidatos
+1. **Testear** → `A-TEST-25`, 7 pasos en `MANUAL-USO.md` § *Cash Flow multiempresa*. Es lo único
+   que separa esto de estar terminado en su parte gruesa.
+2. **Terminar el paso 6**: la conciliación **manual** del extracto sigue ofreciendo candidatos
    sólo de MSA (~10 `.schema('msa')` en `vista-extracto-bancario.tsx`).
 
-**⚠️ Decisión abierta — cómo correr el SQL.** El MCP de Supabase estaba en **`failed`**
-(2026-08-08). Diagnosticado: **no es la config ni el token**. Verificado ese día:
-- el binario `@supabase/mcp-server-supabase` levanta bien a mano;
-- el `SUPABASE_ACCESS_TOKEN` de `.mcp.json` es **válido** → `GET /v1/projects/{ref}` devuelve
-  `HTTP 200`, proyecto `ACTIVE_HEALTHY`;
-- `.mcp.json` está bien y **sin `--read-only`** (modo write).
+**✅ El SQL ya se corrió** (2026-08-08, por MCP `apply_migration`, verificado antes y después):
+Alondra `PAM→MA` · AMS y JMS `ambas→MSA/PAM/MA` · CHECK nuevo con el patrón multiempresa ·
+`anticipos_proveedores.empresa` creada con los 33 en `MSA` (+ su propio CHECK). Detalle →
+`RECONSTRUCCION_SUPABASE_2026-01-07.md` § *2026-08-07*.
 
-O sea que era un problema de arranque del server dentro de Claude Code (wrapper `cmd /c npx` en
-Windows). **El plan acordado con el usuario fue reiniciar Claude Code** y reintentar por el MCP.
+**Recordatorio que costó descubrir**: PostgREST (`supabase-js` + service role) **escribe filas
+pero no ejecuta DDL**. Por eso los cambios de datos salieron sin problema y los de estructura
+tuvieron que esperar al MCP. Cuando el MCP falla, la alternativa es el **SQL Editor de Supabase**.
 
-> **Hay una segunda vía si el MCP sigue fallando**: la **API de administración de Supabase**
-> (`POST /v1/projects/{ref}/database/query`) **sí ejecuta SQL crudo**, con ese mismo token.
-> ⚠️ **El usuario NO autorizó todavía ese mecanismo** — sí autorizó los cambios en sí (los 4 de
-> abajo), no la vía. **Preguntar antes de usarla.** Si se usa: un bloque por vez, mostrando el
-> antes y el después, empezando por el de sueldos (es el que tiene el `DROP CONSTRAINT`).
+**Commits de esta tanda**: `4209572` (plan) · `b444c6a` (paso 0) · `82741f1` (pasos 1-5) ·
+`7f2d2a8` (handoff).
 
-**Recordatorio**: PostgREST (`supabase-js` + service role) **escribe filas pero no ejecuta DDL**.
-Por eso los cambios de datos sí se pudieron hacer y los de estructura no.
-
-**Commits de esta tanda**: `4209572` (plan) · `b444c6a` (paso 0) · `82741f1` (pasos 1-5).
-
-### 🚧 Bloqueantes abiertos (esperan definición del usuario)
-1. **`sueldos.empleados.empresa` tiene un CHECK que rechaza `MA`.** Verificado 2026-08-07: el
-   `UPDATE` de Alondra Olivo (PAM → MA, autorizado por el usuario) falló con
-   `empleados_empresa_check`. Los valores en uso son `MSA`, `PAM`, `ambas` — **el módulo de sueldos
-   nunca contempló MA**. Requiere cambio de estructura (recrear la constraint). Alondra sigue en PAM.
-2. **`ambas` es ambiguo con tres empresas** (AMS y JMS lo tienen). ¿Es `MSA/PAM`? Sin definirlo, la
-   cascada de sueldos no puede contestar.
-3. **`Duhau`** → acordado pasarlo a `PAM/MA/Duhau`. Falta confirmar el string exacto.
-4. **Anticipos**: 33 en total, **18 con `factura_id` (los 18 apuntan a MSA) y 15 sin**. Como el
-   anticipo se paga *antes* de que exista la factura, derivar la empresa del vínculo no sirve justo
-   cuando hace falta. **Acordado: columna `empresa` propia.** Falta el OK para el cambio de estructura.
+### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
+1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el
+   módulo de sueldos nunca contempló MA**. Se descubrió porque el `UPDATE` de Alondra (autorizado)
+   falló con `empleados_empresa_check`. Reemplazado por el patrón multiempresa.
+2. **`ambas` era ambiguo con tres empresas.** El usuario definió que AMS y JMS son de **las tres**
+   → `MSA/PAM/MA`. El alias sigue soportado en `lib/empresas.ts` por si reaparece.
+3. **`Duhau`** → `PAM/MA/Duhau`. Aparece al filtrar PAM o MA; `Duhau` se muestra y no filtra.
+4. **Anticipos**: columna `empresa` creada, los 33 en `MSA`.
    *(Nota del usuario: las irregularidades de anticipos vienen de que el módulo se desarrolló muy
-   pobremente al principio — hay 2 anticipos con `estado='vinculado'` y `factura_id` nulo.)*
+   pobremente al principio — hay 2 con `estado='vinculado'` y `factura_id` nulo. **Sigue abierto**,
+   es del módulo de anticipos, no de esto.)*
 
 ### Fuera de alcance, explícito
 - **SICORE para PAM/MA: nunca.** Es regla, no configuración.
