@@ -3074,7 +3074,14 @@ consultaba nada más en la rama TEMPLATE. Ahora la conciliación manual la aplic
 - Si la empresa de la factura ≠ la de la cuenta → busca la regla Tipo B y estampa
   `contable` (y `interno` si la regla lo trae). Lo que el usuario haya escrito a mano **gana**.
 
-**Falta**: mostrar el chip de empresa en la lista de candidatos (el dato ya viaja).
+**También en el MOTOR automático**: la rama ARCA no consultaba la regla Tipo B (sólo miraba
+reglas de texto). Ahora, si la empresa de la factura ≠ la de la cuenta, aplica `RET 3 …` y la
+regla de texto queda como respaldo para lo que haya quedado vacío. **Sin esto el arreglo servía
+sólo si conciliabas a mano**, que es el camino secundario.
+
+**Chip de empresa en los candidatos**: cada opción muestra su empresa con color, y cuando no
+coincide con la cuenta agrega **⇄** con el aviso de que se registrará como retiro. Se ve *antes*
+de confirmar, no después en la grilla.
 
 ### ✅ La conciliación pisaba el vencimiento de la factura (2026-08-08)
 `ejecutarAsignacion` escribía `fecha_vencimiento = fecha del movimiento` sobre la factura ARCA
@@ -3096,7 +3103,10 @@ Tres de los cuatro puntos del dossier, corregidos en las 4 ramas (template · AR
 3. **`nro_cuenta` sin fallback** en la rama ARCA → ahora, si la factura no lo tiene, se deriva de
    `cuentas_contables` por la categ, igual que hace el motor.
 
-Queda el punto 3 del dossier original (la rama TEMPLATE tampoco llena `nro_cuenta`) — **pendiente**.
+4. **La rama TEMPLATE tampoco llenaba `nro_cuenta`** (punto 3 del dossier) → ahora lo deriva de
+   `cuentas_contables` por la categ, igual que la rama ARCA.
+
+**A-BUG-05 queda cerrado en sus 4 puntos.**
 
 ### 🧪 Resultado del testeo del usuario (2026-08-08)
 | # | Test | Estado |

@@ -474,11 +474,23 @@ export function useMotorConciliacion() {
                 }
               }
             } else {
-              // ARCA u otros orígenes: solo regla de texto con código propio
-              const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
-              if (reglaQueMatcheaF1) {
-                if (esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
-                if (esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+              // ARCA: si la cuenta bancaria es de una empresa y la factura de OTRA, es un pago a
+              // terceros por cuenta ajena → retiro (`RET 3 PAM` / `RET 3 MA`). Se usa la MISMA
+              // regla Tipo B (`reglas_contable_interno`, cuenta + responsable) que ya se aplicaba
+              // a los templates; hasta ahora las facturas no la consultaban. Ver A-FEAT-13 paso 6.
+              const empresaFC = (matchCF.cashFlowRow.empresas || [])[0]
+              if (empresaFC && empresaFC !== cuenta.empresa) {
+                const codigosRet = await buscarCodigosContableInterno(cuenta.id, null, empresaFC)
+                if (codigosRet.contable) extraCF.contable = codigosRet.contable
+                if (codigosRet.interno) extraCF.interno = codigosRet.interno
+              }
+              // Prioridad menor: regla de texto con código propio, sólo para lo que quedó vacío
+              if (!extraCF.contable || !extraCF.interno) {
+                const reglaQueMatcheaF1 = reglas.find(r => evaluarRegla(movimiento, r))
+                if (reglaQueMatcheaF1) {
+                  if (!extraCF.contable && esValorContableValido(reglaQueMatcheaF1.codigo_contable)) extraCF.contable = reglaQueMatcheaF1.codigo_contable
+                  if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
+                }
               }
             }
             // Si es template multi-cuenta sin categ asignada en la cuota → auditar

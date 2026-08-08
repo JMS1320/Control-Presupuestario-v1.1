@@ -1244,6 +1244,13 @@ export function VistaExtractoBancario() {
           estado: 'conciliado',
           comprobantes_pagados: templateElegido.display_referencia || templateElegido.nombre_referencia || null
         }
+        // `nro_cuenta` derivado de la categ: la rama TEMPLATE no lo llenaba nunca (A-BUG-05 p.3),
+        // así que el movimiento quedaba con cuenta contable y sin su número.
+        if (categFinal) {
+          const { data: ccTpl } = await supabase.from('cuentas_contables')
+            .select('nro_cuenta').eq('categ', categFinal).maybeSingle()
+          if (ccTpl?.nro_cuenta) updateTemplate.nro_cuenta = ccTpl.nro_cuenta
+        }
         // El detalle se preserva si el usuario escribió algo; si no, se deriva. Antes iba `null`
         // fijo y **cada reasignación borraba el detalle** (A-BUG-05 punto 1). Y el proveedor no se
         // pisa con null cuando el CUIT no está en el maestro (punto 4).
@@ -2490,6 +2497,7 @@ export function VistaExtractoBancario() {
                                               <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === opcion.id ? "opacity-100" : "opacity-0"}`} />
                                               <div className="flex flex-col">
                                                 <span className="font-medium">
+                                                  <ChipEmpresaOpcion opcion={opcion} cuenta={cuentaActivaObj} />
                                                   ⭐ {opcion.tipo === 'ARCA' ? '📄' : '📋'} {opcion.display_nombre} - {formatCurrency(opcion.display_monto)}
                                                 </span>
                                                 <span className="text-xs text-gray-500">
@@ -2522,6 +2530,7 @@ export function VistaExtractoBancario() {
                                               <Check className={`mr-2 h-4 w-4 ${vinculaciones[movimientoId] === opcion.id ? "opacity-100" : "opacity-0"}`} />
                                               <div className="flex flex-col">
                                                 <span className="font-medium">
+                                                  <ChipEmpresaOpcion opcion={opcion} cuenta={cuentaActivaObj} />
                                                   {opcion.tipo === 'ARCA' ? '📄' : '📋'} {opcion.display_nombre} - {formatCurrency(opcion.display_monto)}
                                                 </span>
                                                 <span className="text-xs text-gray-500">
@@ -4036,5 +4045,28 @@ export function VistaExtractoBancario() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+/**
+ * Chip de empresa en la lista de candidatos a vincular.
+ *
+ * Importa porque los candidatos ahora son de las TRES empresas: hay que ver de cuál es cada uno
+ * antes de elegirlo. Y cuando la factura no es de la empresa de la cuenta, se avisa que va a
+ * quedar como **retiro por pago a terceros** (`RET 3 PAM` / `RET 3 MA`) — que es lo correcto, no
+ * un error, pero conviene saberlo ANTES de confirmar y no descubrirlo después en la grilla.
+ */
+function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa: string } }) {
+  const empresa = opcion?.empresa as Empresa | undefined
+  if (!empresa) return null
+  const esOtra = !!cuenta && empresa !== cuenta.empresa
+  return (
+    <span
+      className={`mr-1 rounded border px-1 text-[10px] leading-4 ${COLOR_EMPRESA[empresa] || ''}`}
+      title={esOtra
+        ? `Factura de ${empresa} pagada desde una cuenta de ${cuenta!.empresa} → se registra como retiro (RET 3 ${empresa})`
+        : `Factura de ${empresa}`}
+    >
+      {empresa}{esOtra ? ' ⇄' : ''}
+    </span>
   )
 }
