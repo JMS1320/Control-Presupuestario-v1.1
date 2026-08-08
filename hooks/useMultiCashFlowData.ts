@@ -17,6 +17,25 @@ const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
   return 'FC'
 }
 
+/**
+ * Estado de una fila-grupo: sale de sus miembros, no de un valor fijo.
+ *
+ * Si todos comparten estado, ese. Si difieren, se muestra el **menos avanzado**: un grupo donde
+ * una factura quedó sin pagar no puede figurar como pagado. Antes estaba escrito `'pagar'` fijo,
+ * así que marcar un grupo como pagado no se reflejaba nunca en la grilla.
+ */
+const AVANCE_ESTADO = ['pendiente', 'pagar', 'preparado', 'programado', 'echeq', 'pagado', 'conciliado']
+const estadoDeGrupo = (estados: Array<string | null | undefined>): string => {
+  const limpios = estados.map(e => e || 'pendiente')
+  if (limpios.length === 0) return 'pagar'
+  return limpios.reduce((menos, e) => {
+    const ia = AVANCE_ESTADO.indexOf(e), ib = AVANCE_ESTADO.indexOf(menos)
+    if (ia === -1) return menos          // estado desconocido: no manda
+    if (ib === -1) return e
+    return ia < ib ? e : menos
+  }, limpios[0])
+}
+
 // Empresas de una fila, con MSA como respaldo cuando el dato todavía no existe.
 // Hoy lo usan los anticipos: su columna `empresa` está pendiente de crearse y los 33 son de MSA.
 const empresasOMsa = (valor: unknown): string[] => {
@@ -240,7 +259,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
-        estado: 'pagar',
+        estado: estadoDeGrupo(fs.map(f => f.estado)),
         sicore: null,
         imp_neto_gravado: 0,
         imp_neto_no_gravado: 0,
@@ -981,27 +1000,33 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const arcaUpdates = actualizaciones.filter(u => u.origen === 'ARCA')
       const templateUpdates = actualizaciones.filter(u => u.origen === 'TEMPLATE')
 
-      // Procesar updates ARCA — cada factura, en el schema de su empresa (A-FEAT-13)
+      // Procesar updates ARCA — cada factura, en el schema de su empresa (A-FEAT-13).
+      // Si la fila es un GRUPO, su `id` es el del grupo y no existe en `comprobantes_arca`:
+      // hay que escribir sobre sus miembros (`ids_grupo`), igual que hace actualizarRegistro.
       for (const update of arcaUpdates) {
         const fila = data.find(f => f.id === update.id)
+        const ids = (fila?.ids_grupo && fila.ids_grupo.length > 0) ? fila.ids_grupo : [update.id]
         const { error, count } = await supabase
           .schema(schemaDeFila(fila))
           .from('comprobantes_arca')
           .update({ [update.campo]: update.valor }, { count: 'exact' })
-          .eq('id', update.id)
+          .in('id', ids)
 
         if (error) throw error
         if (count === 0) throw new Error(`No se encontró la factura ${update.id}: el cambio NO se guardó`)
       }
 
-      // Procesar updates Templates
+      // Procesar updates Templates — mismo caso: una cuota agrupada actualiza a sus miembros
       for (const update of templateUpdates) {
-        const { error } = await supabase
+        const fila = data.find(f => f.id === update.id)
+        const ids = (fila?.ids_grupo && fila.ids_grupo.length > 0) ? fila.ids_grupo : [update.id]
+        const { error, count } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ [update.campo]: update.valor })
-          .eq('id', update.id)
+          .update({ [update.campo]: update.valor }, { count: 'exact' })
+          .in('id', ids)
 
         if (error) throw error
+        if (count === 0) throw new Error(`No se encontró la cuota ${update.id}: el cambio NO se guardó`)
       }
 
       // Actualización local de cada registro del batch

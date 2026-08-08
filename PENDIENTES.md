@@ -2990,6 +2990,30 @@ salida no es un `if` con dos CUITs adentro.
   aplica a muchos pagos.
 - Ver también el estado `credito`, que ya saca facturas del Cash Flow — puede ser el molde.
 
+### 🐛 Bugs que destapó el testeo del usuario (2026-08-08)
+
+**1. Marcar una fila-grupo no guardaba nada.** Al pasar el grupo de Allende a *pagar*, saltó
+*"No se encontró la factura 1295bb34…: el cambio NO se guardó"*.
+
+**Causa**: en una fila-grupo el `id` es el del **grupo**, no el de una factura. `actualizarBatch`
+hacía `UPDATE comprobantes_arca WHERE id = <id del grupo>` → 0 filas. `actualizarRegistro` ya
+sabía expandir a `ids_grupo`; **`actualizarBatch` no**.
+
+**Era preexistente y silencioso**, y también afectaba a **MSA**: marcar un grupo desde el modo
+Pagos nunca escribió nada, sólo que hasta ahora no había forma de enterarse. Lo destapó el aviso
+del **paso 0** — que es exactamente para lo que se hizo. **Fix**: `actualizarBatch` expande a
+`ids_grupo`, en ARCA y en templates.
+
+**2. La fila-grupo mostraba el estado fijo en `'pagar'`.** Estaba escrito así en
+`mapearFacturasArca`, así que al marcar un grupo como pagado la grilla seguía diciendo *pagar*
+después de recargar. **Fix**: el estado sale de los miembros — si todos coinciden, ése; si
+difieren, **el menos avanzado**, porque un grupo con una factura sin pagar no puede figurar como
+pagado.
+
+> 🔎 **Queda igual, anotado**: la fila-grupo de **sueldos** (`useMultiCashFlowData`, ~l.761)
+> también tiene `estado: 'pagar'` fijo. No se tocó por ahora — es otro módulo y no estaba en
+> prueba —, pero es el mismo patrón.
+
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el
    módulo de sueldos nunca contempló MA**. Se descubrió porque el `UPDATE` de Alondra (autorizado)
