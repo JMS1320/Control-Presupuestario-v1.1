@@ -36,8 +36,11 @@ const estadoDeGrupo = (estados: Array<string | null | undefined>): string => {
   }, limpios[0])
 }
 
-// Empresas de una fila, con MSA como respaldo cuando el dato todavía no existe.
-// Hoy lo usan los anticipos: su columna `empresa` está pendiente de crearse y los 33 son de MSA.
+// Empresas con MSA como respaldo. Lo usa SOLO `ventas_unificadas`, donde la vista puede no
+// traer `empresa` y MSA es el default real del módulo de ventas.
+// ⚠️ No usarlo cuando el dato existe y puede faltar: inventar 'MSA' produce un valor falso pero
+// creíble, que no se revisa nunca. Pasó con los sueldos (Alondra salía MSA siendo MA) y con los
+// anticipos. Si el dato puede faltar, que se vea vacío: `parseEmpresas` a secas.
 const empresasOMsa = (valor: unknown): string[] => {
   const e = parseEmpresas(valor as string | null | undefined)
   return e.length > 0 ? e : ['MSA']
@@ -670,7 +673,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // 4. Cargar períodos de sueldos (desde Ene 2026, no históricos)
       const { data: periodosSueldos, error: errorSueldos } = await supabase
         .from('sueldos_periodos')
-        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa)')
         .gte('fecha_inicio_periodo', '2026-01-01')
         .neq('estado', 'historico')
         .order('fecha_fin_periodo', { ascending: true })
@@ -683,7 +686,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados ni anteriores)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
-        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa)')
         .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
@@ -742,7 +745,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: a.id,
         origen: 'SUELDO' as const,
         origen_tabla: 'sueldos.pagos',
-        empresas: empresasOMsa(a.empleado?.empresa),
+        empresas: parseEmpresas(a.empleado?.empresa),
         fecha_estimada: a.fecha,
         fecha_vencimiento: null,
         categ: 'Sueldos',
@@ -778,7 +781,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           id: grupoId,
           origen: 'SUELDO' as const,
           origen_tabla: 'msa.grupos_pago',
-          empresas: empresasOMsa(primero.empleado?.empresa),
+          empresas: parseEmpresas(primero.empleado?.empresa),
           fecha_estimada: fechaMax,
           fecha_vencimiento: null,
           categ: 'Sueldos',

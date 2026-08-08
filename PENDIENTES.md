@@ -3077,7 +3077,7 @@ de si el estado se movió igual.
    **`10-6204` sigue en `pendiente` con `sicore` null.** Y `msa.sicore_retenciones` no tuvo
    ningún insert en las 3 horas previas.
 
-### 🐛 A-BUG-CANCELAR-SICORE — un "Cancelar" que sí paga (2026-08-08)
+### ✅ A-BUG-CANCELAR-SICORE — un "Cancelar" que sí paga (RESUELTO 2026-08-08)
 La intuición del usuario (*"cancelar tiene que abortar toda la operación"*) es correcta como
 regla, y **hay un lugar donde no se cumple**. Cuando la factura **no llega al mínimo** aparece:
 
@@ -3091,12 +3091,25 @@ descuento?"*, no a *"¿querés pagar?"* — el mismo botón significa dos cosas 
 **No es lo que le pasó al usuario** (su factura superaba el mínimo, así que fue por el camino que
 sí aborta), pero es el mismo riesgo que detectó.
 
-**Arreglo propuesto** (sin hacer): que ese `confirm` sea explícito — tres salidas reales
-(*aplicar descuento* / *pagar sin descuento* / *cancelar todo*), o como mínimo que el texto diga
-que al cancelar la factura igual pasa a *pagar*. Mismo repaso merecen los otros `window.confirm`
-del flujo de pagos: la regla es **cancelar = abortar, siempre**.
+**✅ Resuelto**: se eliminó ese `confirm`. Ahora el caso "no llega al mínimo" abre directamente el
+modal, donde las tres salidas son botones explícitos:
 
-### 🐛 A-BUG-FECHA-MODIFICACION — la columna no se actualiza nunca (2026-08-08)
+| Botón | Qué hace |
+|---|---|
+| ✅ **Confirmar y pasar a Pagar** | aplica el descuento cargado y pasa a pagar |
+| 🟡 **Seguir sin retención** *(nuevo, sólo en este caso)* | pasa a pagar **sin** estampar quincena |
+| **Cancelar** | **aborta**, la factura vuelve a su estado anterior |
+
+⚠️ **Por qué "Seguir sin retención" y no reusar el Confirmar**: `finalizarProcesoSicoreCF` estampa
+`sicore = quincena` en la factura. Con retención cero eso dejaría a la FC marcada como si se le
+hubiera retenido, y `verificarRetencionPreviaFactura` (que consulta `.eq('sicore', quincena)`)
+haría que **la siguiente factura de ese proveedor retuviera desde el primer peso**. El botón nuevo
+usa `cancelarSicoreCF(true)`, el camino ya probado que sólo cambia el estado.
+
+**Regla que queda**: *cancelar = abortar, siempre*. Los demás `window.confirm` del flujo de pagos
+merecen el mismo repaso — **pendiente**.
+
+### ✅ A-BUG-FECHA-MODIFICACION — la columna no se actualizaba nunca (RESUELTO 2026-08-08)
 `msa.comprobantes_arca.fecha_modificacion` **es una columna muerta**: de las **383** filas,
 **383** la tienen idéntica a `created_at` y **cero** figuran como modificadas. Nada la escribe (no
 hay trigger ni la setea el código).
@@ -3105,8 +3118,30 @@ hay trigger ni la setea el código).
 factura — y **no hubo forma de saberlo por horario**. Cualquier pregunta futura del tipo *"¿esto
 se tocó, y cuándo?"* hoy no tiene respuesta.
 
-**Arreglo**: un trigger `BEFORE UPDATE` que haga `NEW.fecha_modificacion = now()` en las tres
-`comprobantes_arca`. Es barato y convierte a la columna en lo que su nombre promete.
+**✅ Resuelto**: trigger `BEFORE UPDATE` en las **tres** `comprobantes_arca` (migración
+`trigger_fecha_modificacion_comprobantes_arca`, detalle en `RECONSTRUCCION_*`).
+
+⚠️ **Sólo hacia adelante**: las 383 filas viejas conservan la fecha de creación. No se tocaron
+retroactivamente porque no hay dato real que poner. Consecuencia práctica: **la duda del
+"Cancelar" de hoy no se puede responder por horario ni ahora** — se respondió por descarte (ver
+arriba). De la próxima en adelante, sí.
+
+### 🐛 Alondra salía MSA (y algunas filas vacías) — el select no traía `empresa` (2026-08-08)
+En la BD estaba bien (`Alondra Olivo → MA`), pero el Cash Flow mostraba **MSA** en sus pagos
+viejos y **—** en los períodos futuros. Ninguna decía MA.
+
+**Causa**: las dos consultas de sueldos pedían
+`empleado:sueldos_empleados(id, nombre, cuit_empleado)` — **sin `empresa`**. Armé la cascada para
+leer `empleado.empresa` y nunca la traje. Llegaba `undefined` y cada rama lo resolvía distinto:
+`sueldos.pagos` usaba el fallback `empresasOMsa` → **inventaba MSA**; `sueldos_periodos` usaba
+`parseEmpresas` → `[]` → `—`. **Las filas que mostraban `—` estaban siendo las honestas.**
+
+**Fix**: `empresa` en los dos selects, y **fuera el fallback a MSA en sueldos**.
+
+> 🔑 **Tercera vez que muerde el mismo patrón** (anticipos, sueldos, y el `.includes('')` del
+> buscador de la ficha): **un valor plausible pero falso no se revisa nunca; un vacío sí se ve.**
+> `empresasOMsa` quedó **sólo** para `ventas_unificadas`, donde MSA es el default real del módulo,
+> con el comentario explicando por qué no debe usarse en otro lado.
 
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el

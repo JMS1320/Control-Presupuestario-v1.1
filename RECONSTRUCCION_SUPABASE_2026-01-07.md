@@ -12251,3 +12251,39 @@ la **anon key**, así que no hizo falta esperar refresco de caché de PostgREST.
 
 Por eso el código pasa `schema` según el origen, no según la empresa de la fila. Y por la FK,
 **un grupo no puede mezclar empresas**: agrupar FC de PAM con FC de MSA se rechaza con un aviso.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-08 · `fecha_modificacion` que se actualiza de verdad
+
+✅ **APLICADO** (migración `trigger_fecha_modificacion_comprobantes_arca`).
+
+**El problema**: `fecha_modificacion` era una **columna muerta**. De las 383 filas de
+`msa.comprobantes_arca`, las **383** la tenían idéntica a `created_at` — cero modificadas. Nada la
+escribía: ni trigger ni código. Guardaba la hora de creación con otro nombre.
+
+**Cómo se descubrió**: el usuario apretó "Cancelar" en la pantalla de SICORE y quedó la duda de si
+la factura se había movido igual. **No hubo forma de saberlo por horario.** La respuesta salió por
+descarte, que funcionó esta vez pero no escala.
+
+```sql
+CREATE OR REPLACE FUNCTION public.set_fecha_modificacion()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.fecha_modificacion := now();
+  RETURN NEW;
+END;
+$$;
+
+-- En las TRES empresas, para que la respuesta sea la misma en cualquiera
+DROP TRIGGER IF EXISTS trg_fecha_modificacion ON msa.comprobantes_arca;
+CREATE TRIGGER trg_fecha_modificacion BEFORE UPDATE ON msa.comprobantes_arca
+  FOR EACH ROW EXECUTE FUNCTION public.set_fecha_modificacion();
+-- idem pam.comprobantes_arca y ma.comprobantes_arca
+```
+
+**Verificado**: los tres triggers existen como `BEFORE UPDATE`.
+
+⚠️ **Las 383 filas viejas siguen con la fecha de creación**: el trigger sólo actúa de ahora en más.
+No se tocaron retroactivamente porque no hay dato real que poner — inventar una fecha sería peor
+que no tenerla.

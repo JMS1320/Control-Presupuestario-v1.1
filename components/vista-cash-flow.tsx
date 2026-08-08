@@ -1661,22 +1661,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena)
       const minimoDisponible = Math.max(0, minimoServicios - netoPrevio)
       if (netoFacturaPesos <= minimoDisponible) {
-        // No corresponde retención, pero ofrecer descuento pronto pago (igual que el Modal)
-        const infoPrevio = netoPrevio > 0 ? `\n(mínimo $${minimoServicios.toLocaleString('es-AR')} − $${netoPrevio.toLocaleString('es-AR')} ya pagados en la quincena = disponible $${minimoDisponible.toLocaleString('es-AR')})` : ''
-        const aplicarDescuento = window.confirm(
-          `No corresponde retención SICORE (menor al mínimo disponible).${infoPrevio}\n\n¿Desea aplicar un descuento pronto pago?`
-        )
-        if (aplicarDescuento) {
-          setFacturaEnProceso(fila)
-          setTipoSeleccionado(null)
-          setMontoRetencion(0)
-          setDescuentoAdicional(0)
-          setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true, netoPrevio })
-          setPasoSicore('calculo')
-          setMostrarModalSicore(true)
-        } else {
-          await cancelarSicoreCF(true, freshPending, freshCola)
-        }
+        // No corresponde retención. Antes acá había un `confirm` "¿Desea aplicar un descuento
+        // pronto pago?" cuyo **Cancelar pasaba la factura a 'pagar'** — un botón que decía
+        // cancelar y confirmaba. Ahora se abre el modal, donde las tres salidas son explícitas:
+        // aplicar descuento y confirmar · confirmar sin descuento · Cancelar = abortar.
+        // Regla del usuario: **cancelar aborta siempre**; para seguir sin retención está el botón
+        // de confirmar, que ya existe.
+        setFacturaEnProceso(fila)
+        setTipoSeleccionado(null)
+        setMontoRetencion(0)
+        setDescuentoAdicional(0)
+        setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true, netoPrevio })
+        setPasoSicore('calculo')
+        setMostrarModalSicore(true)
         return
       }
     }
@@ -1779,7 +1776,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Finalizar SICORE para factura ARCA desde Cash Flow
   const finalizarProcesoSicoreCF = async () => {
     if (!facturaEnProceso || !guardadoPendienteCF) return
-    // Permitir finalizar sin retención si hay descuento (paridad con el Modal)
+    // Permitir finalizar sin retención si hay descuento (paridad con el Modal).
+    // Pagar SIN retención y SIN descuento no pasa por acá: tiene su propio botón
+    // "Seguir sin retención", que no estampa la quincena en la factura. Ver el modal.
     if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0) return
 
     try {
@@ -4484,7 +4483,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={finalizarProcesoSicoreCF}>
                   ✅ Confirmar y pasar a Pagar
                 </Button>
-                <Button variant="outline" onClick={() => setPasoSicore('tipo')}>← Tipo</Button>
+                {/* Sin retención y sin descuento: pasa a pagar sin estampar la quincena en la FC.
+                    Es la salida que antes estaba escondida en el "Cancelar" de un confirm. */}
+                {datosSicoreCalculo?.sinRetencion && (
+                  <Button variant="outline" className="border-amber-500 text-amber-700 hover:bg-amber-50"
+                    onClick={() => cancelarSicoreCF(true)}>
+                    Seguir sin retención
+                  </Button>
+                )}
+                {!datosSicoreCalculo?.sinRetencion && (
+                  <Button variant="outline" onClick={() => setPasoSicore('tipo')}>← Tipo</Button>
+                )}
                 <Button variant="outline" onClick={() => cancelarSicoreCF(false)}>Cancelar</Button>
               </div>
             </div>
