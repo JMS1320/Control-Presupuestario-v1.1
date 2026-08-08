@@ -3048,6 +3048,66 @@ tanda** y ninguno rompe nada; se anotan para que no se descubran de nuevo desde 
 > `fecha_pago` y `fecha_estimada` al 07/08, `monto_a_abonar` = total, y **`sicore`, `monto_sicore`
 > y `tipo_sicore` en `null`** — el blindaje de SICORE funcionó sobre datos reales.
 
+### 🧪 Resultado del testeo del usuario (2026-08-08)
+| # | Test | Estado |
+|---|---|---|
+| 1-3 | Barra de empresas, columna Empresa, defaults, tildar/destildar MA | ✅ OK |
+| 4 | Pagar FC de PAM sin SICORE, y que persista | ✅ OK |
+| 5 | Bloqueo de ECHEQ en PAM | ✅ OK |
+| 6 | Agrupar las 2 de Allende, fecha de pago, pagar el grupo, desagrupar (las 2 vías) | ✅ OK *(destapó 3 bugs, ya corregidos)* |
+| 7 | No mezclar empresas al agrupar | ✅ OK — "no me deja" |
+| 8 | Que MSA no se rompió (SICORE aparece) | ✅ **SICORE apareció**; el "Cancelar" se auditó aparte, ver abajo |
+| 9 | Template `MSA/PAM` con filtros | ✅ OK |
+| 10 | Sueldo de Alondra con chip MA | ⏳ pendiente |
+| 11 | Anticipo sin empresa | ✅ OK |
+| A-TEST-24 | Ficha de proveedor — **botón Editar** | ✅ OK (era lo único nunca ejecutado) |
+
+### 🔍 Auditoría del "Cancelar" de SICORE (2026-08-08) — no movió nada
+El usuario pasó una FC de Alcorta a *pagar*, apareció SICORE, apretó **Cancelar** y quedó la duda
+de si el estado se movió igual.
+
+**Conclusión: no se movió.** Verificado por dos vías:
+1. **Por el código**: `evaluarRetencionSicoreCF` **no escribe el estado antes de abrir el modal**
+   (queda pendiente en memoria). Los dos botones Cancelar (`vista-cash-flow.tsx` ~l.4371 y ~4488)
+   y el cierre del diálogo (~l.4327) llaman `cancelarSicoreCF(false)`, que **restaura
+   `estadoAnterior`** y limpia la cola del lote. Aborta de verdad.
+2. **Por los datos**: de las Alcorta en `pendiente`, la **única** que podía llegar al modal es
+   `10-6204` (neto $196.623,76 > mínimo **y** con `fecha_pago` cargada; las otras dos que superan
+   el mínimo no tienen `fecha_pago`, así que el enforce las frena **antes** de SICORE).
+   **`10-6204` sigue en `pendiente` con `sicore` null.** Y `msa.sicore_retenciones` no tuvo
+   ningún insert en las 3 horas previas.
+
+### 🐛 A-BUG-CANCELAR-SICORE — un "Cancelar" que sí paga (2026-08-08)
+La intuición del usuario (*"cancelar tiene que abortar toda la operación"*) es correcta como
+regla, y **hay un lugar donde no se cumple**. Cuando la factura **no llega al mínimo** aparece:
+
+> *"No corresponde retención SICORE (menor al mínimo disponible). ¿Desea aplicar un descuento
+> pronto pago?"* — **[Aceptar] [Cancelar]**
+
+Apretar **Cancelar** ahí lleva a `cancelarSicoreCF(**true**)` (`vista-cash-flow.tsx` ~l.1678), que
+**guarda el cambio a `pagar`**. El cartel no lo dice: ese "Cancelar" responde a *"¿querés
+descuento?"*, no a *"¿querés pagar?"* — el mismo botón significa dos cosas según dónde estés.
+
+**No es lo que le pasó al usuario** (su factura superaba el mínimo, así que fue por el camino que
+sí aborta), pero es el mismo riesgo que detectó.
+
+**Arreglo propuesto** (sin hacer): que ese `confirm` sea explícito — tres salidas reales
+(*aplicar descuento* / *pagar sin descuento* / *cancelar todo*), o como mínimo que el texto diga
+que al cancelar la factura igual pasa a *pagar*. Mismo repaso merecen los otros `window.confirm`
+del flujo de pagos: la regla es **cancelar = abortar, siempre**.
+
+### 🐛 A-BUG-FECHA-MODIFICACION — la columna no se actualiza nunca (2026-08-08)
+`msa.comprobantes_arca.fecha_modificacion` **es una columna muerta**: de las **383** filas,
+**383** la tienen idéntica a `created_at` y **cero** figuran como modificadas. Nada la escribe (no
+hay trigger ni la setea el código).
+
+**Por qué importa**: se descubrió al querer auditar si el "Cancelar" de SICORE había movido una
+factura — y **no hubo forma de saberlo por horario**. Cualquier pregunta futura del tipo *"¿esto
+se tocó, y cuándo?"* hoy no tiene respuesta.
+
+**Arreglo**: un trigger `BEFORE UPDATE` que haga `NEW.fecha_modificacion = now()` en las tres
+`comprobantes_arca`. Es barato y convierte a la columna en lo que su nombre promete.
+
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el
    módulo de sueldos nunca contempló MA**. Se descubrió porque el `UPDATE` de Alondra (autorizado)
