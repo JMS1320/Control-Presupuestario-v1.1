@@ -153,6 +153,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) |
 | A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) |
 | A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) |
+| A-FEAT-13 | 🔴 | **Alta** | **Cash Flow multi-empresa: las facturas de PAM y MA no se pueden pagar** — hoy el Cash Flow lee sólo `msa`, así que las 4 FC de PAM y las 92 de MA no tienen dónde registrarse. Plan acordado con el usuario 2026-08-07, 7 pasos | → [A-FEAT-13](#a-feat-13) |
 
 ### 📚 Documentación (auditoría de dimensiones, 2026-08-02)
 > Origen: comparación de nuestro `CLAUDE.md` contra el `CLAUDE.md` de otro proyecto del usuario ("Remates Televisados"), que trajo reglas de proceso mejores. Salió de ahí `CLAUDE_BASE.md` (plantilla portable) + esta auditoría de los 31 `.md` del repo. **Casi todos esperan una decisión del usuario (⏸️), no trabajo de Claude.**
@@ -2791,6 +2792,138 @@ El INSERT se escribió **genérico** (todo `cuit_cliente` de `comprobantes_venta
 > validación de dígito verificador** (le correspondería terminar en 5). El usuario confirmó que
 > *"las facturas tienen los datos reales"*, así que los contratos se alinearon a la factura.
 > Queda anotado por si algún día ARCA lo rechaza.
+
+---
+
+## <a id="a-feat-13"></a>A-FEAT-13 — Cash Flow multi-empresa: poder pagar facturas de PAM y MA (2026-08-07)
+
+**El problema, dicho por el usuario:** *"tenemos cargadas facturas de PAM y de MA y hoy no tengo
+cómo registrar que pagué una factura de PAM. El pago se registra desde Cash Flow."*
+
+### La decisión conceptual (del usuario, y es la que ordena todo lo demás)
+> *"Hoy Cash Flow no es de MSA, es de todos, porque muestra templates a pagar de todos y eso es
+> correcto. Si muestra templates multiempresa debería mostrar FC multiempresa. Si no, no habría
+> congruencia conceptual."*
+
+No se hace un Cash Flow por empresa. Se hace **uno solo, multiempresa**, que es lo que ya es a
+medias: los templates viven en `public` y entran los de las tres empresas; las facturas viven en el
+schema de cada una y entra sólo MSA. La incoherencia era mostrar una sola empresa de facturas.
+
+### Estado medido el 2026-08-07 (BD viva)
+| Empresa | Facturas | Estados |
+|---|---|---|
+| MSA | 383 | ciclo completo (146 conciliadas, 22 pagadas, 46 pendientes…) |
+| **PAM** | **4** | **las 4 en `pendiente`** |
+| **MA** | **92** | **84 `pendiente` + 8 `debito`** |
+
+Ninguna FC de PAM/MA tuvo nunca `fecha_pago` ni `grupo_pago_id`: **el circuito no falla a la
+mitad, nunca arrancó**. En cambio los **templates de PAM sí concilian** — de los 29 movimientos de
+`pam_galicia` + `pam_galicia_cc`, **19 están conciliados contra cuotas de template y 0 contra
+facturas**. Eso prueba que el circuito PAM funciona punta a punta; falta enchufar las facturas.
+
+### De dónde sale la empresa de cada fila (la cascada)
+| Origen | Fuente | ¿Existe? |
+|---|---|---|
+| FC compra | el schema donde vive (`msa`/`pam`/`ma`) | ✅ implícito |
+| TEMPLATE | `egresos_sin_factura.responsable` | ✅ |
+| SUELDO | `sueldos_empleados.empresa` | ⚠️ ver constraint abajo |
+| VENTA | el schema: `msa.comprobantes_venta` + `ma.comprobantes_venta` | ✅ (PAM no tiene tabla → pendiente aparte) |
+| ANTICIPO | **no hay campo** | 🔴 hay que crearlo |
+
+**`responsable` ES la empresa**, verificado: de 176 templates → MSA 98 · PAM 70 · MA 6 · `Duhau` 1 ·
+`MSA/PAM` 1. El selector del wizard ofrece además `Manuel`, `Soledad`, `Merceditas`, `Andres`,
+`Jose` y **ninguno se usó nunca**. Por eso va **una sola columna: Empresa**.
+
+**`responsable_interno` es otro eje y no va en esa columna.** Contesta *a quién le corresponde el
+gasto*, no quién paga, y ahí sí hay personas. 16 templates lo tienen: ABL/AYSA/Metrogas/Expensas
+Libertad → `responsable PAM` / `interno MA`; Imp. Automotores Voyage → `MSA` / `JMS`; Seguro Flota
+→ `MSA` / `MSA/MA/JMS`. **Ese campo es el mecanismo de adjudicación entre empresas** (paso 7).
+
+### 🔑 `empresa` es MULTIVALOR, no un valor
+Decisión del usuario: un template `MSA/PAM` **se muestra con las dos y aparece al filtrar
+cualquiera de las dos**. Se parsea por `/`; el filtro es *"entra si alguna de sus empresas está
+tildada"*; los valores que no son MSA/PAM/MA (`Duhau`) **se muestran pero no filtran**.
+
+- **No es una convención nueva**: el Presupuesto ya lee `responsable` así —
+  `tab-presupuesto.tsx:614` y `seccion-metodos-templates.tsx:61` hacen
+  `.or("responsable.ilike.%MSA%,responsable.eq.ambas")`. Hay que mantener compatibilidad con `ambas`.
+- **No complica la escritura**: el multivalor sólo puede darse en templates y sueldos, que viven en
+  `public`. Una FC pertenece a **un único schema** por definición. El destino de escritura siempre
+  es único; el multivalor afecta sólo qué se muestra y qué se filtra.
+- **Efecto aceptado a ojos abiertos**: filtrando MSA y PAM por separado, el template `MSA/PAM`
+  aparece **entero en los dos**. Los subtotales por empresa no suman el total. No se puede repartir
+  sin porcentajes y no los hay. La pantalla no debe fingir que cierran.
+
+### Defaults (pedido explícito, con su motivo)
+**El filtro de empresa NO es uno solo: son dos, porque los defaults difieren.**
+- **Facturas** → MSA ✅ · PAM ✅ · **MA ☐ apagado**. *Motivo: las FC de MA las paga MA de su propia
+  cuenta y el usuario concilia cada tanto; verlas por default es ruido.*
+- **Templates** → MSA ✅ · PAM ✅ · **MA ✅**. *Motivo: son impuestos que paga él siempre; no verlos
+  es perder trabajo.*
+
+### Los 7 pasos, en orden
+| # | Qué | Por qué en ese orden |
+|---|---|---|
+| **0** | **Que el guardado avise cuando no matcheó ninguna fila** (`useInlineEditor`) | Red de seguridad de todo lo que sigue. Ver el riesgo abajo |
+| **1** | `empresa` (lista) en `CashFlowRow` + columna `empresa` en `anticipos_proveedores` | El cimiento |
+| **2+3** | Leer los 3 schemas **y** escribir en el schema correcto — **una sola fase** | Separarlas es lo que crea la trampa |
+| **4** | Columna Empresa a la izquierda + los dos filtros | Lo que deja operar |
+| **5** | **SICORE, echeq y agrupar sólo MSA** | Blindaje |
+| **6** | Motor: conciliar contra el schema correcto + candidatos de las 3 en el extracto | Cierra el circuito |
+| **7** | Adjudicación entre empresas (MSA paga, PAM/MA retira) | Después; no bloquea |
+
+### ⚠️ El riesgo que hace que el paso 0 vaya primero
+`useInlineEditor.ts:153` decide *"si la fila es ARCA → escribir en `msa`"*, fijo. Hoy no molesta
+porque todas las filas ARCA son de MSA. En cuanto entren las de PAM/MA, editar una fecha de PAM va
+a buscar ese `id` en la tabla de MSA.
+
+**No corrompe**: el `UPDATE` filtra por `id` y un uuid de PAM no existe en MSA → matchea 0 filas.
+**Pero tampoco falla**: devuelve OK y la UI dice *"Campo actualizado correctamente"*. El riesgo es
+**no registrar en silencio** — el mismo modo de falla que `B-BUG-CLIENTE-NO-SE-CREA`.
+
+Idea del usuario, adoptada como paso 0: **que avise cuando no encontró**. Es más barato y más útil
+que un parche puntual, porque `useInlineEditor` lo usan también el extracto, los templates y
+productivo — queda como red para todo el desarrollo siguiente.
+
+*Matiz*: sí quedarían huérfanas las filas que se crean en **otras** tablas referenciando el id
+(`msa.sicore_retenciones.factura_id`, `msa.grupos_pago`). Se cierra con el paso 5.
+
+### Lo que NO existe fuera de MSA
+| Tabla | pam | ma | ¿Hace falta? |
+|---|---|---|---|
+| `sicore_retenciones` | ❌ | ❌ | **No — SICORE es sólo MSA, decisión firme del usuario. No se habilita nunca** |
+| `grupos_pago` | ❌ | ❌ | Sólo si se quiere agrupar FC en una OP |
+| `cheques` | ❌ | ❌ | Sólo si se paga con echeq |
+
+### 🚧 Bloqueantes abiertos (esperan definición del usuario)
+1. **`sueldos.empleados.empresa` tiene un CHECK que rechaza `MA`.** Verificado 2026-08-07: el
+   `UPDATE` de Alondra Olivo (PAM → MA, autorizado por el usuario) falló con
+   `empleados_empresa_check`. Los valores en uso son `MSA`, `PAM`, `ambas` — **el módulo de sueldos
+   nunca contempló MA**. Requiere cambio de estructura (recrear la constraint). Alondra sigue en PAM.
+2. **`ambas` es ambiguo con tres empresas** (AMS y JMS lo tienen). ¿Es `MSA/PAM`? Sin definirlo, la
+   cascada de sueldos no puede contestar.
+3. **`Duhau`** → acordado pasarlo a `PAM/MA/Duhau`. Falta confirmar el string exacto.
+4. **Anticipos**: 33 en total, **18 con `factura_id` (los 18 apuntan a MSA) y 15 sin**. Como el
+   anticipo se paga *antes* de que exista la factura, derivar la empresa del vínculo no sirve justo
+   cuando hace falta. **Acordado: columna `empresa` propia.** Falta el OK para el cambio de estructura.
+   *(Nota del usuario: las irregularidades de anticipos vienen de que el módulo se desarrolló muy
+   pobremente al principio — hay 2 anticipos con `estado='vinculado'` y `factura_id` nulo.)*
+
+### Fuera de alcance, explícito
+- **SICORE para PAM/MA: nunca.** Es regla, no configuración.
+- **Desde qué cuenta se pagó**: se sigue definiendo en la conciliación, no al pagar.
+- **`DIST PAM`**: `distribucion_socios` tiene `DIST MA` (`empresa_destino='MA'`) y no hay
+  equivalente para PAM. Es una fila, no un mecanismo. Va con el paso 7.
+- **Ventas PAM**: no existe `pam.comprobantes_venta`. Módulo pendiente de desarrollar, menos
+  prioritario, pero pendiente al fin.
+
+### Estado del paso 7 (para cuando toque)
+**Para templates ya está construido y funcionando**: 21 reglas `especifica` + 2 `responsable` en
+`reglas_contable_interno` escriben `interno='DIST MA'` al conciliar, y **42 movimientos de
+`msa_galicia` ya salieron así**. **Para ARCA no**: el motor sólo busca códigos en las reglas de
+texto y las facturas no tienen `responsable_interno`. Con `empresa` en la fila, la adjudicación
+pasa a ser **derivable sola** (si el movimiento sale de una cuenta MSA y la FC es de PAM, la
+conclusión es automática) en vez de requerir una regla por caso.
 
 ---
 
