@@ -212,6 +212,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     estado_pago: 'pagado',
     nro_cuenta: null as string | null,
     categ: null as string | null,
+    // De qué empresa sale el anticipo. Arranca vacío A PROPÓSITO: no se hereda en silencio.
+    // Vacío es un valor válido y significa "no se sabe" — pero hay que confirmarlo. A-FEAT-13.
+    empresa: null as Empresa | null,
   })
   const [guardandoAnticipo, setGuardandoAnticipo] = useState(false)
   const [anticiposExistentes, setAnticiposExistentes] = useState<any[]>([])
@@ -1506,7 +1509,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
-    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null })
+    setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null, empresa: null })
     setTabAnticipo('nuevo')
     setModalAnticipo(true)
     cargarAnticiposExistentes()
@@ -2086,6 +2089,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       return
     }
 
+    // La empresa se elige. Puede quedar vacía, pero con confirmación explícita: un anticipo sin
+    // empresa NO es "es de MSA", es "todavía no se sabe" — y así se ve en el Cash Flow, con `—`
+    // y visible en cualquier filtro hasta que se resuelva. A-FEAT-13.
+    if (!nuevoAnticipo.empresa) {
+      const seguir = window.confirm(
+        '⚠️ No elegiste de qué empresa sale este anticipo.\n\n' +
+        'Puede quedar sin empresa: eso significa "no se sabe todavía", y se va a resolver cuando ' +
+        'vincules el anticipo con su factura.\n\n' +
+        '¿Guardarlo sin empresa?'
+      )
+      if (!seguir) return
+    }
+
     setGuardandoAnticipo(true)
     try {
       const monto = parseFloat(nuevoAnticipo.monto.replace(/\./g, '').replace(',', '.'))
@@ -2103,6 +2119,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           estado: 'pendiente_vincular',
           estado_pago: nuevoAnticipo.estado_pago,
           nro_cuenta: nuevoAnticipo.nro_cuenta || null,
+          empresa: nuevoAnticipo.empresa,   // null = no se sabe (confirmado arriba)
         })
         .select('id')
 
@@ -2129,7 +2146,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const tipoLabel = nuevoAnticipo.tipo === 'cobro' ? 'Anticipo de Cobro' : 'Anticipo'
       toast.success(`${tipoLabel} registrado con estado "${nuevoAnticipo.estado_pago}".`)
 
-      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null })
+      setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null, empresa: null })
       await cargarDatos()
       await cargarAnticiposExistentes()
 
@@ -3801,6 +3818,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         Cobro (Ingreso)
                       </span>
                     </label>
+                  </div>
+                </div>
+
+                {/* De qué empresa sale. Sin default: se elige. Puede quedar vacío, pero al
+                    guardar pide confirmación — vacío significa "no se sabe", no "es de MSA". */}
+                <div className="space-y-2">
+                  <Label>Empresa</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {EMPRESAS.map(e => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setNuevoAnticipo(prev => ({ ...prev, empresa: prev.empresa === e ? null : e }))}
+                        className={`rounded border px-3 py-1 text-sm transition-colors ${
+                          nuevoAnticipo.empresa === e ? COLOR_EMPRESA[e] : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-100'}`}
+                      >
+                        {e}
+                      </button>
+                    ))}
+                    {!nuevoAnticipo.empresa && (
+                      <span className="text-xs text-amber-700">
+                        sin elegir — se puede guardar así, pero queda como “no se sabe”
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -801,11 +801,31 @@ perder el dato pero no filtra por él.
    que aparecer igual que antes, y seguir exigiendo la Fecha de Pago.
 7. **Multiempresa.** En Templates dejá tildado sólo **MSA**: el template *Retiro MA mensual*
    (`MSA/PAM`) tiene que seguir apareciendo. Dejá sólo **MA**: tiene que desaparecer.
+8. **Sueldos de Alondra** (estaba mal cargada como PAM, ahora es **MA**). Su sueldo tiene que
+   mostrar el chip **MA**, y responde al selector de **Templates y demás**, *no* al de Facturas:
+   con MA apagada en Facturas se sigue viendo; se esconde sólo si destildás MA en Templates.
+9. **Anticipo sin empresa.** Cargá un anticipo sin elegir empresa: tiene que avisar y pedirte
+   confirmación. Guardalo así y verificá que en el Cash Flow aparece con `—` y **se ve con
+   cualquier filtro de empresa**.
+
+### Anticipos: de qué empresa salen
+Al cargar un anticipo ahora elegís la **empresa**. Arranca **sin elegir a propósito** — no se
+hereda en silencio. Podés guardarlo vacío, pero te pide confirmación, porque **vacío no significa
+"es de MSA": significa "todavía no se sabe"**. Esos anticipos se muestran con `—` en la columna
+Empresa y **aparecen con cualquier filtro**, para que no se pierdan de vista hasta que se resuelva.
+
+Se resuelve solo cuando vinculás el anticipo con su factura: ahí queda claro de qué empresa era.
+Hoy hay **15 anticipos así** (los que nunca se vincularon).
 
 ### ⚠️ Lo que todavía no anda
-La **conciliación manual desde el extracto** sigue ofreciendo sólo facturas de MSA: si tenés que
-vincular a mano un movimiento de PAM con su factura, no la vas a encontrar en la lista. La
-conciliación **automática** (el motor) sí funciona.
+- **La conciliación manual desde el extracto** sigue ofreciendo sólo facturas de MSA: si tenés que
+  vincular a mano un movimiento de PAM con su factura, no la vas a encontrar. La conciliación
+  **automática** (el motor) sí funciona.
+- **Agrupar pagos de PAM y MA** está bloqueado (avisa que es sólo de MSA). Falta crear
+  `grupos_pago` en esos schemas — ver `PENDIENTES.md` § A-FEAT-13-B.
+- **Los honorarios de JMS y AMS** (2 de las 4 facturas de PAM, $22,7 M y $25,5 M) van a quedar
+  eternamente pendientes en el Cash Flow: son facturas de cuenta corriente que se cancelan contra
+  muchos pagos, no algo a pagar de una vez. Sin resolver — ver § A-FEAT-13-C.
 
 ---
 

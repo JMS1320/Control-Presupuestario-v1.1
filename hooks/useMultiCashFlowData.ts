@@ -410,9 +410,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: a.id,
         origen: 'ANTICIPO' as const,
         origen_tabla: 'anticipos_proveedores',
-        // `empresa` es columna nueva (RECONSTRUCCION § 2026-08-07, pendiente de correr).
-        // Hasta que exista viene undefined y cae a MSA, que es lo que son los 33 de hoy.
-        empresas: empresasOMsa(a.empresa),
+        // Vacío = NO SE SABE de qué empresa es, y así se muestra (`—`). No cae a MSA: un valor
+        // plausible pero falso no se revisa nunca. Se resuelve al vincular el anticipo con su
+        // factura. 15 de los 33 están así hoy. Ver A-FEAT-13.
+        empresas: parseEmpresas(a.empresa),
         fecha_estimada: fechaAnticipo,
         fecha_vencimiento: null,
         categ: tipoLabel,

@@ -12180,3 +12180,29 @@ UPDATE public.egresos_sin_factura SET responsable = 'PAM/MA/Duhau' WHERE respons
 `pam.sicore_retenciones` y `ma.sicore_retenciones` **no se crean nunca**: SICORE es sólo MSA, es
 una decisión firme del usuario y en el código se blinda por empresa, no por configuración.
 `grupos_pago` y `cheques` tampoco existen fuera de MSA — agrupar y echeq no se ofrecen en PAM/MA.
+
+### Corrección del mismo día — `anticipos_proveedores.empresa` (2026-08-08)
+
+✅ **APLICADO** (migración `anticipos_empresa_sin_default_y_null_los_no_vinculados`).
+
+El backfill de arriba (los 33 en `MSA`) **estaba mal**: cruzando el CUIT contra las facturas de
+cada empresa, al menos 2 de los no vinculados son de MA (Penino Miguel Gustavo tiene **5 FC en
+`ma`** y ninguna en `msa`; Luciano Joaquin Gimenez tiene 1), y otros 4 no tienen facturas en
+ninguna empresa. Lo detectó el usuario.
+
+```sql
+-- Sin default: la empresa se elige, no se hereda en silencio
+ALTER TABLE public.anticipos_proveedores ALTER COLUMN empresa DROP DEFAULT;
+
+-- Los no vinculados quedan en NULL = "no se sabe todavía".
+-- Los 18 vinculados sí están verificados: sus factura_id apuntan a msa.comprobantes_arca.
+UPDATE public.anticipos_proveedores SET empresa = NULL WHERE factura_id IS NULL;
+```
+
+**Resultado verificado**: 18 en `MSA` (todos vinculados) · 15 sin empresa.
+
+⚠️ **El CHECK deja pasar `NULL`** a propósito (en Postgres una condición que evalúa a NULL no
+viola el CHECK). Eso es lo que permite el "no se sabe" sin desactivar la validación del formato.
+
+**Motivo**: un valor plausible pero falso no se revisa nunca; un vacío sí se ve. El alta de
+anticipos ahora pide elegir empresa y, si se deja vacía, confirma explícitamente.

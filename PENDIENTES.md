@@ -2942,6 +2942,51 @@ tuvieron que esperar al MCP. Cuando el MCP falla, la alternativa es el **SQL Edi
 **Commits de esta tanda**: `4209572` (plan) · `b444c6a` (paso 0) · `82741f1` (pasos 1-5) ·
 `7f2d2a8` (handoff).
 
+### 🔴 A-FEAT-13-B — Agrupar pagos de PAM y MA (bloquea un caso real, 2026-08-08)
+El usuario **pagó las 2 facturas de Allende (PAM) juntas, en un solo pago**, y quiere reflejarlo
+agrupándolas. **Hoy no se puede**: agrupar está bloqueado para PAM/MA (paso 5) porque
+`grupos_pago` **existe sólo en `msa`** — verificado:
+- `msa.comprobantes_arca.grupo_pago_id` → FK a `msa.grupos_pago`;
+- `pam.comprobantes_arca.grupo_pago_id` y `ma.…` **existen como columna pero sin FK**: apuntan al vacío.
+
+**Lo que falta es chico**, porque `lib/pagos/agrupar.ts` ya recibe `schema` como parámetro:
+1. Crear `pam.grupos_pago` y `ma.grupos_pago` con la misma estructura que la de MSA
+   (`id, cuit, proveedor, monto_total, estado, observaciones, created_at`).
+2. Agregar la FK `grupo_pago_id → {schema}.grupos_pago ON DELETE SET NULL` en las dos.
+3. Sacar el bloqueo de `agruparSeleccionados` y el de `desagruparFilaGrupo` en `vista-cash-flow.tsx`.
+4. Que `mapearFacturasArca` ya arma `origen_tabla = '{schema}.grupos_pago'` — eso ya está.
+
+⚠️ **Ojo**: el `estado` que `agruparPagos` pone al grupo ARCA es `'pagar'`. Para PAM/MA eso está
+bien (no hay SICORE de por medio), pero hay que verificar que no dispare nada de MSA.
+
+### 🔴 A-FEAT-13-C — Honorarios de JMS y AMS: no deberían estar en el Cash Flow (2026-08-08)
+**Planteo del usuario**: JMS y AMS **facturan en bloque** — una sola factura puede cubrir medio año
+o un año entero. Esa factura **no es algo a pagar**: entra en una **cuenta corriente** y se va
+cancelando contra lo que se les paga, que el usuario registra como **"sueldo"** aunque en realidad
+sean **honorarios facturados**. Una factura va contra **muchos pagos**.
+
+**El problema concreto**: como el Cash Flow muestra todo lo no conciliado, esas facturas van a
+quedar **eternamente pendientes** y ensuciando la proyección. Hoy son 2 de las 4 FC de PAM:
+
+| Nº | Proveedor | Emisión | Importe | Cuenta |
+|---|---|---|---:|---|
+| 00001-00000069 | MARTINEZ JOSE MARIA (**JMS**) | 22/06/2026 | $22.735.000 | HONORARIOS JMS |
+| 00002-00000061 | MARTINEZ PLACIDO ANDRES (**AMS**) | 26/06/2026 | $25.500.000 | HONORARIOS AMS |
+
+**Estado**: sin resolver y **no urgente** — el usuario lo dijo explícitamente. Pero tampoco se
+arregla solo. Su advertencia, textual: *"no debemos crear miles de excepciones"* — o sea que la
+salida no es un `if` con dos CUITs adentro.
+
+**Pistas para cuando se retome** (nada decidido):
+- Ya existen `JMS` y `MSA/MA/JMS` como `responsable_interno` de templates, y los empleados `JMS` y
+  `AMS` están en `sueldos.empleados` con `empresa = MSA/PAM/MA`. O sea que **el sistema ya conoce a
+  estas dos personas por dos vías distintas**, y esto es justamente el cruce de ambas.
+- Suena a un **estado o marca de "cuenta corriente"** en la factura (no un caso especial por CUIT),
+  que la saque del Cash Flow y la mande a un saldo que se cancela con pagos parciales. Emparenta
+  con los **anticipos** (un pago que se aplica a una factura) pero al revés: una factura que se
+  aplica a muchos pagos.
+- Ver también el estado `credito`, que ya saca facturas del Cash Flow — puede ser el molde.
+
 ### ✅ Los 4 bloqueantes — todos resueltos el 2026-08-08
 1. **`sueldos.empleados.empresa` rechazaba `MA`.** El CHECK era `IN ('MSA','PAM','ambas')`: **el
    módulo de sueldos nunca contempló MA**. Se descubrió porque el `UPDATE` de Alondra (autorizado)
@@ -2949,10 +2994,37 @@ tuvieron que esperar al MCP. Cuando el MCP falla, la alternativa es el **SQL Edi
 2. **`ambas` era ambiguo con tres empresas.** El usuario definió que AMS y JMS son de **las tres**
    → `MSA/PAM/MA`. El alias sigue soportado en `lib/empresas.ts` por si reaparece.
 3. **`Duhau`** → `PAM/MA/Duhau`. Aparece al filtrar PAM o MA; `Duhau` se muestra y no filtra.
-4. **Anticipos**: columna `empresa` creada, los 33 en `MSA`.
+4. **Anticipos**: columna `empresa` creada. **Corregida el mismo día** — ver abajo.
    *(Nota del usuario: las irregularidades de anticipos vienen de que el módulo se desarrolló muy
    pobremente al principio — hay 2 con `estado='vinculado'` y `factura_id` nulo. **Sigue abierto**,
    es del módulo de anticipos, no de esto.)*
+
+### 🐛 El backfill de anticipos estaba mal — corregido el 2026-08-08
+El primer backfill puso **los 33 en MSA**. El usuario dudó (*"es muy posible que no fueran todos de
+MSA"*) y **tenía razón**. Cruzando el CUIT de cada anticipo contra las facturas de las tres empresas:
+
+| Anticipo | FC en MSA | FC en MA | Lectura |
+|---|---:|---:|---|
+| **Penino Miguel Gustavo** ($2.000.000) | 0 | **5** | casi seguro **MA** |
+| **Luciano Joaquin Gimenez** ($400.000) | 0 | **1** | casi seguro **MA** |
+| Municipalidad de Zarate · Leonsio · Rodolfo Quevedo · BALLESTER Paulo | 0 | 0 | **sin evidencia** |
+| los otros 9 sin vincular | ≥1 | 0 | probablemente MSA |
+
+**Decisión del usuario (variante A)**: los **no vinculados quedan en `NULL`**. `NULL` significa
+**"no se sabe de qué empresa es"**, y se resuelve al vincular el anticipo con su factura. Quedó
+**18 en MSA** (los vinculados, verificados: sus `factura_id` apuntan a `msa.comprobantes_arca`) y
+**15 sin empresa**.
+
+**Además, por pedido del usuario:**
+- **Sin `DEFAULT`** — la empresa se elige, no se hereda en silencio.
+- **Se puede dejar vacía, pero con confirmación**: el alta de anticipos avisa y pide un `confirm`
+  explicando que vacío = *no se sabe*.
+- **El código ya no tapa el vacío**: `mapearAnticipos` usaba un fallback a MSA; ahora devuelve
+  vacío, la fila muestra `—` y **aparece con cualquier filtro** (`coincideEmpresa` no esconde lo
+  que no puede clasificar). Visible y evidentemente incompleto, que es lo que se buscaba.
+
+**Motivo de fondo, para no repetirlo**: un valor plausible pero falso **no se revisa nunca**; un
+vacío sí se ve. Es la misma familia que `B-BUG-CLIENTE-NO-SE-CREA` y que el paso 0 de este dossier.
 
 ### Fuera de alcance, explícito
 - **SICORE para PAM/MA: nunca.** Es regla, no configuración.
