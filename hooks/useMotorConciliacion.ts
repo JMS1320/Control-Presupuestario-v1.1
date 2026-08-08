@@ -515,10 +515,22 @@ export function useMotorConciliacion() {
               if (ccData?.nro_cuenta) extraIdsCF.nro_cuenta = ccData.nro_cuenta
             }
 
+            // A-BUG-07 — convención de `detalle`, la misma que usa la asignación manual:
+            //   1. lo que el usuario escribió en la fila del Cash Flow, si escribió algo
+            //   2. si no, se deriva: `<comprobante> — <proveedor>`
+            //   3. y si no hay ni eso, el detalle armado de la fila
+            // Antes iba `detalle_usuario || null`, así que un template conciliado por el motor
+            // quedaba trazado por ID pero **ilegible en la grilla**: no decía qué era.
+            const comprobanteCF = matchCF.cashFlowRow.comprobante_display
+            const detalleDerivado = comprobanteCF
+              ? `${comprobanteCF}${provNombreCF ? ' — ' + provNombreCF : ''}`
+              : (matchCF.cashFlowRow.detalle || null)
+            const detalleFinal = matchCF.cashFlowRow.detalle_usuario?.trim() || detalleDerivado
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
-              detalle: matchCF.cashFlowRow.detalle_usuario || null,
+              detalle: detalleFinal,
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
               proveedor_nombre: provNombreCF,

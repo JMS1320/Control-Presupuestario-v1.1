@@ -187,6 +187,13 @@ export function VistaExtractoBancario() {
     detalle: ''
   })
   const [facturasDisponibles, setFacturasDisponibles] = useState<any[]>([])
+  /**
+   * Códigos contable/interno YA usados en esta cuenta, para ofrecerlos al imputar a mano (A-FEAT-03).
+   * Motivo: al ser texto libre se fueron creando variantes del mismo concepto — hoy conviven
+   * `RET 3 PAM`, `RET PAM` y `RET 1 PAM`, y `Ver` junto a `VER`. Sugerir lo existente corta eso
+   * de raíz sin obligar a migrar nada.
+   */
+  const [codigosUsados, setCodigosUsados] = useState<{ contable: string[]; interno: string[] }>({ contable: [], interno: [] })
   const [vinculaciones, setVinculaciones] = useState<{[key: string]: string}>({}) // movimiento_id -> factura_id
   
   // Edición inline detalle
@@ -853,8 +860,24 @@ export function VistaExtractoBancario() {
   }
 
   // Cargar facturas y templates disponibles para vincular
+  // A-FEAT-03: junta los códigos que ya se usaron en esta cuenta para sugerirlos al imputar
+  const cargarCodigosUsados = async () => {
+    try {
+      const { data } = await dbCuenta().from(tablaActiva).select('contable, interno')
+      const limpiar = (vals: (string | null)[]) =>
+        [...new Set(vals.map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+      setCodigosUsados({
+        contable: limpiar((data || []).map((r: any) => r.contable)),
+        interno: limpiar((data || []).map((r: any) => r.interno)),
+      })
+    } catch (e) {
+      console.error('Error cargando códigos usados:', e)
+    }
+  }
+
   const cargarFacturasDisponibles = async () => {
     try {
+      cargarCodigosUsados()
       // Facturas ARCA no conciliadas de LAS TRES empresas.
       // Antes sólo se leía `msa`, así que parado en el extracto de PAM no aparecía ninguna de sus
       // facturas. Y se ofrecen las tres a propósito, no sólo la de la cuenta: **MSA paga facturas
@@ -932,6 +955,8 @@ export function VistaExtractoBancario() {
       const templatesFormateados = (templatesEgresos || []).map(t => ({
         id: t.id,
         tipo: 'TEMPLATE' as const,
+        // El `responsable` del template ES su empresa (puede ser varias) -> alimenta el chip
+        empresas: parseEmpresas(t.egreso?.responsable),
         origen_tabla: 'cuotas_egresos_sin_factura' as const,
         descripcion: t.descripcion,
         denominacion_emisor: t.egreso?.nombre_quien_cobra || t.egreso?.responsable || 'Template Sin Factura',
@@ -1518,14 +1543,46 @@ export function VistaExtractoBancario() {
     }
   }
 
+  /**
+   * Palabras que no identifican a nadie: aparecen en decenas de razones sociales.
+   */
+  const RUIDO_RAZON_SOCIAL = new Set(['srl', 'sociedad', 'anonima', 'limitada', 'coop',
+    'cooperativa', 'hnos', 'hermanos', 'grupo', 'servicios', 'argentina', 'sacif', 'saci'])
+
+  /**
+   * ¿La descripción del banco nombra a este proveedor? (A-BUG-06)
+   *
+   * Antes comparaba contra **la primera palabra** del nombre, y por eso las propuestas eran
+   * erráticas: `LA MERCURE S.R.L.` buscaba `la` y matcheaba casi cualquier descripción;
+   * `DE NEVARES...` buscaba `de`. Al revés, un proveedor cuya primera palabra el banco no escribe
+   * no aparecía nunca.
+   *
+   * Ahora se parte el nombre en palabras con contenido (>= 4 letras, sin las de sociedad) y
+   * alcanza con que la descripción nombre alguna. Normalizado, así que `FEDERACION` encuentra
+   * a `FEDERACION PATRONAL` aunque el banco escriba sin tilde.
+   */
+  const proveedorNombrado = (descripcion: string, nombre: string): boolean => {
+    const desc = normalizarBusqueda(descripcion || '')
+    if (!desc) return false
+    const palabras = normalizarBusqueda(nombre || '')
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length >= 4 && !RUIDO_RAZON_SOCIAL.has(w))
+    if (palabras.length === 0) return false
+    return palabras.some(w => desc.includes(w))
+  }
+
   // Generar propuestas inteligentes para un movimiento (funciona con ARCA y Templates)
   const generarPropuestasInteligentes = (movimiento: any) => {
     const opcionesDisponibles = facturasDisponibles
-    const propuestas = []
-    
+    const propuestas: any[] = []
+
+    // El monto del movimiento es el débito O el crédito: un INGRESO tiene débito 0, y comparar
+    // sólo contra débitos dejaba a los ingresos sin una sola propuesta (además dividía por cero).
+    const montoMov = Math.abs(Number(movimiento.debitos) || 0) || Math.abs(Number(movimiento.creditos) || 0)
+
     // 1. Mismo monto exacto (cualquier fecha)
-    const mismoMonto = opcionesDisponibles.filter(f => 
-      Math.abs(f.display_monto - movimiento.debitos) < 0.01
+    const mismoMonto = opcionesDisponibles.filter(f =>
+      Math.abs(Math.abs(f.display_monto) - montoMov) < 0.01
     )
     propuestas.push(...mismoMonto.map(f => ({
       ...f, 
@@ -1534,10 +1591,11 @@ export function VistaExtractoBancario() {
     })))
     
     // 2. Monto similar ±10% + mismo proveedor (buscar en descripción)
-    const montoSimilar = opcionesDisponibles.filter(f => {
-      const diferenciaMonto = Math.abs(f.display_monto - movimiento.debitos) / movimiento.debitos
-      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.display_nombre.toLowerCase().split(' ')[0])
-      return diferenciaMonto <= 0.10 && proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
+    const montoSimilar = montoMov === 0 ? [] : opcionesDisponibles.filter(f => {
+      const diferenciaMonto = Math.abs(Math.abs(f.display_monto) - montoMov) / montoMov
+      return diferenciaMonto <= 0.10
+        && proveedorNombrado(movimiento.descripcion, f.display_nombre)
+        && !propuestas.find(p => p.id === f.id)
     })
     propuestas.push(...montoSimilar.map(f => ({
       ...f, 
@@ -1546,10 +1604,10 @@ export function VistaExtractoBancario() {
     })))
     
     // 3. Mismo proveedor (cualquier monto)
-    const mismoProveedor = opcionesDisponibles.filter(f => {
-      const proveedorEnDescripcion = movimiento.descripcion.toLowerCase().includes(f.display_nombre.toLowerCase().split(' ')[0])
-      return proveedorEnDescripcion && !propuestas.find(p => p.id === f.id)
-    })
+    const mismoProveedor = opcionesDisponibles.filter(f =>
+      proveedorNombrado(movimiento.descripcion, f.display_nombre)
+        && !propuestas.find(p => p.id === f.id)
+    )
     propuestas.push(...mismoProveedor.map(f => ({
       ...f, 
       tipo_match: f.tipo === 'ARCA' ? 'factura_mismo_proveedor' : 'template_mismo_proveedor', 
@@ -4016,7 +4074,8 @@ export function VistaExtractoBancario() {
                 <label className="text-xs text-gray-500 mb-0.5 block">Contable</label>
                 <Input
                   className="h-7 text-xs"
-                  placeholder="Ej: AP i"
+                  placeholder="Ej: RET 3 PAM"
+                  list="codigos-contables-usados"
                   value={contableManual}
                   onChange={e => setContableManual(e.target.value)}
                 />
@@ -4026,9 +4085,18 @@ export function VistaExtractoBancario() {
                 <Input
                   className="h-7 text-xs"
                   placeholder="Ej: DIST MA"
+                  list="codigos-internos-usados"
                   value={internoManual}
                   onChange={e => setInternoManual(e.target.value)}
                 />
+                {/* A-FEAT-03: los códigos ya usados, para dejar de crear variantes parecidas.
+                    Hoy conviven RET 3 PAM / RET PAM / RET 1 PAM y Ver / VER porque nada los sugería. */}
+                <datalist id="codigos-contables-usados">
+                  {codigosUsados.contable.map(c => <option key={c} value={c} />)}
+                </datalist>
+                <datalist id="codigos-internos-usados">
+                  {codigosUsados.interno.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
             </div>
           </div>
@@ -4056,17 +4124,30 @@ export function VistaExtractoBancario() {
  * un error, pero conviene saberlo ANTES de confirmar y no descubrirlo después en la grilla.
  */
 function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa: string } }) {
-  const empresa = opcion?.empresa as Empresa | undefined
-  if (!empresa) return null
-  const esOtra = !!cuenta && empresa !== cuenta.empresa
+  // Las FC traen UNA empresa (la del schema); los templates pueden traer varias (`MSA/PAM`)
+  const lista: string[] = Array.isArray(opcion?.empresas) && opcion.empresas.length > 0
+    ? opcion.empresas
+    : (opcion?.empresa ? [opcion.empresa] : [])
+  if (lista.length === 0) return null
+  const canon = lista.filter(e => COLOR_EMPRESA[e as Empresa])
+  // "De otra empresa" sólo si NINGUNA de las suyas es la de la cuenta: un template MSA/PAM pagado
+  // desde MSA no es un retiro.
+  const esOtra = !!cuenta && canon.length > 0 && !canon.includes(cuenta.empresa)
+  const que = opcion?.tipo === 'ARCA' ? 'Factura' : 'Template'
   return (
-    <span
-      className={`mr-1 rounded border px-1 text-[10px] leading-4 ${COLOR_EMPRESA[empresa] || ''}`}
-      title={esOtra
-        ? `Factura de ${empresa} pagada desde una cuenta de ${cuenta!.empresa} → se registra como retiro (RET 3 ${empresa})`
-        : `Factura de ${empresa}`}
-    >
-      {empresa}{esOtra ? ' ⇄' : ''}
+    <span className="mr-1 inline-flex gap-0.5">
+      {lista.map(e => (
+        <span
+          key={e}
+          className={`rounded border px-1 text-[10px] leading-4 ${COLOR_EMPRESA[e as Empresa] || 'border-gray-200 bg-gray-100 text-gray-500'}`}
+          title={esOtra
+            ? `${que} de ${lista.join('/')} pagado desde una cuenta de ${cuenta!.empresa} → se registra como retiro (RET 3 ${canon[0]})`
+            : `${que} de ${lista.join('/')}`}
+        >
+          {e}
+        </span>
+      ))}
+      {esOtra && <span className="text-[10px] leading-4 text-amber-600" title="Se registrará como retiro">⇄</span>}
     </span>
   )
 }

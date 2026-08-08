@@ -3108,6 +3108,39 @@ Tres de los cuatro puntos del dossier, corregidos en las 4 ramas (template · AR
 
 **A-BUG-05 queda cerrado en sus 4 puntos.**
 
+### 🔧 Tanda de conciliación — qué se mejoró y qué queda (2026-08-08)
+
+Informe completo con los datos de la BD, ejemplos y propuestas:
+**artifact `de1f4519`** — *"Cómo se decide contable e interno al conciliar"*.
+
+#### ✅ Mejorado
+| # | Qué | Detalle |
+|---|---|---|
+| **A-BUG-06** | Los candidatos al reasignar eran erráticos | Comparaba la descripción del banco contra **la primera palabra** del proveedor: `LA MERCURE S.R.L.` buscaba `la` y matcheaba casi todo; `DE NEVARES…` buscaba `de`. Ahora parte el nombre en palabras con contenido (≥4 letras, sin `srl`/`sociedad`/etc.) y alcanza con que la descripción nombre alguna. Verificado con 8 casos reales |
+| **A-BUG-06b** | **Los ingresos no recibían ninguna propuesta** | El monto se comparaba sólo contra `debitos`, que en un crédito es 0 → división por cero. Ahora usa débito **o** crédito. Eran **6 de los 39** pendientes de MSA |
+| **A-BUG-06c** | Sin tilde no matcheaba | Usaba `toLowerCase()` en vez del `normalizarBusqueda` que el proyecto ya tenía |
+| **A-BUG-07** | El motor dejaba el movimiento ilegible | Escribía `detalle_usuario \|\| null`: un template conciliado quedaba trazado por ID pero sin decir qué era. Ahora aplica **la misma convención que el manual**: lo que el usuario escribió → si no, `<comprobante> — <proveedor>` |
+| **A-FEAT-03** | Códigos contable/interno de texto libre | `<datalist>` con los códigos **ya usados en esa cuenta**. Motivo: conviven `RET 3 PAM`, `RET PAM`, `RET 1 PAM`, y `Ver` con `VER` |
+| **Chip de empresa** | Extendido a templates | Entiende la lista (`MSA/PAM`) y no marca retiro si **alguna** de sus empresas es la de la cuenta |
+| **Dato** | `Aportes Domesticas (MA)` | `RET MA` → **`RET 3 MA`** (corregido a pedido del usuario) |
+
+#### ⏳ Pendientes de DEFINICIÓN del usuario
+| # | Qué falta decidir |
+|---|---|
+| **Fallback sin regla** | Si ninguna capa responde y las empresas difieren: ¿estampar `RET 3 <empresa>` igual **y** dejarlo en `auditar`, o dejarlo vacío? Hoy queda **conciliado y vacío, sin avisar**. Postergado por el usuario hasta terminar bugs y feats |
+| **Dirección inversa (`AP`)** | Si PAM/MA pagan algo de MSA. No hay ninguna regla ni un solo movimiento con ese código; la doc propone `AP 3 …` pero está sin definir. El usuario: *"deberíamos ir viéndolo aunque no es común"* |
+| **A-FEAT-04 — SICORE** | Criterio ya dado por el usuario: la retención puntual es `DIST MA` si el pago lo es, pero **el pago total de SICORE en el extracto no puede serlo** — va como los `Desglosar`, **registrando el desglose en el momento** y sin quedar como revisión manual. Falta diseñar cómo |
+| **Poblar las 9 cuentas sin reglas** | `pam_galicia` (6 movs pendientes, **cero reglas de ambas clases**), `ma_galicia`, 3 cajas y 3 tarjetas. Las cajas y tarjetas **ya obedecen el mismo motor**: lo que falta son las reglas, no el código |
+
+#### 🔴 Pendientes de TRABAJO (acordados, sin hacer)
+| # | Qué |
+|---|---|
+| **A-FEAT-02** | Al **Editar** un movimiento se puede elegir cuenta contable pero **no vincularlo a un template**: hay que salir y entrar por Reasignar. El usuario: *"acá hay que resolver este punto"* |
+| **A-BUG-09** | Auditar los movimientos que quedaron sin conciliar existiendo una fila del Cash Flow por el mismo monto, y convertir cada caso en regla. **Acordado hacerlo ANTES de conciliar en masa** |
+| **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
+| **Chip en sueldos y grupos** | Se hizo en facturas y templates; las pestañas de sueldos y grupos usan otras listas |
+| **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
+
 ### 🧪 Resultado del testeo del usuario (2026-08-08)
 | # | Test | Estado |
 |---|---|---|
