@@ -798,11 +798,12 @@ perder el dato pero no filtra por él.
    escritura fue al schema equivocado — es el error que este cambio vino a arreglar.
 5. **Bloqueo de ECHEQ.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que avisar que
    es sólo de MSA y **no cambiar nada**.
-6. ⚠️ **El caso real: agrupar las 2 de Allende** (las pagaste juntas en un solo pago). Seleccioná
-   las dos FC de ALLENDE y agrupá. Esperado: quedan como **una sola fila** con los dos
+6. ⚠️ **El caso real: agrupar las 2 de Allende** (las pagaste juntas en un solo pago).
+   **Ctrl+Click en Pagos** para entrar al modo PAGOS, tildá las dos FC de ALLENDE y **🔗 Agrupar**. Esperado: quedan como **una sola fila** con los dos
    comprobantes en el detalle y el total sumado ($150.295 + $832.970 = **$983.265**). Después
-   marcala como pagada y verificá que el estado quedó en **las dos** facturas. Probá también
-   **deshacer el grupo**: tienen que volver a ser dos filas.
+   marcala como pagada y verificá que el estado quedó en **las dos** facturas. Después tildá
+   **sólo esa fila agrupada**: el botón tiene que cambiar a **✕ Desagrupar (2)**. Deshacela y
+   verificá que vuelven a ser dos filas.
 7. **No se pueden mezclar empresas.** Seleccioná una FC de PAM y una de MSA e intentá agrupar:
    tiene que avisar que un grupo de pago vive en una sola empresa.
 8. **Que MSA no se haya roto.** Pagá una FC de **MSA** como siempre: la pantalla de SICORE tiene
@@ -816,10 +817,23 @@ perder el dato pero no filtra por él.
    confirmación. Guardalo así y verificá que en el Cash Flow aparece con `—` y **se ve con
    cualquier filtro de empresa**.
 
-### Agrupar pagos
+### Agrupar y desagrupar pagos
 Ya funciona en las tres empresas. La única restricción es que **un grupo no puede mezclar
 empresas**: el grupo y sus facturas viven en la misma, así que juntar una FC de PAM con una de MSA
 se rechaza con un aviso.
+
+**Cómo se llega** (no es obvio y conviene tenerlo escrito):
+1. **Ctrl+Click** en el botón **Pagos** (arriba a la derecha). Con clic normal no pasa nada: el
+   modo PAGOS se activa sólo con Ctrl.
+2. Aparecen los **checkboxes** por fila y una barra de acciones.
+3. Tildá **2 o más** filas del mismo proveedor → se habilita **🔗 Agrupar**.
+
+**Para deshacer un grupo**, dos caminos:
+- Tildá **una sola** fila agrupada: el botón **🔗 Agrupar** se transforma en **✕ Desagrupar (N)**,
+  con N = cuántos comprobantes tiene el grupo.
+- O la **✕ roja** que aparece dentro de la columna **Detalle** de la fila agrupada, al lado del 🔗.
+
+Los dos piden confirmación y devuelven las facturas a filas individuales.
 
 Los **templates** son la excepción a tener en cuenta: aunque el template sea de PAM, su grupo se
 guarda siempre del lado de MSA. Es una cuestión interna y no cambia nada de lo que ves.

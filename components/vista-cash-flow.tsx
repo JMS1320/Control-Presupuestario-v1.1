@@ -1042,6 +1042,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Los chips de origen (siempre visibles) ya filtran; en Modo Pagos usamos el mismo set operativo.
   const datosFiltradosPagos = datosOperativos
 
+  /**
+   * Si hay UNA sola fila seleccionada y es un grupo, el botón "Agrupar" pasa a ser "Desagrupar".
+   *
+   * Antes deshacer un grupo era una ✕ de 8 píxeles dentro de la celda Detalle, sin rótulo: estaba
+   * pero no se encontraba. Acá la acción aparece donde el usuario ya está mirando, y sólo cuando
+   * tiene sentido — con 0, con 2+, o con una fila que no es grupo, sigue siendo "Agrupar".
+   */
+  const filaGrupoSeleccionada = (() => {
+    if (filasSeleccionadas.size !== 1) return null
+    const fila = datosOperativos.find(f => filasSeleccionadas.has(f.id))
+    return fila && (fila.facturas_agrupadas ?? 0) > 1 && fila.grupo_pago_id ? fila : null
+  })()
+
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
     const idsVisibles = new Set(datosFiltradosPagos.map(f => f.id))
@@ -2982,15 +2995,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     >
                       🏦 Exportar lote Galicia
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={agruparSeleccionados}
-                      className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
-                      disabled={filasSeleccionadas.size < 2}
-                    >
-                      🔗 Agrupar
-                    </Button>
+                    {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
+                    {filaGrupoSeleccionada ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
+                        className="text-xs border-red-500 text-red-700 hover:bg-red-50"
+                        title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
+                      >
+                        ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={agruparSeleccionados}
+                        className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
+                        disabled={filasSeleccionadas.size < 2}
+                        title="Seleccioná 2 o más filas del mismo proveedor"
+                      >
+                        🔗 Agrupar
+                      </Button>
+                    )}
                   </div>
                 </div>
 
