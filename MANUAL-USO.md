@@ -782,7 +782,9 @@ perder el dato pero no filtra por él.
 - **SICORE** — no corresponde a esas empresas. Una FC de PAM pasa a *pagar* **derecho**, sin
   pantalla de retención y sin exigirte la Fecha de Pago (esa exigencia existía sólo porque de ahí
   salía la quincena SICORE). Si es en dólares, **sí** te sigue preguntando el tipo de cambio.
-- **ECHEQ** y **agrupar pagos** — avisan que son sólo de MSA y no tocan nada.
+- **ECHEQ** — avisa que es sólo de MSA y no toca nada (`msa.cheques` no tiene equivalente).
+- **Agrupar pagos** sí funciona en las tres desde el 2026-08-08; lo único que no se puede es
+  **mezclar empresas en un mismo grupo**.
 
 ### 🧪 Cómo probarlo
 1. **Abrí Cash Flow.** Tiene que aparecer la barra de empresas arriba y la columna **Empresa**
@@ -794,23 +796,23 @@ perder el dato pero no filtra por él.
    aparece la pantalla de SICORE, y avisa *"Factura de PAM marcada para pagar (sin SICORE)"*.
    **Después recargá la pantalla y verificá que siguió en `pagar`.** Si volvió a `pendiente`, la
    escritura fue al schema equivocado — es el error que este cambio vino a arreglar.
-5. **Probá el bloqueo de ECHEQ.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que
-   avisar que es sólo de MSA y **no cambiar nada**.
-5b. **Agrupar las 2 de Allende** (el caso real: las pagaste juntas en un solo pago). Seleccioná
+5. **Bloqueo de ECHEQ.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que avisar que
+   es sólo de MSA y **no cambiar nada**.
+6. ⚠️ **El caso real: agrupar las 2 de Allende** (las pagaste juntas en un solo pago). Seleccioná
    las dos FC de ALLENDE y agrupá. Esperado: quedan como **una sola fila** con los dos
-   comprobantes en el detalle y el total sumado. Después marcala como pagada: tiene que
-   escribirse en **las dos facturas de PAM**. Probá también **deshacer el grupo** y que vuelvan a
-   ser dos filas.
-5c. **Que no se puedan mezclar empresas.** Seleccioná una FC de PAM y una de MSA e intentá
-   agrupar: tiene que avisar que un grupo de pago vive en una sola empresa.
-6. **Que MSA no se haya roto.** Pagá una FC de **MSA** como siempre: la pantalla de SICORE tiene
+   comprobantes en el detalle y el total sumado ($150.295 + $832.970 = **$983.265**). Después
+   marcala como pagada y verificá que el estado quedó en **las dos** facturas. Probá también
+   **deshacer el grupo**: tienen que volver a ser dos filas.
+7. **No se pueden mezclar empresas.** Seleccioná una FC de PAM y una de MSA e intentá agrupar:
+   tiene que avisar que un grupo de pago vive en una sola empresa.
+8. **Que MSA no se haya roto.** Pagá una FC de **MSA** como siempre: la pantalla de SICORE tiene
    que aparecer igual que antes, y seguir exigiendo la Fecha de Pago.
-7. **Multiempresa.** En Templates dejá tildado sólo **MSA**: el template *Retiro MA mensual*
+9. **Multiempresa.** En Templates dejá tildado sólo **MSA**: el template *Retiro MA mensual*
    (`MSA/PAM`) tiene que seguir apareciendo. Dejá sólo **MA**: tiene que desaparecer.
-8. **Sueldos de Alondra** (estaba mal cargada como PAM, ahora es **MA**). Su sueldo tiene que
+10. **Sueldos de Alondra** (estaba mal cargada como PAM, ahora es **MA**). Su sueldo tiene que
    mostrar el chip **MA**, y responde al selector de **Templates y demás**, *no* al de Facturas:
    con MA apagada en Facturas se sigue viendo; se esconde sólo si destildás MA en Templates.
-9. **Anticipo sin empresa.** Cargá un anticipo sin elegir empresa: tiene que avisar y pedirte
+11. **Anticipo sin empresa.** Cargá un anticipo sin elegir empresa: tiene que avisar y pedirte
    confirmación. Guardalo así y verificá que en el Cash Flow aparece con `—` y **se ve con
    cualquier filtro de empresa**.
 
