@@ -143,6 +143,8 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       // Venc de templates: SÍ o SÍ por el RPC (único camino autorizado por el guardián de BD).
       // El RPC ya setea fecha_vencimiento + fecha_estimada.
       let error: any
+      // Cuántas filas tocó el UPDATE. `null` = no aplica (rama RPC, que no lo informa).
+      let filasAfectadas: number | null = null
       if (celdaEnEdicion.columna === 'fecha_vencimiento' && tabla === 'cuotas_egresos_sin_factura') {
         const res = await supabase.rpc('actualizar_venc_cuota', {
           p_cuota_id: celdaEnEdicion.filaId,
@@ -158,14 +160,28 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
 
         console.log(`💾 Actualizando ${tabla}:`, updateData, 'WHERE:', filtro)
 
-        const res = await query.update(updateData).match(filtro)
+        // `count: 'exact'` para saber si el UPDATE matcheó algo. Un UPDATE que no encuentra
+        // la fila NO es un error para Postgres: toca 0 filas y devuelve OK. Sin este conteo
+        // la pantalla dice "guardado" y no se guardó nada. Ver PENDIENTES A-FEAT-13 paso 0.
+        const res = await query.update(updateData, { count: 'exact' }).match(filtro)
         error = res.error
+        filasAfectadas = res.count
       }
 
       if (error) {
         console.error(`Error actualizando ${tabla}:`, error)
         toast.error('Error al guardar cambio')
         onError?.('Error al guardar cambio')
+        return false
+      }
+
+      // No matcheó ninguna fila: el registro no está donde se lo buscó (schema equivocado,
+      // fila borrada, o id de otra empresa). Se avisa en vez de festejar un guardado que no ocurrió.
+      if (filasAfectadas === 0) {
+        const msg = `No se encontró el registro en ${tabla}: el cambio NO se guardó`
+        console.error(`⚠️ ${msg}`, 'WHERE:', filtro)
+        toast.error(msg)
+        onError?.(msg)
         return false
       }
 
@@ -215,4 +231,4 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
 }
 
 export default useInlineEditor
-export type { CeldaEnEdicion }
+// `CeldaEnEdicion` ya se exporta en su declaración (arriba); re-exportarla acá chocaba (TS2484).

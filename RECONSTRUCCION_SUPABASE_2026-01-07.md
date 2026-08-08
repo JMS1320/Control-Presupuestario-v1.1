@@ -12099,3 +12099,71 @@ estaban: **59 cabezas de más**.
 
 Fix: `activo` pasó a ser **obligatorio** en `existenciasDePesada()` — no opcional, para que el
 compilador obligue a cada pantalla a decidirlo.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-08-07 · Cash Flow multiempresa (A-FEAT-13, paso 1)
+
+> ⏳ **PENDIENTE DE EJECUTAR.** Requiere DDL: el MCP de Supabase estaba caído y PostgREST no
+> ejecuta DDL, así que este bloque hay que correrlo desde el **SQL Editor de Supabase**.
+> Contexto y motivo → `PENDIENTES.md` § [A-FEAT-13](PENDIENTES.md#a-feat-13).
+
+Habilitan que el Cash Flow muestre y pueda pagar facturas de **PAM y MA**, no sólo de MSA.
+
+### 1. `sueldos.empleados.empresa` — admitir MA y el formato multiempresa
+
+El CHECK actual **rechaza `'MA'`**: el módulo de sueldos nunca contempló esa empresa (los valores
+en uso eran `MSA`, `PAM`, `ambas`). Y `ambas` es ambiguo con tres empresas.
+
+Convención nueva, común a templates y sueldos: **una o más empresas separadas por `/`**
+(`MSA` · `PAM/MA` · `MSA/PAM/MA`). El filtro del Cash Flow entra si **alguna** coincide.
+
+```sql
+-- (a) Sacar el CHECK viejo (el nombre puede variar; verificar antes con \d sueldos.empleados)
+ALTER TABLE sueldos.empleados DROP CONSTRAINT IF EXISTS empleados_empresa_check;
+
+-- (b) Migrar los datos ANTES de poner el CHECK nuevo
+--     'ambas' = AMS y JMS, que según el usuario son de las TRES empresas
+UPDATE sueldos.empleados SET empresa = 'MSA/PAM/MA' WHERE empresa = 'ambas';
+--     Alondra Olivo estaba mal cargada como PAM (confirmado por el usuario 2026-08-07)
+UPDATE sueldos.empleados SET empresa = 'MA' WHERE nombre = 'Alondra Olivo';
+
+-- (c) CHECK nuevo: uno o más tokens de {MSA,PAM,MA} separados por '/'
+ALTER TABLE sueldos.empleados
+  ADD CONSTRAINT empleados_empresa_check
+  CHECK (empresa ~ '^(MSA|PAM|MA)(/(MSA|PAM|MA))*$');
+```
+
+⚠️ **El Presupuesto sigue funcionando sin tocar código.** `tab-presupuesto.tsx` (l. 1103 y 1126)
+filtra con `empresa.toLowerCase().includes("msa") || empresa === "ambas"`, y `'MSA/PAM/MA'`
+contiene `msa` → sigue entrando. La rama `=== "ambas"` queda muerta pero inofensiva. Verificado
+antes de escribir esta migración.
+
+### 2. `public.anticipos_proveedores.empresa` — nueva columna
+
+Un anticipo **se paga antes de que exista la factura** (para eso sirve), así que la empresa no se
+puede deducir del vínculo justo cuando hace falta: de 33 anticipos, **15 no tienen `factura_id`**
+(y los 18 que sí, apuntan todos a MSA).
+
+```sql
+ALTER TABLE public.anticipos_proveedores
+  ADD COLUMN IF NOT EXISTS empresa varchar(20) DEFAULT 'MSA';
+
+-- Backfill: hoy los 33 son de MSA (los 18 vinculados apuntan a msa.comprobantes_arca).
+-- ⚠️ Es una ASUNCIÓN sobre los 15 sin vincular; se corrige desde la pantalla si alguno no lo es.
+UPDATE public.anticipos_proveedores SET empresa = 'MSA' WHERE empresa IS NULL;
+```
+
+### 3. Sin cambio de estructura — dato corregido el 2026-08-07 (ya aplicado)
+
+```sql
+-- Template "ABL Cochera Libertad Anual": responsable decía 'Duhau', que no es empresa ni está
+-- en el selector. Pasa a multiempresa para que aparezca al filtrar PAM o MA ('Duhau' se muestra
+-- pero no filtra). Los otros 4 templates de Libertad son responsable PAM / interno MA.
+UPDATE public.egresos_sin_factura SET responsable = 'PAM/MA/Duhau' WHERE responsable = 'Duhau';
+```
+
+### Lo que NO se crea, a propósito
+`pam.sicore_retenciones` y `ma.sicore_retenciones` **no se crean nunca**: SICORE es sólo MSA, es
+una decisión firme del usuario y en el código se blinda por empresa, no por configuración.
+`grupos_pago` y `cheques` tampoco existen fuera de MSA — agrupar y echeq no se ofrecen en PAM/MA.
