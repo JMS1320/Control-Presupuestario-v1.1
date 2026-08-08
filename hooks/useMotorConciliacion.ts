@@ -799,8 +799,11 @@ export function useMotorConciliacion() {
         .from('cuotas_egresos_sin_factura')
         .insert({
           egreso_id: template.id,
+          // Cuota nueva desde una regla: la fecha del banco es lo único que se sabe. `fecha_pago`
+          // faltaba — sin ella la cuota quedaba conciliada sin decir cuándo se pagó.
           fecha_vencimiento: movimiento.fecha,
           fecha_estimada: movimiento.fecha,
+          fecha_pago: movimiento.fecha,
           monto,
           estado: 'conciliado',
           tipo_movimiento: tipoMovimiento,

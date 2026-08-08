@@ -3048,6 +3048,56 @@ tanda** y ninguno rompe nada; se anotan para que no se descubran de nuevo desde 
 > `fecha_pago` y `fecha_estimada` al 07/08, `monto_a_abonar` = total, y **`sicore`, `monto_sicore`
 > y `tipo_sicore` en `null`** — el blindaje de SICORE funcionó sobre datos reales.
 
+### ✅ Paso 6 — Conciliación multiempresa (2026-08-08)
+
+**Decisión del usuario, y es la que ordena el diseño**: el extracto de MSA **sí** puede conciliar
+una factura de PAM o MA, pero tiene que quedar marcado como **retiro por pago a terceros** —
+`RET 3 PAM` / `RET 3 MA`. No es un retiro directo (una transferencia MSA→PAM): es que MSA le pagó
+a un tercero algo facturado a PAM.
+
+**🔑 La regla ya existía y no había que inventar nada.** `reglas_contable_interno` tipo
+`responsable` (Tab 2 / "Tipo B") tiene configurado desde antes:
+
+| Cuenta | Responsable | → contable |
+|---|---|---|
+| `msa_galicia` | PAM | **RET 3 PAM** |
+| `msa_galicia` | MA | **RET 3 MA** |
+
+Y está en uso: **12 movimientos con `RET 3 PAM` y 9 con `RET 3 MA`** en `msa_galicia.contable`.
+Lo que faltaba —y el usuario lo sospechaba— es que **sólo se aplicaba a templates**: el motor la
+consultaba nada más en la rama TEMPLATE. Ahora la conciliación manual la aplica también a
+**facturas**, comparando la empresa de la factura contra la de la cuenta bancaria.
+
+**Cambios:**
+- `cargarFacturasDisponibles` lee las **tres** empresas; cada candidato lleva su `empresa`.
+- La rama ARCA de `ejecutarAsignacion` **lee y escribe en el schema de la factura elegida**.
+- Si la empresa de la factura ≠ la de la cuenta → busca la regla Tipo B y estampa
+  `contable` (y `interno` si la regla lo trae). Lo que el usuario haya escrito a mano **gana**.
+
+**Falta**: mostrar el chip de empresa en la lista de candidatos (el dato ya viaja).
+
+### ✅ La conciliación pisaba el vencimiento de la factura (2026-08-08)
+`ejecutarAsignacion` escribía `fecha_vencimiento = fecha del movimiento` sobre la factura ARCA
+(`vista-extracto-bancario.tsx` ~l.1282). Es el comportamiento **anterior al refactor de fechas**
+de julio, que separó el vencimiento firme de la fecha real de pago: **cada conciliación borraba el
+vencimiento original**. Ahora escribe `fecha_pago`.
+
+Los otros dos lugares que parecían el mismo bug **no lo eran**: crean una cuota **nueva** desde el
+movimiento, donde la fecha del banco es lo único que se sabe. Ahí lo que faltaba era `fecha_pago`,
+y se agregó (motor y manual).
+
+### ✅ A-BUG-05 — la asignación manual borraba datos (2026-08-08)
+Tres de los cuatro puntos del dossier, corregidos en las 4 ramas (template · ARCA · sueldo · grupo):
+1. **`detalle: null` fijo** → se preserva lo que el usuario escribió y, si no hay, se **deriva**
+   (`FC 1234 — Proveedor`, `Nombre template — Proveedor`, `Grupo de N — Proveedor`). En la rama de
+   sueldos se usa el `detalleSueldo` que **ya se calculaba y se descartaba**.
+2. **`proveedor_nombre` pisado con null** cuando el CUIT no está en `proveedores` → ahora sólo se
+   escribe si hay un nombre; si no, se conserva lo que hubiera.
+3. **`nro_cuenta` sin fallback** en la rama ARCA → ahora, si la factura no lo tiene, se deriva de
+   `cuentas_contables` por la categ, igual que hace el motor.
+
+Queda el punto 3 del dossier original (la rama TEMPLATE tampoco llena `nro_cuenta`) — **pendiente**.
+
 ### 🧪 Resultado del testeo del usuario (2026-08-08)
 | # | Test | Estado |
 |---|---|---|

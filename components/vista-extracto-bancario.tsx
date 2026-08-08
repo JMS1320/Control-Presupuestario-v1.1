@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, type Empresa } from "@/lib/empresas"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -854,18 +855,31 @@ export function VistaExtractoBancario() {
   // Cargar facturas y templates disponibles para vincular
   const cargarFacturasDisponibles = async () => {
     try {
-      // Cargar facturas ARCA NO conciliadas (cualquier estado excepto conciliado)
-      const { data: facturasArca, error: errorArca } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, fecha_emision, cuit, estado')
-        .neq('estado', 'conciliado')
-        .order('fecha_estimada', { ascending: false })
-
-      if (errorArca) {
-        console.error('Error cargando facturas ARCA:', errorArca)
+      // Facturas ARCA no conciliadas de LAS TRES empresas.
+      // Antes sólo se leía `msa`, así que parado en el extracto de PAM no aparecía ninguna de sus
+      // facturas. Y se ofrecen las tres a propósito, no sólo la de la cuenta: **MSA paga facturas
+      // de PAM y de MA** (pago a terceros facturado a otra empresa) y eso hay que poder
+      // registrarlo. Cuando la empresa de la factura no es la de la cuenta, se marca como retiro
+      // (`RET 3 PAM` / `RET 3 MA`). Ver PENDIENTES § A-FEAT-13 paso 6.
+      const resultadosArca = await Promise.all(EMPRESAS.map(async (empresa) => {
+        const { data, error } = await supabase
+          .schema(schemaDeEmpresa(empresa))
+          .from('comprobantes_arca')
+          .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, fecha_emision, cuit, estado')
+          .neq('estado', 'conciliado')
+          .order('fecha_estimada', { ascending: false })
+        return { empresa, data: data || [], error }
+      }))
+      const errArcaMsa = resultadosArca.find(r => r.empresa === 'MSA')?.error
+      if (errArcaMsa) {
+        console.error('Error cargando facturas ARCA:', errArcaMsa)
         return
       }
+      for (const r of resultadosArca) {
+        if (r.error) console.error(`Error cargando facturas ARCA de ${r.empresa}:`, r.error)
+      }
+      const facturasArca = resultadosArca.flatMap(r =>
+        r.data.map((f: any) => ({ ...f, __empresa: r.empresa })))
 
       // Cargar templates egresos NO conciliados (cualquier estado excepto conciliado)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
@@ -895,10 +909,13 @@ export function VistaExtractoBancario() {
       console.log('🔍 DEBUG Templates raw data:', templatesEgresos)
 
       // Combinar facturas ARCA y templates en formato unificado
-      const facturasFormateadas = (facturasArca || []).map(f => ({
+      const facturasFormateadas = (facturasArca || []).map((f: any) => ({
         id: f.id,
         tipo: 'ARCA' as const,
-        origen_tabla: 'msa.comprobantes_arca' as const,
+        // La empresa viaja en la opción: de ella salen el schema donde escribir y el aviso de
+        // retiro cuando no coincide con la cuenta del extracto.
+        empresa: f.__empresa as Empresa,
+        origen_tabla: `${schemaDeEmpresa(f.__empresa as Empresa)}.comprobantes_arca`,
         tipo_comprobante: f.tipo_comprobante,
         numero_desde: f.numero_desde,
         denominacion_emisor: f.denominacion_emisor,
@@ -1189,8 +1206,11 @@ export function VistaExtractoBancario() {
           // Crear cuota nueva en el template
           const cuotaInsert: Record<string, any> = {
               egreso_id: templateElegido.id,
+              // Cuota NUEVA creada desde el movimiento: acá la fecha del banco sí es todo lo que
+              // se sabe, así que va a las tres. `fecha_pago` faltaba y es la que dice qué se pagó.
               fecha_vencimiento: movimientoAsignando.fecha,
               fecha_estimada: movimientoAsignando.fecha,
+              fecha_pago: movimientoAsignando.fecha,
               monto,
               estado: 'conciliado',
               tipo_movimiento: tipoMovimiento,
@@ -1221,11 +1241,16 @@ export function VistaExtractoBancario() {
           template_id: templateElegido.id,
           template_cuota_id: cuotaId,
           categ: categFinal,
-          detalle: null,
           estado: 'conciliado',
-          proveedor_nombre: provTemplate?.razon_social || null,
           comprobantes_pagados: templateElegido.display_referencia || templateElegido.nombre_referencia || null
         }
+        // El detalle se preserva si el usuario escribió algo; si no, se deriva. Antes iba `null`
+        // fijo y **cada reasignación borraba el detalle** (A-BUG-05 punto 1). Y el proveedor no se
+        // pisa con null cuando el CUIT no está en el maestro (punto 4).
+        const nombreProvTpl = provTemplate?.razon_social || templateElegido.denominacion_emisor || null
+        if (nombreProvTpl) updateTemplate.proveedor_nombre = nombreProvTpl
+        updateTemplate.detalle = movimientoAsignando.detalle?.trim()
+          || `${templateElegido.nombre_referencia || templateElegido.display_referencia || 'Template'}${nombreProvTpl ? ' — ' + nombreProvTpl : ''}`
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
@@ -1240,15 +1265,23 @@ export function VistaExtractoBancario() {
         actualizarLocal(movimientoAsignando.id, updateTemplate)
 
       } else if (tabAsignar === 'arca' && arcaElegida) {
-        // Obtener cuenta_contable y nro_cuenta de la factura ARCA (igual que el motor)
+        // La factura vive en el schema de SU empresa, que puede no ser la de la cuenta bancaria
+        const schemaFactura = schemaDeEmpresa((arcaElegida as any).empresa || 'MSA')
         const { data: facturaCompleta } = await supabase
-          .schema('msa')
+          .schema(schemaFactura)
           .from('comprobantes_arca')
           .select('cuenta_contable, nro_cuenta')
           .eq('id', arcaElegida.id)
           .maybeSingle()
         const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
-        const nroCuenta = facturaCompleta?.nro_cuenta || null              // código numérico → nro_cuenta
+        // Fallback igual que el motor: si la FC no tiene nro_cuenta, derivarlo de la categ.
+        // Sin esto el movimiento quedaba con categ y sin nro_cuenta (A-BUG-05 punto 2).
+        let nroCuenta = facturaCompleta?.nro_cuenta || null
+        if (!nroCuenta && cuentaContable) {
+          const { data: cc } = await supabase.from('cuentas_contables')
+            .select('nro_cuenta').eq('categ', cuentaContable).maybeSingle()
+          nroCuenta = cc?.nro_cuenta || null
+        }
 
         // Buscar nombre oficial del proveedor en BBDD proveedores
         const cuitArca = arcaElegida.cuit?.replace(/[-\s]/g, '') || ''
@@ -1256,15 +1289,35 @@ export function VistaExtractoBancario() {
           .from('proveedores').select('razon_social').eq('cuit', cuitArca).maybeSingle() : { data: null }
         const updateArca: Record<string, any> = {
           comprobante_arca_id: arcaElegida.id,
-          detalle: null,
           estado: 'conciliado',
-          proveedor_nombre: provArca?.razon_social || null,
           comprobantes_pagados: arcaElegida.display_referencia || null
         }
+        // No pisar con null lo que ya estaba: sin proveedor en el maestro se conserva lo que hubiera
+        // (A-BUG-05 punto 4), y el detalle deja de borrarse en cada reasignación (punto 1).
+        const nombreProv = provArca?.razon_social || arcaElegida.denominacion_emisor || null
+        if (nombreProv) updateArca.proveedor_nombre = nombreProv
+        const detalleArca = `${arcaElegida.display_referencia || 'FC'} — ${nombreProv || 'sin proveedor'}`
+        updateArca.detalle = movimientoAsignando.detalle?.trim() || detalleArca
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
         if (internoManual.trim()) updateArca.interno = internoManual.trim()
+
+        // 💡 Pago a terceros de otra empresa: si la cuenta bancaria es de una empresa y la factura
+        // de otra, es un RETIRO (`RET 3 PAM` / `RET 3 MA`). La regla ya existe en
+        // `reglas_contable_interno` (tipo 'responsable') y se usaba SÓLO para templates.
+        const empresaFactura = (arcaElegida as any).empresa as Empresa | undefined
+        if (empresaFactura && cuentaActivaObj && empresaFactura !== cuentaActivaObj.empresa) {
+          const { data: reglaRet } = await supabase.from('reglas_contable_interno')
+            .select('codigo_contable, codigo_interno')
+            .eq('cuenta_bancaria_id', cuentaId)
+            .eq('tipo_regla', 'responsable')
+            .eq('responsable', empresaFactura)
+            .eq('activo', true)
+            .maybeSingle()
+          if (reglaRet?.codigo_contable && !contableManual.trim()) updateArca.contable = reglaRet.codigo_contable
+          if (reglaRet?.codigo_interno && !internoManual.trim()) updateArca.interno = reglaRet.codigo_interno
+        }
 
         const { error: errExt } = await dbCuenta()
           .from(tablaActiva)
@@ -1273,13 +1326,16 @@ export function VistaExtractoBancario() {
 
         if (errExt) throw errExt
 
-        // Actualizar factura ARCA: conciliado + fecha_vencimiento = fecha real + monto = lo pagado
+        // Actualizar la factura ARCA en el schema de SU empresa: conciliado + fecha real de pago
         await supabase
-          .schema('msa')
+          .schema(schemaFactura)
           .from('comprobantes_arca')
           .update({
             estado: 'conciliado',
-            fecha_vencimiento: movimientoAsignando.fecha,
+            // La fecha del movimiento es la fecha REAL de pago, no el vencimiento. Escribirla en
+            // `fecha_vencimiento` (como se hacía) **borraba el vencimiento firme** de la factura,
+            // que es justo lo que el refactor de fechas separó en julio. Ver A-TEST-06.
+            fecha_pago: movimientoAsignando.fecha,
             monto_a_abonar: monto   // ajusta al monto exacto del débito (ej: redondeo terminal)
           })
           .eq('id', arcaElegida.id)
@@ -1327,7 +1383,8 @@ export function VistaExtractoBancario() {
         const updateSueldo: Record<string, any> = {
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
-          detalle: null,
+          // `detalleSueldo` ya se calcula arriba y se descartaba escribiendo null (A-BUG-05 p.1)
+          detalle: movimientoAsignando.detalle?.trim() || detalleSueldo || null,
           estado: 'conciliado',
           proveedor_nombre: nombreEmpleado,
           comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
@@ -1388,11 +1445,15 @@ export function VistaExtractoBancario() {
         const { data: provGrupo } = cuitGrupo ? await supabase
           .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
 
+        const nombreProvGrupo = provGrupo?.razon_social || grupoElegido.nombre_proveedor || null
         const updateGrupo: Record<string, any> = {
           categ: grupoElegido.categ,
-          detalle: null,
+          // Se preserva lo que el usuario haya escrito; si no, se deriva del grupo. Antes iba
+          // `null` fijo y borraba el detalle en cada reasignación (A-BUG-05 punto 1).
+          detalle: movimientoAsignando.detalle?.trim()
+            || `Grupo de ${grupoElegido.cuotas?.length ?? 0}${nombreProvGrupo ? ' — ' + nombreProvGrupo : ''}`,
           estado: 'conciliado',
-          proveedor_nombre: provGrupo?.razon_social || grupoElegido.nombre_proveedor || null,
+          proveedor_nombre: nombreProvGrupo,
           comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
             ? grupoElegido.cuotas.map((f: any) => `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde}`).join(' + ')
             : grupoElegido.tipo_grupo === 'sueldo'
