@@ -3120,8 +3120,9 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-BUG-06b** | **Los ingresos no recibían ninguna propuesta** | El monto se comparaba sólo contra `debitos`, que en un crédito es 0 → división por cero. Ahora usa débito **o** crédito. Eran **6 de los 39** pendientes de MSA |
 | **A-BUG-06c** | Sin tilde no matcheaba | Usaba `toLowerCase()` en vez del `normalizarBusqueda` que el proyecto ya tenía |
 | **A-BUG-07** | El motor dejaba el movimiento ilegible | Escribía `detalle_usuario \|\| null`: un template conciliado quedaba trazado por ID pero sin decir qué era. Ahora aplica **la misma convención que el manual**: lo que el usuario escribió → si no, `<comprobante> — <proveedor>` |
-| **A-FEAT-03** | Códigos contable/interno de texto libre | `<datalist>` con los códigos **ya usados en esa cuenta**. Motivo: conviven `RET 3 PAM`, `RET PAM`, `RET 1 PAM`, y `Ver` con `VER` |
-| **Chip de empresa** | Extendido a templates | Entiende la lista (`MSA/PAM`) y no marca retiro si **alguna** de sus empresas es la de la cuenta |
+| **A-FEAT-03** | Códigos contable/interno de texto libre | `<datalist>` con los códigos **ya usados en esa cuenta**, en el modal de asignación **y en el panel de edición masiva** — que es donde más fácil se cuelan variantes, porque el valor se aplica a muchos movimientos de una. Se recargan al cambiar de cuenta. Motivo: conviven `RET 3 PAM`, `RET PAM`, `RET 1 PAM`, y `Ver` con `VER` |
+| **Chip de empresa** | En **facturas, templates, sueldos y grupos** | Entiende la lista (`MSA/PAM`) y no marca retiro si **alguna** de sus empresas es la de la cuenta. En grupos, la empresa es la **unión** de la de sus miembros |
+| **A-FEAT-02** | ⚠️ **Ya estaba resuelto** | El dossier decía que Editar no ofrecía templates. **Está desactualizado**: el combobox "Vincular a" del panel masivo se alimenta de `[...facturasFormateadas, ...templatesFormateados]`, o sea que ofrece las dos cosas desde antes. Sólo falta verificarlo en pantalla |
 | **Dato** | `Aportes Domesticas (MA)` | `RET MA` → **`RET 3 MA`** (corregido a pedido del usuario) |
 
 #### ⏳ Pendientes de DEFINICIÓN del usuario
@@ -3135,10 +3136,8 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 #### 🔴 Pendientes de TRABAJO (acordados, sin hacer)
 | # | Qué |
 |---|---|
-| **A-FEAT-02** | Al **Editar** un movimiento se puede elegir cuenta contable pero **no vincularlo a un template**: hay que salir y entrar por Reasignar. El usuario: *"acá hay que resolver este punto"* |
 | **A-BUG-09** | Auditar los movimientos que quedaron sin conciliar existiendo una fila del Cash Flow por el mismo monto, y convertir cada caso en regla. **Acordado hacerlo ANTES de conciliar en masa** |
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
-| **Chip en sueldos y grupos** | Se hizo en facturas y templates; las pestañas de sueldos y grupos usan otras listas |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
 ### 🧪 Resultado del testeo del usuario (2026-08-08)

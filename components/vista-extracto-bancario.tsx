@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, type Empresa } from "@/lib/empresas"
+import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, parseEmpresas, type Empresa } from "@/lib/empresas"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -407,6 +407,13 @@ export function VistaExtractoBancario() {
       cargarFacturasDisponibles()
     }
   }, [modoEdicion])
+
+  // Los códigos ya usados dependen de la CUENTA, no del modo edición: se cargan al cambiarla
+  // para que el panel masivo también los sugiera sin tener que abrir el modal de asignación.
+  useEffect(() => {
+    if (tablaActiva) cargarCodigosUsados()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tablaActiva, schemaActivo])
 
   // Iniciar proceso de conciliación
   // Si hay filtros activos → corre SOLO sobre los pendientes visibles (con aviso).
@@ -1013,7 +1020,7 @@ export function VistaExtractoBancario() {
     // Cargar pagos de sueldos no conciliados
     const { data: sueldosData } = await supabase
       .from('sueldos_pagos')
-      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
+      .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa), periodo:sueldos_periodos(mes, anio)')
       .neq('estado', 'conciliado')
       .eq('medio_pago', 'banco')
       .order('fecha', { ascending: false })
@@ -1036,7 +1043,7 @@ export function VistaExtractoBancario() {
         .order('fecha_estimada', { ascending: false }),
       supabase
         .from('sueldos_pagos')
-        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado), periodo:sueldos_periodos(mes, anio)')
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa), periodo:sueldos_periodos(mes, anio)')
         .not('grupo_pago_id', 'is', null)
         .neq('estado', 'conciliado')
         .order('fecha', { ascending: false }),
@@ -1061,6 +1068,9 @@ export function VistaExtractoBancario() {
       return {
         id: grupoId,
         tipo_grupo: 'template' as const,
+        // Empresas del grupo: la unión de las de sus miembros (un grupo puede juntar templates
+        // de responsables distintos). Alimenta el chip.
+        empresas: [...new Set(cuotas.flatMap((c: any) => parseEmpresas(c.egreso?.responsable)))],
         cuotas,
         total,
         categ: primera.categ || primera.egreso?.categ || '',
@@ -1097,6 +1107,7 @@ export function VistaExtractoBancario() {
       return {
         id: grupoId,
         tipo_grupo: 'arca' as const,
+        empresas: [...new Set(facturas.map((f: any) => f.__empresa).filter(Boolean))],
         cuotas: facturas,
         total,
         categ: primera.cuenta_contable || 'SIN_CATEG',
@@ -1130,6 +1141,7 @@ export function VistaExtractoBancario() {
       return {
         id: grupoId,
         tipo_grupo: 'sueldo' as const,
+        empresas: [...new Set(pagos.flatMap((p: any) => parseEmpresas(p.empleado?.empresa)))],
         cuotas: pagos,
         total,
         categ: 'Sueldos',
@@ -2382,6 +2394,16 @@ export function VistaExtractoBancario() {
             </Card>
           )}
 
+          {/* A-FEAT-03: los códigos ya usados en esta cuenta, compartidos por el panel masivo y el
+              modal de asignación. Hoy conviven RET 3 PAM / RET PAM / RET 1 PAM y Ver / VER porque
+              nada los sugería. */}
+          <datalist id="codigos-contables-usados">
+            {codigosUsados.contable.map(c => <option key={c} value={c} />)}
+          </datalist>
+          <datalist id="codigos-internos-usados">
+            {codigosUsados.interno.map(c => <option key={c} value={c} />)}
+          </datalist>
+
           {/* Panel de Edición Masiva */}
           {modoEdicion && seleccionados.size > 0 && (
             <Card className="border-blue-200 bg-blue-50">
@@ -2427,8 +2449,11 @@ export function VistaExtractoBancario() {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Contable</label>
+                    {/* A-FEAT-03 también acá: la edición masiva es donde más fácil se cuelan
+                        variantes, porque el valor se aplica a muchos movimientos de una. */}
                     <Input
                       placeholder="Código contable"
+                      list="codigos-contables-usados"
                       value={editData.contable}
                       onChange={(e) => setEditData({...editData, contable: e.target.value})}
                     />
@@ -2437,6 +2462,7 @@ export function VistaExtractoBancario() {
                     <label className="text-sm font-medium mb-2 block">Interno</label>
                     <Input
                       placeholder="Código interno"
+                      list="codigos-internos-usados"
                       value={editData.interno}
                       onChange={(e) => setEditData({...editData, interno: e.target.value})}
                     />
@@ -3906,7 +3932,10 @@ export function VistaExtractoBancario() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="font-medium text-sm">{s.empleado?.nombre || 'Sin nombre'}</div>
+                        <div className="font-medium text-sm flex items-center">
+                          <ChipEmpresaOpcion opcion={{ empresas: parseEmpresas(s.empleado?.empresa), tipo: 'SUELDO' }} cuenta={cuentaActivaObj} />
+                          {s.empleado?.nombre || 'Sin nombre'}
+                        </div>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                           s.tipo === 'anticipo' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
                         }`}>
@@ -3995,7 +4024,10 @@ export function VistaExtractoBancario() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="font-medium text-sm">{g.nombre}</div>
+                        <div className="font-medium text-sm flex items-center">
+                          <ChipEmpresaOpcion opcion={{ empresas: g.empresas, tipo: g.tipo_grupo === 'arca' ? 'ARCA' : g.tipo_grupo === 'sueldo' ? 'SUELDO' : 'TEMPLATE' }} cuenta={cuentaActivaObj} />
+                          {g.nombre}
+                        </div>
                         <span className="text-xs font-mono font-semibold">${g.total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
@@ -4089,14 +4121,7 @@ export function VistaExtractoBancario() {
                   value={internoManual}
                   onChange={e => setInternoManual(e.target.value)}
                 />
-                {/* A-FEAT-03: los códigos ya usados, para dejar de crear variantes parecidas.
-                    Hoy conviven RET 3 PAM / RET PAM / RET 1 PAM y Ver / VER porque nada los sugería. */}
-                <datalist id="codigos-contables-usados">
-                  {codigosUsados.contable.map(c => <option key={c} value={c} />)}
-                </datalist>
-                <datalist id="codigos-internos-usados">
-                  {codigosUsados.interno.map(c => <option key={c} value={c} />)}
-                </datalist>
+
               </div>
             </div>
           </div>
@@ -4133,7 +4158,7 @@ function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa
   // "De otra empresa" sólo si NINGUNA de las suyas es la de la cuenta: un template MSA/PAM pagado
   // desde MSA no es un retiro.
   const esOtra = !!cuenta && canon.length > 0 && !canon.includes(cuenta.empresa)
-  const que = opcion?.tipo === 'ARCA' ? 'Factura' : 'Template'
+  const que = opcion?.tipo === 'ARCA' ? 'Factura' : opcion?.tipo === 'SUELDO' ? 'Sueldo' : 'Template'
   return (
     <span className="mr-1 inline-flex gap-0.5">
       {lista.map(e => (
