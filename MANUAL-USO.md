@@ -751,6 +751,64 @@ de declarar.
 
 ---
 
+## 🏢 Cash Flow multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
+
+> Diseño y motivos → `PENDIENTES.md` § A-FEAT-13.
+
+Hasta ahora el Cash Flow mostraba **templates de las tres empresas** pero **facturas sólo de MSA**.
+Por eso no había forma de registrar que pagaste una factura de PAM: la fila no existía. Ahora
+aparecen las de las tres.
+
+### La barra de empresas
+Arriba de la grilla, **siempre visible** (no está dentro de "Filtros"). Son **dos** selecciones
+separadas, con defaults distintos a propósito:
+
+| | MSA | PAM | MA | Por qué |
+|---|---|---|---|---|
+| **Facturas** | ✅ | ✅ | ☐ | Las de MA las paga MA de su cuenta y conciliás cada tanto: por default serían 92 filas de ruido |
+| **Templates y demás** | ✅ | ✅ | ✅ | Son impuestos que pagás vos siempre; no verlos es perder trabajo |
+
+Se aplican al toque, sin apretar nada. **Limpiar filtros vuelve a estos defaults**, no a "mostrar
+todo" — ver las 92 facturas de MA no es el estado limpio.
+
+### La columna Empresa
+Primera de la grilla, con un color por empresa. Una fila puede tener **varias** (ej. `MSA/PAM`) y
+entonces **aparece al filtrar cualquiera de ellas**. Si tildás sólo MA, no aparece.
+
+El template de la cochera muestra `PAM/MA/Duhau`: `Duhau` no es una empresa, se muestra para no
+perder el dato pero no filtra por él.
+
+### Lo que NO se ofrece en PAM ni MA
+- **SICORE** — no corresponde a esas empresas. Una FC de PAM pasa a *pagar* **derecho**, sin
+  pantalla de retención y sin exigirte la Fecha de Pago (esa exigencia existía sólo porque de ahí
+  salía la quincena SICORE). Si es en dólares, **sí** te sigue preguntando el tipo de cambio.
+- **ECHEQ** y **agrupar pagos** — avisan que son sólo de MSA y no tocan nada.
+
+### 🧪 Cómo probarlo
+1. **Abrí Cash Flow.** Tiene que aparecer la barra de empresas arriba y la columna **Empresa**
+   como primera columna de la grilla.
+2. **Mirá los defaults.** Facturas: MSA y PAM encendidas, **MA apagada**. Templates: las tres.
+   Buscá una fila de factura de **PAM** — hay 4. **No** tenés que ver facturas de MA.
+3. **Tildá MA en Facturas.** Deberían aparecer ~92 facturas más. Destildala y tienen que irse.
+4. ⚠️ **El paso que importa: pagá una factura de PAM.** Cambiala a *pagar*. Esperado: **no**
+   aparece la pantalla de SICORE, y avisa *"Factura de PAM marcada para pagar (sin SICORE)"*.
+   **Después recargá la pantalla y verificá que siguió en `pagar`.** Si volvió a `pendiente`, la
+   escritura fue al schema equivocado — es el error que este cambio vino a arreglar.
+5. **Probá los bloqueos.** Con una FC de PAM seleccionada, intentá **ECHEQ**: tiene que avisar que
+   es sólo de MSA. Intentá **agrupar** dos FC de PAM: mismo aviso. Ninguna de las dos debe cambiar
+   nada.
+6. **Que MSA no se haya roto.** Pagá una FC de **MSA** como siempre: la pantalla de SICORE tiene
+   que aparecer igual que antes, y seguir exigiendo la Fecha de Pago.
+7. **Multiempresa.** En Templates dejá tildado sólo **MSA**: el template *Retiro MA mensual*
+   (`MSA/PAM`) tiene que seguir apareciendo. Dejá sólo **MA**: tiene que desaparecer.
+
+### ⚠️ Lo que todavía no anda
+La **conciliación manual desde el extracto** sigue ofreciendo sólo facturas de MSA: si tenés que
+vincular a mano un movimiento de PAM con su factura, no la vas a encontrar en la lista. La
+conciliación **automática** (el motor) sí funciona.
+
+---
+
 ## 🏢 Ficha de proveedor 🟡 *(nuevo 2026-08-07, sin testear)*
 
 > Diseño completo del maestro de proveedores → **`MODULO_PROVEEDORES.md`**

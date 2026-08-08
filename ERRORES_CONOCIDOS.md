@@ -120,3 +120,24 @@ roto en runtime, no sólo en tipos. Candidato a mirar primero en el triage.
 
 **Verificado el 2026-08-02:** `lib/presupuesto/*` y `components/panel-presupuesto-cuentas.tsx`
 tienen **0 errores** — el fix de P-16 de ese día no agregó ninguno.
+
+---
+
+## 2026-08-08 — Resueltos de paso, al tocar el Cash Flow multiempresa (A-FEAT-13)
+
+No fueron un triage: aparecieron al re-chequear archivos que había que modificar igual. El resto
+del baseline sigue intacto.
+
+| Archivo | Error | Qué era | Estado |
+|---|---|---|---|
+| `hooks/useInlineEditor.ts` | TS2484 | `CeldaEnEdicion` exportada dos veces (en su declaración y en un `export type {}` al final) | ✅ resuelto |
+| `hooks/useMultiCashFlowData.ts` | TS2304 `toast` | **Faltaba el `import { toast } from "sonner"`.** No era sólo de tipos: la rama que bloquea editar la categ de un template desde Cash Flow habría tirado `ReferenceError` en runtime | ✅ resuelto |
+
+### 🔍 Queda abierto y vale la pena mirarlo (3 errores)
+`hooks/useMultiCashFlowData.ts` — `filaActualArca?.fecha_emision` (3 usos, TS2339):
+**`CashFlowRow` no tiene `fecha_emision`**, así que la propiedad es siempre `undefined` y la regla
+*"si pasa a estado `debito`, `fecha_estimada` = `fecha_emision`"* **nunca se ejecuta**. No es un
+error de tipos nada más: es una regla de negocio muerta desde que se escribió.
+
+No se arregló ahora **a propósito**: hacerla funcionar cambia el comportamiento (empezarían a
+moverse fechas que hoy no se mueven) y eso se decide con el usuario, no de pasada.

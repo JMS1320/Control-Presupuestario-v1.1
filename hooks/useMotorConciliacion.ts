@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase"
 import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
+import { schemaDeFila } from "@/lib/empresas"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -528,11 +529,17 @@ export function useMotorConciliacion() {
                 const idsArcaConciliar = matchCF.cashFlowRow.ids_grupo && matchCF.cashFlowRow.ids_grupo.length > 0
                   ? matchCF.cashFlowRow.ids_grupo
                   : [matchCF.cashFlowRow.id]
-                await supabase
-                  .schema('msa')
+                // La factura se marca conciliada en el schema de SU empresa. Escribir siempre
+                // en `msa` dejaba la FC de PAM/MA sin conciliar y sin error (A-FEAT-13 paso 6).
+                const { count: conciliadas } = await supabase
+                  .schema(schemaDeFila(matchCF.cashFlowRow))
                   .from('comprobantes_arca')
-                  .update({ estado: 'conciliado' })
+                  .update({ estado: 'conciliado' }, { count: 'exact' })
                   .in('id', idsArcaConciliar)
+                if (conciliadas === 0) {
+                  console.error('⚠️ La factura no se marcó como conciliada (no se encontró):',
+                    matchCF.cashFlowRow.origen_tabla, idsArcaConciliar)
+                }
               } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
                 await supabase
                   .from('sueldos_pagos')

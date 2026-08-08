@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -13,6 +15,13 @@ const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
   if (codND.includes(tipo)) return 'ND'
   if (codNC.includes(tipo)) return 'NC'
   return 'FC'
+}
+
+// Empresas de una fila, con MSA como respaldo cuando el dato todavía no existe.
+// Hoy lo usan los anticipos: su columna `empresa` está pendiente de crearse y los 33 son de MSA.
+const empresasOMsa = (valor: unknown): string[] => {
+  const e = parseEmpresas(valor as string | null | undefined)
+  return e.length > 0 ? e : ['MSA']
 }
 
 // Genera detalle base de factura: "FC 00001234 - Proveedor"
@@ -44,6 +53,13 @@ export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
   origen_tabla: string // Para identificar tabla específica al editar
+  /**
+   * De qué empresa(s) es la fila. Es una LISTA porque un template puede ser `MSA/PAM` y tiene
+   * que aparecer al filtrar cualquiera de las dos. Las facturas siempre traen una sola (la del
+   * schema donde viven). Puede incluir tokens que no son empresa (`Duhau`): se muestran pero no
+   * filtran. Ver `lib/empresas.ts` y PENDIENTES § A-FEAT-13.
+   */
+  empresas: string[]
   egreso_id?: string // Para templates: ID del egreso padre
   es_multi_cuenta?: boolean // Para templates: indica categ por cuota
   fecha_estimada: string
@@ -96,7 +112,15 @@ export interface CashFlowFilters {
   responsables?: string[]
   estados?: string[]
   origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA')[]
-  empresas?: ('MSA' | 'PAM')[]
+  /**
+   * Empresa: DOS filtros, no uno. Las facturas de MA por default no se ven (las paga MA de su
+   * propia cuenta y se concilian cada tanto → sería ruido); los templates sí se ven todos
+   * (son impuestos que paga el usuario siempre). Ver PENDIENTES § A-FEAT-13.
+   * Aplica a filas ARCA.
+   */
+  empresasFacturas?: Empresa[]
+  /** Aplica a todo lo que no es ARCA (templates, anticipos, sueldos, ventas). */
+  empresasTemplates?: Empresa[]
   busquedaDetalle?: string
   busquedaCateg?: string
   busquedaCUIT?: string
@@ -116,7 +140,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   }
 
   // Mapear facturas ARCA a formato Cash Flow (con agrupación)
-  const mapearFacturasArca = (facturas: any[]): CashFlowRow[] => {
+  // `empresa` viene de afuera: una factura es de la empresa en cuyo schema vive. Ver lib/empresas.
+  const mapearFacturasArca = (facturas: any[], empresa: Empresa = 'MSA'): CashFlowRow[] => {
+    const schema = schemaDeEmpresa(empresa)
+    const empresas = [empresa as string]
     // Separar facturas agrupadas de las individuales
     const individuales = facturas.filter(f => !f.grupo_pago_id)
     const agrupadas    = facturas.filter(f =>  f.grupo_pago_id)
@@ -138,7 +165,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       return {
         id: f.id,
         origen: 'ARCA' as const,
-        origen_tabla: 'msa.comprobantes_arca',
+        origen_tabla: `${schema}.comprobantes_arca`,
+        empresas,
         fecha_estimada: fechaCF,
         fecha_vencimiento: f.fecha_vencimiento,
         fecha_pago: f.fecha_pago ?? null,
@@ -199,7 +227,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       return {
         id: grupoId,                         // ID del grupo (para conciliación)
         origen: 'ARCA' as const,
-        origen_tabla: 'msa.grupos_pago',
+        origen_tabla: `${schema}.grupos_pago`,
+        empresas,
         fecha_estimada: fechaMax,
         fecha_vencimiento: fechaVencMax,
         categ: primera.cuenta_contable || 'SIN_CATEG',
@@ -244,6 +273,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: c.id,
         origen: 'TEMPLATE' as const,
         origen_tabla: 'cuotas_egresos_sin_factura',
+        // El `responsable` del template ES su empresa (puede ser varias: `MSA/PAM`)
+        empresas: parseEmpresas(c.egreso?.responsable),
         egreso_id: c.egreso_id,
         fecha_estimada: c.fecha_estimada,
         fecha_vencimiento: c.fecha_vencimiento,
@@ -307,6 +338,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: grupoId,
         origen: 'TEMPLATE' as const,
         origen_tabla: 'msa.grupos_pago',
+        empresas: parseEmpresas(primera.egreso?.responsable),
         egreso_id: primera.egreso_id,
         fecha_estimada: fechaMax,
         fecha_vencimiento: fechaVencMax,
@@ -342,6 +374,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       id: p.id,
       origen: 'SUELDO' as const,
       origen_tabla: 'sueldos.periodos',
+      // `ambas` (heredado) lo resuelve parseEmpresas a las tres — anda antes y después del SQL
+      empresas: parseEmpresas(p.empleado?.empresa),
       fecha_estimada: p.fecha_fin_periodo,
       fecha_vencimiento: null,
       categ: 'Sueldos',
@@ -376,6 +410,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: a.id,
         origen: 'ANTICIPO' as const,
         origen_tabla: 'anticipos_proveedores',
+        // `empresa` es columna nueva (RECONSTRUCCION § 2026-08-07, pendiente de correr).
+        // Hasta que exista viene undefined y cae a MSA, que es lo que son los 33 de hoy.
+        empresas: empresasOMsa(a.empresa),
         fecha_estimada: fechaAnticipo,
         fecha_vencimiento: null,
         categ: tipoLabel,
@@ -404,6 +441,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: c.id,
         origen: 'VENTA' as const,
         origen_tabla: 'msa.comprobantes_venta',
+        // Sólo MSA: `ma.comprobantes_venta` existe pero con otra estructura (no tiene `estado`),
+        // y PAM no tiene tabla de ventas. Ver PENDIENTES § A-FEAT-13 (ventas PAM/MA pendientes).
+        empresas: ['MSA'],
         fecha_estimada: c.fecha_cobro_estimada || c.fecha_liquidacion,
         fecha_vencimiento: null,
         categ: 'VENTAS',
@@ -439,6 +479,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: v.venta_id,
         origen: 'VENTA' as const,
         origen_tabla: 'public.ventas_unificadas',
+        // La vista trae `empresa` en arrendamientos; si no, MSA (ver nota en comprobantes_venta)
+        empresas: empresasOMsa(v.empresa),
         fecha_estimada: v.fecha_cobro,
         fecha_vencimiento: null,
         categ: 'VENTAS',
@@ -494,6 +536,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         if (!filtros.origenes.includes(fila.origen)) return false
       }
 
+      // Filtro por EMPRESA — son DOS, porque los defaults difieren (A-FEAT-13):
+      // las FC de MA las paga MA de su cuenta (ruido por default); los templates son
+      // impuestos que paga el usuario siempre (se ven todos). Una fila con varias
+      // empresas entra si alguna está tildada.
+      const seleccion = fila.origen === 'ARCA' ? filtros.empresasFacturas : filtros.empresasTemplates
+      if (seleccion && !coincideEmpresa(fila.empresas || [], seleccion)) return false
+
       // Filtro por detalle
       if (filtros.busquedaDetalle && filtros.busquedaDetalle.trim()) {
         const detalleSearch = filtros.busquedaDetalle.toLowerCase()
@@ -527,20 +576,31 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     setError(null)
 
     try {
-      // 1. Cargar facturas ARCA (excluir: conciliado, credito, anterior, cuotas)
-      const { data: facturasArca, error: errorArca } = await supabase
-        .schema('msa')
-        .from('comprobantes_arca')
-        .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago, metodo_pago, fecha_cobro_echeq')
-        .neq('estado', 'conciliado')
-        .neq('estado', 'credito')
-        .neq('estado', 'anterior')
-        .neq('estado', 'cuotas')
-        .order('fecha_estimada', { ascending: true, nullsFirst: false })
+      // 1. Cargar facturas ARCA de LAS TRES EMPRESAS (excluir: conciliado, credito, anterior, cuotas).
+      //    Cada empresa vive en su schema; la fila se queda con la empresa de donde salió.
+      //    Antes se leía sólo `msa` y por eso las FC de PAM y MA no se podían pagar (A-FEAT-13).
+      const resultadosArca = await Promise.all(EMPRESAS.map(async (empresa) => {
+        const { data, error } = await supabase
+          .schema(schemaDeEmpresa(empresa))
+          .from('comprobantes_arca')
+          .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago, metodo_pago, fecha_cobro_echeq')
+          .neq('estado', 'conciliado')
+          .neq('estado', 'credito')
+          .neq('estado', 'anterior')
+          .neq('estado', 'cuotas')
+          .order('fecha_estimada', { ascending: true, nullsFirst: false })
+        return { empresa, data: data || [], error }
+      }))
 
-      if (errorArca) {
-        console.error('Error cargando facturas ARCA:', errorArca)
-        throw new Error(`Error facturas ARCA: ${errorArca.message}`)
+      // MSA es el corazón del Cash Flow: si falla, se corta. Si falla PAM o MA se avisa y se
+      // sigue — es peor quedarse sin pantalla que sin una empresa, pero el error no se traga.
+      const errorMsa = resultadosArca.find(r => r.empresa === 'MSA')?.error
+      if (errorMsa) {
+        console.error('Error cargando facturas ARCA:', errorMsa)
+        throw new Error(`Error facturas ARCA: ${errorMsa.message}`)
+      }
+      for (const r of resultadosArca) {
+        if (r.error) console.error(`Error cargando facturas ARCA de ${r.empresa}:`, r.error)
       }
 
       // 2. Cargar templates egresos (excluir: conciliado, desactivado, credito, anterior)
@@ -636,7 +696,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       if (errorVSF) console.error('Error cargando ventas sin factura:', errorVSF)
 
       // 6. Mapear todas las fuentes a formato unificado
-      const filasArca = mapearFacturasArca(facturasArca || [])
+      const filasArca = resultadosArca.flatMap(r => mapearFacturasArca(r.data, r.empresa))
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
       const filasAnticipos = mapearAnticipos(anticipos || [])
       const filasSueldos = mapearSueldos(periodosSueldos || [])
@@ -650,6 +710,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         id: a.id,
         origen: 'SUELDO' as const,
         origen_tabla: 'sueldos.pagos',
+        empresas: empresasOMsa(a.empleado?.empresa),
         fecha_estimada: a.fecha,
         fecha_vencimiento: null,
         categ: 'Sueldos',
@@ -685,6 +746,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           id: grupoId,
           origen: 'SUELDO' as const,
           origen_tabla: 'msa.grupos_pago',
+          empresas: empresasOMsa(primero.empleado?.empresa),
           fecha_estimada: fechaMax,
           fecha_vencimiento: null,
           categ: 'Sueldos',
@@ -795,21 +857,18 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         }
 
         const idsGrupoArca = filaActualArca?.ids_grupo
+        // La factura vive en el schema de SU empresa: escribir siempre en `msa` mandaba el
+        // UPDATE de una FC de PAM a la tabla de MSA, donde matchea 0 filas y no falla (A-FEAT-13).
+        const dbArca = supabase.schema(schemaDeFila(filaActualArca)).from('comprobantes_arca')
 
         if (idsGrupoArca && idsGrupoArca.length > 0) {
-          const { error } = await supabase
-            .schema('msa')
-            .from('comprobantes_arca')
-            .update(updateData)
-            .in('id', idsGrupoArca)
+          const { error, count } = await dbArca.update(updateData, { count: 'exact' }).in('id', idsGrupoArca)
           if (error) throw error
+          if (count === 0) throw new Error('No se encontró el grupo de facturas: el cambio NO se guardó')
         } else {
-          const { error } = await supabase
-            .schema('msa')
-            .from('comprobantes_arca')
-            .update(updateData)
-            .eq('id', id)
+          const { error, count } = await dbArca.update(updateData, { count: 'exact' }).eq('id', id)
           if (error) throw error
+          if (count === 0) throw new Error('No se encontró la factura: el cambio NO se guardó')
         }
       } else if (origen === 'ANTICIPO') {
         // Para anticipos: mapear campos según la BD
@@ -921,15 +980,17 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const arcaUpdates = actualizaciones.filter(u => u.origen === 'ARCA')
       const templateUpdates = actualizaciones.filter(u => u.origen === 'TEMPLATE')
 
-      // Procesar updates ARCA
+      // Procesar updates ARCA — cada factura, en el schema de su empresa (A-FEAT-13)
       for (const update of arcaUpdates) {
-        const { error } = await supabase
-          .schema('msa')
+        const fila = data.find(f => f.id === update.id)
+        const { error, count } = await supabase
+          .schema(schemaDeFila(fila))
           .from('comprobantes_arca')
-          .update({ [update.campo]: update.valor })
+          .update({ [update.campo]: update.valor }, { count: 'exact' })
           .eq('id', update.id)
 
         if (error) throw error
+        if (count === 0) throw new Error(`No se encontró la factura ${update.id}: el cambio NO se guardó`)
       }
 
       // Procesar updates Templates

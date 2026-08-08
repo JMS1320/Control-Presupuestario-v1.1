@@ -15,6 +15,7 @@ import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
+import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -40,6 +41,9 @@ import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculab
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
+  // Empresa primero, a la izquierda: el Cash Flow es de las tres y hay que ver de quién es
+  // cada fila sin buscarla. Puede traer varias (`MSA/PAM`). Ver lib/empresas y A-FEAT-13.
+  { key: 'empresas', label: 'Empresa', type: 'empresas', width: 'w-28', editable: false },
   { key: 'fecha_estimada', label: 'FECHA Estimada', type: 'date', width: 'w-32', editable: true },
   { key: 'fecha_vencimiento', label: 'Fecha Vencimiento', type: 'date', width: 'w-32', editable: true },
   { key: 'fecha_pago', label: 'Fecha Pago', type: 'date', width: 'w-32', editable: true },
@@ -94,7 +98,14 @@ interface CeldaEnEdicion {
 }
 
 export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
-  const [filtros, setFiltros] = useState<CashFlowFilters | undefined>(undefined)
+  // Empresa: DOS filtros, con defaults distintos y a propósito (A-FEAT-13).
+  //  · Facturas → MA APAGADA: las paga MA de su propia cuenta y se concilian cada tanto,
+  //    así que por default serían 92 filas de ruido.
+  //  · Templates → las tres: son impuestos que paga el usuario siempre; no verlos es perder trabajo.
+  const [empresasFacturas, setEmpresasFacturas] = useState<Empresa[]>(['MSA', 'PAM'])
+  const [empresasTemplates, setEmpresasTemplates] = useState<Empresa[]>(['MSA', 'PAM', 'MA'])
+
+  const [filtros, setFiltros] = useState<CashFlowFilters | undefined>({ empresasFacturas: ['MSA', 'PAM'], empresasTemplates: ['MSA', 'PAM', 'MA'] })
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [busquedaRapida, setBusquedaRapida] = useState('')
   
@@ -379,10 +390,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const esParaContinuarPagar = tcPagoOrigenPagar
     setModalTcPago(prev => ({ ...prev, guardando: true }))
     try {
-      const { error } = await supabase.schema('msa').from('comprobantes_arca')
-        .update({ tc_pago: tc })
+      const { error, count } = await supabase.schema(schemaDeFila(filaCapturada)).from('comprobantes_arca')
+        .update({ tc_pago: tc }, { count: 'exact' })
         .eq('id', modalTcPago.filaId)
       if (error) throw error
+      if (count === 0) throw new Error('No se encontró la factura: el TC NO se guardó')
       actualizarLocal(modalTcPago.filaId, 'tc_pago', tc)
       // También actualizar débitos local con nuevo TC
       if (filaCapturada) {
@@ -553,6 +565,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // HOOK ECHEQ (facturas ARCA) - abrir modal para capturar banco/número/fechas.
       // El echeq pasa por el MISMO flujo SICORE que "pagar" (la retención sale igual); al finalizar
       // se estampa estado='echeq' + metodo_pago + fecha_cobro_echeq + se registra el cheque (neto).
+      // ── BLINDAJE POR EMPRESA (A-FEAT-13 paso 5) ─────────────────────────────
+      // ECHEQ existe sólo en MSA: `msa.cheques` no tiene equivalente en `pam` ni `ma`.
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'echeq' && !esFilaMsa(filaParaCambioEstado)) {
+        const empresa = (filaParaCambioEstado.empresas || []).join('/') || 'esta empresa'
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        toast.error(`ECHEQ está disponible sólo para MSA (esta factura es de ${empresa}).`)
+        return
+      }
+
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'echeq' && filaParaCambioEstado.estado !== 'echeq') {
         echeqFilaCF.current = filaParaCambioEstado
         echeqAnticipoCF.current = null
@@ -576,6 +598,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         // Abrir modal de TC de pago; al guardar, continuar automáticamente con SICORE
         setTcPagoOrigenPagar(true)
         abrirModalTcPago(filaParaCambioEstado)
+        return
+      }
+
+      // PAM y MA no tienen SICORE (decisión del usuario, no una tabla que falte) → pasan
+      // derecho a 'pagar', sin evaluación de retención y sin exigir fecha_pago (esa exigencia
+      // existe sólo porque de esa fecha sale la quincena SICORE). A-FEAT-13 paso 5.
+      // Va DESPUÉS del hook de TC para que una FC en dólares siga preguntando el tipo de cambio.
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && !esFilaMsa(filaParaCambioEstado)) {
+        const empresa = (filaParaCambioEstado.empresas || []).join('/') || 'la empresa'
+        const ok = await actualizarRegistro(filaParaCambioEstado.id, 'estado', 'pagar', 'ARCA')
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        if (ok) {
+          cargarDatos()
+          toast.success(`Factura de ${empresa} marcada para pagar (sin SICORE)`)
+        }
         return
       }
 
@@ -904,6 +942,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (busquedaCUIT.trim()) nuevosFiltros.busquedaCUIT = busquedaCUIT.trim()
     if (medioPagoFiltro && medioPagoFiltro !== 'todos') nuevosFiltros.medioPago = medioPagoFiltro
 
+    // La empresa siempre viaja: es un filtro de contexto, no uno de búsqueda
+    nuevosFiltros.empresasFacturas = empresasFacturas
+    nuevosFiltros.empresasTemplates = empresasTemplates
+
     setFiltros(nuevosFiltros)
     toast.success(`Filtros aplicados: ${Object.keys(nuevosFiltros).length} criterios`)
   }
@@ -918,9 +960,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setBusquedaCateg('')
     setBusquedaCUIT('')
     setMedioPagoFiltro('todos')
-    setFiltros(undefined)
+    // "Limpiar" vuelve a los DEFAULTS de empresa, no a "todo": ver las 92 FC de MA no es el
+    // estado limpio, es el estado ruidoso. Para verlas hay que tildar MA a propósito.
+    setEmpresasFacturas(['MSA', 'PAM'])
+    setEmpresasTemplates(['MSA', 'PAM', 'MA'])
+    setFiltros({ empresasFacturas: ['MSA', 'PAM'], empresasTemplates: ['MSA', 'PAM', 'MA'] })
     toast.success('Filtros limpiados')
   }
+
+  // El filtro de empresa se aplica al toque, sin pasar por "Aplicar filtros": es un
+  // interruptor de contexto (qué empresas estoy mirando), no un criterio de búsqueda.
+  useEffect(() => {
+    setFiltros(prev => ({ ...(prev || {}), empresasFacturas, empresasTemplates }))
+  }, [empresasFacturas, empresasTemplates])
 
   // Funciones para modo PAGOS
   const activarModoPagos = (event: React.MouseEvent) => {
@@ -1033,7 +1085,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       let mediosPago: Awaited<ReturnType<typeof obtenerMediosPagoFactura>> = []
       if (tipo === 'arca') {
         const ids = fs.flatMap(f => (f.facturas_agrupadas && f.ids_grupo?.length) ? f.ids_grupo : [f.id])
-        mediosPago = await obtenerMediosPagoFactura('msa', ids)
+        mediosPago = await obtenerMediosPagoFactura(schemaDeFila(fs[0]), ids)
       }
       await generarPDFDetallePago(tipo as 'arca' | 'template', proveedor, cuit, items, null, { mediosPago })
     })
@@ -1084,7 +1136,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         if (f.ids_grupo && f.ids_grupo.length) facturaIds.push(...f.ids_grupo)
         else facturaIds.push(f.id)
       }
-      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: 'msa', facturaIds })
+      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds })
       if (!r.ok) err++
       else if (!r.email) sinMail++
       else ok++
@@ -1126,6 +1178,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const origen = filas[0].origen
     if (origen !== 'ARCA' && origen !== 'TEMPLATE') { toast.error('Agrupar disponible para FC (ARCA) y templates'); return }
     if (filas.some(f => f.grupo_pago_id)) { toast.error('Alguna fila ya pertenece a un grupo (desagrupá primero desde el Modal)'); return }
+    // `grupos_pago` sólo existe en `msa` — agrupar FC de PAM/MA rompería contra una tabla inexistente
+    if (origen === 'ARCA' && filas.some(f => !esFilaMsa(f))) {
+      toast.error('Agrupar pagos está disponible sólo para facturas de MSA')
+      return
+    }
     const cuits = new Set(filas.map(f => f.cuit_proveedor || ''))
     if (cuits.size > 1) {
       if (!window.confirm('⚠️ Las filas seleccionadas tienen CUITs diferentes. ¿Agrupar igual?')) return
@@ -1228,8 +1285,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // ECHEQ en lote: las FC ARCA pasan por el flujo echeq+SICORE (modal + cheque); el resto va directo.
       if (cambiarEstadoLote && valorEstadoLote === 'echeq') {
-        const arcaFacturas = todasFilas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq')
-        const noArca = todasFilas.filter(f => !(f.origen === 'ARCA' && f.estado !== 'echeq'))
+        // ECHEQ es sólo MSA (`msa.cheques`): una FC de PAM/MA en la selección se avisa y no entra
+        const arcaNoMsa = todasFilas.filter(f => f.origen === 'ARCA' && !esFilaMsa(f))
+        if (arcaNoMsa.length > 0) {
+          toast.error(`${arcaNoMsa.length} factura(s) de PAM/MA no pueden pagarse por ECHEQ (es sólo de MSA). Quedan sin tocar.`)
+        }
+        const arcaFacturas = todasFilas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq' && esFilaMsa(f))
+        const noArca = todasFilas.filter(f => !(f.origen === 'ARCA' && f.estado !== 'echeq') && !arcaNoMsa.includes(f))
         noArca.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen as 'ARCA' | 'TEMPLATE', campo: 'estado', valor: 'echeq' }))
         if (actualizaciones.length > 0) await actualizarBatch(actualizaciones)
         if (arcaFacturas.length > 0) {
@@ -1251,7 +1313,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
 
       if (cambiarEstadoLote) {
-        const esArcaAPagar = (f: CashFlowRow) => valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar'
+        // Sólo las FC de MSA pasan por SICORE; las de PAM/MA van por el camino directo (paso 5)
+        const esArcaAPagar = (f: CashFlowRow) =>
+          valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar' && esFilaMsa(f)
         // Lo que no es ARCA→pagar: estado directo
         todasFilas.filter(f => !esArcaAPagar(f)).forEach(f =>
           actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote })
@@ -1315,7 +1379,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           setGuardadoPendienteCF(firstPending)
           // Actualizar fecha en BD para la primera si aplica
           if (cambiarFechaVenc && valorFechaLote) {
-            await supabase.schema('msa').from('comprobantes_arca')
+            await supabase.schema(schemaDeFila(primera)).from('comprobantes_arca')
               .update({ fecha_vencimiento: valorFechaLote, fecha_estimada: valorFechaLote })
               .eq('id', primera.id)
           }
@@ -2214,7 +2278,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
     const valor = fila[columna.key as keyof CashFlowRow]
-    
+
+    // Empresa: no se edita acá (sale de dónde vive la factura o del responsable del template).
+    // Se muestran TODAS las que tiene, incluidas las que no son empresa (`Duhau`): esconder una
+    // sería perder el dato. Cada empresa con su color, para distinguirlas sin leer.
+    if (columna.type === 'empresas') {
+      const empresas = (fila.empresas || [])
+      return (
+        <div className={`${columna.width} flex flex-wrap items-center gap-0.5`}>
+          {empresas.length === 0 ? (
+            <span className="text-xs text-gray-300">—</span>
+          ) : empresas.map(e => (
+            <span
+              key={e}
+              className={`rounded border px-1 text-[10px] leading-4 ${
+                COLOR_EMPRESA[e as Empresa] || 'bg-gray-100 text-gray-600 border-gray-200'}`}
+              title={COLOR_EMPRESA[e as Empresa] ? `Empresa ${e}` : `${e} — no es una empresa: se muestra pero no filtra`}
+            >
+              {e}
+            </span>
+          ))}
+        </div>
+      )
+    }
+
     // Verificar si esta celda está siendo editada por el hook
     const esCeldaHookEnEdicion = hookEditor.celdaEnEdicion?.filaId === fila.id && 
                                  hookEditor.celdaEnEdicion?.columna === columna.key
@@ -2600,6 +2687,27 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         </CardHeader>
 
         <CardContent>
+          {/* Empresa — SIEMPRE visible: es el contexto de lo que estás mirando, no un criterio
+              de búsqueda. Son dos selecciones porque los defaults difieren (A-FEAT-13). */}
+          <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-gray-50 px-3 py-2">
+            <SelectorEmpresas
+              titulo="Facturas"
+              seleccionadas={empresasFacturas}
+              onCambio={setEmpresasFacturas}
+              ayuda="Las facturas de MA las paga MA de su propia cuenta, por eso vienen apagadas."
+            />
+            <div className="h-6 w-px bg-gray-300" />
+            <SelectorEmpresas
+              titulo="Templates y demás"
+              seleccionadas={empresasTemplates}
+              onCambio={setEmpresasTemplates}
+              ayuda="Impuestos y servicios: los pagás vos, por eso se ven los de las tres."
+            />
+            <span className="text-[11px] text-gray-500">
+              Una fila de varias empresas (ej. <strong>MSA/PAM</strong>) aparece en cualquiera de ellas.
+            </span>
+          </div>
+
           {/* Filtros avanzados */}
           {mostrarFiltros && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
@@ -4362,6 +4470,49 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         items={modalExportarLote.items}
         userRole={userRole}
       />
+    </div>
+  )
+}
+/**
+ * Selector de empresas del Cash Flow: tres tildes, sin "todas" ni "ninguna".
+ *
+ * Se separa de la barra de filtros a propósito. La empresa no es un criterio de búsqueda que
+ * uno aplica y limpia: es **qué estás mirando**, y tiene que estar a la vista siempre para que
+ * un total nunca se lea sin saber de quién es.
+ */
+function SelectorEmpresas({ titulo, seleccionadas, onCambio, ayuda }: {
+  titulo: string
+  seleccionadas: Empresa[]
+  onCambio: (e: Empresa[]) => void
+  ayuda: string
+}) {
+  const alternar = (empresa: Empresa) => {
+    onCambio(
+      seleccionadas.includes(empresa)
+        ? seleccionadas.filter(e => e !== empresa)
+        : [...seleccionadas, empresa],
+    )
+  }
+  return (
+    <div className="flex items-center gap-2" title={ayuda}>
+      <span className="text-xs font-medium text-gray-600">{titulo}:</span>
+      {EMPRESAS.map(empresa => {
+        const activa = seleccionadas.includes(empresa)
+        return (
+          <button
+            key={empresa}
+            onClick={() => alternar(empresa)}
+            className={`rounded border px-2 py-0.5 text-xs transition-colors ${
+              activa ? COLOR_EMPRESA[empresa] : 'border-gray-200 bg-white text-gray-400 hover:bg-gray-100'}`}
+            title={activa ? `Ocultar ${empresa}` : `Mostrar ${empresa}`}
+          >
+            {empresa}
+          </button>
+        )
+      })}
+      {seleccionadas.length === 0 && (
+        <span className="text-[11px] text-amber-700">nada seleccionado</span>
+      )}
     </div>
   )
 }

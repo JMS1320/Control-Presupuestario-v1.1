@@ -282,6 +282,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-22 | 🔴 | **Panel del ciclo de recría** (2026-08-05) — apertura desde la pesada del destete, neto como columna generada, promedio ponderado, y la transferencia cría→recría. `MANUAL-USO.md` § Ciclo de recría |
 | A-TEST-23 | 🔴 | **Ingresos → Ganadería: cría y recría separadas** (2026-08-05) — por actividad y por campaña, con el desglose *destetados − se guardan = a vender*, las confirmadas y el disponible. Usa la **misma valuación que el Presupuesto**: si los números difieren entre las dos pantallas, hay un bug |
 | A-TEST-20 | 🔴 | **Aviso: marca de reposición ≠ categoría Torito** (2026-08-05) — sólo en machos, porque *un torito no está capado: es un hecho, no un plan*. Dice las dos salidas (sacar marcas / recategorizar). 3 pasos en `MANUAL-USO.md` § La marca de reposición. ⚠️ El paso 2 es el que valida el criterio: marcar una **hembra** NO debe avisar |
+| A-TEST-25 | 🔴 | **Cash Flow multiempresa** (2026-08-08) — las FC de PAM y MA aparecen y se pueden pagar; columna Empresa; dos filtros con defaults distintos; SICORE/echeq/agrupar sólo MSA. `MANUAL-USO.md` § Cash Flow multiempresa, 7 pasos. ⚠️ **El paso 4 es el que caza el error caro**: pagar una FC de PAM y verificar que el cambio quedó **en PAM**; si el guardado dice OK pero al recargar volvió atrás, la escritura fue al schema equivocado. Hay 4 FC de PAM y 92 de MA para probar |
 | A-TEST-24 | 🔴 | **Ficha de proveedor** (2026-08-07) — modal de consulta desde *Principal → Proveedores* y desde el ícono 🏢 del control de subas. Datos del maestro + últimas facturas + últimos pagos + anticipos. `MANUAL-USO.md` § Ficha de proveedor, 6 pasos. ⚠️ **Lo no testeado de verdad es el botón Editar**: la lectura se verificó contra la BD, pero **el guardado no se probó** (no se tocan datos reales sin permiso) y el PATCH ahora acepta 14 campos que antes no eran editables por ninguna pantalla. Probar primero con un campo inocuo (`notas`). Dossier → [A-TEST-24](#a-test-24) |
 | G-03 | ✅ | **~~Un lote 100 % vendido se marca como «desactualizado»~~** — RESUELTO 2026-08-05: `desactualizado()` no compara cuando el saldo es 0. Con saldo 0 los animales que quedan en la pesada son **los que NO se vendieron**, así que el lote siempre iba a diferir, y el aviso invitaba a correr «Desde pesada» — que **reescribiría una venta ya hecha**. Ver abajo el detalle original |
 | ~~G-03~~ | 📎 | *(detalle)* **Un lote 100 % vendido se marcaba como «desactualizado»** — *Productivo → Evolución Rodeo → Cabezas disponibles*. El lote de 55 terneros tiene `vendidas 55 · quedan 0` y el panel igual avisa *"corré «Desde pesada» para traer los números nuevos"*. ⚠️ **Es una invitación a reescribir una venta ya hecha**: los 40 que quedan NO son de ese lote, son los que *no* se vendieron. La comparación lote↔pesada sólo tiene sentido mientras el lote tenga saldo. Los números en sí están bien (55→40 y 275→227,7 kg son correctos: los vendidos eran los más pesados) |
@@ -2862,15 +2863,40 @@ tildada"*; los valores que no son MSA/PAM/MA (`Duhau`) **se muestran pero no fil
   es perder trabajo.*
 
 ### Los 7 pasos, en orden
-| # | Qué | Por qué en ese orden |
+| # | Qué | Estado |
 |---|---|---|
-| **0** | **Que el guardado avise cuando no matcheó ninguna fila** (`useInlineEditor`) | Red de seguridad de todo lo que sigue. Ver el riesgo abajo |
-| **1** | `empresa` (lista) en `CashFlowRow` + columna `empresa` en `anticipos_proveedores` | El cimiento |
-| **2+3** | Leer los 3 schemas **y** escribir en el schema correcto — **una sola fase** | Separarlas es lo que crea la trampa |
-| **4** | Columna Empresa a la izquierda + los dos filtros | Lo que deja operar |
-| **5** | **SICORE, echeq y agrupar sólo MSA** | Blindaje |
-| **6** | Motor: conciliar contra el schema correcto + candidatos de las 3 en el extracto | Cierra el circuito |
-| **7** | Adjudicación entre empresas (MSA paga, PAM/MA retira) | Después; no bloquea |
+| **0** | **Que el guardado avise cuando no matcheó ninguna fila** (`useInlineEditor`) | ✅ 2026-08-07 (`b444c6a`) |
+| **1** | `empresas` (lista) en `CashFlowRow` + columna `empresa` en `anticipos_proveedores` | ✅ código · ⏳ la columna espera el SQL |
+| **2+3** | Leer los 3 schemas **y** escribir en el schema correcto | ✅ 2026-08-08 |
+| **4** | Columna Empresa a la izquierda + los dos filtros | ✅ 2026-08-08 |
+| **5** | **SICORE, echeq y agrupar sólo MSA** | ✅ 2026-08-08 |
+| **6** | Motor: conciliar contra el schema correcto + candidatos de las 3 en el extracto | 🟡 **a medias** |
+| **7** | Adjudicación entre empresas (MSA paga, PAM/MA retira) | 🔴 después; no bloquea |
+
+### Lo implementado el 2026-08-08
+- **`lib/empresas.ts`** — pieza compartida: `parseEmpresas` (multivalor por `/`, más el alias
+  heredado `ambas`), `coincideEmpresa` (entra si **alguna** coincide), `schemaDeFila` /
+  `esFilaMsa` (de `origen_tabla`), `COLOR_EMPRESA`.
+- **`useMultiCashFlowData`** — lee `comprobantes_arca` de los **tres** schemas en paralelo. Si
+  falla MSA se corta (es el corazón del Cash Flow); si falla PAM o MA se avisa por consola y se
+  sigue, porque es peor quedarse sin pantalla que sin una empresa. Cada fila lleva `empresas`, y
+  las escrituras ARCA (individual, grupo y batch) van al schema de la fila **con `count`**: si
+  matchean 0 filas, tiran error en vez de mentir.
+- **Vista** — columna **Empresa** primera, con un chip de color por empresa; barra de selección
+  **siempre visible** (no dentro de "Filtros avanzados": es contexto, no búsqueda), con las dos
+  selecciones y sus defaults. *Limpiar filtros* vuelve a los **defaults**, no a "todo": ver las
+  92 FC de MA no es el estado limpio, es el ruidoso.
+- **Blindaje** — ECHEQ bloqueado con aviso para PAM/MA; agrupar bloqueado; `pagar` de PAM/MA pasa
+  **derecho, sin SICORE y sin exigir `fecha_pago`** (esa exigencia existía sólo porque de esa
+  fecha sale la quincena SICORE). El bypass va **después** del hook de TC, para que una FC en
+  dólares de PAM siga preguntando el tipo de cambio.
+- **Motor** — al conciliar, marca `conciliado` en el schema de la fila y avisa por consola si no
+  encontró la factura.
+
+### 🟡 Lo que falta del paso 6
+La **conciliación manual** desde el extracto (`vista-extracto-bancario.tsx`, ~10 usos de
+`.schema('msa')`) sigue ofreciendo candidatos sólo de MSA: si el movimiento de PAM hay que
+vincularlo a mano, la FC de PAM no aparece en la lista. El camino automático (motor) ya funciona.
 
 ### ⚠️ El riesgo que hace que el paso 0 vaya primero
 `useInlineEditor.ts:153` decide *"si la fila es ARCA → escribir en `msa`"*, fijo. Hoy no molesta
