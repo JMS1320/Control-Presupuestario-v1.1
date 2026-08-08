@@ -3091,8 +3091,19 @@ descuento?"*, no a *"¿querés pagar?"* — el mismo botón significa dos cosas 
 **No es lo que le pasó al usuario** (su factura superaba el mínimo, así que fue por el camino que
 sí aborta), pero es el mismo riesgo que detectó.
 
-**✅ Resuelto**: se eliminó ese `confirm`. Ahora el caso "no llega al mínimo" abre directamente el
-modal, donde las tres salidas son botones explícitos:
+**✅ Resuelto**, en dos pasos el mismo día (el primer intento estuvo mal y lo corrigió el usuario):
+
+**Cómo quedó**: si la factura **no llega al mínimo no se abre ninguna pantalla** — no hay decisión
+de SICORE que tomar, así que pasa derecho a `pagar`. El descuento pronto pago queda como **acción
+opcional del aviso** ("Aplicar descuento"), no como un cartel que hay que contestar para poder
+pagar. Se usa en 14 de 383 facturas, así que no se podía simplemente sacar.
+
+> ⚠️ **El intento fallido, anotado para no repetirlo**: al sacar el `confirm` lo reemplacé por
+> *"abrir siempre el modal"*. Eso arreglaba la ambigüedad pero metía un paso extra en el caso más
+> común (factura chica, sin descuento) y hacía **parecer que SICORE aplica cuando no aplica**. Lo
+> detectó el usuario: *"si la FC es menor a 67.170 no debería abrir SICORE"*. Tenía razón.
+
+Cuando **sí** corresponde retención, el modal muestra las tres salidas explícitas:
 
 | Botón | Qué hace |
 |---|---|

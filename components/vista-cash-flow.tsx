@@ -1576,6 +1576,25 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Evaluar si corresponde SICORE para una fila ARCA
   // freshPending y freshCola se pasan explícitamente para evitar stale closures
+  /**
+   * Abre el modal SÓLO para cargar un descuento pronto pago, cuando la factura no lleva retención.
+   * Se llega desde la acción del aviso, nunca de forma obligatoria: para entonces la FC **ya está
+   * en 'pagar'**, así que el pendiente sólo le dice a "Confirmar" sobre qué fila escribir, y
+   * `estadoAnterior: 'pagar'` hace que Cancelar no cambie nada.
+   */
+  const abrirDescuentoSinRetencion = (fila: CashFlowRow, neto: number, netoPrevio: number) => {
+    setFacturaEnProceso(fila)
+    setTipoSeleccionado(null)
+    setMontoRetencion(0)
+    setDescuentoAdicional(0)
+    setDescuentoInputValor('')
+    setDescuentoDesglose(null)
+    setDatosSicoreCalculo({ netoFactura: neto, minimoAplicado: 0, baseImponible: neto, esRetencionAdicional: false, sinRetencion: true, netoPrevio })
+    setGuardadoPendienteCF({ filaId: fila.id, nuevoEstado: 'pagar', estadoAnterior: 'pagar' })
+    setPasoSicore('calculo')
+    setMostrarModalSicore(true)
+  }
+
   const evaluarRetencionSicoreCF = async (
     fila: CashFlowRow,
     freshPending?: PendingSicore | null,
@@ -1661,19 +1680,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena)
       const minimoDisponible = Math.max(0, minimoServicios - netoPrevio)
       if (netoFacturaPesos <= minimoDisponible) {
-        // No corresponde retención. Antes acá había un `confirm` "¿Desea aplicar un descuento
-        // pronto pago?" cuyo **Cancelar pasaba la factura a 'pagar'** — un botón que decía
-        // cancelar y confirmaba. Ahora se abre el modal, donde las tres salidas son explícitas:
-        // aplicar descuento y confirmar · confirmar sin descuento · Cancelar = abortar.
-        // Regla del usuario: **cancelar aborta siempre**; para seguir sin retención está el botón
-        // de confirmar, que ya existe.
-        setFacturaEnProceso(fila)
-        setTipoSeleccionado(null)
-        setMontoRetencion(0)
-        setDescuentoAdicional(0)
-        setDatosSicoreCalculo({ netoFactura: netoFacturaPesos, minimoAplicado: 0, baseImponible: netoFacturaPesos, esRetencionAdicional: false, sinRetencion: true, netoPrevio })
-        setPasoSicore('calculo')
-        setMostrarModalSicore(true)
+        // NO corresponde retención → no hay nada que decidir sobre SICORE: la factura pasa
+        // derecho a 'pagar'. No se abre ninguna pantalla.
+        //
+        // Historia, para no volver atrás: acá hubo un `confirm` "¿Desea aplicar un descuento
+        // pronto pago?" cuyo **Cancelar pasaba la factura a pagar** — un botón que decía cancelar
+        // y confirmaba. Al sacarlo lo reemplacé por "abrir siempre el modal", y eso metió un paso
+        // extra en el caso más común (factura chica, sin descuento). Las dos cosas estaban mal.
+        // El descuento pronto pago queda como **acción opcional** del aviso, no como un cartel
+        // que hay que contestar para poder pagar.
+        const sinCola = (freshCola !== undefined ? freshCola : colaLoteSicore).length === 0
+        await cancelarSicoreCF(true, freshPending, freshCola)
+        if (sinCola) {
+          const fmt = (n: number) => `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+          toast.info(
+            `Sin retención SICORE: el neto (${fmt(netoFacturaPesos)}) no llega al mínimo disponible (${fmt(minimoDisponible)})`,
+            {
+              duration: 8000,
+              action: {
+                label: 'Aplicar descuento',
+                onClick: () => abrirDescuentoSinRetencion(fila, netoFacturaPesos, netoPrevio),
+              },
+            },
+          )
+        }
         return
       }
     }
