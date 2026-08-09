@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
 import { ModalFichaProveedor } from "./proveedores/modal-ficha-proveedor"
 import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
+import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertasFcVenta } from "./alertas-fc-venta"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
@@ -208,6 +209,9 @@ export function VistaPrincipal() {
 
       {/* Extractos sin cargar — va primero: si los datos están viejos, todo lo de abajo lo está */}
       <AlertaExtractosDesactualizados />
+
+      {/* Movimientos importados a los que les falta el desglose por reglas */}
+      <AlertaParseoPendiente />
 
       {/* Llegó FC de una venta: ¿es de esta venta? */}
       <AlertasFcVenta />

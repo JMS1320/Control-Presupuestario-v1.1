@@ -453,6 +453,68 @@ export function VistaExtractoBancario() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tablaActiva, schemaActivo])
 
+  /**
+   * Re-parseo: aplica las reglas de desglose sobre movimientos YA importados.
+   *
+   * Primero corre en seco y muestra qué cambiaría; recién si confirmás, escribe. Sirve para
+   * probar una regla nueva sin volver a subir el Excel — el texto crudo del banco quedó
+   * guardado en `concepto` al importar.
+   *
+   * Sólo aplica a Caja de Ahorro: son las cuentas cuyo importador desglosa por reglas.
+   */
+  const [reparseando, setReparseando] = useState(false)
+  const CUENTAS_CON_PARSEO = ['pam_galicia', 'ma_galicia']
+
+  const reparsearExtracto = async () => {
+    if (!cuentaSeleccionada) { setSelectorAbierto(true); return }
+    setReparseando(true)
+    try {
+      const r = await fetch('/api/reparsear-extracto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cuenta: cuentaSeleccionada }),
+      })
+      const seco = await r.json()
+      if (!seco.ok) { alert('Error: ' + (seco.error ?? 'desconocido')); return }
+
+      const sinRegla = (seco.tipos ?? []).filter((t: any) => !t.conRegla)
+      const resumenTipos = sinRegla.length > 0
+        ? `\n\nTipos sin regla (no se van a desglosar):\n`
+          + sinRegla.slice(0, 8).map((t: any) => `  · ${t.tipo} — ${t.movimientos} mov.`).join('\n')
+        : ''
+
+      if (seco.cambiosTotales === 0) {
+        alert(`${seco.message}${resumenTipos}`)
+        return
+      }
+
+      const muestra = (seco.cambios ?? []).slice(0, 5)
+        .map((c: any) => `  ${c.fecha} ${c.tipo}: ${Object.keys(c.despues).join(', ')}`)
+        .join('\n')
+
+      const ok = window.confirm(
+        `${seco.cambiosTotales} de ${seco.totalMovimientos} movimiento(s) cambiarían.\n\n`
+        + `Ejemplos:\n${muestra}\n\n`
+        + `Sólo se tocan los campos del desglose. La cuenta contable, el detalle, contable/interno `
+        + `y el estado NO se modifican.${resumenTipos}\n\n¿Aplicar?`
+      )
+      if (!ok) return
+
+      const r2 = await fetch('/api/reparsear-extracto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true }),
+      })
+      const res = await r2.json()
+      alert(res.message ?? 'Listo')
+      recargar()
+    } catch (e) {
+      alert('Error de red: ' + (e as Error).message)
+    } finally {
+      setReparseando(false)
+    }
+  }
+
   // Iniciar proceso de conciliación
   // Si hay filtros activos → corre SOLO sobre los pendientes visibles (con aviso).
   // Si no hay filtros → corre sobre TODOS los pendientes (el límite de filas NO cuenta como filtro).
@@ -1848,6 +1910,20 @@ export function VistaExtractoBancario() {
             <Settings className="h-4 w-4" />
             Configuración
           </Button>
+
+          {/* Re-parsear: sólo en Caja de Ahorro, que son las que desglosan por reglas */}
+          {CUENTAS_CON_PARSEO.includes(cuentaSeleccionada) && (
+            <Button
+              variant="outline"
+              onClick={reparsearExtracto}
+              disabled={reparseando}
+              title="Aplica las reglas de desglose sobre lo ya importado, sin volver a subir el Excel"
+              className="flex items-center gap-2 border-sky-500 text-sky-700 hover:bg-sky-50"
+            >
+              <RotateCcw className={`h-4 w-4 ${reparseando ? 'animate-spin' : ''}`} />
+              {reparseando ? 'Re-parseando...' : 'Re-parsear'}
+            </Button>
+          )}
 
           {/* El botón anticipa el alcance: sobre cuántos va a correr y si está acotado. Antes eso
               se sabía recién en el confirm — o no se sabía, cuando el filtro no estaba en la lista. */}

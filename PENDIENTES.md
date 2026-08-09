@@ -3185,6 +3185,67 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### ✅ Re-parseo de extractos + aviso de movimientos sin desglosar (2026-08-09)
+
+**El problema**: el banco manda toda la info apilada en una celda (tipo, CUIT, beneficiario, nº de
+operación) y las reglas de `config_parseo_extracto` la reparten en columnas. Pero **las reglas sólo
+corrían al importar**: si faltaba la de un tipo, el movimiento quedaba sin desglosar y la única
+salida era volver a subir el Excel.
+
+> ✅ **Lo que NO pasa, y conviene tenerlo claro**: el dato **no se pierde**. El importador guarda el
+> texto crudo del banco en `concepto`, **siempre**, haya regla o no (verificado: 96 de 96 en MA).
+> Lo que falta es el desglose, no la información.
+
+#### Lo que se hizo
+1. **`lib/extractos/parseo-movimiento.ts`** — la lógica salió del importador a una lib compartida.
+   La usan el importador y el re-parseo. **Es una sola a propósito**: dos copias podrían divergir y
+   un movimiento quedaría distinto según por dónde entró, sin forma de notarlo en la grilla.
+2. **`POST /api/reparsear-extracto`** — aplica las reglas sobre lo ya importado, leyendo `concepto`.
+   **Pasada en seco por defecto**: informa qué cambiaría y no toca nada hasta que se confirme.
+   Acepta `tipo` para probar una regla nueva de a una. Sólo escribe los campos del desglose —
+   `categ`, `detalle`, `contable`, `interno` y el estado **no se tocan**.
+3. **`GET /api/reparsear-extracto?cuenta=…`** — diagnóstico puro: qué tipos hay y cuáles no tienen
+   regla propia, ordenados por cantidad.
+4. **Botón "Re-parsear"** en Extracto Bancario, sólo visible en cuentas de Caja de Ahorro.
+5. **`AlertaParseoPendiente`** en Principal: cuántos movimientos están sin desglosar y **qué tipos**,
+   ordenados por volumen — o sea, qué regla conviene escribir primero.
+
+#### La verificación que vale
+Correr el re-parseo en seco sobre **PAM**, que sí tiene reglas, devuelve
+*"Nada que cambiar: el desglose guardado ya coincide con lo que dan las reglas actuales."*
+Eso prueba que el re-parseo es **fiel al importador** — y sólo se puede afirmar porque comparten
+el código.
+
+#### El diagnóstico que dejó al descubierto
+`GET` sobre `ma_galicia`: **96 de 96 sin desglosar**, en 12 tipos. Y sobre `pam_galicia`, 21 de 25.
+
+⚠️ **Las 49 reglas existentes casi no aplican a lo que se está cargando.** Cubren 21 tipos, pero
+los que aparecen son otros — y varios fallan por diferencias mínimas de nombre, porque **el match
+del tipo es exacto**:
+
+| Aparece | Regla que existe | Matchea |
+|---|---|---|
+| `COMPRA DEBITO` (33 en MA) | `COMPRA CON DEBITO` | ❌ por el "CON" |
+| `EXTRACCION EN AUTOSERVICIO` (12) · `EXTRACCION CAJERO` | `EXTRACCION` | ❌ |
+| `INTERES CAPITALIZADO` (3 MA + 6 PAM) | `ACREDITACION INTERESES` | ❌ |
+| `PAGO TARJETA VISA` · `SERVICIO PAGO A PROVEEDORES` · `REINTEGRO PROMOCION GALICIA` · `COM. CAJA DE SEGURIDAD` | — | ❌ |
+
+**Por eso copiar las reglas de PAM a MA no alcanza**: cubriría 3 de sus 12 tipos. Lo que destraba
+es **escribir las reglas de los tipos que realmente aparecen**, que sirven para las dos cuentas.
+
+#### 🔴 Pendiente — necesita criterio del usuario
+Escribir las ~15 reglas de los tipos reales. El reparto es decisión suya; ejemplo de MA:
+```
+COMPRA DEBITO
+MIMADOS                 ← ¿el comercio, a leyendas_1?
+4517XXXXXXXXXX29        ← ¿la tarjeta enmascarada, a leyendas_3?
+A381                    ← ¿el código de autorización, a numero_de_comprobante?
+```
+Con el re-parseo se pueden probar de a una sobre datos reales, sin re-importar.
+
+También sigue pendiente: **no hay pantalla para administrar `config_parseo_extracto`** — aparece en
+un solo archivo del proyecto y las 49 reglas de PAM se cargaron por SQL.
+
 ### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
 Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de
 **30 días** sin movimientos nuevos (rojo a los 60, o si nunca se importó).

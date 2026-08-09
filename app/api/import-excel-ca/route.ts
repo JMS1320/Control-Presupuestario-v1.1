@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
+import {
+  parsearMovimiento,
+  cargarReglasParseo,
+  type MapaReglas,
+} from "@/lib/extractos/parseo-movimiento"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,15 +15,6 @@ const supabase = createClient(
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
-
-interface ReglaParseo {
-  campo_destino: string | null
-  tipo_regla: string
-  numero_linea: number | null
-  grupo_de_conceptos: string
-}
-
-type MapaReglas = Record<string, ReglaParseo[]> // tipo_movimiento → reglas
 
 // ---------------------------------------------------------------------------
 // Helpers numéricos y de fecha (formato CA Galicia)
@@ -109,154 +105,9 @@ function cleanString(value: any): string {
 // Parseo del campo Movimiento usando reglas de BD
 // ---------------------------------------------------------------------------
 
-/**
- * Divide el texto Movimiento (multilinea) en líneas limpias.
- */
-function splitMovimiento(raw: string): string[] {
-  return raw
-    .split(/\r\n|\r|\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-}
-
-/**
- * Detecta CUIT en una línea: 11 dígitos, posible prefijo "CU " o "NO ".
- */
-function esCuit(linea: string): boolean {
-  const limpio = linea.replace(/^(CU|NO)\s+/, "").trim()
-  return /^\d{11}$/.test(limpio)
-}
-
-/**
- * Extrae CUIT limpio (sin prefijo).
- */
-function extraerCuit(lineas: string[]): string {
-  for (const l of lineas) {
-    const c = l.replace(/^(CU|NO)\s+/, "").trim()
-    if (/^\d{11}$/.test(c)) return c
-  }
-  return ""
-}
-
-/**
- * Aplica una regla a las líneas del Movimiento.
- */
-function aplicarRegla(lineas: string[], regla: ReglaParseo): string {
-  switch (regla.tipo_regla) {
-    case "linea":
-      return lineas[(regla.numero_linea ?? 1) - 1]?.trim() ?? ""
-
-    case "cuit":
-      return extraerCuit(lineas)
-
-    case "pre_cuit":
-      // Devuelve la línea ANTES del CUIT, solo si el CUIT está en posición 2 o mayor.
-      // Si el CUIT está en la posición 1 (línea 2 del array, índice 1), no hay nombre previo.
-      for (let i = 1; i < lineas.length; i++) {
-        if (esCuit(lineas[i])) {
-          // CUIT en índice i → línea previa sería índice i-1.
-          // Solo devolver si i >= 2 (hay al menos una línea entre tipo y CUIT).
-          return i >= 2 ? lineas[i - 1]?.trim() ?? "" : ""
-        }
-      }
-      return ""
-
-    case "post_cuit":
-      // Devuelve la línea DESPUÉS del CUIT.
-      for (let i = 0; i < lineas.length - 1; i++) {
-        if (esCuit(lineas[i])) return lineas[i + 1]?.trim() ?? ""
-      }
-      return ""
-
-    case "nro_operacion":
-      // Busca patrón "OPERACION XXXXX" o "OP:XXXXX"
-      for (const l of lineas) {
-        const m1 = l.match(/OPERACION\s+(\S+)/i)
-        if (m1) return m1[1]
-        const m2 = l.match(/OP:(\S+)/i)
-        if (m2) return m2[1]
-      }
-      // Fallback: último segmento numérico (no CUIT)
-      for (let i = lineas.length - 1; i >= 1; i--) {
-        const l = lineas[i].trim()
-        if (/^\d+$/.test(l) && !/^\d{11}$/.test(l)) return l
-      }
-      return ""
-  }
-  return ""
-}
-
-/**
- * Parsea un texto Movimiento usando las reglas de la BD.
- * Devuelve un objeto con los campos destino populados.
- */
-function parsearMovimiento(
-  raw: string,
-  mapaReglas: MapaReglas
-): Record<string, string> {
-  const lineas = splitMovimiento(raw)
-  const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
-  const resultado: Record<string, string> = {}
-
-  // Buscar reglas exactas (case-insensitive sobre tipo_movimiento)
-  const claveExacta = Object.keys(mapaReglas).find(
-    (k) => k.toUpperCase() === tipoLinea1
-  )
-  const reglas = claveExacta
-    ? mapaReglas[claveExacta]
-    : mapaReglas["*"] ?? []
-
-  // Extraer grupo_de_conceptos del primer set de reglas
-  const grupoConceptos =
-    reglas.length > 0 ? reglas[0].grupo_de_conceptos : "Otros"
-
-  resultado["grupo_de_conceptos"] = grupoConceptos
-
-  for (const regla of reglas) {
-    if (!regla.campo_destino) continue
-    resultado[regla.campo_destino] = aplicarRegla(lineas, regla)
-  }
-
-  // Descripcion siempre tiene al menos la línea 1 (tipo)
-  if (!resultado["descripcion"]) {
-    resultado["descripcion"] = tipoLinea1 || raw.substring(0, 100)
-  }
-
-  return resultado
-}
-
-// ---------------------------------------------------------------------------
-// Carga de reglas desde BD
-// ---------------------------------------------------------------------------
-
-async function cargarReglasCA(cuentaBancariaId: string): Promise<MapaReglas> {
-  const { data, error } = await supabase
-    .from("config_parseo_extracto")
-    .select(
-      "tipo_movimiento, campo_destino, tipo_regla, numero_linea, grupo_de_conceptos"
-    )
-    .eq("cuenta_bancaria_id", cuentaBancariaId)
-    .eq("activo", true)
-    .order("orden", { ascending: true })
-
-  if (error || !data) {
-    console.error("Error cargando reglas parseo:", error)
-    return {}
-  }
-
-  const mapa: MapaReglas = {}
-  for (const r of data) {
-    const tipo = r.tipo_movimiento
-    if (!mapa[tipo]) mapa[tipo] = []
-    mapa[tipo].push({
-      campo_destino: r.campo_destino,
-      tipo_regla: r.tipo_regla,
-      numero_linea: r.numero_linea,
-      grupo_de_conceptos: r.grupo_de_conceptos ?? "",
-    })
-  }
-  return mapa
-}
+// El desglose del texto del banco vive en `lib/extractos/parseo-movimiento.ts`, compartido con
+// el re-parseo. Ver el comentario de ese archivo: si fueran dos copias podrían divergir y un
+// movimiento quedaría distinto según por dónde entró.
 
 // ---------------------------------------------------------------------------
 // Endpoint POST
@@ -334,7 +185,7 @@ export async function POST(req: Request) {
     // -----------------------------------------------------------------------
     // 2. Cargar reglas de parseo
     // -----------------------------------------------------------------------
-    const mapaReglas = await cargarReglasCA(cuentaBancariaId)
+    const mapaReglas = await cargarReglasParseo(supabase, cuentaBancariaId)
     console.log(`CA Import: reglas cargadas:`, Object.keys(mapaReglas).length, "tipos")
 
     // -----------------------------------------------------------------------
