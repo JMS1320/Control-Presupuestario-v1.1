@@ -3140,6 +3140,36 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### 📄 Los dos informes de conciliación (2026-08-08)
+Se abren en el navegador y **el link es permanente** — se pueden cerrar y volver a abrir.
+
+| Informe | Link | Para qué |
+|---|---|---|
+| **Cómo se decide contable e interno** | `claude.ai/code/artifact/de1f4519-cedc-40aa-a381-50b7ba54cdcd` | Las 4 capas de reglas, qué aplica a cada origen, ejemplos reales y los huecos |
+| **Conciliación empresa por empresa** | `claude.ai/code/artifact/82969b74-c519-4b3d-aee8-f7af4287fc24` | El mismo terreno visto desde MSA, PAM y MA por separado: qué está cubierto y qué falta **customizar** |
+
+> 🔑 **La reformulación del usuario, que ordena todo**: mirado por empresa, la mayoría de los
+> "huecos" **no son bugs, son casillas que no existen**. `AP 3 PAM` no puede ocurrir en el extracto
+> de MSA — ocurriría en el de PAM. Para **facturas de MSA el circuito está cubierto** con las 2
+> reglas `RET 3 PAM` / `RET 3 MA`; lo que falta es customizar PAM y MA.
+
+### 🚨 El volumen real a conciliar son 477, no 49 (2026-08-08)
+Los 49 de bancos eran la punta. **Cajas y tarjetas suman 428 pendientes y no tienen ninguna regla**,
+aunque el motor las trata igual que a un banco:
+
+| Cuenta | Pendientes | Reglas |
+|---|---:|---:|
+| `msa.tarjeta_visa_business` | **296** | 0 |
+| `msa.caja_sigot` | **79** | 0 |
+| `pam.tarjeta_visa` | **53** | 0 |
+| `msa_galicia` | 39 | 26 imput. + 40 texto |
+| `pam_galicia` + `pam_galicia_cc` | 10 | 0 imput. + 34 texto (sólo en `_cc`) |
+| `ma_galicia` · `ma.tarjeta_visa` · `caja_general` · `caja_ams` | 0 | 0 |
+
+**La tarjeta de MSA sola tiene 6 veces más pendientes que el banco.** Orden sugerido: banco MSA (39,
+terreno conocido) → copiar a `pam_galicia` lo que sirva de las 34 reglas de `pam_galicia_cc` →
+tarjeta MSA (296) → caja Sigot y tarjeta PAM → extracto de MA cuando se importe.
+
 ### 🔍 A-BUG-09 — Auditoría de los 49 pendientes (2026-08-08)
 
 **El hallazgo que da vuelta la premisa**: el dossier suponía movimientos *"que deberían haber
