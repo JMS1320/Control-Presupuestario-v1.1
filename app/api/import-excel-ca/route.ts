@@ -30,6 +30,13 @@ type MapaReglas = Record<string, ReglaParseo[]> // tipo_movimiento → reglas
  */
 function parseNumberCA(value: any): number {
   if (value === null || value === undefined || value === "") return 0
+
+  // Si Excel ya lo entregó como NÚMERO, viene listo: no hay separadores que interpretar.
+  // ⚠️ Sin esta rama, un valor tipeado a mano se destruía: el `.replace(/\./g, "")` de abajo
+  // asume que todo punto es separador de miles, así que 3.86 → "386" y 214140.6 → "2141406".
+  // El texto del banco ("3,86") no tiene ese problema porque usa coma decimal.
+  if (typeof value === "number") return isFinite(value) ? value : 0
+
   const s = String(value)
     .trim()
     .replace(/\./g, "")   // eliminar separador de miles
@@ -39,13 +46,37 @@ function parseNumberCA(value: any): number {
 }
 
 /**
- * Parsea fecha DD/MM/YYYY → YYYY-MM-DD
+ * Parsea la fecha de una celda → YYYY-MM-DD.
+ *
+ * El banco escribe las fechas como TEXTO (`"25/03/2026"`), pero una fila agregada a mano queda
+ * como **fecha de Excel**, que en el archivo es un número de serie (25/03/2026 → 46106). Y eso
+ * hay que soportarlo sí o sí: Galicia no deja descargar movimientos viejos, así que completar
+ * un hueco a mano es parte del uso normal.
+ *
+ * ⚠️ Sin la rama numérica, `new Date("46106")` devolvía **el año 46106** (`"+046106-01-01"`), que
+ * al compararse como texto contra la última fecha cargada resultaba "más viejo" (el `+` ordena
+ * antes que cualquier dígito) y **la fila se descartaba en silencio**. El síntoma no era ése:
+ * eran 15 filas con un descuadre de saldo heredado de la fila que faltaba.
  */
 function parseDateCA(value: any): string | null {
-  if (!value) return null
-  const s = String(value).trim()
+  if (value === null || value === undefined || value === "") return null
 
-  // Formato DD/MM/YYYY
+  // Fecha de Excel: número de serie de días desde 1899-12-30 (25569 = ese origen en epoch Unix)
+  if (typeof value === "number") {
+    if (!isFinite(value) || value <= 0) return null
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000))
+    return isNaN(date.getTime()) ? null : date.toISOString().split("T")[0]
+  }
+
+  // Según cómo se lea el archivo, la celda puede llegar ya como Date
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value.toISOString().split("T")[0]
+  }
+
+  const s = String(value).trim()
+  if (!s) return null
+
+  // Formato DD/MM/YYYY — el que usa el banco
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
   if (m) {
     const [, d, mo, y] = m
@@ -53,10 +84,17 @@ function parseDateCA(value: any): string | null {
     if (!isNaN(date.getTime())) return date.toISOString().split("T")[0]
   }
 
-  // Fallback: dejar que Date lo intente
+  // Un número escrito como texto ("46106") también es una fecha de Excel
+  if (/^\d+(\.\d+)?$/.test(s)) return parseDateCA(Number(s))
+
+  // Fallback: dejar que Date lo intente, pero SÓLO si da un año creíble.
+  // Sin este cerco volvería el bug: `new Date("46106")` da el año 46106 y pasa como válido.
   try {
     const date = new Date(s)
-    if (!isNaN(date.getTime())) return date.toISOString().split("T")[0]
+    if (!isNaN(date.getTime())) {
+      const anio = date.getFullYear()
+      if (anio >= 1990 && anio <= 2100) return date.toISOString().split("T")[0]
+    }
   } catch {}
 
   return null
@@ -377,15 +415,42 @@ export async function POST(req: Request) {
     const controlErrors: any[] = []
     const rowsParaInsertar: any[] = []
 
+    /**
+     * Filas que el importador NO procesa, con el motivo.
+     *
+     * Antes se salteaban en silencio, y eso hizo casi imposible diagnosticar un caso real: una
+     * fila con fecha ilegible se descartó sin decir nada, y el síntoma fueron **15 filas con un
+     * descuadre de saldo** que no tenían nada malo — arrastraban el de la que faltaba.
+     * Una fila que no entra tiene que decirlo.
+     */
+    const descartadas: { fila: number; fecha: string; movimiento: string; motivo: string }[] = []
+    const descartar = (index: number, fechaTxt: string, row: any[], motivo: string) => {
+      descartadas.push({
+        fila: index + 1,
+        fecha: fechaTxt,
+        movimiento: cleanString(row[idxMovimiento]).split(/\r?\n/)[0].slice(0, 60),
+        motivo,
+      })
+    }
+
     console.log(`CA Import: hoy=${hoy}, ultimaFecha=${ultimaFecha}, saldoAnterior=${saldoAnterior}`)
 
     for (const [index, row] of filas.entries()) {
       const fecha = parseDateCA(row[idxFecha])
-      if (!fecha) continue
+      if (!fecha) {
+        descartar(index, String(row[idxFecha] ?? ""), row, "fecha ilegible")
+        continue
+      }
 
       // Filtros de fecha
-      if (fecha >= hoy) continue
-      if (ultimaFecha && fecha < ultimaFecha) continue
+      if (fecha >= hoy) {
+        descartar(index, fecha, row, "fecha de hoy o futura")
+        continue
+      }
+      if (ultimaFecha && fecha < ultimaFecha) {
+        descartar(index, fecha, row, `anterior al último cargado (${ultimaFecha})`)
+        continue
+      }
 
       // Deduplicar movimientos del mismo día que el último ya guardado
       const rawMovimiento = cleanString(row[idxMovimiento])
@@ -401,7 +466,10 @@ export async function POST(req: Request) {
         const parsedTemp = parsearMovimiento(rawMovimiento, mapaReglas)
         const descTemp = parsedTemp["descripcion"] ?? rawMovimiento.substring(0, 100)
         const clave = `${descTemp}|${debitos}|${creditos}`
-        if (movimientosUltimaFecha.has(clave)) continue
+        if (movimientosUltimaFecha.has(clave)) {
+          descartar(index, fecha, row, "ya estaba cargado (duplicado del mismo día)")
+          continue
+        }
       }
 
       // CA Galicia: saldo = post-transacción (igual que MSA CC).
@@ -415,8 +483,13 @@ export async function POST(req: Request) {
       const descripcion =
         parsed["descripcion"] || rawMovimiento.substring(0, 200)
 
-      // Control: saldo reportado debe coincidir con saldoAnterior + neto
-      const control = saldo - (saldoAnterior + creditos - debitos) + controlAnterior
+      // Control: saldo reportado debe coincidir con saldoAnterior + neto.
+      // `control` ARRASTRA el desfase anterior (por eso suma `controlAnterior`): así el saldo
+      // final sigue cerrando aunque una fila del medio esté mal. Pero para el mensaje hay que
+      // distinguir las dos cosas — si no, UN error se ve como quince y se busca en el lugar
+      // equivocado. `propio` es el descuadre que nace en ESTA fila.
+      const propio = saldo - (saldoAnterior + creditos - debitos)
+      const control = propio + controlAnterior
 
       if (Math.abs(control) > 0.5) {
         controlErrors.push({
@@ -424,6 +497,9 @@ export async function POST(req: Request) {
           fecha,
           descripcion,
           control: control.toFixed(2),
+          propio: propio.toFixed(2),
+          // La fila donde nace el problema es la que tiene descuadre propio; el resto lo hereda
+          origen: Math.abs(propio) > 0.5,
         })
       }
 
@@ -477,17 +553,35 @@ export async function POST(req: Request) {
     // -----------------------------------------------------------------------
     // 6. Insertar — pero NO si el control de saldos falla (salvo que se fuerce)
     // -----------------------------------------------------------------------
+    // Cuántos descuadres NACEN acá y cuántos sólo lo heredan — es la diferencia entre
+    // "revisá 15 filas" y "revisá la fila 7".
+    const erroresPropios = controlErrors.filter((e: any) => e.origen)
+    const textoDescartadas = descartadas.length > 0
+      ? ` Además se descartaron ${descartadas.length} fila(s): ${[...new Set(descartadas.map(d => d.motivo))].join(", ")}.`
+      : ""
+
     if (controlErrors.length > 0 && !forzar) {
+      const dondeEmpieza = erroresPropios.length > 0
+        ? `El descuadre nace en ${erroresPropios.length === 1 ? "la fila" : "las filas"} `
+          + erroresPropios.map((e: any) => `${e.fila} (${e.fecha}, ${e.propio})`).join(", ")
+          + `; el resto lo arrastra.`
+        : `Ninguna fila tiene descuadre propio: el desfase viene de ANTES del archivo — del saldo inicial, de lo ya cargado, o de una fila descartada.`
       return NextResponse.json({
         success: false,
-        message: `Control de saldos NO cuadra en ${controlErrors.length} fila(s). NO se importó nada — revisá el saldo inicial o el archivo (o tildá "Forzar" para importar igual).`,
+        message: `Control de saldos NO cuadra en ${controlErrors.length} fila(s). ${dondeEmpieza}`
+          + ` NO se importó nada — revisá el saldo inicial o el archivo (o tildá "Forzar" para importar igual).`
+          + textoDescartadas,
         insertedCount: 0,
         controlErrors,
+        erroresPropios,
+        descartadas,
         errores,
         summary: {
           totalFilas: filas.length,
           filasInsertadas: 0,
           erroresControl: controlErrors.length,
+          erroresControlPropios: erroresPropios.length,
+          filasDescartadas: descartadas.length,
           erroresCategoria: errores.length,
         },
       })
@@ -509,16 +603,20 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       message:
-        rowsParaInsertar.length > 0
+        (rowsParaInsertar.length > 0
           ? `Importación completada. ${rowsParaInsertar.length} registros insertados.`
-          : "No se encontraron registros nuevos para importar.",
+          : "No se encontraron registros nuevos para importar.") + textoDescartadas,
       insertedCount: rowsParaInsertar.length,
       controlErrors,
+      erroresPropios,
+      descartadas,
       errores,
       summary: {
         totalFilas: filas.length,
         filasInsertadas: rowsParaInsertar.length,
         erroresControl: controlErrors.length,
+        erroresControlPropios: erroresPropios.length,
+        filasDescartadas: descartadas.length,
         erroresCategoria: errores.length,
       },
     })

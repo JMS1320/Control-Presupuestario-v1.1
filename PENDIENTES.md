@@ -3185,6 +3185,49 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### ✅ Importador de Caja de Ahorro: una fila cargada a mano se descartaba en silencio (2026-08-09)
+
+**Síntoma**: al importar el extracto de `pam_galicia`, *"Control de saldos NO cuadra en 15 fila(s)"*
+— **todas con el mismo valor, 3,86**. La única fila que el usuario había cargado a mano no aparecía
+en la lista, así que parecía la sana.
+
+**Eran dos bugs del mismo tipo**, y los dos sólo se disparan con una fila escrita a mano: el banco
+entrega **texto**, Excel guarda lo tipeado como **número**.
+
+| | Qué hacía | Con `3.86` / `25/03/2026` |
+|---|---|---|
+| `parseNumberCA` | `String(v).replace(/\./g,"")` — asume que todo punto es separador de miles | `3.86` → **386** · `214140.6` → **2.141.406** |
+| `parseDateCA` | Sólo reconocía texto `DD/MM/YYYY`; el resto caía a `new Date(s)` | `46106` → `new Date("46106")` → **el año 46106** (`"+046106-01-01"`) |
+
+**Por qué la fila desaparecía**: `"+046106-01-01" < "2026-03-20"` es **verdadero** — es comparación
+de texto y `+` (código 43) ordena antes que `2` (código 50). El guarda *"descartar lo anterior a lo
+ya cargado"* la tomaba por vieja y la salteaba **antes** de la validación de control. Su crédito de
+3,86 nunca entraba a la cadena, el saldo anterior quedaba en 214.136,74 en vez de 214.140,60, y de
+ahí el descuadre en **todas** las filas siguientes.
+
+**Por qué se veían 15 y no 1**: la fórmula del control **arrastra** el desfase
+(`control = propio + controlAnterior`) para que el saldo final cierre igual. Correcto para el saldo,
+pésimo para el diagnóstico: mostraba 15 filas sanas y ninguna rota.
+
+**Contexto que lo vuelve permanente, no un caso raro**: *"no puedo descargar data más vieja de
+Galicia"* — completar un hueco a mano **es parte del uso normal**.
+
+#### Los tres arreglos (aplican a `pam_galicia` **y** `ma_galicia`: comparten el importador)
+1. **`parseNumberCA` respeta los números** que ya vienen como número.
+2. **`parseDateCA` entiende fechas de Excel** (serial y objeto `Date`), y el fallback ahora **exige
+   un año entre 1990 y 2100** — sin ese cerco el bug volvería por la misma puerta.
+3. **Las filas descartadas se informan**, con fila, fecha, movimiento y motivo (ilegible · futura ·
+   anterior a lo cargado · duplicada). Y el error de control **distingue dónde nace el descuadre**
+   de dónde sólo se arrastra: *"nace en la fila 7 (2026-04-06, 3.86); el resto lo arrastra"*.
+   Si ninguna fila tiene descuadre propio, lo dice: el desfase viene de antes del archivo.
+
+**Verificado** con el archivo real del usuario (`PAM CA - Extracto_00004439022.xlsx`): 16 de 16
+filas procesadas, **0 descartadas, 0 errores de control**, saldo final 11.003,99 = el del banco.
+
+> 🔑 **El patrón, otra vez**: lo que hizo caro este bug no fue el parseo, fue que **la fila
+> descartada no dijo nada**. Mismo modo de falla que el `UPDATE` que no encuentra la fila y
+> devuelve OK. *El silencio miente.*
+
 ### ✅ "¿Hay filtros?" pasa a tener una fuente única (2026-08-09)
 
 **El bug que lo destapó**, encontrado por una pregunta del usuario (*"¿qué pasa si filtro junio y
