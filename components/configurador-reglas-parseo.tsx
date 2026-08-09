@@ -29,12 +29,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check } from "lucide-react"
 import { toast } from "sonner"
+import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 
-/** Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). */
-const CUENTAS_CA = [
-  { id: "pam_galicia", nombre: "PAM Galicia CA" },
-  { id: "ma_galicia", nombre: "MA Galicia CA" },
-]
+/**
+ * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
+ * que aceptan `app/api/import-excel-ca` y `app/api/reparsear-extracto`; el nombre se toma de
+ * `CUENTAS_BANCARIAS` para que sea idéntico al del selector del modal.
+ */
+const IDS_CA = ["pam_galicia", "ma_galicia"]
+const CUENTAS_CA = IDS_CA.map(id => ({
+  id,
+  nombre: CUENTAS_BANCARIAS.find(c => c.id === id)?.nombre ?? id,
+}))
 
 /** Los cinco modos que sabe aplicar `lib/extractos/parseo-movimiento`. */
 const TIPOS_REGLA = [
@@ -77,8 +83,10 @@ interface TipoSinRegla {
 }
 
 export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
-  const inicial = CUENTAS_CA.some(c => c.id === cuentaBancariaId) ? cuentaBancariaId! : CUENTAS_CA[0].id
-  const [cuenta, setCuenta] = useState(inicial)
+  // La cuenta la elige el selector del modal, que es único para las tres solapas. Tener otro acá
+  // sería un segundo mando para lo mismo y podrían quedar apuntando a cuentas distintas.
+  const cuenta = cuentaBancariaId ?? ""
+  const esCajaDeAhorro = CUENTAS_CA.some(c => c.id === cuenta)
   const [reglas, setReglas] = useState<Regla[]>([])
   const [sinRegla, setSinRegla] = useState<TipoSinRegla[]>([])
   const [cargando, setCargando] = useState(true)
@@ -95,6 +103,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const [guardando, setGuardando] = useState(false)
 
   const cargar = useCallback(async () => {
+    if (!esCajaDeAhorro) { setReglas([]); setSinRegla([]); setCargando(false); return }
     setCargando(true)
     try {
       const [{ data }, diag] = await Promise.all([
@@ -108,7 +117,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     } finally {
       setCargando(false)
     }
-  }, [cuenta])
+  }, [cuenta, esCajaDeAhorro])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -182,19 +191,31 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     (acc[r.tipo_movimiento] ||= []).push(r); return acc
   }, {})
 
+  // Las cuentas corrientes no usan estas reglas: su export del banco YA viene con las columnas
+  // separadas (Descripción, Concepto, Leyendas 1-4, Nº de Comprobante…), así que no hay nada que
+  // desglosar. El desglose por reglas existe sólo para Caja de Ahorro, donde el banco manda todo
+  // apilado en una sola celda.
+  if (!esCajaDeAhorro) {
+    return (
+      <div className="rounded border bg-gray-50 p-6 text-center">
+        <FileWarning className="mx-auto mb-2 h-6 w-6 text-gray-400" />
+        <p className="text-sm font-medium text-gray-700">
+          Esta cuenta no usa reglas de parseo
+        </p>
+        <p className="mx-auto mt-1.5 max-w-md text-xs text-gray-500">
+          Las <strong>cuentas corrientes</strong> ya vienen del banco con las columnas separadas, así
+          que no hay nada que desglosar. Estas reglas son sólo para <strong>Caja de Ahorro</strong>,
+          donde el banco manda todo apilado en una celda.
+        </p>
+        <p className="mt-2.5 text-xs text-gray-500">
+          Cuentas con parseo: {CUENTAS_CA.map(c => c.nombre).join(" · ")} — elegilas en el selector de arriba.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Label className="text-sm">Cuenta</Label>
-        <select className="border rounded px-2 py-1.5 text-sm bg-white"
-          value={cuenta} onChange={e => setCuenta(e.target.value)}>
-          {CUENTAS_CA.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-        <span className="text-xs text-gray-500">
-          Sólo Caja de Ahorro: son las cuentas cuyo importador desglosa por reglas.
-        </span>
-      </div>
-
       {cargando ? (
         <div className="flex items-center gap-2 py-8 text-gray-400">
           <Loader2 className="h-4 w-4 animate-spin" /> Cargando…
