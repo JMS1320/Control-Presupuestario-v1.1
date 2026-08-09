@@ -3243,8 +3243,29 @@ A381                    ← ¿el código de autorización, a numero_de_comproban
 ```
 Con el re-parseo se pueden probar de a una sobre datos reales, sin re-importar.
 
-También sigue pendiente: **no hay pantalla para administrar `config_parseo_extracto`** — aparece en
-un solo archivo del proyecto y las 49 reglas de PAM se cargaron por SQL.
+#### ✅ Y la pantalla que faltaba (2026-08-09)
+`config_parseo_extracto` **no tenía UI**: no se podían ver, crear ni editar las reglas, y las 49 de
+PAM se habían cargado por SQL. Sin poder verlas era imposible saber por qué un movimiento no se
+desglosaba.
+
+Ahora hay una tercera solapa en **Extracto Bancario → Configuración**: *"Reglas de Parseo (import)"*.
+Las otras dos son de **conciliación** — otra tabla y otro momento; el rótulo lo aclara.
+
+Lo que la hace útil de verdad: **muestra primero los tipos SIN regla**, ordenados por cantidad de
+movimientos, y con un **movimiento real de ejemplo con las líneas numeradas**:
+
+```
+1  COMPRA DEBITO
+2  MIMADOS
+3  4517XXXXXXXXXX29
+4  A381
+```
+
+Así la regla se escribe mirando el texto en vez de adivinando qué hay en cada línea. El tipo se
+guarda **en mayúscula** porque el match es exacto, y el grupo de conceptos se hereda del que ya
+tenga el tipo (con sugerencias de los usados) para no generar variantes.
+
+Al crear una regla avisa que **no cambia sola lo ya importado**: hay que correr *Re-parsear*.
 
 ### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
 Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de

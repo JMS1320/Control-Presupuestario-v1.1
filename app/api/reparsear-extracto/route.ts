@@ -21,7 +21,7 @@ import {
   cargarReglasParseo,
   tipoDeMovimiento,
   tieneReglaPropia,
-  GRUPO_SIN_REGLA,
+  splitMovimiento,
 } from "@/lib/extractos/parseo-movimiento"
 
 const supabase = createClient(
@@ -164,13 +164,16 @@ export async function GET(req: Request) {
     const { data, error } = await db.from(cuenta).select("concepto, grupo_de_conceptos")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const porTipo = new Map<string, number>()
+    const porTipo = new Map<string, { n: number; ejemplo: string }>()
     let sinDesglosar = 0
     for (const m of (data ?? []) as any[]) {
       const tipo = tipoDeMovimiento(m.concepto)
       if (!tipo) continue
       if (!tieneReglaPropia(m.concepto, mapaReglas)) {
-        porTipo.set(tipo, (porTipo.get(tipo) ?? 0) + 1)
+        // Se guarda un movimiento de ejemplo por tipo: con el texto real a la vista, la regla
+        // se escribe mirando las líneas en vez de adivinando cuál es cuál.
+        const prev = porTipo.get(tipo)
+        porTipo.set(tipo, { n: (prev?.n ?? 0) + 1, ejemplo: prev?.ejemplo ?? String(m.concepto) })
         sinDesglosar++
       }
     }
@@ -181,7 +184,7 @@ export async function GET(req: Request) {
       totalMovimientos: data?.length ?? 0,
       sinDesglosar,
       tiposSinRegla: [...porTipo.entries()]
-        .map(([tipo, movimientos]) => ({ tipo, movimientos }))
+        .map(([tipo, v]) => ({ tipo, movimientos: v.n, lineas: splitMovimiento(v.ejemplo) }))
         .sort((a, b) => b.movimientos - a.movimientos),
     })
   } catch (err) {

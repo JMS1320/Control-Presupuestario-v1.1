@@ -47,6 +47,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
 import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
+import { ConfiguradorReglasParseo } from "./configurador-reglas-parseo"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
@@ -3583,9 +3584,11 @@ export function VistaExtractoBancario() {
           </div>
 
           <Tabs defaultValue="conciliacion" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
               <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
+              {/* Las otras dos son de CONCILIACIÓN; ésta es de IMPORT — otra tabla, otro momento */}
+              <TabsTrigger value="parseo">Reglas de Parseo (import)</TabsTrigger>
             </TabsList>
 
             <TabsContent value="conciliacion" className="mt-4">
@@ -3594,6 +3597,9 @@ export function VistaExtractoBancario() {
 
             <TabsContent value="contable-interno" className="mt-4">
               <ConfiguradorReglasContable cuentaBancariaId={cuentaConfig} />
+            </TabsContent>
+            <TabsContent value="parseo" className="mt-4">
+              <ConfiguradorReglasParseo cuentaBancariaId={cuentaConfig} />
             </TabsContent>
           </Tabs>
         </DialogContent>
