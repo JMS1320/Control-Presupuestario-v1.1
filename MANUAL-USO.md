@@ -751,6 +751,50 @@ de declarar.
 
 ---
 
+## 🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
+
+> Diseño, reglas y huecos → `PENDIENTES.md` § A-FEAT-13 y § A-BUG-09.
+
+### Qué cambió
+- **Los candidatos al reasignar ahora son de las tres empresas.** Cada uno muestra un **chip con su
+  empresa** (facturas, templates, sueldos y grupos). Si la empresa no es la de la cuenta aparece
+  **⇄**: eso significa que se va a registrar como **retiro por pago a terceros** (`RET 3 PAM` /
+  `RET 3 MA`), que es lo correcto cuando MSA paga algo facturado a otra empresa.
+- **Las propuestas ya funcionan.** Antes buscaban al proveedor por **la primera palabra** del
+  nombre — `LA MERCURE` buscaba `la` y traía de todo, y un proveedor cuya primera palabra el banco
+  no escribe no aparecía nunca. Y **los ingresos no recibían ninguna propuesta**.
+- **Contable e Interno sugieren los códigos ya usados** en esa cuenta, en el modal y en la edición
+  masiva. Para dejar de crear variantes (`RET 3 PAM` vs `RET PAM`).
+- **Ya no se pisa el vencimiento de la factura**: la fecha del movimiento se guarda en `fecha_pago`.
+- El detalle **no se borra más** al reasignar, y si no hay se deriva.
+
+### 🧪 Cómo probarlo
+1. **Correr por tandas** (lo más importante antes de conciliar mucho). Poné un **filtro de fechas**
+   y dale conciliar: tiene que preguntarte *"se conciliará sólo lo visible (N pendientes)"*.
+   ⚠️ **El límite de 100 registros NO cuenta como filtro** — si sólo limitás la vista, corre sobre
+   todo. Hay que filtrar por fecha, categoría, estado o búsqueda.
+2. **Reasignar un movimiento de PAM.** Parado en el extracto de PAM, reasignar: tienen que
+   aparecer **las facturas de PAM**, con su chip. Antes sólo salían las de MSA.
+3. **El cruzado.** Desde el extracto de **MSA**, elegir una factura de **PAM**: el candidato tiene
+   que mostrar **PAM ⇄**, y al confirmar el movimiento queda con `contable = RET 3 PAM`.
+4. **Un ingreso.** Reasignar un movimiento de **crédito**: antes no ofrecía nada; ahora tiene que
+   proponer candidatos. Hay 14 ingresos entre los pendientes.
+5. **Los códigos sugeridos.** En Contable, empezá a escribir `RET`: tiene que desplegar los ya
+   usados en esa cuenta.
+6. **Que no se borre el detalle.** Reasignar un movimiento que ya tenga detalle escrito: **tiene
+   que conservarlo**. Si estaba vacío, ahora se completa solo (`FC 1234 — Proveedor`).
+7. **El vencimiento.** Conciliar una factura que tenga vencimiento cargado y verificar en Egresos
+   que **el vencimiento no cambió** y que la fecha del banco quedó en *Fecha de Pago*.
+
+### ⚠️ Lo que se sabe que todavía no anda
+- **Las acreditaciones de haberes no van a conciliar solas**: el banco debita el total y el sistema
+  tiene los pagos uno por uno. Hay que **agruparlos** primero.
+- **Los echeq con más de 5 días** entre emisión y débito quedan fuera de la ventana del motor.
+- **`pam_galicia` no tiene ninguna regla** (ni de imputación ni de texto): se concilia a mano.
+- Si no hay regla y las empresas difieren, **el movimiento queda conciliado sin `contable`, sin avisar**.
+
+---
+
 ## 🏢 Cash Flow multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § A-FEAT-13.

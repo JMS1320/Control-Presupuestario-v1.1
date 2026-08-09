@@ -3140,6 +3140,67 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### 🔍 A-BUG-09 — Auditoría de los 49 pendientes (2026-08-08)
+
+**El hallazgo que da vuelta la premisa**: el dossier suponía movimientos *"que deberían haber
+conciliado por tener el mismo monto"*. **No existen.** Cruzando los 49 pendientes contra todo lo
+conciliable (FC de las 3 empresas + cuotas de template activas) aparecen sólo **4 coincidencias de
+monto, y todas con 57 a 209 días de diferencia** — o sea casualidades, no matches perdidos.
+
+El motor no está fallando por monto. Está fallando por **cuatro causas concretas**:
+
+#### 1. Anticipo excluido del Cash Flow por su estado 🔴
+`Echeq 48 Hs. Nro. 102` · 26/05/2026 · **$1.455.755,70** ↔ anticipo de **Eduardo Castillo**,
+mismo importe, `fecha_cobro_echeq` 22/05 → **4 días de diferencia, tendría que haber dado
+`auditar`**. No matcheó porque `mapearAnticipos` excluye `estado = 'vinculado'`, así que el
+anticipo **nunca entra al Cash Flow** y el motor no puede verlo.
+→ *Un anticipo vinculado a su factura sigue siendo un movimiento de banco que hay que conciliar.*
+
+#### 2. Ventana de fecha de 5 días 🟡
+`Echeq 48 Hs. Nro. 105` · 16/06/2026 · **$1.461.558,28** ↔ anticipo de **ARROYO TALA**, mismo
+importe, fecha 08/06 → **8 días**. Está en el Cash Flow, pero supera la ventana y no matchea ni
+como `auditar`. Con echeq la brecha entre emisión y débito es normal.
+→ *Ventana más ancha para echeq, o basada en `fecha_cobro_echeq`.*
+
+#### 3. Pagos agrupados que el motor no puede resolver por diseño 🔴
+`Servicio Acreditamiento De Haberes` — **4 movimientos, $3.970.534**. **Ningún pago de sueldo
+tiene ese monto**: el banco debita el **total** de la acreditación y el sistema tiene N pagos
+individuales (3 a 9 cerca de cada fecha). El motor compara contra **una** fila del Cash Flow, así
+que un agregado nunca va a matchear.
+→ *La salida es agrupar los sueldos en un grupo de pago —el mecanismo ya existe— para que la fila
+del Cash Flow traiga el total.*
+
+#### 4. Movimientos que no son conciliables contra un comprobante 🟢
+No es un bug: necesitan **regla de texto**, no match por monto.
+
+| Descripción | Veces | Total | Qué es |
+|---|---:|---:|---|
+| `Trf Inmed Proveed` | 16 | $15,5 M | El grueso real: transferencias a proveedores |
+| `Deb. Autom. De Serv.` | 8 | $1,28 M | Débitos automáticos |
+| `Transferencias Cash Proveedores` | 5 | **$94,9 M** | **Ingresos** — no son egresos conciliables |
+| `Servicio Pago A Proveedores` | 3 | $15,9 M | Ingresos |
+| `Compra Debito` | 3 | $116 K | Tarjeta de débito |
+| `REINTEGRO PROMOCION GALICIA` (+MODO) | 3 | $45 K | Reintegros del banco |
+| `Transf. Ctas Propias` / `TRANSFERENCIA DE CUENTA PROPIA` | 2 | $300 K ×2 | **El mismo movimiento visto de los dos lados** (sale de `pam_galicia_cc`, entra en `pam_galicia`) |
+| `INTERES CAPITALIZADO`, `Anulacion Debitos`, `PAGO TARJETA VISA` | 3 | $92 K | Movimientos del banco |
+
+#### Reparto de los 49
+| Cuenta | Egresos | Ingresos |
+|---|---:|---:|
+| `msa_galicia` | 33 · $23,8 M | 6 · **$106,7 M** |
+| `pam_galicia` | 1 · $6.264 | 5 · $345.754 |
+| `pam_galicia_cc` | 1 · $300.000 | 3 · $4,19 M |
+
+**14 de los 49 son ingresos** — y hasta hoy **no recibían ninguna propuesta** al reasignar
+(A-BUG-06b, ya corregido). Esa sola corrección desbloquea casi un tercio del trabajo pendiente.
+
+#### Qué haría, en orden
+1. **Incluir los anticipos `vinculado` en el Cash Flow** si su `estado_pago` no es `conciliado`. Es el caso 1 y es de una condición.
+2. **Ampliar la ventana de fecha para echeq** o usar `fecha_cobro_echeq` como referencia (caso 2).
+3. **Agrupar los pagos de sueldo** de cada acreditación antes de conciliar (caso 3, sin código).
+4. **Reglas de texto** para `Trf Inmed Proveed`, `Deb. Autom. De Serv.` y los del banco (caso 4).
+   ⚠️ `pam_galicia` **no tiene ni una** regla de texto.
+
 ### 🧪 Resultado del testeo del usuario (2026-08-08)
 | # | Test | Estado |
 |---|---|---|
