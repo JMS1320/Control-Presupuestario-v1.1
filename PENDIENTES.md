@@ -3140,6 +3140,39 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### ✅ Campos de las reglas: elegir en vez de tipear (2026-08-09)
+Antes de cargar las reglas de PAM y MA, el usuario preguntó si los campos que ya sabemos qué
+valores admiten deberían ser selectores. Eran **6**, en los dos configuradores:
+
+| Campo | Dónde | Antes | Ahora |
+|---|---|---|---|
+| **Responsable** (regla Tipo B) | Reglas de imputación | `<Input>` libre, placeholder *"Ej: PAM, MA, JMS"* | **Selector** de MSA/PAM/MA |
+| Contable · Interno | Reglas de imputación | `<Input>` libre | Sugieren los **ya usados** (se puede escribir uno nuevo) |
+| **CATEG (cuenta contable)** | Reglas de texto | `<Input>` libre, *"Ej: BANC, IMP, FCI"* | **`SelectorCuentaContable`** — jerarquía + buscador |
+| Contable · Interno | Reglas de texto | `<Input>` libre | Sugieren los ya usados |
+
+**Por qué importaba cada uno:**
+- **Responsable**: el motor busca la regla con `=` **exacto** contra el `responsable` del template.
+  Un typo (`pam` en minúscula, `PAM ` con espacio) la vuelve **inaplicable en silencio** — la regla
+  existe, se ve en la pantalla, y nunca se aplica.
+- **CATEG**: escribirla a mano permitía inventar una categ **que no está en el plan de cuentas**, y
+  la regla quedaba imputando a una cuenta inexistente. Además incumplía la regla del proyecto
+  (`CLAUDE.md` § Centralizar): *para asignar cuenta contable va siempre `SelectorCuentaContable`*.
+- **Contable/Interno**: son texto libre por diseño (hay que poder crear códigos nuevos), pero sin
+  sugerencias se generaron las variantes que ya conviven: `RET 3 PAM` / `RET PAM` / `RET 1 PAM`,
+  `RET MA` / `RET 3 MA`, y `Ver` / `VER`.
+
+#### ⚠️ Hueco que quedó a la vista al revisar esto
+La regla Tipo B compara `responsable` con **igualdad exacta**, así que **un template multiempresa
+no matchea ninguna**: el de `MSA/PAM` buscaría una regla con ese literal, que no existe. Para
+**facturas** no pasa (se compara la empresa canónica, una sola). Son 2 templates hoy
+(`MSA/PAM` y `PAM/MA/Duhau`), pero conviene decidir si la comparación debe pasar a "contiene".
+
+#### 🔴 Queda sin hacer
+La **edición inline** de contable/interno en la tabla de reglas (`CeldaEditable`,
+`configurador-reglas-contable.tsx` ~l.505) sigue siendo un `<input>` pelado sin sugerencias. Es el
+mismo riesgo de variantes, por otra puerta.
+
 ### 📄 Los dos informes de conciliación (2026-08-08)
 Se abren en el navegador y **el link es permanente** — se pueden cerrar y volver a abrir.
 

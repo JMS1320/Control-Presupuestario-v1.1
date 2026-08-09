@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Trash2, Building2, Users, UserCheck } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
+import { EMPRESAS } from "@/lib/empresas"
 
 // ── Tipos ──────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   // Formulario modal
   const [formTemplateId, setFormTemplateId] = useState('')
   const [formResponsable, setFormResponsable] = useState('')
+  /** Códigos contable/interno ya usados en alguna regla, para sugerirlos y no crear variantes. */
+  const [codigosEnUso, setCodigosEnUso] = useState<{ contable: string[]; interno: string[] }>({ contable: [], interno: [] })
   const [formEmpleadoId, setFormEmpleadoId] = useState('')
   const [formContable, setFormContable] = useState('')
   const [formInterno, setFormInterno] = useState('')
@@ -98,6 +101,17 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
       setReglas(reglasData || [])
       setTemplates(tmplData || [])
       setEmpleados(empData || [])
+      // Códigos ya usados en CUALQUIER regla (no sólo las de esta cuenta): la convención de
+      // nombres es transversal, y lo que se busca evitar es escribir `RET PAM` donde ya existe
+      // `RET 3 PAM`.
+      const { data: todosCodigos } = await supabase
+        .from('reglas_contable_interno').select('codigo_contable, codigo_interno')
+      const limpiar = (vals: (string | null)[]) =>
+        [...new Set(vals.map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+      setCodigosEnUso({
+        contable: limpiar((todosCodigos || []).map((r: any) => r.codigo_contable)),
+        interno: limpiar((todosCodigos || []).map((r: any) => r.codigo_interno)),
+      })
     } catch (err: any) {
       setError(err.message || 'Error cargando datos')
     } finally {
@@ -436,12 +450,19 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
             ) : modal?.tipo === 'responsable' ? (
               <div>
                 <Label className="text-sm">Responsable *</Label>
-                <Input
-                  className="mt-1"
+                {/* Se elige, no se tipea: el motor busca la regla con `=` exacto contra el
+                    `responsable` del template, así que un typo la vuelve inaplicable en silencio. */}
+                <select
+                  className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-white"
                   value={formResponsable}
                   onChange={e => setFormResponsable(e.target.value)}
-                  placeholder="Ej: PAM, MA, JMS"
-                />
+                >
+                  <option value="">— Elegir empresa —</option>
+                  {EMPRESAS.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  La regla aplica cuando la empresa que paga (la de la cuenta) es distinta de ésta.
+                </p>
                 <p className="text-xs text-gray-400 mt-1">Se aplicará a todos los templates con ese responsable pagados por esta cuenta.</p>
               </div>
             ) : (
@@ -466,11 +487,19 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-sm">Código Contable</Label>
-                <Input className="mt-1" value={formContable} onChange={e => setFormContable(e.target.value)} placeholder="Ej: CTA JMS" />
+                <Input className="mt-1" list="codigos-contable-reglas" value={formContable} onChange={e => setFormContable(e.target.value)} placeholder="Ej: RET 3 PAM" />
               </div>
               <div>
                 <Label className="text-sm">Código Interno</Label>
-                <Input className="mt-1" value={formInterno} onChange={e => setFormInterno(e.target.value)} placeholder="Ej: DIST MA" />
+                <Input className="mt-1" list="codigos-interno-reglas" value={formInterno} onChange={e => setFormInterno(e.target.value)} placeholder="Ej: DIST MA" />
+              {/* Sugerencias con los códigos ya usados en las reglas: son texto libre y por eso
+                  hoy conviven `RET 3 PAM`, `RET PAM` y `RET 1 PAM`. Se permite escribir uno nuevo. */}
+              <datalist id="codigos-contable-reglas">
+                {codigosEnUso.contable.map(c => <option key={c} value={c} />)}
+              </datalist>
+              <datalist id="codigos-interno-reglas">
+                {codigosEnUso.interno.map(c => <option key={c} value={c} />)}
+              </datalist>
               </div>
             </div>
 

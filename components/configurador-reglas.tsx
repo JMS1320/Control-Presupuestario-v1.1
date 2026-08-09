@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff, Copy } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -37,6 +38,20 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
   useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
+
+  /**
+   * Códigos contable/interno ya usados — se sugieren al crear una regla para no ir generando
+   * variantes del mismo concepto. Salen de las dos tablas de reglas y de los propios extractos,
+   * porque la convención de nombres es una sola.
+   */
+  const codigosEnUso = useMemo(() => {
+    const limpiar = (vals: (string | null | undefined)[]) =>
+      [...new Set(vals.map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+    return {
+      contable: limpiar(reglas.map(r => r.codigo_contable)),
+      interno: limpiar(reglas.map(r => r.codigo_interno)),
+    }
+  }, [reglas])
   const [formulario, setFormulario] = useState({
     orden: '',
     tipo: '',
@@ -558,11 +573,15 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
 
             <div>
               <Label htmlFor="categ">CATEG (Cuenta Contable)</Label>
-              <Input
-                id="categ"
+              {/* Se elige del plan de cuentas, no se tipea. Regla del proyecto (CLAUDE.md
+                  § Centralizar): para ASIGNAR cuenta contable va siempre SelectorCuentaContable,
+                  que trae jerarquía y buscador. Escribirla a mano permitía inventar una categ
+                  inexistente y la regla quedaba imputando a una cuenta que no está en el plan. */}
+              <SelectorCuentaContable
                 value={formulario.categ}
-                onChange={(e) => setFormulario(prev => ({ ...prev, categ: e.target.value }))}
-                placeholder="Ej: BANC, IMP, FCI"
+                onSelect={(c) => setFormulario(prev => ({ ...prev, categ: c?.categ || '' }))}
+                placeholder="Buscar cuenta contable…"
+                mostrarSinAsignar
               />
             </div>
 
@@ -597,9 +616,10 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
               <Label htmlFor="codigo_contable">Contable</Label>
               <Input
                 id="codigo_contable"
+                list="codigos-contable-texto"
                 value={formulario.codigo_contable}
                 onChange={(e) => setFormulario(prev => ({ ...prev, codigo_contable: e.target.value }))}
-                placeholder="Ej: RET 3 PAM, AP 3 MSA, LIB"
+                placeholder="Ej: RET 3 PAM, LIB"
               />
             </div>
 
@@ -607,10 +627,19 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
               <Label htmlFor="codigo_interno">Interno</Label>
               <Input
                 id="codigo_interno"
+                list="codigos-interno-texto"
                 value={formulario.codigo_interno}
                 onChange={(e) => setFormulario(prev => ({ ...prev, codigo_interno: e.target.value }))}
                 placeholder="Ej: DIST MA, CTA JMS"
               />
+              {/* Sugerencias con lo ya usado. Se permite escribir uno nuevo: la lista es una ayuda
+                  para no duplicar, no una restricción. */}
+              <datalist id="codigos-contable-texto">
+                {codigosEnUso.contable.map(c => <option key={c} value={c} />)}
+              </datalist>
+              <datalist id="codigos-interno-texto">
+                {codigosEnUso.interno.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
 
             <div className="col-span-2 flex items-center space-x-2">
