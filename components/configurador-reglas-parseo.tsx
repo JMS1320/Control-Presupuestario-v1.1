@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
+import { aplicarRegla } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -141,6 +142,17 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     const ej = sinRegla.find(s => s.tipo === r.tipo_movimiento.toUpperCase())
     setModal({ abierto: true, tipo: r.tipo_movimiento, lineas: ej?.lineas ?? [], editando: r })
   }
+
+  // La vista previa usa `aplicarRegla`, exactamente la función que corre al importar. Si fuera una
+  // copia podría mostrar una cosa y guardar otra, que es peor que no tener vista previa.
+  const vistaPrevia = modal.lineas.length > 0
+    ? aplicarRegla(modal.lineas, {
+        campo_destino: fCampo,
+        tipo_regla: fTipoRegla,
+        numero_linea: Number(fLinea) || 1,
+        grupo_de_conceptos: fGrupo,
+      })
+    : ""
 
   const guardar = async () => {
     if (!fTipoMovimiento.trim()) { toast.error("Falta el tipo de movimiento"); return }
@@ -373,6 +385,37 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 {CAMPOS_DESTINO.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+
+            {/* Vista previa: la regla aplicada al ejemplo real, con la MISMA función que corre al
+                importar. Es lo que evita descubrir recién en el re-parseo que la línea era otra. */}
+            {modal.lineas.length > 0 && (
+              <div className="col-span-2 rounded border bg-emerald-50 px-2.5 py-2">
+                <span className="text-[11px] text-emerald-900">Con el ejemplo de arriba, esta regla guardaría</span>
+                <div className="mt-0.5 font-mono text-xs">
+                  <span className="text-gray-500">{fCampo} = </span>
+                  {vistaPrevia
+                    ? <strong className="text-emerald-800">{vistaPrevia}</strong>
+                    : <span className="text-red-600">(vacío — la regla no encuentra nada)</span>}
+                </div>
+              </div>
+            )}
+
+            {/* `leyendas_adicionales_2` no es una columna cualquiera: es DONDE EL MOTOR BUSCA EL
+                CUIT, con igualdad exacta. Un CBU o un nombre ahí no rompe nada visible — sólo hace
+                que la conciliación no encuentre a la contraparte y nadie sepa por qué. */}
+            {fCampo === "leyendas_adicionales_2" && fTipoRegla !== "cuit" && (
+              <div className="col-span-2 rounded border border-amber-400 bg-amber-50 px-2.5 py-2">
+                <p className="text-xs font-medium text-amber-900">
+                  ⚠ Esta columna es la del CUIT — conviene el modo «CUIT»
+                </p>
+                <p className="mt-0.5 text-[11px] text-amber-800">
+                  El motor de conciliación busca el CUIT acá y compara <strong>exacto</strong>. El modo
+                  «CUIT» lo encuentra esté en la línea que esté y valida los 11 dígitos; contar líneas
+                  puede traer el CBU —que está pegado al CUIT y también es sólo números— y entonces
+                  la contraparte deja de matchear <strong>sin ningún aviso</strong>.
+                </p>
+              </div>
+            )}
 
             <div>
               <Label className="text-xs">Grupo de conceptos</Label>
