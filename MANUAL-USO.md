@@ -751,6 +751,30 @@ de declarar.
 
 ---
 
+## 🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*
+
+En **Principal**, arriba de todo, aparece un aviso cuando hace **más de 30 días** que no se carga
+el extracto de una cuenta bancaria. En **rojo** a partir de los 60, o si esa cuenta nunca se importó.
+
+**Por qué existe**: un extracto que no se importa no da ningún error. El Cash Flow y la conciliación
+siguen andando con lo último cargado, y eso no se nota hasta que los números no cierran.
+
+**Qué mira**: sólo las **cuentas bancarias** — cajas de ahorro y cuentas corrientes. Las cajas de
+efectivo y las tarjetas quedan afuera a propósito: no son extractos que el banco publique todos los
+meses, así que "hace 40 días que no se carga" no significa lo mismo.
+
+**Qué cuenta como "cargado"**: la fecha del **último movimiento** de esa cuenta, no la fecha en que
+importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
+
+### 🧪 Cómo probarlo
+1. Entrá a **Principal**. Al 2026-08-09 debería avisarte por **MA Galicia CA** (último movimiento
+   27/03, unos 135 días) y **no** por MSA ni PAM, que están al día.
+2. Cargá el extracto de MA en **Extracto Bancario** y volvé a Principal: el aviso tiene que
+   desaparecer.
+3. Verificá que **no** aparecen las cajas ni las tarjetas, aunque estén más desactualizadas.
+
+---
+
 ## 🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
 
 > Diseño, reglas y huecos → `PENDIENTES.md` § A-FEAT-13 y § A-BUG-09.

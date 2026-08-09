@@ -3185,6 +3185,24 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
+Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de
+**30 días** sin movimientos nuevos (rojo a los 60, o si nunca se importó).
+
+**Sólo cuentas bancarias** — cajas de ahorro y cuentas corrientes. Las cajas de efectivo y las
+tarjetas quedan afuera **a propósito**: no son extractos periódicos del banco, así que el mismo
+umbral no significa lo mismo.
+
+Mide la fecha del **último movimiento**, no la de importación: subir un extracto que termina hace
+dos meses no apaga el aviso, que es lo correcto.
+
+**Motivo**: un extracto sin cargar no produce ningún error — el Cash Flow y la conciliación siguen
+andando con datos viejos. Es el mismo patrón que venimos tapando: *el silencio miente*.
+
+Componente: `components/alerta-extractos-desactualizados.tsx`. Lee las cuentas de
+`CUENTAS_BANCARIAS` filtrando por `tipo === 'banco'`, así que **una cuenta nueva queda cubierta
+sola**. Si una consulta falla, esa cuenta se omite y se loguea — no se inventa un atraso.
+
 ### ✅ Importador de Caja de Ahorro: una fila cargada a mano se descartaba en silencio (2026-08-09)
 
 **Síntoma**: al importar el extracto de `pam_galicia`, *"Control de saldos NO cuadra en 15 fila(s)"*

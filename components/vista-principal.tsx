@@ -8,6 +8,7 @@ import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2, Buildin
 import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
 import { ModalFichaProveedor } from "./proveedores/modal-ficha-proveedor"
+import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
 import { AlertasFcVenta } from "./alertas-fc-venta"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
@@ -204,6 +205,9 @@ export function VistaPrincipal() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Extractos sin cargar — va primero: si los datos están viejos, todo lo de abajo lo está */}
+      <AlertaExtractosDesactualizados />
 
       {/* Llegó FC de una venta: ¿es de esta venta? */}
       <AlertasFcVenta />
