@@ -220,6 +220,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-03 | 🔍 | Feat | Contable/Interno: mostrar los existentes para no duplicar parecidos (#8) | → [A-FEAT-03](#a-feat-03) |
 | A-FEAT-04 | 🔍 | Feat | DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (arquitectura) (#9) | → [A-FEAT-04](#a-feat-04) |
 | A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) |
+| A-BUG-13 | ⏸️ | Bug | **Una regla uni-responsable no matchea un template multi-responsable** — `MSA/PAM` no encuentra la regla de `MSA` ni la de `PAM`. Postergado por el usuario **para los ajustes finales** | → [A-BUG-13](#a-bug-13) |
 
 ### 📎 GAS PDF — hallazgos 2026-06-21 (revisión del módulo)
 | ID | Estado | Tipo | Tema | Detalle |
@@ -2702,6 +2703,50 @@ Sesión del cliente (si el browser de Ulises se compromete, su acceso cae) · Tr
 
 ---
 
+## <a id="a-bug-13"></a>A-BUG-13 — Regla uni-responsable vs. template multi-responsable (2026-08-09)
+
+> ⏸️ **Postergado a propósito** por el usuario: *"deja el peligro de multi responsable contra
+> regla uniresponsable documentado para los ajustes finales"*. **No tocar antes de eso.**
+
+**El problema.** La regla Tipo B (`reglas_contable_interno`, `tipo_regla='responsable'`) se busca
+con **igualdad exacta**:
+
+```
+.eq('responsable', responsable)      // useMotorConciliacion.ts → buscarCodigosContableInterno
+```
+
+Pero el `responsable` de un template **puede traer varias empresas**. Entonces:
+
+| Template | `responsable` | ¿Encuentra regla? |
+|---|---|---|
+| Retiro MA mensual | `MSA/PAM` | ❌ — no hay ninguna regla con ese literal |
+| ABL Cochera Libertad Anual | `PAM/MA/Duhau` | ❌ — idem |
+| Los otros 174 | `MSA` · `PAM` · `MA` | ✅ |
+
+**Por qué es peligroso y no sólo incompleto**: la regla **existe y se ve en la pantalla de
+configuración**, pero nunca se aplica. No hay error, no hay aviso — el movimiento se concilia sin
+`contable`. Es el mismo modo de falla que veníamos persiguiendo toda la sesión: *el silencio miente*.
+
+**Alcance hoy**: **2 templates de 176**. Chico, pero crece cada vez que se cargue un template
+compartido, y el usuario ya confirmó que lo compartido es un caso real y recurrente (también está
+en sueldos: AMS y JMS son `MSA/PAM/MA`).
+
+**Dónde NO pasa**: en **facturas**. Ahí se compara la empresa canónica del schema, que siempre es
+una sola. El arreglo del 2026-08-08 quedó del lado seguro.
+
+**Salidas posibles** (a decidir en los ajustes finales):
+1. **Comparación "contiene"** — que el template `MSA/PAM` encuentre la regla de `MSA` **y** la de
+   `PAM`. ⚠️ Hay que definir **cuál gana** si las dos existen y difieren.
+2. **Reutilizar `parseEmpresas`** (`lib/empresas.ts`) para partir el responsable y buscar regla
+   por cada empresa, con un orden de prioridad explícito.
+3. **Avisar en la pantalla de reglas** cuando un template multiempresa no tiene regla aplicable —
+   no arregla el match pero saca el problema del silencio.
+
+**Relacionado**: la comparación exacta es la misma que hace que `RET PAM` y `RET 3 PAM` convivan
+sin que nada las relacione. Ver § *Campos de las reglas: elegir en vez de tipear*.
+
+---
+
 ## <a id="a-feat-02"></a>A-FEAT-02 — Editar extracto: ofrece cuentas contables pero NO templates (#7)
 
 **Confirmado** (vista-extracto-bancario.tsx): el panel **Edición Masiva** (l.2110-2152) ofrece `SelectorCuentaContable` (CATEG, l.2123), Centro de Costo, Estado, Contable, Interno — **pero ningún selector de template**. Para vincular un template hay que ir al modal **Asignar/Reasignar** (que sí tiene tab Template). 
@@ -3163,10 +3208,9 @@ valores admiten deberían ser selectores. Eran **6**, en los dos configuradores:
   `RET MA` / `RET 3 MA`, y `Ver` / `VER`.
 
 #### ⚠️ Hueco que quedó a la vista al revisar esto
-La regla Tipo B compara `responsable` con **igualdad exacta**, así que **un template multiempresa
-no matchea ninguna**: el de `MSA/PAM` buscaría una regla con ese literal, que no existe. Para
-**facturas** no pasa (se compara la empresa canónica, una sola). Son 2 templates hoy
-(`MSA/PAM` y `PAM/MA/Duhau`), pero conviene decidir si la comparación debe pasar a "contiene".
+La regla Tipo B compara `responsable` con **igualdad exacta**, así que un template multiempresa no
+matchea ninguna regla. **Postergado por el usuario para los ajustes finales** → dossier propio en
+[A-BUG-13](#a-bug-13).
 
 #### 🔴 Queda sin hacer
 La **edición inline** de contable/interno en la tabla de reglas (`CeldaEditable`,
