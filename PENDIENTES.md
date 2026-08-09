@@ -3185,6 +3185,40 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 | **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
+### ✅ "¿Hay filtros?" pasa a tener una fuente única (2026-08-09)
+
+**El bug que lo destapó**, encontrado por una pregunta del usuario (*"¿qué pasa si filtro junio y
+le doy conciliar?"*): **filtrar por fechas y conciliar corría sobre TODOS los pendientes de la
+cuenta, sin avisar**. El filtro de fechas no estaba en la lista que decidía si acotar.
+
+**La causa de fondo no era el olvido, era el patrón**: cada lugar que necesitaba saber *"¿hay
+filtros?"* armaba **su propia lista a mano**, y las dos que existían eran **complementarias** —
+ninguna estaba completa:
+
+| | Aviso al conciliar | Cartel *"filtros aplicados"* |
+|---|---|---|
+| estado · búsqueda · categs · categ especial · revisado | ✅ | ❌ |
+| fechas · montos · categ · detalle | ❌ | ✅ |
+
+**Fix**: `filtrosActivos` — un `useMemo` que devuelve las **etiquetas legibles** de los filtros
+activos, y del que salen las tres cosas: el rótulo del botón, el cartel y el acotamiento al
+conciliar. **Agregar un filtro mañana es agregarlo ahí y nada más.**
+`limiteRegistros` queda afuera a propósito (decisión del usuario: acota la vista, no el trabajo).
+
+**El botón ahora anticipa el alcance**, en vez de que se sepa recién en el `confirm`:
+
+| Estado | Botón |
+|---|---|
+| Sin filtros | **Conciliación Bancaria** — verde |
+| Con filtros | **Conciliar 12 movimientos filtrados** — **ámbar**, y el tooltip lista los filtros |
+
+Y el `confirm` pasa a decir **cuáles** son los filtros y que *"el resto de los pendientes NO se
+toca"*.
+
+> 🔑 **Confirmado de paso**: el motor **nunca reprocesa lo ya conciliado**. Por los dos caminos
+> filtra a `estado = 'pendiente'` (la query es `.eq('estado','pendiente')`). Se puede correr las
+> veces que haga falta.
+
 ### ✅ Campos de las reglas: elegir en vez de tipear (2026-08-09)
 Antes de cargar las reglas de PAM y MA, el usuario preguntó si los campos que ya sabemos qué
 valores admiten deberían ser selectores. Eran **6**, en los dos configuradores:

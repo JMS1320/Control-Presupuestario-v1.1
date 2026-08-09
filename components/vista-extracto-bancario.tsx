@@ -359,6 +359,38 @@ export function VistaExtractoBancario() {
   }, [movimientos])
 
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
+  /**
+   * ⭐ FUENTE ÚNICA de "qué está filtrado".
+   *
+   * Antes cada lugar que necesitaba saberlo armaba su propia lista a mano, y **las dos que había
+   * eran complementarias**: el aviso de conciliar miraba estado/búsqueda/categ/revisado y se
+   * perdía fechas y montos; el cartel "(filtros aplicados)" miraba fechas y montos y se perdía el
+   * resto. Por eso filtrar junio y apretar conciliar corría sobre TODOS los pendientes sin avisar.
+   *
+   * De acá salen las tres cosas: el rótulo del botón, el cartel y el acotamiento al conciliar.
+   * 👉 **Si mañana se agrega un filtro, se agrega ACÁ y el resto lo hereda solo.**
+   *
+   * `limiteRegistros` queda afuera **a propósito** (decisión del usuario): mostrar 100 de 500 no
+   * es acotar el trabajo, es acotar la vista.
+   */
+  const filtrosActivos = useMemo(() => {
+    const fmt = (f: string) => f ? f.split('-').reverse().join('/') : '…'
+    const items: string[] = []
+    if (fechaMovDesde || fechaMovHasta) items.push(`fechas ${fmt(fechaMovDesde)} a ${fmt(fechaMovHasta)}`)
+    if (montoDesde || montoHasta) items.push(`monto ${montoDesde || '…'} a ${montoHasta || '…'}`)
+    if (categsFiltro !== null) items.push(`${categsFiltro.size} categoría(s)`)
+    if (busquedaCateg.trim()) items.push(`categ "${busquedaCateg.trim()}"`)
+    if (busqueda.trim()) items.push(`búsqueda "${busqueda.trim()}"`)
+    if (busquedaDetalle.trim()) items.push(`detalle "${busquedaDetalle.trim()}"`)
+    if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
+    if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
+    if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
+    return items
+  }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
+      busqueda, busquedaDetalle, filtroEstado, filtroRevisado, filtroCategEspecial])
+
+  const hayFiltros = filtrosActivos.length > 0
+
   const movimientosVisibles = useMemo(() => {
     // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
     const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen')
@@ -378,6 +410,12 @@ export function VistaExtractoBancario() {
     }
     return lista
   }, [movimientos, categsFiltro, busqueda])
+
+  /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
+  const pendientesFiltrados = useMemo(
+    () => movimientosVisibles.filter(m => (m as any).estado === 'pendiente').length,
+    [movimientosVisibles],
+  )
 
   // Info por resumen (tarjeta): total oficial, suma en vivo, control, pendientes — para las cabeceras agrupadas
   const resumenInfoTarjeta = useMemo(() => {
@@ -427,22 +465,17 @@ export function VistaExtractoBancario() {
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
     if (!cuenta) return
 
-    // Filtro activo = cualquier acotamiento deliberado (NO el límite de carga)
-    const hayFiltroActivo =
-      categsFiltro !== null ||
-      busqueda.trim() !== '' ||
-      filtroCategEspecial !== null ||
-      filtroRevisado !== 'todas' ||
-      filtroEstado !== 'Todos'
-
-    if (hayFiltroActivo) {
+    // Acotado o no, sale de `filtrosActivos` — la fuente única. Ver su comentario.
+    if (hayFiltros) {
       const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente')
       if (pendientesVisibles.length === 0) {
-        alert('No hay movimientos pendientes en lo visible. Quitá los filtros para conciliar todo, o ajustalos.')
+        alert('No hay movimientos pendientes en lo filtrado. Quitá los filtros para conciliar todo, o ajustalos.')
         return
       }
       const ok = window.confirm(
-        `Hay filtros activos: se conciliará SOLO lo visible (${pendientesVisibles.length} movimiento(s) pendiente(s)), no todos los pendientes.\n\n¿Continuar?`
+        `Se conciliará SOLO lo filtrado: ${pendientesVisibles.length} movimiento(s) pendiente(s).\n\n`
+        + `Filtros: ${filtrosActivos.join(' · ')}\n\n`
+        + `El resto de los pendientes de la cuenta NO se toca.\n\n¿Continuar?`
       )
       if (!ok) return
       setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesVisibles.length })
@@ -1816,15 +1849,27 @@ export function VistaExtractoBancario() {
             Configuración
           </Button>
 
+          {/* El botón anticipa el alcance: sobre cuántos va a correr y si está acotado. Antes eso
+              se sabía recién en el confirm — o no se sabía, cuando el filtro no estaba en la lista. */}
           <Button
             onClick={iniciarConciliacion}
             disabled={procesoEnCurso}
-            className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
+            title={hayFiltros
+              ? `Se conciliará sólo lo filtrado — ${filtrosActivos.join(' · ')}`
+              : 'Se conciliarán TODOS los movimientos pendientes de la cuenta'}
+            className={`flex items-center gap-2 ${hayFiltros
+              ? 'bg-amber-600 hover:bg-amber-700'
+              : 'bg-green-600 hover:bg-green-700'}`}
           >
             {procesoEnCurso ? (
               <>
                 <RotateCcw className="h-4 w-4 animate-spin" />
                 Procesando...
+              </>
+            ) : hayFiltros ? (
+              <>
+                <Play className="h-4 w-4" />
+                Conciliar {pendientesFiltrados} movimiento{pendientesFiltrados === 1 ? '' : 's'} filtrado{pendientesFiltrados === 1 ? '' : 's'}
               </>
             ) : (
               <>
@@ -2366,8 +2411,10 @@ export function VistaExtractoBancario() {
                           ⚠️ Límite alcanzado - puede haber más registros
                         </div>
                       )}
-                      {(fechaMovDesde || fechaMovHasta || montoDesde || montoHasta || busquedaCateg || busquedaDetalle) && (
-                        <span className="text-purple-600"> (filtros aplicados)</span>
+                      {hayFiltros && (
+                        <span className="text-amber-700" title={filtrosActivos.join(' · ')}>
+                          {' '}({filtrosActivos.length} filtro{filtrosActivos.length === 1 ? '' : 's'} aplicado{filtrosActivos.length === 1 ? '' : 's'})
+                        </span>
                       )}
                     </div>
                   </div>
