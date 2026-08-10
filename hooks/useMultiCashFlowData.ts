@@ -792,7 +792,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           debitos: totalDebitos,
           creditos: 0,
           saldo_cta_cte: 0,
-          estado: 'pagar',
+          // Antes estaba fijo en 'pagar': el grupo se mostraba amarillo aunque sus pagos
+          // estuvieran pagados o conciliados. Se usa el mismo criterio que los grupos de
+          // facturas — manda el estado MENOS avanzado de sus miembros.
+          estado: estadoDeGrupo(pagos.map(a => a.estado)),
           medio_pago: primero.medio_pago || 'banco',
           empleado_id: primero.empleado_id ?? null,
           grupo_pago_id: grupoId,
@@ -876,11 +879,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         } else {
           pagosUpdateData[campo] = valor
         }
-        const { error } = await supabase
+        // `count: 'exact'` — sin esto, un UPDATE que no encuentra la fila devuelve OK y la
+        // pantalla lo da por guardado. Es lo que hacía A-BUG-19.
+        const { error, count } = await supabase
           .from('sueldos_pagos')
-          .update(pagosUpdateData)
+          .update(pagosUpdateData, { count: 'exact' })
           .eq('id', id)
         if (error) throw error
+        if (count === 0) throw new Error('No se encontró el pago de sueldo: el cambio NO se guardó')
       } else if (origen === 'ARCA') {
         // Comprobar si es una fila de grupo → propagar a todos los miembros
         const filaActualArca = data.find(f => f.id === id)
@@ -926,12 +932,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           anticipoUpdateData[campo] = valor
         }
 
-        const { error } = await supabase
+        const { error, count } = await supabase
           .from('anticipos_proveedores')
-          .update(anticipoUpdateData)
+          .update(anticipoUpdateData, { count: 'exact' })
           .eq('id', id)
 
         if (error) throw error
+        if (count === 0) throw new Error('No se encontró el anticipo: el cambio NO se guardó')
       } else {
         // Para templates: manejo especial de categ
         if (campo === 'categ') {
@@ -964,20 +971,22 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
           if (idsGrupo && idsGrupo.length > 0) {
             // Fila colapsada de grupo: actualizar todos los templates del grupo
-            const { error } = await supabase
+            const { error, count } = await supabase
               .from('cuotas_egresos_sin_factura')
-              .update(updateData)
+              .update(updateData, { count: 'exact' })
               .in('id', idsGrupo)
 
             if (error) throw error
+            if (count === 0) throw new Error('No se encontró el grupo de cuotas: el cambio NO se guardó')
           } else {
             // Cuota individual
-            const { error } = await supabase
+            const { error, count } = await supabase
               .from('cuotas_egresos_sin_factura')
-              .update(updateData)
+              .update(updateData, { count: 'exact' })
               .eq('id', id)
 
             if (error) throw error
+            if (count === 0) throw new Error('No se encontró la cuota: el cambio NO se guardó')
           }
         }
       }
@@ -1001,19 +1010,36 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     }
   }
 
-  // Función para actualización batch (modo PAGOS)
+  /**
+   * Actualización en lote (botón PAGOS).
+   *
+   * 🐞 **A-BUG-19** — hasta 2026-08-10 esta función aceptaba filas de cualquier origen pero sólo
+   * escribía las de tipo `ARCA` y `TEMPLATE`. Un sueldo, un anticipo o una venta **se descartaban
+   * en silencio**… y después el bucle final pintaba en verde TODAS las filas y devolvía `true`.
+   * Resultado: la pantalla confirmaba un guardado que nunca ocurrió, y al recargar volvía atrás.
+   * TypeScript lo venía marcando en 4 líneas del componente; estaba en el baseline de errores.
+   *
+   * Ahora: los orígenes que esta función no sabe escribir en lote **se delegan a
+   * `actualizarRegistro`**, que ya sabe a qué tabla va cada uno — en vez de duplicar acá esa
+   * lógica. Y **sólo se pinta lo que efectivamente se guardó**.
+   */
   const actualizarBatch = async (
     actualizaciones: Array<{
       id: string
-      origen: 'ARCA' | 'TEMPLATE'
+      origen: CashFlowRow['origen']
       campo: string
       valor: any
     }>
   ): Promise<boolean> => {
+    // Lo que se guardó de verdad: sólo esto se pinta al final.
+    const guardadas: typeof actualizaciones = []
+    const fallidas: Array<{ id: string; motivo: string }> = []
     try {
       // Agrupar por origen para hacer updates eficientes
       const arcaUpdates = actualizaciones.filter(u => u.origen === 'ARCA')
       const templateUpdates = actualizaciones.filter(u => u.origen === 'TEMPLATE')
+      // Todo lo demás (SUELDO, ANTICIPO, VENTA) no tiene camino en lote: va de a uno.
+      const otrosUpdates = actualizaciones.filter(u => u.origen !== 'ARCA' && u.origen !== 'TEMPLATE')
 
       // Procesar updates ARCA — cada factura, en el schema de su empresa (A-FEAT-13).
       // Si la fila es un GRUPO, su `id` es el del grupo y no existe en `comprobantes_arca`:
@@ -1029,6 +1055,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
         if (count === 0) throw new Error(`No se encontró la factura ${update.id}: el cambio NO se guardó`)
+        guardadas.push(update)
       }
 
       // Procesar updates Templates — mismo caso: una cuota agrupada actualiza a sus miembros
@@ -1042,17 +1069,47 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
         if (count === 0) throw new Error(`No se encontró la cuota ${update.id}: el cambio NO se guardó`)
+        guardadas.push(update)
       }
 
-      // Actualización local de cada registro del batch
-      for (const update of actualizaciones) {
+      // Sueldos, anticipos y ventas: se delega en `actualizarRegistro`, que sabe a qué tabla va
+      // cada origen y **ya pinta la fila** cuando el guardado sale bien.
+      for (const update of otrosUpdates) {
+        const ok = await actualizarRegistro(update.id, update.campo, update.valor, update.origen)
+        if (!ok) {
+          const fila = data.find(f => f.id === update.id)
+          fallidas.push({
+            id: update.id,
+            motivo: fila?.origen === 'SUELDO' && fila?.origen_tabla !== 'sueldos.pagos'
+              ? `${fila?.detalle ?? update.id}: el sueldo del mes se gestiona desde Sueldos`
+              : `${fila?.detalle ?? update.id}: no se pudo guardar`,
+          })
+        }
+      }
+
+      // Pintar SOLO lo que se guardó. Lo delegado ya se pintó dentro de `actualizarRegistro`.
+      for (const update of guardadas) {
         actualizarLocal(update.id, update.campo, update.valor)
+      }
+
+      if (fallidas.length > 0) {
+        const detalle = fallidas.slice(0, 3).map(f => f.motivo).join(' · ')
+        const resto = fallidas.length > 3 ? ` y ${fallidas.length - 3} más` : ''
+        toast.error(`${fallidas.length} registro(s) NO se guardaron — ${detalle}${resto}`)
+        setError(`${fallidas.length} registro(s) no se guardaron`)
+        return false
       }
       return true
 
     } catch (error) {
       console.error('Error en actualización batch:', error)
+      // Lo que sí se escribió antes del corte se pinta igual: si no, la pantalla mostraría como
+      // pendiente algo que en la BD ya cambió, que es el mismo engaño al revés.
+      for (const update of guardadas) {
+        actualizarLocal(update.id, update.campo, update.valor)
+      }
       setError(error instanceof Error ? error.message : 'Error en actualización masiva')
+      toast.error(error instanceof Error ? error.message : 'Error en actualización masiva')
       return false
     }
   }

@@ -235,7 +235,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
-| **A-BUG-19** | 🔴 | **Bug** | **Cash Flow: los sueldos vuelven a «pagar» solos** — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
+| **A-BUG-19** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
 | A-FEAT-20 | 🔴 | Feat | **Homologar las columnas de Caja de Ahorro con MSA** + decidir dónde va el CBU. Convención medida sobre los datos → `ARQUITECTURA-BD.md` § 6b | → [A-FEAT-20](#a-feat-20) |
 | A-FEAT-21 | 🔴 | Feat | **Una tarjeta por forma** en vez de un tipo con selector de alcance. Propuesta del usuario: *saca* UI, no la agrega | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
@@ -3768,7 +3768,49 @@ de ahí al presupuesto, que es el norte del proyecto.
 3. Se escribe bien pero **la lectura recalcula el estado** en vez de leerlo, y lo pisa al volver.
 4. Optimismo de UI: el estado se pinta local y nunca se persiste.
 
-**Estado**: 🔴 sin diagnosticar. Es lo próximo.
+### ✅ CAUSA ENCONTRADA y ARREGLADA (2026-08-10) — falta testear
+
+**Se confirmó con un test en vivo acordado con el usuario**: marcó `Pago Saldo AMS 518.188` del
+07/08 desde el botón **PAGOS**, la pantalla lo pintó verde… y en la BD seguía en `pagar`.
+**Nunca se guardó.** No había reseteo: el guardado no llegaba y la pantalla lo daba por bueno.
+
+**La causa**, en `actualizarBatch` (`useMultiCashFlowData.ts`):
+
+```ts
+const arcaUpdates     = actualizaciones.filter(u => u.origen === 'ARCA')
+const templateUpdates = actualizaciones.filter(u => u.origen === 'TEMPLATE')
+// … se escriben esas dos y nada más
+for (const update of actualizaciones) actualizarLocal(...)   // ← pinta TODAS
+return true                                                   // ← siempre
+```
+
+El lote aceptaba filas de cualquier origen pero **sólo sabía escribir facturas y templates**. Un
+`SUELDO`, `ANTICIPO` o `VENTA` se descartaba en silencio, y después el bucle final pintaba en verde
+**todas** las filas y devolvía `true`.
+
+> 🔴 **Y TypeScript lo venía marcando**: `Type '"ARCA" | "TEMPLATE" | "ANTICIPO" | "SUELDO" | "VENTA"
+> is not assignable to type '"ARCA" | "TEMPLATE"'`, en **4 líneas** de `vista-cash-flow.tsx`. Estaba
+> en el baseline de errores preexistentes — el mismo que se usó toda esta sesión para afirmar "no
+> rompí nada". Nadie lo miró. Es el argumento más fuerte a favor de [A-OP-07](#a-op-07).
+
+**Alcance**: no era sólo sueldos. Afectaba a **sueldos, anticipos y ventas** en el botón PAGOS.
+
+#### El arreglo, 3 partes
+1. **El lote sabe guardar todo**: los orígenes sin camino en lote se **delegan a
+   `actualizarRegistro`**, que ya sabe a qué tabla va cada uno — en vez de duplicar esa lógica.
+2. **Verifica que escribió**: `count: 'exact'` en `sueldos_pagos`, `anticipos_proveedores` y las dos
+   ramas de `cuotas_egresos_sin_factura`. Un UPDATE de 0 filas ahora falla y avisa.
+3. **Se pinta sólo lo que se guardó.** Y si algo falla, el modo PAGOS **queda abierto con la
+   selección puesta**, para ver qué pasó y reintentar sin volver a marcar todo.
+
+**De yapa**: las filas de grupo de sueldos ya no están fijas en `'pagar'` — usan `estadoDeGrupo()`,
+el mismo criterio que los grupos de facturas.
+
+⚠️ **Queda abierto**: una fila de **sueldo del mes** o de **grupo** sigue sin poder editarse desde
+Cash Flow, pero ahora **lo dice** en vez de callarse. Si se quiere que marcarlas registre el pago de
+verdad, es el camino A que quedó sin decidir (ver arriba).
+
+**Falta testear** → repetir el test de AMS: marcar el pago, recargar, y que siga en verde.
 
 ---
 

@@ -1294,7 +1294,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(Boolean)
 
       let facturasParaSicore: CashFlowRow[] = []
-      const actualizaciones: Array<{id: string, origen: 'ARCA' | 'TEMPLATE', campo: string, valor: any}> = []
+      // ⚠️ Antes decía `'ARCA' | 'TEMPLATE'` y acá se empujan filas de CUALQUIER origen. TypeScript
+      // marcaba el error en las 4 líneas de abajo y estaba en el baseline sin mirar: los sueldos,
+      // anticipos y ventas se descartaban al guardar (A-BUG-19).
+      const actualizaciones: Array<{id: string, origen: CashFlowRow['origen'], campo: string, valor: any}> = []
 
       // Cambio de fecha: siempre directo para todas
       todasFilas.forEach(fila => {
@@ -1366,9 +1369,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
       }
 
-      // Guardar las que no necesitan SICORE primero
+      // Guardar las que no necesitan SICORE primero.
+      // `actualizarBatch` ya avisa qué falló; acá sólo se recuerda para no cantar éxito después.
+      let loteOk = true
       if (actualizaciones.length > 0) {
-        await actualizarBatch(actualizaciones)
+        loteOk = await actualizarBatch(actualizaciones)
       }
 
       // Procesar SICORE para las que califican
@@ -1407,12 +1412,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           // Pasar pending y cola frescos para evitar stale closure
           await evaluarRetencionSicoreCF(primera, firstPending, resto)
         }
-      } else {
+      } else if (loteOk) {
         const cambiosTexto = []
         if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
         if (cambiarEstadoLote) cambiosTexto.push('estado')
         toast.success(`${filasSeleccionadas.size} registros actualizados: ${cambiosTexto.join(' y ')}`)
         desactivarModoPagos()
+      } else {
+        // Algo no se guardó: el detalle ya lo dijo `actualizarBatch`. El modo PAGOS queda ABIERTO
+        // con la selección puesta, para poder ver qué pasó y reintentar sin volver a marcar todo.
+        console.warn('Lote con fallos: se mantiene la selección para reintentar')
       }
     } catch (error) {
       console.error('Error en aplicarCambiosLote:', error)
