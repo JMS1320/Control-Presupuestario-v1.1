@@ -436,6 +436,27 @@ del otro, anotarlo en ambos.
 
 **Argumento más fuerte a favor (el decisivo):** un baseline documentado vuelve **verificable** la frase "no rompí nada". Si aparece un error que NO está en el baseline → lo causó el cambio actual. Hoy esa afirmación es de memoria; con baseline es comprobable. Protege al usuario y disciplina a Claude.
 
+### 🔴 2026-08-10 — dejó de ser teórico: DOS bugs de esta sesión estaban ahí, señalados
+
+El baseline se venía usando de la peor manera posible: **comparando el total** (117 antes, 117
+después) para afirmar "no rompí nada", **sin leer ninguno**. Y adentro estaban las dos causas:
+
+| Bug | Lo que decía el compilador | Consecuencia real |
+|---|---|---|
+| [A-BUG-19](#a-bug-19) | `Type '"ARCA" \| "TEMPLATE" \| "ANTICIPO" \| "SUELDO" \| "VENTA"' is not assignable to type '"ARCA" \| "TEMPLATE"'` — en **4 líneas** | pagos de sueldos que la pantalla daba por guardados y **nunca se guardaban** |
+| [A-BUG-22](#a-bug-22) | *(no lo marcó, porque un `as any` lo silenció)* | a las **Fac C** se les proponía SICORE: el filtro existía pero era código muerto |
+
+**Las dos lecciones, distintas:**
+1. **El baseline hay que leerlo, no contarlo.** Un total igual no dice nada: puede tener adentro el
+   error que explica el bug que estás persiguiendo. Al triagear, **empezar por los del archivo que
+   se está tocando**.
+2. **Un `as any` es un error del baseline que ni siquiera llegó al baseline.** `A-BUG-22` no aparece
+   en la lista justamente porque alguien lo silenció al escribirlo. Merecen su propio repaso:
+   `grep -c "as any"` sobre los archivos grandes.
+
+> Esto convierte a A-OP-07 de "buena práctica" en **deuda con costo medido**: dos bugs que costaron
+> horas de diagnóstico estaban escritos, con archivo y línea, esperando que alguien los leyera.
+
 **Guardrails para que no sea ruido:**
 - Solo errores reales (NO warnings de formato tipo LF/CRLF).
 - Dedup por firma del error: si ya está, bumpear "última vez visto" + contador; no repetir.
