@@ -235,10 +235,10 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
-| A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear** (2026-08-09) — configurar un tipo, ver la vista previa, guardar, correr el re-parseo en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
+| A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
-| A-FEAT-18 | 🔴 | Feat | **La identidad de un tipo debería ser 1ª línea + cantidad de líneas**, no sólo la 1ª línea. Idea del usuario; es la raíz de A-BUG-17 | → [A-FEAT-18](#a-feat-18) |
+| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Camino A HECHO 2026-08-10** (detecta y muestra las formas, evalúa cada regla en todas) — falta testear. Camino B (columna `cantidad_lineas`) sigue abierto | → [A-FEAT-18](#a-feat-18) |
 | A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -3438,6 +3438,37 @@ tipo**. Con dos formatos distintos no es un tipo con excepciones — son dos tip
 para un formato que no vio) y no toca datos. **B** queda para cuando aparezca un tipo donde los dos
 formatos necesiten reglas realmente distintas — hoy `TRANSFERENCIA A TERCEROS` se resuelve con los
 modos que buscan (`cuit`, `pre_cuit`), sin necesidad de partir el tipo.
+
+> ℹ️ **A y B no son alternativas: A está contenido en B.** No se pueden ofrecer reglas por formato
+> sin antes detectar los formatos. Hacer A no cierra ninguna puerta.
+
+#### ✅ CAMINO A — HECHO 2026-08-10, falta testear
+
+`firmaDeMovimiento()` en la lib · `GET /api/reparsear-extracto` agrupa por tipo **y por forma** ·
+la pantalla muestra todas las formas y evalúa **cada regla en todas ellas**, marcando en ámbar
+cuando trae clases distintas.
+
+**Y la firma con clase por línea se justificó sola.** Verificado contra el endpoint real, **2 de los
+4 casos multiformato NO se detectan contando líneas** — tienen la misma cantidad y las líneas
+cambiadas de lugar:
+
+```
+TRANSFERENCIA A TERCEROS — 3 formas, no 2
+  6 líneas · 12 mov   … | LINK | 4517XXXXXXXXXX11 | VARIOS
+  6 líneas ·  4 mov   … | LINK | VARIOS | 4517XXXXXXXXXX11   ← 5 y 6 al revés
+  5 líneas ·  7 mov   … | MARTINEZ PLACIDO ANDRES | 20287492546 | VARIOS | BANCO…
+
+DEB. AUTOM. DE SERV. — 2 formas, las dos de 5 líneas
+  3 mov   … | CONSUMO    | 004105544412  | 0000055193
+  2 mov   … | CUOTA ACA  | 0226 - 0226   | 432063165     ← la 4 es texto, no número
+```
+
+La regla `línea 5 → nro_terminal` que ya está cargada trae **la tarjeta** en 12 movimientos,
+**«VARIOS»** en 4 y **«BANCO DE GALICIA Y BUENOS AIRES SAU»** en 7. Tres cosas distintas en la
+misma columna, y hasta ahora ninguna pantalla lo mostraba.
+
+**Ojo con el conteo anterior**: [A-BUG-17](#a-bug-17) decía *"16 con 6 líneas y 7 con 5"*. Son
+**12 + 4 + 7**: los de 6 líneas también se parten en dos. El diagnóstico viejo no podía verlo.
 
 #### El chequeo extra que pidió el usuario
 Además de la cantidad de líneas, conviene una **firma de forma**: qué clase de dato hay en cada

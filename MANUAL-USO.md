@@ -823,6 +823,27 @@ La cuenta se elige en el selector de arriba del modal, el mismo que usan las otr
 5. Elegí el **grupo de conceptos** (es del tipo entero, no de cada línea) y **Guardar**. El botón
    dice cuántas reglas crea, cambia y borra.
 
+### 🔀 Cuando un tipo llega con varias formas
+Un mismo tipo puede llegar escrito de maneras distintas. La tarjeta lo avisa con un chip
+**«N formas»** y las muestra todas, con cuántos movimientos tiene cada una.
+
+Dentro del editor eso cambia la columna **«Quedaría»**: en vez de un valor, muestra **uno por
+forma**, y si la regla trae cosas de distinta naturaleza según la forma, la fila se pinta en ámbar:
+
+```
+línea 5 → nro_terminal      6L·12   4517XXXXXXXXXX11
+                            6L· 4   VARIOS
+                            5L· 7   BANCO DE GALICIA Y BUENOS AIRES SAU
+                            ⚠ Trae cosas distintas según la forma.
+```
+
+Ésa es la señal de que hay que usar un modo que **busque** (CUIT, antes/después del CUIT) en vez de
+contar líneas. Los botones de arriba del editor permiten cambiar **qué forma estás mirando**.
+
+**No alcanza con contar líneas**: dos movimientos de 6 líneas pueden ser formas distintas si tienen
+las líneas cambiadas de lugar. Por eso la forma se calcula con la **clase de dato de cada línea**
+(CUIT, CBU, tarjeta, número, texto), no sólo con la cantidad.
+
 ### 🔑 Dos cosas que conviene saber
 - **«Busca el CUIT» le gana a «Línea N».** Los modos que buscan (`Busca el CUIT`, `Antes del CUIT`,
   `Después del CUIT`) siguen funcionando aunque el banco corra las líneas. Contar posiciones no.
@@ -856,6 +877,12 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 6. Poné una fila en **«— sin asignar —»**: la columna *Quedaría* pasa a `—` y el contador del botón
    Guardar tiene que reflejar una baja.
 7. **Re-parsear en seco** sobre MA y leer el resumen antes de aplicar.
+8. ⚠️ **El paso de las formas múltiples**: abrí `TRANSFERENCIA A TERCEROS` (23 mov.). Tiene que
+   avisar **«3 formas»** — 12 y 4 de seis líneas, 7 de cinco. En la fila de la línea 5, la columna
+   *Quedaría* tiene que mostrar los tres valores distintos y pintarse en ámbar. Si muestra uno solo,
+   la detección de formas no está corriendo.
+9. `DEB. AUTOM. DE SERV.` tiene **2 formas, las dos de 5 líneas** (una con `0226 - 0226` en la línea
+   4). Sirve para verificar que la forma no se calcula sólo contando líneas.
 
 ---
 

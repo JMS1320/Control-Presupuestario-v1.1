@@ -217,10 +217,44 @@ export interface LineaPropuesta {
   motivo: string
 }
 
-const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
-const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
+export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
+export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
 const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
 const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
+
+// ────────────────────────────────────────────────────────────────────────────
+// FIRMA DE FORMA — qué hace que dos movimientos sean "el mismo tipo"
+//
+// Hasta 2026-08-10 el tipo era **sólo la primera línea**. Alcanzaba hasta que apareció
+// `TRANSFERENCIA A TERCEROS`, que llega de dos formas: 16 movimientos de 6 líneas con el CUIT en
+// la 2, y 7 de 5 líneas con el CUIT en la 3 y con nombre. Mostrados como un tipo homogéneo, las
+// reglas por número de línea se escribieron para la forma que estaba a la vista y fallan en la
+// otra — sin decir nada (ver PENDIENTES § A-BUG-17).
+//
+// La firma es **cantidad de líneas + qué clase de dato hay en cada una**. Dos movimientos con la
+// misma cantidad de líneas pueden ser formas distintas si en uno la línea 3 es un CUIT y en el
+// otro un texto, así que contar líneas solo no alcanza.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** La clase de dato de una línea, para comparar formas. */
+export function claseDeLinea(l: string, indice: number): string {
+  if (indice === 0) return "tipo"
+  if (esCuit(l)) return "cuit"
+  if (esCbu(l)) return "cbu"
+  if (esTarjeta(l)) return "tarjeta"
+  if (/^\d+$/.test(l.trim())) return "num"
+  return "texto"
+}
+
+/** Firma de la forma del movimiento. Dos movimientos con la misma firma son intercambiables. */
+export function firmaDeMovimiento(lineas: string[]): string {
+  return `${lineas.length}:${lineas.map(claseDeLinea).join(",")}`
+}
+
+/** Cuántas líneas describe una firma. */
+export function lineasDeFirma(firma: string): number {
+  return Number(firma.split(":")[0]) || 0
+}
 
 /** ¿La línea trae un número de operación, y lo agarra el modo `nro_operacion`? */
 function operacionEnLinea(l: string): { hay: boolean; loAgarra: boolean } {

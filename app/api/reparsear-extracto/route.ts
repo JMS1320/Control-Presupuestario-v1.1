@@ -22,6 +22,8 @@ import {
   tipoDeMovimiento,
   tieneReglaPropia,
   splitMovimiento,
+  firmaDeMovimiento,
+  lineasDeFirma,
 } from "@/lib/extractos/parseo-movimiento"
 
 const supabase = createClient(
@@ -164,27 +166,56 @@ export async function GET(req: Request) {
     const { data, error } = await db.from(cuenta).select("concepto, grupo_de_conceptos")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Un movimiento de ejemplo por tipo, **tenga regla o no**. Con el texto real a la vista, la
-    // regla se escribe mirando las líneas en vez de adivinando cuál es cuál — y eso hace falta
-    // igual para revisar una regla que ya existe, no sólo para escribir una nueva.
-    const porTipo = new Map<string, { n: number; ejemplo: string; conRegla: boolean }>()
+    // Un ejemplo por tipo **y por forma**, tenga regla o no.
+    //
+    // ⚠️ Antes se guardaba el PRIMER movimiento de cada tipo y se lo mostraba como si fuera
+    // representativo. No lo es: un tipo puede llegar con formas distintas, y una regla escrita
+    // mirando una de ellas falla en las otras sin avisar (PENDIENTES § A-BUG-17). Ahora se
+    // agrupa además por firma, así la pantalla puede mostrar TODAS las formas.
+    const porTipo = new Map<string, {
+      n: number; conRegla: boolean
+      formas: Map<string, { n: number; ejemplo: string }>
+    }>()
     let sinDesglosar = 0
+
     for (const m of (data ?? []) as any[]) {
       const tipo = tipoDeMovimiento(m.concepto)
       if (!tipo) continue
       const conRegla = tieneReglaPropia(m.concepto, mapaReglas)
-      const prev = porTipo.get(tipo)
-      porTipo.set(tipo, { n: (prev?.n ?? 0) + 1, ejemplo: prev?.ejemplo ?? String(m.concepto), conRegla })
+      if (!porTipo.has(tipo)) porTipo.set(tipo, { n: 0, conRegla, formas: new Map() })
+      const t = porTipo.get(tipo)!
+      t.n++
+
+      const lineas = splitMovimiento(String(m.concepto))
+      const firma = firmaDeMovimiento(lineas)
+      const f = t.formas.get(firma)
+      t.formas.set(firma, { n: (f?.n ?? 0) + 1, ejemplo: f?.ejemplo ?? String(m.concepto) })
+
       if (!conRegla) sinDesglosar++
     }
 
     const tipos = [...porTipo.entries()]
-      .map(([tipo, v]) => ({
-        tipo,
-        movimientos: v.n,
-        conRegla: v.conRegla,
-        lineas: splitMovimiento(v.ejemplo),
-      }))
+      .map(([tipo, v]) => {
+        // Las formas van ordenadas por cantidad: la mayoritaria manda como ejemplo por defecto
+        const formatos = [...v.formas.entries()]
+          .map(([firma, f]) => ({
+            firma,
+            lineas: lineasDeFirma(firma),
+            movimientos: f.n,
+            texto: splitMovimiento(f.ejemplo),
+          }))
+          .sort((a, b) => b.movimientos - a.movimientos)
+
+        return {
+          tipo,
+          movimientos: v.n,
+          conRegla: v.conRegla,
+          /** Ejemplo de la forma mayoritaria. Se mantiene el nombre para no romper consumidores. */
+          lineas: formatos[0]?.texto ?? [],
+          /** Todas las formas del tipo. `length > 1` = ojo con las reglas por número de línea. */
+          formatos,
+        }
+      })
       .sort((a, b) => b.movimientos - a.movimientos)
 
     return NextResponse.json({

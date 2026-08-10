@@ -33,7 +33,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, type LineaPropuesta } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, claseDeLinea, type LineaPropuesta } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -92,11 +92,21 @@ interface Regla {
   activo: boolean
 }
 
+interface Formato {
+  firma: string
+  lineas: number
+  movimientos: number
+  texto: string[]
+}
+
 interface TipoInfo {
   tipo: string
   movimientos: number
   conRegla: boolean
+  /** Ejemplo de la forma mayoritaria. */
   lineas: string[]
+  /** Todas las formas del tipo. Si hay más de una, contar líneas es peligroso. */
+  formatos: Formato[]
 }
 
 /** Una fila del editor: la línea + a dónde la manda el usuario. */
@@ -134,6 +144,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   // Editor de un tipo entero
   const [editando, setEditando] = useState<TipoInfo | null>(null)
   const [filas, setFilas] = useState<Fila[]>([])
+  const [firmaBase, setFirmaBase] = useState("")
   const [fGrupo, setFGrupo] = useState("")
   const [grupoOriginal, setGrupoOriginal] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -162,25 +173,39 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     [reglas]
   )
 
-  /** Abre el editor del tipo: propone lo que sabemos y pre-carga lo que ya existe. */
-  const abrirTipo = (t: TipoInfo) => {
+  /** Arma las filas del editor sobre una forma concreta del movimiento. */
+  const armarFilas = useCallback((t: TipoInfo, lineas: string[]) => {
     const existentes = reglasDe(t.tipo)
-    const propuesta = proponerMapeo(t.lineas)
+    const propuesta = proponerMapeo(lineas)
 
-    const filasNuevas: Fila[] = propuesta.map((p, i) => {
-      const ya = existentes.find(r => lineaDeRegla(r, t.lineas) === i)
+    return propuesta.map((p, i) => {
+      const ya = existentes.find(r => lineaDeRegla(r, lineas) === i)
       return ya
         // Lo ya guardado manda sobre la propuesta: si el usuario decidió algo, se respeta.
         ? { ...p, campo: ya.campo_destino ?? "", modo: ya.tipo_regla, reglaExistente: ya, seguro: true,
             motivo: "Ya estaba configurado así" }
         : { ...p, reglaExistente: null }
-    })
+    }) as Fila[]
+  }, [reglasDe])
 
-    setFilas(filasNuevas)
-    const grupo = existentes[0]?.grupo_de_conceptos ?? ""
+  /** Abre el editor del tipo sobre su forma mayoritaria. */
+  const abrirTipo = (t: TipoInfo) => {
+    const forma = t.formatos?.[0]
+    setFilas(armarFilas(t, forma?.texto ?? t.lineas))
+    setFirmaBase(forma?.firma ?? "")
+    const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos ?? ""
     setFGrupo(grupo)
     setGrupoOriginal(grupo)
     setEditando(t)
+  }
+
+  /** Cambia la forma sobre la que se está trabajando, conservando lo ya guardado. */
+  const cambiarFormato = (firma: string) => {
+    if (!editando) return
+    const f = editando.formatos.find(x => x.firma === firma)
+    if (!f) return
+    setFilas(armarFilas(editando, f.texto))
+    setFirmaBase(firma)
   }
 
   const cambiarFila = (i: number, cambio: Partial<Fila>) =>
@@ -296,6 +321,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
+  const formatos = editando?.formatos ?? []
+
   /** El bloque de líneas del ejemplo, numerado. */
   const Ejemplo = ({ lineas }: { lineas: string[] }) => (
     <div className="rounded bg-gray-50 p-2 font-mono text-[11px] leading-5 text-gray-700">
@@ -306,6 +333,35 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       ))}
     </div>
   )
+
+  /**
+   * Todas las formas del tipo, no una sola. Mostrar un único ejemplo fue lo que dejó escribir
+   * reglas por número de línea que fallan en la otra forma (PENDIENTES § A-BUG-17).
+   */
+  const Formas = ({ t }: { t: TipoInfo }) => {
+    const fs = t.formatos ?? []
+    if (fs.length <= 1) return <Ejemplo lineas={t.lineas} />
+    return (
+      <div className="space-y-1.5">
+        {fs.map(f => (
+          <div key={f.firma}>
+            <p className="mb-0.5 text-[10px] text-amber-700">
+              forma de {f.lineas} líneas · {f.movimientos} movimiento{f.movimientos === 1 ? "" : "s"}
+            </p>
+            <Ejemplo lineas={f.texto} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  /** Chip de aviso cuando el tipo tiene más de una forma. */
+  const ChipFormas = ({ t }: { t: TipoInfo }) =>
+    (t.formatos?.length ?? 0) > 1 ? (
+      <Badge variant="outline" className="border-amber-400 bg-amber-50 text-[10px] text-amber-800">
+        {t.formatos.length} formas
+      </Badge>
+    ) : null
 
   return (
     <div className="space-y-4">
@@ -334,11 +390,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs font-medium text-gray-800">{t.tipo}</span>
                       <Badge variant="outline" className="text-[10px]">{t.movimientos} mov.</Badge>
+                      <ChipFormas t={t} />
                       <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" onClick={() => abrirTipo(t)}>
                         <Plus className="mr-1 h-3 w-3" /> Configurar {t.lineas.length} línea{t.lineas.length === 1 ? "" : "s"}
                       </Button>
                     </div>
-                    {t.lineas.length > 0 && <div className="mt-1.5"><Ejemplo lineas={t.lineas} /></div>}
+                    {t.lineas.length > 0 && <div className="mt-1.5"><Formas t={t} /></div>}
                   </div>
                 ))}
               </CardContent>
@@ -371,6 +428,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                         <div className="flex flex-wrap items-center gap-2 border-b bg-gray-50 px-2.5 py-1.5">
                           <span className="font-mono text-xs font-medium">{t.tipo}</span>
                           <Badge variant="outline" className="text-[10px]">{t.movimientos} mov.</Badge>
+                          <ChipFormas t={t} />
                           {rs[0]?.grupo_de_conceptos && (
                             <Badge variant="outline" className="text-[10px]">{rs[0].grupo_de_conceptos}</Badge>
                           )}
@@ -386,23 +444,44 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                         {/* Ejemplo real a la izquierda, lo que produce a la derecha */}
                         <div className="grid gap-2.5 p-2.5 md:grid-cols-2">
                           <div>
-                            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Un movimiento real</p>
-                            <Ejemplo lineas={t.lineas} />
+                            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">
+                              {(t.formatos?.length ?? 0) > 1 ? "Las formas que llegan" : "Un movimiento real"}
+                            </p>
+                            <Formas t={t} />
                           </div>
                           <div>
                             <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Lo que guardan las reglas</p>
                             <table className="w-full font-mono text-[11px] leading-5">
                               <tbody>
                                 {rs.map(r => {
-                                  const valor = aplicarRegla(t.lineas, {
-                                    campo_destino: r.campo_destino, tipo_regla: r.tipo_regla,
-                                    numero_linea: r.numero_linea, grupo_de_conceptos: "",
-                                  })
+                                  // Cada regla se evalúa en TODAS las formas del tipo: si trae
+                                  // clases distintas, la fila se marca en ámbar.
+                                  const fs = t.formatos?.length
+                                    ? t.formatos
+                                    : [{ firma: "u", lineas: t.lineas.length, movimientos: t.movimientos, texto: t.lineas }]
+                                  const vals = fs.map(fm => ({
+                                    fm,
+                                    valor: aplicarRegla(fm.texto, {
+                                      campo_destino: r.campo_destino, tipo_regla: r.tipo_regla,
+                                      numero_linea: r.numero_linea, grupo_de_conceptos: "",
+                                    }),
+                                  }))
+                                  const clases = new Set(vals.map(v => (v.valor ? claseDeLinea(v.valor, 1) : "vacio")))
+                                  const discrepa = vals.length > 1 && clases.size > 1
                                   return (
-                                    <tr key={r.id}>
+                                    <tr key={r.id} className={discrepa ? "bg-amber-50" : ""}>
                                       <td className="pr-2 align-top text-gray-500">{r.campo_destino}</td>
                                       <td className="align-top font-medium text-gray-800">
-                                        {valor || <span className="font-normal italic text-red-500">vacío</span>}
+                                        {vals.map(v => (
+                                          <div key={v.fm.firma} className="flex gap-1.5">
+                                            {vals.length > 1 && (
+                                              <span className="shrink-0 text-[10px] font-normal text-gray-400">{v.fm.lineas}L</span>
+                                            )}
+                                            {v.valor
+                                              ? <span className={discrepa ? "text-amber-800" : ""}>{v.valor}</span>
+                                              : <span className="font-normal italic text-red-500">vacío</span>}
+                                          </div>
+                                        ))}
                                       </td>
                                     </tr>
                                   )
@@ -448,6 +527,31 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             <DialogTitle className="font-mono text-base">{editando?.tipo}</DialogTitle>
           </DialogHeader>
 
+          {formatos.length > 1 && (
+            <div className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2">
+              <p className="text-xs font-medium text-amber-900">
+                Este tipo llega con {formatos.length} formas distintas
+              </p>
+              <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
+                Las reglas son las mismas para todas, así que <strong>contar líneas es riesgoso</strong>:
+                la línea 5 puede ser una cosa en una forma y otra en otra. Los modos que
+                <strong> buscan</strong> (CUIT, antes/después del CUIT) sirven para todas.
+              </p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-amber-900">Estoy mirando:</span>
+                {formatos.map(fm => (
+                  <button key={fm.firma} onClick={() => cambiarFormato(fm.firma)}
+                    className={`rounded border px-1.5 py-0.5 text-[11px] ${
+                      fm.firma === firmaBase
+                        ? "border-amber-500 bg-white font-medium text-amber-900"
+                        : "border-amber-200 bg-amber-100/60 text-amber-800 hover:bg-white"}`}>
+                    {fm.lineas} líneas · {fm.movimientos} mov.
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="-mt-1 text-xs text-gray-600">
             Una fila por línea del movimiento. Lo que el banco escribe siempre igual
             —el CUIT, el nombre antes del CUIT, el tipo en la línea 1— ya viene propuesto;
@@ -468,12 +572,21 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <tbody>
                 {filas.map((f, i) => {
                   const rot = ROTULO[f.contenido]
-                  const previa = f.campo
-                    ? aplicarRegla(filas.map(x => x.texto), {
-                        campo_destino: f.campo, tipo_regla: f.modo,
-                        numero_linea: f.numero, grupo_de_conceptos: "",
-                      })
-                    : ""
+                  // La regla se prueba contra CADA forma del tipo, no sólo contra la que está a la
+                  // vista. Es el punto entero de A-FEAT-18: una regla `linea 5` puede traer la
+                  // tarjeta en una forma y el nombre del banco en otra, y hasta ahora eso no se veia.
+                  const previas = f.campo
+                    ? formatos.map(fm => ({
+                        fm,
+                        valor: aplicarRegla(fm.texto, {
+                          campo_destino: f.campo, tipo_regla: f.modo,
+                          numero_linea: f.numero, grupo_de_conceptos: "",
+                        }),
+                      }))
+                    : []
+                  // Discrepa si en una forma saca una clase de dato y en otra, otra (o nada)
+                  const clases = new Set(previas.map(p => (p.valor ? claseDeLinea(p.valor, 1) : "vacio")))
+                  const discrepa = previas.length > 1 && clases.size > 1
                   const alerta = f.campo === "leyendas_adicionales_2" && f.modo !== "cuit"
                   return (
                     <tr key={i} className={`border-t align-top ${f.campo ? "" : "bg-gray-50/60"}`}>
@@ -506,12 +619,33 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                           </p>
                         )}
                       </td>
-                      <td className="px-2 py-2 font-mono text-[11px]">
-                        {!f.campo
-                          ? <span className="text-gray-400">—</span>
-                          : previa
-                            ? <span className="font-medium text-emerald-700">{previa}</span>
-                            : <span className="text-red-600">vacío</span>}
+                      <td className={`px-2 py-2 font-mono text-[11px] ${discrepa ? "bg-amber-50" : ""}`}>
+                        {!f.campo ? (
+                          <span className="text-gray-400">—</span>
+                        ) : previas.length === 1 ? (
+                          previas[0].valor
+                            ? <span className="font-medium text-emerald-700">{previas[0].valor}</span>
+                            : <span className="text-red-600">vacío</span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            {previas.map(p => (
+                              <div key={p.fm.firma} className="flex gap-1.5">
+                                <span className="shrink-0 text-[10px] text-gray-400">
+                                  {p.fm.lineas}L·{p.fm.movimientos}
+                                </span>
+                                {p.valor
+                                  ? <span className={discrepa ? "text-amber-800" : "font-medium text-emerald-700"}>{p.valor}</span>
+                                  : <span className="text-red-600">vacío</span>}
+                              </div>
+                            ))}
+                            {discrepa && (
+                              <p className="pt-0.5 text-[10px] leading-4 text-amber-700">
+                                ⚠ Trae cosas distintas según la forma. Probá un modo que
+                                <strong> busque</strong> en vez de contar líneas.
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
