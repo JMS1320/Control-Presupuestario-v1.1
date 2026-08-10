@@ -222,6 +222,22 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) |
 | A-BUG-13 | ⏸️ | Bug | **Una regla uni-responsable no matchea un template multi-responsable** — `MSA/PAM` no encuentra la regla de `MSA` ni la de `PAM`. Postergado por el usuario **para los ajustes finales** | → [A-BUG-13](#a-bug-13) |
 
+### 🧩 Parseo de extractos (Caja de Ahorro) — huecos abiertos 2026-08-09
+> Salieron de revisar los datos reales con el usuario. **Decisión suya: no se arreglan de a uno
+> ahora — se ven todos juntos al final.** Acá quedan registrados para que ese repaso exista.
+
+| ID | Estado | Tipo | Tema | Detalle |
+|----|--------|------|------|---------|
+| A-BUG-14 | 🔴 | Bug | **PAM perdió el CUIT en 2 de 25 movimientos** — la cuenta SÍ está parseada, así que acá el desglose falló de verdad | → [A-BUG-14](#a-bug-14) |
+| A-BUG-15 | 🔴 | Bug | `Nro Operacion: 200112733` **no lo agarra** el modo *Nº de operación* (busca `OP:` u `OPERACION␣`, y acá hay dos puntos) | → [A-BUG-15](#a-bug-15) |
+| A-BUG-16 | 🟡 | Riesgo | Una regla `línea N → leyendas_adicionales_2` puede meter **el CBU en la columna del CUIT** y la contraparte deja de matchear sin aviso. **Mitigado** en la UI, no cerrado | → [A-BUG-16](#a-bug-16) |
+| A-FEAT-14 | 🔴 | Feat | Las **reglas vigentes** no muestran ejemplo: el movimiento real sólo aparece en los tipos SIN regla. Pedido del usuario | → [A-FEAT-14](#a-feat-14) |
+
+⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
+(cero reglas), así que sus 96 movimientos sin desglosar **no son un fallo** — son trabajo pendiente.
+En **PAM sí hay reglas corriendo**, y por eso lo que queda sin desglosar ahí sí amerita revisión.
+Mezclar las dos cosas infla el problema y esconde el bug real.
+
 ### 📎 GAS PDF — hallazgos 2026-06-21 (revisión del módulo)
 | ID | Estado | Tipo | Tema | Detalle |
 |----|--------|------|------|---------|
@@ -3266,6 +3282,97 @@ guarda **en mayúscula** porque el match es exacto, y el grupo de conceptos se h
 tenga el tipo (con sugerencias de los usados) para no generar variantes.
 
 Al crear una regla avisa que **no cambia sola lo ya importado**: hay que correr *Re-parsear*.
+
+---
+
+## 🧩 Huecos del parseo — encontrados al revisar los datos (2026-08-09)
+
+> Los cuatro salieron de una sola revisión con el usuario. **Él decidió no arreglarlos de a uno:
+> se ven todos juntos al final.** Índice → § Parseo de extractos.
+
+### 🔴 <a id="a-bug-14"></a>A-BUG-14 — PAM perdió el CUIT en 2 de 25 movimientos
+
+**La distinción que importa, y que corrigió el usuario**: en **MA no se parseó nunca** —cero reglas
+cargadas—, así que sus 32 movimientos con CUIT sin desglosar **no son un fallo del parseo**: son
+trabajo que no se hizo todavía. **PAM es otra cosa**: tiene 49 reglas corriendo desde el import, y
+aun así 2 movimientos entraron con el CUIT en el texto y sin CUIT en la columna.
+
+| Movimiento | Tipo | ¿Tiene regla el tipo? |
+|---|---|---|
+| `20044390222` en la línea 3 | `TRANSFERENCIA DE CUENTA PROPIA` | ❌ no |
+| `30692138747` en la línea 3 | `PAGO CON TRANSFERENCIA` | ❌ no |
+
+**Causa medida**: los dos tipos no están entre los 21 que cubren las reglas. O sea que el mecanismo
+es el mismo que en MA (falta la regla), pero **en PAM eso no debería pasar**, porque la cuenta se dio
+por parseada. Lo que hay que revisar no es el parser: es **por qué el set de 49 reglas se dio por
+completo**. De sus 21 tipos, **sólo 2 aparecen en los 25 movimientos cargados** — los otros 19 se
+escribieron por SQL anticipando movimientos que nunca llegaron.
+
+**Por qué duele**: `leyendas_adicionales_2` es de donde el motor lee el CUIT
+(`useMotorConciliacion.ts:239`) y donde `useVinculacionAnticipo.ts:116` compara con `.eq()` exacto.
+Sin CUIT, la contraparte no matchea y la conciliación no dice por qué.
+
+### 🔴 <a id="a-bug-15"></a>A-BUG-15 — `Nro Operacion:` no lo agarra el modo *Nº de operación*
+
+El modo busca `OP:` o `OPERACION` **seguido de espacio**. Verificado contra el regex real de
+`lib/extractos/parseo-movimiento.ts`:
+
+```
+"OP:99O31012026F"           -> 99O31012026F     ✅
+"OPERACION 6150935348"      -> 6150935348       ✅
+"Nro Operacion: 200112733"  -> (NO MATCHEA)     ❌ los dos puntos
+```
+
+El plan B tampoco lo salva: sólo mira renglones que sean **puramente** numéricos, y ése no lo es.
+
+**Dónde aparece**: `SUSCRIPCION FIMA` en MA. Hoy es 1 movimiento, pero es una **colocación** — plata
+que sigue siendo de la empresa (§ Templates: lo `financiero` no se presupuesta), así que va a repetirse.
+
+**El fix es de una línea** en `parseo-movimiento.ts`, aceptando el formato con dos puntos. ⚠️ Toca la
+**función compartida con el importador**: cambiarla cambia también cómo entra lo nuevo. No se tocó.
+
+### 🟡 <a id="a-bug-16"></a>A-BUG-16 — Una regla por número de línea puede meter el CBU en la columna del CUIT
+
+**El riesgo, concreto.** Nada impide escribir `línea 3 → leyendas_adicionales_2`. En las
+transferencias de MA la línea 3 es el **CBU**:
+
+```
+1  TRANSFERENCIA A TERCEROS
+2  NO  27300503905            ← el CUIT
+3  0140363103650054482399     ← el CBU: también sólo números, también creíble
+```
+
+El resultado sería un dato plausible en la columna equivocada, **23 veces**. Y como el motor compara
+por igualdad exacta, la contraparte simplemente deja de matchear: sin error, sin aviso, sin nada que
+mirar. Es *el silencio miente* otra vez.
+
+**Estado hoy** (verificado sobre los datos, no supuesto): la convención **se respeta**. Las únicas 4
+reglas que escriben en `leyendas_adicionales_2` son modo `cuit`, y las únicas 4 reglas modo `cuit`
+van a esa columna — relación 1 a 1. No hay ningún valor que no sea un CUIT de 11 dígitos ahí, en
+ninguna de las dos cuentas.
+
+**Mitigación aplicada** (`95f705b`), que **no cierra el ítem**: la pantalla avisa en ámbar si se
+elige esa columna con un modo distinto de `cuit`, y muestra en vivo qué extraería la regla. Sigue
+siendo posible guardarla igual — es un aviso, no una validación. **Decidir al repasar**: si se
+bloquea directamente, o si se deja como aviso.
+
+> Nota: el modo `cuit` **no puede** equivocarse de dato por construcción — exige 11 dígitos exactos
+> tras sacar el prefijo `CU`/`NO`, así que un CBU (22) o una tarjeta con `X` no pasan el filtro.
+
+### 🔴 <a id="a-feat-14"></a>A-FEAT-14 — Las reglas vigentes no muestran su ejemplo
+
+**Pedido del usuario, 2026-08-09**: los ejemplos tienen que verse **en las reglas vigentes**, no sólo
+en los tipos sin regla.
+
+Hoy el movimiento de ejemplo llega desde `GET /api/reparsear-extracto`, que **sólo devuelve los
+tipos SIN regla propia** (`tiposSinRegla`). Consecuencias:
+- un tipo ya resuelto se muestra como una lista de `modo → columna`, sin el texto del que salió;
+- al **editar** una regla, `abrirEdicion()` busca el ejemplo en esa misma lista y no lo encuentra, así
+  que **la vista previa queda vacía justo donde más se necesita** — modificando algo que ya corre.
+
+**Qué haría falta**: que el diagnóstico devuelva un movimiento de ejemplo **por cada tipo presente**,
+tenga regla o no, y que la tarjeta del tipo lo muestre al lado de lo que produce cada regla — el
+mismo formato *texto del banco → columnas* del reporte.
 
 ### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
 Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de
