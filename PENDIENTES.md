@@ -231,7 +231,11 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-BUG-14 | 🔴 | Bug | **PAM perdió el CUIT en 2 de 25 movimientos** — la cuenta SÍ está parseada, así que acá el desglose falló de verdad | → [A-BUG-14](#a-bug-14) |
 | A-BUG-15 | 🔴 | Bug | `Nro Operacion: 200112733` **no lo agarra** el modo *Nº de operación* (busca `OP:` u `OPERACION␣`, y acá hay dos puntos) | → [A-BUG-15](#a-bug-15) |
 | A-BUG-16 | 🟡 | Riesgo | Una regla `línea N → leyendas_adicionales_2` puede meter **el CBU en la columna del CUIT** y la contraparte deja de matchear sin aviso. **Mitigado** en la UI, no cerrado | → [A-BUG-16](#a-bug-16) |
-| A-FEAT-14 | 🔴 | Feat | Las **reglas vigentes** no muestran ejemplo: el movimiento real sólo aparece en los tipos SIN regla. Pedido del usuario | → [A-FEAT-14](#a-feat-14) |
+| A-FEAT-14 | ✅ | Feat | Las reglas vigentes no mostraban ejemplo — **HECHO 2026-08-09** (`9cffeef`), falta testear | → [A-FEAT-14](#a-feat-14) |
+| **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
+| A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
+| A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
+| A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear** (2026-08-09) — configurar un tipo, ver la vista previa, guardar, correr el re-parseo en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
 (cero reglas), así que sus 96 movimientos sin desglosar **no son un fallo** — son trabajo pendiente.
@@ -3359,7 +3363,68 @@ bloquea directamente, o si se deja como aviso.
 > Nota: el modo `cuit` **no puede** equivocarse de dato por construcción — exige 11 dígitos exactos
 > tras sacar el prefijo `CU`/`NO`, así que un CBU (22) o una tarjeta con `X` no pasan el filtro.
 
-### 🔴 <a id="a-feat-14"></a>A-FEAT-14 — Las reglas vigentes no muestran su ejemplo
+### 🔴 <a id="a-bug-17"></a>A-BUG-17 — Un mismo tipo llega con dos formatos, y las reglas por línea fallan en el 30 %
+
+**Encontrado 2026-08-09**, revisando las 34 reglas que cargó el usuario en MA. Es el hallazgo más
+caro de la tanda y **no lo detecta ninguna pantalla hoy**.
+
+`TRANSFERENCIA A TERCEROS` no tiene una forma: tiene **dos**.
+
+```
+7 movimientos, 5 líneas          16 movimientos, 6 líneas
+1 TRANSFERENCIA A TERCEROS       1 TRANSFERENCIA A TERCEROS
+2 MARTINEZ PLACIDO ANDRES ←nombre 2 NO  27300503905          ←CUIT
+3 20287492546             ←CUIT   3 0140363103650054482399   ←CBU
+4 VARIOS                          4 LINK
+5 BANCO DE GALICIA…               5 4517XXXXXXXXXX11
+                                  6 VARIOS
+```
+
+**El CUIT está en la línea 3 en una y en la 2 en la otra.** Las reglas cargadas son:
+
+| Regla | En los 16 de 6 líneas | En los 7 de 5 líneas |
+|---|---|---|
+| `cuit → leyendas_2` | ✅ el CUIT | ✅ **el CUIT igual** — por eso el modo `cuit` es el correcto |
+| `línea 3 → nro_comprobante` | el CBU | ❌ **el CUIT**, duplicado en otra columna |
+| `línea 5 → nro_terminal` | la tarjeta | ❌ **«BANCO DE GALICIA Y BUENOS AIRES SAU»** |
+
+Y en los 7 con nombre, **`MARTINEZ PLACIDO ANDRES` se pierde**: no hay regla `pre_cuit`, que es la
+que lo agarraría en los dos formatos (en el de 6 líneas devuelve vacío, correctamente, porque ahí
+no hay nombre).
+
+**La lección, que vale más que el caso**: la regla `cuit` acertó en las dos formas porque **busca**;
+las reglas `línea N` acertaron sólo en la forma que el usuario tenía delante. Es la misma falla de
+siempre — nada avisa, las columnas se llenan igual, y el nombre de un banco pasa por un número de
+terminal sin que nadie lo mire.
+
+**Qué haría falta (→ A-FEAT-15)**: que la pantalla, en vez de un movimiento de ejemplo por tipo,
+detecte **cuántos formatos distintos** tiene y los muestre. Con "23 movimientos · 2 formatos" a la
+vista, esto no pasaba. Hoy `GET /api/reparsear-extracto` devuelve `lineas` del **primer** movimiento
+que encuentra, sin mirar si los demás coinciden.
+
+**Mitigación mientras tanto**: preferir `cuit` / `pre_cuit` / `post_cuit` sobre `línea N` siempre que
+haya un CUIT en el texto.
+
+⚠️ **Antes de tocar las reglas hay que decidir con el usuario** — son datos suyos, ya cargados.
+
+### 🟡 <a id="a-feat-16"></a>A-FEAT-16 — Tarjeta y autorización van a columnas invertidas según el tipo
+
+En las reglas de MA cargadas 2026-08-09, el mismo par de datos va a columnas opuestas:
+
+| Tipo | Tarjeta `4517XXXX…` | Autorización `A837` |
+|---|---|---|
+| `COMPRA DEBITO` (33 mov.) | `numero_de_terminal` | `numero_de_comprobante` |
+| `EXTRACCION CAJERO` | `numero_de_comprobante` | `numero_de_terminal` |
+| `PAGO DE SERVICIOS` | `leyendas_adicionales_3` | `leyendas_adicionales_4` |
+
+No rompe nada hoy, pero **vuelve inútil filtrar por columna**: buscar todas las operaciones de una
+tarjeta requiere mirar tres columnas distintas. Conviene fijar una convención y unificar.
+
+Relacionado: en `INTERES CAPITALIZADO` y `PAGO TARJETA VISA` el `numero_de_comprobante` guarda
+`Enero 2026` y `D.A. AL VTO` — texto, no comprobantes. Misma decisión de fondo: **qué significa cada
+columna**, y respetarlo.
+
+### ✅ <a id="a-feat-14"></a>A-FEAT-14 — Las reglas vigentes no muestran su ejemplo (HECHO 2026-08-09)
 
 **Pedido del usuario, 2026-08-09**: los ejemplos tienen que verse **en las reglas vigentes**, no sólo
 en los tipos sin regla.
@@ -3370,9 +3435,40 @@ tipos SIN regla propia** (`tiposSinRegla`). Consecuencias:
 - al **editar** una regla, `abrirEdicion()` busca el ejemplo en esa misma lista y no lo encuentra, así
   que **la vista previa queda vacía justo donde más se necesita** — modificando algo que ya corre.
 
-**Qué haría falta**: que el diagnóstico devuelva un movimiento de ejemplo **por cada tipo presente**,
-tenga regla o no, y que la tarjeta del tipo lo muestre al lado de lo que produce cada regla — el
-mismo formato *texto del banco → columnas* del reporte.
+**Resuelto (`9cffeef`)**: `GET` devuelve `tipos` — todos los presentes, con ejemplo y `conRegla` —
+y mantiene `tiposSinRegla` con la forma vieja para no tocar la alerta de Principal. Cada tipo
+configurado muestra el movimiento real al lado de lo que extrae cada regla, con **vacío en rojo**
+si no saca nada. Falta testear → [A-TEST-26](#a-test-26).
+
+### ✅ Y el editor pasó a ser del TIPO, no de la regla (2026-08-09, `9cffeef`)
+
+**Pedido del usuario**: *"si pongo crear regla para un tipo que tiene 5 líneas, de 5 líneas para
+crear las 5 reglas"*. Tenía razón — el modal mostraba un tipo de N líneas y dejaba hacer **una**
+regla, obligando a abrirlo N veces acordándose de cuál era cuál.
+
+Ahora es **una fila por línea**, con: qué reconoció, cómo se extrae, a qué columna va y **qué
+quedaría** (vista previa por línea, con `aplicarRegla()`, la función que corre al importar).
+**«— sin asignar —»** está en todos los selects, porque no asignar también es una decisión.
+
+**Y lo que ya sabemos no se pregunta** — `proponerMapeo()` en la lib compartida:
+
+| Detecta | Cómo | Propone | Modo |
+|---|---|---|---|
+| CUIT | 11 dígitos, con o sin `CU`/`NO` | `leyendas_2` | **`cuit`** (busca, no cuenta) |
+| Nombre | la línea justo antes del CUIT | `leyendas_1` | `pre_cuit` |
+| Tipo | siempre la línea 1 | `descripcion` | `linea 1` |
+| Nº de operación | `OP:` u `OPERACION␣` | `nro_comprobante` | `nro_operacion` |
+| **CBU** | 22 dígitos | **sin asignar** | — |
+| **Tarjeta** | enmascarada con `XXXX` | **sin asignar** | — |
+
+Cada fila dice **por qué**, y lo no seguro va marcado `sugerido`.
+
+> 🔑 **El criterio de las dos últimas**: el CBU **se reconoce, y justo por eso no se asigna**. No hay
+> columna de CBU, y meterlo en la del CUIT es [A-BUG-16](#a-bug-16). Un dato creíble en la columna
+> equivocada es peor que un dato ausente, porque nadie lo va a revisar.
+
+Verificado contra `DEB. AUTOM. DE SERV.` de PAM: la propuesta reproduce casi exactamente las 5
+reglas que estaban cargadas por SQL.
 
 ### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
 Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de

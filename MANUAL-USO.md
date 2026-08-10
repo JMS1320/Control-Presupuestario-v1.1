@@ -775,6 +775,90 @@ importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
 
 ---
 
+## 🧩 Reglas de parseo — desglosar el texto del banco 🟡 *(nuevo 2026-08-09, sin testear)*
+
+> Diseño, propuesta automática y los huecos abiertos → `PENDIENTES.md` § Parseo de extractos.
+
+### Qué son y por qué existen
+En **Caja de Ahorro** el banco no manda columnas: manda todo apilado dentro de una sola celda.
+
+```
+TRANSFERENCIA A TERCEROS      ← el tipo
+MARTINEZ PLACIDO ANDRES       ← el nombre
+20287492546                   ← el CUIT
+VARIOS                        ← el concepto
+BANCO DE GALICIA…
+```
+
+Las **reglas de parseo** reparten ese bloque en columnas. Sin ellas el movimiento entra igual —el
+texto completo **nunca se pierde**, queda entero en `concepto`— pero no se puede buscar por CUIT ni
+por beneficiario, y la conciliación no encuentra la contraparte.
+
+⚠️ **No son las reglas de conciliación.** Son otra tabla y otro momento: éstas corren **al importar**
+y reparten texto; las de conciliación corren después y asignan cuenta contable.
+
+**Las cuentas corrientes no las usan**: su export ya viene del banco con las columnas separadas.
+Si elegís una CC, la pantalla te lo dice.
+
+### Dónde está
+**Extracto Bancario → botón Configuración → solapa «Reglas de Parseo (import)»**.
+La cuenta se elige en el selector de arriba del modal, el mismo que usan las otras dos solapas.
+
+### Cómo se usa
+1. Arriba aparecen los **tipos sin regla**, ordenados por cantidad de movimientos: el primero es el
+   que más rinde. Cada uno muestra un movimiento real con las líneas numeradas.
+2. Tocá **«Configurar N líneas»**. Se abre una tabla con **una fila por línea**:
+
+   | # | Lo que dice el banco | Cómo se extrae | Va a la columna | Quedaría |
+   |---|---|---|---|---|
+   | 1 | COMPRA DEBITO `tipo` | Línea N | descripcion | COMPRA DEBITO |
+   | 2 | DIA TIENDA 670 `nombre` | Línea N | leyendas_1 | DIA TIENDA 670 |
+   | 3 | 4517XXXXXXXXXX11 `tarjeta` | — | — sin asignar — | — |
+
+3. **Lo que el banco escribe siempre igual ya viene propuesto**: el CUIT, el nombre que está antes
+   del CUIT, el tipo de la línea 1, el número de operación. Lo que no reconoce lo deja
+   **sin asignar** y te dice por qué. Todo es editable.
+4. La última columna, **«Quedaría»**, muestra lo que esa regla extrae **de ese movimiento**. Es la
+   verificación: si dice *vacío* en rojo, la regla no sirve.
+5. Elegí el **grupo de conceptos** (es del tipo entero, no de cada línea) y **Guardar**. El botón
+   dice cuántas reglas crea, cambia y borra.
+
+### 🔑 Dos cosas que conviene saber
+- **«Busca el CUIT» le gana a «Línea N».** Los modos que buscan (`Busca el CUIT`, `Antes del CUIT`,
+  `Después del CUIT`) siguen funcionando aunque el banco corra las líneas. Contar posiciones no.
+  Ya pasó: `TRANSFERENCIA A TERCEROS` llega con 5 o con 6 líneas y el CUIT cambia de lugar
+  (→ `PENDIENTES.md` § A-BUG-17).
+- **Guardar una regla NO cambia lo ya importado.** Para eso está **Re-parsear**.
+
+### Re-parsear — aplicar las reglas a lo que ya está cargado
+Botón **«Re-parsear»** en Extracto Bancario, sólo en cuentas de Caja de Ahorro.
+
+1. Corre **en seco** primero: te dice cuántos movimientos cambiarían y **no toca nada**.
+2. Si el resultado convence, **Aplicar**.
+
+**No hace falta volver a importar nunca**: lee el texto original que el importador guardó. Y sólo
+escribe las columnas del desglose — la cuenta contable, el detalle y el estado de conciliación
+**no se tocan**.
+
+### 🧪 Cómo probarlo <a id="a-test-26"></a>
+1. **Extracto Bancario → Configuración → Reglas de Parseo**, con **MSA Galicia CC** elegida: tiene
+   que decir *"Esta cuenta no usa reglas de parseo"*.
+2. Cambiá a **MA Galicia CA**. Deberías ver los tipos sin regla arriba y los ya configurados abajo,
+   cada uno con su movimiento real al lado de lo que extrae cada regla.
+3. Abrí un tipo ya configurado (ej. `COMPRA DEBITO`): las filas tienen que venir **pre-cargadas con
+   lo que ya guardaste**, no con la propuesta.
+4. Abrí `TRANSFERENCIAS CASH PROVEEDORES` (sin regla, 1 mov.). Verificá que **propone solo**:
+   línea 3 reconocida como **CUIT** → `leyendas_2` con modo *Busca el CUIT*, y línea 2 como
+   **nombre** → `leyendas_1`.
+5. ⚠️ **El paso que caza el error caro**: en cualquier fila, cambiá «Va a la columna» a
+   **leyendas_2 — CUIT** con un modo que **no** sea *Busca el CUIT*. Tiene que aparecer el aviso
+   ámbar. Si no aparece, la protección contra meter el CBU en la columna del CUIT no está activa.
+6. Poné una fila en **«— sin asignar —»**: la columna *Quedaría* pasa a `—` y el contador del botón
+   Guardar tiene que reflejar una baja.
+7. **Re-parsear en seco** sobre MA y leer el resumen antes de aplicar.
+
+---
+
 ## 🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
 
 > Diseño, reglas y huecos → `PENDIENTES.md` § A-FEAT-13 y § A-BUG-09.
