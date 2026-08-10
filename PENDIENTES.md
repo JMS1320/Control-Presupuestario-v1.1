@@ -236,6 +236,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
 | **A-BUG-19** | ✅ | **Bug** | **ARREGLADO Y TESTEADO 2026-08-10.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
+| **A-BUG-20** | 🔴 | **Bug** | 🔁 **REGRESIÓN** — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) |
+| A-FEAT-22 | 🔴 | Feat | **Confirmar la fecha de pago ANTES de SICORE** — hoy la fecha se asume y SICORE depende de ella. Proponer hoy, editable, con 3 salidas | → [A-FEAT-22](#a-feat-22) |
+| A-FEAT-23 | 🟢 | Feat | Al escribir una fecha con **día y mes pero sin año**, autocompletar con el año actual | → [A-FEAT-23](#a-feat-23) |
 | A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) |
 | A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
@@ -3824,6 +3827,88 @@ Los dos quedaron guardados después de recargar. **Cerrado.**
 ⚠️ Lo que NO cubre este arreglo y sigue abierto: marcar una fila de **sueldo del mes** desde Cash
 Flow. Hoy avisa que se gestiona desde Sueldos, en vez de callarse — pero no lo hace. Si se quiere
 que marcarla **registre el pago**, es el camino A (arriba). Decisión pendiente del usuario.
+
+---
+
+## 💸 Cash Flow → PAGOS — los 3 pendientes del 2026-08-10
+
+> Los tres salieron de un caso real del usuario: puso un lote a pagar, saltó SICORE, y como la
+> fecha de pago no era la correcta canceló. **Se le pasó a la mitad y quedaron todas en `pagar`.**
+
+### 🔴 <a id="a-bug-20"></a>A-BUG-20 — Cancelar en SICORE no aborta el proceso 🔁 REGRESIÓN
+
+**Reportado por el usuario**: *"le di cancelar al primer cartel… eso debe abortar proceso. Ya lo
+habíamos hablado y volvió el bug, porque quedaron todas en pagar."*
+
+**El cartel es** el `window.confirm` de `aplicarCambiosLote`:
+*«N factura(s) ARCA califican para retención SICORE… ¿Procesar SICORE una por una?»*
+
+**Y lo que hace hoy Cancelar no es cancelar.** En el `else` de ese confirm:
+
+```ts
+if (!confirmar) {
+  // Guardar todas sin SICORE
+  await actualizarBatch(facturasParaSicore.map(f => ({ …, campo: 'estado', valor: 'pagar' })))
+  toast.success(`${facturasParaSicore.length} facturas marcadas 'pagar' sin SICORE`)
+}
+```
+
+O sea: **Cancelar = "marcalas todas en pagar y seguí"**. No aborta nada. Y como el usuario lo
+aprieta esperando volver atrás, el lote queda aplicado a medias y con la fecha equivocada.
+
+**El problema de fondo es el texto del cartel, no sólo el código.** *"¿Procesar SICORE una por
+una?"* con Aceptar/Cancelar no ofrece tres opciones, ofrece dos — y ninguna de las dos es "no hagas
+nada". Hay **tres intenciones posibles** y hacen falta tres botones:
+
+| Lo que el usuario quiere | Qué debería pasar |
+|---|---|
+| Procesar SICORE una por una | lo que hace hoy Aceptar |
+| Pagar sin retener | lo que hace hoy Cancelar (marcar en `pagar`) |
+| **Volver atrás** | **no tocar nada** — y hoy no existe |
+
+⚠️ **Es regresión**: ya se había resuelto antes. Al arreglarlo, dejar registrado **qué lo revirtió**,
+o va a volver una tercera vez. Y ojo: hay más de un camino que llega acá (lote, fila individual,
+cola de SICORE) — verificar los tres.
+
+### 🔴 <a id="a-feat-22"></a>A-FEAT-22 — La fecha de pago se confirma ANTES de SICORE
+
+**Planteo del usuario**: *"las facturas tienen una fecha estimada y si no pongo fecha de pago quedan
+con esa fecha estimada. Por lo general yo registro cuando pago."*
+
+O sea: la fecha de pago **se asume** y casi siempre está mal, porque el registro se hace el día que
+se paga, no el día que se había estimado.
+
+**Y no es cosmético**: la quincena de SICORE se calcula desde la fecha de pago
+(`generarQuincenaSicore(f.fecha_pago || f.fecha_vencimiento || f.fecha_estimada)`). Con la fecha
+equivocada, **la retención puede caer en la quincena equivocada** — y eso se presenta a ARCA.
+
+**Lo pedido**, en este orden: primero la fecha, después SICORE.
+
+1. Al aplicar el lote, **antes de todo**, un paso que propone la **fecha de hoy** y deja editarla.
+2. Tres salidas, no dos:
+   - **Aceptar** → se registra la fecha elegida (hoy o la que se escriba) como `fecha_pago`.
+   - **Dejar las fechas que están** → `fecha_pago` se llena con la `fecha_estimada` de cada una.
+     Es la opción que hoy ocurre por omisión, pero elegida a propósito.
+   - **Cancelar** → aborta todo el proceso, sin tocar nada.
+3. Recién ahí se evalúa SICORE, ya con la fecha correcta.
+
+Se cruza con [A-BUG-20](#a-bug-20): los dos son el mismo problema de fondo — **carteles que no
+ofrecen la salida que el usuario está buscando**.
+
+### 🟢 <a id="a-feat-23"></a>A-FEAT-23 — Autocompletar el año en las fechas
+
+Al escribir una fecha con **día y mes pero sin año** (`10/8`), completar con el **año actual**.
+
+Hoy el parseo de `DD/MM/AAAA` espera las tres partes: `const [d, m, y] = fechaStr.split('/')`. Con
+dos, `y` queda `undefined` y sale una fecha inválida.
+
+Chico, pero es de los que más se usan: la fecha se tipea muchas veces por día.
+
+⚠️ Al hacerlo, mirar **todos los lugares** donde se tipea una fecha, no sólo Cash Flow — si sólo
+funciona en una pantalla, es peor que no tenerlo, porque uno cuenta con eso y en la otra falla.
+Y cuidado con el import de pesadas, donde una fecha ambigua ya metió **176 pesadas en marzo**
+(→ [A-TEST-18](#a-test-18)): acá el año se **completa**, no se adivina — el día y el mes los
+escribió el usuario.
 
 ---
 

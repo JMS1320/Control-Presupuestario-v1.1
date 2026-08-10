@@ -849,7 +849,7 @@ Así, `TRANSFERENCIA A TERCEROS` se ve como tres bloques: el de 6 líneas con 12
 cambio— valen para todas las formas. En cuanto guardás una forma, quedan atadas **sólo a ésa** y las
 otras se quedan sin reglas hasta que las configures. El editor te lo avisa antes de guardar.
 
-### 🛑 Una forma sin cubrir NO se parsea
+### 🛑 Una forma sin reglas NO se parsea
 Si un tipo tiene reglas atadas a formas y llega un movimiento de **otra** forma, el sistema
 **no lo desglosa**: lo deja marcado con el grupo **«Forma nueva»**.
 
@@ -858,7 +858,8 @@ otra forma — que se vería correcto y estaría mal. Así, cuando el banco empi
 **se ve**. El texto original nunca se pierde: se le escriben las reglas de esa forma y se corre
 **Re-parsear**.
 
-En la pantalla, una forma sin reglas propias aparece marcada **«sin cubrir, no se parsea»**.
+En la pantalla, esa forma aparece marcada **«sin reglas — no se desglosa»**, y arriba de todo hay
+un recuadro celeste con todas las formas que están en esa situación, ordenadas por cantidad.
 
 **No alcanza con contar líneas**: dos movimientos de 6 líneas pueden ser formas distintas si tienen
 las líneas cambiadas de lugar. Por eso la forma se calcula con la **clase de dato de cada línea**
@@ -925,13 +926,16 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
    la detección de formas no está corriendo.
 9. `DEB. AUTOM. DE SERV.` tiene **2 formas, las dos de 5 líneas** (una con `0226 - 0226` en la línea
    4). Sirve para verificar que la forma no se calcula sólo contando líneas.
-10. **Reglas por forma** (requiere haber corrido `sql/2026-08-10_firma_forma_parseo.sql`): en
-    `TRANSFERENCIA A TERCEROS`, poné la regla del CUIT en *«vale para las 3 formas»* y la de la
-    tarjeta en *«sólo la forma de 6 líneas»*. Guardá y cambiá de forma con los botones de arriba: la
-    del CUIT tiene que seguir ahí, la de la tarjeta no.
-11. ⚠️ **El paso que verifica lo más delicado**: dejá una forma **sin ninguna regla propia**. Tiene
-    que aparecer **«sin cubrir, no se parsea»**, y al correr *Re-parsear en seco* esos movimientos
-    tienen que quedar con grupo **«Forma nueva»** — no desglosados con las reglas de otra forma.
+10. **Reglas por forma**: abrí una forma de `TRANSFERENCIA A TERCEROS`. Antes de guardar tiene que
+    avisarte que las reglas actuales valen para las 3 y que van a quedar atadas sólo a ésta.
+    Guardá, y verificá que las **otras dos** formas pasaron a *«sin reglas — no se desglosa»*.
+11. ⚠️ **El paso que verifica lo más delicado**: con una forma sin reglas, corré *Re-parsear en
+    seco*. Esos movimientos tienen que quedar con grupo **«Forma nueva»** — **no** desglosados con
+    las reglas de otra forma. Es la garantía de que una forma nueva del banco se ve en vez de
+    entrar mal.
+12. **El CBU**: en una forma que lo traiga, la línea de 22 dígitos tiene que venir propuesta como
+    **CBU** con el modo *Busca el CBU*. Y la línea que empieza con `BANCO` como
+    **Banco de la contraparte**.
 
 ---
 
