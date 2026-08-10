@@ -164,28 +164,38 @@ export async function GET(req: Request) {
     const { data, error } = await db.from(cuenta).select("concepto, grupo_de_conceptos")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const porTipo = new Map<string, { n: number; ejemplo: string }>()
+    // Un movimiento de ejemplo por tipo, **tenga regla o no**. Con el texto real a la vista, la
+    // regla se escribe mirando las líneas en vez de adivinando cuál es cuál — y eso hace falta
+    // igual para revisar una regla que ya existe, no sólo para escribir una nueva.
+    const porTipo = new Map<string, { n: number; ejemplo: string; conRegla: boolean }>()
     let sinDesglosar = 0
     for (const m of (data ?? []) as any[]) {
       const tipo = tipoDeMovimiento(m.concepto)
       if (!tipo) continue
-      if (!tieneReglaPropia(m.concepto, mapaReglas)) {
-        // Se guarda un movimiento de ejemplo por tipo: con el texto real a la vista, la regla
-        // se escribe mirando las líneas en vez de adivinando cuál es cuál.
-        const prev = porTipo.get(tipo)
-        porTipo.set(tipo, { n: (prev?.n ?? 0) + 1, ejemplo: prev?.ejemplo ?? String(m.concepto) })
-        sinDesglosar++
-      }
+      const conRegla = tieneReglaPropia(m.concepto, mapaReglas)
+      const prev = porTipo.get(tipo)
+      porTipo.set(tipo, { n: (prev?.n ?? 0) + 1, ejemplo: prev?.ejemplo ?? String(m.concepto), conRegla })
+      if (!conRegla) sinDesglosar++
     }
+
+    const tipos = [...porTipo.entries()]
+      .map(([tipo, v]) => ({
+        tipo,
+        movimientos: v.n,
+        conRegla: v.conRegla,
+        lineas: splitMovimiento(v.ejemplo),
+      }))
+      .sort((a, b) => b.movimientos - a.movimientos)
 
     return NextResponse.json({
       ok: true,
       cuenta,
       totalMovimientos: data?.length ?? 0,
       sinDesglosar,
-      tiposSinRegla: [...porTipo.entries()]
-        .map(([tipo, v]) => ({ tipo, movimientos: v.n, lineas: splitMovimiento(v.ejemplo) }))
-        .sort((a, b) => b.movimientos - a.movimientos),
+      /** Todos los tipos presentes, con ejemplo. Lo usa el configurador. */
+      tipos,
+      /** Sólo los que no tienen regla. Lo usa la alerta de Principal — no cambiar la forma. */
+      tiposSinRegla: tipos.filter(t => !t.conRegla).map(({ tipo, movimientos, lineas }) => ({ tipo, movimientos, lineas })),
     })
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 })

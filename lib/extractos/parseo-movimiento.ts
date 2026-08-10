@@ -175,6 +175,119 @@ export async function cargarReglasParseo(
   return mapa
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// PROPUESTA DE MAPEO — qué es cada línea y a qué columna va
+//
+// El extracto del Galicia no es texto libre: el mismo tipo de dato aparece siempre de la misma
+// forma. Un CUIT son 11 dígitos con prefijo `CU`/`NO`; un CBU son 22; el nombre del beneficiario
+// va justo antes del CUIT. Eso ya lo sabemos, así que **no tiene por qué preguntarse**.
+//
+// La convención de columnas, que es la que respetan las 49 reglas ya cargadas:
+//
+//   descripcion            el tipo de movimiento (línea 1)
+//   leyendas_adicionales_1 el nombre / beneficiario / comercio
+//   leyendas_adicionales_2 EL CUIT — de acá lo lee el motor de conciliación
+//   leyendas_adicionales_3 el concepto
+//   numero_de_comprobante  el número de operación o el código de autorización
+//   numero_de_terminal     identificadores largos del banco
+//
+// Lo que NO sabemos se propone **sin asignar**, nunca adivinando: un dato creíble en la columna
+// equivocada es peor que un dato ausente, porque nadie lo va a revisar.
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Qué contenido reconocimos en una línea. `""` = no lo sabemos. */
+export type ContenidoLinea =
+  | "tipo" | "cuit" | "nombre" | "concepto" | "operacion"
+  | "cbu" | "tarjeta" | "autorizacion" | "identificador" | ""
+
+export interface LineaPropuesta {
+  /** La línea tal cual vino del banco. */
+  texto: string
+  /** Qué reconocimos, para mostrarlo. */
+  contenido: ContenidoLinea
+  /** Columna propuesta. `""` = sin asignar. */
+  campo: string
+  /** Modo con el que conviene extraerlo. */
+  modo: string
+  /** Nº de línea (1-based), sólo relevante con modo `linea`. */
+  numero: number
+  /** `true` cuando el formato del banco no deja lugar a dudas. */
+  seguro: boolean
+  /** Por qué se propuso esto. Se muestra al usuario. */
+  motivo: string
+}
+
+const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
+const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
+const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
+const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
+
+/** ¿La línea trae un número de operación, y lo agarra el modo `nro_operacion`? */
+function operacionEnLinea(l: string): { hay: boolean; loAgarra: boolean } {
+  const loAgarra = /OPERACION\s+\S/i.test(l) || /OP:\S/i.test(l)
+  const hay = loAgarra || /OPERACION/i.test(l)
+  return { hay, loAgarra }
+}
+
+/**
+ * Propone, para cada línea del movimiento, qué es y dónde debería guardarse.
+ * Es una **propuesta**: la pantalla la muestra editable y el usuario decide.
+ */
+export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
+  const idxCuit = lineas.findIndex((l) => esCuit(l))
+
+  return lineas.map((texto, i) => {
+    const base = { texto, numero: i + 1 }
+
+    if (i === 0)
+      return { ...base, contenido: "tipo" as const, campo: "descripcion", modo: "linea",
+        seguro: true, motivo: "La primera línea es siempre el tipo de movimiento" }
+
+    if (esCuit(texto))
+      return { ...base, contenido: "cuit" as const, campo: "leyendas_adicionales_2", modo: "cuit",
+        seguro: true, motivo: "11 dígitos: es el CUIT. Va donde el motor lo busca, y con el modo que lo encuentra aunque cambie de línea" }
+
+    if (esCbu(texto))
+      return { ...base, contenido: "cbu" as const, campo: "", modo: "linea",
+        seguro: true, motivo: "22 dígitos: es un CBU. No hay columna para el CBU — asignarlo a la del CUIT la ensucia" }
+
+    if (esTarjeta(texto))
+      return { ...base, contenido: "tarjeta" as const, campo: "", modo: "linea",
+        seguro: true, motivo: "Tarjeta enmascarada. No hay columna propia; elegí una si te sirve" }
+
+    const op = operacionEnLinea(texto)
+    if (op.hay)
+      return { ...base, contenido: "operacion" as const, campo: "numero_de_comprobante",
+        modo: op.loAgarra ? "nro_operacion" : "linea", seguro: true,
+        motivo: op.loAgarra
+          ? "Número de operación"
+          : "Dice «Operacion» pero el modo no lo sabe leer (los dos puntos) — se guarda la línea entera" }
+
+    if (idxCuit >= 0 && i === idxCuit - 1 && i >= 1)
+      return { ...base, contenido: "nombre" as const, campo: "leyendas_adicionales_1", modo: "pre_cuit",
+        seguro: true, motivo: "La línea antes del CUIT es el nombre de la contraparte" }
+
+    if (idxCuit >= 0 && i === idxCuit + 1)
+      return { ...base, contenido: "concepto" as const, campo: "leyendas_adicionales_3", modo: "post_cuit",
+        seguro: false, motivo: "Después del CUIT suele venir el concepto — conviene mirarlo" }
+
+    if (idxCuit < 0 && i === 1 && !/^\d+$/.test(texto.trim()))
+      return { ...base, contenido: "nombre" as const, campo: "leyendas_adicionales_1", modo: "linea",
+        seguro: false, motivo: "Sin CUIT en el texto, la línea 2 suele ser el comercio o la contraparte" }
+
+    if (esAutorizacion(texto))
+      return { ...base, contenido: "autorizacion" as const, campo: "numero_de_comprobante", modo: "linea",
+        seguro: false, motivo: "Parece un código de autorización" }
+
+    if (esIdentificador(texto))
+      return { ...base, contenido: "identificador" as const, campo: "numero_de_terminal", modo: "linea",
+        seguro: false, motivo: "Número largo del banco" }
+
+    return { ...base, contenido: "" as const, campo: "", modo: "linea",
+      seguro: false, motivo: "No lo reconocimos — decidilo vos" }
+  })
+}
+
 /** Los campos que escribe el desglose. Todo lo demás del movimiento no se toca. */
 export const CAMPOS_DEL_PARSEO = [
   "descripcion",
