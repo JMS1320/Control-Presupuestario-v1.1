@@ -236,9 +236,10 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
 | **A-BUG-19** | ✅ | **Bug** | **ARREGLADO Y TESTEADO 2026-08-10.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
-| **A-BUG-20** | 🔴 | **Bug** | 🔁 **REGRESIÓN** — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) |
-| A-FEAT-22 | 🔴 | Feat | **Confirmar la fecha de pago ANTES de SICORE** — hoy la fecha se asume y SICORE depende de ella. Proponer hoy, editable, con 3 salidas | → [A-FEAT-22](#a-feat-22) |
-| A-FEAT-23 | 🟢 | Feat | Al escribir una fecha con **día y mes pero sin año**, autocompletar con el año actual | → [A-FEAT-23](#a-feat-23) |
+| **A-BUG-20** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** 🔁 REGRESIÓN — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) |
+| A-FEAT-22 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Confirmar la fecha de pago ANTES de SICORE — hoy la fecha se asume y SICORE depende de ella. Proponer hoy, editable, con 3 salidas | → [A-FEAT-22](#a-feat-22) |
+| A-FEAT-23 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Al escribir una fecha con **día y mes pero sin año**, autocompletar con el año actual | → [A-FEAT-23](#a-feat-23) |
+| **A-BUG-21** | 🔴 | **Bug** | **ARCA calcula la quincena de SICORE desde `fecha_vencimiento`**, no desde la fecha de pago — misma falla que se arregló en Cash Flow. Y tiene una **copia local** de `generarQuincenaSicore` | → [A-BUG-21](#a-bug-21) |
 | A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) |
 | A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
@@ -3866,9 +3867,25 @@ nada". Hay **tres intenciones posibles** y hacen falta tres botones:
 | Pagar sin retener | lo que hace hoy Cancelar (marcar en `pagar`) |
 | **Volver atrás** | **no tocar nada** — y hoy no existe |
 
-⚠️ **Es regresión**: ya se había resuelto antes. Al arreglarlo, dejar registrado **qué lo revirtió**,
-o va a volver una tercera vez. Y ojo: hay más de un camino que llega acá (lote, fila individual,
-cola de SICORE) — verificar los tres.
+⚠️ **Es regresión**: ya se había resuelto antes. Y ojo: hay más de un camino que llega acá (lote,
+fila individual, cola de SICORE) — verificar los tres.
+
+#### ✅ ARREGLADO 2026-08-10 — falta testear
+El `window.confirm` se reemplazó por un diálogo con **tres botones**, uno por intención:
+
+| Botón | Qué hace |
+|---|---|
+| **Retener SICORE — una factura por vez** | la cola de siempre |
+| **Pagar sin retener** | marca el estado sin retención |
+| **Cancelar — no tocar nada** | 🔑 **aborta de verdad** |
+
+Y el cambio de fondo, que es lo que hace posible que Cancelar cancele: **ahora no se escribe nada
+hasta que la pregunta está contestada.** Antes se guardaba una parte del lote y recién después se
+preguntaba, así que cancelar dejaba el lote aplicado a medias — y ése era el síntoma que reportó el
+usuario ("quedaron todas en pagar"). El diálogo lo dice: *"Todavía no se guardó nada"*.
+
+Además el diálogo **lista las facturas con su fecha de pago**, para poder ver antes de decidir que
+la quincena va a salir bien.
 
 ### 🔴 <a id="a-feat-22"></a>A-FEAT-22 — La fecha de pago se confirma ANTES de SICORE
 
@@ -3895,7 +3912,61 @@ equivocada, **la retención puede caer en la quincena equivocada** — y eso se 
 Se cruza con [A-BUG-20](#a-bug-20): los dos son el mismo problema de fondo — **carteles que no
 ofrecen la salida que el usuario está buscando**.
 
-### 🟢 <a id="a-feat-23"></a>A-FEAT-23 — Autocompletar el año en las fechas
+#### ✅ HECHO 2026-08-10 — falta testear
+El lote se partió en dos fases. Cuando el estado elegido implica que la plata sale
+(`ESTADOS_QUE_PAGAN` = pagar · preparado · programado · pagado · débito), **antes de todo** aparece
+el paso de la fecha, con las tres salidas pedidas:
+
+| Botón | Qué hace |
+|---|---|
+| **Registrar con esta fecha** | propone **hoy**, editable → se guarda como `fecha_pago` en todas |
+| **Dejar las fechas que ya tienen** | `fecha_pago` = `fecha_estimada` de cada una, pero **elegido a propósito** |
+| **Cancelar — no tocar nada** | aborta |
+
+Recién después se evalúa SICORE, ya con la fecha correcta. `echeq` queda afuera: tiene su propio
+flujo con la fecha de emisión del cheque.
+
+### 🔑 Y la regla que atraviesa todo: SICORE sale SIEMPRE de `fecha_pago`
+
+**Regla del usuario 2026-08-10**: *"SICORE siempre toma fecha de pago, nunca puede tomar otra fecha.
+Si no hay fecha de pago no se debe poder calcular ni registrar SICORE."*
+
+Había **una cadena de respaldo que hacía exactamente lo prohibido**:
+
+```ts
+generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || hoy)
+```
+
+Producía en silencio una quincena plausible pero equivocada — **y la quincena se presenta a ARCA**.
+Estaba en 3 lugares, más un cuarto que directamente usaba `fecha_estimada`.
+
+Ahora hay **una sola función**, `quincenaDePago(fila)`, que devuelve `''` si no hay fecha de pago, y
+tres guardas que cortan:
+- al **evaluar** si una fila califica → avisa y no sigue;
+- al **calcular** la retención → tira error;
+- en el **lote** → esas facturas van por el camino directo, sin retención, y se avisa cuántas fueron.
+
+⚠️ **Queda pendiente el módulo ARCA** (`vista-facturas-arca.tsx`): tiene el mismo patrón en ~6
+lugares con `fecha_vencimiento || fecha_estimada`, y además **una copia local de
+`generarQuincenaSicore`** (línea 3255) que duplica la de `lib/sicore/quincena`. Es la misma regla y
+hay que aplicarla ahí, pero es otra pantalla y merece su propia pasada → nuevo ítem.
+
+### 🔴 <a id="a-bug-21"></a>A-BUG-21 — La misma falla de la fecha, en el módulo ARCA
+
+Detectado 2026-08-10 al aplicar la regla en Cash Flow. `components/vista-facturas-arca.tsx`:
+
+1. Calcula la quincena desde **`fecha_vencimiento || fecha_estimada`** en ~6 lugares (líneas 1374,
+   3336, 3558, 4051…), o sea **nunca desde la fecha de pago**. Contradice la regla del usuario.
+2. Tiene **su propia copia** de `generarQuincenaSicore` (línea 3255) en vez de usar la de
+   `lib/sicore/quincena`. Dos implementaciones de la misma cuenta: si una se corrige y la otra no,
+   la misma factura cae en quincenas distintas según por qué pantalla se la mire.
+
+**Orden sugerido**: primero unificar en la lib (que sean una sola), después aplicar la regla de
+`fecha_pago`. Al revés se corrige una copia y queda la otra.
+
+⚠️ Es la pantalla desde donde se genera el TXT que va a ARCA: **correr en seco y comparar antes**.
+
+### 🟡 <a id="a-feat-23"></a>A-FEAT-23 — Autocompletar el año en las fechas
 
 Al escribir una fecha con **día y mes pero sin año** (`10/8`), completar con el **año actual**.
 
@@ -3903,6 +3974,18 @@ Hoy el parseo de `DD/MM/AAAA` espera las tres partes: `const [d, m, y] = fechaSt
 dos, `y` queda `undefined` y sale una fecha inválida.
 
 Chico, pero es de los que más se usan: la fecha se tipea muchas veces por día.
+
+#### ✅ HECHO 2026-08-10 — falta testear
+`fechaTipeadaAISO()` reemplaza al `split('/')` suelto. Verificado:
+
+```
+"10/8"       -> 2026-08-10      "5/3/26"     -> 2026-03-05
+"10/08"      -> 2026-08-10      "5/3/2026"   -> 2026-03-05
+"1/12"       -> 2026-12-01      "2026-08-10" -> 2026-08-10 (pasa igual)
+```
+
+Acepta `/`, `-` y `.` como separador, y un año de 2 dígitos. Por ahora **sólo en Cash Flow** — falta
+llevarlo al resto de las pantallas donde se tipea una fecha.
 
 ⚠️ Al hacerlo, mirar **todos los lugares** donde se tipea una fecha, no sólo Cash Flow — si sólo
 funciona en una pantalla, es peor que no tenerlo, porque uno cuenta con eso y en la otra falla.

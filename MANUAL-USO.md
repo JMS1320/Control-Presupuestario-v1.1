@@ -775,6 +775,60 @@ importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
 
 ---
 
+## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
+
+> Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.
+
+Seleccionás las filas, elegís el estado y tocás **Aplicar**. A partir de ahí son **dos preguntas**,
+en este orden, y **hasta contestarlas no se guarda nada**.
+
+### 1 · ¿Con qué fecha se pagaron?
+Aparece sólo cuando el estado elegido significa que la plata sale (*pagar, preparado, programado,
+pagado, débito*). Viene propuesta la fecha de **hoy**, editable.
+
+| Botón | Qué hace |
+|---|---|
+| **Registrar con esta fecha** | guarda esa fecha como fecha de pago en todas las seleccionadas |
+| **Dejar las fechas que ya tienen** | usa la fecha estimada de cada una como fecha de pago |
+| **Cancelar — no tocar nada** | no modifica nada |
+
+**Por qué se pregunta**: el pago se registra el día que se paga, no el día que se había estimado. Y
+la **quincena de SICORE sale de esta fecha**, así que si está mal, la retención puede caer en la
+quincena equivocada — y eso se presenta a ARCA.
+
+### 2 · ¿Qué hacemos con las que retienen SICORE?
+Si alguna califica, aparece la lista **con la fecha de pago de cada una**, para poder verla antes de
+decidir. Dice *"Todavía no se guardó nada"* porque es literal.
+
+| Botón | Qué hace |
+|---|---|
+| **Retener SICORE — una factura por vez** | abre la cola de siempre |
+| **Pagar sin retener** | guarda el estado, sin retención |
+| **Cancelar — no tocar nada** | 🔑 **aborta todo**, incluidas las que no llevan SICORE |
+
+### 🔑 Sin fecha de pago no hay SICORE
+Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de pago**. Si una
+factura califica por monto pero no tiene fecha de pago, se guarda **sin retención** y te avisa
+cuántas fueron. No se inventa la fecha con la de vencimiento ni con la estimada.
+
+### ✍️ Escribir fechas: el año se completa solo
+Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **10/08/2026**. Sirven
+`/`, `-` y `.`, y el año de dos dígitos (`5/3/26`). *Por ahora sólo en Cash Flow.*
+
+### 🧪 Cómo probarlo <a id="a-test-27"></a>
+1. Seleccioná 2 o 3 filas, estado **Pagar**, Aplicar. Tiene que aparecer **primero** la pregunta de
+   la fecha, con la de hoy puesta.
+2. **Cancelar** en esa pantalla: nada tiene que cambiar y la selección queda como estaba.
+3. Repetí y elegí **Registrar con esta fecha**. Si alguna califica para SICORE, aparece la segunda
+   pregunta con la lista y las fechas.
+4. ⚠️ **El paso que caza el bug viejo**: en la pregunta de SICORE tocá **Cancelar**. Recargá.
+   **Ninguna** de las filas —ni las de SICORE ni el resto del lote— puede haber cambiado de estado.
+   Antes quedaban todas en *pagar*.
+5. Repetí y elegí **Pagar sin retener**: se guardan con el estado, sin retención.
+6. En la grilla, escribí `10/8` en una fecha: tiene que quedar **10/08/2026**.
+
+---
+
 ## 🧩 Reglas de parseo — desglosar el texto del banco 🟡 *(nuevo 2026-08-09, sin testear)*
 
 > Diseño, propuesta automática y los huecos abiertos → `PENDIENTES.md` § Parseo de extractos.

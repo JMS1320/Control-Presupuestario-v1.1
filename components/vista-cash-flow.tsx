@@ -58,6 +58,39 @@ const columnasDefinicion = [
 ] as const
 
 // Estados disponibles para edición
+/**
+ * 🔑 **SICORE se calcula SIEMPRE desde `fecha_pago`. Nunca desde otra fecha.**
+ *
+ * Regla del usuario (2026-08-10). Antes había una cadena de respaldo
+ * `fecha_pago || fecha_vencimiento || fecha_estimada || hoy` que producía en silencio una quincena
+ * plausible pero equivocada — y la quincena **se presenta a ARCA**.
+ *
+ * Devuelve `''` cuando no hay fecha de pago. Quien la llame **no debe calcular ni registrar
+ * SICORE** en ese caso: hay que pedir la fecha primero.
+ */
+const quincenaDePago = (fila: { fecha_pago?: string | null }): string =>
+  fila.fecha_pago ? generarQuincenaSicore(fila.fecha_pago) : ''
+
+/** Estados que significan que la plata sale: exigen fecha de pago antes de seguir. */
+const ESTADOS_QUE_PAGAN = ['pagar', 'preparado', 'programado', 'pagado', 'debito']
+
+/**
+ * Completa el año cuando se escribe sólo día y mes (`10/8` → `10/08/2026`) y devuelve `YYYY-MM-DD`.
+ * El día y el mes los escribió el usuario; **el año se completa, no se adivina**.
+ */
+const fechaTipeadaAISO = (texto: string): string => {
+  const t = String(texto ?? '').trim()
+  if (!t) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t
+  const partes = t.split(/[\/\-.]/).filter(Boolean)
+  if (partes.length < 2) return t
+  const [d, m, a] = partes
+  const anio = a === undefined || a === ''
+    ? String(new Date().getFullYear())
+    : a.length <= 2 ? `20${a.padStart(2, '0')}` : a
+  return `${anio}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
 const ESTADOS_DISPONIBLES = [
   { value: 'pendiente',  label: 'Pendiente',  color: 'bg-gray-100 text-gray-600' },
   { value: 'debito',     label: 'Débito',      color: 'bg-violet-100 text-violet-800' },
@@ -173,6 +206,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Estado para modo PAGOS (Ctrl+Click botón PAGOS)
   const [modoPagos, setModoPagos] = useState(false)
   const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
+  // Paso 1 del lote: confirmar la FECHA DE PAGO. Va antes de SICORE porque la quincena sale de ahí.
+  const [modalFechaPago, setModalFechaPago] = useState<{ open: boolean; fecha: string }>({ open: false, fecha: '' })
+  // Paso 2: qué hacer con las que califican para SICORE. Tres salidas, no dos (A-BUG-20).
+  const [modalSicoreLote, setModalSicoreLote] = useState<{
+    facturas: CashFlowRow[]
+    actualizaciones: Array<{ id: string; origen: CashFlowRow['origen']; campo: string; valor: any }>
+    sinFecha: number
+  } | null>(null)
   const [cambiarFechaVenc, setCambiarFechaVenc] = useState(false)
   const [cambiarEstadoLote, setCambiarEstadoLote] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
@@ -329,11 +370,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         let valorFinal: any = celda.valor
         // Procesar fechas: convertir DD/MM/AAAA → YYYY-MM-DD si corresponde
         if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago'].includes(celda.columna)) {
-          const fechaStr = String(valorFinal).trim()
-          if (fechaStr.includes('/')) {
-            const [d, m, y] = fechaStr.split('/')
-            valorFinal = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
-          }
+          // A-FEAT-23: `10/8` completa el año actual. Antes `split('/')` dejaba el año en
+          // `undefined` y salía una fecha inválida sin decir nada.
+          valorFinal = fechaTipeadaAISO(String(valorFinal))
         } else if (['debitos', 'creditos'].includes(celda.columna)) {
           valorFinal = parseFloat(String(valorFinal).replace(/\./g, '').replace(',', '.')) || 0
         }
@@ -652,7 +691,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // HOOK QUINCENA - Interceptar cambio a "pagado" para facturas ARCA con SICORE
       if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagado' && filaParaCambioEstado.sicore) {
-        const quincenahNueva = generarQuincenaSicore(filaParaCambioEstado.fecha_estimada)
+        // La quincena sale de la fecha de PAGO, no de la estimada (ver `quincenaDePago`)
+        const quincenahNueva = quincenaDePago(filaParaCambioEstado)
         if (quincenahNueva !== filaParaCambioEstado.sicore) {
           setConfirmCambioQuincena({
             filaId: filaParaCambioEstado.id,
@@ -1281,6 +1321,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       return
     }
 
+    // A-FEAT-22 · Si el estado implica que la plata sale, primero se confirma la FECHA DE PAGO.
+    // Antes se asumía la estimada, que casi nunca es la real porque el registro se hace el día en
+    // que se paga. Y no es cosmético: la quincena de SICORE sale de esta fecha.
+    if (cambiarEstadoLote && ESTADOS_QUE_PAGAN.includes(valorEstadoLote)) {
+      setModalFechaPago({ open: true, fecha: new Date().toISOString().split('T')[0] })
+      return
+    }
+
+    await ejecutarLote('ninguna', '')
+  }
+
+  /**
+   * Fase 2 del lote, ya con la fecha de pago decidida.
+   *
+   * `modoFecha`:
+   *  - `elegida`   → se registra `fechaElegida` como fecha de pago en todas
+   *  - `estimadas` → cada fila usa su propia `fecha_estimada` como fecha de pago
+   *  - `ninguna`   → no se toca la fecha de pago (cambios que no son de pago)
+   *
+   * ⚠️ **Nada se escribe hasta que las preguntas estén contestadas.** Antes se guardaba una parte y
+   * recién después se preguntaba por SICORE: si el usuario cancelaba, el lote quedaba aplicado a
+   * medias (A-BUG-20).
+   */
+  const ejecutarLote = async (modoFecha: 'elegida' | 'estimadas' | 'ninguna', fechaElegida: string) => {
     setProcesandoLote(true)
 
     try {
@@ -1293,13 +1357,31 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // Separar filas: las ARCA→'pagar' necesitan evaluación SICORE; el resto va directo
       const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(Boolean)
 
+      /** La fecha de pago que le corresponde a cada fila según lo elegido en el paso 1. */
+      const fechaPagoDe = (f: CashFlowRow): string =>
+        modoFecha === 'elegida' ? fechaElegida
+        : modoFecha === 'estimadas' ? (f.fecha_pago || f.fecha_estimada || '')
+        : (f.fecha_pago || '')
+
       let facturasParaSicore: CashFlowRow[] = []
+      // Califican por monto pero no tienen fecha de pago: sin quincena no se puede retener
+      let sinFechaParaSicore = 0
       // ⚠️ Antes decía `'ARCA' | 'TEMPLATE'` y acá se empujan filas de CUALQUIER origen. TypeScript
       // marcaba el error en las 4 líneas de abajo y estaba en el baseline sin mirar: los sueldos,
       // anticipos y ventas se descartaban al guardar (A-BUG-19).
       const actualizaciones: Array<{id: string, origen: CashFlowRow['origen'], campo: string, valor: any}> = []
 
-      // Cambio de fecha: siempre directo para todas
+      // La fecha de pago decidida en el paso 1 se guarda en todas las filas del lote
+      if (modoFecha !== 'ninguna') {
+        todasFilas.forEach(f => {
+          const fp = fechaPagoDe(f)
+          if (fp && fp !== f.fecha_pago) {
+            actualizaciones.push({ id: f.id, origen: f.origen, campo: 'fecha_pago', valor: fp })
+          }
+        })
+      }
+
+      // Cambio de fecha de vencimiento: siempre directo para todas
       todasFilas.forEach(fila => {
         if (cambiarFechaVenc && valorFechaLote) {
           actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_vencimiento', valor: valorFechaLote })
@@ -1352,7 +1434,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         })
         for (const grupo of porCuit.values()) {
           const g0 = grupo[0]
-          const quincena = generarQuincenaSicore(g0.fecha_pago || g0.fecha_vencimiento || g0.fecha_estimada || new Date().toISOString())
+          const quincena = quincenaDePago({ fecha_pago: fechaPagoDe(g0) })
+          if (!quincena) {
+            // Sin fecha de pago no hay quincena posible: va por el camino directo y se avisa.
+            sinFechaParaSicore += grupo.length
+            grupo.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote }))
+            continue
+          }
           const totalNeto = grupo.reduce((s, f) => s + calcularNetoLote(f), 0)
           const hayNegativa = grupo.some(f => calcularNetoLote(f) < 0)
           const yaRetuvo = await verificarRetencionPreviaFactura(g0.cuit_proveedor, quincena)
@@ -1369,50 +1457,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
       }
 
-      // Guardar las que no necesitan SICORE primero.
+      // ⚠️ Si hay facturas para SICORE **no se escribe nada todavía**: primero se pregunta.
+      // Así «Cancelar» puede abortar de verdad en vez de dejar medio lote aplicado (A-BUG-20).
+      if (facturasParaSicore.length > 0) {
+        // Las filas llevan ya la fecha de pago elegida, para que la cola de SICORE calcule bien
+        const conFecha = facturasParaSicore.map(f => ({ ...f, fecha_pago: fechaPagoDe(f) }))
+        setModalSicoreLote({ facturas: conFecha, actualizaciones, sinFecha: sinFechaParaSicore })
+        setProcesandoLote(false)
+        return
+      }
+
       // `actualizarBatch` ya avisa qué falló; acá sólo se recuerda para no cantar éxito después.
       let loteOk = true
       if (actualizaciones.length > 0) {
         loteOk = await actualizarBatch(actualizaciones)
       }
 
-      // Procesar SICORE para las que califican
-      if (facturasParaSicore.length > 0) {
-        const mensajeFecha = cambiarFechaVenc && valorFechaLote
-          ? `\n📅 Fecha de pago: ${valorFechaLote.split('-').reverse().join('/')}`
-          : ''
-        const confirmar = window.confirm(
-          `${facturasParaSicore.length} factura(s) ARCA califican para retención SICORE:\n\n` +
-          facturasParaSicore.map(f => `• ${f.nombre_proveedor || f.cuit_proveedor}`).join('\n') +
-          mensajeFecha +
-          `\n\n¿Procesar SICORE una por una?`
+      if (sinFechaParaSicore > 0) {
+        toast.warning(
+          `${sinFechaParaSicore} factura(s) califican por monto pero NO tienen fecha de pago: ` +
+          `se guardaron sin retención. SICORE necesita la fecha de pago para saber la quincena.`
         )
+      }
 
-        if (!confirmar) {
-          // Guardar todas sin SICORE
-          await actualizarBatch(facturasParaSicore.map(f => ({ id: f.id, origen: 'ARCA' as const, campo: 'estado', valor: 'pagar' })))
-          toast.success(`${facturasParaSicore.length} facturas marcadas 'pagar' sin SICORE`)
-          desactivarModoPagos()
-        } else {
-          // Con fecha actualizada si corresponde
-          const facturasConFecha = facturasParaSicore.map(f => ({
-            ...f,
-            ...(cambiarFechaVenc && valorFechaLote ? { fecha_vencimiento: valorFechaLote, fecha_estimada: valorFechaLote } : {})
-          }))
-          const [primera, ...resto] = facturasConFecha
-          setColaLoteSicore(resto)
-          const firstPending: PendingSicore = { filaId: primera.id, nuevoEstado: 'pagar', estadoAnterior: primera.estado }
-          setGuardadoPendienteCF(firstPending)
-          // Actualizar fecha en BD para la primera si aplica
-          if (cambiarFechaVenc && valorFechaLote) {
-            await supabase.schema(schemaDeFila(primera)).from('comprobantes_arca')
-              .update({ fecha_vencimiento: valorFechaLote, fecha_estimada: valorFechaLote })
-              .eq('id', primera.id)
-          }
-          // Pasar pending y cola frescos para evitar stale closure
-          await evaluarRetencionSicoreCF(primera, firstPending, resto)
-        }
-      } else if (loteOk) {
+      if (loteOk) {
         const cambiosTexto = []
         if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
         if (cambiarEstadoLote) cambiosTexto.push('estado')
@@ -1426,6 +1494,53 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     } catch (error) {
       console.error('Error en aplicarCambiosLote:', error)
       toast.error('Error al aplicar cambios por lote')
+    } finally {
+      setProcesandoLote(false)
+    }
+  }
+
+  /**
+   * Las tres salidas del cartel de SICORE (A-BUG-20). Antes eran dos, y «Cancelar» **no cancelaba**:
+   * marcaba todo en `pagar` y seguía. El usuario lo apretaba esperando volver atrás.
+   */
+  const resolverSicoreLote = async (accion: 'retener' | 'sin_retencion' | 'cancelar') => {
+    const pendiente = modalSicoreLote
+    if (!pendiente) return
+    setModalSicoreLote(null)
+
+    // Cancelar = no tocar NADA. Ni las de SICORE ni el resto del lote.
+    if (accion === 'cancelar') {
+      toast.info('Cancelado: no se modificó ningún registro. La selección quedó como estaba.')
+      return
+    }
+
+    setProcesandoLote(true)
+    try {
+      const extras = accion === 'sin_retencion'
+        ? pendiente.facturas.map(f => ({ id: f.id, origen: 'ARCA' as CashFlowRow['origen'], campo: 'estado', valor: valorEstadoLote }))
+        : []
+      const ok = await actualizarBatch([...pendiente.actualizaciones, ...extras])
+      if (!ok) return
+
+      if (pendiente.sinFecha > 0) {
+        toast.warning(`${pendiente.sinFecha} factura(s) califican por monto pero NO tienen fecha de pago: van sin retención`)
+      }
+
+      if (accion === 'sin_retencion') {
+        toast.success(`${pendiente.facturas.length} factura(s) guardadas sin retención SICORE`)
+        desactivarModoPagos()
+        return
+      }
+
+      // Retener: arranca la cola, una factura por vez
+      const [primera, ...resto] = pendiente.facturas
+      setColaLoteSicore(resto)
+      const firstPending: PendingSicore = { filaId: primera.id, nuevoEstado: valorEstadoLote, estadoAnterior: primera.estado }
+      setGuardadoPendienteCF(firstPending)
+      await evaluarRetencionSicoreCF(primera, firstPending, resto)
+    } catch (e) {
+      console.error('Error resolviendo SICORE del lote:', e)
+      toast.error('Error al procesar el lote')
     } finally {
       setProcesandoLote(false)
     }
@@ -1622,7 +1737,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
     const minimoServicios = 67170
-    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = quincenaDePago(fila)
+    if (!quincena) {
+      // Sin fecha de pago no hay quincena, y sin quincena no puede haber retención.
+      toast.error(`${fila.nombre_proveedor || 'La factura'} no tiene fecha de pago: cargala antes de retener SICORE`)
+      setGuardadoPendienteCF(null)
+      setGuardandoCambio(false)
+      return
+    }
 
     console.log('🔍 SICORE CF: Evaluando fila', {
       id: fila.id,
@@ -1732,7 +1854,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const opExentas = fila.imp_op_exentas || 0
     const netoFactura = netoGravado + netoNoGravado + opExentas
     const netoFacturaPesos = netoFactura * tc  // ← pesos al TC de pago
-    const quincena = generarQuincenaSicore(fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString())
+    const quincena = quincenaDePago(fila)
+    if (!quincena) throw new Error('No se puede calcular SICORE sin fecha de pago')
 
     // Capa 1: ¿ya hubo retención en la quincena? → mínimo ya consumido → adicional (sin mínimo).
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
@@ -4591,6 +4714,90 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         items={modalExportarLote.items}
         userRole={userRole}
       />
+
+      {/* ── A-FEAT-22 · Paso 1 del lote: la fecha de pago ────────────────────
+          Va ANTES de SICORE porque la quincena se calcula desde esta fecha. */}
+      <Dialog open={modalFechaPago.open} onOpenChange={v => !v && setModalFechaPago({ open: false, fecha: '' })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Con qué fecha se pagaron?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            {filasSeleccionadas.size} registro(s) pasan a <strong>{ESTADOS_DISPONIBLES.find(e => e.value === valorEstadoLote)?.label ?? valorEstadoLote}</strong>.
+          </p>
+          <div>
+            <Label className="text-xs">Fecha de pago</Label>
+            <Input type="date" className="mt-1" value={modalFechaPago.fecha}
+              onChange={e => setModalFechaPago(m => ({ ...m, fecha: e.target.value }))} />
+            <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
+              Viene propuesta la de <strong>hoy</strong>, que es cuando normalmente se registra el pago.
+              La <strong>quincena de SICORE sale de esta fecha</strong>, así que conviene que sea la real.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 pt-1">
+            <Button
+              disabled={!modalFechaPago.fecha}
+              onClick={() => { const f = modalFechaPago.fecha; setModalFechaPago({ open: false, fecha: '' }); ejecutarLote('elegida', f) }}>
+              Registrar con esta fecha
+            </Button>
+            <Button variant="outline"
+              onClick={() => { setModalFechaPago({ open: false, fecha: '' }); ejecutarLote('estimadas', '') }}>
+              Dejar las fechas que ya tienen
+            </Button>
+            <Button variant="ghost" className="text-gray-500"
+              onClick={() => setModalFechaPago({ open: false, fecha: '' })}>
+              Cancelar — no tocar nada
+            </Button>
+          </div>
+          <p className="text-[11px] leading-4 text-gray-400">
+            «Dejar las fechas que ya tienen» usa la fecha estimada de cada registro como fecha de pago.
+          </p>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── A-BUG-20 · Paso 2: SICORE, con TRES salidas ──────────────────────
+          Antes era un confirm de dos botones donde «Cancelar» marcaba todo en pagar y seguía. */}
+      <Dialog open={!!modalSicoreLote} onOpenChange={v => !v && resolverSicoreLote('cancelar')}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{modalSicoreLote?.facturas.length} factura(s) califican para retención SICORE</DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-48 overflow-y-auto rounded border bg-gray-50 p-2 text-xs">
+            {modalSicoreLote?.facturas.map(f => (
+              <div key={f.id} className="flex justify-between gap-3 border-b py-0.5 last:border-0">
+                <span className="truncate">{f.nombre_proveedor || f.cuit_proveedor}</span>
+                <span className="shrink-0 font-mono text-gray-500">
+                  {f.fecha_pago ? f.fecha_pago.split('-').reverse().join('/') : 'sin fecha'}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {(modalSicoreLote?.sinFecha ?? 0) > 0 && (
+            <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
+              Otras {modalSicoreLote?.sinFecha} califican por monto pero <strong>no tienen fecha de
+              pago</strong>: sin fecha no hay quincena, así que van sin retención.
+            </p>
+          )}
+
+          <p className="text-xs text-gray-600">
+            Todavía <strong>no se guardó nada</strong>. Elegí qué hacer:
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => resolverSicoreLote('retener')}>
+              Retener SICORE — una factura por vez
+            </Button>
+            <Button variant="outline" onClick={() => resolverSicoreLote('sin_retencion')}>
+              Pagar sin retener
+            </Button>
+            <Button variant="ghost" className="text-gray-500" onClick={() => resolverSicoreLote('cancelar')}>
+              Cancelar — no tocar nada
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
