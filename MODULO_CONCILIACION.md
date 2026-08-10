@@ -2515,3 +2515,53 @@ filtroRevisado: 'todas' | 'no_revisadas' | 'revisadas'
 **Causa**: El contador sumaba filas con `categ.startsWith('INVALIDA:')` pero el filtro solo buscaba `categ IS NULL OR categ = ''`.
 
 **Fix**: Contador alineado al filtro — solo cuenta `!m.categ || m.categ === ''`. INVALIDA tiene su propio chip separado.
+
+---
+
+## 31 — El CUIT: por dónde entra y quién lo lee (2026-08-09)
+
+Documentado al analizar cómo alimentar la conciliación desde el parseo del extracto
+(→ `PENDIENTES.md` § A-FEAT-17). **Hay dos mecanismos distintos leyendo el CUIT, y hoy no leen la
+misma columna.**
+
+### La cadena, de punta a punta
+
+```
+Extracto del banco (Caja de Ahorro)
+   │  todo apilado en una celda
+   ▼
+config_parseo_extracto — regla modo `cuit`        ← se escribe en Configuración → Reglas de Parseo
+   │  extrae los 11 dígitos, saca el prefijo CU/NO
+   ▼
+leyendas_adicionales_2                            ← LA COLUMNA CANÓNICA DEL CUIT
+   │
+   ├──► extraerCuitBancario()   useMotorConciliacion.ts:239   ✅ lee acá
+   │      valida prefijo 20/23/24/27/30/33/34
+   │      └─► PRE-FILTRO: el movimiento se compara sólo contra las filas
+   │            del Cash Flow de ese proveedor (cf.cuit_proveedor)
+   │            con fallback: si no hay candidatos, busca en todo
+   │
+   └──► reglas_conciliacion con columna_busqueda='cuit'
+          useMotorConciliacion.ts:203              ❌ NO lee acá
+          lee `numero_de_comprobante || observaciones_cliente`
+```
+
+### Por qué importa
+- **El pre-filtro es la pieza que más rinde**, y se enciende **sola** con escribir la regla de
+  parseo del CUIT. No hace falta ninguna regla de conciliación para que funcione.
+- **La divergencia es un bug** (`A-BUG-18`): en Caja de Ahorro una regla por CUIT no puede matchear
+  nunca. Las 2 que existen viven en `pam_galicia_cc` — una **cuenta corriente**, cuyo importador
+  llena `numero_de_comprobante` directo desde la columna del banco. Por eso nadie lo notó.
+
+### Qué NO hay que hacer
+Mandar el CUIT a `numero_de_comprobante` desde el parseo "para que las reglas lo vean". Rompería el
+pre-filtro —que es el mecanismo bueno— y mezclaría CUITs con números de comprobante en una misma
+columna. **La columna del CUIT es `leyendas_adicionales_2`**; lo que hay que corregir es el lector.
+
+### Reglas de dominio, para no volver a discutirlas
+1. `leyendas_adicionales_2` = CUIT. Nada más va ahí.
+2. Para extraerlo, **siempre el modo `cuit`** (busca), nunca `línea N` (cuenta). Un mismo tipo de
+   movimiento puede llegar con el CUIT en distinta línea — pasó, y son 7 de 23 en
+   `TRANSFERENCIA A TERCEROS` (→ `PENDIENTES.md` § A-BUG-17).
+3. Un CUIT del extracto que **no está en `proveedores`** es un hueco a dar de alta, no una
+   conciliación fallida (§ Contrapartes en `CLAUDE.md`).

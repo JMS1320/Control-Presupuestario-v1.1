@@ -236,6 +236,10 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear** (2026-08-09) — configurar un tipo, ver la vista previa, guardar, correr el re-parseo en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
+| **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
+| A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
+| A-FEAT-18 | 🔴 | Feat | **La identidad de un tipo debería ser 1ª línea + cantidad de líneas**, no sólo la 1ª línea. Idea del usuario; es la raíz de A-BUG-17 | → [A-FEAT-18](#a-feat-18) |
+| A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
 (cero reglas), así que sus 96 movimientos sin desglosar **no son un fallo** — son trabajo pendiente.
@@ -3407,6 +3411,58 @@ haya un CUIT en el texto.
 
 ⚠️ **Antes de tocar las reglas hay que decidir con el usuario** — son datos suyos, ya cargados.
 
+### 🔴 <a id="a-feat-18"></a>A-FEAT-18 — La identidad de un tipo debería ser 1ª línea **+ cantidad de líneas**
+
+**Idea del usuario, 2026-08-09**, y es la raíz de [A-BUG-17](#a-bug-17):
+
+> *"si me proponía un tipo para 40 movimientos es porque ya se auditó que los 40 tienen 5 líneas,
+> son homogéneos. ¿Eso está controlado previo? Porque si no está controlado, luego segmentará
+> errores. Sería 1ª línea más cantidad de líneas."*
+
+**Respuesta honesta: NO está controlado.** `GET /api/reparsear-extracto` agrupa por la primera línea
+y se queda con **el primer movimiento que encuentra** como ejemplo, sin mirar si los demás tienen la
+misma forma. Por eso `TRANSFERENCIA A TERCEROS` se mostró como un tipo homogéneo de 6 líneas cuando
+en realidad son dos formas, y las reglas por número de línea fallan en 7 de 23.
+
+Y el razonamiento del usuario es el correcto: **la cantidad de líneas es parte de lo que define el
+tipo**. Con dos formatos distintos no es un tipo con excepciones — son dos tipos.
+
+#### Dos caminos, con costos distintos
+
+| | Qué implica | Costo |
+|---|---|---|
+| **A · Sólo mostrar** | La pantalla detecta los formatos y los muestra por separado, con su ejemplo y su conteo. La identidad en BD sigue siendo la 1ª línea | Sin tocar la BD. **No impide** escribir una regla que falle en el otro formato |
+| **B · Identidad real** | `config_parseo_extracto` gana una columna `cantidad_lineas` (nullable: `null` = aplica a todos los formatos). El parseo elige el set que coincide | ⚠️ **Cambio de estructura** — requiere acuerdo del usuario y MCP en write |
+
+**Recomendación**: hacer **A** ya, porque tapa el modo de falla (nadie escribe a ciegas una regla
+para un formato que no vio) y no toca datos. **B** queda para cuando aparezca un tipo donde los dos
+formatos necesiten reglas realmente distintas — hoy `TRANSFERENCIA A TERCEROS` se resuelve con los
+modos que buscan (`cuit`, `pre_cuit`), sin necesidad de partir el tipo.
+
+#### El chequeo extra que pidió el usuario
+Además de la cantidad de líneas, conviene una **firma de forma**: qué clase de dato hay en cada
+línea (`CUIT` / `CBU` / `numérico` / `texto`). Dos movimientos con 5 líneas pueden ser formas
+distintas si en uno la línea 3 es un CUIT y en el otro un importe. La firma se calcula con los
+detectores que ya existen en `proponerMapeo()` — **no hay que escribir nada nuevo para reconocerlas**.
+
+### 🔴 <a id="a-feat-19"></a>A-FEAT-19 — Chequeo de consistencia de las reglas cargadas
+
+**Pedido del usuario**: *"no sé si adjudiqué bien las columnas"*. Hoy no hay forma de saberlo sin
+leer las 34 reglas una por una.
+
+**Qué debería marcar** — todo esto es calculable con lo que ya está en la BD:
+
+| Chequeo | Ejemplo real encontrado a mano |
+|---|---|
+| Una regla que da **vacío** sobre los movimientos reales | (la pantalla ya lo muestra por tipo; falta el resumen) |
+| La **misma clase de dato en columnas distintas** según el tipo | tarjeta → `nro_terminal` en uno y `nro_comprobante` en otro → [A-FEAT-16](#a-feat-16) |
+| Una columna que **mezcla clases** | `nro_comprobante` con `Enero 2026` y con `A837` |
+| Un tipo con **más de un formato** y reglas por número de línea | [A-BUG-17](#a-bug-17) |
+| Un CUIT que **no valida** el prefijo (20/23/24/27/30/33/34) | el motor lo descarta en silencio (`useMotorConciliacion.ts:246`) |
+| Un tipo **sin regla de CUIT** teniendo CUIT en el texto | es plata que no se puede vincular a un proveedor |
+
+**Dónde vivir**: al lado de *Re-parsear*, como una pasada en seco más — informa, no corrige.
+
 ### 🟡 <a id="a-feat-16"></a>A-FEAT-16 — Tarjeta y autorización van a columnas invertidas según el tipo
 
 En las reglas de MA cargadas 2026-08-09, el mismo par de datos va a columnas opuestas:
@@ -3469,6 +3525,153 @@ Cada fila dice **por qué**, y lo no seguro va marcado `sugerido`.
 
 Verificado contra `DEB. AUTOM. DE SERV.` de PAM: la propuesta reproduce casi exactamente las 5
 reglas que estaban cargadas por SQL.
+
+---
+
+## <a id="a-feat-17"></a>A-FEAT-17 — Reglas de conciliación a partir del parseo (propuesta, 2026-08-09)
+
+> **Pedido del usuario**: *"aprovechar esto para la creación de reglas de conciliación, ya que mucho
+> se puede hacer desde acá… si hay CUIT para pagos o cobros habrá que ver si hay proveedor cargado
+> con factura a conciliar y ahí seguramente podemos hacer algo."*
+
+**Es análisis y propuesta. No hay código escrito.**
+
+### Punto de partida medido (BD, 2026-08-09)
+
+| | |
+|---|---|
+| Reglas de conciliación existentes | **77** — 41 en `msa_galicia`, 36 en `pam_galicia_cc` |
+| De ésas, buscan por `descripcion` | **75** |
+| Buscan por `cuit` | **2** (ambas en `pam_galicia_cc`) |
+| Cuentas de **Caja de Ahorro** con reglas de conciliación | **ninguna** |
+| Proveedores con CUIT cargado | **154** |
+
+O sea: las reglas de conciliación viven en las cuentas corrientes y buscan casi siempre en
+`descripcion`. **En Caja de Ahorro no hay ninguna**, y ahí `descripcion` es sólo el tipo de
+movimiento — no alcanza para decidir nada.
+
+### 🔴 <a id="a-bug-18"></a>A-BUG-18 — El hallazgo que condiciona todo lo demás
+
+**Una regla de conciliación con `columna_busqueda: 'cuit'` NO mira donde el parseo escribe el CUIT.**
+
+```ts
+// hooks/useMotorConciliacion.ts:203-206
+case 'cuit':
+  valorCampo = movimiento.numero_de_comprobante || movimiento.observaciones_cliente || ''
+```
+
+Pero el parseo lo guarda en **`leyendas_adicionales_2`**, que es de donde lo lee el *otro* mecanismo
+del mismo archivo:
+
+```ts
+// hooks/useMotorConciliacion.ts:239-247 — el pre-filtro
+const valor = (mov.leyendas_adicionales_2 || …).trim()
+```
+
+**Hay dos lugares distintos buscando la misma cosa.** El pre-filtro mira la columna correcta; las
+reglas por CUIT miran otra. En Caja de Ahorro, una regla por CUIT **nunca puede matchear**.
+
+Las 2 reglas que existen funcionan porque están en una **cuenta corriente**, cuyo importador llena
+`numero_de_comprobante` directamente desde la columna del banco. Nadie lo notó porque en CC funciona
+y en CA no hay reglas todavía. *El silencio miente* otra vez.
+
+> ⚠️ Y hay un agravante que ya está en los datos: en `TRANSFERENCIA A TERCEROS` de MA la regla
+> `línea 3 → numero_de_comprobante` mete **el CBU** en los movimientos de 6 líneas y **el CUIT** en
+> los de 5. O sea que una regla por CUIT ahí matchearía **a veces**, por accidente. Peor que no
+> matchear nunca.
+
+**Fix**: que `case 'cuit'` lea también `leyendas_adicionales_2` — y ponerla **primero**, porque es
+la columna canónica. Es un cambio de 1 línea en el motor, pero **cambia cómo concilia**: hay que
+correrlo primero en seco y decidirlo con el usuario.
+
+### La propuesta, en 4 niveles
+
+Ordenados por **retorno sobre trabajo**. El primero no requiere escribir ninguna regla.
+
+#### Nivel 0 — Ya funciona solo: el pre-filtro por CUIT
+
+**Esto es lo más importante del documento.** El motor **ya** hace lo que pide el usuario:
+
+```ts
+// Pre-filtro por CUIT: si el banco informa CUIT, buscar sólo en ese proveedor
+const cuitBancario = extraerCuitBancario(movimiento)
+const candidatos = cuitBancario
+  ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
+  : cashFlowData
+```
+
+Es decir: **escribir la regla de parseo `cuit → leyendas_adicionales_2` ya enciende maquinaria que
+existe**. El movimiento deja de compararse contra todo el Cash Flow y se compara sólo contra las
+facturas y templates de ese proveedor. No hay que crear ninguna regla de conciliación para eso.
+
+Detalles verificados que conviene saber:
+- **Valida el prefijo** del CUIT (20/23/24/27/30/33/34). Un CBU o un número cualquiera se descarta.
+  Es una segunda defensa contra [A-BUG-16](#a-bug-16).
+- **Tiene fallback**: si hay CUIT pero ningún candidato con ese CUIT, busca en todo el Cash Flow.
+  Un CUIT equivocado **no bloquea** la conciliación; simplemente no ayuda.
+- Para **haberes** ya restringe a sueldos y filtra por el CUIT del empleado.
+
+→ **Acción**: escribir la regla de CUIT en **todos** los tipos que lo traigan. Hoy en MA sólo lo
+tienen `TRANSFERENCIA A TERCEROS` y `TRANSFERENCIA DE CUENTA PROPIA`; faltan
+`SERVICIO PAGO A PROVEEDORES` (7 mov.) y `TRANSFERENCIAS CASH PROVEEDORES`.
+
+#### Nivel 1 — Reglas por `grupo_de_conceptos` (lo que el parseo ya etiqueta)
+
+El parseo llena `grupo_de_conceptos` para **todo el tipo**: el usuario ya cargó *Tarjeta Debito,
+Extracciones, Servicios Pago, Interes Capitalizado, FCI, Transferencias, Interbancarias, Tarjeta
+Credito, Debito Automatico*.
+
+Eso es exactamente la granularidad de una regla contable. Una regla por grupo cubre de una vez
+todos sus movimientos, sin escribir texto a buscar.
+
+⚠️ **Falta habilitarlo**: `columna_busqueda` hoy sólo acepta
+`descripcion | cuit | monto_debito | monto_credito`. Habría que agregar `grupo_de_conceptos`.
+
+**Y acá se cruza con el norte**: el grupo dice si el movimiento **se presupuesta o no**. `FCI` es una
+colocación — plata que sigue siendo de la empresa, `tipo = financiero`, no se proyecta (§ Templates
+en `CLAUDE.md`). Si entra como gasto, infla el egreso con plata propia. Es el mismo error que ya
+costó ~$135 M con el FCI.
+
+#### Nivel 2 — Reglas por beneficiario (`leyendas_adicionales_1`)
+
+Antes del parseo, `DIA TIENDA 670` no existía en ninguna columna: estaba enterrado en el bloque de
+texto. Ahora está en `leyendas_adicionales_1` en los 33 `COMPRA DEBITO`.
+
+Habilitar `columna_busqueda: 'leyendas_adicionales_1'` permite reglas del tipo
+*«si el comercio es X → categ Y»*, que es como el usuario piensa el gasto de tarjeta.
+
+#### Nivel 3 — CUIT → proveedor → factura pendiente
+
+Lo que pidió el usuario. El Nivel 0 ya empareja contra el Cash Flow; **lo que falta es qué pasa
+cuando NO empareja**:
+
+| Situación | Hoy | Propuesta |
+|---|---|---|
+| CUIT está en `proveedores` y hay factura pendiente | ✅ el pre-filtro la propone | — |
+| CUIT está en `proveedores`, **sin** factura por ese monto | busca en todo el Cash Flow y probablemente no concilia | Mostrar *"es <proveedor>, pero no hay factura por $X"* — que es un dato, no un fracaso |
+| CUIT **no está** en `proveedores` | silencio total | **Ofrecer el alta**, con la razón social que trae el banco. Es la regla de contrapartes de `CLAUDE.md`: si entra un comprobante, su contraparte va al maestro |
+| Es un **cobro** (crédito) | ídem | Mismo circuito contra clientes (`es_cliente`) |
+
+El último caso es el que más rinde: **154 proveedores tienen CUIT**, así que el maestro ya sirve
+como índice. Un CUIT del extracto que no está ahí es un hueco visible, no una conciliación fallida.
+
+### Cómo se implementaría, sin romper nada
+
+1. **Arreglar [A-BUG-18](#a-bug-18)** — sin eso, ninguna regla por CUIT sirve en Caja de Ahorro.
+2. **Ampliar `columna_busqueda`** con `grupo_de_conceptos` y `leyendas_adicionales_1`.
+3. **Botón «Proponer reglas de conciliación»** al lado del parseo: recorre los grupos y beneficiarios
+   recurrentes y **propone** reglas con su conteo (*"Extracciones · 13 movimientos → ¿qué categ?"*).
+   ⚠️ **Propone, no crea.** Una regla mal puesta se aplica en masa y ensucia el Cash Flow, que es de
+   donde se autoalimenta el presupuesto.
+4. **Aviso de CUIT sin proveedor**, en el mismo lugar que los otros avisos.
+
+### 🔗 Cómo incide en el presupuesto (§ norte)
+Directamente. La conciliación es lo que convierte un movimiento del banco en un hecho contable
+imputado; el presupuesto se autoalimenta de ahí. Un movimiento que no concilia **no llega** al
+presupuesto, y uno mal clasificado llega **mal** — el caso `FCI` es el ejemplo caro. Mejorar la
+conciliación desde el parseo es trabajo del norte, no una desviación.
+
+---
 
 ### ✅ Aviso de extractos bancarios sin cargar (2026-08-09)
 Pedido del usuario. En **Principal**, arriba de todo, avisa cuando una cuenta bancaria lleva más de
