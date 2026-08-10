@@ -371,6 +371,50 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 
 ---
 
+## 6b. Extractos bancarios — qué guarda cada columna (verificado 2026-08-10)
+
+Las 4 tablas de extracto (`msa_galicia`, `pam_galicia_cc`, `pam_galicia`, `ma.ma_galicia`) tienen
+las **mismas columnas**, pero se llenan de dos maneras distintas:
+
+- **Cuenta corriente** (`msa_galicia`, `pam_galicia_cc`): el banco manda el Excel **ya con columnas
+  separadas** y el importador las mapea 1 a 1. No hay parseo.
+- **Caja de ahorro** (`pam_galicia`, `ma.ma_galicia`): el banco manda **una sola celda** (`Movimiento`)
+  y las reglas de `config_parseo_extracto` la reparten. El Excel de CA sólo trae
+  `Fecha · Movimiento · Débito · Crédito · Saldo · Comentarios`.
+
+### Convención de columnas — medida sobre los datos reales
+Sale de mirar los 849 movimientos de MSA y los 76 de PAM CC, que son los que el banco llenó solo.
+**Es la referencia a la que hay que homologar las cuentas de Caja de Ahorro.**
+
+| Columna | Qué guarda | Evidencia |
+|---|---|---|
+| `descripcion` | el **tipo** de movimiento | `Trf Inmed Proveed`, `Rescate Fima` |
+| `leyendas_adicionales_1` | **nombre / contraparte** | `Placido Andres Martinez`, `ARBA INMOB.` |
+| `leyendas_adicionales_2` | **CUIT** 🔑 | 219 CUITs en MSA — de acá lo lee el motor |
+| `leyendas_adicionales_3` | **concepto** | `VARIOS`, `HONORARIOS` |
+| `leyendas_adicionales_4` | **banco** | `BANCO DE GALICIA…`, `BANCO SANTANDER RIO S.A.` |
+| `numero_de_comprobante` | nº de operación | numérico, 358 en MSA |
+| `numero_de_terminal` | terminal / identificador | `LINK0011100D5` |
+| `observaciones_cliente` | **comentarios del usuario** | en CA viene de la columna **«Comentarios»** del Excel |
+| `grupo_de_conceptos` | etiqueta del tipo | alimenta el dashboard |
+
+### 🔑 Las dos que NO se pueden tocar
+- **`concepto` — en Caja de Ahorro guarda el TEXTO CRUDO ENTERO del banco** (96/96 en MA, 25/25 en
+  PAM). Es lo que hace posible el **re-parseo sin volver a importar**. Usarla para otra cosa
+  destruiría esa capacidad y no hay forma de recuperarla salvo re-subiendo los Excel.
+- **`observaciones_cliente`** — parece vacía en MSA (0/849) pero en CA la llena el usuario desde la
+  columna «Comentarios»: `"lavaplatos"`, `"empl Dom Nz"`, `"su carmen 4 dias"`. En gastos personales
+  sin factura es **la única anotación de qué fue el movimiento**.
+
+### La única columna realmente vacante
+| Columna | Estado |
+|---|---|
+| `tipo_de_movimiento` | `"Imputado"` en el **100 %** de MSA y PAM CC · **vacía** en las dos CA · **nunca se lee en el código** (sólo se escribe al importar CC) |
+| `origen` | en CA es `"CA_GALICIA"` en el 100 % — traza de por qué importador entró. Bajo valor, pero ocupada |
+
+⚠️ Usar `tipo_de_movimiento` para otra cosa (p. ej. el CBU) funciona, pero deja una columna cuyo
+nombre miente. Decisión abierta → `PENDIENTES.md` § A-FEAT-20.
+
 ## 7. Referencias
 
 - **Columnas completas** → `ESTRUCTURA_BD_COLUMNAS.md` (apéndice auto-generado).

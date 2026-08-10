@@ -235,6 +235,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
+| **A-BUG-19** | 🔴 | **Bug** | **Cash Flow: los sueldos vuelven a «pagar» solos** — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
+| A-FEAT-20 | 🔴 | Feat | **Homologar las columnas de Caja de Ahorro con MSA** + decidir dónde va el CBU. Convención medida sobre los datos → `ARQUITECTURA-BD.md` § 6b | → [A-FEAT-20](#a-feat-20) |
+| A-FEAT-21 | 🔴 | Feat | **Una tarjeta por forma** en vez de un tipo con selector de alcance. Propuesta del usuario: *saca* UI, no la agrega | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
@@ -3530,6 +3533,7 @@ leer las 34 reglas una por una.
 | Un tipo con **más de un formato** y reglas por número de línea | [A-BUG-17](#a-bug-17) |
 | Un CUIT que **no valida** el prefijo (20/23/24/27/30/33/34) | el motor lo descarta en silencio (`useMotorConciliacion.ts:246`) |
 | Un tipo **sin regla de CUIT** teniendo CUIT en el texto | es plata que no se puede vincular a un proveedor |
+| **La columna del CUIT contaminada** | 🔴 medido 2026-08-10: en `msa_galicia`, `leyendas_2` tiene **421 valores y sólo 219 son CUIT** — el resto es `"Nro Operacion: 188923636"` y similares. En `pam_galicia_cc`, 35 y 12. No rompe nada (`extraerCuitBancario` exige 11 dígitos y prefijo válido) pero **en esos movimientos el pre-filtro por CUIT no se enciende**, y es la mejor herramienta de conciliación que ya existe. ⚠️ Viene del **importador de CC**, que mapea las columnas del banco sin validar qué cae en cada una — o sea que el alcance de este chequeo es mayor de lo pensado: no es sólo auditar las reglas nuevas de CA |
 
 **Dónde vivir**: al lado de *Re-parsear*, como una pasada en seco más — informa, no corrige.
 
@@ -3740,6 +3744,109 @@ Directamente. La conciliación es lo que convierte un movimiento del banco en un
 imputado; el presupuesto se autoalimenta de ahí. Un movimiento que no concilia **no llega** al
 presupuesto, y uno mal clasificado llega **mal** — el caso `FCI` es el ejemplo caro. Mejorar la
 conciliación desde el parseo es trabajo del norte, no una desviación.
+
+---
+
+---
+
+## <a id="a-bug-19"></a>A-BUG-19 — Cash Flow: los sueldos vuelven a "pagar" solos (2026-08-10)
+
+**Reportado por el usuario**: *"Cash Flow no está registrando los sueldos como pagados. Parece que
+sí, pero luego al irme y volver a Cash Flow vuelve a quedar como pagar en vez de pagado. En el
+momento yo lo doy por bueno pero luego se resetea y termino teniendo muchos pagos como pagar cuando
+ya los pasé a pagado."*
+
+**Por qué es grave, más allá de la molestia**: es el patrón que venimos persiguiendo toda la
+sesión — **el silencio miente**. La pantalla confirma el cambio, el usuario lo da por hecho y sigue;
+recién lo descubre mucho después, y para entonces no sabe cuáles marcó y cuáles no. Además un
+sueldo que figura "a pagar" cuando ya se pagó **infla el egreso proyectado**: entra al Cash Flow y
+de ahí al presupuesto, que es el norte del proyecto.
+
+**Hipótesis a descartar en orden** (la primera que aplique explica todo):
+1. El `UPDATE` matchea **0 filas** y devuelve OK — el caso clásico. Se ve con `count: 'exact'`.
+2. Se escribe en el **schema equivocado** (los sueldos tienen su propio schema `sueldos`).
+3. Se escribe bien pero **la lectura recalcula el estado** en vez de leerlo, y lo pisa al volver.
+4. Optimismo de UI: el estado se pinta local y nunca se persiste.
+
+**Estado**: 🔴 sin diagnosticar. Es lo próximo.
+
+---
+
+## <a id="a-feat-20"></a>A-FEAT-20 — Homologar columnas de Caja de Ahorro y dónde va el CBU (2026-08-10)
+
+**Punto de partida**: la convención de columnas quedó **medida sobre los datos**, no supuesta —
+849 movimientos de MSA y 76 de PAM CC, que son los que el banco llenó solo.
+Tabla completa → `ARQUITECTURA-BD.md` § 6b.
+
+### Lo que hay que homologar en MA y PAM CA
+Sale directo de comparar contra MSA. Lo más claro:
+
+| Dato | Hoy en MA | Debería ir a |
+|---|---|---|
+| `BANCO DE GALICIA Y BUENOS AIRES SAU` | `numero_de_terminal` | **`leyendas_adicionales_4`** (es la del banco en MSA) |
+| CUIT | ✅ `leyendas_2` | ya está bien |
+| nombre | ✅ `leyendas_1` | ya está bien |
+
+**El criterio del usuario, y es el correcto**: *"lo que me parece bien es homologar, así cada dato
+va a su lugar e incluso no hace falta que lo setee yo, ya que me puedo confundir."* O sea: la
+convención no es una regla para recordar, es algo que **la app tiene que proponer sola**.
+`proponerMapeo()` ya hace eso; falta alinearlo a la convención completa (banco → `leyendas_4`).
+
+### 🔴 La decisión abierta: dónde va el CBU
+El usuario propuso revisar **todas** las columnas por si alguna estaba libre. Se revisaron las 37 de
+cada tabla. Resultado:
+
+| Columna que parecía libre | Veredicto |
+|---|---|
+| `observaciones_cliente` | ❌ **ocupada** — en CA la llena el usuario desde la columna «Comentarios» del Excel. 10 valores en MA: `"lavaplatos"`, `"empl Dom Nz"`, `"su carmen 4 dias"`. En gastos personales sin factura es la **única** anotación de qué fue el movimiento |
+| `concepto` | ❌ **la más ocupada de todas** — guarda el **texto crudo entero** del banco (96/96 en MA). Es lo que hace posible re-parsear sin volver a importar |
+| `origen` | ❌ `"CA_GALICIA"` en el 100 % — traza del importador |
+| `grupo_de_conceptos` | ❌ etiqueta del tipo, alimenta el dashboard |
+| **`tipo_de_movimiento`** | ✅ **la única libre** — `"Imputado"` en el 100 % de MSA y PAM CC, vacía en las CA, y **nunca se lee en el código** |
+
+**Las tres opciones, con lo que cuesta cada una:**
+1. **Columna `cbu` nueva** *(recomendación de Claude)* — el nombre dice lo que guarda, es consultable
+   por sí misma el día que sirva para emparejar contra `proveedores.cbu`. Contra: el usuario prefiere
+   no sumar columnas.
+2. **Reusar `tipo_de_movimiento`** — funciona hoy, pero deja una columna cuyo nombre miente. Es la
+   misma deuda de [A-FEAT-16](#a-feat-16): qué significa cada columna.
+3. **No guardar el CBU** — hoy son **5 CBUs distintos y 0 coinciden** con los 33 del maestro de
+   proveedores. El texto crudo queda en `concepto`, así que un re-parseo lo rescata cuando se decida.
+
+> Dato para decidir: el usuario aclaró que **muchos movimientos de MA son consumos personales sin
+> factura**, así que el CBU no va a emparejar con nada en la mayoría de los casos — pero *"si el dato
+> está, se guarda bien"*.
+
+### Modos que faltan
+`busca el CBU` (22 dígitos) y `busca la tarjeta` (enmascarada con `X`), análogos a `busca el CUIT`.
+**Los detectores ya existen** (`esCbu`, `esTarjeta`, usados por la firma de forma); falta exponerlos
+como modo. Sirven para que la regla **sobreviva a las formas** — en `TRANSFERENCIA A TERCEROS` el
+CBU está en la línea 3 de dos formas y no existe en la tercera.
+
+## <a id="a-feat-21"></a>A-FEAT-21 — Una tarjeta por forma, en vez de un tipo con selector de alcance
+
+**Propuesta del usuario 2026-08-10**: *"me parece medio rebuscado la UI. Yo creería que lo mejor es
+tener 3 tipos directamente, verlo por separado, configurarlos por separado."*
+
+**De acuerdo.** Toda la maquinaria que se construyó —selector de alcance por fila, botones de forma,
+previa en tres columnas— existe **sólo porque las reglas se comparten entre formas**. Con una tarjeta
+por forma, esa maquinaria desaparece. **Saca código, no lo agrega.**
+
+**No toca la BD**: `firma_forma` ya está por regla; un "tipo" en la pantalla pasa a ser *(tipo, forma)*.
+
+#### La objeción que Claude levantó y el usuario desarmó
+Claude dijo que duplicar las reglas del CUIT y del nombre costaría *"si mañana cambiás la columna del
+CUIT"*. **El ejemplo estaba mal elegido**: la columna del CUIT es lo que **nunca** cambia — es fija
+por convención y el motor la lee de ahí. O sea que lo que se duplicaría es justamente lo que no se
+edita nunca, y encima la app lo propone solo. La objeción se cae.
+
+#### La única condición que sí queda
+**`grupo_de_conceptos` no se puede duplicar.** Es del tipo, no de la forma: si cada tarjeta tiene su
+campo independiente, alcanza con que una diga `Transferencias` y otra `Transferencia` para que el
+dashboard parta el mismo concepto en dos.
+
+→ Diseño: lista **agrupada por tipo**, con el grupo de conceptos arriba (uno, compartido) y **una
+tarjeta por forma** debajo, cada una con su ejemplo, su conteo y sus reglas.
 
 ---
 
