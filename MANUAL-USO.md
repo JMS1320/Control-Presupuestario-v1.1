@@ -837,8 +837,30 @@ línea 5 → nro_terminal      6L·12   4517XXXXXXXXXX11
                             ⚠ Trae cosas distintas según la forma.
 ```
 
-Ésa es la señal de que hay que usar un modo que **busque** (CUIT, antes/después del CUIT) en vez de
-contar líneas. Los botones de arriba del editor permiten cambiar **qué forma estás mirando**.
+Los botones de arriba del editor permiten cambiar **qué forma estás mirando**.
+
+**Cada regla decide a qué formas aplica.** Debajo del modo aparece un segundo selector:
+
+- **«vale para las N formas»** — la regla se guarda sin atarse a ninguna forma.
+- **«sólo la forma de N líneas»** — se guarda atada a la forma que estás mirando.
+
+Por defecto, los modos que **buscan** valen para todas y los que **cuentan líneas** quedan atados a
+su forma, porque contar sólo tiene sentido dentro de una. Se puede cambiar.
+
+Así, en `TRANSFERENCIA A TERCEROS`, el CUIT y el nombre se escriben **una sola vez** (valen para las
+3 formas) y el CBU, la tarjeta y el concepto se escriben **por forma**, que es donde cambian de
+lugar.
+
+### 🛑 Una forma sin cubrir NO se parsea
+Si un tipo tiene reglas atadas a formas y llega un movimiento de **otra** forma, el sistema
+**no lo desglosa**: lo deja marcado con el grupo **«Forma nueva»**.
+
+Es a propósito. Vale más un movimiento sin desglosar y señalado que uno desglosado con las reglas de
+otra forma — que se vería correcto y estaría mal. Así, cuando el banco empieza a mandar algo nuevo,
+**se ve**. El texto original nunca se pierde: se le escriben las reglas de esa forma y se corre
+**Re-parsear**.
+
+En la pantalla, una forma sin reglas propias aparece marcada **«sin cubrir, no se parsea»**.
 
 **No alcanza con contar líneas**: dos movimientos de 6 líneas pueden ser formas distintas si tienen
 las líneas cambiadas de lugar. Por eso la forma se calcula con la **clase de dato de cada línea**
@@ -883,6 +905,13 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
    la detección de formas no está corriendo.
 9. `DEB. AUTOM. DE SERV.` tiene **2 formas, las dos de 5 líneas** (una con `0226 - 0226` en la línea
    4). Sirve para verificar que la forma no se calcula sólo contando líneas.
+10. **Reglas por forma** (requiere haber corrido `sql/2026-08-10_firma_forma_parseo.sql`): en
+    `TRANSFERENCIA A TERCEROS`, poné la regla del CUIT en *«vale para las 3 formas»* y la de la
+    tarjeta en *«sólo la forma de 6 líneas»*. Guardá y cambiá de forma con los botones de arriba: la
+    del CUIT tiene que seguir ahí, la de la tarjeta no.
+11. ⚠️ **El paso que verifica lo más delicado**: dejá una forma **sin ninguna regla propia**. Tiene
+    que aparecer **«sin cubrir, no se parsea»**, y al correr *Re-parsear en seco* esos movimientos
+    tienen que quedar con grupo **«Forma nueva»** — no desglosados con las reglas de otra forma.
 
 ---
 

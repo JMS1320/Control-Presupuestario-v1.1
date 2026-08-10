@@ -27,6 +27,11 @@ export interface ReglaParseo {
   tipo_regla: string
   numero_linea: number | null
   grupo_de_conceptos: string
+  /**
+   * Forma del movimiento a la que aplica (ver `firmaDeMovimiento`).
+   * `null` / ausente = vale para **todas** las formas del tipo.
+   */
+  firma_forma?: string | null
 }
 
 /** tipo_movimiento → reglas. La clave `*` es el comodín para lo no contemplado. */
@@ -34,6 +39,15 @@ export type MapaReglas = Record<string, ReglaParseo[]>
 
 /** Grupo que se asigna cuando ningún set de reglas aplica. Es la marca de "sin desglosar". */
 export const GRUPO_SIN_REGLA = "Otros"
+
+/**
+ * Grupo que se asigna cuando el tipo TIENE reglas por forma pero **ninguna es de esta forma**.
+ *
+ * Decisión del usuario (2026-08-10): en ese caso **no se parsea**. Preferimos un movimiento sin
+ * desglosar y señalado a uno desglosado con las reglas de otra forma — que se vería correcto y
+ * estaría mal. Además así una forma nueva del banco **se ve**, en vez de pasar de largo.
+ */
+export const GRUPO_FORMA_NUEVA = "Forma nueva"
 
 /** Divide el texto multilínea en líneas limpias, descartando las vacías. */
 export function splitMovimiento(raw: string): string[] {
@@ -112,10 +126,15 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
   const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
   const resultado: Record<string, string> = {}
 
-  // El match del tipo es EXACTO (ignorando mayúsculas). Por eso `COMPRA DEBITO` no encuentra
-  // la regla de `COMPRA CON DEBITO`: para el sistema son dos tipos distintos.
-  const claveExacta = Object.keys(mapaReglas).find((k) => k.toUpperCase() === tipoLinea1)
-  const reglas = claveExacta ? mapaReglas[claveExacta] : mapaReglas["*"] ?? []
+  const { reglas, formaNueva } = resolverReglas(lineas, mapaReglas)
+
+  if (formaNueva) {
+    // No se parsea a propósito. El texto crudo sigue entero en `concepto`, así que un re-parseo
+    // posterior lo resuelve apenas se escriba la regla de esta forma.
+    resultado["grupo_de_conceptos"] = GRUPO_FORMA_NUEVA
+    resultado["descripcion"] = tipoLinea1 || raw.substring(0, 100)
+    return resultado
+  }
 
   resultado["grupo_de_conceptos"] = reglas.length > 0 ? reglas[0].grupo_de_conceptos : GRUPO_SIN_REGLA
 
@@ -130,6 +149,49 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
   }
 
   return resultado
+}
+
+/**
+ * Qué reglas se aplican a este movimiento, y si su forma es desconocida.
+ *
+ * Las reglas de un tipo son de dos clases:
+ * - **genéricas** (`firma_forma` vacío): valen para todas las formas. Son las de los modos que
+ *   buscan — el CUIT y el nombre están donde estén.
+ * - **por forma**: valen sólo para esa forma. Son las que cuentan líneas, porque contar sólo
+ *   tiene sentido dentro de una forma.
+ *
+ * Se aplican las genéricas y encima las de la forma, así que ante el mismo `campo_destino` **manda
+ * la específica**.
+ *
+ * ⚠️ **Y si el tipo tiene reglas por forma pero ninguna es de ESTA forma → no se parsea**
+ * (`formaNueva`). Ver `GRUPO_FORMA_NUEVA`.
+ */
+export function resolverReglas(
+  lineas: string[],
+  mapaReglas: MapaReglas,
+): { reglas: ReglaParseo[]; formaNueva: boolean } {
+  const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
+  // El match del tipo es EXACTO (ignorando mayúsculas). Por eso `COMPRA DEBITO` no encuentra
+  // la regla de `COMPRA CON DEBITO`: para el sistema son dos tipos distintos.
+  const claveExacta = Object.keys(mapaReglas).find((k) => k.toUpperCase() === tipoLinea1)
+  const delTipo = claveExacta ? mapaReglas[claveExacta] : mapaReglas["*"] ?? []
+
+  const firma = firmaDeMovimiento(lineas)
+  const genericas = delTipo.filter((r) => !r.firma_forma)
+  const propias = delTipo.filter((r) => r.firma_forma === firma)
+  const tieneReglasPorForma = delTipo.some((r) => !!r.firma_forma)
+
+  if (tieneReglasPorForma && propias.length === 0) {
+    return { reglas: [], formaNueva: true }
+  }
+  return { reglas: [...genericas, ...propias], formaNueva: false }
+}
+
+/** ¿Este movimiento quedó sin parsear por ser de una forma no contemplada? */
+export function esFormaNueva(raw: string | null | undefined, mapaReglas: MapaReglas): boolean {
+  const lineas = splitMovimiento(String(raw ?? ""))
+  if (lineas.length === 0) return false
+  return resolverReglas(lineas, mapaReglas).formaNueva
 }
 
 /** El tipo de movimiento de un texto crudo: su primera línea, normalizada. */
@@ -149,9 +211,13 @@ export async function cargarReglasParseo(
   supabase: SupabaseClient,
   cuentaBancariaId: string,
 ): Promise<MapaReglas> {
+  // `select("*")` a propósito: `firma_forma` es una columna nueva y con el listado explícito la
+  // consulta fallaría en cualquier entorno donde el ALTER TABLE todavía no se corrió. Así, hasta
+  // que exista, `firma_forma` llega `undefined` y todas las reglas se tratan como genéricas —
+  // exactamente el comportamiento anterior.
   const { data, error } = await supabase
     .from("config_parseo_extracto")
-    .select("tipo_movimiento, campo_destino, tipo_regla, numero_linea, grupo_de_conceptos")
+    .select("*")
     .eq("cuenta_bancaria_id", cuentaBancariaId)
     .eq("activo", true)
     .order("orden", { ascending: true })
@@ -170,6 +236,7 @@ export async function cargarReglasParseo(
       tipo_regla: r.tipo_regla,
       numero_linea: r.numero_linea,
       grupo_de_conceptos: r.grupo_de_conceptos ?? "",
+      firma_forma: r.firma_forma ?? null,
     })
   }
   return mapa

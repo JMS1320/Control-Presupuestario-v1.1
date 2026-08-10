@@ -3323,6 +3323,31 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-08-10: Parseo de extractos — reglas por FORMA del movimiento**
+
+Un mismo tipo de movimiento llega escrito de varias maneras. En `ma_galicia`,
+`TRANSFERENCIA A TERCEROS` tiene **3 formas**: dos de 6 líneas (con la 5 y la 6 cambiadas de lugar)
+y una de 5 con el CUIT corrido. Con un solo juego de reglas por tipo, las que cuentan líneas
+aciertan en una forma y fallan en las otras **sin avisar** (→ `PENDIENTES.md` § A-BUG-17).
+
+```sql
+ALTER TABLE public.config_parseo_extracto
+  ADD COLUMN IF NOT EXISTS firma_forma text;   -- NULL = vale para TODAS las formas del tipo
+CREATE INDEX IF NOT EXISTS idx_config_parseo_tipo_firma
+  ON public.config_parseo_extracto (cuenta_bancaria_id, tipo_movimiento, firma_forma);
+```
+
+Script completo con el control posterior: **`sql/2026-08-10_firma_forma_parseo.sql`**. NO en backup.
+
+- La firma la calcula la app (`firmaDeMovimiento`, `lib/extractos/parseo-movimiento.ts`): cantidad
+  de líneas **+ la clase de dato de cada una**. ⚠️ **No alcanza con la cantidad** — dos formas de
+  `TRANSFERENCIA A TERCEROS` tienen 6 líneas las dos.
+- Las 83 reglas existentes quedan en `NULL` y **siguen funcionando sin tocarlas**.
+- Si un tipo tiene reglas con firma y llega un movimiento de **otra** forma, **no se parsea**: queda
+  con `grupo_de_conceptos = 'Forma nueva'`. Decisión del usuario — que una forma nueva del banco se
+  **vea**, en vez de desglosarse mal. El texto crudo sigue entero en `concepto`, así que un
+  re-parseo posterior lo resuelve.
+
 ### **2026-07-01: Ventas — cobros + retenciones recibidas (base)**
 
 Módulo de cobros de ventas (espejo del pago de compras). El cobro NO se asume: la factura/liquidación se concilia contra el **extracto** (transferencias) y las **retenciones sufridas** (IVA/IIBB/Ganancias, que no entran al banco) se asientan en su cuenta contable. NO hay tabla de "cobros": el cobro = extracto + retenciones vinculados a la factura. Se reusa el motor de conciliación (ya maneja `creditos`/ingresos) agregando origen `VENTA` al cash flow.

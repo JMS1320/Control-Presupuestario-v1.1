@@ -238,7 +238,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
-| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Camino A HECHO 2026-08-10** (detecta y muestra las formas, evalúa cada regla en todas) — falta testear. Camino B (columna `cantidad_lineas`) sigue abierto | → [A-FEAT-18](#a-feat-18) |
+| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10** — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. ⏳ **Falta que el usuario corra `sql/2026-08-10_firma_forma_parseo.sql`** + testear | → [A-FEAT-18](#a-feat-18) |
 | A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -3441,6 +3441,41 @@ modos que buscan (`cuit`, `pre_cuit`), sin necesidad de partir el tipo.
 
 > ℹ️ **A y B no son alternativas: A está contenido en B.** No se pueden ofrecer reglas por formato
 > sin antes detectar los formatos. Hacer A no cierra ninguna puerta.
+
+#### ⚠️ Corrección a la propuesta original de B
+Decía *"una columna `cantidad_lineas`"*. **No alcanza**, y lo demostraron los datos apenas A
+estuvo corriendo: `TRANSFERENCIA A TERCEROS` tiene **dos formas de 6 líneas** con la 5 y la 6
+cambiadas de lugar. Contra "6 líneas" las dos caerían en el mismo juego de reglas y volveríamos al
+problema original. La columna guarda **la firma completa** — cantidad + clase de cada línea.
+
+#### ✅ CAMINO B — HECHO 2026-08-10, falta el SQL y testear
+
+**Por qué los modos que buscan no alcanzaban** (planteo del usuario, y tenía razón): resuelven el
+CUIT (`cuit`) y el nombre (`pre_cuit`) en las 3 formas, pero **no el CBU, ni la tarjeta, ni el
+concepto**. Y el concepto no tiene arreglo por búsqueda: `VARIOS` está en la línea 6, 5 y 4 según la
+forma, y **no hay ninguna señal en el texto** que permita reconocerlo — es texto suelto. Para eso
+hacen falta reglas por forma.
+
+| Lo que se hizo | Dónde |
+|---|---|
+| `firma_forma` en las reglas · `null` = vale para todas las formas | `sql/2026-08-10_firma_forma_parseo.sql` |
+| `resolverReglas()` — genéricas + las de la forma; ante el mismo campo **manda la específica** | `lib/extractos/parseo-movimiento.ts` |
+| **Si el tipo tiene reglas por forma y ninguna es de ésta → NO se parsea** (`GRUPO_FORMA_NUEVA`) | ídem |
+| Cada regla elige su alcance; por defecto **buscar → todas**, **contar líneas → sólo su forma** | la pantalla |
+| Cada forma muestra si está **sin cubrir**, y el diagnóstico cuenta `formasNuevas` | pantalla + `GET` |
+
+**La decisión de no parsear es del usuario** (2026-08-10): *"si no coincidiera con la firma debería
+no parsearse, así nos da la chance de evaluar si apareció una nueva firma"*. Es lo contrario de lo
+que hace el sistema en todos lados: acá **preferimos el hueco visible al dato plausible**. El texto
+crudo sigue entero en `concepto`, así que un re-parseo lo resuelve apenas se escriba la regla.
+
+**Verificado antes de commitear** (servidor limpio, sin el ALTER corrido): 12 tipos, 16 formas,
+**ninguna sin cubrir**, `formasNuevas: 0`. O sea que **el código funciona igual antes y después del
+SQL** — hasta que existan reglas con firma, todo se resuelve como hoy. `cargarReglasParseo` usa
+`select("*")` justamente para eso: con el listado explícito de columnas, la consulta fallaría en
+cualquier entorno donde el ALTER no se corrió todavía.
+
+⏳ **Pendiente del usuario**: correr `sql/2026-08-10_firma_forma_parseo.sql` en el SQL Editor.
 
 #### ✅ CAMINO A — HECHO 2026-08-10, falta testear
 

@@ -24,6 +24,7 @@ import {
   splitMovimiento,
   firmaDeMovimiento,
   lineasDeFirma,
+  resolverReglas,
 } from "@/lib/extractos/parseo-movimiento"
 
 const supabase = createClient(
@@ -198,12 +199,19 @@ export async function GET(req: Request) {
       .map(([tipo, v]) => {
         // Las formas van ordenadas por cantidad: la mayoritaria manda como ejemplo por defecto
         const formatos = [...v.formas.entries()]
-          .map(([firma, f]) => ({
-            firma,
-            lineas: lineasDeFirma(firma),
-            movimientos: f.n,
-            texto: splitMovimiento(f.ejemplo),
-          }))
+          .map(([firma, f]) => {
+            const texto = splitMovimiento(f.ejemplo)
+            // `cubierto: false` = el tipo tiene reglas por forma pero ninguna es de ésta, así que
+            // sus movimientos NO se parsean. Es la señal de "apareció una forma nueva".
+            const { formaNueva } = resolverReglas(texto, mapaReglas)
+            return {
+              firma,
+              lineas: lineasDeFirma(firma),
+              movimientos: f.n,
+              texto,
+              cubierto: !formaNueva,
+            }
+          })
           .sort((a, b) => b.movimientos - a.movimientos)
 
         return {
@@ -218,11 +226,19 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => b.movimientos - a.movimientos)
 
+    // Movimientos que quedan sin parsear por ser de una forma no contemplada. Se cuentan aparte
+    // de `sinDesglosar` porque son otra cosa: acá el tipo SÍ tiene reglas, la forma no.
+    const formasNuevas = tipos.reduce(
+      (acc, t) => acc + t.formatos.filter(f => !f.cubierto).reduce((n, f) => n + f.movimientos, 0),
+      0
+    )
+
     return NextResponse.json({
       ok: true,
       cuenta,
       totalMovimientos: data?.length ?? 0,
       sinDesglosar,
+      formasNuevas,
       /** Todos los tipos presentes, con ejemplo. Lo usa el configurador. */
       tipos,
       /** Sólo los que no tienen regla. Lo usa la alerta de Principal — no cambiar la forma. */
